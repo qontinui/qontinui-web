@@ -488,6 +488,7 @@ export function ContextMenu({
         left: `${adjustedPosition.x}px`,
         top: `${adjustedPosition.y}px`,
       }}
+      data-ui-id="canvas-context-menu"
     >
       <div className="py-1">
         {items.map((item, index) => {
@@ -521,6 +522,7 @@ export function ContextMenu({
                 onClick={() => handleItemClick(item, index)}
                 onMouseEnter={() => setSelectedIndex(index)}
                 disabled={item.disabled}
+                data-ui-id={`canvas-context-menu-item-${item.label?.toLowerCase().replace(/\s+/g, "-") || index}-btn`}
               >
                 <div className="flex items-center gap-2 flex-1">
                   {item.icon && (
@@ -577,6 +579,7 @@ export function ContextMenu({
                             }
                           }}
                           disabled={subItem.disabled}
+                          data-ui-id={`canvas-context-submenu-item-${subItem.label?.toLowerCase().replace(/\s+/g, "-") || subIndex}-btn`}
                         >
                           {subItem.icon && <span>{subItem.icon}</span>}
                           <span className="flex-1">{subItem.label}</span>

@@ -117,7 +117,7 @@ export default function ProjectsTab() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-ui-id="admin-projects-tab">
       {/* Filters */}
       <Card className="bg-card border-border">
         <CardHeader>
@@ -135,10 +135,11 @@ export default function ProjectsTab() {
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
+                data-ui-id="admin-projects-search-input"
               />
             </div>
             <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger className="w-full md:w-[200px]">
+              <SelectTrigger className="w-full md:w-[200px]" data-ui-id="admin-projects-sort-select">
                 <SelectValue placeholder="Sort by" />
               </SelectTrigger>
               <SelectContent>
@@ -157,7 +158,7 @@ export default function ProjectsTab() {
       </Card>
 
       {/* Projects List */}
-      <Card className="bg-card border-border">
+      <Card className="bg-card border-border" data-ui-id="admin-projects-list">
         <CardContent className="p-0">
           <div className="divide-y divide-border">
             {filteredProjects.length === 0 ? (
@@ -180,6 +181,7 @@ export default function ProjectsTab() {
                       setSelectedProjectId(project.id);
                       setIsModalOpen(true);
                     }}
+                    data-ui-id={`admin-projects-item-${project.id}`}
                   >
                     <div className="flex items-start gap-4">
                       <div className="flex-1 min-w-0">

@@ -85,6 +85,13 @@ from app.models.project import Project
 from app.models.project_assets import ProjectImage, ProjectScreenshot
 from app.models.project_embedding import ProjectEmbedding
 from app.models.project_version import ProjectVersion
+from app.models.render_log import (
+    RenderImage,
+    RenderImageType,
+    RenderLog,
+    RenderLogMutationType,
+    RenderLogTrigger,
+)
 from app.models.recording import (
     DiscoveredTransition,
     ProcessingLog,
@@ -152,6 +159,12 @@ from app.models.training_dataset import (
     TrainingDatasetAnnotation,
     TrainingDatasetExportJob,
     TrainingDatasetImage,
+)
+from app.models.ui_bridge_state import (
+    DomainKnowledge,
+    UIBridgeState,
+    UIBridgeStateConfig,
+    UIBridgeStateDomainKnowledge,
 )
 from app.models.transition_execution import (
     TransitionExecution,
@@ -384,4 +397,15 @@ __all__ = [
     "TestResultStatus",
     "WorkflowTestAssociation",
     "TriggerPoint",
+    # Render Logging (Development Debugging)
+    "RenderLog",
+    "RenderImage",
+    "RenderLogTrigger",
+    "RenderLogMutationType",
+    "RenderImageType",
+    # UI Bridge State Discovery
+    "UIBridgeStateConfig",
+    "UIBridgeState",
+    "DomainKnowledge",
+    "UIBridgeStateDomainKnowledge",
 ]

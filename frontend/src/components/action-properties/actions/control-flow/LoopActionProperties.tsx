@@ -95,7 +95,7 @@ export function LoopActionProperties({
       <div className="space-y-2">
         <Label className="text-xs text-text-muted">Loop Type</Label>
         <Select value={loopType} onValueChange={handleLoopTypeChange}>
-          <SelectTrigger className="bg-transparent border-border-default">
+          <SelectTrigger className="bg-transparent border-border-default" data-ui-id="action-props-loop-type-select">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -134,6 +134,7 @@ export function LoopActionProperties({
                 updateConfig("iterations", Number.parseInt(e.target.value) || 1)
               }
               className="bg-transparent border-border-default"
+              data-ui-id="action-props-loop-iterations-input"
             />
             <p className="text-xs text-text-muted">
               How many times to repeat the loop
@@ -189,7 +190,7 @@ export function LoopActionProperties({
                 })
               }
             >
-              <SelectTrigger className="bg-transparent border-border-default">
+              <SelectTrigger className="bg-transparent border-border-default" data-ui-id="action-props-loop-collection-select">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -327,6 +328,7 @@ export function LoopActionProperties({
               )
             }
             className="bg-transparent border-border-default"
+            data-ui-id="action-props-loop-maxiterations-input"
           />
           <p className="text-xs text-text-muted">
             Safety limit to prevent infinite loops (default: 1000)
@@ -338,6 +340,7 @@ export function LoopActionProperties({
             id="breakOnError"
             checked={breakOnError}
             onCheckedChange={(checked) => updateConfig("breakOnError", checked)}
+            data-ui-id="action-props-loop-breakonerror-checkbox"
           />
           <label
             htmlFor="breakOnError"

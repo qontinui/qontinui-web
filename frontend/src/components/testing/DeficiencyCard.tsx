@@ -80,7 +80,7 @@ export function DeficiencyCard({ deficiency }: DeficiencyCardProps) {
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <div className="rounded-lg bg-surface-canvas/50 border border-border-subtle/30 hover:border-border-default/50 transition-colors">
+      <div className="rounded-lg bg-surface-canvas/50 border border-border-subtle/30 hover:border-border-default/50 transition-colors" data-ui-id={`testing-deficiency-card-${deficiency.id}`}>
         {/* Header */}
         <CollapsibleTrigger asChild>
           <div className="flex items-start gap-4 p-4 cursor-pointer">
@@ -145,7 +145,7 @@ export function DeficiencyCard({ deficiency }: DeficiencyCardProps) {
                   handleStatusChange(value as Deficiency["status"])
                 }
               >
-                <SelectTrigger className="w-[180px] bg-surface-raised border-border-default">
+                <SelectTrigger className="w-[180px] bg-surface-raised border-border-default" data-ui-id="testing-deficiency-card-status-select">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -225,6 +225,7 @@ export function DeficiencyCard({ deficiency }: DeficiencyCardProps) {
                     onClick={() =>
                       window.open(deficiency.screenshot_url!, "_blank")
                     }
+                    data-ui-id="testing-deficiency-card-screenshot-btn"
                   >
                     <ExternalLink className="w-4 h-4" />
                   </Button>

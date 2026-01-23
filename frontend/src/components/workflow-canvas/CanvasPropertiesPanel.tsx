@@ -174,11 +174,11 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
           className="flex-1 flex flex-col"
         >
           <TabsList className="w-full justify-start border-b border-border-default rounded-none bg-transparent p-0">
-            <TabsTrigger value="properties" className="rounded-none">
+            <TabsTrigger value="properties" className="rounded-none" data-ui-id="canvas-props-properties-tab-btn">
               <Settings className="w-3 h-3 mr-1.5" />
               Properties
             </TabsTrigger>
-            <TabsTrigger value="history" className="rounded-none">
+            <TabsTrigger value="history" className="rounded-none" data-ui-id="canvas-props-history-tab-btn">
               <History className="w-3 h-3 mr-1.5" />
               History
             </TabsTrigger>
@@ -253,6 +253,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
           size="sm"
           onClick={toggleOpen}
           className="bg-surface-raised hover:bg-surface-raised/80 border border-border-default"
+          data-ui-id="canvas-props-expand-btn"
         >
           {effectivePosition === "right" ? (
             <ChevronLeft className="w-4 h-4" />
@@ -339,6 +340,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
             }}
             className="h-7 w-7 p-0"
             title="Change position"
+            data-ui-id="canvas-props-position-btn"
           >
             {effectivePosition === "floating" ? (
               <Minimize2 className="w-4 h-4" />
@@ -355,6 +357,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
               onClick={toggleOpen}
               className="h-7 w-7 p-0"
               title="Close panel"
+              data-ui-id="canvas-props-close-btn"
             >
               {effectivePosition === "right" ? (
                 <ChevronRight className="w-4 h-4" />
@@ -383,6 +386,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
                 variant="outline"
                 onClick={() => console.log("Discard changes")}
                 className="h-7 text-xs"
+                data-ui-id="canvas-props-discard-btn"
               >
                 <RotateCcw className="w-3 h-3 mr-1" />
                 Discard
@@ -391,6 +395,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
                 size="sm"
                 onClick={() => console.log("Save changes")}
                 className="h-7 text-xs bg-blue-600 hover:bg-blue-700"
+                data-ui-id="canvas-props-save-btn"
               >
                 <Save className="w-3 h-3 mr-1" />
                 Save

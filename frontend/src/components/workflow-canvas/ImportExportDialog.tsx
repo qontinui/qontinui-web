@@ -115,6 +115,7 @@ export function ExportDialog({
               value={format}
               onChange={(e) => setFormat(e.target.value as ExportFormat)}
               className="w-full bg-surface-canvas border border-border-default text-white rounded-md px-3 py-2 focus:border-brand-primary focus:ring-1 focus:ring-brand-primary"
+              data-ui-id="canvas-export-format-select"
             >
               <option value="json">JSON (Workflow Data)</option>
               <option value="png">PNG (Image)</option>
@@ -134,6 +135,7 @@ export function ExportDialog({
               onChange={(e) => setFilename(e.target.value)}
               className="w-full bg-surface-canvas border border-border-default text-white rounded-md px-3 py-2 focus:border-brand-primary focus:ring-1 focus:ring-brand-primary placeholder:text-text-muted"
               placeholder="workflow-name"
+              data-ui-id="canvas-export-filename-input"
             />
           </div>
 
@@ -151,6 +153,7 @@ export function ExportDialog({
                 value={quality}
                 onChange={(e) => setQuality(parseFloat(e.target.value))}
                 className="w-full accent-brand-primary"
+                data-ui-id="canvas-export-quality-input"
               />
             </div>
           )}
@@ -169,6 +172,7 @@ export function ExportDialog({
                   )
                 }
                 className="w-full bg-surface-canvas border border-border-default text-white rounded-md px-3 py-2 focus:border-brand-primary focus:ring-1 focus:ring-brand-primary"
+                data-ui-id="canvas-export-background-select"
               >
                 <option value="white">White</option>
                 <option value="transparent">Transparent</option>
@@ -186,6 +190,7 @@ export function ExportDialog({
                 checked={includeMetadata}
                 onChange={(e) => setIncludeMetadata(e.target.checked)}
                 className="mr-2 accent-brand-primary"
+                data-ui-id="canvas-export-metadata-checkbox"
               />
               <label
                 htmlFor="includeMetadata"
@@ -203,6 +208,7 @@ export function ExportDialog({
             onClick={onClose}
             className="px-4 py-2 border border-border-default text-text-secondary rounded-md hover:bg-surface-raised"
             disabled={exporting}
+            data-ui-id="canvas-export-cancel-btn"
           >
             Cancel
           </button>
@@ -210,6 +216,7 @@ export function ExportDialog({
             onClick={handleExport}
             className="px-4 py-2 bg-brand-primary text-black rounded-md hover:bg-brand-primary/80 disabled:opacity-50"
             disabled={exporting}
+            data-ui-id="canvas-export-submit-btn"
           >
             {exporting ? "Exporting..." : "Export"}
           </button>
@@ -342,18 +349,21 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
               <button
                 onClick={() => setImportMethod("file")}
                 className={`flex-1 px-3 py-2 rounded-md text-sm font-medium ${importMethod === "file" ? "bg-brand-primary text-black" : "bg-surface-raised text-text-secondary hover:bg-surface-raised/80"}`}
+                data-ui-id="canvas-import-method-file-btn"
               >
                 File
               </button>
               <button
                 onClick={() => setImportMethod("url")}
                 className={`flex-1 px-3 py-2 rounded-md text-sm font-medium ${importMethod === "url" ? "bg-brand-primary text-black" : "bg-surface-raised text-text-secondary hover:bg-surface-raised/80"}`}
+                data-ui-id="canvas-import-method-url-btn"
               >
                 URL
               </button>
               <button
                 onClick={() => setImportMethod("clipboard")}
                 className={`flex-1 px-3 py-2 rounded-md text-sm font-medium ${importMethod === "clipboard" ? "bg-brand-primary text-black" : "bg-surface-raised text-text-secondary hover:bg-surface-raised/80"}`}
+                data-ui-id="canvas-import-method-clipboard-btn"
               >
                 Clipboard
               </button>
@@ -372,6 +382,7 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
                 onChange={(e) => setUrl(e.target.value)}
                 className="w-full bg-surface-canvas border border-border-default text-white rounded-md px-3 py-2 focus:border-brand-primary focus:ring-1 focus:ring-brand-primary placeholder:text-text-muted"
                 placeholder="https://example.com/workflow.json"
+                data-ui-id="canvas-import-url-input"
               />
             </div>
           )}
@@ -414,6 +425,7 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
             onClick={onClose}
             className="px-4 py-2 border border-border-default text-text-secondary rounded-md hover:bg-surface-raised"
             disabled={loading}
+            data-ui-id="canvas-import-cancel-btn"
           >
             Cancel
           </button>
@@ -425,6 +437,7 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
             }}
             className="px-4 py-2 bg-brand-primary text-black rounded-md hover:bg-brand-primary/80 disabled:opacity-50"
             disabled={loading || (importMethod === "url" && !url)}
+            data-ui-id="canvas-import-submit-btn"
           >
             {loading ? "Importing..." : "Import"}
           </button>
@@ -490,15 +503,17 @@ export function TemplateDialog({
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search templates..."
             className="w-full bg-surface-canvas border border-border-default text-white rounded-md px-3 py-2 mb-4 focus:border-brand-primary focus:ring-1 focus:ring-brand-primary placeholder:text-text-muted"
+            data-ui-id="canvas-template-search-input"
           />
 
           {/* Category Filter */}
-          <div className="flex space-x-2 overflow-x-auto">
+          <div className="flex space-x-2 overflow-x-auto" data-ui-id="canvas-template-category-list">
             {categories.map((category) => (
               <button
                 key={category}
                 onClick={() => setSelectedCategory(category)}
                 className={`px-4 py-2 rounded-md whitespace-nowrap text-sm font-medium ${selectedCategory === category ? "bg-brand-primary text-black" : "bg-surface-raised text-text-secondary hover:bg-surface-raised/80"}`}
+                data-ui-id={`canvas-template-category-${category}-btn`}
               >
                 {category.charAt(0).toUpperCase() + category.slice(1)}
               </button>
@@ -508,12 +523,13 @@ export function TemplateDialog({
 
         {/* Template Grid */}
         <div className="flex-1 overflow-y-auto p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-ui-id="canvas-template-grid-list">
             {templates.map((template) => (
               <div
                 key={template.id}
                 onClick={() => handleSelectTemplate(template)}
                 className="border border-border-default bg-surface-canvas rounded-lg p-4 hover:border-brand-primary hover:shadow-md cursor-pointer transition"
+                data-ui-id={`canvas-template-item-${template.id}`}
               >
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="font-semibold text-lg text-white">
@@ -554,6 +570,7 @@ export function TemplateDialog({
           <button
             onClick={onClose}
             className="px-4 py-2 border border-border-default text-text-secondary rounded-md hover:bg-surface-raised"
+            data-ui-id="canvas-template-cancel-btn"
           >
             Cancel
           </button>

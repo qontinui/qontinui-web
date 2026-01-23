@@ -107,6 +107,7 @@ export default function ProfilePage() {
               size="sm"
               onClick={handleBackToDashboard}
               className="text-text-muted hover:text-white"
+              data-ui-id="profile-back-btn"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to Dashboard
@@ -119,6 +120,7 @@ export default function ProfilePage() {
               onClick={() => router.push("/connect-runner")}
               className="border-border-default hover:border-brand-primary hover:text-brand-primary bg-transparent"
               title="Connect Desktop Runner"
+              data-ui-id="profile-connect-runner-btn"
             >
               <Cable className="w-4 h-4 mr-2" />
               Connect Runner
@@ -136,7 +138,7 @@ export default function ProfilePage() {
         <div
           className="mb-8"
           data-awas-action="get_current_user"
-          data-awas-element="user-profile-header"
+          data-ui-id="user-profile-header"
         >
           <div className="flex items-center justify-between mb-2">
             <div>

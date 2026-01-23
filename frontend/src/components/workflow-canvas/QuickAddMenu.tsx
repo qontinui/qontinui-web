@@ -158,6 +158,7 @@ export const QuickAddMenu: React.FC<QuickAddMenuProps> = ({
           placeholder="Search nodes..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          data-ui-id="canvas-quickadd-search-input"
         />
         {!query && (
           <div className="quick-add-menu__hint">
@@ -167,7 +168,7 @@ export const QuickAddMenu: React.FC<QuickAddMenuProps> = ({
       </div>
 
       {/* Results */}
-      <div className="quick-add-menu__results">
+      <div className="quick-add-menu__results" data-ui-id="canvas-quickadd-results-list">
         {/* Header */}
         {!query && recentTypes.length > 0 && (
           <div className="quick-add-menu__section-header">
@@ -190,6 +191,7 @@ export const QuickAddMenu: React.FC<QuickAddMenuProps> = ({
                   )}
                   onClick={() => handleSelect(metadata.type)}
                   onMouseEnter={() => setSelectedIndex(index)}
+                  data-ui-id={`canvas-quickadd-item-${metadata.type.toLowerCase()}-btn`}
                 >
                   <div
                     className="quick-add-menu__item-icon"
@@ -354,7 +356,7 @@ export const QuickActionsPanel: React.FC<QuickActionsPanelProps> = ({
         ].slice(0, maxItems);
 
   return (
-    <div className={cn("quick-actions-panel", className)}>
+    <div className={cn("quick-actions-panel", className)} data-ui-id="canvas-quickactions-panel">
       <div className="quick-actions-panel__header">
         <Zap className="h-4 w-4 text-yellow-500" />
         <span className="text-sm font-medium text-text-secondary">
@@ -370,6 +372,7 @@ export const QuickActionsPanel: React.FC<QuickActionsPanelProps> = ({
               className="quick-actions-panel__button"
               onClick={() => onSelect(metadata.type)}
               title={metadata.description}
+              data-ui-id={`canvas-quickaction-${metadata.type.toLowerCase()}-btn`}
             >
               <IconComponent className="h-5 w-5" />
               <span className="text-xs">{metadata.displayName}</span>

@@ -278,6 +278,7 @@ export function ImageEnlargeModal({
       <DialogContent
         className="max-w-[96vw] max-h-[92vh] p-0 overflow-hidden"
         style={{ width: displayDimensions.containerWidth + 48, height: "auto" }}
+        data-ui-id="dialog-image-enlarge"
       >
         <DialogHeader className="p-4 pb-2 flex flex-row items-center justify-between">
           <DialogTitle className="text-lg font-semibold">{title}</DialogTitle>

@@ -4,24 +4,28 @@
  * State Machine Page
  *
  * Visual editor for creating and managing state structures in automation workflows.
- * Three tabs:
+ * Four tabs:
  * - Definition: Create and edit states, transitions, and their properties
  * - State View: Visualize states spatially on a canvas
  * - Transitions: Animate and visualize transition execution
+ * - Discovery: Automatically explore and discover states from target applications
  */
 
-import { useState, useMemo, useEffect, Suspense } from "react";
+import { useState, useMemo, useEffect, useCallback, Suspense } from "react";
 import { StateStructure } from "@/components/state-machine";
 import { RequireProject } from "@/components/require-project";
 import { useProjectLoader } from "@/hooks/use-project-loader";
 import { useAutomation } from "@/contexts/automation-context";
 import { useRunnerMonitors } from "@/hooks/useRunnerMonitors";
+import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
+import { useUIBridgeExploration, type ExploredElement } from "@/hooks/useUIBridgeExploration";
 import { ActiveStatesCanvas } from "@/components/workflow-viz/ActiveStatesCanvas";
 import { TransitionAnimationCanvas } from "@/components/workflow-viz/TransitionAnimationCanvas";
 import { TransitionPlaybackControls } from "@/components/workflow-viz/TransitionPlaybackControls";
 import { TransitionList } from "@/components/workflow-viz/TransitionList";
 import { useTransitionAnimation } from "@/components/workflow-viz/TransitionAnimationController";
-import type { Transition } from "@/contexts/automation-context/types";
+import { ExplorationConfigPanel } from "@/components/ui-bridge/ExplorationConfigPanel";
+import type { Transition, StateMachineState } from "@/contexts/automation-context/types";
 import {
   Card,
   CardContent,
@@ -34,6 +38,10 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import {
   Loader2,
   Layers,
@@ -43,7 +51,13 @@ import {
   Square,
   ArrowRight,
   Network,
+  Compass,
+  CheckCircle2,
+  AlertCircle,
+  Plus,
+  Save,
 } from "lucide-react";
+import { toast } from "sonner";
 
 function LoadingFallback() {
   return (

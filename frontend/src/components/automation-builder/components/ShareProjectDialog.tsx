@@ -240,7 +240,7 @@ export function ShareProjectDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col" data-ui-id="dialog-share-project">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Share2 className="h-5 w-5" />
@@ -294,6 +294,7 @@ export function ShareProjectDialog({
                         handleAddUser();
                       }
                     }}
+                    data-ui-id="automation-share-email-input"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
@@ -306,7 +307,7 @@ export function ShareProjectDialog({
                       }
                       disabled={loading}
                     >
-                      <SelectTrigger id="permission">
+                      <SelectTrigger id="permission" data-ui-id="automation-share-permission-select">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -328,6 +329,7 @@ export function ShareProjectDialog({
                         disabled={loading}
                         min={new Date().toISOString().split("T")[0]}
                         className="pr-8"
+                        data-ui-id="automation-share-expiration-input"
                       />
                       <Calendar className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted pointer-events-none" />
                     </div>
@@ -337,6 +339,7 @@ export function ShareProjectDialog({
                   onClick={handleAddUser}
                   disabled={loading}
                   className="w-full"
+                  data-ui-id="automation-share-user-btn"
                 >
                   {loading ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -358,7 +361,7 @@ export function ShareProjectDialog({
                     onValueChange={setSelectedOrg}
                     disabled={loading}
                   >
-                    <SelectTrigger id="organization">
+                    <SelectTrigger id="organization" data-ui-id="automation-share-org-select">
                       <SelectValue placeholder="Select an organization" />
                     </SelectTrigger>
                     <SelectContent>
@@ -380,7 +383,7 @@ export function ShareProjectDialog({
                       }
                       disabled={loading}
                     >
-                      <SelectTrigger id="org-permission">
+                      <SelectTrigger id="org-permission" data-ui-id="automation-share-orgpermission-select">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -402,6 +405,7 @@ export function ShareProjectDialog({
                         disabled={loading}
                         min={new Date().toISOString().split("T")[0]}
                         className="pr-8"
+                        data-ui-id="automation-share-orgexpiration-input"
                       />
                       <Calendar className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted pointer-events-none" />
                     </div>
@@ -411,6 +415,7 @@ export function ShareProjectDialog({
                   onClick={handleAddOrganization}
                   disabled={loading}
                   className="w-full"
+                  data-ui-id="automation-share-org-btn"
                 >
                   {loading ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -434,11 +439,13 @@ export function ShareProjectDialog({
                     value={generatedLink || "Generate a shareable link"}
                     readOnly
                     className="flex-1 font-mono text-sm"
+                    data-ui-id="automation-share-link-input"
                   />
                   <Button
                     onClick={handleCopyLink}
                     disabled={loading}
                     variant={linkCopied ? "default" : "outline"}
+                    data-ui-id="automation-share-copylink-btn"
                   >
                     {loading ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -530,6 +537,7 @@ export function ShareProjectDialog({
                                 "w-[120px] h-8 text-xs",
                                 permissionColors[collaborator.permission]
                               )}
+                              data-ui-id={`automation-share-collaborator-${collaborator.id}-permission-select`}
                             >
                               <div className="flex items-center gap-1.5">
                                 <PermissionIcon className="h-3 w-3" />
@@ -554,6 +562,7 @@ export function ShareProjectDialog({
                             }
                             disabled={isUpdating}
                             aria-label={`Remove ${collaborator.name || collaborator.email}`}
+                            data-ui-id={`automation-share-collaborator-${collaborator.id}-revoke-btn`}
                           >
                             {isUpdating ? (
                               <Loader2 className="h-4 w-4 animate-spin" />

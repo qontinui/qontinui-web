@@ -1,11 +1,8 @@
 """
-API endpoints for render logging (development debugging).
+API endpoints for render logging.
 
 This module provides REST API endpoints for storing and retrieving DOM snapshots
-captured by the frontend for AI-assisted debugging.
-
-IMPORTANT: These endpoints are only enabled when RENDER_LOG_ENABLED=True.
-In production, these endpoints return 404 to prevent information disclosure.
+captured by the frontend for UI Bridge state discovery.
 """
 
 from datetime import datetime, timedelta, UTC
@@ -38,15 +35,6 @@ logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 
-def check_render_log_enabled() -> None:
-    """Check if render logging is enabled. Raises 404 if disabled."""
-    if not settings.RENDER_LOG_ENABLED:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Render logging is not enabled",
-        )
-
-
 def get_image_storage_path() -> Path:
     """Get the image storage directory path."""
     base_path = Path(settings.RENDER_LOG_IMAGE_DIR)
@@ -64,8 +52,6 @@ async def get_render_log_stats(
     db: AsyncSession = Depends(get_async_db),
 ) -> RenderLogStats:
     """Get render logging statistics."""
-    check_render_log_enabled()
-
     # Get total snapshots
     total_result = await db.execute(select(func.count(RenderLog.id)))
     total_snapshots = total_result.scalar() or 0
@@ -112,8 +98,6 @@ async def list_sessions(
     db: AsyncSession = Depends(get_async_db),
 ) -> list[RenderLogSessionSummary]:
     """List render log sessions with summaries."""
-    check_render_log_enabled()
-
     # Query for session summaries
     # Count mutations using case expression
     from sqlalchemy import case
@@ -167,8 +151,6 @@ async def list_render_logs(
     db: AsyncSession = Depends(get_async_db),
 ) -> RenderLogList:
     """List render logs with pagination."""
-    check_render_log_enabled()
-
     # Build query
     query = select(RenderLog)
 
@@ -211,8 +193,6 @@ async def get_render_log(
     db: AsyncSession = Depends(get_async_db),
 ) -> RenderLogWithImages:
     """Get a render log by ID with full data."""
-    check_render_log_enabled()
-
     result = await db.execute(select(RenderLog).filter(RenderLog.id == render_log_id))
     log = result.scalar_one_or_none()
 
@@ -247,8 +227,6 @@ async def create_render_log(
     current_user: User | None = Depends(current_active_user_optional),
 ) -> RenderLogResponse:
     """Create a new render log entry."""
-    check_render_log_enabled()
-
     # Create the render log
     render_log = RenderLog(
         session_id=log_data.session_id,
@@ -298,8 +276,6 @@ async def upload_render_image(
     db: AsyncSession = Depends(get_async_db),
 ) -> RenderImageResponse:
     """Upload an image for a render log."""
-    check_render_log_enabled()
-
     # Verify render log exists
     result = await db.execute(select(RenderLog).filter(RenderLog.id == render_log_id))
     log = result.scalar_one_or_none()
@@ -356,8 +332,6 @@ async def clear_render_logs(
     db: AsyncSession = Depends(get_async_db),
 ) -> ClearRenderLogsResponse:
     """Clear render logs."""
-    check_render_log_enabled()
-
     if not request.confirm:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -426,8 +400,6 @@ async def cleanup_old_render_logs(
     db: AsyncSession = Depends(get_async_db),
 ) -> ClearRenderLogsResponse:
     """Cleanup old render logs based on retention settings."""
-    check_render_log_enabled()
-
     cutoff = datetime.now(UTC) - timedelta(days=settings.RENDER_LOG_RETENTION_DAYS)
 
     # Get images to delete

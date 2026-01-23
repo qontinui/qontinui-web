@@ -441,6 +441,7 @@ export function StateExplorerView({
             placeholder="Filter states..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            data-ui-id="extraction-results-search-input"
             className="bg-surface-canvas border-border-subtle text-white font-mono text-xs h-8 focus:border-brand-primary focus:ring-brand-primary/30 placeholder:text-text-muted/50"
           />
         </div>
@@ -456,6 +457,7 @@ export function StateExplorerView({
                   selected={state.id === selectedStateId}
                   accent="primary"
                   onClick={() => setSelectedStateId(state.id)}
+                  data-ui-id={`extraction-results-state-${state.id}`}
                   className="overflow-hidden"
                 >
                   <div
@@ -543,6 +545,7 @@ export function StateExplorerView({
                 variant="ghost"
                 onClick={handleCopyImage}
                 title="Copy image to clipboard"
+                data-ui-id="extraction-results-copy-btn"
                 className="text-brand-success hover:bg-brand-success/20 h-6 w-6 p-0 mr-1"
               >
                 <Copy className="w-3.5 h-3.5" />
@@ -552,6 +555,7 @@ export function StateExplorerView({
                 size="sm"
                 variant="ghost"
                 onClick={handleZoomOut}
+                data-ui-id="extraction-results-zoom-out-btn"
                 className="text-brand-success hover:bg-brand-success/20 h-6 w-6 p-0"
               >
                 <ZoomOut className="w-3.5 h-3.5" />
@@ -563,6 +567,7 @@ export function StateExplorerView({
                 size="sm"
                 variant="ghost"
                 onClick={handleZoomIn}
+                data-ui-id="extraction-results-zoom-in-btn"
                 className="text-brand-success hover:bg-brand-success/20 h-6 w-6 p-0"
               >
                 <ZoomIn className="w-3.5 h-3.5" />
@@ -572,6 +577,7 @@ export function StateExplorerView({
                 size="sm"
                 variant="ghost"
                 onClick={handleResetZoom}
+                data-ui-id="extraction-results-zoom-reset-btn"
                 className="text-brand-success hover:bg-brand-success/20 h-6 w-6 p-0"
               >
                 <RotateCcw className="w-3.5 h-3.5" />

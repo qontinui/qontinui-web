@@ -11,7 +11,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Globe, Bot, Monitor, ImageIcon } from "lucide-react";
+import { Globe, Bot, Monitor, ImageIcon, Link } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { ExtractionMethod } from "@/types/extraction-unified";
 
@@ -31,6 +31,14 @@ const methodOptions: MethodOption[] = [
     description: "DOM-based element discovery using Playwright",
     icon: <Globe className="h-8 w-8" />,
     color: "var(--brand-primary)",
+  },
+  {
+    id: "ui-bridge",
+    label: "UI Bridge States",
+    description: "Discover states from render logs via co-occurrence analysis",
+    icon: <Link className="h-8 w-8" />,
+    color: "#4ECDC4",
+    badge: "BETA",
   },
   {
     id: "uitars-web",
@@ -82,6 +90,7 @@ export function ExtractionMethodSelector({
             <button
               key={option.id}
               onClick={() => onMethodChange(option.id)}
+              data-ui-id={`extraction-method-${option.id}-btn`}
               className={cn(
                 "relative p-4 rounded-lg border-2 transition-all duration-300 text-left group",
                 "hover:shadow-lg hover:scale-[1.02]",

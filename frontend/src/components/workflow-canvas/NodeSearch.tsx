@@ -244,12 +244,14 @@ export const NodeSearch: React.FC<NodeSearchProps> = ({
           onChange={(e) => setQuery(e.target.value)}
           onFocus={handleInputFocus}
           onBlur={handleInputBlur}
+          data-ui-id="canvas-nodesearch-input"
         />
         {query && (
           <button
             className="node-search__clear-btn"
             onClick={() => setQuery("")}
             title="Clear search"
+            data-ui-id="canvas-nodesearch-clear-btn"
           >
             <X className="h-4 w-4" />
           </button>
@@ -269,6 +271,7 @@ export const NodeSearch: React.FC<NodeSearchProps> = ({
             <button
               className="text-xs text-text-muted hover:text-text-secondary"
               onClick={clearHistory}
+              data-ui-id="canvas-nodesearch-clearhistory-btn"
             >
               Clear
             </button>
@@ -289,7 +292,7 @@ export const NodeSearch: React.FC<NodeSearchProps> = ({
       )}
 
       {/* Results */}
-      <div className="node-search__results" ref={resultsRef}>
+      <div className="node-search__results" ref={resultsRef} data-ui-id="canvas-nodesearch-results-list">
         {results.length > 0 ? (
           <>
             <div className="node-search__results-header">

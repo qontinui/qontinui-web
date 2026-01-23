@@ -293,6 +293,7 @@ export function ComponentInsertDialog({
     <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         className={cn("max-w-2xl max-h-[90vh] flex flex-col", className)}
+        data-ui-id="dialog-component-insert"
       >
         <DialogHeader>
           <div className="flex items-center gap-3">
@@ -555,11 +556,11 @@ export function ComponentInsertDialog({
         </Tabs>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={onClose} data-ui-id="dialog-component-insert-cancel-btn">
             <X />
             Cancel
           </Button>
-          <Button onClick={handleInsert}>
+          <Button onClick={handleInsert} data-ui-id="dialog-component-insert-confirm-btn">
             <Copy />
             Insert Component
           </Button>

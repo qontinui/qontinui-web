@@ -333,15 +333,15 @@ export function SettingsTab() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={exportSettings}>
+          <Button variant="outline" size="sm" onClick={exportSettings} data-ui-id="settings-export-btn">
             <Download className="w-4 h-4 mr-2" />
             Export
           </Button>
-          <Button variant="outline" size="sm" onClick={resetSettings}>
+          <Button variant="outline" size="sm" onClick={resetSettings} data-ui-id="settings-reset-btn">
             <RotateCcw className="w-4 h-4 mr-2" />
             Reset
           </Button>
-          <Button size="sm" onClick={saveSettings} disabled={loading}>
+          <Button size="sm" onClick={saveSettings} disabled={loading} data-ui-id="settings-save-btn">
             <Save className="w-4 h-4 mr-2" />
             Save
           </Button>
@@ -363,6 +363,7 @@ export function SettingsTab() {
                 onChange={(e) =>
                   updateSetting("core", "image_path", e.target.value)
                 }
+                data-ui-id="settings-core-image-path-input"
               />
             </div>
             <div className="flex items-center justify-between">
@@ -373,6 +374,7 @@ export function SettingsTab() {
                 onCheckedChange={(checked) =>
                   updateSetting("core", "mock", checked)
                 }
+                data-ui-id="settings-core-mock-toggle"
               />
             </div>
             <div className="flex items-center justify-between">
@@ -383,6 +385,7 @@ export function SettingsTab() {
                 onCheckedChange={(checked) =>
                   updateSetting("core", "headless", checked)
                 }
+                data-ui-id="settings-core-headless-toggle"
               />
             </div>
             <div className="space-y-2">
@@ -398,6 +401,7 @@ export function SettingsTab() {
                     parseInt(e.target.value)
                   )
                 }
+                data-ui-id="settings-core-image-cache-size-input"
               />
             </div>
             <div className="space-y-2">
@@ -416,6 +420,7 @@ export function SettingsTab() {
                     parseFloat(e.target.value)
                   )
                 }
+                data-ui-id="settings-core-auto-wait-timeout-input"
               />
             </div>
           </CardContent>
@@ -442,6 +447,7 @@ export function SettingsTab() {
                     parseInt(e.target.value)
                   )
                 }
+                data-ui-id="settings-monitor-default-screen-index-input"
               />
             </div>
             <div className="flex items-center justify-between">
@@ -454,6 +460,7 @@ export function SettingsTab() {
                 onCheckedChange={(checked) =>
                   updateSetting("monitor", "multi_monitor_enabled", checked)
                 }
+                data-ui-id="settings-monitor-multi-monitor-enabled-toggle"
               />
             </div>
             <div className="flex items-center justify-between">
@@ -464,6 +471,7 @@ export function SettingsTab() {
                 onCheckedChange={(checked) =>
                   updateSetting("monitor", "search_all_monitors", checked)
                 }
+                data-ui-id="settings-monitor-search-all-monitors-toggle"
               />
             </div>
             <div className="flex items-center justify-between">
@@ -474,6 +482,7 @@ export function SettingsTab() {
                 onCheckedChange={(checked) =>
                   updateSetting("monitor", "log_monitor_info", checked)
                 }
+                data-ui-id="settings-monitor-log-monitor-info-toggle"
               />
             </div>
           </CardContent>
@@ -499,6 +508,7 @@ export function SettingsTab() {
                     parseFloat(e.target.value)
                   )
                 }
+                data-ui-id="settings-mouse-move-delay-input"
               />
             </div>
             <div className="space-y-2">
@@ -517,6 +527,7 @@ export function SettingsTab() {
                     parseFloat(e.target.value)
                   )
                 }
+                data-ui-id="settings-mouse-pause-before-down-input"
               />
             </div>
             <div className="space-y-2">
@@ -535,6 +546,7 @@ export function SettingsTab() {
                     parseFloat(e.target.value)
                   )
                 }
+                data-ui-id="settings-mouse-pause-after-down-input"
               />
             </div>
             <div className="space-y-2">
@@ -551,6 +563,7 @@ export function SettingsTab() {
                     parseFloat(e.target.value)
                   )
                 }
+                data-ui-id="settings-mouse-click-delay-input"
               />
             </div>
             <div className="space-y-2">
@@ -567,6 +580,7 @@ export function SettingsTab() {
                     parseFloat(e.target.value)
                   )
                 }
+                data-ui-id="settings-mouse-drag-delay-input"
               />
             </div>
           </CardContent>
@@ -594,6 +608,7 @@ export function SettingsTab() {
                     parseFloat(e.target.value)
                   )
                 }
+                data-ui-id="settings-mock-click-duration-input"
               />
             </div>
             <div className="space-y-2">
@@ -610,6 +625,7 @@ export function SettingsTab() {
                     parseFloat(e.target.value)
                   )
                 }
+                data-ui-id="settings-mock-type-duration-input"
               />
             </div>
             <div className="space-y-2">
@@ -626,6 +642,7 @@ export function SettingsTab() {
                     parseFloat(e.target.value)
                   )
                 }
+                data-ui-id="settings-mock-find-duration-input"
               />
             </div>
             <div className="space-y-2">
@@ -642,6 +659,7 @@ export function SettingsTab() {
                     parseFloat(e.target.value)
                   )
                 }
+                data-ui-id="settings-mock-drag-duration-input"
               />
             </div>
           </CardContent>
@@ -663,6 +681,7 @@ export function SettingsTab() {
                 onCheckedChange={(checked) =>
                   updateSetting("screenshot", "save_snapshots", checked)
                 }
+                data-ui-id="settings-screenshot-save-snapshots-toggle"
               />
             </div>
             <div className="space-y-2">
@@ -673,6 +692,7 @@ export function SettingsTab() {
                 onChange={(e) =>
                   updateSetting("screenshot", "path", e.target.value)
                 }
+                data-ui-id="settings-screenshot-path-input"
               />
             </div>
             <div className="space-y-2">
@@ -688,6 +708,7 @@ export function SettingsTab() {
                     parseInt(e.target.value)
                   )
                 }
+                data-ui-id="settings-screenshot-max-history-input"
               />
             </div>
             <div className="space-y-2">
@@ -698,7 +719,7 @@ export function SettingsTab() {
                   updateSetting("screenshot", "format", value)
                 }
               >
-                <SelectTrigger id="screenshot_format">
+                <SelectTrigger id="screenshot_format" data-ui-id="settings-screenshot-format-select">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -724,6 +745,7 @@ export function SettingsTab() {
                     parseInt(e.target.value)
                   )
                 }
+                data-ui-id="settings-screenshot-quality-input"
               />
             </div>
             <div className="flex items-center justify-between">
@@ -734,6 +756,7 @@ export function SettingsTab() {
                 onCheckedChange={(checked) =>
                   updateSetting("screenshot", "include_timestamp", checked)
                 }
+                data-ui-id="settings-screenshot-include-timestamp-toggle"
               />
             </div>
             <div className="flex items-center justify-between">
@@ -744,6 +767,7 @@ export function SettingsTab() {
                 onCheckedChange={(checked) =>
                   updateSetting("screenshot", "capture_on_error", checked)
                 }
+                data-ui-id="settings-screenshot-capture-on-error-toggle"
               />
             </div>
           </CardContent>
@@ -763,6 +787,7 @@ export function SettingsTab() {
                 onCheckedChange={(checked) =>
                   updateSetting("recording", "enabled", checked)
                 }
+                data-ui-id="settings-recording-enabled-toggle"
               />
             </div>
             <div className="space-y-2">
@@ -773,6 +798,7 @@ export function SettingsTab() {
                 onChange={(e) =>
                   updateSetting("recording", "path", e.target.value)
                 }
+                data-ui-id="settings-recording-path-input"
               />
             </div>
             <div className="space-y-2">
@@ -784,6 +810,7 @@ export function SettingsTab() {
                 onChange={(e) =>
                   updateSetting("recording", "fps", parseInt(e.target.value))
                 }
+                data-ui-id="settings-recording-fps-input"
               />
             </div>
             <div className="space-y-2">
@@ -794,7 +821,7 @@ export function SettingsTab() {
                   updateSetting("recording", "quality", value)
                 }
               >
-                <SelectTrigger id="recording_quality">
+                <SelectTrigger id="recording_quality" data-ui-id="settings-recording-quality-select">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -819,6 +846,7 @@ export function SettingsTab() {
                     parseInt(e.target.value)
                   )
                 }
+                data-ui-id="settings-recording-max-duration-minutes-input"
               />
             </div>
           </CardContent>
@@ -838,6 +866,7 @@ export function SettingsTab() {
                 onCheckedChange={(checked) =>
                   updateSetting("illustration", "enabled", checked)
                 }
+                data-ui-id="settings-illustration-enabled-toggle"
               />
             </div>
             <div className="flex items-center justify-between">
@@ -848,6 +877,7 @@ export function SettingsTab() {
                 onCheckedChange={(checked) =>
                   updateSetting("illustration", "show_click", checked)
                 }
+                data-ui-id="settings-illustration-show-click-toggle"
               />
             </div>
             <div className="flex items-center justify-between">
@@ -858,6 +888,7 @@ export function SettingsTab() {
                 onCheckedChange={(checked) =>
                   updateSetting("illustration", "show_drag", checked)
                 }
+                data-ui-id="settings-illustration-show-drag-toggle"
               />
             </div>
             <div className="flex items-center justify-between">
@@ -868,6 +899,7 @@ export function SettingsTab() {
                 onCheckedChange={(checked) =>
                   updateSetting("illustration", "show_find", checked)
                 }
+                data-ui-id="settings-illustration-show-find-toggle"
               />
             </div>
             <div className="space-y-2">
@@ -882,6 +914,7 @@ export function SettingsTab() {
                     e.target.value
                   )
                 }
+                data-ui-id="settings-illustration-highlight-color-input"
               />
             </div>
             <div className="space-y-2">
@@ -901,6 +934,7 @@ export function SettingsTab() {
                     parseInt(e.target.value)
                   )
                 }
+                data-ui-id="settings-illustration-highlight-thickness-input"
               />
             </div>
           </CardContent>
@@ -927,6 +961,7 @@ export function SettingsTab() {
                     parseInt(e.target.value)
                   )
                 }
+                data-ui-id="settings-analysis-kmeans-clusters-input"
               />
             </div>
             <div className="space-y-2">
@@ -942,6 +977,7 @@ export function SettingsTab() {
                     parseInt(e.target.value)
                   )
                 }
+                data-ui-id="settings-analysis-color-tolerance-input"
               />
             </div>
             <div className="space-y-2">
@@ -957,6 +993,7 @@ export function SettingsTab() {
                     parseInt(e.target.value)
                   )
                 }
+                data-ui-id="settings-analysis-min-contour-area-input"
               />
             </div>
             <div className="space-y-2">
@@ -972,6 +1009,7 @@ export function SettingsTab() {
                     parseInt(e.target.value)
                   )
                 }
+                data-ui-id="settings-analysis-max-contour-area-input"
               />
             </div>
           </CardContent>
@@ -991,6 +1029,7 @@ export function SettingsTab() {
                 onCheckedChange={(checked) =>
                   updateSetting("dataset", "collect", checked)
                 }
+                data-ui-id="settings-dataset-collect-toggle"
               />
             </div>
             <div className="space-y-2">
@@ -1001,6 +1040,7 @@ export function SettingsTab() {
                 onChange={(e) =>
                   updateSetting("dataset", "path", e.target.value)
                 }
+                data-ui-id="settings-dataset-path-input"
               />
             </div>
             <div className="flex items-center justify-between">
@@ -1011,6 +1051,7 @@ export function SettingsTab() {
                 onCheckedChange={(checked) =>
                   updateSetting("dataset", "include_screenshots", checked)
                 }
+                data-ui-id="settings-dataset-include-screenshots-toggle"
               />
             </div>
             <div className="flex items-center justify-between">
@@ -1021,6 +1062,7 @@ export function SettingsTab() {
                 onCheckedChange={(checked) =>
                   updateSetting("dataset", "include_actions", checked)
                 }
+                data-ui-id="settings-dataset-include-actions-toggle"
               />
             </div>
             <div className="space-y-2">
@@ -1031,7 +1073,7 @@ export function SettingsTab() {
                   updateSetting("dataset", "format", value)
                 }
               >
-                <SelectTrigger id="dataset_format">
+                <SelectTrigger id="dataset_format" data-ui-id="settings-dataset-format-select">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1064,6 +1106,7 @@ export function SettingsTab() {
                     parseFloat(e.target.value)
                   )
                 }
+                data-ui-id="settings-testing-timeout-multiplier-input"
               />
             </div>
             <div className="flex items-center justify-between">
@@ -1074,6 +1117,7 @@ export function SettingsTab() {
                 onCheckedChange={(checked) =>
                   updateSetting("testing", "retry_failed", checked)
                 }
+                data-ui-id="settings-testing-retry-failed-toggle"
               />
             </div>
             <div className="space-y-2">
@@ -1089,6 +1133,7 @@ export function SettingsTab() {
                     parseInt(e.target.value)
                   )
                 }
+                data-ui-id="settings-testing-max-retries-input"
               />
             </div>
             <div className="flex items-center justify-between">
@@ -1101,6 +1146,7 @@ export function SettingsTab() {
                 onCheckedChange={(checked) =>
                   updateSetting("testing", "screenshot_on_failure", checked)
                 }
+                data-ui-id="settings-testing-screenshot-on-failure-toggle"
               />
             </div>
             <div className="flex items-center justify-between">
@@ -1111,6 +1157,7 @@ export function SettingsTab() {
                 onCheckedChange={(checked) =>
                   updateSetting("testing", "verbose_logging", checked)
                 }
+                data-ui-id="settings-testing-verbose-logging-toggle"
               />
             </div>
             <div className="flex items-center justify-between">
@@ -1121,6 +1168,7 @@ export function SettingsTab() {
                 onCheckedChange={(checked) =>
                   updateSetting("testing", "parallel_execution", checked)
                 }
+                data-ui-id="settings-testing-parallel-execution-toggle"
               />
             </div>
             <div className="space-y-2">
@@ -1136,6 +1184,7 @@ export function SettingsTab() {
                     parseInt(e.target.value)
                   )
                 }
+                data-ui-id="settings-testing-iteration-input"
               />
             </div>
             <div className="flex items-center justify-between">
@@ -1146,6 +1195,7 @@ export function SettingsTab() {
                 onCheckedChange={(checked) =>
                   updateSetting("testing", "send_logs", checked)
                 }
+                data-ui-id="settings-testing-send-logs-toggle"
               />
             </div>
           </CardContent>

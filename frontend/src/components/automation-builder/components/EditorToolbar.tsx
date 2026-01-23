@@ -93,6 +93,7 @@ export function EditorToolbar({
             disabled={!item || isSaving}
             size="sm"
             data-tutorial-id="save-workflow"
+            data-ui-id="automation-toolbar-save-btn"
             style={{
               backgroundColor: item ? `${accentColor}22` : undefined,
               borderColor: item ? `${accentColor}44` : undefined,
@@ -119,6 +120,7 @@ export function EditorToolbar({
                 variant="ghost"
                 className="text-text-muted hover:text-white hover:bg-surface-raised"
                 title="Undo (Ctrl+Z)"
+                data-ui-id="automation-toolbar-undo-btn"
               >
                 <Undo className="w-4 h-4" />
               </Button>
@@ -131,6 +133,7 @@ export function EditorToolbar({
                 variant="ghost"
                 className="text-text-muted hover:text-white hover:bg-surface-raised"
                 title="Redo (Ctrl+Y)"
+                data-ui-id="automation-toolbar-redo-btn"
               >
                 <Redo className="w-4 h-4" />
               </Button>
@@ -152,6 +155,7 @@ export function EditorToolbar({
                 size="sm"
                 variant="ghost"
                 data-tutorial-id="run-workflow"
+                data-ui-id="automation-toolbar-run-btn"
                 className="text-text-muted hover:text-white hover:bg-surface-raised"
               >
                 <Play className="w-4 h-4 mr-2" />
@@ -164,6 +168,7 @@ export function EditorToolbar({
                 size="sm"
                 variant="ghost"
                 className="text-text-muted hover:text-white hover:bg-surface-raised"
+                data-ui-id="automation-toolbar-test-btn"
               >
                 <TestTube className="w-4 h-4 mr-2" />
                 Test
@@ -183,6 +188,7 @@ export function EditorToolbar({
             variant="ghost"
             className="text-text-muted hover:text-white hover:bg-surface-raised"
             title="Share Project"
+            data-ui-id="automation-toolbar-share-btn"
           >
             <Share2 className="w-4 h-4 mr-2" />
             Share
@@ -200,6 +206,7 @@ export function EditorToolbar({
             variant="ghost"
             className="text-text-muted hover:text-white hover:bg-surface-raised"
             title="Verify project configuration"
+            data-ui-id="automation-toolbar-verify-btn"
           >
             <ClipboardCheck className="w-4 h-4 mr-2" />
             Verify
@@ -214,6 +221,7 @@ export function EditorToolbar({
             variant="ghost"
             className="text-text-muted hover:text-white hover:bg-surface-raised"
             title="Export entire project for qontinui-runner"
+            data-ui-id="automation-toolbar-exportproject-btn"
           >
             <FolderDown className="w-4 h-4 mr-2" />
             Export Project
@@ -235,6 +243,7 @@ export function EditorToolbar({
                 variant="ghost"
                 className="text-text-muted hover:text-white hover:bg-surface-raised"
                 title="Export Workflow"
+                data-ui-id="automation-toolbar-export-btn"
               >
                 <Download className="w-4 h-4" />
               </Button>
@@ -246,6 +255,7 @@ export function EditorToolbar({
                 variant="ghost"
                 className="text-text-muted hover:text-white hover:bg-surface-raised"
                 title="Import Workflow"
+                data-ui-id="automation-toolbar-import-btn"
               >
                 <Upload className="w-4 h-4" />
               </Button>
@@ -266,6 +276,7 @@ export function EditorToolbar({
             variant="ghost"
             className="text-text-muted hover:text-white hover:bg-surface-raised"
             title="Duplicate"
+            data-ui-id="automation-toolbar-duplicate-btn"
           >
             <Copy className="w-4 h-4 mr-2" />
             Duplicate
@@ -280,6 +291,7 @@ export function EditorToolbar({
             variant="ghost"
             className="text-red-400 hover:text-red-300 hover:bg-red-950/30"
             title="Delete"
+            data-ui-id="automation-toolbar-delete-btn"
           >
             <Trash2 className="w-4 h-4 mr-2" />
             Delete

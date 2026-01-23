@@ -180,6 +180,7 @@ export function SequentialEditor({
             <Button
               size="sm"
               data-tutorial-id="add-action-button"
+              data-ui-id="automation-sequential-addaction-btn"
               className="bg-brand-secondary hover:bg-brand-secondary/80 text-white"
             >
               <Plus className="w-4 h-4 mr-2" />
@@ -350,6 +351,7 @@ export function SequentialEditor({
                               e.stopPropagation();
                               duplicateAction(action);
                             }}
+                            data-ui-id={`automation-sequential-action-${action.id}-duplicate-btn`}
                           >
                             <Copy className="w-3 h-3" />
                           </Button>
@@ -361,6 +363,7 @@ export function SequentialEditor({
                               e.stopPropagation();
                               deleteAction(action.id);
                             }}
+                            data-ui-id={`automation-sequential-action-${action.id}-delete-btn`}
                           >
                             <Trash2 className="w-3 h-3" />
                           </Button>

@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { GoogleAnalytics } from "@next/third-parties/google";
 import { Toaster } from "sonner";
 import { AuthProvider } from "@/contexts/auth-context";
+import { UIBridgeWrapper, RenderLogWrapper } from "@/lib/ui-bridge";
 import { QueryProvider } from "@/lib/providers/query-provider";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { RefreshTokenExpiryWarning } from "@/components/refresh-token-expiry-warning";
@@ -44,13 +45,21 @@ export default function RootLayout({
         <ErrorBoundary>
           <QueryProvider>
             <AuthProvider>
-              {/* <ActivityTracker /> */}
-              {/* BetaBanner moved to app layout to properly respect sidebar */}
-              {children}
-              {/* <SessionTimeoutWarning /> */}
-              <RefreshTokenExpiryWarning />
-              <OfflineIndicator />
-              <OnboardingTour />
+              <UIBridgeWrapper>
+                <RenderLogWrapper
+                  enableOnMount={true}
+                  enableMutationObserver={true}
+                  mutationDebounceMs={500}
+                >
+                  {/* <ActivityTracker /> */}
+                  {/* BetaBanner moved to app layout to properly respect sidebar */}
+                  {children}
+                  {/* <SessionTimeoutWarning /> */}
+                  <RefreshTokenExpiryWarning />
+                  <OfflineIndicator />
+                  <OnboardingTour />
+                </RenderLogWrapper>
+              </UIBridgeWrapper>
             </AuthProvider>
           </QueryProvider>
         </ErrorBoundary>

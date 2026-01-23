@@ -28,7 +28,7 @@ export function DeleteConfirmationDialog({
 }: DeleteConfirmationDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[425px]" onSubmit={onConfirm}>
+      <DialogContent className="sm:max-w-[425px]" onSubmit={onConfirm} data-ui-id="dialog-delete-confirmation">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-yellow-500" />
@@ -44,6 +44,7 @@ export function DeleteConfirmationDialog({
             onClick={onClose}
             variant="outline"
             className="w-full sm:w-auto"
+            data-ui-id="dialog-delete-confirmation-cancel-btn"
           >
             Cancel
           </Button>
@@ -51,7 +52,7 @@ export function DeleteConfirmationDialog({
             onClick={onConfirm}
             variant="destructive"
             className="w-full sm:w-auto"
-            data-awas-element="confirm-delete-button"
+            data-ui-id="confirm-delete-button"
             data-awas-trigger="click"
           >
             Delete

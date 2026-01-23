@@ -45,7 +45,7 @@ export default function CoveragePage() {
 
   return (
     <RequireProject pageName="Test Coverage">
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
+      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white" data-ui-id="qa-coverage-page">
         {/* Header */}
         <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
           <div className="flex items-center justify-between px-6 py-4">
@@ -54,6 +54,7 @@ export default function CoveragePage() {
                 variant="ghost"
                 onClick={() => router.push("/qa-dashboard")}
                 className="text-text-muted hover:text-white"
+                data-ui-id="qa-coverage-back-btn"
               >
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back
@@ -68,6 +69,7 @@ export default function CoveragePage() {
                 size="sm"
                 onClick={() => router.push("/qa-dashboard")}
                 className="border-border-default hover:border-warning hover:text-warning"
+                data-ui-id="qa-coverage-runs-btn"
               >
                 <BarChart3 className="w-4 h-4 mr-2" />
                 Test Runs
@@ -77,6 +79,7 @@ export default function CoveragePage() {
                 size="sm"
                 onClick={() => router.push("/qa-dashboard/deficiencies")}
                 className="border-border-default hover:border-error hover:text-error"
+                data-ui-id="qa-coverage-deficiencies-btn"
               >
                 <AlertTriangle className="w-4 h-4 mr-2" />
                 Deficiencies

@@ -242,3 +242,15 @@ async def get_discovered_states(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"State discovery failed: {str(e)}",
         )
+
+
+# =============================================================================
+# UI Bridge State Discovery
+# =============================================================================
+# NOTE: UI Bridge state discovery and exploration endpoints are provided by
+# the qontinui-runner. The frontend should call the runner directly at:
+#   - POST /ui-bridge/explore - For automated exploration
+#   - POST /ui-bridge/discover-states - For co-occurrence state discovery
+# This is because the qontinui library runs on the local runner, not in the
+# cloud-hosted backend.
+# =============================================================================

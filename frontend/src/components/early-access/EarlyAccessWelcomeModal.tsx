@@ -99,6 +99,7 @@ export function EarlyAccessWelcomeModal({
           "shadow-[0_0_50px_rgba(59,130,246,0.2)]"
         )}
         showCloseButton={false}
+        data-ui-id="dialog-early-access-welcome"
       >
         {/* Glow Effects */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
@@ -195,6 +196,7 @@ export function EarlyAccessWelcomeModal({
                 "text-white shadow-[0_0_20px_rgba(59,130,246,0.3)]",
                 "transition-all duration-300"
               )}
+              data-ui-id="dialog-early-access-welcome-export-btn"
             >
               <Download className="mr-2 h-5 w-5" />
               Show Me Export
@@ -208,6 +210,7 @@ export function EarlyAccessWelcomeModal({
                 "text-text-secondary hover:text-brand-success hover:bg-brand-success/10",
                 "transition-all duration-300"
               )}
+              data-ui-id="dialog-early-access-welcome-close-btn"
             >
               Got it, let&apos;s build!
             </Button>

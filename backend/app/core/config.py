@@ -250,6 +250,25 @@ class Settings(BaseSettings):
         description="Maximum number of queries per request before warning (N+1 detection)",
     )
 
+    # Render Logging for UI Bridge State Discovery
+    # Captures DOM snapshots for co-occurrence analysis
+    RENDER_LOG_ENABLED: bool = Field(
+        default=True,
+        description="Enable render logging for UI Bridge state discovery",
+    )
+    RENDER_LOG_IMAGE_DIR: str = Field(
+        default="debug_data/render_images",
+        description="Directory for storing render log images",
+    )
+    RENDER_LOG_RETENTION_DAYS: int = Field(
+        default=7,
+        description="Auto-delete render logs older than this many days",
+    )
+    RENDER_LOG_MAX_SNAPSHOTS: int = Field(
+        default=1000,
+        description="Maximum number of render snapshots to keep",
+    )
+
     # Allowed hosts for TrustedHostMiddleware
     ALLOWED_HOSTS: list[str] = Field(
         default=[],

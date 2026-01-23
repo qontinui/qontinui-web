@@ -171,7 +171,7 @@ export function AnalysisJobList({
 
   return (
     <>
-      <Card>
+      <Card data-ui-id="analysis-job-list">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
@@ -183,7 +183,7 @@ export function AnalysisJobList({
 
             <div className="flex items-center gap-2">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-32">
+                <SelectTrigger className="w-32" data-ui-id="analysis-job-list-status-select">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -195,7 +195,7 @@ export function AnalysisJobList({
                 </SelectContent>
               </Select>
 
-              <Button onClick={loadJobs} variant="outline" size="icon">
+              <Button onClick={loadJobs} variant="outline" size="icon" data-ui-id="analysis-job-list-refresh-btn">
                 <RefreshCw className="h-4 w-4" />
               </Button>
             </div>
@@ -262,6 +262,7 @@ export function AnalysisJobList({
                           onClick={() => handleViewJob(job.id)}
                           variant="ghost"
                           size="icon"
+                          data-ui-id={`analysis-job-view-btn-${job.id}`}
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
@@ -270,6 +271,7 @@ export function AnalysisJobList({
                           variant="ghost"
                           size="icon"
                           className="text-destructive hover:text-destructive"
+                          data-ui-id={`analysis-job-delete-btn-${job.id}`}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -292,6 +294,7 @@ export function AnalysisJobList({
                       disabled={page === 1}
                       variant="outline"
                       size="sm"
+                      data-ui-id="analysis-job-list-prev-btn"
                     >
                       Previous
                     </Button>
@@ -300,6 +303,7 @@ export function AnalysisJobList({
                       disabled={page * pageSize >= total}
                       variant="outline"
                       size="sm"
+                      data-ui-id="analysis-job-list-next-btn"
                     >
                       Next
                     </Button>

@@ -207,7 +207,7 @@ export default function AnalysisPage() {
   }
 
   return (
-    <div className="container mx-auto py-8">
+    <div className="container mx-auto py-8" data-ui-id="admin-page-analysis">
       {/* Navigation Links */}
       <div className="mb-6 flex items-center gap-4">
         <Button
@@ -277,7 +277,7 @@ export default function AnalysisPage() {
           ) : (
             <div className="space-y-4">
               <Select value={selectedSetId} onValueChange={setSelectedSetId}>
-                <SelectTrigger>
+                <SelectTrigger data-ui-id="admin-page-analysis-set-select">
                   <SelectValue placeholder="Select annotation set" />
                 </SelectTrigger>
                 <SelectContent>
@@ -326,11 +326,11 @@ export default function AnalysisPage() {
 
       {/* Main Content */}
       {selectedSetId && (
-        <Tabs defaultValue="run" className="space-y-6">
+        <Tabs defaultValue="run" className="space-y-6" data-ui-id="admin-page-analysis-tabs">
           <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="run">Run Analysis</TabsTrigger>
-            <TabsTrigger value="results">Results</TabsTrigger>
-            <TabsTrigger value="history">History</TabsTrigger>
+            <TabsTrigger value="run" data-ui-id="admin-page-analysis-run-tab">Run Analysis</TabsTrigger>
+            <TabsTrigger value="results" data-ui-id="admin-page-analysis-results-tab">Results</TabsTrigger>
+            <TabsTrigger value="history" data-ui-id="admin-page-analysis-history-tab">History</TabsTrigger>
           </TabsList>
 
           <TabsContent value="run" className="space-y-6">

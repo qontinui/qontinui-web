@@ -122,7 +122,7 @@ export function DragActionProperties({
       <div className="space-y-2">
         <Label className="text-xs text-text-muted">From</Label>
         <Select value={fromType} onValueChange={handleFromTypeChange}>
-          <SelectTrigger className="bg-transparent border-border-default">
+          <SelectTrigger className="bg-transparent border-border-default" data-ui-id="action-props-drag-from-select">
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="bg-surface-raised border-border-default">
@@ -161,6 +161,7 @@ export function DragActionProperties({
             updateConfig("drag_duration", Number.parseInt(e.target.value))
           }
           className="bg-transparent border-border-default"
+          data-ui-id="action-props-drag-duration-input"
         />
       </div>
 
@@ -171,6 +172,7 @@ export function DragActionProperties({
           onCheckedChange={(checked) =>
             updateConfig("smooth_movement", checked)
           }
+          data-ui-id="action-props-drag-smooth-checkbox"
         />
         <Label htmlFor="smooth_movement" className="text-xs text-text-muted">
           Smooth movement

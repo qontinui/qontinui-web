@@ -154,7 +154,7 @@ export function IntegrationTestResults({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-ui-id="testing-integration-results">
       {/* Summary Header */}
       <SummaryHeader
         run={normalizedRun}
@@ -169,11 +169,13 @@ export function IntegrationTestResults({
       <Tabs
         value={activeTab}
         onValueChange={(v) => setActiveTab(v as "steps" | "insights")}
+        data-ui-id="testing-integration-results-tabs"
       >
         <TabsList className="bg-surface-raised/50 border border-border-subtle/50">
           <TabsTrigger
             value="steps"
             className="data-[state=active]:bg-brand-primary/20 data-[state=active]:text-brand-primary"
+            data-ui-id="testing-integration-results-steps-tab"
           >
             <Route className="w-4 h-4 mr-2" />
             Execution Steps ({unifiedSteps.length})
@@ -181,6 +183,7 @@ export function IntegrationTestResults({
           <TabsTrigger
             value="insights"
             className="data-[state=active]:bg-brand-primary/20 data-[state=active]:text-brand-primary"
+            data-ui-id="testing-integration-results-insights-tab"
           >
             <Shield className="w-4 h-4 mr-2" />
             Insights
@@ -255,6 +258,7 @@ function SummaryHeader({
               size="sm"
               onClick={onToggleVisualMode}
               className="border-brand-primary/30 text-brand-primary hover:bg-brand-primary/10"
+              data-ui-id="testing-integration-results-visual-btn"
             >
               <Activity className="w-4 h-4 mr-2" />
               Visual Playback

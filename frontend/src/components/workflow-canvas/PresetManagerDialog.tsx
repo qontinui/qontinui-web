@@ -76,7 +76,7 @@ function EditPresetDialog({ preset, onClose, onSave }: EditPresetDialogProps) {
 
   return (
     <div className="edit-preset-overlay">
-      <div className="edit-preset-dialog">
+      <div className="edit-preset-dialog" data-ui-id="dialog-edit-preset">
         <div className="dialog-header">
           <h3>Edit Preset</h3>
           <button className="close-button" onClick={onClose}>
@@ -94,6 +94,7 @@ function EditPresetDialog({ preset, onClose, onSave }: EditPresetDialogProps) {
               onChange={(e) => setName(e.target.value)}
               placeholder="Preset name"
               className="form-input"
+              data-ui-id="dialog-edit-preset-name-input"
             />
           </div>
 
@@ -106,6 +107,7 @@ function EditPresetDialog({ preset, onClose, onSave }: EditPresetDialogProps) {
               placeholder="Preset description"
               className="form-textarea"
               rows={2}
+              data-ui-id="dialog-edit-preset-description-input"
             />
           </div>
 
@@ -116,6 +118,7 @@ function EditPresetDialog({ preset, onClose, onSave }: EditPresetDialogProps) {
               value={style}
               onChange={(e) => setStyle(e.target.value as LayoutStyle)}
               className="form-select"
+              data-ui-id="dialog-edit-preset-style-select"
             >
               {Object.values(LayoutStyle).map((s) => (
                 <option key={s} value={s}>
@@ -235,13 +238,14 @@ function EditPresetDialog({ preset, onClose, onSave }: EditPresetDialogProps) {
         </div>
 
         <div className="dialog-footer">
-          <button className="cancel-button" onClick={onClose}>
+          <button className="cancel-button" onClick={onClose} data-ui-id="dialog-edit-preset-cancel-btn">
             Cancel
           </button>
           <button
             className="save-button"
             onClick={handleSave}
             disabled={!name.trim()}
+            data-ui-id="dialog-edit-preset-confirm-btn"
           >
             Save Changes
           </button>
@@ -578,10 +582,10 @@ export function PresetManagerDialog({
 
   return (
     <div className="preset-manager-overlay">
-      <div className="preset-manager-dialog">
+      <div className="preset-manager-dialog" data-ui-id="dialog-preset-manager">
         <div className="dialog-header">
           <h2>Manage Layout Presets</h2>
-          <button className="close-button" onClick={onClose}>
+          <button className="close-button" onClick={onClose} data-ui-id="dialog-preset-manager-close-btn">
             ×
           </button>
         </div>
@@ -593,8 +597,9 @@ export function PresetManagerDialog({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="search-input"
+            data-ui-id="dialog-preset-manager-search-input"
           />
-          <button className="import-button" onClick={handleImport}>
+          <button className="import-button" onClick={handleImport} data-ui-id="dialog-preset-manager-import-btn">
             📥 Import
           </button>
         </div>

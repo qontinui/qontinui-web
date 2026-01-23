@@ -57,6 +57,7 @@ import { AccessibilityExplorer } from "@/components/accessibility";
 import { Accessibility, ChevronUp, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { runnerClient } from "@/lib/runner-client";
 
 export function AutomationBuilder() {
   // State
@@ -436,6 +437,52 @@ export function AutomationBuilder() {
   }, [workflows, states, transitions, images]);
 
   /**
+   * Handle running the current workflow on the desktop runner
+   */
+  const handleRun = useCallback(async () => {
+    if (!selectedItem) return;
+
+    // Check if runner is available
+    const isAvailable = await runnerClient.isAvailable();
+    if (!isAvailable) {
+      toast.error("Desktop Runner not connected", {
+        description:
+          "Start the qontinui-runner desktop app and ensure it's connected.",
+      });
+      return;
+    }
+
+    // Show loading toast
+    const toastId = toast.loading(`Running "${selectedItem.name}"...`, {
+      description: "Sending workflow to desktop runner",
+    });
+
+    try {
+      const result = await runnerClient.runWorkflow(selectedItem.name);
+
+      if (result.success) {
+        toast.success(`Workflow "${selectedItem.name}" completed`, {
+          id: toastId,
+          description: result.execution_time_ms
+            ? `Completed in ${(result.execution_time_ms / 1000).toFixed(1)}s`
+            : "Execution completed successfully",
+        });
+      } else {
+        toast.error(`Workflow "${selectedItem.name}" failed`, {
+          id: toastId,
+          description: result.error || "Unknown error occurred",
+        });
+      }
+    } catch (error) {
+      toast.error("Failed to run workflow", {
+        id: toastId,
+        description:
+          error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  }, [selectedItem]);
+
+  /**
    * Handle navigating to a workflow from validation results
    */
   const handleNavigateToWorkflow = useCallback(
@@ -591,6 +638,7 @@ export function AutomationBuilder() {
               onDelete={() => selectedItem && handleDeleteItem(selectedItem)}
               onDuplicate={handleDuplicateItem}
               onConvert={() => selectedItem && openConversion(selectedItem)}
+              onRun={handleRun}
               onShare={handleShare}
               onExport={handleExport}
               onImport={handleImport}
@@ -611,6 +659,7 @@ export function AutomationBuilder() {
                     : "text-text-muted hover:text-white hover:bg-surface-raised"
                 )}
                 title="Toggle Accessibility Explorer"
+                data-ui-id="automation-accessibility-toggle-btn"
               >
                 <Accessibility className="h-4 w-4" />
                 <span className="hidden xl:inline">Accessibility</span>

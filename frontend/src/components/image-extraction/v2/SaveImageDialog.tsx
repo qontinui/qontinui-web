@@ -126,6 +126,7 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
       <div
         className="bg-surface-raised border border-border-default rounded-lg p-6 w-[450px] max-w-full max-h-[90vh] overflow-y-auto"
         onKeyDown={handleKeyDown}
+        data-ui-id="dialog-save-image"
       >
         <h3 className="text-lg font-semibold text-white mb-4">
           Save Extracted Image
@@ -143,6 +144,7 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
               onChange={(e) => onUpdateDialog({ imageName: e.target.value })}
               placeholder="Enter a name for the image"
               className="w-full px-3 py-2 bg-surface-canvas border border-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-brand-primary text-white"
+              data-ui-id="dialog-save-image-name-input"
             />
           </div>
 
@@ -321,6 +323,7 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
           <button
             onClick={handleCancel}
             className="px-4 py-2 text-sm text-text-secondary bg-surface-raised rounded-md hover:bg-surface-raised/80"
+            data-ui-id="dialog-save-image-cancel-btn"
           >
             Cancel
           </button>
@@ -328,6 +331,7 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
             onClick={onSave}
             disabled={!canSave}
             className="px-4 py-2 text-sm text-black bg-brand-success rounded-md hover:bg-brand-success/90 disabled:bg-surface-raised disabled:text-text-muted disabled:cursor-not-allowed"
+            data-ui-id="dialog-save-image-confirm-btn"
           >
             {saveDialog.mode === "libraryOnly"
               ? "Save to Library"

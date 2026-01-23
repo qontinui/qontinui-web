@@ -451,6 +451,7 @@ export default function Dashboard() {
               <Card
                 className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm hover:border-brand-primary/50 hover:shadow-[0_0_20px_var(--glow-primary)] transition-all duration-300 cursor-pointer group"
                 onClick={handleNewProject}
+                data-ui-id="dashboard-quick-new-project"
               >
                 <CardContent className="p-6 text-center">
                   <div className="w-12 h-12 bg-brand-primary/20 rounded-lg flex items-center justify-center mx-auto mb-3 group-hover:bg-brand-primary/30 transition-colors">
@@ -466,6 +467,7 @@ export default function Dashboard() {
               <Card
                 className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm hover:border-brand-secondary/50 hover:shadow-[0_0_20px_var(--glow-secondary)] transition-all duration-300 cursor-pointer group"
                 onClick={handleBrowseTemplates}
+                data-ui-id="dashboard-quick-templates"
               >
                 <CardContent className="p-6 text-center">
                   <div className="w-12 h-12 bg-brand-secondary/20 rounded-lg flex items-center justify-center mx-auto mb-3 group-hover:bg-brand-secondary/30 transition-colors">
@@ -481,6 +483,7 @@ export default function Dashboard() {
               <Card
                 className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm hover:border-brand-success/50 hover:shadow-[0_0_20px_var(--glow-success)] transition-all duration-300 cursor-pointer group"
                 onClick={handleImportProject}
+                data-ui-id="dashboard-quick-import"
               >
                 <CardContent className="p-6 text-center">
                   <div className="w-12 h-12 bg-brand-success/20 rounded-lg flex items-center justify-center mx-auto mb-3 group-hover:bg-brand-success/30 transition-colors">
@@ -507,7 +510,7 @@ export default function Dashboard() {
                 className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
                 data-tour="new-project"
                 data-awas-action="create_project"
-                data-awas-element="new-project-button"
+                data-ui-id="new-project-button"
                 data-awas-trigger="click"
               >
                 <Plus className="w-4 h-4 mr-2" />
@@ -535,7 +538,7 @@ export default function Dashboard() {
                     onClick={handleNewProject}
                     className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
                     data-awas-action="create_project"
-                    data-awas-element="create-first-project-button"
+                    data-ui-id="create-first-project-button"
                     data-awas-trigger="click"
                   >
                     <Plus className="w-4 h-4 mr-2" />
@@ -547,7 +550,7 @@ export default function Dashboard() {
               <div
                 className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
                 data-awas-action="list_projects"
-                data-awas-element="projects-grid"
+                data-ui-id="projects-grid"
               >
                 {projects.map((project) => {
                   const isSelected = selectedProjectId === project.id;
@@ -560,7 +563,7 @@ export default function Dashboard() {
                           : "border-border-subtle/50 hover:border-brand-primary/30 hover:shadow-[0_0_20px_var(--glow-primary)]"
                       }`}
                       data-awas-action="get_project"
-                      data-awas-element={`project-card-${project.id}`}
+                      data-ui-id={`project-card-${project.id}`}
                       data-awas-param-project_id={project.id}
                     >
                       <CardContent className="p-6">
@@ -606,7 +609,7 @@ export default function Dashboard() {
                                 : "bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary border border-brand-primary/30 hover:border-brand-primary/50"
                             }`}
                             data-awas-action="get_project"
-                            data-awas-element={`select-project-${project.id}`}
+                            data-ui-id={`select-project-${project.id}`}
                             data-awas-trigger="click"
                             data-awas-param-project_id={project.id}
                           >
@@ -631,7 +634,7 @@ export default function Dashboard() {
                             }}
                             className="border-border-default hover:border-red-500 hover:text-red-400 bg-transparent"
                             data-awas-action="delete_project"
-                            data-awas-element={`delete-project-${project.id}`}
+                            data-ui-id={`delete-project-${project.id}`}
                             data-awas-trigger="click"
                             data-awas-param-project_id={project.id}
                           >

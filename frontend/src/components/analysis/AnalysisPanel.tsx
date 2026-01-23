@@ -214,7 +214,7 @@ export function AnalysisPanel({
   );
 
   return (
-    <Card>
+    <Card data-ui-id="analysis-panel">
       <CardHeader>
         <CardTitle>Analysis Configuration</CardTitle>
         <CardDescription>
@@ -233,6 +233,7 @@ export function AnalysisPanel({
                 onClick={() =>
                   setSelectedAnalyzers(new Set(analyzers.map((a) => a.name)))
                 }
+                data-ui-id="analysis-panel-select-all-btn"
               >
                 Select All
               </Button>
@@ -240,6 +241,7 @@ export function AnalysisPanel({
                 variant="outline"
                 size="sm"
                 onClick={() => setSelectedAnalyzers(new Set())}
+                data-ui-id="analysis-panel-clear-all-btn"
               >
                 Clear All
               </Button>
@@ -473,6 +475,7 @@ export function AnalysisPanel({
             disabled={isRunning || selectedAnalyzers.size === 0}
             className="w-full"
             size="lg"
+            data-ui-id="analysis-panel-run-btn"
           >
             {isRunning ? (
               <>
@@ -492,6 +495,7 @@ export function AnalysisPanel({
             disabled={isRunning || selectedAnalyzers.size === 0}
             variant="outline"
             className="w-full"
+            data-ui-id="analysis-panel-quick-btn"
           >
             {isRunning ? (
               <>

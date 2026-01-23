@@ -87,7 +87,7 @@ export function SaveScreenshotDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px]">
+      <DialogContent className="sm:max-w-[600px]" data-ui-id="dialog-save-screenshot">
         <DialogHeader>
           <DialogTitle>Save Screenshot to Project</DialogTitle>
           <DialogDescription>
@@ -118,6 +118,7 @@ export function SaveScreenshotDialog({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Enter screenshot name"
+              data-ui-id="dialog-save-screenshot-name-input"
             />
           </div>
 
@@ -130,6 +131,7 @@ export function SaveScreenshotDialog({
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Optional description..."
               rows={2}
+              data-ui-id="dialog-save-screenshot-description-input"
             />
           </div>
 
@@ -143,6 +145,7 @@ export function SaveScreenshotDialog({
                 onKeyDown={handleKeyDown}
                 placeholder="Add a tag..."
                 className="flex-1"
+                data-ui-id="dialog-save-screenshot-tag-input"
               />
               <Button
                 type="button"
@@ -150,6 +153,7 @@ export function SaveScreenshotDialog({
                 size="icon"
                 onClick={handleAddTag}
                 disabled={!tagInput.trim()}
+                data-ui-id="dialog-save-screenshot-add-tag-btn"
               >
                 <Plus className="h-4 w-4" />
               </Button>
@@ -181,10 +185,11 @@ export function SaveScreenshotDialog({
             variant="outline"
             onClick={() => onOpenChange(false)}
             disabled={saving}
+            data-ui-id="dialog-save-screenshot-cancel-btn"
           >
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={!name.trim() || saving}>
+          <Button onClick={handleSave} disabled={!name.trim() || saving} data-ui-id="dialog-save-screenshot-confirm-btn">
             {saving ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

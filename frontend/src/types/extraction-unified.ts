@@ -11,7 +11,8 @@ export type ExtractionMethod =
   | "web"
   | "uitars-web"
   | "uitars-desktop"
-  | "image";
+  | "image"
+  | "ui-bridge";
 
 export type UITarsProvider = "local_transformers" | "local_vllm" | "cloud";
 export type UITarsModelSize = "2B" | "7B" | "72B";

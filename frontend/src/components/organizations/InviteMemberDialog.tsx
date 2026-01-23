@@ -257,7 +257,7 @@ export function InviteMemberDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={handleClose}>
-        <DialogContent className="sm:max-w-[600px] max-h-[80vh]">
+        <DialogContent className="sm:max-w-[600px] max-h-[80vh]" data-ui-id="dialog-invite-member">
           <DialogHeader>
             <DialogTitle>Invite Members to {organizationName}</DialogTitle>
             <DialogDescription>
@@ -287,6 +287,7 @@ export function InviteMemberDialog({
                       }}
                       className="pl-9"
                       disabled={isSending}
+                      data-ui-id="dialog-invite-member-email-input"
                     />
                   </div>
                 </div>
@@ -298,7 +299,7 @@ export function InviteMemberDialog({
                   value={role}
                   onValueChange={(value) => setRole(value as MemberRole)}
                 >
-                  <SelectTrigger id="role">
+                  <SelectTrigger id="role" data-ui-id="dialog-invite-member-role-select">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -334,6 +335,7 @@ export function InviteMemberDialog({
                 onClick={handleSendInvitation}
                 disabled={isSending || !email}
                 className="w-full"
+                data-ui-id="dialog-invite-member-send-btn"
               >
                 {isSending ? (
                   <>
@@ -430,7 +432,7 @@ export function InviteMemberDialog({
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={handleClose}>
+            <Button variant="outline" onClick={handleClose} data-ui-id="dialog-invite-member-close-btn">
               Close
             </Button>
           </DialogFooter>
@@ -442,7 +444,7 @@ export function InviteMemberDialog({
         open={!!invitationToCancel}
         onOpenChange={() => setInvitationToCancel(null)}
       >
-        <AlertDialogContent>
+        <AlertDialogContent data-ui-id="dialog-cancel-invitation">
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-yellow-500" />
@@ -455,10 +457,11 @@ export function InviteMemberDialog({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Keep Invitation</AlertDialogCancel>
+            <AlertDialogCancel data-ui-id="dialog-cancel-invitation-cancel-btn">Keep Invitation</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleCancelInvitation}
               className="bg-destructive hover:bg-destructive/90"
+              data-ui-id="dialog-cancel-invitation-confirm-btn"
             >
               Cancel Invitation
             </AlertDialogAction>

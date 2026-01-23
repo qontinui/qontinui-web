@@ -55,6 +55,7 @@ function LandingContent() {
             <Button
               variant="ghost"
               onClick={() => router.push("/demo")}
+              data-ui-id="landing-demo-btn"
               className="hover:bg-primary/10"
             >
               <Globe className="mr-2 h-4 w-4" />
@@ -63,6 +64,7 @@ function LandingContent() {
             <Button
               variant="ghost"
               onClick={() => router.push("/runner/download")}
+              data-ui-id="landing-download-btn"
               className="hover:bg-primary/10"
             >
               Download
@@ -70,6 +72,7 @@ function LandingContent() {
             <Button
               variant="ghost"
               onClick={() => router.push("/docs")}
+              data-ui-id="landing-docs-btn"
               className="hover:bg-primary/10"
             >
               Docs
@@ -82,6 +85,7 @@ function LandingContent() {
                 <Button
                   variant="outline"
                   onClick={() => router.push("/dashboard")}
+                  data-ui-id="landing-dashboard-btn"
                   className="border-primary/50 hover:border-primary hover:bg-primary/10"
                 >
                   Go to Dashboard
@@ -91,6 +95,7 @@ function LandingContent() {
                   <Button
                     variant="outline"
                     onClick={() => router.push("/admin")}
+                    data-ui-id="landing-admin-btn"
                     className="border-secondary/50 hover:border-secondary hover:bg-secondary/10"
                   >
                     Go to Admin
@@ -105,6 +110,7 @@ function LandingContent() {
                   setSignupMode(false);
                   setAuthDialogOpen(true);
                 }}
+                data-ui-id="landing-signin-btn"
                 className="border-primary/50 hover:border-primary hover:bg-primary/10"
               >
                 <LogIn className="mr-2 h-4 w-4" />
@@ -137,6 +143,7 @@ function LandingContent() {
             <Button
               size="lg"
               onClick={handleGetStarted}
+              data-ui-id="landing-try-early-access-btn"
               className="bg-primary text-primary-foreground hover:bg-primary/90 glow-cyan pulse-cyan text-lg px-8 py-4"
             >
               Try Early Access
@@ -146,6 +153,7 @@ function LandingContent() {
               size="lg"
               variant="outline"
               onClick={() => router.push("/demo")}
+              data-ui-id="landing-view-demos-btn"
               className="text-lg px-8 py-4 border-primary/30 hover:border-primary hover:bg-primary/10"
             >
               <Globe className="mr-2 h-5 w-5" />
@@ -396,6 +404,7 @@ function LandingContent() {
           <Button
             size="lg"
             onClick={handleGetStarted}
+            data-ui-id="landing-cta-try-early-access-btn"
             className="bg-primary text-primary-foreground hover:bg-primary/90 glow-cyan pulse-cyan text-lg px-8 py-4"
           >
             Try Early Access

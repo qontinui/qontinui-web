@@ -236,8 +236,8 @@ const navItems: NavItem[] = [
       },
       {
         id: "extraction",
-        label: "Extraction",
-        description: "Discover states from web pages or desktop apps",
+        label: "Discover",
+        description: "Discover states from web, desktop, or render logs",
         icon: <Globe size={22} />,
         route: "/automation-builder/extraction",
         color: "#4ECDC4",
@@ -883,6 +883,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
   return (
     <div
       data-sidebar="true"
+      data-ui-id="sidebar-nav"
       className={cn(
         "fixed left-0 top-0 h-screen bg-surface-canvas border-r border-border-subtle flex flex-col transition-all duration-300 overflow-visible z-50",
         isCollapsed ? "w-16" : "w-64",
@@ -962,6 +963,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
             >
               <button
                 data-nav-id={item.id}
+                data-ui-id={`sidebar-nav-item-${item.id}`}
                 onClick={() => {
                   if (item.children) {
                     toggleFlyout(item.id);
@@ -1117,6 +1119,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                 <TooltipTrigger asChild>
                   <button
                     onClick={handleExport}
+                    data-ui-id="sidebar-export-btn"
                     className="p-2 rounded-lg hover:bg-surface-raised transition-all duration-300 hover:scale-110 text-text-muted hover:text-brand-secondary"
                   >
                     <Download size={18} />
@@ -1131,6 +1134,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                 <TooltipTrigger asChild>
                   <button
                     onClick={handleImport}
+                    data-ui-id="sidebar-import-btn"
                     className="p-2 rounded-lg hover:bg-surface-raised transition-all duration-300 hover:scale-110 text-text-muted hover:text-brand-success"
                   >
                     <Upload size={18} />
@@ -1145,6 +1149,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                 <TooltipTrigger asChild>
                   <button
                     onClick={() => router.push("/docs")}
+                    data-ui-id="sidebar-docs-btn"
                     className="p-2 rounded-lg hover:bg-surface-raised transition-all duration-300 hover:scale-110 text-text-muted hover:text-brand-primary"
                   >
                     <FileText size={18} />
@@ -1159,6 +1164,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                 <TooltipTrigger asChild>
                   <button
                     onClick={handleLogout}
+                    data-ui-id="sidebar-logout-btn"
                     className="p-2 rounded-lg hover:bg-surface-raised transition-all duration-300 hover:scale-110 text-text-muted hover:text-red-500"
                   >
                     <LogOut size={18} />
@@ -1185,6 +1191,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
               <TooltipTrigger asChild>
                 <button
                   onClick={toggleCollapse}
+                  data-ui-id="sidebar-collapse-btn"
                   className="p-2 rounded-lg hover:bg-surface-raised transition-all duration-300 hover:scale-110 text-text-muted hover:text-text-primary"
                 >
                   {isCollapsed ? (

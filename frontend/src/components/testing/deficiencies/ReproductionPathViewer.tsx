@@ -94,7 +94,7 @@ export function ReproductionPathViewer({
   }
 
   return (
-    <div className={cn("space-y-4", className)}>
+    <div className={cn("space-y-4", className)} data-ui-id="testing-reproduction-path-viewer">
       {/* Header Controls */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2">
@@ -106,13 +106,13 @@ export function ReproductionPathViewer({
           )}
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={expandAll}>
+          <Button variant="outline" size="sm" onClick={expandAll} data-ui-id="testing-reproduction-path-expand-btn">
             Expand All
           </Button>
-          <Button variant="outline" size="sm" onClick={collapseAll}>
+          <Button variant="outline" size="sm" onClick={collapseAll} data-ui-id="testing-reproduction-path-reset-btn">
             Reset Progress
           </Button>
-          <Button variant="outline" size="sm" onClick={copyAllSteps}>
+          <Button variant="outline" size="sm" onClick={copyAllSteps} data-ui-id="testing-reproduction-path-copy-btn">
             <Copy className="h-4 w-4 mr-2" />
             Copy
           </Button>
@@ -138,7 +138,7 @@ export function ReproductionPathViewer({
       <Separator />
 
       {/* Steps List */}
-      <div className="space-y-2">
+      <div className="space-y-2" data-ui-id="testing-reproduction-path-steps-list">
         {steps.map((step, index) => {
           const isExpanded = expandedSteps.has(index);
           const isCompleted = completedSteps.has(index);

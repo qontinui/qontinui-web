@@ -179,7 +179,7 @@ export default function DatasetsPage() {
   }
 
   return (
-    <div className="container mx-auto py-8">
+    <div className="container mx-auto py-8" data-ui-id="admin-page-datasets">
       {/* Navigation Links */}
       <div className="mb-6 flex items-center gap-4">
         <Button
@@ -212,7 +212,7 @@ export default function DatasetsPage() {
             Manage and curate training datasets for GUI element detection models
           </p>
         </div>
-        <Button onClick={() => setShowImportDialog(true)}>
+        <Button onClick={() => setShowImportDialog(true)} data-ui-id="admin-page-datasets-import-btn">
           <Upload className="mr-2 h-4 w-4" />
           Import Dataset
         </Button>
@@ -248,6 +248,7 @@ export default function DatasetsPage() {
                 key={dataset.id}
                 className="hover:shadow-lg transition-shadow cursor-pointer"
                 onClick={() => router.push(`/admin/datasets/${dataset.id}`)}
+                data-ui-id={`admin-page-datasets-item-${dataset.id}`}
               >
                 <CardHeader>
                   <div className="flex items-start justify-between">
@@ -330,6 +331,7 @@ export default function DatasetsPage() {
                         e.stopPropagation();
                         router.push(`/admin/datasets/${dataset.id}`);
                       }}
+                      data-ui-id={`admin-page-datasets-view-btn-${dataset.id}`}
                     >
                       <Eye className="mr-2 h-4 w-4" />
                       View
@@ -341,6 +343,7 @@ export default function DatasetsPage() {
                         e.stopPropagation();
                         setExportDataset(dataset);
                       }}
+                      data-ui-id={`admin-page-datasets-export-btn-${dataset.id}`}
                     >
                       <Download className="h-4 w-4" />
                     </Button>
@@ -352,6 +355,7 @@ export default function DatasetsPage() {
                         e.stopPropagation();
                         setDeleteConfirm(dataset);
                       }}
+                      data-ui-id={`admin-page-datasets-delete-btn-${dataset.id}`}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>

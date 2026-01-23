@@ -27,6 +27,8 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "ui-bridge": "file:../../ui-bridge/packages/ui-bridge",
+    "ui-bridge-server": "file:../../ui-bridge/packages/ui-bridge-server",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",

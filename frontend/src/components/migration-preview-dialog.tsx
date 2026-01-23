@@ -79,7 +79,7 @@ export function MigrationPreviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onCancel()}>
-      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col" data-ui-id="dialog-migration-preview">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <RefreshCw className="h-5 w-5 text-primary" />
@@ -189,12 +189,13 @@ export function MigrationPreviewDialog({
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={onCancel}>
+          <Button variant="outline" onClick={onCancel} data-ui-id="dialog-migration-preview-cancel-btn">
             Cancel Import
           </Button>
           <Button
             onClick={onApprove}
             disabled={loading || (preview ? !preview.needsMigration : false)}
+            data-ui-id="dialog-migration-preview-confirm-btn"
           >
             {preview && preview.needsMigration
               ? "Approve & Migrate"

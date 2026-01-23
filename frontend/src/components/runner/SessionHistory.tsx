@@ -129,7 +129,7 @@ export function SessionHistory() {
       <Card
         className="lg:col-span-1 flex flex-col"
         data-awas-action="list_automation_sessions"
-        data-awas-element="session-history-list"
+        data-ui-id="session-history-list"
       >
         <CardHeader>
           <div className="flex items-center justify-between mb-4">
@@ -138,7 +138,7 @@ export function SessionHistory() {
               size="sm"
               variant="outline"
               onClick={loadRuns}
-              data-awas-element="refresh-sessions-button"
+              data-ui-id="refresh-sessions-button"
               data-awas-trigger="click"
             >
               <RefreshCw className="h-4 w-4" />
@@ -156,7 +156,7 @@ export function SessionHistory() {
             </div>
             <Select value={filterStatus} onValueChange={setFilterStatus}>
               <SelectTrigger
-                data-awas-element="session-status-filter"
+                data-ui-id="session-status-filter"
                 data-awas-param-status={filterStatus}
               >
                 <SelectValue placeholder="Filter by status" />
@@ -196,7 +196,7 @@ export function SessionHistory() {
                         : "hover:bg-muted/50 border border-transparent"
                     }`}
                     data-awas-action="get_automation_session"
-                    data-awas-element={`session-item-${run.id}`}
+                    data-ui-id={`session-item-${run.id}`}
                     data-awas-trigger="click"
                     data-awas-param-session_id={run.id}
                   >

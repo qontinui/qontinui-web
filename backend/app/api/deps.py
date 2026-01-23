@@ -4,6 +4,21 @@ FastAPI dependencies for authentication and database access.
 Now using fastapi-users for authentication.
 """
 
+__all__ = [
+    "current_active_user",
+    "current_active_user_optional",
+    "current_superuser",
+    "current_verified_user",
+    "get_async_db",
+    "get_db",
+    "get_current_user_async",
+    "get_current_active_user_async",
+    "get_current_superuser_async",
+    "get_verified_user_async",
+    "get_current_user_from_ws",
+    "get_runner_user_from_token",
+]
+
 from typing import cast
 from uuid import UUID
 
@@ -20,6 +35,7 @@ logger = structlog.get_logger(__name__)
 # Export fastapi-users dependencies
 from app.auth.config import (
     current_active_user,
+    current_active_user_optional,
     current_superuser,
     current_verified_user,
 )

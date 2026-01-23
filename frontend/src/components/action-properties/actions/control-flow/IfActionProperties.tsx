@@ -124,6 +124,7 @@ export function IfActionProperties({
               size="sm"
               className="h-6 text-xs text-brand-primary hover:text-brand-primary/80 hover:bg-brand-primary/10"
               onClick={handleAddElseBranch}
+              data-ui-id="action-props-if-addelse-btn"
             >
               <Plus className="w-3 h-3 mr-1" />
               Add Else Branch
@@ -135,6 +136,7 @@ export function IfActionProperties({
               className="h-5 w-5 p-0 text-text-muted hover:text-red-400"
               onClick={handleRemoveElseBranch}
               title="Remove else branch"
+              data-ui-id="action-props-if-removeelse-btn"
             >
               <X className="w-3 h-3" />
             </Button>

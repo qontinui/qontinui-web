@@ -102,7 +102,7 @@ export function AnalysisResults({
         : [];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-ui-id="analysis-results">
       {/* Stats Summary */}
       <Card>
         <CardHeader>
@@ -149,7 +149,7 @@ export function AnalysisResults({
           </div>
 
           <div className="mt-4 flex gap-2">
-            <Button onClick={handleExport} variant="outline" size="sm">
+            <Button onClick={handleExport} variant="outline" size="sm" data-ui-id="analysis-results-export-btn">
               <Download className="mr-2 h-4 w-4" />
               Export JSON
             </Button>
@@ -176,7 +176,7 @@ export function AnalysisResults({
                   setSelectedView(v)
                 }
               >
-                <SelectTrigger className="w-40">
+                <SelectTrigger className="w-40" data-ui-id="analysis-results-view-select">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -356,10 +356,10 @@ export function AnalysisResults({
             <CardDescription>Click an element to view details</CardDescription>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue="list" className="w-full">
+            <Tabs defaultValue="list" className="w-full" data-ui-id="analysis-results-tabs">
               <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="list">List</TabsTrigger>
-                <TabsTrigger value="stats">Stats</TabsTrigger>
+                <TabsTrigger value="list" data-ui-id="analysis-results-list-tab">List</TabsTrigger>
+                <TabsTrigger value="stats" data-ui-id="analysis-results-stats-tab">Stats</TabsTrigger>
               </TabsList>
 
               <TabsContent value="list" className="space-y-2">

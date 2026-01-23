@@ -27,7 +27,7 @@ export function BatchDeleteWorkflowsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px]" data-ui-id="dialog-batch-delete-workflows">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-yellow-500" />
@@ -60,6 +60,7 @@ export function BatchDeleteWorkflowsDialog({
             onClick={onClose}
             variant="outline"
             className="w-full sm:w-auto"
+            data-ui-id="dialog-batch-delete-workflows-cancel-btn"
           >
             Cancel
           </Button>
@@ -67,6 +68,7 @@ export function BatchDeleteWorkflowsDialog({
             onClick={onConfirm}
             variant="destructive"
             className="w-full sm:w-auto"
+            data-ui-id="dialog-batch-delete-workflows-confirm-btn"
           >
             Delete {count} Workflow{count !== 1 ? "s" : ""}
           </Button>

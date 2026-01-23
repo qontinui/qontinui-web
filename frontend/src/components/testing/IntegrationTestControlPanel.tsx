@@ -260,7 +260,7 @@ export function IntegrationTestControlPanel({
     !isLoading;
 
   return (
-    <Card className="bg-[#1A1A1B]/80 border-border-subtle/50 backdrop-blur-sm">
+    <Card className="bg-[#1A1A1B]/80 border-border-subtle/50 backdrop-blur-sm" data-ui-id="testing-integration-control-panel">
       <CardHeader className="pb-3">
         <CardTitle className="text-lg font-medium text-white flex items-center gap-2">
           <FlaskConical className="w-5 h-5 text-[#FF6B6B]" />
@@ -276,6 +276,7 @@ export function IntegrationTestControlPanel({
               onClick={() => setShowWorkflowDropdown(!showWorkflowDropdown)}
               disabled={isLoading || runnableWorkflows.length === 0}
               className="w-full bg-surface-raised/50 border border-border-default/50 rounded-lg px-4 py-2.5 text-left flex items-center justify-between gap-2 hover:border-border-default transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              data-ui-id="testing-integration-workflow-select"
             >
               <span
                 className={`truncate ${selectedWorkflow ? "text-white" : "text-text-muted"}`}
@@ -379,6 +380,7 @@ export function IntegrationTestControlPanel({
           onClick={onRunTest}
           disabled={!canRunTest}
           className="w-full bg-[#FF6B6B] hover:bg-[#FF6B6B]/80 text-white font-medium py-3"
+          data-ui-id="testing-integration-run-btn"
           title={
             !selectedWorkflowId
               ? "Select a workflow to run"

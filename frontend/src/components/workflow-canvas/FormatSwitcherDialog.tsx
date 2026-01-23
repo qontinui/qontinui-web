@@ -225,7 +225,7 @@ export function FormatSwitcherDialog({
 
   return (
     <div className="format-switcher-overlay">
-      <div className="format-switcher-dialog">
+      <div className="format-switcher-dialog" data-ui-id="dialog-format-switcher">
         {/* Header */}
         <div className="format-switcher-header">
           <h2>Switch Workflow Format</h2>
@@ -233,6 +233,7 @@ export function FormatSwitcherDialog({
             className="close-button"
             onClick={handleCancel}
             aria-label="Close"
+            data-ui-id="dialog-format-switcher-close-btn"
           >
             ×
           </button>
@@ -469,6 +470,7 @@ export function FormatSwitcherDialog({
             className="cancel-button"
             onClick={handleCancel}
             disabled={isConverting}
+            data-ui-id="dialog-format-switcher-cancel-btn"
           >
             Cancel
           </button>
@@ -476,6 +478,7 @@ export function FormatSwitcherDialog({
             className="convert-button"
             onClick={handleConvert}
             disabled={!canConvert || isConverting}
+            data-ui-id="dialog-format-switcher-confirm-btn"
           >
             {isConverting ? (
               <>

@@ -163,3 +163,7 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         "VerificationTest",
         back_populates="created_by",
     )
+    render_logs = relationship(
+        "RenderLog",
+        back_populates="user",
+    )

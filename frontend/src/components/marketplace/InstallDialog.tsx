@@ -93,7 +93,7 @@ export function InstallDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px]">
+      <DialogContent className="sm:max-w-[600px]" data-ui-id="dialog-install-package">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Package className="w-5 h-5 text-brand-primary" />
@@ -122,6 +122,7 @@ export function InstallDialog({
               <SelectTrigger
                 id="project"
                 className="bg-surface-canvas/50 border-border-default"
+                data-ui-id="dialog-install-package-project-select"
               >
                 <SelectValue placeholder="Select a project..." />
               </SelectTrigger>
@@ -151,6 +152,7 @@ export function InstallDialog({
               <SelectTrigger
                 id="version"
                 className="bg-surface-canvas/50 border-border-default"
+                data-ui-id="dialog-install-package-version-select"
               >
                 <SelectValue />
               </SelectTrigger>
@@ -270,6 +272,7 @@ export function InstallDialog({
             variant="outline"
             onClick={() => onOpenChange(false)}
             disabled={isInstalling}
+            data-ui-id="dialog-install-package-cancel-btn"
           >
             {isComplete ? "Close" : "Cancel"}
           </Button>
@@ -278,6 +281,7 @@ export function InstallDialog({
               onClick={handleInstall}
               disabled={!selectedProjectId || isInstalling || hasSecurityIssues}
               className="bg-gradient-to-r from-brand-primary to-brand-secondary"
+              data-ui-id="dialog-install-package-confirm-btn"
             >
               {isInstalling ? (
                 <>

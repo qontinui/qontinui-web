@@ -38,7 +38,7 @@ export default function TestRunsPage() {
 
   return (
     <RequireProject pageName="Test Runs">
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
+      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white" data-ui-id="qa-runs-page">
         {/* Header */}
         <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
           <div className="flex items-center justify-between px-6 py-4">
@@ -47,6 +47,7 @@ export default function TestRunsPage() {
                 variant="ghost"
                 onClick={() => router.push("/qa-dashboard")}
                 className="text-text-muted hover:text-white"
+                data-ui-id="qa-runs-page-back-btn"
               >
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back

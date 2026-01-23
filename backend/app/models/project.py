@@ -128,3 +128,13 @@ class Project(Base):
         back_populates="project",
         cascade="all, delete-orphan",
     )
+    ui_bridge_configs = relationship(
+        "UIBridgeStateConfig",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+    domain_knowledge = relationship(
+        "DomainKnowledge",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )

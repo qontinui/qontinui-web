@@ -45,7 +45,7 @@ export default function TestingDashboard() {
 
   return (
     <RequireProject pageName="Test Runs">
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-surface-sunken to-surface-canvas text-white">
+      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-surface-sunken to-surface-canvas text-white" data-ui-id="testing-page-dashboard">
         {/* Header */}
         <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
           <div className="flex items-center justify-between px-6 py-4">
@@ -54,6 +54,7 @@ export default function TestingDashboard() {
                 variant="ghost"
                 onClick={() => router.push("/dashboard")}
                 className="text-text-muted hover:text-white"
+                data-ui-id="testing-page-back-btn"
               >
                 ← Dashboard
               </Button>
@@ -67,6 +68,7 @@ export default function TestingDashboard() {
                 size="sm"
                 onClick={() => router.push("/testing/runs")}
                 className="border-border-default hover:border-brand-primary hover:text-brand-primary"
+                data-ui-id="testing-page-all-runs-btn"
               >
                 <FileText className="w-4 h-4 mr-2" />
                 All Runs
@@ -76,6 +78,7 @@ export default function TestingDashboard() {
                 size="sm"
                 onClick={() => router.push("/testing/deficiencies")}
                 className="border-border-default hover:border-brand-secondary hover:text-brand-secondary"
+                data-ui-id="testing-page-deficiencies-btn"
               >
                 <BarChart3 className="w-4 h-4 mr-2" />
                 Deficiencies
@@ -96,7 +99,7 @@ export default function TestingDashboard() {
           </div>
 
           {/* View Selector */}
-          <div className="flex items-center gap-2 mb-6">
+          <div className="flex items-center gap-2 mb-6" data-ui-id="testing-page-view-selector">
             <Button
               variant={selectedView === "overview" ? "default" : "outline"}
               onClick={() => setSelectedView("overview")}
@@ -105,6 +108,7 @@ export default function TestingDashboard() {
                   ? "bg-brand-primary hover:bg-brand-primary/80 text-black"
                   : "border-border-default hover:border-brand-primary hover:text-brand-primary"
               }
+              data-ui-id="testing-page-overview-tab"
             >
               <PlayCircle className="w-4 h-4 mr-2" />
               Test Runs
@@ -117,6 +121,7 @@ export default function TestingDashboard() {
                   ? "bg-brand-primary hover:bg-brand-primary/80 text-black"
                   : "border-border-default hover:border-brand-primary hover:text-brand-primary"
               }
+              data-ui-id="testing-page-trends-tab"
             >
               <TrendingUp className="w-4 h-4 mr-2" />
               Coverage Trends
@@ -129,6 +134,7 @@ export default function TestingDashboard() {
                   ? "bg-brand-primary hover:bg-brand-primary/80 text-black"
                   : "border-border-default hover:border-brand-primary hover:text-brand-primary"
               }
+              data-ui-id="testing-page-reliability-tab"
             >
               <BarChart3 className="w-4 h-4 mr-2" />
               Reliability

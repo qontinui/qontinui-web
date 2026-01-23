@@ -106,7 +106,7 @@ export function DeficiencyAssignment({
   };
 
   return (
-    <Card className={cn("w-full", className)}>
+    <Card className={cn("w-full", className)} data-ui-id="testing-deficiency-assignment">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <UserIcon className="h-5 w-5" />
@@ -156,6 +156,7 @@ export function DeficiencyAssignment({
                 onClick={handleUnassign}
                 disabled={isAssigning}
                 className="w-full"
+                data-ui-id="testing-deficiency-assignment-unassign-btn"
               >
                 <UserMinus className="h-4 w-4 mr-2" />
                 {isAssigning ? "Unassigning..." : "Unassign"}
@@ -182,7 +183,7 @@ export function DeficiencyAssignment({
                   onValueChange={setSelectedUserId}
                   disabled={isAssigning}
                 >
-                  <SelectTrigger className="flex-1">
+                  <SelectTrigger className="flex-1" data-ui-id="testing-deficiency-assignment-user-select">
                     <SelectValue placeholder="Select team member..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -212,6 +213,7 @@ export function DeficiencyAssignment({
                   onClick={handleAssign}
                   disabled={!selectedUserId || isAssigning}
                   size="default"
+                  data-ui-id="testing-deficiency-assignment-assign-btn"
                 >
                   {isAssigning ? (
                     "Assigning..."

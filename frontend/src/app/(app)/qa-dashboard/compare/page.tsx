@@ -54,7 +54,7 @@ function ComparePageContent() {
   }
 
   return (
-    <div className="container mx-auto p-8 space-y-6">
+    <div className="container mx-auto p-8 space-y-6" data-ui-id="qa-compare-page">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold mb-2">Compare Test Runs</h1>
@@ -69,6 +69,7 @@ function ComparePageContent() {
           }
           variant="outline"
           className="border-border-default hover:border-brand-primary hover:text-brand-primary"
+          data-ui-id="qa-compare-back-btn"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Runs

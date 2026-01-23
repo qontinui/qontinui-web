@@ -108,11 +108,11 @@ export default function SettingsPage() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={handleReset}>
+            <Button variant="outline" size="sm" onClick={handleReset} data-ui-id="automation-settings-reset-btn">
               <RotateCcw className="w-4 h-4 mr-2" />
               Reset
             </Button>
-            <Button variant="outline" size="sm" onClick={handleExport}>
+            <Button variant="outline" size="sm" onClick={handleExport} data-ui-id="automation-settings-export-btn">
               <Download className="w-4 h-4 mr-2" />
               Export
             </Button>
@@ -120,6 +120,7 @@ export default function SettingsPage() {
               size="sm"
               className="bg-brand-primary hover:bg-brand-primary/80 text-black"
               onClick={handleSave}
+              data-ui-id="automation-settings-save-btn"
             >
               <Save className="w-4 h-4 mr-2" />
               Save Changes
@@ -174,6 +175,7 @@ export default function SettingsPage() {
                     onCheckedChange={(checked) =>
                       updateSetting("autoSave", checked)
                     }
+                    data-ui-id="automation-settings-auto-save-toggle"
                   />
                 </div>
 
@@ -192,6 +194,7 @@ export default function SettingsPage() {
                           parseInt(e.target.value)
                         )
                       }
+                      data-ui-id="automation-settings-auto-save-interval-input"
                     />
                   </div>
                 )}
@@ -215,7 +218,7 @@ export default function SettingsPage() {
                     value={settings.theme}
                     onValueChange={(value) => updateSetting("theme", value)}
                   >
-                    <SelectTrigger id="theme">
+                    <SelectTrigger id="theme" data-ui-id="automation-settings-theme-select">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -237,6 +240,7 @@ export default function SettingsPage() {
                     onChange={(e) =>
                       updateSetting("fontSize", parseInt(e.target.value))
                     }
+                    data-ui-id="automation-settings-font-size-input"
                   />
                 </div>
 
@@ -254,6 +258,7 @@ export default function SettingsPage() {
                     onCheckedChange={(checked) =>
                       updateSetting("showLineNumbers", checked)
                     }
+                    data-ui-id="automation-settings-show-line-numbers-toggle"
                   />
                 </div>
 
@@ -269,6 +274,7 @@ export default function SettingsPage() {
                     onCheckedChange={(checked) =>
                       updateSetting("enableAutoComplete", checked)
                     }
+                    data-ui-id="automation-settings-enable-auto-complete-toggle"
                   />
                 </div>
               </CardContent>
@@ -301,6 +307,7 @@ export default function SettingsPage() {
                         parseInt(e.target.value)
                       )
                     }
+                    data-ui-id="automation-settings-max-concurrent-workflows-input"
                   />
                   <p className="text-xs text-muted-foreground">
                     Maximum number of workflows that can run simultaneously
@@ -316,6 +323,7 @@ export default function SettingsPage() {
                     onChange={(e) =>
                       updateSetting("defaultTimeout", parseInt(e.target.value))
                     }
+                    data-ui-id="automation-settings-default-timeout-input"
                   />
                 </div>
 
@@ -333,6 +341,7 @@ export default function SettingsPage() {
                     onCheckedChange={(checked) =>
                       updateSetting("retryOnFailure", checked)
                     }
+                    data-ui-id="automation-settings-retry-on-failure-toggle"
                   />
                 </div>
 
@@ -348,6 +357,7 @@ export default function SettingsPage() {
                       onChange={(e) =>
                         updateSetting("maxRetries", parseInt(e.target.value))
                       }
+                      data-ui-id="automation-settings-max-retries-input"
                     />
                   </div>
                 )}
@@ -377,6 +387,7 @@ export default function SettingsPage() {
                     onCheckedChange={(checked) =>
                       updateSetting("notifyOnSuccess", checked)
                     }
+                    data-ui-id="automation-settings-notify-on-success-toggle"
                   />
                 </div>
 
@@ -392,6 +403,7 @@ export default function SettingsPage() {
                     onCheckedChange={(checked) =>
                       updateSetting("notifyOnFailure", checked)
                     }
+                    data-ui-id="automation-settings-notify-on-failure-toggle"
                   />
                 </div>
 
@@ -407,6 +419,7 @@ export default function SettingsPage() {
                     onCheckedChange={(checked) =>
                       updateSetting("notifyOnStart", checked)
                     }
+                    data-ui-id="automation-settings-notify-on-start-toggle"
                   />
                 </div>
 
@@ -424,6 +437,7 @@ export default function SettingsPage() {
                     onCheckedChange={(checked) =>
                       updateSetting("emailNotifications", checked)
                     }
+                    data-ui-id="automation-settings-email-notifications-toggle"
                   />
                 </div>
               </CardContent>
@@ -452,6 +466,7 @@ export default function SettingsPage() {
                     onCheckedChange={(checked) =>
                       updateSetting("enableDebugMode", checked)
                     }
+                    data-ui-id="automation-settings-enable-debug-mode-toggle"
                   />
                 </div>
 
@@ -461,7 +476,7 @@ export default function SettingsPage() {
                     value={settings.logLevel}
                     onValueChange={(value) => updateSetting("logLevel", value)}
                   >
-                    <SelectTrigger id="logLevel">
+                    <SelectTrigger id="logLevel" data-ui-id="automation-settings-log-level-select">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -487,6 +502,7 @@ export default function SettingsPage() {
                     onCheckedChange={(checked) =>
                       updateSetting("enableTelemetry", checked)
                     }
+                    data-ui-id="automation-settings-enable-telemetry-toggle"
                   />
                 </div>
               </CardContent>
@@ -507,7 +523,7 @@ export default function SettingsPage() {
                       Delete all workflows, settings, and data
                     </p>
                   </div>
-                  <Button variant="destructive" size="sm">
+                  <Button variant="destructive" size="sm" data-ui-id="automation-settings-clear-data-btn">
                     <Trash2 className="w-4 h-4 mr-2" />
                     Clear Data
                   </Button>

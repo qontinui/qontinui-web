@@ -181,6 +181,7 @@ export function EdgePropertiesPanel({
           size="icon"
           onClick={onClose}
           className="h-8 w-8 text-text-muted hover:text-white"
+          data-ui-id="automation-edge-close-btn"
         >
           <X className="w-4 h-4" />
         </Button>
@@ -225,6 +226,7 @@ export function EdgePropertiesPanel({
             onChange={(e) => setLabel(e.target.value)}
             placeholder="e.g., Success, Login Failed, Retry"
             className="bg-surface-canvas border-border-default text-white placeholder:text-text-muted"
+            data-ui-id="automation-edge-label-input"
           />
           <p className="text-xs text-text-muted">
             Human-readable name displayed on the edge
@@ -283,7 +285,7 @@ export function EdgePropertiesPanel({
                   setConditionType(val as EdgeCondition["type"])
                 }
               >
-                <SelectTrigger className="bg-surface-canvas border-border-default text-white">
+                <SelectTrigger className="bg-surface-canvas border-border-default text-white" data-ui-id="automation-edge-conditiontype-select">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -309,6 +311,7 @@ export function EdgePropertiesPanel({
                   placeholder="e.g., result.success === true"
                   className="bg-surface-canvas border-border-default text-white placeholder:text-text-muted font-mono text-sm"
                   rows={3}
+                  data-ui-id="automation-edge-expression-input"
                 />
                 <p className="text-xs text-text-muted">
                   Expression evaluated at runtime. Access previous action result
@@ -328,6 +331,7 @@ export function EdgePropertiesPanel({
                     onChange={(e) => setConditionVariable(e.target.value)}
                     placeholder="e.g., loginStatus, itemCount"
                     className="bg-surface-canvas border-border-default text-white placeholder:text-text-muted"
+                    data-ui-id="automation-edge-variable-input"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
@@ -339,7 +343,7 @@ export function EdgePropertiesPanel({
                         setConditionOperator(val as EdgeCondition["operator"])
                       }
                     >
-                      <SelectTrigger className="bg-surface-canvas border-border-default text-white">
+                      <SelectTrigger className="bg-surface-canvas border-border-default text-white" data-ui-id="automation-edge-operator-select">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -360,6 +364,7 @@ export function EdgePropertiesPanel({
                       placeholder="true, 0, 'success'"
                       className="bg-surface-canvas border-border-default text-white placeholder:text-text-muted"
                       disabled={conditionOperator === "exists"}
+                      data-ui-id="automation-edge-value-input"
                     />
                   </div>
                 </div>
@@ -391,6 +396,7 @@ export function EdgePropertiesPanel({
             placeholder="Optional notes about this connection..."
             className="bg-surface-canvas border-border-default text-white placeholder:text-text-muted"
             rows={2}
+            data-ui-id="automation-edge-description-input"
           />
         </div>
       </div>
@@ -401,12 +407,14 @@ export function EdgePropertiesPanel({
           variant="outline"
           onClick={onClose}
           className="flex-1 border-border-default text-text-muted hover:bg-surface-raised"
+          data-ui-id="automation-edge-cancel-btn"
         >
           Cancel
         </Button>
         <Button
           onClick={handleSave}
           className="flex-1 bg-brand-primary text-black hover:bg-brand-primary/90"
+          data-ui-id="automation-edge-save-btn"
         >
           Save Changes
         </Button>

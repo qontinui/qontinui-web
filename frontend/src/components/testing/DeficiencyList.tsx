@@ -109,7 +109,7 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
   const currentPage = data?.page || 1;
 
   return (
-    <Card className="bg-surface-raised/50 border-border-subtle/50">
+    <Card className="bg-surface-raised/50 border-border-subtle/50" data-ui-id="testing-deficiency-list">
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="text-xl">Deficiencies</CardTitle>
@@ -119,6 +119,7 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
               variant="outline"
               onClick={() => handleExport("csv")}
               className="border-border-default hover:border-brand-primary hover:text-brand-primary"
+              data-ui-id="testing-deficiency-list-export-btn"
             >
               <Download className="w-4 h-4 mr-2" />
               Export
@@ -137,17 +138,19 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSearch()}
                 className="bg-surface-canvas/50 border-border-default focus:border-brand-primary"
+                data-ui-id="testing-deficiency-list-search-input"
               />
               <Button
                 onClick={handleSearch}
                 className="bg-brand-primary hover:bg-brand-primary/80 text-black"
+                data-ui-id="testing-deficiency-list-search-btn"
               >
                 <Search className="w-4 h-4" />
               </Button>
             </div>
           </div>
           <Select value={severityFilter} onValueChange={handleSeverityChange}>
-            <SelectTrigger className="bg-surface-canvas/50 border-border-default">
+            <SelectTrigger className="bg-surface-canvas/50 border-border-default" data-ui-id="testing-deficiency-list-severity-select">
               <SelectValue placeholder="Severity" />
             </SelectTrigger>
             <SelectContent>
@@ -159,7 +162,7 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
             </SelectContent>
           </Select>
           <Select value={statusFilter} onValueChange={handleStatusChange}>
-            <SelectTrigger className="bg-surface-canvas/50 border-border-default">
+            <SelectTrigger className="bg-surface-canvas/50 border-border-default" data-ui-id="testing-deficiency-list-status-select">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
@@ -199,6 +202,7 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
                     onClick={() => handlePageChange(currentPage - 1)}
                     disabled={currentPage === 1}
                     className="border-border-default hover:border-brand-primary hover:text-brand-primary"
+                    data-ui-id="testing-deficiency-list-prev-btn"
                   >
                     <ChevronLeft className="w-4 h-4" />
                     Previous
@@ -209,6 +213,7 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
                     onClick={() => handlePageChange(currentPage + 1)}
                     disabled={currentPage === totalPages}
                     className="border-border-default hover:border-brand-primary hover:text-brand-primary"
+                    data-ui-id="testing-deficiency-list-next-btn"
                   >
                     Next
                     <ChevronRight className="w-4 h-4" />

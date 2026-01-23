@@ -358,6 +358,7 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
               onCheckedChange={(checked) =>
                 setOptions((prev) => ({ ...prev, include_ocr: checked }))
               }
+              data-ui-id="automation-rag-ocr-toggle"
             />
           </div>
 
@@ -376,6 +377,7 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
                   include_screenshots: checked,
                 }))
               }
+              data-ui-id="automation-rag-screenshots-toggle"
             />
           </div>
 
@@ -389,7 +391,7 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
                 setOptions((prev) => ({ ...prev, embedding_model: value }))
               }
             >
-              <SelectTrigger className="bg-surface-canvas border-border-default">
+              <SelectTrigger className="bg-surface-canvas border-border-default" data-ui-id="automation-rag-model-select">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -438,7 +440,7 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
                   value={selectedRunnerId || undefined}
                   onValueChange={setSelectedRunnerId}
                 >
-                  <SelectTrigger className="bg-surface-canvas border-border-default">
+                  <SelectTrigger className="bg-surface-canvas border-border-default" data-ui-id="automation-rag-runner-select">
                     <SelectValue placeholder="Choose a runner..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -463,6 +465,7 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
                 onClick={handleTransferToRunner}
                 disabled={isTransferring || !selectedRunnerId}
                 className="w-full bg-gradient-to-r from-brand-primary to-brand-secondary hover:opacity-90 text-white"
+                data-ui-id="automation-rag-transfer-btn"
               >
                 {isTransferring ? (
                   <>
@@ -494,6 +497,7 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
                     size="sm"
                     className="mt-3 border-border-default"
                     onClick={() => (window.location.href = "/connect-runner")}
+                    data-ui-id="automation-rag-connect-btn"
                   >
                     <Monitor className="w-4 h-4 mr-2" />
                     Connect Runner
@@ -598,6 +602,7 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
             disabled={isExporting}
             variant="outline"
             className="w-full border-border-default"
+            data-ui-id="automation-rag-download-btn"
           >
             {isExporting ? (
               <>

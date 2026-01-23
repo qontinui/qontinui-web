@@ -348,7 +348,7 @@ export function ConflictResolutionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col" data-ui-id="dialog-conflict-resolution">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-orange-500" />
@@ -368,6 +368,7 @@ export function ConflictResolutionDialog({
               size="sm"
               onClick={() => setSelectedIndex(Math.max(0, selectedIndex - 1))}
               disabled={selectedIndex === 0}
+              data-ui-id="dialog-conflict-resolution-previous-btn"
             >
               <ChevronLeft className="h-4 w-4 mr-1" />
               Previous
@@ -384,6 +385,7 @@ export function ConflictResolutionDialog({
                 )
               }
               disabled={selectedIndex === conflicts.length - 1}
+              data-ui-id="dialog-conflict-resolution-next-btn"
             >
               Next
               <ChevronRight className="h-4 w-4 ml-1" />
@@ -438,6 +440,7 @@ export function ConflictResolutionDialog({
                   onClick={() => handleResolveAll("local")}
                   disabled={loading}
                   className="flex-1"
+                  data-ui-id="dialog-conflict-resolution-keep-all-mine-btn"
                 >
                   Keep All Mine
                 </Button>
@@ -446,6 +449,7 @@ export function ConflictResolutionDialog({
                   onClick={() => handleResolveAll("remote")}
                   disabled={loading}
                   className="flex-1"
+                  data-ui-id="dialog-conflict-resolution-keep-all-theirs-btn"
                 >
                   Keep All Theirs
                 </Button>
@@ -457,6 +461,7 @@ export function ConflictResolutionDialog({
               variant="outline"
               onClick={() => handleResolve("local")}
               disabled={loading}
+              data-ui-id="dialog-conflict-resolution-keep-mine-btn"
             >
               <User className="mr-2 h-4 w-4" />
               Keep Mine
@@ -465,11 +470,12 @@ export function ConflictResolutionDialog({
               variant="outline"
               onClick={() => handleResolve("remote")}
               disabled={loading}
+              data-ui-id="dialog-conflict-resolution-keep-theirs-btn"
             >
               <Users className="mr-2 h-4 w-4" />
               Keep Theirs
             </Button>
-            <Button onClick={() => handleResolve("merge")} disabled={loading}>
+            <Button onClick={() => handleResolve("merge")} disabled={loading} data-ui-id="dialog-conflict-resolution-merge-btn">
               {loading ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (

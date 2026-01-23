@@ -170,7 +170,7 @@ export function PublishTemplateDialog({
 
   return (
     <div className="publish-template-overlay">
-      <div className="publish-template-dialog">
+      <div className="publish-template-dialog" data-ui-id="dialog-publish-template">
         <div className="dialog-header">
           <h2>
             {step === "preview"
@@ -184,6 +184,7 @@ export function PublishTemplateDialog({
             onClick={onClose}
             disabled={loading}
             aria-label="Close"
+            data-ui-id="dialog-publish-template-close-btn"
           >
             ×
           </button>
@@ -202,6 +203,7 @@ export function PublishTemplateDialog({
                 onChange={(e) => setName(e.target.value)}
                 placeholder="My Awesome Template"
                 maxLength={200}
+                data-ui-id="dialog-publish-template-name-input"
               />
               <span className="char-count">{name.length}/200</span>
             </div>
@@ -215,6 +217,7 @@ export function PublishTemplateDialog({
                 placeholder="A brief description of what this template does..."
                 rows={2}
                 maxLength={500}
+                data-ui-id="dialog-publish-template-description-input"
               />
               <span className="char-count">{description.length}/500</span>
             </div>
@@ -230,6 +233,7 @@ export function PublishTemplateDialog({
                 placeholder="Detailed description, usage instructions, examples..."
                 rows={5}
                 maxLength={10000}
+                data-ui-id="dialog-publish-template-long-description-input"
               />
               <span className="char-count">{longDescription.length}/10000</span>
             </div>
@@ -241,6 +245,7 @@ export function PublishTemplateDialog({
                   id="template-category"
                   value={categoryId || ""}
                   onChange={(e) => setCategoryId(e.target.value || null)}
+                  data-ui-id="dialog-publish-template-category-select"
                 >
                   <option value="">Select a category...</option>
                   {categories.map((cat) => (
@@ -257,6 +262,7 @@ export function PublishTemplateDialog({
                   id="template-license"
                   value={license}
                   onChange={(e) => setLicense(e.target.value)}
+                  data-ui-id="dialog-publish-template-license-select"
                 >
                   <option value="MIT">MIT</option>
                   <option value="Apache-2.0">Apache 2.0</option>
@@ -277,6 +283,7 @@ export function PublishTemplateDialog({
                 value={tagsInput}
                 onChange={(e) => setTagsInput(e.target.value)}
                 placeholder="automation, data, api, etc."
+                data-ui-id="dialog-publish-template-tags-input"
               />
               <span className="hint">Maximum 10 tags</span>
             </div>
@@ -352,6 +359,7 @@ export function PublishTemplateDialog({
                 className="cancel-button"
                 onClick={onClose}
                 disabled={loading}
+                data-ui-id="dialog-publish-template-cancel-btn"
               >
                 Cancel
               </button>
@@ -359,6 +367,7 @@ export function PublishTemplateDialog({
                 className="secondary-button"
                 onClick={handleSaveAsDraft}
                 disabled={loading}
+                data-ui-id="dialog-publish-template-draft-btn"
               >
                 Save as Draft
               </button>
@@ -366,6 +375,7 @@ export function PublishTemplateDialog({
                 className="primary-button"
                 onClick={handlePreview}
                 disabled={loading}
+                data-ui-id="dialog-publish-template-preview-btn"
               >
                 Preview
               </button>
@@ -378,6 +388,7 @@ export function PublishTemplateDialog({
                 className="cancel-button"
                 onClick={() => setStep("form")}
                 disabled={loading}
+                data-ui-id="dialog-publish-template-back-btn"
               >
                 Back
               </button>
@@ -385,6 +396,7 @@ export function PublishTemplateDialog({
                 className="primary-button"
                 onClick={handlePublish}
                 disabled={loading}
+                data-ui-id="dialog-publish-template-confirm-btn"
               >
                 Publish Now
               </button>

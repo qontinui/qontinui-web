@@ -139,7 +139,7 @@ export function StateImageCreationDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-ui-id="dialog-state-image-creation">
         <DialogHeader>
           <DialogTitle>Create StateImages from Optimized Patterns</DialogTitle>
           <DialogDescription>
@@ -323,12 +323,13 @@ export function StateImageCreationDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={onClose} data-ui-id="dialog-state-image-creation-cancel-btn">
             Cancel
           </Button>
           <Button
             onClick={handleCreate}
             className="bg-brand-primary hover:bg-brand-primary/80 text-black"
+            data-ui-id="dialog-state-image-creation-confirm-btn"
           >
             Create StateImages
           </Button>

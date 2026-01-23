@@ -156,7 +156,7 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
   const currentPage = data?.page || 1;
 
   return (
-    <Card className="bg-surface-raised/50 border-border-subtle/50">
+    <Card className="bg-surface-raised/50 border-border-subtle/50" data-ui-id="testing-test-runs-list">
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="text-xl">Test Runs</CardTitle>
@@ -165,7 +165,7 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
               value={statusFilter}
               onValueChange={handleStatusFilterChange}
             >
-              <SelectTrigger className="w-[150px] bg-surface-canvas/50 border-border-default">
+              <SelectTrigger className="w-[150px] bg-surface-canvas/50 border-border-default" data-ui-id="testing-test-runs-status-select">
                 <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
               <SelectContent>
@@ -186,7 +186,7 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
         ) : (
           <>
             <div className="overflow-x-auto">
-              <Table>
+              <Table data-ui-id="testing-test-runs-table">
                 <TableHeader>
                   <TableRow className="border-border-subtle/50">
                     <TableHead>Status</TableHead>
@@ -205,6 +205,7 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
                       key={run.id}
                       className="border-border-subtle/50 hover:bg-surface-raised/30 cursor-pointer"
                       onClick={() => router.push(`/testing/runs/${run.id}`)}
+                      data-ui-id={`testing-test-runs-item-${run.id}`}
                     >
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -281,6 +282,7 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
                             handleExport(run.id, "json");
                           }}
                           className="hover:text-brand-primary"
+                          data-ui-id={`testing-test-runs-export-btn-${run.id}`}
                         >
                           <Download className="w-4 h-4" />
                         </Button>
@@ -304,6 +306,7 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
                     onClick={() => handlePageChange(currentPage - 1)}
                     disabled={currentPage === 1}
                     className="border-border-default hover:border-brand-primary hover:text-brand-primary"
+                    data-ui-id="testing-test-runs-prev-btn"
                   >
                     <ChevronLeft className="w-4 h-4" />
                     Previous
@@ -314,6 +317,7 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
                     onClick={() => handlePageChange(currentPage + 1)}
                     disabled={currentPage === totalPages}
                     className="border-border-default hover:border-brand-primary hover:text-brand-primary"
+                    data-ui-id="testing-test-runs-next-btn"
                   >
                     Next
                     <ChevronRight className="w-4 h-4" />

@@ -101,7 +101,7 @@ export function FeedbackForm({ open, onOpenChange }: FeedbackFormProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[500px]" data-ui-id="dialog-feedback">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <MessageSquare className="h-5 w-5" />
@@ -126,6 +126,7 @@ export function FeedbackForm({ open, onOpenChange }: FeedbackFormProps) {
                 required
                 maxLength={100}
                 disabled={isSubmitting}
+                data-ui-id="dialog-feedback-name-input"
               />
             </div>
 
@@ -139,6 +140,7 @@ export function FeedbackForm({ open, onOpenChange }: FeedbackFormProps) {
                 onChange={(e) => handleChange("email", e.target.value)}
                 required
                 disabled={isSubmitting}
+                data-ui-id="dialog-feedback-email-input"
               />
             </div>
 
@@ -155,6 +157,7 @@ export function FeedbackForm({ open, onOpenChange }: FeedbackFormProps) {
                 rows={6}
                 disabled={isSubmitting}
                 className="resize-none"
+                data-ui-id="dialog-feedback-message-input"
               />
               <p className="text-xs text-muted-foreground text-right">
                 {formData.message.length}/2000 characters
@@ -168,10 +171,11 @@ export function FeedbackForm({ open, onOpenChange }: FeedbackFormProps) {
               variant="outline"
               onClick={() => onOpenChange(false)}
               disabled={isSubmitting}
+              data-ui-id="dialog-feedback-cancel-btn"
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={!isFormValid || isSubmitting}>
+            <Button type="submit" disabled={!isFormValid || isSubmitting} data-ui-id="dialog-feedback-confirm-btn">
               {isSubmitting ? (
                 <>Sending...</>
               ) : (

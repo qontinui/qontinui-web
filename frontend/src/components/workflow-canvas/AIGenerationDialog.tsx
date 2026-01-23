@@ -211,7 +211,7 @@ export function AIGenerationDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="relative w-full max-w-6xl h-[90vh] bg-white dark:bg-surface-canvas rounded-lg shadow-2xl flex flex-col">
+      <div className="relative w-full max-w-6xl h-[90vh] bg-white dark:bg-surface-canvas rounded-lg shadow-2xl flex flex-col" data-ui-id="dialog-ai-generation">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle dark:border-border-default">
           <div className="flex items-center gap-3">
@@ -230,6 +230,7 @@ export function AIGenerationDialog({
           <button
             onClick={onClose}
             className="p-2 hover:bg-surface-raised/50 dark:hover:bg-surface-raised rounded-lg transition-colors"
+            data-ui-id="dialog-ai-generation-close-btn"
           >
             <X className="w-5 h-5" />
           </button>
@@ -252,6 +253,7 @@ export function AIGenerationDialog({
                   placeholder="Example: Create a workflow that logs into Gmail by clicking the login button and typing my credentials..."
                   className="w-full h-48 px-4 py-3 border border-border-default dark:border-border-default rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none bg-white dark:bg-surface-raised text-text-primary dark:text-white"
                   disabled={state === "generating" || state === "refining"}
+                  data-ui-id="dialog-ai-generation-description-input"
                 />
                 <div className="mt-2 text-xs text-text-muted dark:text-text-muted">
                   {description.length} characters
@@ -365,6 +367,7 @@ export function AIGenerationDialog({
                   state === "refining"
                 }
                 className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-surface-raised disabled:text-text-muted dark:disabled:bg-surface-raised text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                data-ui-id="dialog-ai-generation-generate-btn"
               >
                 {state === "generating" ? (
                   <>
@@ -556,12 +559,14 @@ export function AIGenerationDialog({
                   <button
                     onClick={onClose}
                     className="flex-1 py-3 border border-border-default dark:border-border-default text-text-secondary dark:text-text-secondary rounded-lg font-medium hover:bg-surface-raised/50 dark:hover:bg-surface-raised transition-colors"
+                    data-ui-id="dialog-ai-generation-cancel-btn"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleAccept}
                     className="flex-1 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                    data-ui-id="dialog-ai-generation-confirm-btn"
                   >
                     <Check className="w-5 h-5" />
                     Accept Workflow

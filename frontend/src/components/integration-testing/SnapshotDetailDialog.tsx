@@ -94,7 +94,7 @@ export function SnapshotDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[80vh]">
+      <DialogContent className="max-w-3xl max-h-[80vh]" data-ui-id="dialog-snapshot-detail">
         <DialogHeader>
           <DialogTitle>Snapshot Details</DialogTitle>
           <DialogDescription>

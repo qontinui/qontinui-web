@@ -145,7 +145,7 @@ export function InviteMemberDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col" data-ui-id="dialog-invite-member">
         <DialogHeader>
           <DialogTitle>Invite Team Members</DialogTitle>
           <DialogDescription>
@@ -163,6 +163,7 @@ export function InviteMemberDialog({
               {...form.register("email")}
               disabled={loading}
               aria-invalid={!!form.formState.errors.email}
+              data-ui-id="dialog-invite-member-email-input"
             />
             {form.formState.errors.email && (
               <p className="text-sm text-destructive flex items-center gap-1">
@@ -181,7 +182,7 @@ export function InviteMemberDialog({
               }
               disabled={loading}
             >
-              <SelectTrigger id="role" aria-label="Select member role">
+              <SelectTrigger id="role" aria-label="Select member role" data-ui-id="dialog-invite-member-role-select">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -213,7 +214,7 @@ export function InviteMemberDialog({
             </Select>
           </div>
 
-          <Button type="submit" className="w-full" disabled={loading}>
+          <Button type="submit" className="w-full" disabled={loading} data-ui-id="dialog-invite-member-confirm-btn">
             {loading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

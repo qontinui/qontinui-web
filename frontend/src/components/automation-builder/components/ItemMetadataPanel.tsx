@@ -245,6 +245,7 @@ export function ItemMetadataPanel({
             onChange={(e) => setTempName(e.target.value)}
             onKeyDown={handleKeyDown}
             data-tutorial-id="workflow-name-input"
+            data-ui-id="automation-metadata-name-input"
             className="bg-surface-canvas border-border-default text-white"
             placeholder="Enter name..."
             autoFocus
@@ -275,6 +276,7 @@ export function ItemMetadataPanel({
             onKeyDown={handleKeyDown}
             className="bg-surface-canvas border-border-default text-white min-h-[80px]"
             placeholder="Enter description..."
+            data-ui-id="automation-metadata-description-input"
           />
         ) : (
           <div
@@ -298,7 +300,7 @@ export function ItemMetadataPanel({
         </Label>
         {isEditing ? (
           <Select value={tempCategory} onValueChange={setTempCategory}>
-            <SelectTrigger className="bg-surface-canvas border-border-default text-white">
+            <SelectTrigger className="bg-surface-canvas border-border-default text-white" data-ui-id="automation-metadata-category-select">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -332,7 +334,7 @@ export function ItemMetadataPanel({
             value={tempViewMode}
             onValueChange={(v) => setTempViewMode(v as BuilderMode)}
           >
-            <SelectTrigger className="bg-surface-canvas border-border-default text-white">
+            <SelectTrigger className="bg-surface-canvas border-border-default text-white" data-ui-id="automation-metadata-viewmode-select">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -361,6 +363,7 @@ export function ItemMetadataPanel({
             onClick={handleSave}
             disabled={!tempName.trim()}
             className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+            data-ui-id="automation-metadata-save-btn"
           >
             <Check className="w-4 h-4 mr-2" />
             Save
@@ -369,6 +372,7 @@ export function ItemMetadataPanel({
             onClick={handleCancel}
             variant="outline"
             className="flex-1 border-border-default text-text-muted hover:bg-surface-raised"
+            data-ui-id="automation-metadata-cancel-btn"
           >
             <X className="w-4 h-4 mr-2" />
             Cancel
@@ -439,6 +443,7 @@ export function ItemMetadataPanel({
                           },
                         } as LibraryItem);
                       }}
+                      data-ui-id="automation-metadata-resetstates-btn"
                     >
                       Reset to defaults
                     </Button>
@@ -478,6 +483,7 @@ export function ItemMetadataPanel({
                               )
                             }
                             className="border-border-default data-[state=checked]:bg-brand-success data-[state=checked]:border-brand-success"
+                            data-ui-id={`automation-metadata-initialstate-${state.id}-checkbox`}
                           />
                           <span className="text-sm text-text-muted flex-1">
                             {state.name}

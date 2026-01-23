@@ -145,16 +145,17 @@ export function VisualDiffViewer({
   };
 
   return (
-    <div className={cn("flex flex-col gap-4", className)}>
+    <div className={cn("flex flex-col gap-4", className)} data-ui-id="testing-visual-diff-viewer">
       {/* Controls Bar */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         {/* Mode Selector */}
-        <div className="flex items-center gap-1 border rounded-lg p-1">
+        <div className="flex items-center gap-1 border rounded-lg p-1" data-ui-id="testing-visual-diff-mode-selector">
           <Button
             variant={mode === "side-by-side" ? "secondary" : "ghost"}
             size="sm"
             onClick={() => setMode("side-by-side")}
             className="h-8 px-3"
+            data-ui-id="testing-visual-diff-sidebyside-btn"
           >
             <SplitSquareVertical className="h-4 w-4 mr-1" />
             Side by Side
@@ -164,6 +165,7 @@ export function VisualDiffViewer({
             size="sm"
             onClick={() => setMode("overlay")}
             className="h-8 px-3"
+            data-ui-id="testing-visual-diff-overlay-btn"
           >
             <Layers className="h-4 w-4 mr-1" />
             Overlay
@@ -173,6 +175,7 @@ export function VisualDiffViewer({
             size="sm"
             onClick={() => setMode("swipe")}
             className="h-8 px-3"
+            data-ui-id="testing-visual-diff-swipe-btn"
           >
             <Maximize2 className="h-4 w-4 mr-1" />
             Swipe
@@ -182,6 +185,7 @@ export function VisualDiffViewer({
             size="sm"
             onClick={() => setMode("blink")}
             className="h-8 px-3"
+            data-ui-id="testing-visual-diff-blink-btn"
           >
             <RefreshCw className="h-4 w-4 mr-1" />
             Blink
@@ -216,6 +220,7 @@ export function VisualDiffViewer({
             onClick={handleZoomOut}
             disabled={zoom <= 0.25}
             className="h-8 w-8 p-0"
+            data-ui-id="testing-visual-diff-zoom-out-btn"
           >
             <ZoomOut className="h-4 w-4" />
           </Button>
@@ -228,6 +233,7 @@ export function VisualDiffViewer({
             onClick={handleZoomIn}
             disabled={zoom >= 4}
             className="h-8 w-8 p-0"
+            data-ui-id="testing-visual-diff-zoom-in-btn"
           >
             <ZoomIn className="h-4 w-4" />
           </Button>
@@ -236,6 +242,7 @@ export function VisualDiffViewer({
             size="sm"
             onClick={handleResetZoom}
             className="h-8 px-2"
+            data-ui-id="testing-visual-diff-zoom-reset-btn"
           >
             Reset
           </Button>

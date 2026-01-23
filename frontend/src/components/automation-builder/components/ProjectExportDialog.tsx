@@ -537,7 +537,7 @@ export function ProjectExportDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-[500px] bg-surface-canvas border-border-subtle">
+        <DialogContent className="sm:max-w-[500px] bg-surface-canvas border-border-subtle" data-ui-id="dialog-project-export">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Upload className="w-5 h-5 text-brand-primary" />
@@ -559,6 +559,7 @@ export function ProjectExportDialog({
                 onChange={(e) => setExportName(e.target.value)}
                 placeholder="Enter project name"
                 className="bg-surface-canvas border-border-default"
+                data-ui-id="automation-export-name-input"
               />
             </div>
 
@@ -571,6 +572,7 @@ export function ProjectExportDialog({
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Add a description for this export..."
                 className="bg-surface-canvas border-border-default min-h-[80px]"
+                data-ui-id="automation-export-description-input"
               />
             </div>
 
@@ -623,6 +625,7 @@ export function ProjectExportDialog({
                     onClick={handleFixIssues}
                     disabled={isFixing}
                     className="border-yellow-700 text-yellow-500 hover:bg-yellow-950/50"
+                    data-ui-id="automation-export-fix-btn"
                   >
                     {isFixing ? (
                       <>
@@ -854,6 +857,7 @@ export function ProjectExportDialog({
               onClick={() => onOpenChange(false)}
               className="border-border-default"
               disabled={ragStatus === "processing" || ragStatus === "checking"}
+              data-ui-id="automation-export-cancel-btn"
             >
               {ragStatus === "completed" ||
               ragStatus === "failed" ||
@@ -868,6 +872,7 @@ export function ProjectExportDialog({
                   onClick={() => handleExport(false)}
                   disabled={isExporting || !exportName.trim()}
                   className="border-border-default hover:bg-surface-raised"
+                  data-ui-id="automation-export-only-btn"
                 >
                   {isExporting ? (
                     <>
@@ -885,6 +890,7 @@ export function ProjectExportDialog({
                   onClick={() => handleExport(true)}
                   disabled={isExporting || !exportName.trim()}
                   className="bg-brand-primary hover:bg-brand-primary/80 text-black"
+                  data-ui-id="automation-export-load-btn"
                 >
                   {isExporting ? (
                     <>

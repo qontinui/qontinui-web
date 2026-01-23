@@ -224,7 +224,7 @@ export function ProjectSharingDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col" data-ui-id="dialog-project-sharing">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Share2 className="h-5 w-5" />
@@ -277,6 +277,7 @@ export function ProjectSharingDialog({
                       handleAddUser();
                     }
                   }}
+                  data-ui-id="dialog-project-sharing-email-input"
                 />
               </div>
               <div className="flex gap-2">
@@ -287,7 +288,7 @@ export function ProjectSharingDialog({
                   }
                   disabled={loading}
                 >
-                  <SelectTrigger className="w-[180px]">
+                  <SelectTrigger className="w-[180px]" data-ui-id="dialog-project-sharing-user-permission-select">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -301,6 +302,7 @@ export function ProjectSharingDialog({
                   onClick={handleAddUser}
                   disabled={loading}
                   className="flex-1"
+                  data-ui-id="dialog-project-sharing-share-user-btn"
                 >
                   {loading ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -323,7 +325,7 @@ export function ProjectSharingDialog({
                   onValueChange={setSelectedOrg}
                   disabled={loading}
                 >
-                  <SelectTrigger id="organization">
+                  <SelectTrigger id="organization" data-ui-id="dialog-project-sharing-organization-select">
                     <SelectValue placeholder="Select an organization" />
                   </SelectTrigger>
                   <SelectContent>
@@ -343,7 +345,7 @@ export function ProjectSharingDialog({
                   }
                   disabled={loading}
                 >
-                  <SelectTrigger className="w-[180px]">
+                  <SelectTrigger className="w-[180px]" data-ui-id="dialog-project-sharing-org-permission-select">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -357,6 +359,7 @@ export function ProjectSharingDialog({
                   onClick={handleAddOrganization}
                   disabled={loading}
                   className="flex-1"
+                  data-ui-id="dialog-project-sharing-share-org-btn"
                 >
                   {loading ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -385,6 +388,7 @@ export function ProjectSharingDialog({
               onClick={handleCopyLink}
               disabled={loading}
               variant={linkCopied ? "default" : "outline"}
+              data-ui-id="dialog-project-sharing-copy-link-btn"
             >
               {loading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

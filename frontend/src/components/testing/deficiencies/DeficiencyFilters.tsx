@@ -178,7 +178,7 @@ export function DeficiencyFilters({
   const activeCount = getActiveFilterCount();
 
   return (
-    <Card className={cn("w-full", className)}>
+    <Card className={cn("w-full", className)} data-ui-id="testing-deficiency-filters">
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
@@ -194,7 +194,7 @@ export function DeficiencyFilters({
             <CardDescription>Filter and search deficiencies</CardDescription>
           </div>
           {activeCount > 0 && (
-            <Button variant="outline" size="sm" onClick={clearFilters}>
+            <Button variant="outline" size="sm" onClick={clearFilters} data-ui-id="testing-deficiency-filters-clear-btn">
               <X className="h-4 w-4 mr-2" />
               Clear
             </Button>
@@ -213,6 +213,7 @@ export function DeficiencyFilters({
             placeholder="Search title, description..."
             value={localFilters.search || ""}
             onChange={(e) => handleSearchChange(e.target.value)}
+            data-ui-id="testing-deficiency-filters-search-input"
           />
         </div>
 
@@ -433,6 +434,7 @@ export function DeficiencyFilters({
                 type="date"
                 value={localFilters.date_from || ""}
                 onChange={(e) => handleDateChange("date_from", e.target.value)}
+                data-ui-id="testing-deficiency-filters-date-from-input"
               />
             </div>
             <div className="space-y-2">
@@ -442,6 +444,7 @@ export function DeficiencyFilters({
                 type="date"
                 value={localFilters.date_to || ""}
                 onChange={(e) => handleDateChange("date_to", e.target.value)}
+                data-ui-id="testing-deficiency-filters-date-to-input"
               />
             </div>
           </CollapsibleContent>

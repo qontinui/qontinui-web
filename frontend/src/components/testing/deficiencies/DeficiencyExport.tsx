@@ -95,7 +95,7 @@ export function DeficiencyExport({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg" data-ui-id="testing-deficiency-export-modal">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Download className="h-5 w-5" />
@@ -158,7 +158,7 @@ export function DeficiencyExport({
               <div className="space-y-3">
                 <Label htmlFor="template">PDF Template</Label>
                 <Select value={template} onValueChange={setTemplate}>
-                  <SelectTrigger id="template">
+                  <SelectTrigger id="template" data-ui-id="testing-deficiency-export-template-select">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -308,10 +308,11 @@ export function DeficiencyExport({
             variant="outline"
             onClick={() => onOpenChange(false)}
             disabled={isExporting}
+            data-ui-id="testing-deficiency-export-cancel-btn"
           >
             Cancel
           </Button>
-          <Button onClick={handleExport} disabled={isExporting}>
+          <Button onClick={handleExport} disabled={isExporting} data-ui-id="testing-deficiency-export-submit-btn">
             {isExporting ? (
               "Exporting..."
             ) : (
