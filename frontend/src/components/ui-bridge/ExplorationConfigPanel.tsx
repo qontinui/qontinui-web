@@ -7,6 +7,7 @@
  * collecting render logs for state discovery.
  */
 
+import { useState } from "react";
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,18 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Select,
   SelectContent,
@@ -26,14 +38,18 @@ import {
 import {
   Play,
   Square,
-  RotateCcw,
   Compass,
   ShieldAlert,
   Clock,
   Globe,
   Loader2,
   AlertCircle,
+  Info,
+  ChevronDown,
+  Monitor,
+  Smartphone,
 } from "lucide-react";
+import type { TargetType } from "@/hooks/useUIBridgeExploration";
 import type {
   UIBridgeExplorationConfig,
   ExplorationProgress,
@@ -47,15 +63,18 @@ interface ExplorationConfigPanelProps {
   isRunning: boolean;
   onStart: () => void;
   onStop: () => void;
-  onReset: () => void;
-  /** Available runner connections */
+  /** Available runner connections from database */
   connections: RunnerConnection[];
   /** Whether connections are loading */
   connectionsLoading: boolean;
-  /** Currently selected connection ID */
+  /** Currently selected connection ID (-1 for detected local runner) */
   selectedConnectionId: number | null;
   /** Handler for connection selection change */
   onConnectionChange: (connectionId: number | null) => void;
+  /** Whether local runner is detected via HTTP check */
+  isLocalRunnerAvailable: boolean;
+  /** Whether runner availability is being checked */
+  isCheckingRunnerAvailability: boolean;
 }
 
 export function ExplorationConfigPanel({
@@ -65,12 +84,15 @@ export function ExplorationConfigPanel({
   isRunning,
   onStart,
   onStop,
-  onReset,
   connections,
   connectionsLoading,
   selectedConnectionId,
   onConnectionChange,
+  isLocalRunnerAvailable,
+  isCheckingRunnerAvailability,
 }: ExplorationConfigPanelProps) {
+  const [isRequirementsOpen, setIsRequirementsOpen] = useState(false);
+
   const progressPercent =
     progress.elementsDiscovered > 0
       ? Math.round(
@@ -79,7 +101,41 @@ export function ExplorationConfigPanel({
       : 0;
 
   // Check if we can start exploration
-  const canStart = selectedConnectionId !== null && config.targetUrl && progress.status !== "completed";
+  const canStart = selectedConnectionId !== null && !!config.targetUrl && progress.status !== "completed";
+
+  // Target type descriptions for the requirements section
+  const targetTypeRequirements: Record<TargetType, { title: string; requirements: string[]; icon: React.ReactNode }> = {
+    web: {
+      title: "Web Application",
+      icon: <Globe className="h-4 w-4" />,
+      requirements: [
+        "Target app must be running and accessible",
+        "UI Bridge SDK (@qontinui/ui-bridge) must be installed",
+        "UIBridgeProvider must wrap your app root",
+      ],
+    },
+    desktop: {
+      title: "Desktop (Tauri)",
+      icon: <Monitor className="h-4 w-4" />,
+      requirements: [
+        "Tauri app must be running",
+        "UI Bridge SDK must be installed in the frontend",
+        "App must connect to qontinui-runner via WebSocket",
+      ],
+    },
+    mobile: {
+      title: "Mobile (React Native)",
+      icon: <Smartphone className="h-4 w-4" />,
+      requirements: [
+        "React Native app must be running",
+        "UI Bridge SDK must be installed",
+        "App must connect to qontinui-runner via WebSocket",
+      ],
+    },
+  };
+
+  const currentTargetType = config.targetType || "web";
+  const currentRequirements = targetTypeRequirements[currentTargetType as TargetType];
 
   return (
     <div className="space-y-4">
@@ -110,14 +166,6 @@ export function ExplorationConfigPanel({
             Stop
           </Button>
         )}
-        <Button
-          onClick={onReset}
-          variant="outline"
-          disabled={isRunning}
-        >
-          <RotateCcw className="w-4 h-4 mr-2" />
-          Reset
-        </Button>
 
         {progress.status !== "idle" && (
           <div className="flex items-center gap-2 ml-auto">
@@ -138,6 +186,50 @@ export function ExplorationConfigPanel({
           </div>
         )}
       </div>
+
+      {/* Requirements Info Section */}
+      <Collapsible open={isRequirementsOpen} onOpenChange={setIsRequirementsOpen}>
+        <CollapsibleTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-between text-text-muted hover:text-text-secondary"
+          >
+            <span className="flex items-center gap-2">
+              <Info className="h-4 w-4" />
+              How UI Bridge Exploration Works
+            </span>
+            <ChevronDown
+              className={`h-4 w-4 transition-transform ${isRequirementsOpen ? "rotate-180" : ""}`}
+            />
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="mt-2">
+          <Alert variant="info" className="border-blue-500/30 bg-blue-500/5">
+            <Info className="h-4 w-4" />
+            <AlertTitle>UI Bridge SDK Required</AlertTitle>
+            <AlertDescription className="text-xs space-y-2">
+              <p>
+                UI Bridge exploration connects to applications that have the{" "}
+                <strong>UI Bridge SDK</strong> installed. This is different from
+                browser automation (like Playwright) which can work with any website.
+              </p>
+              <div className="mt-3 space-y-2">
+                <p className="font-medium">Requirements for {currentRequirements.title}:</p>
+                <ul className="list-disc list-inside space-y-1 text-text-muted">
+                  {currentRequirements.requirements.map((req, idx) => (
+                    <li key={idx}>{req}</li>
+                  ))}
+                </ul>
+              </div>
+              <p className="mt-3 text-text-muted">
+                For browser automation without SDK requirements, use{" "}
+                <span className="text-brand-primary">Playwright extraction</span> instead.
+              </p>
+            </AlertDescription>
+          </Alert>
+        </CollapsibleContent>
+      </Collapsible>
 
       {/* Progress Section */}
       {progress.status !== "idle" && (
@@ -205,25 +297,21 @@ export function ExplorationConfigPanel({
         <div className="flex items-center gap-2 mb-4">
           <Compass className="w-4 h-4 text-brand-primary" />
           <Label className="text-brand-primary font-mono text-sm uppercase tracking-wider">
-            Connected Runner
+            Runner
           </Label>
         </div>
 
         <div className="space-y-4">
-          {connectionsLoading ? (
+          {connectionsLoading || isCheckingRunnerAvailability ? (
             <div className="flex items-center gap-2 text-text-muted">
               <Loader2 className="w-4 h-4 animate-spin" />
-              <span className="text-sm">Loading runners...</span>
+              <span className="text-sm">Detecting runners...</span>
             </div>
-          ) : connections.length === 0 ? (
-            <Alert className="bg-yellow-500/10 border-yellow-500/30">
-              <AlertCircle className="h-4 w-4 text-yellow-500" />
-              <AlertDescription className="text-yellow-400">
-                No runners connected.{" "}
-                <Link href="/connect-runner" className="underline hover:text-yellow-300">
-                  Connect a runner
-                </Link>{" "}
-                to start exploring.
+          ) : !isLocalRunnerAvailable && connections.length === 0 ? (
+            <Alert variant="destructive" className="border-red-500/30 bg-red-500/10">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription className="text-xs">
+                No runners detected. Make sure the runner is running at localhost:9876.
               </AlertDescription>
             </Alert>
           ) : (
@@ -233,9 +321,20 @@ export function ExplorationConfigPanel({
               disabled={isRunning}
             >
               <SelectTrigger className="bg-surface-canvas border-brand-primary/20">
-                <SelectValue placeholder="Select a connected runner" />
+                <SelectValue placeholder="Select a runner" />
               </SelectTrigger>
               <SelectContent>
+                {/* Show detected local runner first when available */}
+                {isLocalRunnerAvailable && (
+                  <SelectItem value="-1">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                      <span>Local Runner</span>
+                      <span className="text-text-muted text-xs">(detected)</span>
+                    </div>
+                  </SelectItem>
+                )}
+                {/* Show connected runners from database */}
                 {connections.map((conn) => (
                   <SelectItem key={conn.id} value={conn.id.toString()}>
                     <div className="flex items-center gap-2">
@@ -250,31 +349,129 @@ export function ExplorationConfigPanel({
               </SelectContent>
             </Select>
           )}
+          {isLocalRunnerAvailable && connections.length === 0 && (
+            <p className="text-[10px] text-text-muted">
+              Local runner detected at localhost:9876.
+            </p>
+          )}
         </div>
       </Card>
 
-      {/* Target Application URL */}
+      {/* Target Application */}
       <Card className="p-4 bg-surface-raised/60 border-brand-primary/30">
         <div className="flex items-center gap-2 mb-4">
-          <Globe className="w-4 h-4 text-brand-primary" />
+          {currentRequirements.icon}
           <Label className="text-brand-primary font-mono text-sm uppercase tracking-wider">
             Target Application
           </Label>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="h-3.5 w-3.5 text-text-muted cursor-help" />
+              </TooltipTrigger>
+              <TooltipContent side="right" className="max-w-xs">
+                <p className="text-xs">
+                  The target app must have the UI Bridge SDK installed.
+                  Select the target type that matches your application.
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
 
-        <div className="space-y-2">
-          <Label className="text-text-muted text-xs">URL to Explore</Label>
-          <Input
-            type="url"
-            placeholder="https://example.com"
-            value={config.targetUrl}
-            onChange={(e) => onConfigChange({ targetUrl: e.target.value })}
-            disabled={isRunning}
-            className="bg-surface-canvas border-brand-primary/20 font-mono"
-          />
-          <p className="text-[10px] text-text-muted">
-            The URL of the web application to explore and collect render logs from.
-          </p>
+        <div className="space-y-4">
+          {/* Target Type Selector */}
+          <div className="space-y-2">
+            <Label className="text-text-muted text-xs">Target Type</Label>
+            <Select
+              value={config.targetType}
+              onValueChange={(value: TargetType) => onConfigChange({ targetType: value })}
+              disabled={isRunning}
+            >
+              <SelectTrigger className="bg-surface-canvas border-brand-primary/20">
+                <SelectValue placeholder="Select target type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="web">
+                  <div className="flex items-center gap-2">
+                    <Globe className="h-4 w-4" />
+                    <span>Web Application</span>
+                  </div>
+                </SelectItem>
+                <SelectItem value="desktop">
+                  <div className="flex items-center gap-2">
+                    <Monitor className="h-4 w-4" />
+                    <span>Desktop (Tauri)</span>
+                  </div>
+                </SelectItem>
+                <SelectItem value="mobile">
+                  <div className="flex items-center gap-2">
+                    <Smartphone className="h-4 w-4" />
+                    <span>Mobile (React Native)</span>
+                  </div>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* URL / Connection Input */}
+          <div className="space-y-2">
+            <Label className="text-text-muted text-xs">
+              {config.targetType === "web" ? "Application URL" : "Connection URL"}
+            </Label>
+            <Input
+              type="url"
+              placeholder={
+                config.targetType === "web"
+                  ? "https://localhost:3000"
+                  : config.targetType === "desktop"
+                    ? "ws://localhost:9877"
+                    : "ws://localhost:9877"
+              }
+              value={config.targetUrl}
+              onChange={(e) => onConfigChange({ targetUrl: e.target.value })}
+              disabled={isRunning}
+              className="bg-surface-canvas border-brand-primary/20 font-mono"
+            />
+            <p className="text-[10px] text-text-muted">
+              {config.targetType === "web" ? (
+                <>
+                  The URL where your web app is running. The app must have{" "}
+                  <span className="text-brand-primary">@qontinui/ui-bridge</span> installed.
+                </>
+              ) : config.targetType === "desktop" ? (
+                <>
+                  Your Tauri app must connect to the runner via WebSocket.
+                  Enter the WebSocket URL or leave blank to use the default.
+                </>
+              ) : (
+                <>
+                  Your React Native app must connect to the runner via WebSocket.
+                  Enter the WebSocket URL or leave blank to use the default.
+                </>
+              )}
+            </p>
+          </div>
+
+          {/* Target-specific guidance */}
+          {config.targetType !== "web" && (
+            <Alert className="border-yellow-500/30 bg-yellow-500/5">
+              <AlertCircle className="h-4 w-4 text-yellow-500" />
+              <AlertDescription className="text-xs text-yellow-600">
+                {config.targetType === "desktop" ? (
+                  <>
+                    Your Tauri app must be running and connected to the qontinui-runner.
+                    The runner acts as a WebSocket server that your app connects to.
+                  </>
+                ) : (
+                  <>
+                    Your React Native app must be running on a device or emulator
+                    and connected to the qontinui-runner via WebSocket.
+                  </>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
         </div>
       </Card>
 

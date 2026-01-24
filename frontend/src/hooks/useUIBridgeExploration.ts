@@ -149,6 +149,147 @@ export interface ExplorationResults {
   progress: ExplorationProgress;
 }
 
+/**
+ * Raw Playwright job status (for compatibility with PlaywrightResultsView)
+ */
+export interface PlaywrightJobStatus {
+  job_id: string;
+  status: "idle" | "pending" | "running" | "completed" | "failed";
+  url: string;
+  progress_message?: string;
+  progress_percent?: number;
+  error?: string;
+}
+
+/**
+ * Raw Playwright results (for compatibility with PlaywrightResultsView)
+ */
+export interface PlaywrightRawResults {
+  clickables: Array<{
+    element_id: string;
+    selector: string;
+    tag_name: string;
+    text?: string | null;
+    aria_label?: string | null;
+    bounding_box: { x: number; y: number; width: number; height: number };
+    risk_level?: string;
+    risk_reason?: string;
+    was_clicked: boolean;
+    verified?: boolean;
+    verification_confidence?: number;
+    screenshot?: string;
+    error?: string | null;
+  }>;
+  skipped_dangerous: Array<{
+    selector: string;
+    text?: string;
+    risk: string;
+    reason: string;
+    url: string;
+  }>;
+  metrics: {
+    total_found: number;
+    clicked: number;
+    skipped_dangerous: number;
+    pages_visited: number;
+    errors: number;
+    verified?: number;
+    unverified?: number;
+  };
+  pages_visited: string[];
+  errors: string[];
+}
+
+/**
+ * UI Bridge job status
+ */
+export interface UIBridgeJobStatus {
+  job_id: string;
+  status: "idle" | "pending" | "running" | "completed" | "failed";
+  connection_url: string;
+  target_type: string;
+  progress_message?: string;
+  progress_percent?: number;
+  elements_discovered?: number;
+  elements_explored?: number;
+  current_element?: string;
+  error?: string;
+}
+
+/**
+ * Discovered state from co-occurrence analysis
+ */
+export interface UIBridgeDiscoveredState {
+  id: string;
+  name: string;
+  state_image_ids: string[];
+  screenshot_ids: string[];
+  confidence: number;
+}
+
+/**
+ * Discovered element from UI Bridge exploration
+ */
+export interface UIBridgeDiscoveredElement {
+  id: string;
+  name: string;
+  type: string;
+  render_ids: string[];
+  tag_name?: string;
+  text_content?: string;
+  component_name?: string;
+}
+
+/**
+ * State discovery results from co-occurrence analysis
+ */
+export interface UIBridgeStateDiscovery {
+  states: UIBridgeDiscoveredState[];
+  elements: UIBridgeDiscoveredElement[];
+  element_to_renders: Record<string, string[]>;
+  render_count: number;
+  unique_element_count: number;
+}
+
+/**
+ * Render log from UI Bridge exploration
+ */
+export interface UIBridgeRenderLog {
+  id: string;
+  timestamp: string;
+  url: string;
+  elements_count: number;
+}
+
+/**
+ * Exploration step from UI Bridge
+ */
+export interface UIBridgeExplorationStep {
+  step_id: string;
+  timestamp: string;
+  element_id: string;
+  action: string;
+  success: boolean;
+  state_changed?: boolean;
+  depth: number;
+}
+
+/**
+ * Raw UI Bridge exploration results
+ */
+export interface UIBridgeRawResults {
+  exploration_id: string;
+  elements_discovered: number;
+  elements_explored: number;
+  steps: UIBridgeExplorationStep[];
+  render_logs: UIBridgeRenderLog[];
+  render_log_count: number;
+  state_discovery?: UIBridgeStateDiscovery;
+  errors: string[];
+  start_time?: string;
+  end_time?: string;
+}
+
 
 /**
  * Hook for UI Bridge exploration
@@ -173,6 +314,23 @@ export function useUIBridgeExploration() {
     visitedUrls: [],
     progress: progress,
   });
+
+  // Raw Playwright results for compatibility with PlaywrightResultsView
+  const [playwrightJob, setPlaywrightJob] = useState<PlaywrightJobStatus>({
+    job_id: "",
+    status: "idle",
+    url: "",
+  });
+  const [playwrightResults, setPlaywrightResults] = useState<PlaywrightRawResults | null>(null);
+
+  // UI Bridge exploration results
+  const [uiBridgeJob, setUIBridgeJob] = useState<UIBridgeJobStatus>({
+    job_id: "",
+    status: "idle",
+    connection_url: "",
+    target_type: "web",
+  });
+  const [uiBridgeResults, setUIBridgeResults] = useState<UIBridgeRawResults | null>(null);
 
   const abortRef = useRef(false);
   const visitedStatesRef = useRef(new Set<string>());
@@ -200,7 +358,31 @@ export function useUIBridgeExploration() {
       throw new Error("Runner URL is required");
     }
 
+    // Reset state before starting new exploration
     abortRef.current = false;
+    visitedStatesRef.current.clear();
+    setResults({
+      elements: [],
+      renderLogs: [],
+      visitedUrls: [],
+      progress: {
+        status: "idle",
+        currentDepth: 0,
+        elementsDiscovered: 0,
+        elementsClicked: 0,
+        elementsSkipped: 0,
+        pagesVisited: 0,
+        renderLogsCollected: 0,
+        currentUrl: config.targetUrl,
+      },
+    });
+    // Reset raw Playwright results
+    setPlaywrightJob({
+      job_id: "",
+      status: "pending",
+      url: config.targetUrl,
+    });
+    setPlaywrightResults(null);
 
     const initialProgress: ExplorationProgress = {
       status: "running",
@@ -219,7 +401,7 @@ export function useUIBridgeExploration() {
     try {
       // Start Playwright collection via runner API
       const startResponse = await fetch(
-        `${runnerUrl}/api/playwright/collection/start`,
+        `${runnerUrl}/playwright-collection/start`,
         {
           method: "POST",
           headers: {
@@ -252,18 +434,26 @@ export function useUIBridgeExploration() {
 
       const jobId = startData.data?.job_id;
 
+      // Update Playwright job with the new job ID
+      setPlaywrightJob({
+        job_id: jobId || "",
+        status: "running",
+        url: config.targetUrl,
+      });
+
       // Poll for status
       const pollStatus = async (): Promise<ExplorationResults | null> => {
         if (abortRef.current) {
           // Cancel the job
-          await fetch(`${runnerUrl}/api/playwright/collection/stop`, {
+          await fetch(`${runnerUrl}/playwright-collection/stop`, {
             method: "POST",
           }).catch(() => {});
+          setPlaywrightJob(prev => ({ ...prev, status: "failed", error: "Cancelled" }));
           return null;
         }
 
         const statusResponse = await fetch(
-          `${runnerUrl}/api/playwright/collection/status${jobId ? `?job_id=${jobId}` : ""}`
+          `${runnerUrl}/playwright-collection/status${jobId ? `?job_id=${jobId}` : ""}`
         );
 
         if (!statusResponse.ok) {
@@ -284,10 +474,19 @@ export function useUIBridgeExploration() {
           currentElement: status.progress_message,
         }));
 
+        // Update Playwright job status
+        setPlaywrightJob(prev => ({
+          ...prev,
+          status: status.status,
+          progress_message: status.progress_message,
+          progress_percent: status.progress_percent,
+          error: status.error,
+        }));
+
         if (status.status === "completed" || status.status === "failed") {
           // Get final results
           const resultsResponse = await fetch(
-            `${runnerUrl}/api/playwright/collection/results${jobId ? `?job_id=${jobId}` : ""}`
+            `${runnerUrl}/playwright-collection/results${jobId ? `?job_id=${jobId}` : ""}`
           );
 
           if (!resultsResponse.ok) {
@@ -300,6 +499,22 @@ export function useUIBridgeExploration() {
           if (!results) {
             throw new Error("Invalid results response");
           }
+
+          // Store raw Playwright results for PlaywrightResultsView compatibility
+          const rawResults: PlaywrightRawResults = {
+            clickables: results.clickables || [],
+            skipped_dangerous: results.skipped_dangerous || [],
+            metrics: results.metrics || {
+              total_found: 0,
+              clicked: 0,
+              skipped_dangerous: 0,
+              pages_visited: 0,
+              errors: 0,
+            },
+            pages_visited: results.pages_visited || [config.targetUrl],
+            errors: results.errors || [],
+          };
+          setPlaywrightResults(rawResults);
 
           // Convert Playwright clickables to explored elements
           const clickables = results.clickables || [];
@@ -475,7 +690,7 @@ export function useUIBridgeExploration() {
     if (runnerUrl) {
       try {
         await Promise.all([
-          fetch(`${runnerUrl}/api/playwright/collection/stop`, { method: "POST" }).catch(() => {}),
+          fetch(`${runnerUrl}/playwright-collection/stop`, { method: "POST" }).catch(() => {}),
           fetch(`${runnerUrl}/ui-bridge/explore/stop`, { method: "POST" }).catch(() => {}),
         ]);
       } catch {
@@ -536,7 +751,32 @@ export function useUIBridgeExploration() {
       throw new Error("Runner URL is required");
     }
 
+    // Reset state before starting new exploration
     abortRef.current = false;
+    visitedStatesRef.current.clear();
+    setResults({
+      elements: [],
+      renderLogs: [],
+      visitedUrls: [],
+      progress: {
+        status: "idle",
+        currentDepth: 0,
+        elementsDiscovered: 0,
+        elementsClicked: 0,
+        elementsSkipped: 0,
+        pagesVisited: 0,
+        renderLogsCollected: 0,
+        currentUrl: config.targetUrl,
+      },
+    });
+    // Reset UI Bridge state
+    setUIBridgeJob({
+      job_id: "",
+      status: "pending",
+      connection_url: config.targetUrl,
+      target_type: config.targetType,
+    });
+    setUIBridgeResults(null);
 
     const initialProgress: ExplorationProgress = {
       status: "running",
@@ -554,31 +794,95 @@ export function useUIBridgeExploration() {
 
     try {
       // Start the exploration job via runner's UI Bridge explore endpoint
-      const startResponse = await fetch(
-        `${runnerUrl}/ui-bridge/explore`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            target_type: config.targetType,
-            connection_url: config.targetUrl,
-            max_depth: config.maxDepth,
-            max_elements_per_page: config.maxElementsPerPage,
-            max_total_elements: config.maxTotalElements,
-            action_delay_ms: config.actionDelayMs,
-            blocked_keywords: config.blockedKeywords,
-            safe_keywords: config.safeKeywords,
-            blocked_selectors: config.blockedSelectors,
-            capture_screenshots: false,
-            run_state_discovery: true,
-          }),
-        }
-      );
+      let startResponse: Response;
+      try {
+        startResponse = await fetch(
+          `${runnerUrl}/ui-bridge/explore`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              target_type: config.targetType,
+              connection_url: config.targetUrl,
+              max_depth: config.maxDepth,
+              max_elements_per_page: config.maxElementsPerPage,
+              max_total_elements: config.maxTotalElements,
+              action_delay_ms: config.actionDelayMs,
+              blocked_keywords: config.blockedKeywords,
+              safe_keywords: config.safeKeywords,
+              blocked_selectors: config.blockedSelectors,
+              capture_screenshots: false,
+              run_state_discovery: true,
+            }),
+          }
+        );
+      } catch (fetchError) {
+        // Network error - runner not available
+        throw new Error(
+          `Could not connect to the qontinui-runner at ${runnerUrl}. ` +
+          `Make sure the runner application is running. ` +
+          `You can start it with: cd qontinui-runner && npm run tauri dev`
+        );
+      }
 
       if (!startResponse.ok) {
         const error = await startResponse.json().catch(() => ({}));
+
+        // Provide specific error messages based on the error type
+        const errorDetail = error.detail || error.error || "";
+
+        if (startResponse.status === 404) {
+          throw new Error(
+            `UI Bridge exploration endpoint not found at ${runnerUrl}. ` +
+            `Make sure you're using a compatible version of qontinui-runner.`
+          );
+        }
+
+        if (errorDetail.toLowerCase().includes("connection refused") ||
+            errorDetail.toLowerCase().includes("could not connect")) {
+          if (config.targetType === "web") {
+            throw new Error(
+              `Could not connect to ${config.targetUrl}. ` +
+              `Make sure the web application is running and accessible.`
+            );
+          } else {
+            throw new Error(
+              `Could not connect to the target application. ` +
+              `Make sure your ${config.targetType} app is running and connected to the runner.`
+            );
+          }
+        }
+
+        if (errorDetail.toLowerCase().includes("ui bridge") ||
+            errorDetail.toLowerCase().includes("sdk not found") ||
+            errorDetail.toLowerCase().includes("404")) {
+          throw new Error(
+            `UI Bridge SDK not found at ${config.targetUrl}. ` +
+            `The target application must have the UI Bridge SDK installed and configured. ` +
+            `For web apps, install @qontinui/ui-bridge and add the provider to your app.`
+          );
+        }
+
+        if (errorDetail.toLowerCase().includes("no app connected") ||
+            errorDetail.toLowerCase().includes("websocket") ||
+            errorDetail.toLowerCase().includes("no desktop") ||
+            errorDetail.toLowerCase().includes("no mobile")) {
+          throw new Error(
+            `No ${config.targetType} application connected to the runner. ` +
+            `Start your ${config.targetType === "desktop" ? "Tauri" : "React Native"} app ` +
+            `and ensure it connects to the runner via WebSocket.`
+          );
+        }
+
+        if (errorDetail.toLowerCase().includes("timeout")) {
+          throw new Error(
+            `Connection to ${config.targetUrl} timed out. ` +
+            `The target application may be unresponsive or the network connection is slow.`
+          );
+        }
+
         throw new Error(error.detail || error.error || "Failed to start UI Bridge exploration");
       }
 
@@ -591,6 +895,13 @@ export function useUIBridgeExploration() {
 
       const jobId = responseData.job_id;
 
+      // Update UI Bridge job with ID
+      setUIBridgeJob(prev => ({
+        ...prev,
+        job_id: jobId || "",
+        status: "running",
+      }));
+
       // Poll for status
       const pollStatus = async (): Promise<ExplorationResults | null> => {
         if (abortRef.current) {
@@ -598,6 +909,7 @@ export function useUIBridgeExploration() {
           await fetch(`${runnerUrl}/ui-bridge/explore/stop`, {
             method: "POST",
           }).catch(() => {});
+          setUIBridgeJob(prev => ({ ...prev, status: "failed", error: "Cancelled" }));
           return null;
         }
 
@@ -621,6 +933,18 @@ export function useUIBridgeExploration() {
           currentUrl: status.connection_url || config.targetUrl,
         }));
 
+        // Update UI Bridge job status
+        setUIBridgeJob(prev => ({
+          ...prev,
+          status: status.status,
+          progress_message: status.progress_message,
+          progress_percent: status.progress_percent,
+          elements_discovered: status.elements_discovered,
+          elements_explored: status.elements_explored,
+          current_element: status.current_element,
+          error: status.error,
+        }));
+
         if (status.status === "completed" || status.status === "failed") {
           // Get final results
           const resultsResponse = await fetch(
@@ -637,6 +961,21 @@ export function useUIBridgeExploration() {
           if (!results && status.status === "completed") {
             throw new Error("Invalid results response");
           }
+
+          // Store raw UI Bridge results
+          const rawUIBridgeResults: UIBridgeRawResults = {
+            exploration_id: results?.exploration_id || jobId || "",
+            elements_discovered: results?.elements_discovered || 0,
+            elements_explored: results?.elements_explored || 0,
+            steps: results?.steps || [],
+            render_logs: results?.render_logs || [],
+            render_log_count: results?.render_log_count || results?.render_logs?.length || 0,
+            state_discovery: results?.state_discovery,
+            errors: results?.errors || [],
+            start_time: results?.start_time,
+            end_time: results?.end_time,
+          };
+          setUIBridgeResults(rawUIBridgeResults);
 
           // Convert backend response to our result format
           const steps = results?.steps || [];
@@ -704,13 +1043,31 @@ export function useUIBridgeExploration() {
 
       return await pollStatus();
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "UI Bridge exploration failed";
+      let errorMessage = error instanceof Error ? error.message : "UI Bridge exploration failed";
+
+      // If it's a generic error, provide more context based on target type
+      if (errorMessage === "UI Bridge exploration failed" || errorMessage === "Failed to fetch") {
+        if (config.targetType === "web") {
+          errorMessage = `Could not connect to ${config.targetUrl}. Make sure the web application is running.`;
+        } else if (config.targetType === "desktop") {
+          errorMessage = `Could not connect to desktop application. Make sure the Tauri app is running and connected to the runner.`;
+        } else if (config.targetType === "mobile") {
+          errorMessage = `Could not connect to mobile application. Make sure the React Native app is running and connected to the runner.`;
+        }
+      }
 
       setProgress((prev) => ({
         ...prev,
         status: "failed",
         error: errorMessage,
         endTime: Date.now(),
+      }));
+
+      // Update UI Bridge job status with error
+      setUIBridgeJob(prev => ({
+        ...prev,
+        status: "failed",
+        error: errorMessage,
       }));
 
       throw error;
@@ -742,5 +1099,11 @@ export function useUIBridgeExploration() {
     resetExploration,
     getRenderLogsForDiscovery,
     isRunning: progress.status === "running",
+    // Raw Playwright results for PlaywrightResultsView compatibility
+    playwrightJob,
+    playwrightResults,
+    // Raw UI Bridge results for UIBridgeResultsView
+    uiBridgeJob,
+    uiBridgeResults,
   };
 }

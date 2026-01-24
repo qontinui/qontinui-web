@@ -19,6 +19,7 @@ import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
 import type { ExtractionMethod } from "@/types/extraction-unified";
 import { RequireProject } from "@/components/require-project";
 import { runnerClient } from "@/lib/runner-client";
+import { useRunnerAvailability } from "@/hooks/useRunnerMonitors";
 import { ExtractionMethodSelector } from "@/components/extraction/ExtractionMethodSelector";
 import { UITarsConfigPanel } from "@/components/extraction/UITarsConfigPanel";
 import {
@@ -266,9 +267,33 @@ function UnifiedExtractionContent() {
   const { connections, isLoading: connectionsLoading } = useRealtimeConnections();
   const [selectedConnectionId, setSelectedConnectionId] = useState<number | null>(null);
 
+  // Check if local runner is available via direct HTTP call
+  const { data: isLocalRunnerAvailable = false, isLoading: isCheckingRunnerAvailability } = useRunnerAvailability({
+    refetchInterval: 5000, // Check every 5 seconds
+  });
+
+  // Auto-select local runner when detected and no selection made
+  useEffect(() => {
+    if (selectedConnectionId === null && isLocalRunnerAvailable && !isCheckingRunnerAvailability) {
+      // Auto-select local runner (id = -1)
+      setSelectedConnectionId(-1);
+    }
+  }, [isLocalRunnerAvailable, isCheckingRunnerAvailability, selectedConnectionId]);
+
+  // Handler for connection change
+  const onConnectionChange = useCallback((connectionId: number | null) => {
+    setSelectedConnectionId(connectionId);
+  }, []);
+
   // Helper to construct runner URL from connection
   const getRunnerUrl = useCallback((connectionId: number | null): string | null => {
-    if (!connectionId) return null;
+    if (connectionId === null) return null;
+
+    // Special case: -1 means detected local runner (localhost:9876)
+    if (connectionId === -1) {
+      return 'http://localhost:9876';
+    }
+
     const conn = connections.find(c => c.id === connectionId);
     if (!conn?.ip_address) return null;
 
@@ -1547,8 +1572,10 @@ function UnifiedExtractionContent() {
                           connections={connections}
                           connectionsLoading={connectionsLoading}
                           selectedConnectionId={selectedConnectionId}
-                          onConnectionChange={setSelectedConnectionId}
+                          onConnectionChange={onConnectionChange}
                           getRunnerUrl={getRunnerUrl}
+                          isLocalRunnerAvailable={isLocalRunnerAvailable}
+                          isCheckingRunnerAvailability={isCheckingRunnerAvailability}
                         />
                       )}
 
@@ -1954,6 +1981,8 @@ interface UIBridgeConfigSectionProps {
   selectedConnectionId: number | null;
   onConnectionChange: (connectionId: number | null) => void;
   getRunnerUrl: (connectionId: number | null) => string | null;
+  isLocalRunnerAvailable: boolean;
+  isCheckingRunnerAvailability: boolean;
 }
 
 function UIBridgeConfigSection({
@@ -1994,6 +2023,8 @@ function UIBridgeConfigSection({
   selectedConnectionId,
   onConnectionChange,
   getRunnerUrl,
+  isLocalRunnerAvailable,
+  isCheckingRunnerAvailability,
 }: UIBridgeConfigSectionProps) {
   return (
     <Card>
@@ -2031,13 +2062,25 @@ function UIBridgeConfigSection({
               connectionsLoading={connectionsLoading}
               selectedConnectionId={selectedConnectionId}
               onConnectionChange={onConnectionChange}
+              isLocalRunnerAvailable={isLocalRunnerAvailable}
+              isCheckingRunnerAvailability={isCheckingRunnerAvailability}
               onStart={async () => {
                 const runnerUrl = getRunnerUrl(selectedConnectionId);
                 if (!runnerUrl) {
                   toast.error("Please select a connected runner");
                   return;
                 }
-                const results = await exploration.startExploration(runnerUrl);
+                // Clear old exploration renders before starting new exploration
+                setExplorationRenders(null);
+
+                // Use UI Bridge exploration for ui-bridge method, Playwright for web
+                let results;
+                if (config.method === "ui-bridge") {
+                  results = await exploration.startUIBridgeExploration(runnerUrl);
+                } else {
+                  results = await exploration.startExploration(runnerUrl);
+                }
+
                 if (results && results.renderLogs.length > 0) {
                   const renders = results.renderLogs.map((log) => ({
                     id: log.id,
@@ -2061,10 +2104,6 @@ function UIBridgeConfigSection({
               onStop={() => {
                 const runnerUrl = getRunnerUrl(selectedConnectionId);
                 exploration.stopExploration(runnerUrl || undefined);
-              }}
-              onReset={() => {
-                exploration.resetExploration();
-                setExplorationRenders(null);
               }}
             />
 
