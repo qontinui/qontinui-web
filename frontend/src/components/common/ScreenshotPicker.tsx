@@ -245,8 +245,9 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
       }
 
       // Capture from all selected monitors using runner directly
+      // Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
       const apiUrl =
-        process.env.NEXT_PUBLIC_RUNNER_URL || "http://localhost:9876";
+        process.env.NEXT_PUBLIC_RUNNER_URL || "http://127.0.0.1:9876";
 
       console.log(
         "[ScreenshotPicker] Starting capture for monitors:",

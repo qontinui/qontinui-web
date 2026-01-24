@@ -161,7 +161,8 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
     }
 
     // Default runner URL - in real implementation this would come from the connection
-    const runnerUrl = "http://localhost:9876";
+    // Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
+    const runnerUrl = "http://127.0.0.1:9876";
 
     setIsTransferring(true);
     setExportProgress(10);

@@ -6,8 +6,9 @@
  * Uses the runner (port 9876) which calls the qontinui library via IPC.
  */
 
+// Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
 const RUNNER_URL =
-  process.env.NEXT_PUBLIC_RUNNER_URL || "http://localhost:9876";
+  process.env.NEXT_PUBLIC_RUNNER_URL || "http://127.0.0.1:9876";
 
 export interface BoundingBox {
   x: number;

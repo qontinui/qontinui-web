@@ -718,7 +718,7 @@ export function AutomationBuilder() {
           style={{ height: accessibilityPanelHeight }}
         >
           <AccessibilityExplorer
-            apiUrl="http://localhost:9876"
+            apiUrl="http://127.0.0.1:9876"
             showSettings={true}
             className="h-full"
           />

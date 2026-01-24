@@ -13,7 +13,8 @@
 import type { QontinuiConfig } from "@/lib/export-schema";
 
 // Default runner URL - can be overridden
-const DEFAULT_RUNNER_URL = "http://localhost:9876";
+// Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
+const DEFAULT_RUNNER_URL = "http://127.0.0.1:9876";
 
 /**
  * RAG availability status from the runner

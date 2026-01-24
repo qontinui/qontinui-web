@@ -286,9 +286,10 @@ function UnifiedExtractionContent() {
     if (!conn?.ip_address) return null;
 
     // Handle localhost variations
+    // Use 127.0.0.1 to force IPv4 (runner only listens on IPv4)
     const ip = conn.ip_address;
     if (ip === '127.0.0.1' || ip === '::1' || ip.startsWith('localhost')) {
-      return 'http://localhost:9876';
+      return 'http://127.0.0.1:9876';
     }
     return `http://${ip}:9876`;
   }, [connections]);

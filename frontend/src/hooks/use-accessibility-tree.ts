@@ -91,7 +91,8 @@ interface CaptureOptions {
 export function useAccessibilityTree(
   options: UseAccessibilityTreeOptions = {}
 ): UseAccessibilityTreeResult {
-  const { apiUrl = "http://localhost:9876", cdpHost = "localhost", cdpPort = 9222 } = options;
+  // Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
+  const { apiUrl = "http://127.0.0.1:9876", cdpHost = "localhost", cdpPort = 9222 } = options;
 
   const [snapshot, setSnapshot] = useState<AccessibilitySnapshot | null>(null);
   const [selectedNode, setSelectedNode] = useState<AccessibilityNode | null>(null);

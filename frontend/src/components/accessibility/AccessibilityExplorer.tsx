@@ -83,7 +83,8 @@ export function AccessibilityExplorer({
   onSelectorConfigured,
   initialCdpHost = "localhost",
   initialCdpPort = 9222,
-  apiUrl = "http://localhost:9876",
+  // Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
+  apiUrl = "http://127.0.0.1:9876",
   showSettings = true,
   className,
 }: AccessibilityExplorerProps) {

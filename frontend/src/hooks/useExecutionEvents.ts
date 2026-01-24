@@ -13,8 +13,9 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 
 // Default runner URL - can be overridden via environment variable
+// Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
 const RUNNER_BASE_URL =
-  process.env.NEXT_PUBLIC_RUNNER_URL || "http://localhost:9876";
+  process.env.NEXT_PUBLIC_RUNNER_URL || "http://127.0.0.1:9876";
 
 /**
  * Image recognition result from the runner

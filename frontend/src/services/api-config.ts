@@ -5,8 +5,9 @@ export class ApiConfig {
 
   // Runner URL for local automation (pattern matching, state discovery, extraction)
   // The runner provides a unified API that calls the qontinui library via IPC
+  // Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
   static readonly RUNNER_URL =
-    process.env.NEXT_PUBLIC_RUNNER_URL || "http://localhost:9876";
+    process.env.NEXT_PUBLIC_RUNNER_URL || "http://127.0.0.1:9876";
 
   // Auth endpoints (fastapi-users JWT routes)
   static readonly AUTH_LOGIN = `${ApiConfig.API_BASE_URL}/api/v1/auth/jwt/login`;

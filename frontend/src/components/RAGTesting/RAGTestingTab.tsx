@@ -61,8 +61,9 @@ import type {
 import type { RAGElement } from "@/types/rag-builder";
 
 // Runner API base URL (for SAM3 segmentation and RAG matching)
+// Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
 const RUNNER_URL =
-  process.env.NEXT_PUBLIC_RUNNER_URL || "http://localhost:9876";
+  process.env.NEXT_PUBLIC_RUNNER_URL || "http://127.0.0.1:9876";
 
 // Score color based on confidence
 function getScoreColor(score: number): string {

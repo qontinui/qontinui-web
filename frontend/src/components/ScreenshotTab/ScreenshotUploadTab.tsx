@@ -383,8 +383,9 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
   const handleOpenMonitorMenu = async () => {
     setShowMonitorMenu(true);
     try {
+      // Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
       const apiUrl =
-        process.env.NEXT_PUBLIC_RUNNER_URL || "http://localhost:9876";
+        process.env.NEXT_PUBLIC_RUNNER_URL || "http://127.0.0.1:9876";
       const response = await fetch(`${apiUrl}/api/capture/screenshot/monitors`);
       if (response.ok) {
         const data = await response.json();
@@ -412,8 +413,9 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
 
     setIsCapturing(true);
     try {
+      // Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
       const apiUrl =
-        process.env.NEXT_PUBLIC_RUNNER_URL || "http://localhost:9876";
+        process.env.NEXT_PUBLIC_RUNNER_URL || "http://127.0.0.1:9876";
       const monitorParam =
         monitorIndex !== null ? `&monitor=${monitorIndex}` : "";
       const response = await fetch(

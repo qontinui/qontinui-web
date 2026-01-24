@@ -71,8 +71,9 @@ export class RAGBuilderService {
   constructor(httpClient: HttpClient) {
     this.httpClient = httpClient;
     // Use runner (port 9876) instead of main backend
+    // Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
     this.apiUrl =
-      process.env.NEXT_PUBLIC_RUNNER_URL || "http://localhost:9876";
+      process.env.NEXT_PUBLIC_RUNNER_URL || "http://127.0.0.1:9876";
   }
 
   // ==========================================================================

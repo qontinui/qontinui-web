@@ -397,8 +397,9 @@ export function PatternOptimizationProvider({
       });
 
       // Call runner for pattern optimization
+      // Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
       const response = await fetch(
-        "http://localhost:9876/api/v1/optimize-pattern",
+        "http://127.0.0.1:9876/api/v1/optimize-pattern",
         {
           method: "POST",
           headers: {
@@ -593,8 +594,9 @@ export function PatternOptimizationProvider({
         }));
 
         // Call runner to create StateImage
+        // Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
         const response = await fetch(
-          "http://localhost:9876/api/v1/create-state-image",
+          "http://127.0.0.1:9876/api/v1/create-state-image",
           {
             method: "POST",
             headers: {
