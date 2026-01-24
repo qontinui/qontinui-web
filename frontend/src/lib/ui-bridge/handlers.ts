@@ -16,6 +16,8 @@ import type {
   ComponentActionResponse,
   DiscoveryRequest,
   DiscoveryResponse,
+  FindRequest,
+  FindResponse,
   WorkflowRunRequest,
   WorkflowRunResponse,
   ControlSnapshot,
@@ -122,8 +124,8 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
   },
 
   async executeElementAction(
-    id: string,
-    request: ControlActionRequest
+    _id: string,
+    _request: ControlActionRequest
   ): Promise<APIResponse<ControlActionResponse>> {
     // Action execution happens on client
     // This endpoint receives the result or relays to client
@@ -143,8 +145,8 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
   },
 
   async executeComponentAction(
-    id: string,
-    request: ComponentActionRequest
+    _id: string,
+    _request: ComponentActionRequest
   ): Promise<APIResponse<ComponentActionResponse>> {
     return error(
       "Component actions must be executed on client - use WebSocket or SSE",
@@ -152,8 +154,20 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
     );
   },
 
-  // Discovery endpoints
-  async discover(request?: DiscoveryRequest): Promise<APIResponse<DiscoveryResponse>> {
+  // Find endpoints
+  async find(_request?: FindRequest): Promise<APIResponse<FindResponse>> {
+    // Finding requires DOM access, must happen on client
+    // Elements are discovered via AutoRegisterProvider in the browser
+    return success({
+      elements: [],
+      total: 0,
+      durationMs: 0,
+      timestamp: Date.now(),
+    });
+  },
+
+  // Discovery endpoints (deprecated - use find)
+  async discover(_request?: DiscoveryRequest): Promise<APIResponse<DiscoveryResponse>> {
     // Discovery requires DOM access, must happen on client
     return success({
       elements: [],
@@ -180,8 +194,8 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
   },
 
   async runWorkflow(
-    id: string,
-    request?: WorkflowRunRequest
+    _id: string,
+    _request?: WorkflowRunRequest
   ): Promise<APIResponse<WorkflowRunResponse>> {
     return error("Workflow execution must happen on client", "CLIENT_REQUIRED");
   },
@@ -191,7 +205,7 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
   },
 
   // Debug endpoints
-  async getActionHistory(limit?: number): Promise<APIResponse<unknown[]>> {
+  async getActionHistory(_limit?: number): Promise<APIResponse<unknown[]>> {
     return success([]);
   },
 
@@ -203,7 +217,7 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
     });
   },
 
-  async highlightElement(id: string): Promise<APIResponse<void>> {
+  async highlightElement(_id: string): Promise<APIResponse<void>> {
     return error("Element highlighting must happen on client", "CLIENT_REQUIRED");
   },
 

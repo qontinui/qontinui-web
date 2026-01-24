@@ -50,7 +50,7 @@ export function UIBridgeWrapper({ children }: UIBridgeWrapperProps) {
         debounceMs={100}
         excludeSelectors={["[data-no-register]"]}
       >
-        {children}
+        {children as Parameters<typeof AutoRegisterProvider>[0]["children"]}
       </AutoRegisterProvider>
     </UIBridgeProvider>
   );

@@ -170,7 +170,9 @@ function serializeElement(
   const children: DOMElementSnapshot[] = [];
   const childElements = element.children;
   for (let i = 0; i < Math.min(childElements.length, MAX_CHILDREN); i++) {
-    const childSnapshot = serializeElement(childElements[i], depth + 1);
+    const childElement = childElements[i];
+    if (!childElement) continue;
+    const childSnapshot = serializeElement(childElement, depth + 1);
     if (childSnapshot) {
       children.push(childSnapshot);
     }
@@ -194,8 +196,6 @@ function serializeElement(
 
 // Capture the full DOM snapshot
 function captureSnapshot(): RenderSnapshot {
-  const startTime = performance.now();
-
   // Serialize DOM tree starting from body
   const root = document.body ? serializeElement(document.body) : null;
 
@@ -254,8 +254,6 @@ function captureSnapshot(): RenderSnapshot {
       height: img.naturalHeight,
     });
   });
-
-  const captureDuration = Math.round(performance.now() - startTime);
 
   return {
     root,

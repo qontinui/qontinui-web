@@ -399,7 +399,7 @@ function TransitionVisualizationTab() {
  */
 function StateDiscoveryTab() {
   const { states, addState, projectName, setProjectId } = useAutomation();
-  const { projectId } = useProjectLoader();
+  const { projectId: _projectId } = useProjectLoader();
   const router = useRouter();
 
   // Store access for setStates (replace option)
@@ -415,7 +415,10 @@ function StateDiscoveryTab() {
   // Auto-select first runner when connections load and no selection made
   useEffect(() => {
     if (selectedConnectionId === null && connections.length > 0 && !connectionsLoading) {
-      setSelectedConnectionId(connections[0].id);
+      const firstConnection = connections[0];
+      if (firstConnection) {
+        setSelectedConnectionId(firstConnection.id);
+      }
     }
   }, [connections, connectionsLoading, selectedConnectionId]);
 
@@ -424,14 +427,14 @@ function StateDiscoveryTab() {
 
   // State for discovered states management
   const [selectedElements, setSelectedElements] = useState<Set<string>>(new Set());
-  const [newStateName, setNewStateName] = useState("");
+  const [_newStateName, setNewStateName] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
   // Save options dialog state
   const [showSaveOptionsDialog, setShowSaveOptionsDialog] = useState(false);
   const [pendingStatesToSave, setPendingStatesToSave] = useState<State[]>([]);
 
-  // Helper to construct runner URL from connection
+  // Helper to construct runner URL from connection (used by multiple handlers)
   const getRunnerUrl = useCallback((connectionId: number | null): string | null => {
     if (connectionId === null) return null;
 
@@ -445,6 +448,40 @@ function StateDiscoveryTab() {
     }
     return `http://${ip}:9876`;
   }, [connections]);
+
+  // Fetch browser tabs when extension target type is selected and runner is connected
+  const handleRefreshBrowserTabs = useCallback(() => {
+    const runnerUrl = getRunnerUrl(selectedConnectionId);
+    if (!runnerUrl) {
+      toast.error("Please select a runner connection first");
+      return;
+    }
+    if (exploration.config.targetType !== "extension") {
+      return;
+    }
+    console.log("[States] Fetching browser tabs from:", runnerUrl);
+    exploration.fetchBrowserTabs(runnerUrl);
+  }, [exploration, getRunnerUrl, selectedConnectionId]);
+
+  // Auto-fetch browser tabs when extension mode is selected
+  useEffect(() => {
+    if (exploration.config.targetType === "extension" && selectedConnectionId !== null) {
+      handleRefreshBrowserTabs();
+    }
+  }, [exploration.config.targetType, selectedConnectionId, handleRefreshBrowserTabs]);
+
+  // Handle selecting a browser tab for exploration
+  const handleSelectBrowserTab = useCallback(async (tabId: number | null) => {
+    console.log("[States] handleSelectBrowserTab called with:", tabId);
+    const runnerUrl = getRunnerUrl(selectedConnectionId);
+    console.log("[States] Runner URL:", runnerUrl);
+    if (runnerUrl) {
+      const result = await exploration.selectBrowserTab(runnerUrl, tabId);
+      console.log("[States] selectBrowserTab result:", result);
+    } else {
+      console.warn("[States] No runner URL available");
+    }
+  }, [exploration, getRunnerUrl, selectedConnectionId]);
 
   // Handle starting exploration using UI Bridge
   const handleStartExploration = useCallback(async () => {
@@ -703,6 +740,11 @@ function StateDiscoveryTab() {
             onConnectionChange={setSelectedConnectionId}
             onStart={handleStartExploration}
             onStop={handleStopExploration}
+            browserTabs={exploration.browserTabs}
+            browserTabsLoading={exploration.browserTabsLoading}
+            browserTabsError={exploration.browserTabsError}
+            onRefreshBrowserTabs={handleRefreshBrowserTabs}
+            onSelectBrowserTab={handleSelectBrowserTab}
           />
         </CardContent>
       </Card>

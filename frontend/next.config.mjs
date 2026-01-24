@@ -43,13 +43,29 @@ const nextConfig = {
           { key: 'Access-Control-Allow-Headers', value: 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization' },
         ],
       },
+      {
+        // UI Bridge SDK endpoints - allow external client access
+        source: '/__ui-bridge__/:path*',
+        headers: [
+          { key: 'Access-Control-Allow-Credentials', value: 'true' },
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+          { key: 'Access-Control-Allow-Methods', value: 'GET,OPTIONS,PATCH,DELETE,POST,PUT' },
+          { key: 'Access-Control-Allow-Headers', value: 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization' },
+        ],
+      },
     ]
   },
   async rewrites() {
     return {
       // beforeFiles rewrites are checked before pages/public files
       // allowing them to override page routes
-      beforeFiles: [],
+      beforeFiles: [
+        // UI Bridge SDK endpoint rewrite - allows external clients to access at /__ui-bridge__
+        {
+          source: '/__ui-bridge__/:path*',
+          destination: '/api/ui-bridge/:path*',
+        },
+      ],
       // afterFiles rewrites are checked after pages/public files
       // but before dynamic routes - this is the default behavior
       afterFiles: [

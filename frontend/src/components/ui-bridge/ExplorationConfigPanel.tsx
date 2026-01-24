@@ -8,7 +8,6 @@
  */
 
 import { useState } from "react";
-import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,12 +49,13 @@ import {
   Smartphone,
   Chrome,
 } from "lucide-react";
-import type { TargetType } from "@/hooks/useUIBridgeExploration";
+import type { TargetType, BrowserTab } from "@/hooks/useUIBridgeExploration";
 import type {
   UIBridgeExplorationConfig,
   ExplorationProgress,
 } from "@/hooks/useUIBridgeExploration";
 import type { RunnerConnection } from "@/types/runner";
+import { RefreshCw } from "lucide-react";
 
 interface ExplorationConfigPanelProps {
   config: UIBridgeExplorationConfig;
@@ -72,6 +72,16 @@ interface ExplorationConfigPanelProps {
   selectedConnectionId: number | null;
   /** Handler for connection selection change */
   onConnectionChange: (connectionId: number | null) => void;
+  /** Browser tabs available for extension exploration */
+  browserTabs?: BrowserTab[];
+  /** Whether browser tabs are loading */
+  browserTabsLoading?: boolean;
+  /** Error fetching browser tabs */
+  browserTabsError?: string | null;
+  /** Handler to refresh browser tabs */
+  onRefreshBrowserTabs?: () => void;
+  /** Handler to select a browser tab */
+  onSelectBrowserTab?: (tabId: number | null) => void;
 }
 
 export function ExplorationConfigPanel({
@@ -85,6 +95,11 @@ export function ExplorationConfigPanel({
   connectionsLoading,
   selectedConnectionId,
   onConnectionChange,
+  browserTabs = [],
+  browserTabsLoading = false,
+  browserTabsError = null,
+  onRefreshBrowserTabs,
+  onSelectBrowserTab,
 }: ExplorationConfigPanelProps) {
   const [isRequirementsOpen, setIsRequirementsOpen] = useState(false);
 
@@ -102,14 +117,24 @@ export function ExplorationConfigPanel({
     progress.status !== "completed";
 
   // Target type descriptions for the requirements section
-  const targetTypeRequirements: Record<TargetType, { title: string; requirements: string[]; icon: React.ReactNode }> = {
+  const targetTypeRequirements: Record<TargetType, { title: string; requirements: string[]; icon: React.ReactNode; recommended?: boolean }> = {
+    extension: {
+      title: "Browser Extension (Recommended)",
+      icon: <Chrome className="h-4 w-4" />,
+      recommended: true,
+      requirements: [
+        "Qontinui DevTools extension must be installed in Chrome",
+        "Extension must be connected to the runner (check popup)",
+        "Target page should have elements with data-ui-id attributes",
+      ],
+    },
     web: {
-      title: "Web Application",
+      title: "Web Application (Direct HTTP)",
       icon: <Globe className="h-4 w-4" />,
       requirements: [
-        "Target app must be running and accessible",
-        "UI Bridge SDK (@qontinui/ui-bridge) must be installed",
-        "UIBridgeProvider must wrap your app root",
+        "Target app must expose UI Bridge server endpoints",
+        "Requires custom server-side element synchronization",
+        "Use Browser Extension for most web apps instead",
       ],
     },
     desktop: {
@@ -128,15 +153,6 @@ export function ExplorationConfigPanel({
         "React Native app must be running",
         "UI Bridge SDK must be installed",
         "App must connect to qontinui-runner via WebSocket",
-      ],
-    },
-    extension: {
-      title: "Browser Extension",
-      icon: <Chrome className="h-4 w-4" />,
-      requirements: [
-        "Qontinui DevTools extension must be installed in Chrome",
-        "Extension must be connected to the runner (check popup)",
-        "Target page must have UI Bridge SDK installed",
       ],
     },
   };
@@ -383,10 +399,19 @@ export function ExplorationConfigPanel({
                 <SelectValue placeholder="Select target type" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="extension">
+                  <div className="flex items-center gap-2">
+                    <Chrome className="h-4 w-4" />
+                    <span>Browser Extension</span>
+                    <Badge variant="outline" className="ml-1 text-[10px] py-0 px-1 bg-brand-success/10 text-brand-success border-brand-success/30">
+                      Recommended
+                    </Badge>
+                  </div>
+                </SelectItem>
                 <SelectItem value="web">
                   <div className="flex items-center gap-2">
                     <Globe className="h-4 w-4" />
-                    <span>Web Application</span>
+                    <span>Web (Direct HTTP)</span>
                   </div>
                 </SelectItem>
                 <SelectItem value="desktop">
@@ -399,12 +424,6 @@ export function ExplorationConfigPanel({
                   <div className="flex items-center gap-2">
                     <Smartphone className="h-4 w-4" />
                     <span>Mobile (React Native)</span>
-                  </div>
-                </SelectItem>
-                <SelectItem value="extension">
-                  <div className="flex items-center gap-2">
-                    <Chrome className="h-4 w-4" />
-                    <span>Browser Extension</span>
                   </div>
                 </SelectItem>
               </SelectContent>
@@ -452,16 +471,106 @@ export function ExplorationConfigPanel({
             </div>
           )}
 
-          {/* Extension-specific info */}
+          {/* Extension-specific: Browser Tab Selector */}
           {config.targetType === "extension" && (
-            <Alert className="border-brand-primary/30 bg-brand-primary/5">
-              <Chrome className="h-4 w-4 text-brand-primary" />
-              <AlertDescription className="text-xs">
-                The extension will explore the <strong>active browser tab</strong>.
-                Make sure you have the target page open in Chrome before starting exploration.
-                No URL needed - the extension connects directly to the runner.
-              </AlertDescription>
-            </Alert>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-text-muted text-xs">Target Browser Tab</Label>
+                {onRefreshBrowserTabs && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={onRefreshBrowserTabs}
+                    disabled={isRunning || browserTabsLoading}
+                    className="h-7 px-2"
+                  >
+                    <RefreshCw className={`h-3 w-3 mr-1 ${browserTabsLoading ? "animate-spin" : ""}`} />
+                    <span className="text-xs">Refresh</span>
+                  </Button>
+                )}
+              </div>
+
+              {browserTabsError && (
+                <Alert variant="destructive" className="border-red-500/30 bg-red-500/10">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription className="text-xs">
+                    {browserTabsError}
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {browserTabsLoading ? (
+                <div className="flex items-center gap-2 text-text-muted p-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-xs">Loading browser tabs...</span>
+                </div>
+              ) : browserTabs.length === 0 ? (
+                <Alert className="border-yellow-500/30 bg-yellow-500/5">
+                  <AlertCircle className="h-4 w-4 text-yellow-500" />
+                  <AlertDescription className="text-xs text-yellow-600">
+                    No browser tabs found. Make sure the Chrome extension is connected and click Refresh.
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <Select
+                  value={config.selectedBrowserTabId?.toString() || "active"}
+                  onValueChange={(value) => {
+                    console.log("[ExplorationConfigPanel] Tab selection changed:", value);
+                    const tabId = value === "active" ? null : parseInt(value, 10);
+                    console.log("[ExplorationConfigPanel] Calling onSelectBrowserTab with:", tabId);
+                    onSelectBrowserTab?.(tabId);
+                  }}
+                  disabled={isRunning}
+                >
+                  <SelectTrigger className="bg-surface-canvas border-brand-primary/20">
+                    <SelectValue placeholder="Select a browser tab" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-64">
+                    <SelectItem value="active">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-yellow-500 rounded-full" />
+                        <span>Use Active Tab (auto)</span>
+                      </div>
+                    </SelectItem>
+                    {browserTabs.map((tab) => (
+                      <SelectItem key={tab.id} value={tab.id.toString()}>
+                        <div className="flex items-center gap-2 max-w-[400px]">
+                          {tab.favIconUrl ? (
+                            <img src={tab.favIconUrl} alt="" className="w-4 h-4" />
+                          ) : (
+                            <Globe className="w-4 h-4 text-text-muted" />
+                          )}
+                          <span className="truncate flex-1" title={tab.title}>
+                            {tab.title || tab.url}
+                          </span>
+                          {tab.active && (
+                            <Badge variant="outline" className="text-[9px] py-0 px-1">
+                              Active
+                            </Badge>
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              {config.selectedBrowserTabId !== null && (
+                <div className="p-2 bg-surface-canvas/50 rounded text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="text-text-muted">Selected:</span>
+                    <span className="text-brand-primary font-mono truncate flex-1">
+                      {browserTabs.find(t => t.id === config.selectedBrowserTabId)?.url || "Unknown"}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <p className="text-[10px] text-text-muted">
+                Select which browser tab to explore. If "Use Active Tab" is selected,
+                the currently focused tab will be used when exploration starts.
+              </p>
+            </div>
           )}
 
           {/* Target-specific guidance */}

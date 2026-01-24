@@ -7,6 +7,7 @@
 
 import { createNextRouteHandlers } from "ui-bridge-server/nextjs";
 import { uiBridgeHandlers } from "@/lib/ui-bridge/handlers";
+import { NextRequest } from "next/server";
 
 /**
  * Export route handlers created by ui-bridge-server.
@@ -35,10 +36,43 @@ import { uiBridgeHandlers } from "@/lib/ui-bridge/handlers";
  * - GET /api/ui-bridge/debug/metrics - Get metrics
  * - POST /api/ui-bridge/debug/highlight/:id - Highlight element
  */
-export const { GET, POST, DELETE } = createNextRouteHandlers(uiBridgeHandlers, {
-  // Enable verbose logging in development
-  verbose: process.env.NODE_ENV === "development",
-});
+const handlers = createNextRouteHandlers(uiBridgeHandlers, {});
+
+// Wrap handlers to adapt from Next.js 15 async params to the expected sync params
+type NextContext = { params: Promise<{ path: string[] }> };
+
+async function wrapHandler(
+  handler: (
+    req: NextRequest,
+    ctx: { params: Record<string, string> }
+  ) => Promise<Response>,
+  request: NextRequest,
+  context: NextContext
+): Promise<Response> {
+  const params = await context.params;
+  return handler(request, { params: { path: params.path.join("/") } });
+}
+
+export async function GET(
+  request: NextRequest,
+  context: NextContext
+): Promise<Response> {
+  return wrapHandler(handlers.GET, request, context);
+}
+
+export async function POST(
+  request: NextRequest,
+  context: NextContext
+): Promise<Response> {
+  return wrapHandler(handlers.POST, request, context);
+}
+
+export async function DELETE(
+  request: NextRequest,
+  context: NextContext
+): Promise<Response> {
+  return wrapHandler(handlers.DELETE, request, context);
+}
 
 /**
  * Configure route segment

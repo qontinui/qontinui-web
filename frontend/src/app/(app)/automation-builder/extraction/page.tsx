@@ -241,7 +241,7 @@ function UnifiedExtractionContent() {
 
   // Domain knowledge state
   const [domainKnowledgeList, setDomainKnowledgeList] = useState<DomainKnowledge[]>([]);
-  const [isLoadingKnowledge, setIsLoadingKnowledge] = useState(false);
+  const [_isLoadingKnowledge, setIsLoadingKnowledge] = useState(false);
   const [showKnowledgeDialog, setShowKnowledgeDialog] = useState(false);
   const [newKnowledgeTitle, setNewKnowledgeTitle] = useState("");
   const [newKnowledgeContent, setNewKnowledgeContent] = useState("");
@@ -269,7 +269,7 @@ function UnifiedExtractionContent() {
   // Auto-select first runner when connections load and no selection made
   useEffect(() => {
     if (selectedConnectionId === null && connections.length > 0 && !connectionsLoading) {
-      setSelectedConnectionId(connections[0].id);
+      setSelectedConnectionId(connections[0]?.id ?? null);
     }
   }, [connections, connectionsLoading, selectedConnectionId]);
 
@@ -292,6 +292,35 @@ function UnifiedExtractionContent() {
     }
     return `http://${ip}:9876`;
   }, [connections]);
+
+  // Fetch browser tabs when extension target type is selected and runner is connected
+  const handleRefreshBrowserTabs = useCallback(() => {
+    const runnerUrl = getRunnerUrl(selectedConnectionId);
+    if (!runnerUrl) {
+      toast.error("Please select a runner connection first");
+      return;
+    }
+    if (exploration.config.targetType !== "extension") {
+      return;
+    }
+    console.log("[Extraction] Fetching browser tabs from:", runnerUrl);
+    exploration.fetchBrowserTabs(runnerUrl);
+  }, [exploration, getRunnerUrl, selectedConnectionId]);
+
+  // Auto-fetch browser tabs when extension mode is selected
+  useEffect(() => {
+    if (exploration.config.targetType === "extension" && selectedConnectionId !== null) {
+      handleRefreshBrowserTabs();
+    }
+  }, [exploration.config.targetType, selectedConnectionId, handleRefreshBrowserTabs]);
+
+  // Handle selecting a browser tab for exploration
+  const handleSelectBrowserTab = useCallback(async (tabId: number | null) => {
+    const runnerUrl = getRunnerUrl(selectedConnectionId);
+    if (runnerUrl) {
+      await exploration.selectBrowserTab(runnerUrl, tabId);
+    }
+  }, [exploration, getRunnerUrl, selectedConnectionId]);
 
   // Get renders to analyze
   const rendersToAnalyze = explorationRenders || sessionRenders || uploadedRenders;
@@ -1562,6 +1591,8 @@ function UnifiedExtractionContent() {
                           selectedConnectionId={selectedConnectionId}
                           onConnectionChange={onConnectionChange}
                           getRunnerUrl={getRunnerUrl}
+                          onRefreshBrowserTabs={handleRefreshBrowserTabs}
+                          onSelectBrowserTab={handleSelectBrowserTab}
                         />
                       )}
 
@@ -1803,7 +1834,6 @@ function UnifiedExtractionContent() {
                     availableKnowledge={availableKnowledge}
                     linkKnowledgeToState={linkKnowledgeToState}
                     unlinkKnowledgeFromState={unlinkKnowledgeFromState}
-                    methodColor={methodColor}
                   />
                 )}
 
@@ -1967,6 +1997,9 @@ interface UIBridgeConfigSectionProps {
   selectedConnectionId: number | null;
   onConnectionChange: (connectionId: number | null) => void;
   getRunnerUrl: (connectionId: number | null) => string | null;
+  // Browser tab handlers
+  onRefreshBrowserTabs: () => void;
+  onSelectBrowserTab: (tabId: number | null) => Promise<void>;
 }
 
 function UIBridgeConfigSection({
@@ -2007,6 +2040,8 @@ function UIBridgeConfigSection({
   selectedConnectionId,
   onConnectionChange,
   getRunnerUrl,
+  onRefreshBrowserTabs,
+  onSelectBrowserTab,
 }: UIBridgeConfigSectionProps) {
   return (
     <Card>
@@ -2044,6 +2079,11 @@ function UIBridgeConfigSection({
               connectionsLoading={connectionsLoading}
               selectedConnectionId={selectedConnectionId}
               onConnectionChange={onConnectionChange}
+              browserTabs={exploration.browserTabs}
+              browserTabsLoading={exploration.browserTabsLoading}
+              browserTabsError={exploration.browserTabsError}
+              onRefreshBrowserTabs={onRefreshBrowserTabs}
+              onSelectBrowserTab={onSelectBrowserTab}
               onStart={async () => {
                 const runnerUrl = getRunnerUrl(selectedConnectionId);
                 if (!runnerUrl) {
@@ -2053,9 +2093,9 @@ function UIBridgeConfigSection({
                 // Clear old exploration renders before starting new exploration
                 setExplorationRenders(null);
 
-                // Use UI Bridge exploration for ui-bridge method, Playwright for web
+                // Use UI Bridge exploration for extension/desktop/mobile, Playwright for web
                 let results;
-                if (config.method === "ui-bridge") {
+                if (exploration.config.targetType !== "web") {
                   results = await exploration.startUIBridgeExploration(runnerUrl);
                 } else {
                   results = await exploration.startExploration(runnerUrl);
@@ -2305,7 +2345,6 @@ interface UIBridgeResultsSectionProps {
   availableKnowledge: DomainKnowledge[];
   linkKnowledgeToState: (knowledgeId: string) => void;
   unlinkKnowledgeFromState: (knowledgeId: string) => void;
-  methodColor: string;
 }
 
 function UIBridgeResultsSection({
@@ -2324,7 +2363,6 @@ function UIBridgeResultsSection({
   availableKnowledge,
   linkKnowledgeToState,
   unlinkKnowledgeFromState,
-  methodColor,
 }: UIBridgeResultsSectionProps) {
   if (isLoadingConfigs) {
     return (

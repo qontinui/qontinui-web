@@ -319,13 +319,10 @@ class DevDebugLogger {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ logs: logsToSend }),
       });
-    } catch (error) {
-      // Restore logs if flush failed
+    } catch {
+      // Restore logs if flush failed (silently - this can happen due to
+      // browser extensions intercepting fetch or network issues)
       this.logs = [...logsToSend, ...this.logs].slice(-this.maxLogs);
-      this.originalConsole.error(
-        "[DevDebugLogger] Failed to flush logs:",
-        error
-      );
     }
   }
 

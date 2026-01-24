@@ -30,6 +30,18 @@ function sleep(ms: number): Promise<void> {
 export type TargetType = "web" | "desktop" | "mobile" | "extension";
 
 /**
+ * Browser tab information from the Chrome extension
+ */
+export interface BrowserTab {
+  id: number;
+  url: string;
+  title: string;
+  active: boolean;
+  windowId: number;
+  favIconUrl?: string;
+}
+
+/**
  * Configuration for UI Bridge exploration
  */
 export interface UIBridgeExplorationConfig {
@@ -37,6 +49,8 @@ export interface UIBridgeExplorationConfig {
   targetType: TargetType;
   /** Target URL to explore (required - the application to automate) */
   targetUrl: string;
+  /** Selected browser tab ID for extension exploration (null = use active tab) */
+  selectedBrowserTabId: number | null;
   /** Maximum depth of navigation (0 = current page only) */
   maxDepth: number;
   /** Maximum elements to click per page */
@@ -63,8 +77,9 @@ export interface UIBridgeExplorationConfig {
  * Default exploration configuration
  */
 export const DEFAULT_EXPLORATION_CONFIG: UIBridgeExplorationConfig = {
-  targetType: "web",
+  targetType: "extension",
   targetUrl: "",
+  selectedBrowserTabId: null,
   maxDepth: 2,
   maxElementsPerPage: 20,
   maxTotalElements: 100,
@@ -367,6 +382,11 @@ export function useUIBridgeExploration() {
   });
   const [uiBridgeResults, setUIBridgeResults] = useState<UIBridgeRawResults | null>(null);
 
+  // Browser tabs for extension exploration
+  const [browserTabs, setBrowserTabs] = useState<BrowserTab[]>([]);
+  const [browserTabsLoading, setBrowserTabsLoading] = useState(false);
+  const [browserTabsError, setBrowserTabsError] = useState<string | null>(null);
+
   const abortRef = useRef(false);
   const visitedStatesRef = useRef(new Set<string>());
 
@@ -393,6 +413,138 @@ export function useUIBridgeExploration() {
     },
     []
   );
+
+  /**
+   * Fetch available browser tabs from the Chrome extension via runner
+   * @param runnerUrl - The runner URL (e.g., "http://localhost:9876")
+   */
+  const fetchBrowserTabs = useCallback(async (runnerUrl: string) => {
+    console.log("[useUIBridgeExploration] fetchBrowserTabs called with:", runnerUrl);
+    setBrowserTabsLoading(true);
+    setBrowserTabsError(null);
+
+    // Create an AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+
+    try {
+      console.log("[useUIBridgeExploration] Sending listTabs request...");
+      const response = await fetch(`${runnerUrl}/extension/command`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "listTabs",
+          params: {},
+          timeout_secs: 10,
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || "Failed to fetch browser tabs");
+      }
+
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || "Failed to fetch browser tabs");
+      }
+
+      const data = result.data;
+      const tabs: BrowserTab[] = data.tabs || [];
+      console.log("[useUIBridgeExploration] Got", tabs.length, "browser tabs");
+      setBrowserTabs(tabs);
+
+      // If a tab was previously selected, verify it still exists
+      if (config.selectedBrowserTabId !== null) {
+        const tabExists = tabs.some(t => t.id === config.selectedBrowserTabId);
+        if (!tabExists) {
+          // Tab no longer exists, clear selection
+          setConfig(prev => ({ ...prev, selectedBrowserTabId: null }));
+        }
+      }
+
+      return tabs;
+    } catch (error) {
+      let message = "Failed to fetch browser tabs";
+      if (error instanceof Error) {
+        if (error.name === "AbortError") {
+          message = "Request timed out. Make sure the Chrome extension is connected.";
+        } else if (error.message.includes("Unknown action")) {
+          message = "Extension needs to be reloaded. Go to chrome://extensions and click the refresh icon on Qontinui DevTools.";
+        } else {
+          message = error.message;
+        }
+      }
+      setBrowserTabsError(message);
+      setBrowserTabs([]);
+      return [];
+    } finally {
+      clearTimeout(timeoutId);
+      setBrowserTabsLoading(false);
+    }
+  }, [config.selectedBrowserTabId]);
+
+  /**
+   * Select a browser tab for exploration
+   * @param runnerUrl - The runner URL
+   * @param tabId - The tab ID to select (null to use active tab)
+   */
+  const selectBrowserTab = useCallback(async (runnerUrl: string, tabId: number | null) => {
+    console.log("[useUIBridgeExploration] selectBrowserTab called:", { runnerUrl, tabId });
+    try {
+      if (tabId === null) {
+        // Clear selection - use active tab
+        const response = await fetch(`${runnerUrl}/extension/command`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "clearSelectedTab",
+            params: {},
+            timeout_secs: 10,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to clear tab selection");
+        }
+
+        setConfig(prev => ({ ...prev, selectedBrowserTabId: null }));
+        return { success: true };
+      }
+
+      // Select specific tab
+      const response = await fetch(`${runnerUrl}/extension/command`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "selectTab",
+          params: { tabId },
+          timeout_secs: 10,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || "Failed to select tab");
+      }
+
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || "Failed to select tab");
+      }
+
+      console.log("[useUIBridgeExploration] Setting selectedBrowserTabId to:", tabId);
+      setConfig(prev => ({ ...prev, selectedBrowserTabId: tabId }));
+      return { success: true, ...result.data };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to select tab";
+      console.error("selectBrowserTab error:", message);
+      return { success: false, error: message };
+    }
+  }, []);
 
   /**
    * Start exploration using the qontinui-runner's Playwright collection
@@ -1171,5 +1323,11 @@ export function useUIBridgeExploration() {
     // Raw UI Bridge results for UIBridgeResultsView
     uiBridgeJob,
     uiBridgeResults,
+    // Browser tab management (for extension exploration)
+    browserTabs,
+    browserTabsLoading,
+    browserTabsError,
+    fetchBrowserTabs,
+    selectBrowserTab,
   };
 }
