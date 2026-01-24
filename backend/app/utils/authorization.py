@@ -36,7 +36,7 @@ def is_project_owner(project: Project, user: User) -> bool:
     Returns:
         True if user owns the project or is a superuser
     """
-    return project.owner_id == user.id or user.is_superuser  # type: ignore[return-value]
+    return bool(project.owner_id == user.id or user.is_superuser)
 
 
 def verify_superuser(user: User, action: str = "perform this action") -> None:

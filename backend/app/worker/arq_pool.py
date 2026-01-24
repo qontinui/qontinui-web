@@ -73,7 +73,7 @@ async def enqueue_task(
             logger.warning("task_enqueue_returned_none", task_name=task_name)
             return None
         logger.info("task_enqueued", task_name=task_name, job_id=job.job_id)
-        return job.job_id
+        return str(job.job_id) if job.job_id else None
     except Exception as e:
         logger.error(
             "task_enqueue_failed",

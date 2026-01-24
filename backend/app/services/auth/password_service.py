@@ -2,6 +2,7 @@
 
 import secrets
 import string
+from typing import cast
 
 from passlib.context import CryptContext
 
@@ -23,11 +24,11 @@ class PasswordService:
 
     def hash_password(self, password: str) -> str:
         """Hash a password using bcrypt."""
-        return self.pwd_context.hash(password)
+        return cast(str, self.pwd_context.hash(password))
 
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
         """Verify a password against its hash."""
-        return self.pwd_context.verify(plain_password, hashed_password)
+        return cast(bool, self.pwd_context.verify(plain_password, hashed_password))
 
     def generate_temporary_password(self, length: int = 12) -> str:
         """Generate a temporary password with special characters."""

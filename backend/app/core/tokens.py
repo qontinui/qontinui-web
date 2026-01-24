@@ -37,8 +37,13 @@ def create_access_token(
 
     # Use ACCESS_SECRET_KEY to match fastapi-users JWT strategy
     # ACCESS_SECRET_KEY is guaranteed to be str by the config validator
-    encoded_jwt = jwt.encode(
-        to_encode, cast(str, settings.ACCESS_SECRET_KEY), algorithm=settings.ALGORITHM
+    encoded_jwt = cast(
+        str,
+        jwt.encode(
+            to_encode,
+            cast(str, settings.ACCESS_SECRET_KEY),
+            algorithm=settings.ALGORITHM,
+        ),
     )
     return encoded_jwt
 
@@ -67,18 +72,19 @@ def create_refresh_token(
         "jti": secrets.token_urlsafe(16),
         "long_lived": long_lived,  # Track if this is a remember-me token
     }
-    encoded_jwt = jwt.encode(
-        to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM
+    encoded_jwt = cast(
+        str,
+        jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM),
     )
     return encoded_jwt
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    return cast(bool, pwd_context.verify(plain_password, hashed_password))
 
 
 def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    return cast(str, pwd_context.hash(password))
 
 
 def decode_token(token: str) -> dict[Any, Any]:
@@ -164,8 +170,9 @@ def create_password_reset_token(email: str) -> str:
         "type": "password_reset",
         "iat": datetime.utcnow(),
     }
-    encoded_jwt = jwt.encode(
-        to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM
+    encoded_jwt = cast(
+        str,
+        jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM),
     )
     return encoded_jwt
 

@@ -1,6 +1,6 @@
 import secrets
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 from jose import JWTError, jwt
 
@@ -38,7 +38,9 @@ class TokenService:
         if additional_claims:
             to_encode.update(additional_claims)
 
-        return jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
+        return cast(
+            str, jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
+        )
 
     def create_refresh_token(
         self, subject: str | Any, expires_delta: timedelta | None = None
@@ -56,7 +58,9 @@ class TokenService:
             "jti": secrets.token_urlsafe(16),
         }
 
-        return jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
+        return cast(
+            str, jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
+        )
 
     def create_password_reset_token(self, email: str, hours: int = 1) -> str:
         expire = datetime.utcnow() + timedelta(hours=hours)
@@ -66,12 +70,14 @@ class TokenService:
             "type": "password_reset",
             "iat": datetime.utcnow(),
         }
-        return jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
+        return cast(
+            str, jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
+        )
 
-    def decode_token(self, token: str) -> dict:
+    def decode_token(self, token: str) -> dict[str, Any]:
         try:
             payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
-            return payload
+            return cast(dict[str, Any], payload)
         except JWTError:
             return {}
 
@@ -80,7 +86,8 @@ class TokenService:
             payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
             if payload.get("type") != "password_reset":
                 return None
-            return payload.get("sub")
+            sub = payload.get("sub")
+            return cast(str, sub) if sub is not None else None
         except JWTError:
             return None
 
@@ -93,7 +100,9 @@ class TokenService:
             "type": "email_verification",
             "iat": datetime.utcnow(),
         }
-        return jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
+        return cast(
+            str, jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
+        )
 
     def verify_email_verification_token(self, token: str) -> str | None:
         """Verify email verification token and return email if valid"""
@@ -101,7 +110,8 @@ class TokenService:
             payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
             if payload.get("type") != "email_verification":
                 return None
-            return payload.get("sub")
+            sub = payload.get("sub")
+            return cast(str, sub) if sub is not None else None
         except JWTError:
             return None
 
