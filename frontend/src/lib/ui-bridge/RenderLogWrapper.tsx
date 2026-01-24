@@ -160,8 +160,11 @@ export function RenderLogWrapper({
           if (attrName === "class") {
             const el = mutation.target as Element;
             // Use getAttribute to get string (className can be SVGAnimatedString for SVG elements)
-            const classes = el.getAttribute("class") || "";
-            if (classes.includes("animate-") || classes.includes("transition-")) {
+            const classAttr = el.getAttribute("class");
+            if (
+              typeof classAttr === "string" &&
+              (classAttr.includes("animate-") || classAttr.includes("transition-"))
+            ) {
               return false;
             }
           }

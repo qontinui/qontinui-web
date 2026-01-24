@@ -19,7 +19,7 @@ import { useProjectLoader } from "@/hooks/use-project-loader";
 import { useAutomation } from "@/contexts/automation-context";
 import { useAutomationStore } from "@/stores/automation";
 import { useCreateProject } from "@/hooks/use-projects";
-import { useRunnerMonitors, useRunnerAvailability } from "@/hooks/useRunnerMonitors";
+import { useRunnerMonitors } from "@/hooks/useRunnerMonitors";
 import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
 import { useUIBridgeExploration } from "@/hooks/useUIBridgeExploration";
 import { ActiveStatesCanvas } from "@/components/workflow-viz/ActiveStatesCanvas";
@@ -412,24 +412,19 @@ function StateDiscoveryTab() {
   const { connections, isLoading: connectionsLoading } = useRealtimeConnections();
   const [selectedConnectionId, setSelectedConnectionId] = useState<number | null>(null);
 
-  // Check if local runner is available via direct HTTP call
-  const { data: isLocalRunnerAvailable = false, isLoading: isCheckingRunnerAvailability } = useRunnerAvailability({
-    refetchInterval: 5000, // Check every 5 seconds
-  });
-
-  // Auto-select local runner when detected and no selection made
+  // Auto-select first runner when connections load and no selection made
   useEffect(() => {
-    if (selectedConnectionId === null && isLocalRunnerAvailable && !isCheckingRunnerAvailability) {
-      // Auto-select local runner (id = -1)
-      setSelectedConnectionId(-1);
+    if (selectedConnectionId === null && connections.length > 0 && !connectionsLoading) {
+      setSelectedConnectionId(connections[0].id);
     }
-  }, [isLocalRunnerAvailable, isCheckingRunnerAvailability, selectedConnectionId]);
+  }, [connections, connectionsLoading, selectedConnectionId]);
 
   // Exploration hook
   const exploration = useUIBridgeExploration();
 
   // State for discovered states management
   const [selectedElements, setSelectedElements] = useState<Set<string>>(new Set());
+  const [newStateName, setNewStateName] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
   // Save options dialog state
@@ -711,8 +706,6 @@ function StateDiscoveryTab() {
             connectionsLoading={connectionsLoading}
             selectedConnectionId={selectedConnectionId}
             onConnectionChange={setSelectedConnectionId}
-            isLocalRunnerAvailable={isLocalRunnerAvailable}
-            isCheckingRunnerAvailability={isCheckingRunnerAvailability}
             onStart={handleStartExploration}
             onStop={handleStopExploration}
           />

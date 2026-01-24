@@ -414,6 +414,15 @@ function ErrorsList({ errors }: { errors: string[] }) {
 }
 
 export function UIBridgeResultsView({ job, results }: UIBridgeResultsViewProps) {
+  // Handle case where job is not yet available
+  if (!job) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-muted-foreground">No job data available</p>
+      </div>
+    );
+  }
+
   // Show progress when job is running
   if (job.status === "running" || job.status === "pending") {
     return (

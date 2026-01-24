@@ -48,6 +48,7 @@ import {
   ChevronDown,
   Monitor,
   Smartphone,
+  Chrome,
 } from "lucide-react";
 import type { TargetType } from "@/hooks/useUIBridgeExploration";
 import type {
@@ -67,14 +68,10 @@ interface ExplorationConfigPanelProps {
   connections: RunnerConnection[];
   /** Whether connections are loading */
   connectionsLoading: boolean;
-  /** Currently selected connection ID (-1 for detected local runner) */
+  /** Currently selected connection ID */
   selectedConnectionId: number | null;
   /** Handler for connection selection change */
   onConnectionChange: (connectionId: number | null) => void;
-  /** Whether local runner is detected via HTTP check */
-  isLocalRunnerAvailable: boolean;
-  /** Whether runner availability is being checked */
-  isCheckingRunnerAvailability: boolean;
 }
 
 export function ExplorationConfigPanel({
@@ -88,8 +85,6 @@ export function ExplorationConfigPanel({
   connectionsLoading,
   selectedConnectionId,
   onConnectionChange,
-  isLocalRunnerAvailable,
-  isCheckingRunnerAvailability,
 }: ExplorationConfigPanelProps) {
   const [isRequirementsOpen, setIsRequirementsOpen] = useState(false);
 
@@ -101,7 +96,10 @@ export function ExplorationConfigPanel({
       : 0;
 
   // Check if we can start exploration
-  const canStart = selectedConnectionId !== null && !!config.targetUrl && progress.status !== "completed";
+  // Extension type doesn't need a targetUrl - it uses the active browser tab
+  const canStart = selectedConnectionId !== null &&
+    (config.targetType === "extension" || !!config.targetUrl) &&
+    progress.status !== "completed";
 
   // Target type descriptions for the requirements section
   const targetTypeRequirements: Record<TargetType, { title: string; requirements: string[]; icon: React.ReactNode }> = {
@@ -115,10 +113,10 @@ export function ExplorationConfigPanel({
       ],
     },
     desktop: {
-      title: "Desktop (Tauri)",
+      title: "Desktop App",
       icon: <Monitor className="h-4 w-4" />,
       requirements: [
-        "Tauri app must be running",
+        "Desktop app must be running (Electron, Tauri, etc.)",
         "UI Bridge SDK must be installed in the frontend",
         "App must connect to qontinui-runner via WebSocket",
       ],
@@ -130,6 +128,15 @@ export function ExplorationConfigPanel({
         "React Native app must be running",
         "UI Bridge SDK must be installed",
         "App must connect to qontinui-runner via WebSocket",
+      ],
+    },
+    extension: {
+      title: "Browser Extension",
+      icon: <Chrome className="h-4 w-4" />,
+      requirements: [
+        "Qontinui DevTools extension must be installed in Chrome",
+        "Extension must be connected to the runner (check popup)",
+        "Target page must have UI Bridge SDK installed",
       ],
     },
   };
@@ -149,7 +156,7 @@ export function ExplorationConfigPanel({
             title={
               !selectedConnectionId
                 ? "Select a connected runner"
-                : !config.targetUrl
+                : config.targetType !== "extension" && !config.targetUrl
                   ? "Enter a target URL to explore"
                   : undefined
             }
@@ -302,16 +309,16 @@ export function ExplorationConfigPanel({
         </div>
 
         <div className="space-y-4">
-          {connectionsLoading || isCheckingRunnerAvailability ? (
+          {connectionsLoading ? (
             <div className="flex items-center gap-2 text-text-muted">
               <Loader2 className="w-4 h-4 animate-spin" />
-              <span className="text-sm">Detecting runners...</span>
+              <span className="text-sm">Loading runners...</span>
             </div>
-          ) : !isLocalRunnerAvailable && connections.length === 0 ? (
+          ) : connections.length === 0 ? (
             <Alert variant="destructive" className="border-red-500/30 bg-red-500/10">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription className="text-xs">
-                No runners detected. Make sure the runner is running at localhost:9876.
+                No runners connected. Connect a runner from the Runners page first.
               </AlertDescription>
             </Alert>
           ) : (
@@ -324,17 +331,6 @@ export function ExplorationConfigPanel({
                 <SelectValue placeholder="Select a runner" />
               </SelectTrigger>
               <SelectContent>
-                {/* Show detected local runner first when available */}
-                {isLocalRunnerAvailable && (
-                  <SelectItem value="-1">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                      <span>Local Runner</span>
-                      <span className="text-text-muted text-xs">(detected)</span>
-                    </div>
-                  </SelectItem>
-                )}
-                {/* Show connected runners from database */}
                 {connections.map((conn) => (
                   <SelectItem key={conn.id} value={conn.id.toString()}>
                     <div className="flex items-center gap-2">
@@ -348,11 +344,6 @@ export function ExplorationConfigPanel({
                 ))}
               </SelectContent>
             </Select>
-          )}
-          {isLocalRunnerAvailable && connections.length === 0 && (
-            <p className="text-[10px] text-text-muted">
-              Local runner detected at localhost:9876.
-            </p>
           )}
         </div>
       </Card>
@@ -401,7 +392,7 @@ export function ExplorationConfigPanel({
                 <SelectItem value="desktop">
                   <div className="flex items-center gap-2">
                     <Monitor className="h-4 w-4" />
-                    <span>Desktop (Tauri)</span>
+                    <span>Desktop App</span>
                   </div>
                 </SelectItem>
                 <SelectItem value="mobile">
@@ -410,57 +401,77 @@ export function ExplorationConfigPanel({
                     <span>Mobile (React Native)</span>
                   </div>
                 </SelectItem>
+                <SelectItem value="extension">
+                  <div className="flex items-center gap-2">
+                    <Chrome className="h-4 w-4" />
+                    <span>Browser Extension</span>
+                  </div>
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           {/* URL / Connection Input */}
-          <div className="space-y-2">
-            <Label className="text-text-muted text-xs">
-              {config.targetType === "web" ? "Application URL" : "Connection URL"}
-            </Label>
-            <Input
-              type="url"
-              placeholder={
-                config.targetType === "web"
-                  ? "https://localhost:3000"
-                  : config.targetType === "desktop"
-                    ? "ws://localhost:9877"
-                    : "ws://localhost:9877"
-              }
-              value={config.targetUrl}
-              onChange={(e) => onConfigChange({ targetUrl: e.target.value })}
-              disabled={isRunning}
-              className="bg-surface-canvas border-brand-primary/20 font-mono"
-            />
-            <p className="text-[10px] text-text-muted">
-              {config.targetType === "web" ? (
-                <>
-                  The URL where your web app is running. The app must have{" "}
-                  <span className="text-brand-primary">@qontinui/ui-bridge</span> installed.
-                </>
-              ) : config.targetType === "desktop" ? (
-                <>
-                  Your Tauri app must connect to the runner via WebSocket.
-                  Enter the WebSocket URL or leave blank to use the default.
-                </>
-              ) : (
-                <>
-                  Your React Native app must connect to the runner via WebSocket.
-                  Enter the WebSocket URL or leave blank to use the default.
-                </>
-              )}
-            </p>
-          </div>
+          {config.targetType !== "extension" && (
+            <div className="space-y-2">
+              <Label className="text-text-muted text-xs">
+                {config.targetType === "web" ? "Application URL" : "Connection URL"}
+              </Label>
+              <Input
+                type="url"
+                placeholder={
+                  config.targetType === "web"
+                    ? "https://localhost:3000"
+                    : config.targetType === "desktop"
+                      ? "ws://localhost:9877"
+                      : "ws://localhost:9877"
+                }
+                value={config.targetUrl}
+                onChange={(e) => onConfigChange({ targetUrl: e.target.value })}
+                disabled={isRunning}
+                className="bg-surface-canvas border-brand-primary/20 font-mono"
+              />
+              <p className="text-[10px] text-text-muted">
+                {config.targetType === "web" ? (
+                  <>
+                    The URL where your web app is running. The app must have{" "}
+                    <span className="text-brand-primary">@qontinui/ui-bridge</span> installed.
+                  </>
+                ) : config.targetType === "desktop" ? (
+                  <>
+                    Your Tauri app must connect to the runner via WebSocket.
+                    Enter the WebSocket URL or leave blank to use the default.
+                  </>
+                ) : (
+                  <>
+                    Your React Native app must connect to the runner via WebSocket.
+                    Enter the WebSocket URL or leave blank to use the default.
+                  </>
+                )}
+              </p>
+            </div>
+          )}
+
+          {/* Extension-specific info */}
+          {config.targetType === "extension" && (
+            <Alert className="border-brand-primary/30 bg-brand-primary/5">
+              <Chrome className="h-4 w-4 text-brand-primary" />
+              <AlertDescription className="text-xs">
+                The extension will explore the <strong>active browser tab</strong>.
+                Make sure you have the target page open in Chrome before starting exploration.
+                No URL needed - the extension connects directly to the runner.
+              </AlertDescription>
+            </Alert>
+          )}
 
           {/* Target-specific guidance */}
-          {config.targetType !== "web" && (
+          {config.targetType !== "web" && config.targetType !== "extension" && (
             <Alert className="border-yellow-500/30 bg-yellow-500/5">
               <AlertCircle className="h-4 w-4 text-yellow-500" />
               <AlertDescription className="text-xs text-yellow-600">
                 {config.targetType === "desktop" ? (
                   <>
-                    Your Tauri app must be running and connected to the qontinui-runner.
+                    Your desktop app must be running and connected to the qontinui-runner.
                     The runner acts as a WebSocket server that your app connects to.
                   </>
                 ) : (

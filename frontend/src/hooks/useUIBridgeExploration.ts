@@ -15,7 +15,7 @@
  * - Converts Playwright results to render logs for state discovery
  */
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 
 /**
  * Sleep utility
@@ -27,7 +27,7 @@ function sleep(ms: number): Promise<void> {
 /**
  * Target type for UI Bridge exploration
  */
-export type TargetType = "web" | "desktop" | "mobile";
+export type TargetType = "web" | "desktop" | "mobile" | "extension";
 
 /**
  * Configuration for UI Bridge exploration
@@ -291,6 +291,40 @@ export interface UIBridgeRawResults {
 }
 
 
+const STORAGE_KEY = "qontinui-exploration-config";
+
+/**
+ * Load config from localStorage
+ */
+function loadPersistedConfig(): UIBridgeExplorationConfig {
+  if (typeof window === "undefined") {
+    return DEFAULT_EXPLORATION_CONFIG;
+  }
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      // Merge with defaults to handle new fields
+      return { ...DEFAULT_EXPLORATION_CONFIG, ...parsed };
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return DEFAULT_EXPLORATION_CONFIG;
+}
+
+/**
+ * Save config to localStorage
+ */
+function persistConfig(config: UIBridgeExplorationConfig): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 /**
  * Hook for UI Bridge exploration
  */
@@ -298,6 +332,7 @@ export function useUIBridgeExploration() {
   const [config, setConfig] = useState<UIBridgeExplorationConfig>(
     DEFAULT_EXPLORATION_CONFIG
   );
+  const [isConfigLoaded, setIsConfigLoaded] = useState(false);
   const [progress, setProgress] = useState<ExplorationProgress>({
     status: "idle",
     currentDepth: 0,
@@ -334,6 +369,20 @@ export function useUIBridgeExploration() {
 
   const abortRef = useRef(false);
   const visitedStatesRef = useRef(new Set<string>());
+
+  // Load persisted config on mount
+  useEffect(() => {
+    const persisted = loadPersistedConfig();
+    setConfig(persisted);
+    setIsConfigLoaded(true);
+  }, []);
+
+  // Persist config when it changes (after initial load)
+  useEffect(() => {
+    if (isConfigLoaded) {
+      persistConfig(config);
+    }
+  }, [config, isConfigLoaded]);
 
   /**
    * Update configuration
@@ -869,10 +918,25 @@ export function useUIBridgeExploration() {
             errorDetail.toLowerCase().includes("websocket") ||
             errorDetail.toLowerCase().includes("no desktop") ||
             errorDetail.toLowerCase().includes("no mobile")) {
+          if (config.targetType === "extension") {
+            throw new Error(
+              `Chrome extension not connected to the runner. ` +
+              `Make sure the Qontinui DevTools extension is installed and enabled in Chrome.`
+            );
+          }
           throw new Error(
             `No ${config.targetType} application connected to the runner. ` +
             `Start your ${config.targetType === "desktop" ? "Tauri" : "React Native"} app ` +
             `and ensure it connects to the runner via WebSocket.`
+          );
+        }
+
+        if (errorDetail.toLowerCase().includes("extension not connected") ||
+            errorDetail.toLowerCase().includes("chrome extension")) {
+          throw new Error(
+            `Chrome extension not connected to the runner. ` +
+            `Make sure the Qontinui DevTools extension is installed and enabled in Chrome, ` +
+            `and that you have a browser tab open.`
           );
         }
 
@@ -1053,6 +1117,8 @@ export function useUIBridgeExploration() {
           errorMessage = `Could not connect to desktop application. Make sure the Tauri app is running and connected to the runner.`;
         } else if (config.targetType === "mobile") {
           errorMessage = `Could not connect to mobile application. Make sure the React Native app is running and connected to the runner.`;
+        } else if (config.targetType === "extension") {
+          errorMessage = `Could not connect via browser extension. Make sure the Qontinui DevTools extension is installed in Chrome and connected to the runner.`;
         }
       }
 
