@@ -19,7 +19,6 @@ import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
 import type { ExtractionMethod } from "@/types/extraction-unified";
 import { RequireProject } from "@/components/require-project";
 import { runnerClient } from "@/lib/runner-client";
-import { useRunnerAvailability } from "@/hooks/useRunnerMonitors";
 import { ExtractionMethodSelector } from "@/components/extraction/ExtractionMethodSelector";
 import { UITarsConfigPanel } from "@/components/extraction/UITarsConfigPanel";
 import {
@@ -267,18 +266,12 @@ function UnifiedExtractionContent() {
   const { connections, isLoading: connectionsLoading } = useRealtimeConnections();
   const [selectedConnectionId, setSelectedConnectionId] = useState<number | null>(null);
 
-  // Check if local runner is available via direct HTTP call
-  const { data: isLocalRunnerAvailable = false, isLoading: isCheckingRunnerAvailability } = useRunnerAvailability({
-    refetchInterval: 5000, // Check every 5 seconds
-  });
-
-  // Auto-select local runner when detected and no selection made
+  // Auto-select first runner when connections load and no selection made
   useEffect(() => {
-    if (selectedConnectionId === null && isLocalRunnerAvailable && !isCheckingRunnerAvailability) {
-      // Auto-select local runner (id = -1)
-      setSelectedConnectionId(-1);
+    if (selectedConnectionId === null && connections.length > 0 && !connectionsLoading) {
+      setSelectedConnectionId(connections[0].id);
     }
-  }, [isLocalRunnerAvailable, isCheckingRunnerAvailability, selectedConnectionId]);
+  }, [connections, connectionsLoading, selectedConnectionId]);
 
   // Handler for connection change
   const onConnectionChange = useCallback((connectionId: number | null) => {
@@ -288,11 +281,6 @@ function UnifiedExtractionContent() {
   // Helper to construct runner URL from connection
   const getRunnerUrl = useCallback((connectionId: number | null): string | null => {
     if (connectionId === null) return null;
-
-    // Special case: -1 means detected local runner (localhost:9876)
-    if (connectionId === -1) {
-      return 'http://localhost:9876';
-    }
 
     const conn = connections.find(c => c.id === connectionId);
     if (!conn?.ip_address) return null;
