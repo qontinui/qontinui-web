@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Create a test project with sample configuration"""
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 BASE_URL = "http://localhost:8000/api/v1"
 

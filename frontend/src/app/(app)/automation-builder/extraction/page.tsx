@@ -31,7 +31,8 @@ import { extractionService } from "@/services/service-factory";
 import { useAuth } from "@/contexts/auth-context";
 import { useCreateExtraction } from "@/hooks/use-extractions";
 import { useUIBridgeExploration } from "@/hooks/useUIBridgeExploration";
-import { ExplorationConfigPanel } from "@/components/ui-bridge/ExplorationConfigPanel";
+import { useUIBridgeRecording } from "@/hooks/useUIBridgeRecording";
+import { ExplorationConfigPanel, RecordingPanel } from "@/components/ui-bridge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -79,6 +80,7 @@ import {
   LinkIcon,
   Compass,
   ChevronRight,
+  Circle,
 } from "lucide-react";
 import { toast } from "sonner";
 import type {
@@ -262,6 +264,10 @@ function UnifiedExtractionContent() {
   const exploration = useUIBridgeExploration();
   const [explorationRenders, setExplorationRenders] = useState<unknown[] | null>(null);
 
+  // Recording hook for manual recording
+  const recording = useUIBridgeRecording();
+  const [recordingRenders, setRecordingRenders] = useState<unknown[] | null>(null);
+
   // Runner connections for UI Bridge exploration
   const { connections, isLoading: connectionsLoading } = useRealtimeConnections();
   const [selectedConnectionId, setSelectedConnectionId] = useState<number | null>(null);
@@ -323,8 +329,8 @@ function UnifiedExtractionContent() {
     }
   }, [exploration, getRunnerUrl, selectedConnectionId]);
 
-  // Get renders to analyze
-  const rendersToAnalyze = explorationRenders || sessionRenders || uploadedRenders;
+  // Get renders to analyze (priority: exploration > recording > session > uploaded)
+  const rendersToAnalyze = explorationRenders || recordingRenders || sessionRenders || uploadedRenders;
 
   const { config, setMethod, setUitarsConfig, isLoaded } = extractionConfig;
 
@@ -1559,6 +1565,9 @@ function UnifiedExtractionContent() {
                           exploration={exploration}
                           explorationRenders={explorationRenders}
                           setExplorationRenders={setExplorationRenders}
+                          recording={recording}
+                          recordingRenders={recordingRenders}
+                          setRecordingRenders={setRecordingRenders}
                           sessionRenders={sessionRenders}
                           setSessionRenders={setSessionRenders}
                           uploadedRenders={uploadedRenders}
@@ -1684,6 +1693,7 @@ function UnifiedExtractionContent() {
                               </p>
                               <ul className="list-disc list-inside space-y-1 text-xs">
                                 <li>Auto Explore: Automated Playwright collection</li>
+                                <li>Manual Recording: Navigate manually while capturing</li>
                                 <li>From Session: Previously captured render logs</li>
                                 <li>Upload/Load: JSON files or saved configs</li>
                               </ul>
@@ -1964,6 +1974,10 @@ interface UIBridgeConfigSectionProps {
   exploration: ReturnType<typeof useUIBridgeExploration>;
   explorationRenders: unknown[] | null;
   setExplorationRenders: (renders: unknown[] | null) => void;
+  // Recording props
+  recording: ReturnType<typeof useUIBridgeRecording>;
+  recordingRenders: unknown[] | null;
+  setRecordingRenders: (renders: unknown[] | null) => void;
   sessionRenders: unknown[] | null;
   setSessionRenders: (renders: unknown[] | null) => void;
   uploadedRenders: unknown[] | null;
@@ -2008,6 +2022,9 @@ function UIBridgeConfigSection({
   exploration,
   explorationRenders,
   setExplorationRenders,
+  recording,
+  recordingRenders,
+  setRecordingRenders,
   sessionRenders,
   setSessionRenders,
   uploadedRenders,
@@ -2054,10 +2071,14 @@ function UIBridgeConfigSection({
       </CardHeader>
       <CardContent className="space-y-4">
         <Tabs defaultValue="explore" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="explore" className="flex items-center gap-2">
               <Compass className="h-4 w-4" />
               Auto Explore
+            </TabsTrigger>
+            <TabsTrigger value="recording" className="flex items-center gap-2">
+              <Circle className="h-4 w-4" />
+              Manual Recording
             </TabsTrigger>
             <TabsTrigger value="session" className="flex items-center gap-2">
               <Layers className="h-4 w-4" />
@@ -2153,6 +2174,99 @@ function UIBridgeConfigSection({
             )}
           </TabsContent>
 
+          {/* Manual Recording Tab */}
+          <TabsContent value="recording" className="space-y-4">
+            <RecordingPanel
+              session={recording.session}
+              isStarting={recording.isStarting}
+              isStopping={recording.isStopping}
+              onStartRecording={async (tabId, options) => {
+                const runnerUrl = getRunnerUrl(selectedConnectionId);
+                if (!runnerUrl) {
+                  toast.error("Please select a connected runner");
+                  return;
+                }
+                // Clear old recording renders before starting new recording
+                setRecordingRenders(null);
+                await recording.startRecording(runnerUrl, tabId, options);
+                // Start polling for updates
+                recording.startPolling(runnerUrl);
+              }}
+              onStopRecording={async () => {
+                const runnerUrl = getRunnerUrl(selectedConnectionId);
+                if (!runnerUrl) return;
+                recording.stopPolling();
+                const result = await recording.stopRecording(runnerUrl);
+                if (result.success && result.snapshots) {
+                  // Convert snapshots to render log format
+                  const renders = recording.getSnapshotsAsRenderLogs();
+                  if (renders.length > 0) {
+                    setRecordingRenders(renders);
+                    setExplorationRenders(null);
+                    setSessionRenders(null);
+                    setUploadedRenders(null);
+                    setSelectedSessionId(null);
+                    setDiscoveryResult(null);
+                    setStateDescriptions({});
+                    setCurrentSavedConfigId(null);
+                    setStateUuidMap({});
+                    toast.success(`Captured ${renders.length} snapshots from recording`);
+                  }
+                }
+              }}
+              onCaptureNow={async () => {
+                const runnerUrl = getRunnerUrl(selectedConnectionId);
+                if (runnerUrl) {
+                  await recording.captureNow(runnerUrl);
+                }
+              }}
+              onResetSession={() => {
+                recording.resetSession();
+                setRecordingRenders(null);
+              }}
+              onRunDiscovery={() => {
+                // Convert snapshots to render logs if not already done
+                if (!recordingRenders && recording.session.snapshots.length > 0) {
+                  const renders = recording.getSnapshotsAsRenderLogs();
+                  setRecordingRenders(renders);
+                }
+                runDiscovery();
+              }}
+              isDiscovering={isDiscovering}
+              browserTabs={exploration.browserTabs}
+              browserTabsLoading={exploration.browserTabsLoading}
+              onRefreshTabs={onRefreshBrowserTabs}
+              selectedTabId={exploration.config.selectedBrowserTabId}
+              onSelectTab={async (tabId) => {
+                await onSelectBrowserTab(tabId);
+              }}
+            />
+
+            {recordingRenders && recordingRenders.length > 0 && (
+              <div className="flex items-center justify-between p-3 bg-brand-success/10 border border-brand-success/30 rounded-lg">
+                <div className="flex items-center gap-2 text-brand-success">
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span className="text-sm font-medium">
+                    {recordingRenders.length} snapshots captured from recording
+                  </span>
+                </div>
+                <Button onClick={runDiscovery} disabled={isDiscovering} size="sm">
+                  {isDiscovering ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Discovering...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-4 w-4 mr-2" />
+                      Discover States
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+          </TabsContent>
+
           {/* From Session Tab */}
           <TabsContent value="session" className="space-y-4">
             <div className="flex items-center gap-4 flex-wrap">
@@ -2162,6 +2276,7 @@ function UIBridgeConfigSection({
                   onValueChange={(value) => {
                     loadSessionRenders(value);
                     setExplorationRenders(null);
+                    setRecordingRenders(null);
                   }}
                   disabled={isLoadingSessionRenders}
                 >
@@ -2240,6 +2355,7 @@ function UIBridgeConfigSection({
                   onChange={(e) => {
                     handleFileUpload(e);
                     setExplorationRenders(null);
+                    setRecordingRenders(null);
                   }}
                   className="hidden"
                 />
@@ -2258,6 +2374,7 @@ function UIBridgeConfigSection({
                     setSelectedConfigId(value);
                     loadSavedConfig(value);
                     setExplorationRenders(null);
+                    setRecordingRenders(null);
                   }}
                 >
                   <SelectTrigger className="w-[200px]">
@@ -2275,7 +2392,7 @@ function UIBridgeConfigSection({
               )}
             </div>
 
-            {uploadedRenders && !sessionRenders && !explorationRenders && (
+            {uploadedRenders && !sessionRenders && !explorationRenders && !recordingRenders && (
               <div className="flex items-center justify-between p-3 bg-brand-success/10 border border-brand-success/30 rounded-lg">
                 <div className="flex items-center gap-2 text-brand-success">
                   <CheckCircle2 className="h-4 w-4" />

@@ -5,3 +5,4 @@
  */
 
 export { ExplorationConfigPanel } from "./ExplorationConfigPanel";
+export { RecordingPanel } from "./RecordingPanel";

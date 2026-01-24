@@ -3,7 +3,7 @@
 
 import sys
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 BASE_URL = "http://localhost:8000/api/v1"
 
