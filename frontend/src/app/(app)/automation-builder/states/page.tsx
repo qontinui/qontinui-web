@@ -435,11 +435,6 @@ function StateDiscoveryTab() {
   const getRunnerUrl = useCallback((connectionId: number | null): string | null => {
     if (connectionId === null) return null;
 
-    // Special case: -1 means detected local runner (localhost:9876)
-    if (connectionId === -1) {
-      return 'http://localhost:9876';
-    }
-
     const conn = connections.find(c => c.id === connectionId);
     if (!conn?.ip_address) return null;
 
