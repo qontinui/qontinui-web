@@ -55,7 +55,7 @@ class CollaborationSyncManager:
     @property
     def user_id(self) -> UUID:
         """Get the user ID."""
-        return self.user.id  # type: ignore[return-value]
+        return UUID(str(self.user.id))
 
     async def acquire_lock(
         self,

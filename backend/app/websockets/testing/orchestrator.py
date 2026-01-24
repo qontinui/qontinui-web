@@ -76,7 +76,7 @@ class TestOrchestrator:
     @property
     def user_id(self) -> UUID:
         """Get the user ID."""
-        return self.user.id  # type: ignore[return-value]
+        return UUID(str(self.user.id))
 
     async def handle_session_start(self, message: dict[str, Any]) -> dict[str, Any]:
         """Handle session_start message.

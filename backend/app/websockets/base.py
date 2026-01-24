@@ -57,7 +57,7 @@ class WebSocketContext:
     @property
     def user_id(self) -> UUID:
         """Get the user ID."""
-        return self.user.id  # type: ignore[return-value]
+        return UUID(str(self.user.id))
 
     def update_activity(self) -> None:
         """Update the last activity timestamp."""
