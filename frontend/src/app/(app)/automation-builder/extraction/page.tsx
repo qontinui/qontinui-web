@@ -1562,8 +1562,6 @@ function UnifiedExtractionContent() {
                           selectedConnectionId={selectedConnectionId}
                           onConnectionChange={onConnectionChange}
                           getRunnerUrl={getRunnerUrl}
-                          isLocalRunnerAvailable={isLocalRunnerAvailable}
-                          isCheckingRunnerAvailability={isCheckingRunnerAvailability}
                         />
                       )}
 
@@ -1969,8 +1967,6 @@ interface UIBridgeConfigSectionProps {
   selectedConnectionId: number | null;
   onConnectionChange: (connectionId: number | null) => void;
   getRunnerUrl: (connectionId: number | null) => string | null;
-  isLocalRunnerAvailable: boolean;
-  isCheckingRunnerAvailability: boolean;
 }
 
 function UIBridgeConfigSection({
@@ -2011,8 +2007,6 @@ function UIBridgeConfigSection({
   selectedConnectionId,
   onConnectionChange,
   getRunnerUrl,
-  isLocalRunnerAvailable,
-  isCheckingRunnerAvailability,
 }: UIBridgeConfigSectionProps) {
   return (
     <Card>
@@ -2050,8 +2044,6 @@ function UIBridgeConfigSection({
               connectionsLoading={connectionsLoading}
               selectedConnectionId={selectedConnectionId}
               onConnectionChange={onConnectionChange}
-              isLocalRunnerAvailable={isLocalRunnerAvailable}
-              isCheckingRunnerAvailability={isCheckingRunnerAvailability}
               onStart={async () => {
                 const runnerUrl = getRunnerUrl(selectedConnectionId);
                 if (!runnerUrl) {
