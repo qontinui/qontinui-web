@@ -8,3 +8,14 @@
 export { UIBridgeWrapper } from "./provider";
 export { RenderLogWrapper } from "./RenderLogWrapper";
 export { uiBridgeHandlers } from "./handlers";
+export {
+  queueCommand,
+  resolveCommand,
+  rejectCommand,
+  getPendingCommands,
+  updateControlSnapshot,
+  updateSemanticSnapshot,
+  addRenderLogEntry,
+  addRenderLogEntries,
+} from "./handlers";
+export { useUIBridgeCommandHandler } from "./useUIBridgeCommandHandler";

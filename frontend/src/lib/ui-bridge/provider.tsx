@@ -5,11 +5,13 @@
  *
  * Configures UIBridgeProvider with appropriate features based on environment.
  * Includes AutoRegisterProvider for automatic element registration.
+ * Includes UIBridgeCommandListener for remote automation support.
  */
 
 import React from "react";
 import { UIBridgeProvider, AutoRegisterProvider } from "ui-bridge/react";
 import type { UIBridgeFeatures, UIBridgeConfig } from "ui-bridge/core";
+import { UIBridgeCommandListener } from "./UIBridgeCommandListener";
 
 /**
  * Feature configuration for UI Bridge
@@ -31,6 +33,11 @@ const config: UIBridgeConfig = {
 
 interface UIBridgeWrapperProps {
   children: React.ReactNode;
+  /**
+   * Enable remote command listening for automation.
+   * Defaults to true in development.
+   */
+  enableRemoteCommands?: boolean;
 }
 
 /**
@@ -38,8 +45,16 @@ interface UIBridgeWrapperProps {
  *
  * This wraps the application with UIBridgeProvider for state discovery.
  * Render logging is always enabled.
+ *
+ * Features:
+ * - Automatic element registration via AutoRegisterProvider
+ * - Remote command listening via UIBridgeCommandListener
+ * - SWC plugin integration for compile-time instrumentation
  */
-export function UIBridgeWrapper({ children }: UIBridgeWrapperProps) {
+export function UIBridgeWrapper({
+  children,
+  enableRemoteCommands = process.env.NODE_ENV === "development",
+}: UIBridgeWrapperProps) {
   return (
     <UIBridgeProvider features={features} config={config}>
       {/* AutoRegisterProvider enables automatic element registration for UI Bridge */}
@@ -50,6 +65,8 @@ export function UIBridgeWrapper({ children }: UIBridgeWrapperProps) {
         debounceMs={100}
         excludeSelectors={["[data-no-register]"]}
       >
+        {/* Command listener for remote automation */}
+        <UIBridgeCommandListener enabled={enableRemoteCommands} />
         {children as Parameters<typeof AutoRegisterProvider>[0]["children"]}
       </AutoRegisterProvider>
     </UIBridgeProvider>
