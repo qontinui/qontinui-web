@@ -7,8 +7,12 @@
  * Architecture:
  * - Server-side handlers receive requests from external clients (runner, Python)
  * - For read-only operations, handlers return cached state
- * - For actions, commands are relayed to the browser via WebSocket
- * - Browser executes commands and sends responses back via REST API
+ * - For actions, commands are relayed to the browser via WebSocket (preferred) or HTTP polling
+ * - Browser executes commands and sends responses back
+ *
+ * Transport Priority:
+ * 1. WebSocket - If client is connected via WebSocket, commands are sent instantly
+ * 2. HTTP Polling - Fallback when WebSocket is unavailable
  */
 
 import type { UIBridgeServerHandlers, RenderLogQuery, APIResponse } from "ui-bridge-server";
@@ -92,8 +96,166 @@ const pendingCommands = new Map<
   }
 >();
 
-// Command timeout in milliseconds
-const COMMAND_TIMEOUT_MS = 30000;
+// Command timeout in milliseconds (10 seconds for WebSocket, 30 seconds for HTTP)
+const WEBSOCKET_COMMAND_TIMEOUT_MS = 10000;
+const HTTP_COMMAND_TIMEOUT_MS = 30000;
+
+// ============================================================================
+// WebSocket Client Registry
+// ============================================================================
+
+/**
+ * WebSocket client interface for sending commands
+ */
+export interface WebSocketClient {
+  /**
+   * Unique client identifier
+   */
+  clientId: string;
+
+  /**
+   * Send a message to the client
+   */
+  send: (message: string) => void;
+
+  /**
+   * Check if the client is still connected
+   */
+  isConnected: () => boolean;
+
+  /**
+   * Close the connection
+   */
+  close: () => void;
+}
+
+/**
+ * WebSocket client registry entry
+ */
+interface WebSocketClientEntry {
+  client: WebSocketClient;
+  connectedAt: number;
+  lastActivity: number;
+}
+
+// WebSocket clients registry (clientId -> entry)
+const wsClients = new Map<string, WebSocketClientEntry>();
+
+/**
+ * Register a WebSocket client
+ */
+export function registerWebSocketClient(client: WebSocketClient): void {
+  const now = Date.now();
+  wsClients.set(client.clientId, {
+    client,
+    connectedAt: now,
+    lastActivity: now,
+  });
+  console.log(`[UIBridge] WebSocket client registered: ${client.clientId}`);
+}
+
+/**
+ * Unregister a WebSocket client
+ */
+export function unregisterWebSocketClient(clientId: string): void {
+  wsClients.delete(clientId);
+  console.log(`[UIBridge] WebSocket client unregistered: ${clientId}`);
+}
+
+/**
+ * Update client activity timestamp
+ */
+export function updateClientActivity(clientId: string): void {
+  const entry = wsClients.get(clientId);
+  if (entry) {
+    entry.lastActivity = Date.now();
+  }
+}
+
+/**
+ * Get the number of connected WebSocket clients
+ */
+export function getWebSocketClientCount(): number {
+  // Clean up disconnected clients
+  for (const [clientId, entry] of wsClients.entries()) {
+    if (!entry.client.isConnected()) {
+      wsClients.delete(clientId);
+    }
+  }
+  return wsClients.size;
+}
+
+/**
+ * Get a connected WebSocket client (returns first connected client)
+ */
+function getConnectedClient(): WebSocketClientEntry | null {
+  for (const [clientId, entry] of wsClients.entries()) {
+    if (entry.client.isConnected()) {
+      return entry;
+    } else {
+      // Clean up disconnected client
+      wsClients.delete(clientId);
+    }
+  }
+  return null;
+}
+
+/**
+ * Send a command via WebSocket to a connected client
+ * Returns true if command was sent, false if no client available
+ */
+function sendCommandViaWebSocket(
+  commandId: string,
+  action: string,
+  payload: unknown
+): boolean {
+  const clientEntry = getConnectedClient();
+  if (!clientEntry) {
+    return false;
+  }
+
+  try {
+    const message = JSON.stringify({
+      type: "command",
+      commandId,
+      action,
+      payload,
+      timestamp: Date.now(),
+    });
+
+    clientEntry.client.send(message);
+    clientEntry.lastActivity = Date.now();
+    return true;
+  } catch (e) {
+    console.error(`[UIBridge] Failed to send WebSocket command:`, e);
+    return false;
+  }
+}
+
+/**
+ * Broadcast an event to all connected WebSocket clients
+ */
+export function broadcastEvent(eventType: string, data: unknown): void {
+  const message = JSON.stringify({
+    type: eventType,
+    data,
+    timestamp: Date.now(),
+  });
+
+  for (const [clientId, entry] of wsClients.entries()) {
+    if (entry.client.isConnected()) {
+      try {
+        entry.client.send(message);
+        entry.lastActivity = Date.now();
+      } catch (e) {
+        console.error(`[UIBridge] Failed to broadcast to ${clientId}:`, e);
+        wsClients.delete(clientId);
+      }
+    } else {
+      wsClients.delete(clientId);
+    }
+  }
+}
 
 // ============================================================================
 // Command Queue for Browser Relay
@@ -108,6 +270,7 @@ function generateCommandId(): string {
 
 /**
  * Queue a command to be executed in the browser.
+ * Prefers WebSocket delivery when a client is connected, falls back to HTTP polling.
  * Returns a promise that resolves when the browser sends back the response.
  */
 export function queueCommand<T>(
@@ -117,11 +280,17 @@ export function queueCommand<T>(
   const commandId = generateCommandId();
 
   return new Promise((resolve, reject) => {
-    // Set timeout for command response
+    // Try WebSocket delivery first
+    const sentViaWebSocket = sendCommandViaWebSocket(commandId, action, payload);
+
+    // Set timeout based on transport method
+    const timeoutMs = sentViaWebSocket ? WEBSOCKET_COMMAND_TIMEOUT_MS : HTTP_COMMAND_TIMEOUT_MS;
+    const transport = sentViaWebSocket ? "WebSocket" : "HTTP";
+
     const timeout = setTimeout(() => {
       pendingCommands.delete(commandId);
-      reject(new Error(`Command ${action} timed out after ${COMMAND_TIMEOUT_MS}ms`));
-    }, COMMAND_TIMEOUT_MS);
+      reject(new Error(`Command ${action} timed out after ${timeoutMs}ms (${transport})`));
+    }, timeoutMs);
 
     // Store the pending command
     pendingCommands.set(commandId, {
@@ -130,23 +299,25 @@ export function queueCommand<T>(
       timeout,
     });
 
-    // The command will be picked up by the browser via the command queue endpoint
-    commandQueue.push({
-      commandId,
-      action,
-      payload,
-      timestamp: Date.now(),
-    });
+    // If WebSocket delivery failed, add to HTTP polling queue
+    if (!sentViaWebSocket) {
+      commandQueue.push({
+        commandId,
+        action,
+        payload,
+        timestamp: Date.now(),
+      });
 
-    // Limit queue size
-    while (commandQueue.length > 100) {
-      const dropped = commandQueue.shift();
-      if (dropped) {
-        const pending = pendingCommands.get(dropped.commandId);
-        if (pending) {
-          clearTimeout(pending.timeout);
-          pending.reject(new Error("Command dropped from queue"));
-          pendingCommands.delete(dropped.commandId);
+      // Limit queue size
+      while (commandQueue.length > 100) {
+        const dropped = commandQueue.shift();
+        if (dropped) {
+          const pending = pendingCommands.get(dropped.commandId);
+          if (pending) {
+            clearTimeout(pending.timeout);
+            pending.reject(new Error("Command dropped from queue"));
+            pendingCommands.delete(dropped.commandId);
+          }
         }
       }
     }
@@ -534,6 +705,32 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
   async getPageSummary(): Promise<APIResponse<string>> {
     try {
       const result = await queueCommand<string>("getPageSummary", {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // Component State Endpoint
+  // --------------------------------------------------------------------------
+
+  async getComponentState(id: string): Promise<APIResponse<{ state: Record<string, unknown>; computed: Record<string, unknown>; timestamp: number }>> {
+    try {
+      const result = await queueCommand<{ state: Record<string, unknown>; computed: Record<string, unknown>; timestamp: number }>("getComponentState", { id });
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // Semantic Search Endpoint
+  // --------------------------------------------------------------------------
+
+  async aiSemanticSearch(criteria: { query: string; threshold?: number; limit?: number; type?: string; role?: string; combineWithText?: boolean }): Promise<APIResponse<{ results: unknown[]; bestMatch: unknown | null; scannedCount: number; durationMs: number; query: string; timestamp: number }>> {
+    try {
+      const result = await queueCommand<{ results: unknown[]; bestMatch: unknown | null; scannedCount: number; durationMs: number; query: string; timestamp: number }>("aiSemanticSearch", criteria);
       return success(result);
     } catch (e) {
       return error((e as Error).message, "COMMAND_FAILED");

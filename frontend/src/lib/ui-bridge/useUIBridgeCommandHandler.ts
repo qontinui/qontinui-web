@@ -106,18 +106,16 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         case "getControlSnapshot": {
           const snapshot: ControlSnapshot = {
             timestamp: Date.now(),
-            elements: elements.map((e) => ({
-              id: e.id,
-              tagName: e.tagName,
-              type: e.type,
-              text: e.text,
-              isVisible: e.isVisible,
-              isEnabled: e.isEnabled,
-              rect: e.rect,
-              attributes: e.attributes,
-              componentName: e.componentName,
-              aliases: e.aliases,
-            })),
+            elements: elements.map((e) => {
+              const state = e.getState();
+              return {
+                id: e.id,
+                type: e.type,
+                label: e.label,
+                actions: e.actions,
+                state: state,
+              };
+            }),
             components: [],
             workflows: [],
             activeRuns: [],
@@ -326,16 +324,21 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         case "find":
         case "discover": {
           return {
-            elements: elements.map((e) => ({
-              id: e.id,
-              tagName: e.tagName,
-              type: e.type,
-              text: e.text,
-              isVisible: e.isVisible,
-              isEnabled: e.isEnabled,
-              rect: e.rect,
-              aliases: e.aliases,
-            })),
+            elements: elements.map((e) => {
+              const state = e.getState();
+              const identifier = e.getIdentifier();
+              return {
+                id: e.id,
+                type: e.type,
+                label: e.label,
+                tagName: e.element.tagName.toLowerCase(),
+                role: e.element.getAttribute("role") ?? undefined,
+                accessibleName: e.element.getAttribute("aria-label") ?? e.label,
+                actions: e.actions,
+                state: state,
+                registered: true,
+              };
+            }),
             total: elements.length,
             durationMs: 0,
             timestamp: Date.now(),
@@ -641,8 +644,8 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
             elements: elements.length,
             tree: elements.slice(0, 50).map((e) => ({
               id: e.id,
-              tag: e.tagName,
-              text: e.text?.slice(0, 50),
+              tag: e.element.tagName.toLowerCase(),
+              text: (e.label ?? e.element.textContent ?? "").slice(0, 50),
             })),
           };
         }
@@ -651,6 +654,51 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           // Trigger render log snapshot
           return {
             captured: true,
+            timestamp: Date.now(),
+          };
+        }
+
+        // ========== Component State ==========
+        case "getComponentState": {
+          const { id } = payload;
+          // Components are not fully implemented in this handler yet
+          // Return empty state as placeholder
+          return {
+            state: {},
+            computed: {},
+            timestamp: Date.now(),
+          };
+        }
+
+        // ========== Semantic Search ==========
+        case "aiSemanticSearch": {
+          // Semantic search requires embedding support
+          // For now, fall back to text-based search
+          const criteria = payload as { query: string; threshold?: number; limit?: number };
+          const { createSearchEngine } = await import("ui-bridge/ai");
+          const searchEngine = createSearchEngine({}, elements);
+          const results = searchEngine.search({
+            text: criteria.query,
+            fuzzy: true,
+            fuzzyThreshold: criteria.threshold ?? 0.5,
+          });
+          const limitedResults = criteria.limit ? results.slice(0, criteria.limit) : results;
+          return {
+            results: limitedResults.map((r, idx) => ({
+              element: r.element,
+              similarity: r.confidence,
+              rank: idx + 1,
+              embeddedText: r.element.description || r.element.id,
+            })),
+            bestMatch: limitedResults.length > 0 ? {
+              element: limitedResults[0]!.element,
+              similarity: limitedResults[0]!.confidence,
+              rank: 1,
+              embeddedText: limitedResults[0]!.element.description || limitedResults[0]!.element.id,
+            } : null,
+            scannedCount: elements.length,
+            durationMs: 0,
+            query: criteria.query,
             timestamp: Date.now(),
           };
         }
