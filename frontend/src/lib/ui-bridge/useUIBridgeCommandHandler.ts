@@ -327,7 +327,6 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           return {
             elements: elements.map((e) => {
               const state = e.getState();
-              const identifier = e.getIdentifier();
               return {
                 id: e.id,
                 type: e.type,
@@ -351,12 +350,12 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           // Import AI search functionality dynamically
           const { createSearchEngine } = await import("ui-bridge/ai");
           const searchEngine = createSearchEngine({}, elements);
-          const results = searchEngine.search(
+          const searchResponse = searchEngine.search(
             payload as Parameters<typeof searchEngine.search>[0]
           );
           return {
-            results,
-            total: results.length,
+            results: searchResponse.results,
+            total: searchResponse.results.length,
             timestamp: Date.now(),
           };
         }
@@ -417,10 +416,11 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           // elements is available from hook scope
           const searchEngine = createSearchEngine({}, elements);
 
-          const searchResults = searchEngine.search({
+          const searchResponse = searchEngine.search({
             text: parsed.targetDescription,
             fuzzy: true,
           });
+          const searchResults = searchResponse.results;
 
           if (searchResults.length === 0) {
             return createAIFailure(
@@ -434,7 +434,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
             return createAIFailure(
               "LOW_CONFIDENCE",
               `Best match confidence (${(searchResults[0].confidence * 100).toFixed(0)}%) is below threshold (${(confidenceThreshold * 100).toFixed(0)}%)`,
-              { searchResults: searchResults as Array<{ element: { id: string; description: string; type: string }; confidence: number }> }
+              { searchResults: searchResults.map((r) => ({ element: { id: r.element.id, description: r.element.description, type: r.element.type }, confidence: r.confidence })) }
             );
           }
 
@@ -447,7 +447,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
             return createAIFailure(
               "ELEMENT_NOT_FOUND",
               `DOM element not found for ${targetElement.id}`,
-              { elementId: targetElement.id, searchResults: searchResults as Array<{ element: { id: string; description: string; type: string }; confidence: number }> }
+              { elementId: targetElement.id, searchResults: searchResults.map((r) => ({ element: { id: r.element.id, description: r.element.description, type: r.element.type }, confidence: r.confidence })) }
             );
           }
 
@@ -459,7 +459,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
             return createAIFailure(
               "ELEMENT_NOT_VISIBLE",
               `Element "${targetElement.id}" exists but is not visible`,
-              { elementId: targetElement.id, searchResults: searchResults as Array<{ element: { id: string; description: string; type: string }; confidence: number }> }
+              { elementId: targetElement.id, searchResults: searchResults.map((r) => ({ element: { id: r.element.id, description: r.element.description, type: r.element.type }, confidence: r.confidence })) }
             );
           }
 
@@ -467,7 +467,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
             return createAIFailure(
               "ELEMENT_NOT_ENABLED",
               `Element "${targetElement.id}" is disabled`,
-              { elementId: targetElement.id, searchResults: searchResults as Array<{ element: { id: string; description: string; type: string }; confidence: number }> }
+              { elementId: targetElement.id, searchResults: searchResults.map((r) => ({ element: { id: r.element.id, description: r.element.description, type: r.element.type }, confidence: r.confidence })) }
             );
           }
 
