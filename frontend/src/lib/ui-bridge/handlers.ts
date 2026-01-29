@@ -41,6 +41,7 @@ import type {
   BatchAssertionResult,
   SemanticSnapshot,
   SemanticDiff,
+  SemanticSearchResult,
 } from "ui-bridge/ai";
 
 /**
@@ -728,9 +729,9 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
   // Semantic Search Endpoint
   // --------------------------------------------------------------------------
 
-  async aiSemanticSearch(criteria: { query: string; threshold?: number; limit?: number; type?: string; role?: string; combineWithText?: boolean }): Promise<APIResponse<{ results: unknown[]; bestMatch: unknown | null; scannedCount: number; durationMs: number; query: string; timestamp: number }>> {
+  async aiSemanticSearch(criteria: { query: string; threshold?: number; limit?: number; type?: string; role?: string; combineWithText?: boolean }): Promise<APIResponse<{ results: SemanticSearchResult[]; bestMatch: SemanticSearchResult | null; scannedCount: number; durationMs: number; query: string; timestamp: number }>> {
     try {
-      const result = await queueCommand<{ results: unknown[]; bestMatch: unknown | null; scannedCount: number; durationMs: number; query: string; timestamp: number }>("aiSemanticSearch", criteria);
+      const result = await queueCommand<{ results: SemanticSearchResult[]; bestMatch: SemanticSearchResult | null; scannedCount: number; durationMs: number; query: string; timestamp: number }>("aiSemanticSearch", criteria);
       return success(result);
     } catch (e) {
       return error((e as Error).message, "COMMAND_FAILED");

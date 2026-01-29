@@ -130,14 +130,15 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           if (!element) {
             throw new Error(`Element ${id} not found`);
           }
+          const state = element.getState();
           return {
             id: element.id,
-            isVisible: element.isVisible,
-            isEnabled: element.isEnabled,
-            text: element.text,
-            value: element.value,
-            checked: element.checked,
-            rect: element.rect,
+            isVisible: state.visible,
+            isEnabled: state.enabled,
+            text: state.textContent,
+            value: state.value,
+            checked: state.checked,
+            rect: state.rect,
           };
         }
 
