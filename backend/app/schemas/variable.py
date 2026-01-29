@@ -25,7 +25,11 @@ UuidAsString = Annotated[
 
 
 class VariableScope(str, Enum):
-    """Variable scope enumeration."""
+    """Variable scope enumeration.
+
+    Values are uppercase to match the API contract. The DB model uses lowercase,
+    so VariableRead uses a before_validator to normalize.
+    """
 
     GLOBAL = "GLOBAL"
     WORKFLOW = "WORKFLOW"
@@ -59,7 +63,7 @@ class VariableBase(BaseSchema):
 class VariableCreate(VariableBase):
     """Schema for creating a new variable."""
 
-    scope: VariableScope = Field(..., description="Variable scope (GLOBAL or WORKFLOW)")
+    scope: VariableScope = VariableScope.GLOBAL
 
 
 class VariableUpdate(BaseSchema):
@@ -80,6 +84,16 @@ class VariableRead(VariableBase, BaseORMSchema):
     scope: VariableScope
     created_at: IsoDatetime
     updated_at: IsoDatetime
+
+    @field_validator("scope", mode="before")
+    @classmethod
+    def normalize_scope(cls, v: Any) -> str:
+        """Normalize scope from DB lowercase to schema uppercase."""
+        if isinstance(v, str):
+            return v.upper()
+        if hasattr(v, "value"):
+            return str(v.value).upper()
+        return str(v)
 
 
 class VariableHistoryRead(BaseORMSchema):
