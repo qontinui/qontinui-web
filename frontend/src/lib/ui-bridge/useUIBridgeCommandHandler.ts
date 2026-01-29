@@ -21,6 +21,57 @@ const POLL_INTERVAL_MS = 500;
 // API endpoints
 const COMMANDS_ENDPOINT = "/api/ui-bridge/commands";
 
+/**
+ * Get recovery suggestions based on error code
+ */
+function getRecoverySuggestions(errorCode: string): Array<{
+  suggestion: string;
+  command?: string;
+  confidence: number;
+  retryable: boolean;
+}> {
+  switch (errorCode) {
+    case "ELEMENT_NOT_FOUND":
+      return [
+        { suggestion: "Wait for the page to fully load", command: "wait for page to load", confidence: 0.7, retryable: true },
+        { suggestion: "Use a different description for the element", confidence: 0.8, retryable: false },
+        { suggestion: "Scroll the page to reveal the element", command: "scroll down", confidence: 0.6, retryable: true },
+      ];
+    case "ELEMENT_NOT_VISIBLE":
+      return [
+        { suggestion: "Scroll to make the element visible", command: "scroll to element", confidence: 0.9, retryable: true },
+        { suggestion: "Wait for any loading overlays to disappear", confidence: 0.7, retryable: true },
+        { suggestion: "Close any blocking modals or popups", command: "click close button", confidence: 0.8, retryable: true },
+      ];
+    case "ELEMENT_NOT_ENABLED":
+      return [
+        { suggestion: "Fill in required fields first", confidence: 0.8, retryable: false },
+        { suggestion: "Complete prerequisite steps in the form", confidence: 0.7, retryable: false },
+        { suggestion: "Wait for the element to become enabled", command: "wait for element to be enabled", confidence: 0.6, retryable: true },
+      ];
+    case "ELEMENT_NOT_INTERACTABLE":
+      return [
+        { suggestion: "Close any modal or popup blocking the element", command: "click close button", confidence: 0.9, retryable: true },
+        { suggestion: "Wait for animations to complete", confidence: 0.7, retryable: true },
+        { suggestion: "Scroll the element into the viewport", command: "scroll to element", confidence: 0.8, retryable: true },
+      ];
+    case "ACTION_TIMEOUT":
+      return [
+        { suggestion: "Increase the timeout duration", confidence: 0.8, retryable: true },
+        { suggestion: "Check if the page is responding", confidence: 0.7, retryable: false },
+      ];
+    case "UNSUPPORTED_ACTION":
+      return [
+        { suggestion: "Use a different action type for this element", confidence: 0.9, retryable: false },
+        { suggestion: "Check the element type supports this action", confidence: 0.8, retryable: false },
+      ];
+    default:
+      return [
+        { suggestion: "Try a different approach or check the page state", confidence: 0.5, retryable: false },
+      ];
+  }
+}
+
 interface QueuedCommand {
   commandId: string;
   action: string;
@@ -38,7 +89,7 @@ interface CommandsResponse {
  * Hook to handle UI Bridge commands from external clients
  */
 export function useUIBridgeCommandHandler(enabled: boolean = true) {
-  const { registry, controller } = useUIBridge();
+  const { elements, getElement } = useUIBridge();
   const isPollingRef = useRef(false);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -55,7 +106,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         case "getControlSnapshot": {
           const snapshot: ControlSnapshot = {
             timestamp: Date.now(),
-            elements: registry.getElements().map((e) => ({
+            elements: elements.map((e) => ({
               id: e.id,
               tagName: e.tagName,
               type: e.type,
@@ -77,7 +128,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         // ========== Element Actions ==========
         case "getElementState": {
           const { id } = payload;
-          const element = registry.getElementById(id as string);
+          const element = getElement(id as string);
           if (!element) {
             throw new Error(`Element ${id} not found`);
           }
@@ -93,13 +144,40 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         }
 
         case "executeElementAction": {
+          const startTime = performance.now();
           const { id, request } = payload as {
             id: string;
             request: { action: string; value?: string };
           };
-          const element = registry.getElementById(id);
+
+          // Create structured failure helper
+          const createFailure = (
+            errorCode: string,
+            message: string,
+            elementState?: unknown
+          ) => ({
+            success: false,
+            error: message,
+            failureDetails: {
+              errorCode,
+              message,
+              elementId: id,
+              selectorsTried: [`[data-ui-id="${id}"]`],
+              elementState,
+              suggestedActions: getRecoverySuggestions(errorCode),
+              retryRecommended: ["ELEMENT_NOT_VISIBLE", "ACTION_TIMEOUT"].includes(errorCode),
+              durationMs: performance.now() - startTime,
+            },
+            durationMs: performance.now() - startTime,
+            timestamp: Date.now(),
+          });
+
+          const element = getElement(id);
           if (!element) {
-            throw new Error(`Element ${id} not found`);
+            return createFailure(
+              "ELEMENT_NOT_FOUND",
+              `Element ${id} not found`
+            );
           }
 
           // Get the DOM element
@@ -107,56 +185,122 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
             `[data-ui-id="${id}"]`
           ) as HTMLElement | null;
           if (!domElement) {
-            throw new Error(`DOM element for ${id} not found`);
+            return createFailure(
+              "ELEMENT_NOT_FOUND",
+              `DOM element for ${id} not found`,
+              element
+            );
+          }
+
+          // Check visibility
+          const isVisible = domElement.offsetParent !== null &&
+            getComputedStyle(domElement).visibility !== "hidden" &&
+            getComputedStyle(domElement).display !== "none";
+
+          if (!isVisible) {
+            return createFailure(
+              "ELEMENT_NOT_VISIBLE",
+              `Element ${id} exists but is not visible`,
+              {
+                visible: false,
+                enabled: !(domElement as HTMLButtonElement).disabled,
+                rect: domElement.getBoundingClientRect(),
+              }
+            );
+          }
+
+          // Check if enabled (for buttons/inputs)
+          if ((domElement as HTMLButtonElement).disabled) {
+            return createFailure(
+              "ELEMENT_NOT_ENABLED",
+              `Element ${id} is disabled`,
+              {
+                visible: true,
+                enabled: false,
+                rect: domElement.getBoundingClientRect(),
+              }
+            );
           }
 
           const actionType = request.action;
-          switch (actionType) {
-            case "click":
-              domElement.click();
-              break;
-            case "focus":
-              domElement.focus();
-              break;
-            case "blur":
-              domElement.blur();
-              break;
-            case "setValue":
-              if (
-                domElement instanceof HTMLInputElement ||
-                domElement instanceof HTMLTextAreaElement
-              ) {
-                domElement.value = request.value || "";
-                domElement.dispatchEvent(new Event("input", { bubbles: true }));
-                domElement.dispatchEvent(new Event("change", { bubbles: true }));
-              }
-              break;
-            case "select":
-              if (domElement instanceof HTMLSelectElement) {
-                domElement.value = request.value || "";
-                domElement.dispatchEvent(new Event("change", { bubbles: true }));
-              }
-              break;
-            case "check":
-              if (domElement instanceof HTMLInputElement) {
-                domElement.checked = true;
-                domElement.dispatchEvent(new Event("change", { bubbles: true }));
-              }
-              break;
-            case "uncheck":
-              if (domElement instanceof HTMLInputElement) {
-                domElement.checked = false;
-                domElement.dispatchEvent(new Event("change", { bubbles: true }));
-              }
-              break;
-            default:
-              throw new Error(`Unknown action: ${actionType}`);
+          try {
+            switch (actionType) {
+              case "click":
+                domElement.click();
+                break;
+              case "focus":
+                domElement.focus();
+                break;
+              case "blur":
+                domElement.blur();
+                break;
+              case "setValue":
+                if (
+                  domElement instanceof HTMLInputElement ||
+                  domElement instanceof HTMLTextAreaElement
+                ) {
+                  domElement.value = request.value || "";
+                  domElement.dispatchEvent(new Event("input", { bubbles: true }));
+                  domElement.dispatchEvent(new Event("change", { bubbles: true }));
+                } else {
+                  return createFailure(
+                    "UNSUPPORTED_ACTION",
+                    `Cannot set value on ${domElement.tagName} element`
+                  );
+                }
+                break;
+              case "select":
+                if (domElement instanceof HTMLSelectElement) {
+                  domElement.value = request.value || "";
+                  domElement.dispatchEvent(new Event("change", { bubbles: true }));
+                } else {
+                  return createFailure(
+                    "UNSUPPORTED_ACTION",
+                    `Cannot select on ${domElement.tagName} element`
+                  );
+                }
+                break;
+              case "check":
+                if (domElement instanceof HTMLInputElement) {
+                  domElement.checked = true;
+                  domElement.dispatchEvent(new Event("change", { bubbles: true }));
+                } else {
+                  return createFailure(
+                    "UNSUPPORTED_ACTION",
+                    `Cannot check ${domElement.tagName} element`
+                  );
+                }
+                break;
+              case "uncheck":
+                if (domElement instanceof HTMLInputElement) {
+                  domElement.checked = false;
+                  domElement.dispatchEvent(new Event("change", { bubbles: true }));
+                } else {
+                  return createFailure(
+                    "UNSUPPORTED_ACTION",
+                    `Cannot uncheck ${domElement.tagName} element`
+                  );
+                }
+                break;
+              default:
+                return createFailure(
+                  "UNSUPPORTED_ACTION",
+                  `Unknown action: ${actionType}`
+                );
+            }
+          } catch (actionError) {
+            return createFailure(
+              "ACTION_REJECTED",
+              `Action failed: ${(actionError as Error).message}`
+            );
           }
 
           return {
             success: true,
             action: actionType,
             elementId: id,
+            durationMs: performance.now() - startTime,
+            timestamp: Date.now(),
           };
         }
 
@@ -181,7 +325,6 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         // ========== Find / Discovery ==========
         case "find":
         case "discover": {
-          const elements = registry.getElements();
           return {
             elements: elements.map((e) => ({
               id: e.id,
@@ -203,7 +346,6 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         case "aiSearch": {
           // Import AI search functionality dynamically
           const { createSearchEngine } = await import("ui-bridge/ai");
-          const elements = registry.getElements();
           const searchEngine = createSearchEngine({}, elements);
           const results = searchEngine.search(
             payload as Parameters<typeof searchEngine.search>[0]
@@ -216,20 +358,59 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         }
 
         case "aiExecute": {
+          const startTime = performance.now();
           // Parse natural language and execute
-          const { parseNLInstruction, createNLActionExecutor } = await import(
-            "ui-bridge/ai"
-          );
-          const { instruction } = payload as { instruction: string };
+          const { parseNLInstruction } = await import("ui-bridge/ai");
+          const { instruction, confidenceThreshold = 0.7 } = payload as {
+            instruction: string;
+            confidenceThreshold?: number;
+          };
+
+          // Create structured failure helper for AI execution
+          const createAIFailure = (
+            errorCode: string,
+            message: string,
+            options: {
+              elementId?: string;
+              searchResults?: Array<{ element: { id: string; description: string; type: string }; confidence: number }>;
+            } = {}
+          ) => ({
+            success: false,
+            executedAction: instruction,
+            error: message,
+            errorCode,
+            failureInfo: {
+              errorCode,
+              message,
+              elementId: options.elementId,
+              partialMatches: options.searchResults?.slice(1, 4).map((r) => ({
+                elementId: r.element.id,
+                confidence: r.confidence,
+                reason: "Lower confidence match",
+                type: r.element.type,
+                description: r.element.description,
+              })),
+              suggestedActions: getRecoverySuggestions(errorCode),
+              retryRecommended: ["LOW_CONFIDENCE", "ELEMENT_NOT_VISIBLE", "ACTION_TIMEOUT"].includes(errorCode),
+              durationMs: performance.now() - startTime,
+            },
+            confidence: options.searchResults?.[0]?.confidence || 0,
+            durationMs: performance.now() - startTime,
+            timestamp: Date.now(),
+          });
+
           const parsed = parseNLInstruction(instruction);
 
           if (!parsed) {
-            throw new Error(`Could not parse instruction: ${instruction}`);
+            return createAIFailure(
+              "PARSE_ERROR",
+              `Could not parse instruction: "${instruction}"`
+            );
           }
 
           // Find the target element
           const { createSearchEngine } = await import("ui-bridge/ai");
-          const elements = registry.getElements();
+          // elements is available from hook scope
           const searchEngine = createSearchEngine({}, elements);
 
           const searchResults = searchEngine.search({
@@ -238,8 +419,18 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           });
 
           if (searchResults.length === 0) {
-            throw new Error(
-              `No element found matching: ${parsed.targetDescription}`
+            return createAIFailure(
+              "ELEMENT_NOT_FOUND",
+              `No element found matching: "${parsed.targetDescription}"`
+            );
+          }
+
+          // Check confidence threshold
+          if (searchResults[0].confidence < confidenceThreshold) {
+            return createAIFailure(
+              "LOW_CONFIDENCE",
+              `Best match confidence (${(searchResults[0].confidence * 100).toFixed(0)}%) is below threshold (${(confidenceThreshold * 100).toFixed(0)}%)`,
+              { searchResults: searchResults as Array<{ element: { id: string; description: string; type: string }; confidence: number }> }
             );
           }
 
@@ -249,44 +440,104 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           ) as HTMLElement | null;
 
           if (!domElement) {
-            throw new Error(`DOM element not found for ${targetElement.id}`);
+            return createAIFailure(
+              "ELEMENT_NOT_FOUND",
+              `DOM element not found for ${targetElement.id}`,
+              { elementId: targetElement.id, searchResults: searchResults as Array<{ element: { id: string; description: string; type: string }; confidence: number }> }
+            );
+          }
+
+          // Check visibility and enabled state
+          const isVisible = domElement.offsetParent !== null &&
+            getComputedStyle(domElement).visibility !== "hidden";
+
+          if (!isVisible) {
+            return createAIFailure(
+              "ELEMENT_NOT_VISIBLE",
+              `Element "${targetElement.id}" exists but is not visible`,
+              { elementId: targetElement.id, searchResults: searchResults as Array<{ element: { id: string; description: string; type: string }; confidence: number }> }
+            );
+          }
+
+          if ((domElement as HTMLButtonElement).disabled) {
+            return createAIFailure(
+              "ELEMENT_NOT_ENABLED",
+              `Element "${targetElement.id}" is disabled`,
+              { elementId: targetElement.id, searchResults: searchResults as Array<{ element: { id: string; description: string; type: string }; confidence: number }> }
+            );
           }
 
           // Execute the action
-          switch (parsed.action) {
-            case "click":
-              domElement.click();
-              break;
-            case "type":
-              if (
-                domElement instanceof HTMLInputElement ||
-                domElement instanceof HTMLTextAreaElement
-              ) {
-                domElement.value = parsed.value || "";
-                domElement.dispatchEvent(new Event("input", { bubbles: true }));
-                domElement.dispatchEvent(new Event("change", { bubbles: true }));
-              }
-              break;
-            case "select":
-              if (domElement instanceof HTMLSelectElement) {
-                domElement.value = parsed.value || "";
-                domElement.dispatchEvent(new Event("change", { bubbles: true }));
-              }
-              break;
-            case "check":
-              if (domElement instanceof HTMLInputElement) {
-                domElement.checked = true;
-                domElement.dispatchEvent(new Event("change", { bubbles: true }));
-              }
-              break;
-            case "uncheck":
-              if (domElement instanceof HTMLInputElement) {
-                domElement.checked = false;
-                domElement.dispatchEvent(new Event("change", { bubbles: true }));
-              }
-              break;
-            default:
-              throw new Error(`Unsupported action: ${parsed.action}`);
+          try {
+            switch (parsed.action) {
+              case "click":
+                domElement.click();
+                break;
+              case "type":
+                if (
+                  domElement instanceof HTMLInputElement ||
+                  domElement instanceof HTMLTextAreaElement
+                ) {
+                  domElement.value = parsed.value || "";
+                  domElement.dispatchEvent(new Event("input", { bubbles: true }));
+                  domElement.dispatchEvent(new Event("change", { bubbles: true }));
+                } else {
+                  return createAIFailure(
+                    "UNSUPPORTED_ACTION",
+                    `Cannot type into ${domElement.tagName} element`,
+                    { elementId: targetElement.id }
+                  );
+                }
+                break;
+              case "select":
+                if (domElement instanceof HTMLSelectElement) {
+                  domElement.value = parsed.value || "";
+                  domElement.dispatchEvent(new Event("change", { bubbles: true }));
+                } else {
+                  return createAIFailure(
+                    "UNSUPPORTED_ACTION",
+                    `Cannot select on ${domElement.tagName} element`,
+                    { elementId: targetElement.id }
+                  );
+                }
+                break;
+              case "check":
+                if (domElement instanceof HTMLInputElement) {
+                  domElement.checked = true;
+                  domElement.dispatchEvent(new Event("change", { bubbles: true }));
+                } else {
+                  return createAIFailure(
+                    "UNSUPPORTED_ACTION",
+                    `Cannot check ${domElement.tagName} element`,
+                    { elementId: targetElement.id }
+                  );
+                }
+                break;
+              case "uncheck":
+                if (domElement instanceof HTMLInputElement) {
+                  domElement.checked = false;
+                  domElement.dispatchEvent(new Event("change", { bubbles: true }));
+                } else {
+                  return createAIFailure(
+                    "UNSUPPORTED_ACTION",
+                    `Cannot uncheck ${domElement.tagName} element`,
+                    { elementId: targetElement.id }
+                  );
+                }
+                break;
+              default:
+                return createAIFailure(
+                  "UNSUPPORTED_ACTION",
+                  `Unsupported action: ${parsed.action}`,
+                  { elementId: targetElement.id }
+                );
+            }
+          } catch (actionError) {
+            return createAIFailure(
+              "ACTION_REJECTED",
+              `Action failed: ${(actionError as Error).message}`,
+              { elementId: targetElement.id }
+            );
           }
 
           return {
@@ -294,12 +545,14 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
             executedAction: `${parsed.action} on ${targetElement.id}`,
             elementUsed: targetElement,
             confidence: searchResults[0].confidence,
+            durationMs: performance.now() - startTime,
+            timestamp: Date.now(),
           };
         }
 
         case "aiAssert": {
           const { createAssertionExecutor } = await import("ui-bridge/ai");
-          const elements = registry.getElements();
+          // elements is available from hook scope
           const executor = createAssertionExecutor({}, elements, (id) => {
             const el = document.querySelector(
               `[data-ui-id="${id}"]`
@@ -323,7 +576,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
 
         case "aiAssertBatch": {
           const { createAssertionExecutor } = await import("ui-bridge/ai");
-          const elements = registry.getElements();
+          // elements is available from hook scope
           const executor = createAssertionExecutor({}, elements, (id) => {
             const el = document.querySelector(
               `[data-ui-id="${id}"]`
@@ -347,14 +600,14 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
 
         case "getSemanticSnapshot": {
           const { createSnapshotManager } = await import("ui-bridge/ai");
-          const elements = registry.getElements();
+          // elements is available from hook scope
           const manager = createSnapshotManager({}, elements);
           return manager.capture();
         }
 
         case "getSemanticDiff": {
           const { createDiffManager } = await import("ui-bridge/ai");
-          const elements = registry.getElements();
+          // elements is available from hook scope
           const manager = createDiffManager({}, elements);
           const { since } = payload as { since?: number };
           // This would need previous snapshot tracking - for now return null
@@ -363,7 +616,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
 
         case "getPageSummary": {
           const { generatePageSummary } = await import("ui-bridge/ai");
-          const elements = registry.getElements();
+          // elements is available from hook scope
           const snapshot = {
             timestamp: Date.now(),
             elements,
@@ -382,7 +635,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
 
         case "getElementTree": {
           // Build a tree representation
-          const elements = registry.getElements();
+          // elements is available from hook scope
           return {
             root: document.title,
             elements: elements.length,
@@ -406,7 +659,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           throw new Error(`Unknown command action: ${action}`);
       }
     },
-    [registry, controller]
+    [elements, getElement]
   );
 
   /**
@@ -420,6 +673,23 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           command.payload as Record<string, unknown>
         );
 
+        // Check if result contains a failure (structured error)
+        const resultObj = result as { success?: boolean; failureDetails?: unknown };
+        if (resultObj && resultObj.success === false) {
+          // Send structured failure response
+          await fetch(COMMANDS_ENDPOINT, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              commandId: command.commandId,
+              success: false,
+              result, // Include full result with failureDetails
+              error: (result as { error?: string }).error,
+            }),
+          });
+          return;
+        }
+
         // Send success response
         await fetch(COMMANDS_ENDPOINT, {
           method: "POST",
@@ -430,15 +700,39 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
             result,
           }),
         });
-      } catch (e) {
-        // Send error response
+      } catch (e: unknown) {
+        // Send error response with structured failure details
+        const errorMessage = (e as Error).message;
+        let errorCode = "UNKNOWN_ERROR";
+
+        if (errorMessage.includes("not found")) {
+          errorCode = "ELEMENT_NOT_FOUND";
+        } else if (errorMessage.includes("timeout")) {
+          errorCode = "ACTION_TIMEOUT";
+        } else if (errorMessage.includes("parse") || errorMessage.includes("Could not parse")) {
+          errorCode = "PARSE_ERROR";
+        }
+
         await fetch(COMMANDS_ENDPOINT, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             commandId: command.commandId,
             success: false,
-            error: (e as Error).message,
+            error: errorMessage,
+            result: {
+              success: false,
+              error: errorMessage,
+              failureDetails: {
+                errorCode,
+                message: errorMessage,
+                suggestedActions: getRecoverySuggestions(errorCode),
+                retryRecommended: ["ACTION_TIMEOUT", "ELEMENT_NOT_VISIBLE"].includes(errorCode),
+                timestamp: Date.now(),
+              },
+              durationMs: 0,
+              timestamp: Date.now(),
+            },
           }),
         });
       }
@@ -468,7 +762,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         // Process all commands concurrently
         await Promise.all(data.commands.map(processCommand));
       }
-    } catch (e) {
+    } catch (e: unknown) {
       console.error("[UIBridge] Error polling commands:", e);
     } finally {
       isPollingRef.current = false;

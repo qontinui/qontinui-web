@@ -1,10 +1,17 @@
 """
-WebSocket endpoints for live test streaming.
+WebSocket endpoints for live test streaming and UI Bridge command relay.
 
 Provides real-time test result streaming between runners and dashboard clients.
 Runners connect to stream test results, dashboard clients connect to receive updates.
+
+UI Bridge Command Relay:
+- Runner sends ui_bridge_command via WebSocket
+- Backend broadcasts to dashboard clients via Redis pub/sub
+- Dashboard executes command and sends ui_bridge_response
+- Backend forwards response back to runner
 """
 
+import asyncio
 import time
 from collections import defaultdict
 from uuid import UUID
@@ -22,6 +29,15 @@ from app.services.websocket_manager import get_websocket_manager
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
+
+# UI Bridge command response correlation
+# Maps command_id -> (runner_websocket, asyncio.Event, result)
+_pending_ui_bridge_commands: dict[str, tuple[WebSocket, asyncio.Event, dict | None]] = (
+    {}
+)
+
+# Command timeout in seconds
+UI_BRIDGE_COMMAND_TIMEOUT = 30.0
 
 # Rate limiting state (in-memory for WebSocket connections)
 _connection_attempts: dict[str, list[float]] = defaultdict(list)
@@ -202,6 +218,112 @@ async def websocket_runner_endpoint(
                     )
                     continue
 
+                message_type = data.get("type")
+
+                # Handle UI Bridge commands specially - wait for response
+                if message_type == "ui_bridge_command":
+                    command_id = data.get("command_id")
+                    if not command_id:
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "message": "ui_bridge_command must have 'command_id' field",
+                                "timestamp": utc_now().isoformat() + "Z",
+                            }
+                        )
+                        continue
+
+                    # Register pending command for response correlation
+                    response_event = asyncio.Event()
+                    _pending_ui_bridge_commands[command_id] = (
+                        websocket,
+                        response_event,
+                        None,
+                    )
+
+                    logger.info(
+                        "ws_ui_bridge_command_received",
+                        runner_id=runner_id,
+                        command_id=command_id,
+                        action=data.get("action"),
+                    )
+
+                    # Broadcast to dashboard clients via Redis
+                    await ws_manager.broadcast(runner_id, data)
+
+                    # Wait for response with timeout
+                    try:
+                        await asyncio.wait_for(
+                            response_event.wait(),
+                            timeout=UI_BRIDGE_COMMAND_TIMEOUT,
+                        )
+                        # Get the response
+                        _, _, response_data = _pending_ui_bridge_commands.get(
+                            command_id, (None, None, None)
+                        )
+                        if response_data:
+                            # Forward response to runner
+                            await websocket.send_json(response_data)
+                            logger.info(
+                                "ws_ui_bridge_response_forwarded",
+                                runner_id=runner_id,
+                                command_id=command_id,
+                                success=response_data.get("success"),
+                            )
+                        else:
+                            # Response was set but data is None (shouldn't happen)
+                            await websocket.send_json(
+                                {
+                                    "type": "ui_bridge_response",
+                                    "command_id": command_id,
+                                    "success": False,
+                                    "error": "Response data missing",
+                                    "timestamp": utc_now().isoformat() + "Z",
+                                }
+                            )
+                    except TimeoutError:
+                        logger.warning(
+                            "ws_ui_bridge_command_timeout",
+                            runner_id=runner_id,
+                            command_id=command_id,
+                        )
+                        await websocket.send_json(
+                            {
+                                "type": "ui_bridge_response",
+                                "command_id": command_id,
+                                "success": False,
+                                "error": f"Command timed out after {UI_BRIDGE_COMMAND_TIMEOUT}s",
+                                "timestamp": utc_now().isoformat() + "Z",
+                            }
+                        )
+                    finally:
+                        # Cleanup pending command
+                        _pending_ui_bridge_commands.pop(command_id, None)
+
+                    continue
+
+                # Handle UI Bridge response from dashboard
+                if message_type == "ui_bridge_response":
+                    command_id = data.get("command_id")
+                    if command_id and command_id in _pending_ui_bridge_commands:
+                        ws, event, _ = _pending_ui_bridge_commands[command_id]
+                        # Store the response and signal completion
+                        _pending_ui_bridge_commands[command_id] = (ws, event, data)
+                        event.set()
+                        logger.info(
+                            "ws_ui_bridge_response_received",
+                            runner_id=runner_id,
+                            command_id=command_id,
+                        )
+                    else:
+                        logger.warning(
+                            "ws_ui_bridge_response_orphaned",
+                            runner_id=runner_id,
+                            command_id=command_id,
+                        )
+                    # Don't broadcast responses or send ack
+                    continue
+
                 # Broadcast to dashboard clients via Redis
                 # The broadcast will be received by all backend instances
                 await ws_manager.broadcast(runner_id, data)
@@ -209,7 +331,7 @@ async def websocket_runner_endpoint(
                 logger.debug(
                     "ws_runner_message_broadcast",
                     runner_id=runner_id,
-                    message_type=data.get("type"),
+                    message_type=message_type,
                 )
 
                 # Send acknowledgment
@@ -475,6 +597,38 @@ async def websocket_dashboard_endpoint(
                             "timestamp": utc_now().isoformat() + "Z",
                         }
                     )
+                elif message_type == "ui_bridge_response":
+                    # Dashboard is sending back a response to a UI Bridge command
+                    command_id = data.get("command_id")
+                    if not command_id:
+                        logger.warning(
+                            "ws_dashboard_ui_bridge_response_no_command_id",
+                            project_id=project_id,
+                            user_id=str(user.id),
+                        )
+                        continue
+
+                    # Check if this command is pending
+                    if command_id in _pending_ui_bridge_commands:
+                        ws, event, _ = _pending_ui_bridge_commands[command_id]
+                        # Store the response and signal completion
+                        _pending_ui_bridge_commands[command_id] = (ws, event, data)
+                        event.set()
+                        logger.info(
+                            "ws_dashboard_ui_bridge_response_received",
+                            project_id=project_id,
+                            command_id=command_id,
+                            success=data.get("success"),
+                        )
+                    else:
+                        # Command may have timed out or been handled by another instance
+                        # Broadcast via Redis so the correct instance can handle it
+                        await ws_manager.broadcast(project_id, data)
+                        logger.info(
+                            "ws_dashboard_ui_bridge_response_broadcast",
+                            project_id=project_id,
+                            command_id=command_id,
+                        )
                 else:
                     # Dashboard clients should not send other message types
                     logger.warning(
