@@ -349,7 +349,8 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         case "aiSearch": {
           // Import AI search functionality dynamically
           const { createSearchEngine } = await import("ui-bridge/ai");
-          const searchEngine = createSearchEngine({}, elements);
+          const searchEngine = createSearchEngine({});
+          searchEngine.updateElements(elements);
           const searchResponse = searchEngine.search(
             payload as Parameters<typeof searchEngine.search>[0]
           );
@@ -414,7 +415,8 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           // Find the target element
           const { createSearchEngine } = await import("ui-bridge/ai");
           // elements is available from hook scope
-          const searchEngine = createSearchEngine({}, elements);
+          const searchEngine = createSearchEngine({});
+          searchEngine.updateElements(elements);
 
           const searchResponse = searchEngine.search({
             text: parsed.targetDescription,
@@ -430,15 +432,16 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           }
 
           // Check confidence threshold
-          if (searchResults[0].confidence < confidenceThreshold) {
+          const firstResult = searchResults[0];
+          if (!firstResult || firstResult.confidence < confidenceThreshold) {
             return createAIFailure(
               "LOW_CONFIDENCE",
-              `Best match confidence (${(searchResults[0].confidence * 100).toFixed(0)}%) is below threshold (${(confidenceThreshold * 100).toFixed(0)}%)`,
+              `Best match confidence (${firstResult ? (firstResult.confidence * 100).toFixed(0) : 0}%) is below threshold (${(confidenceThreshold * 100).toFixed(0)}%)`,
               { searchResults: searchResults.map((r) => ({ element: { id: r.element.id, description: r.element.description, type: r.element.type }, confidence: r.confidence })) }
             );
           }
 
-          const targetElement = searchResults[0].element;
+          const targetElement = firstResult.element;
           const domElement = document.querySelector(
             `[data-ui-id="${targetElement.id}"]`
           ) as HTMLElement | null;
@@ -557,62 +560,58 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         case "aiAssert": {
           const { createAssertionExecutor } = await import("ui-bridge/ai");
           // elements is available from hook scope
-          const executor = createAssertionExecutor({}, elements, (id) => {
-            const el = document.querySelector(
-              `[data-ui-id="${id}"]`
-            ) as HTMLElement | null;
-            if (!el) return null;
-            return {
-              isVisible:
-                el.offsetParent !== null && getComputedStyle(el).visibility !== "hidden",
-              isEnabled: !(el as HTMLButtonElement).disabled,
-              isFocused: document.activeElement === el,
-              isChecked: (el as HTMLInputElement).checked,
-              text: el.textContent || "",
-              value: (el as HTMLInputElement).value,
-            };
+          const executor = createAssertionExecutor({});
+          executor.updateElements(elements);
+          const assertionRequest = payload as { target: string; type: string; expected?: unknown };
+          const result = await executor.assert({
+            target: assertionRequest.target,
+            type: assertionRequest.type as "visible" | "hidden" | "enabled" | "disabled" | "exists" | "notExists" | "hasText" | "containsText" | "hasValue" | "checked" | "unchecked" | "focused" | "custom",
+            expected: assertionRequest.expected,
           });
-          const result = await executor.assert(
-            payload as Parameters<typeof executor.assert>[0]
-          );
           return result;
         }
 
         case "aiAssertBatch": {
           const { createAssertionExecutor } = await import("ui-bridge/ai");
           // elements is available from hook scope
-          const executor = createAssertionExecutor({}, elements, (id) => {
-            const el = document.querySelector(
-              `[data-ui-id="${id}"]`
-            ) as HTMLElement | null;
-            if (!el) return null;
-            return {
-              isVisible:
-                el.offsetParent !== null && getComputedStyle(el).visibility !== "hidden",
-              isEnabled: !(el as HTMLButtonElement).disabled,
-              isFocused: document.activeElement === el,
-              isChecked: (el as HTMLInputElement).checked,
-              text: el.textContent || "",
-              value: (el as HTMLInputElement).value,
-            };
+          const executor = createAssertionExecutor({});
+          executor.updateElements(elements);
+          const batchRequest = payload as { assertions: Array<{ target: string; type: string; expected?: unknown }>; mode?: "all" | "any" };
+          const result = await executor.assertBatch({
+            assertions: batchRequest.assertions.map(a => ({
+              target: a.target,
+              type: a.type as "visible" | "hidden" | "enabled" | "disabled" | "exists" | "notExists" | "hasText" | "containsText" | "hasValue" | "checked" | "unchecked" | "focused" | "custom",
+              expected: a.expected,
+            })),
+            mode: batchRequest.mode || "all",
           });
-          const result = await executor.assertBatch(
-            payload as Parameters<typeof executor.assertBatch>[0]
-          );
           return result;
         }
 
         case "getSemanticSnapshot": {
           const { createSnapshotManager } = await import("ui-bridge/ai");
           // elements is available from hook scope
-          const manager = createSnapshotManager({}, elements);
-          return manager.capture();
+          const manager = createSnapshotManager({});
+          const controlSnapshot = {
+            timestamp: Date.now(),
+            elements: elements.map((e) => ({
+              id: e.id,
+              type: e.type,
+              label: e.label,
+              actions: e.actions,
+              state: e.getState(),
+            })),
+            components: [],
+            workflows: [],
+            activeRuns: [],
+          };
+          return manager.createSnapshot(controlSnapshot);
         }
 
         case "getSemanticDiff": {
           const { createDiffManager } = await import("ui-bridge/ai");
           // elements is available from hook scope
-          const manager = createDiffManager({}, elements);
+          const manager = createDiffManager({});
           const { since } = payload as { since?: number };
           // This would need previous snapshot tracking - for now return null
           return null;
