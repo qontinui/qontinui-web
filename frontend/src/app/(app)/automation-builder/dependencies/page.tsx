@@ -334,7 +334,7 @@ function DependenciesPageInner() {
       });
       setActiveTab("circular");
     }
-  }, [graph.cycles]);
+  }, [graph.cycles, setActiveTab]);
 
   const handleFindUnused = useCallback(() => {
     const unused = unusedWorkflows.length;
@@ -346,7 +346,7 @@ function DependenciesPageInner() {
       });
       setActiveTab("unused");
     }
-  }, [unusedWorkflows]);
+  }, [unusedWorkflows, setActiveTab]);
 
   const handleHighlightCycle = useCallback(
     (cycle: string[]) => {

@@ -21,7 +21,6 @@ import {
   Upload,
   Clock,
   FolderOpen,
-  BookTemplate as Template,
   Play,
   Check,
 } from "lucide-react";
@@ -77,12 +76,12 @@ export default function Dashboard() {
   const { showTutorialOverlay, hasCompletedWelcome, toggleWelcomeModal } =
     useOnboardingStore();
 
-  const isNewUser = () => {
+  const isNewUser = useMemo(() => {
     if (!user?.created_at) return false;
     const createdAt = new Date(user.created_at);
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
     return createdAt > fiveMinutesAgo;
-  };
+  }, [user?.created_at]);
 
   useEffect(() => {
     // Wait for auth to finish loading before redirecting
@@ -92,12 +91,12 @@ export default function Dashboard() {
     }
 
     // Show welcome modal for new users who haven't completed onboarding
-    if (user && !authLoading && isNewUser() && !hasCompletedWelcome) {
+    if (user && !authLoading && isNewUser && !hasCompletedWelcome) {
       toggleWelcomeModal(true);
     }
 
     // Show early access welcome for new users (separate from onboarding)
-    if (user && !authLoading && isNewUser()) {
+    if (user && !authLoading && isNewUser) {
       // Small delay to let onboarding modal show first if needed
       const timer = setTimeout(
         () => {
@@ -109,7 +108,7 @@ export default function Dashboard() {
     }
 
     return undefined;
-  }, [user, authLoading, router, hasCompletedWelcome, toggleWelcomeModal]);
+  }, [user, authLoading, router, hasCompletedWelcome, toggleWelcomeModal, isNewUser]);
 
   // Clear old localStorage project data (one-time cleanup)
   useEffect(() => {
@@ -176,7 +175,7 @@ export default function Dashboard() {
 
   const handleNewProject = () => {
     // Show wizard for new users with no projects
-    if (projects.length === 0 && isNewUser()) {
+    if (projects.length === 0 && isNewUser) {
       setShowFirstProjectWizard(true);
       return;
     }
@@ -322,18 +321,6 @@ export default function Dashboard() {
     handleExport();
   };
 
-  const handleBrowseTemplates = () => {
-    // Show template browser
-    toast.info(
-      "Template library is being curated. Check back soon for workflow templates!",
-      {
-        description:
-          "Templates will include common automation patterns like form filling, data extraction, and web scraping.",
-        duration: 7000,
-      }
-    );
-  };
-
   const getStatusColor = (status: Project["status"]) => {
     switch (status) {
       case "production":
@@ -413,7 +400,7 @@ export default function Dashboard() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="text-3xl font-bold mb-2">
-                {isNewUser() ? "Welcome" : "Welcome back"},{" "}
+                {isNewUser ? "Welcome" : "Welcome back"},{" "}
                 {user.full_name || user.username}
               </h2>
               <p className="text-text-muted">
@@ -466,28 +453,12 @@ export default function Dashboard() {
 
               <Card
                 className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm hover:border-brand-secondary/50 hover:shadow-[0_0_20px_var(--glow-secondary)] transition-all duration-300 cursor-pointer group"
-                onClick={handleBrowseTemplates}
-                data-ui-id="dashboard-quick-templates"
-              >
-                <CardContent className="p-6 text-center">
-                  <div className="w-12 h-12 bg-brand-secondary/20 rounded-lg flex items-center justify-center mx-auto mb-3 group-hover:bg-brand-secondary/30 transition-colors">
-                    <Template className="w-6 h-6 text-brand-secondary" />
-                  </div>
-                  <h4 className="font-semibold mb-2">Browse Templates</h4>
-                  <p className="text-sm text-text-muted">
-                    Explore pre-built automation templates
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card
-                className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm hover:border-brand-success/50 hover:shadow-[0_0_20px_var(--glow-success)] transition-all duration-300 cursor-pointer group"
                 onClick={handleImportProject}
                 data-ui-id="dashboard-quick-import"
               >
                 <CardContent className="p-6 text-center">
-                  <div className="w-12 h-12 bg-brand-success/20 rounded-lg flex items-center justify-center mx-auto mb-3 group-hover:bg-brand-success/30 transition-colors">
-                    <Upload className="w-6 h-6 text-brand-success" />
+                  <div className="w-12 h-12 bg-brand-secondary/20 rounded-lg flex items-center justify-center mx-auto mb-3 group-hover:bg-brand-secondary/30 transition-colors">
+                    <Upload className="w-6 h-6 text-brand-secondary" />
                   </div>
                   <h4 className="font-semibold mb-2">Import Configuration</h4>
                   <p className="text-sm text-text-muted">
@@ -495,14 +466,44 @@ export default function Dashboard() {
                   </p>
                 </CardContent>
               </Card>
+
+              <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Clock className="w-5 h-5 text-brand-success" />
+                    Recent Activity
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="space-y-2">
+                    {activities.slice(0, 3).map((activity) => (
+                      <div
+                        key={activity.id}
+                        className="flex items-start gap-2 p-2 rounded-lg hover:bg-surface-hover/30 transition-colors"
+                      >
+                        <div className="w-1.5 h-1.5 bg-brand-primary rounded-full mt-1.5 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-text-secondary line-clamp-1">
+                            {activity.type === "created"
+                              ? "Created"
+                              : "Updated"}{" "}
+                            {activity.projectName}
+                          </p>
+                          <p className="text-xs text-text-muted">
+                            {getRelativeTime(activity.timestamp.toISOString())}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           </div>
         )}
 
-        {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Projects Section */}
-          <div className="lg:col-span-3" data-tour="projects">
+        {/* Projects Section */}
+        <div data-tour="projects">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-xl font-semibold">Your Projects</h3>
               <Button
@@ -648,41 +649,6 @@ export default function Dashboard() {
               </div>
             )}
           </div>
-
-          {/* Recent Activity Sidebar */}
-          {projects.length > 0 && (
-            <div className="lg:col-span-1">
-              <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
-                <CardHeader>
-                  <CardTitle className="text-lg">Recent Activity</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {activities.slice(0, 5).map((activity) => (
-                      <div
-                        key={activity.id}
-                        className="flex items-start gap-3 p-3 rounded-lg hover:bg-surface-hover/30 transition-colors"
-                      >
-                        <div className="w-2 h-2 bg-brand-primary rounded-full mt-2 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-text-secondary line-clamp-1">
-                            {activity.type === "created"
-                              ? "Created"
-                              : "Updated"}{" "}
-                            {activity.projectName}
-                          </p>
-                          <p className="text-xs text-text-muted">
-                            {getRelativeTime(activity.timestamp.toISOString())}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
-        </div>
       </main>
 
       {/* Create Project Dialog */}

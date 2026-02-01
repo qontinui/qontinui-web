@@ -132,6 +132,7 @@ export default function DatasetViewerPage() {
     if (!authLoading && user?.is_superuser && datasetId) {
       loadDataset();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadDataset is stable, only reload when auth/datasetId changes
   }, [authLoading, user, datasetId]);
 
   // Load images when filters change
@@ -139,6 +140,7 @@ export default function DatasetViewerPage() {
     if (dataset) {
       loadImages();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadImages is stable, only reload when dataset/filters change
   }, [dataset, filters]);
 
   // Load annotations when image selected
@@ -149,6 +151,7 @@ export default function DatasetViewerPage() {
       setAnnotations([]);
       setSelectedAnnotation(null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadAnnotations is stable, only reload when selectedImage changes
   }, [selectedImage]);
 
   const loadDataset = async () => {
@@ -657,6 +660,7 @@ export default function DatasetViewerPage() {
                     }`}
                     onClick={() => setSelectedImage(image)}
                   >
+                    {/* eslint-disable-next-line @next/next/no-img-element -- Dynamic thumbnail URL from backend */}
                     <img
                       src={datasetService.getImageThumbnailUrl(
                         datasetId,

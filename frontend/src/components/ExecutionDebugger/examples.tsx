@@ -82,6 +82,7 @@ export function BasicDebuggerExample() {
     // Enable debugger and initialize with action count
     setDebugEnabled(true);
     initialize(simpleProcess.actions.length);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleExecute = () => {
@@ -190,6 +191,7 @@ export function ControlFlowDebuggerExample() {
   useEffect(() => {
     setDebugEnabled(true);
     initialize(controlFlowProcess.actions.length);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: initialize only on mount
   }, []);
 
   // Simulate loop execution
@@ -305,6 +307,7 @@ export function VariableTrackingExample() {
   useEffect(() => {
     setDebugEnabled(true);
     initialize(variableProcess.actions.length);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: initialize only on mount
   }, []);
 
   const simulateVariableOperations = async () => {
@@ -404,6 +407,7 @@ export function BreakpointExample() {
     // Add breakpoints at specific actions
     addBreakpoint(2); // Break before action 3
     addBreakpoint(4); // Break before action 5
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: initialize only on mount
   }, []);
 
   return (
@@ -469,6 +473,7 @@ export function SpeedControlExample() {
   useEffect(() => {
     setDebugEnabled(true);
     initialize(speedProcess.actions.length);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: initialize only on mount
   }, []);
 
   return (
@@ -549,6 +554,7 @@ export function LogManagementExample() {
   useEffect(() => {
     setDebugEnabled(true);
     initialize(logProcess.actions.length);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: initialize only on mount
   }, []);
 
   const generateSampleLogs = () => {
@@ -717,6 +723,7 @@ export function CompleteIntegrationExample() {
   useEffect(() => {
     setDebugEnabled(true);
     initialize(complexProcess.actions.length);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: initialize only on mount
   }, []);
 
   const executeProcess = async () => {

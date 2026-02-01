@@ -480,26 +480,35 @@ export default function WorkflowAnalyticsPage() {
   const [selectedExecution, setSelectedExecution] =
     useState<ExecutionRecord | null>(null);
 
-  // Load data
-  const allMetrics = useMemo(() => {
-    return workflowAnalyticsService.getAllMetrics();
-  }, [refreshKey]);
+  // Load data - refreshKey forces re-fetch when data is refreshed
+  const allMetrics = useMemo(
+    () => workflowAnalyticsService.getAllMetrics(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshKey triggers refresh
+    [refreshKey]
+  );
 
-  const aggregatedStats = useMemo(() => {
-    return workflowAnalyticsService.getAggregatedStats();
-  }, [refreshKey]);
+  const aggregatedStats = useMemo(
+    () => workflowAnalyticsService.getAggregatedStats(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshKey triggers refresh
+    [refreshKey]
+  );
 
-  const recentExecutions = useMemo(() => {
-    return workflowAnalyticsService.getRecentExecutions(100);
-  }, [refreshKey]);
+  const recentExecutions = useMemo(
+    () => workflowAnalyticsService.getRecentExecutions(100),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshKey triggers refresh
+    [refreshKey]
+  );
 
   // Executions filtered by the selected time range
-  const timeRangeExecutions = useMemo(() => {
-    return workflowAnalyticsService.getExecutionsInDateRange(
-      timeRange.start,
-      timeRange.end
-    );
-  }, [refreshKey, timeRange]);
+  const timeRangeExecutions = useMemo(
+    () =>
+      workflowAnalyticsService.getExecutionsInDateRange(
+        timeRange.start,
+        timeRange.end
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshKey triggers refresh
+    [refreshKey, timeRange]
+  );
 
   // Filter metrics
   const filteredMetrics = useMemo(() => {
@@ -525,23 +534,27 @@ export default function WorkflowAnalyticsPage() {
     return filtered;
   }, [allMetrics, filters]);
 
-  // Top workflows
-  const topWorkflows = useMemo(() => {
-    const mostExecuted = workflowAnalyticsService.getMostUsedWorkflows(10);
-    const slowest = workflowAnalyticsService.getSlowestWorkflows(10);
-    const highestError =
-      workflowAnalyticsService.getHighestErrorRateWorkflows(10);
-    const recentlyFailed = recentExecutions
-      .filter((e) => !e.success)
-      .slice(0, 10);
+  // Top workflows - refreshKey forces re-fetch when data is refreshed
+  const topWorkflows = useMemo(
+    () => {
+      const mostExecuted = workflowAnalyticsService.getMostUsedWorkflows(10);
+      const slowest = workflowAnalyticsService.getSlowestWorkflows(10);
+      const highestError =
+        workflowAnalyticsService.getHighestErrorRateWorkflows(10);
+      const recentlyFailed = recentExecutions
+        .filter((e) => !e.success)
+        .slice(0, 10);
 
-    return {
-      mostExecuted,
-      slowest,
-      highestError,
-      recentlyFailed,
-    };
-  }, [refreshKey, recentExecutions]);
+      return {
+        mostExecuted,
+        slowest,
+        highestError,
+        recentlyFailed,
+      };
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshKey triggers refresh
+    [refreshKey, recentExecutions]
+  );
 
   // Selected workflow data
   const selectedWorkflowData = useMemo(() => {

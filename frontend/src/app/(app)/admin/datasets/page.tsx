@@ -10,7 +10,7 @@
  * - Delete datasets
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { datasetService } from "@/services/dataset-service";
@@ -79,14 +79,7 @@ export default function DatasetsPage() {
     }
   }, [user, authLoading, router]);
 
-  // Load datasets
-  useEffect(() => {
-    if (!authLoading && user?.is_superuser) {
-      loadDatasets();
-    }
-  }, [authLoading, user]);
-
-  const loadDatasets = async () => {
+  const loadDatasets = useCallback(async () => {
     setLoading(true);
     try {
       const data = await datasetService.listDatasets();
@@ -97,7 +90,14 @@ export default function DatasetsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  // Load datasets
+  useEffect(() => {
+    if (!authLoading && user?.is_superuser) {
+      loadDatasets();
+    }
+  }, [authLoading, user, loadDatasets]);
 
   const handleDelete = async () => {
     if (!deleteConfirm) return;
