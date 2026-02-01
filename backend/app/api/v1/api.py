@@ -8,6 +8,7 @@ from app.api.v1.endpoints import (
     ai_prompts,
     analytics,
     annotations,
+    annotations_ws,
     audit_logs,
 )
 from app.api.v1.endpoints import auth as auth_pkg
@@ -15,6 +16,7 @@ from app.api.v1.endpoints import (
     automation,
     automation_ws,
     background_removal,
+    batch_import,
     billing,
     capture,
     code_execution,
@@ -24,8 +26,10 @@ from app.api.v1.endpoints import (
     conflicts,
     custom_functions,
     discoveries,
+    element_annotations,
     execution,
     export,
+    exports,
     extraction,
     feedback,
     health,
@@ -57,6 +61,7 @@ from app.api.v1.endpoints import (
 )
 from app.api.v1.endpoints import testing as testing_pkg
 from app.api.v1.endpoints import (
+    training,
     training_datasets,
     ui_bridge_states,
     users,
@@ -111,6 +116,7 @@ api_router.include_router(
 api_router.include_router(
     annotations.router, prefix="/annotations", tags=["annotations"]
 )
+api_router.include_router(annotations_ws.router, tags=["annotations-websockets"])
 api_router.include_router(feedback.router, tags=["feedback"])
 api_router.include_router(
     organizations.router, prefix="/organizations", tags=["organizations"]
@@ -178,3 +184,15 @@ api_router.include_router(
 )
 # UI Bridge state discovery and management
 api_router.include_router(ui_bridge_states.router, tags=["ui-bridge-states"])
+# Training data export endpoints (S3 and local filesystem)
+api_router.include_router(exports.router, prefix="/exports", tags=["exports"])
+# Element annotations (project-scoped)
+api_router.include_router(
+    element_annotations.router, prefix="/projects", tags=["element-annotations"]
+)
+# Training jobs (ML training pipeline)
+api_router.include_router(training.router, prefix="/training", tags=["training"])
+# Batch import annotations from folder
+api_router.include_router(
+    batch_import.router, prefix="/annotations", tags=["batch-import"]
+)
