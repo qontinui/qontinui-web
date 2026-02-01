@@ -63,7 +63,7 @@ class ElementAnnotationResponse(ElementAnnotationBase):
         """Convert UUID objects to strings before validation."""
         if isinstance(v, UUID):
             return str(v)
-        return v
+        return str(v)
 
 
 # Annotation Set schemas
@@ -122,14 +122,14 @@ class ElementAnnotationSetResponse(BaseModel):
         """Convert UUID objects to strings before validation."""
         if isinstance(v, UUID):
             return str(v)
-        return v
+        return str(v)
 
     @field_validator("element_count", mode="before")
     @classmethod
     def set_element_count(cls, v: Any, info: Any) -> int:
         """Compute element count from elements list if not set."""
         if v is not None:
-            return v
+            return int(v)
         elements = info.data.get("elements", [])
         return len(elements) if elements else 0
 
@@ -158,7 +158,7 @@ class ElementAnnotationSetMetadata(BaseModel):
         """Convert UUID objects to strings before validation."""
         if isinstance(v, UUID):
             return str(v)
-        return v
+        return str(v)
 
 
 # Version schemas
@@ -192,7 +192,7 @@ class VersionResponse(BaseModel):
         """Convert UUID objects to strings before validation."""
         if isinstance(v, UUID):
             return str(v)
-        return v
+        return str(v)
 
 
 class VersionListResponse(BaseModel):
@@ -204,10 +204,10 @@ class VersionListResponse(BaseModel):
 
     @field_validator("current_version_id", mode="before")
     @classmethod
-    def convert_uuid_to_str(cls, v: Any) -> str | None:
+    def convert_optional_uuid_to_str(cls, v: Any) -> str | None:
         """Convert UUID objects to strings before validation."""
         if v is None:
             return None
         if isinstance(v, UUID):
             return str(v)
-        return v
+        return str(v)

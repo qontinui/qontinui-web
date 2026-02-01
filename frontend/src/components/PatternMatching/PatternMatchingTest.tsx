@@ -339,6 +339,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
               />
               {screenshotDataUrl && (
                 <div className="relative group">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- Base64 data URL cannot use Next.js Image optimization */}
                   <img
                     src={screenshotDataUrl}
                     alt="Screenshot"
@@ -392,6 +393,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
               />
               {templateDataUrl && (
                 <div className="relative group">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- Base64 data URL cannot use Next.js Image optimization */}
                   <img
                     src={templateDataUrl}
                     alt="Template"

@@ -149,6 +149,7 @@ export function ImageWithRefresh({
   }
 
   return (
+    // eslint-disable-next-line @next/next/no-img-element -- S3 presigned URLs with dynamic expiration cannot use Next.js Image optimization
     <img
       src={currentUrl}
       alt={alt}

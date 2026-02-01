@@ -65,6 +65,7 @@ export function AnalysisPanel() {
     if (analysis?.extractedPatterns.length && selectedPatterns.size === 0) {
       setSelectedPatterns(new Set(analysis.extractedPatterns.map((p) => p.id)));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Intentionally excluding selectedPatterns.size to avoid infinite loop; effect only runs on new analysis
   }, [analysis?.extractedPatterns]);
 
   const handleStartAnalysis = useCallback(async () => {
@@ -526,6 +527,7 @@ export function AnalysisPanel() {
                             >
                               <div className="aspect-video bg-surface-raised rounded mb-2 flex items-center justify-center overflow-hidden">
                                 {pattern.imageUrl ? (
+                                  // eslint-disable-next-line @next/next/no-img-element -- Base64 data URL from pattern extraction cannot use Next.js Image optimization
                                   <img
                                     src={
                                       pattern.customMask
