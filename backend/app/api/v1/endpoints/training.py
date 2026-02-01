@@ -174,7 +174,7 @@ async def list_training_jobs(
     jobs = list(result.scalars().all())
 
     return TrainingJobListResponse(
-        jobs=jobs,
+        jobs=[TrainingJobResponse.model_validate(job) for job in jobs],
         total=total,
         skip=skip,
         limit=limit,
