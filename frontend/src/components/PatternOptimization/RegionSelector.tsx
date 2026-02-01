@@ -44,48 +44,6 @@ export function RegionSelector({ screenshot }: RegionSelectorProps) {
     null
   );
 
-  // Load image and initialize canvas
-  useEffect(() => {
-    if (!screenshot || !canvasRef.current || !containerRef.current) return;
-
-    const loadImage = async () => {
-      try {
-        // Try to get image from IndexedDB first
-        let imageUrl = await patternOptimizationStorage.getImage(screenshot.id);
-
-        // Fallback to URL if not in IndexedDB (for backward compatibility)
-        if (!imageUrl) {
-          imageUrl = screenshot.url;
-        }
-
-        const img = new Image();
-        img.onload = () => {
-          imageRef.current = img;
-          drawCanvas();
-        };
-        img.onerror = () => {
-          toast.error("Failed to load image");
-        };
-        img.src = imageUrl;
-      } catch (error) {
-        console.error("Failed to load image:", error);
-        toast.error("Failed to load image");
-      }
-    };
-
-    loadImage();
-
-    // Set initial region if exists
-    if (screenshot.region) {
-      setCurrentRegion(screenshot.region);
-    }
-  }, [screenshot]);
-
-  // Redraw canvas when state changes
-  useEffect(() => {
-    drawCanvas();
-  }, [currentRegion, zoom, showGrid, showCrosshair, mousePos]);
-
   const drawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
@@ -203,6 +161,48 @@ export function RegionSelector({ screenshot }: RegionSelectorProps) {
       );
     }
   }, [screenshot, currentRegion, zoom, showGrid, showCrosshair, mousePos]);
+
+  // Load image and initialize canvas
+  useEffect(() => {
+    if (!screenshot || !canvasRef.current || !containerRef.current) return;
+
+    const loadImage = async () => {
+      try {
+        // Try to get image from IndexedDB first
+        let imageUrl = await patternOptimizationStorage.getImage(screenshot.id);
+
+        // Fallback to URL if not in IndexedDB (for backward compatibility)
+        if (!imageUrl) {
+          imageUrl = screenshot.url;
+        }
+
+        const img = new Image();
+        img.onload = () => {
+          imageRef.current = img;
+          drawCanvas();
+        };
+        img.onerror = () => {
+          toast.error("Failed to load image");
+        };
+        img.src = imageUrl;
+      } catch (error) {
+        console.error("Failed to load image:", error);
+        toast.error("Failed to load image");
+      }
+    };
+
+    loadImage();
+
+    // Set initial region if exists
+    if (screenshot.region) {
+      setCurrentRegion(screenshot.region);
+    }
+  }, [screenshot, drawCanvas]);
+
+  // Redraw canvas when state changes
+  useEffect(() => {
+    drawCanvas();
+  }, [drawCanvas]);
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {

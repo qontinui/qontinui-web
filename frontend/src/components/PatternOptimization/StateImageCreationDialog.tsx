@@ -71,7 +71,8 @@ export function StateImageCreationDialog({
       const names = patterns.map((_, idx) => `Pattern_${idx + 1}`);
       setImageNames(names);
     }
-  }, [patterns.length]); // Only depend on length, not the array itself
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Intentionally only trigger on patterns.length change
+  }, [patterns.length]);
 
   // Auto-select first state if available
   useEffect(() => {
@@ -225,6 +226,7 @@ export function StateImageCreationDialog({
                   <div key={pattern.id} className="flex items-center gap-2">
                     <div className="w-16 h-16 bg-surface-raised rounded border border-border-default flex items-center justify-center overflow-hidden">
                       {pattern.imageUrl ? (
+                        /* eslint-disable-next-line @next/next/no-img-element -- Dynamic pattern image from optimization */
                         <img
                           src={pattern.imageUrl}
                           alt={`Pattern ${idx + 1}`}

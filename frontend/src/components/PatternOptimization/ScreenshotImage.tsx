@@ -87,5 +87,6 @@ export function ScreenshotImage({
     );
   }
 
+  // eslint-disable-next-line @next/next/no-img-element -- Using data URLs from IndexedDB which aren't supported by next/image
   return <img src={imageUrl || ""} alt={alt} className={className} />;
 }

@@ -696,6 +696,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
                 {/* Thumbnail */}
                 <div className="aspect-video relative overflow-hidden rounded bg-surface-canvas">
                   {screenshot.imageData ? (
+                    /* eslint-disable-next-line @next/next/no-img-element -- Screenshot data URL from user upload */
                     <img
                       src={screenshot.imageData}
                       alt={screenshot.name}
