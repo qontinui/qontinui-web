@@ -21,15 +21,27 @@ import { RequireProject } from "@/components/require-project";
 import { runnerClient } from "@/lib/runner-client";
 import { ExtractionMethodSelector } from "@/components/extraction/ExtractionMethodSelector";
 import { UITarsConfigPanel } from "@/components/extraction/UITarsConfigPanel";
+import { VisionConfigPanel } from "@/components/extraction/VisionConfigPanel";
+import {
+  AnnotationEditor,
+  AnnotationToolbar,
+  ElementAnnotationForm,
+  TrainingDataExportDialog,
+} from "@/components/extraction";
+import {
+  useExtractionAnnotationStore,
+  type AnnotatedElement,
+} from "@/stores/extraction-annotation-store";
 import {
   UITarsProgressPanel,
   type UITarsProgress,
 } from "@/components/extraction/UITarsProgressPanel";
+import { WebExtractionProgressPanel } from "@/components/extraction/WebExtractionProgressPanel";
 import { ExtractionConfigPanel } from "@/components/web-extraction/ExtractionConfigPanel";
 import { StateExplorerView } from "@/components/web-extraction/StateExplorerView";
 import { extractionService } from "@/services/service-factory";
 import { useAuth } from "@/contexts/auth-context";
-import { useCreateExtraction } from "@/hooks/use-extractions";
+import { useCreateExtraction, useExtractions } from "@/hooks/use-extractions";
 import { useUIBridgeExploration } from "@/hooks/useUIBridgeExploration";
 import { useUIBridgeRecording } from "@/hooks/useUIBridgeRecording";
 import { ExplorationConfigPanel, RecordingPanel } from "@/components/ui-bridge";
@@ -81,6 +93,11 @@ import {
   Compass,
   ChevronRight,
   Circle,
+  History,
+  Clock,
+  Trash2,
+  Pencil,
+  Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import type {
@@ -139,7 +156,11 @@ interface StateDiscoveryResult {
   element_to_renders: Record<string, string[]>;
   render_count: number;
   unique_element_count: number;
+  strategy_used?: string;
+  strategy_metadata?: Record<string, unknown>;
 }
+
+type DiscoveryStrategy = "auto" | "legacy" | "fingerprint";
 
 interface SavedConfig {
   id: string;
@@ -191,6 +212,60 @@ function UnifiedExtractionContent() {
   const { getAccessToken } = useAuth();
   const createExtraction = useCreateExtraction();
 
+  // Fetch extraction history for the project
+  const { data: extractionHistory = [], isLoading: isLoadingHistory, refetch: refetchHistory } = useExtractions(
+    projectId || "",
+    !!projectId
+  );
+
+  // Track which extraction from history is currently selected for viewing
+  const [selectedHistoryExtractionId, setSelectedHistoryExtractionId] = useState<string | null>(null);
+
+  // Cleanup stale extractions state
+  const [isCleaningUp, setIsCleaningUp] = useState(false);
+
+  // Count stale extractions (running/pending older than 1 hour)
+  const staleExtractions = useMemo(() => {
+    const oneHourAgo = Date.now() - 60 * 60 * 1000;
+    return extractionHistory.filter(
+      (ext) =>
+        (ext.status === "running" || ext.status === "pending") &&
+        new Date(ext.created_at).getTime() < oneHourAgo
+    );
+  }, [extractionHistory]);
+
+  // Cleanup stale extractions by marking them as failed
+  const cleanupStaleExtractions = useCallback(async () => {
+    if (staleExtractions.length === 0) {
+      toast.info("No stale extractions to clean up");
+      return;
+    }
+
+    setIsCleaningUp(true);
+    try {
+      let cleaned = 0;
+      for (const extraction of staleExtractions) {
+        try {
+          await extractionService.updateExtraction(extraction.id, {
+            status: "failed",
+            error_message: "Marked as failed - extraction was interrupted",
+          });
+          cleaned++;
+        } catch (error) {
+          console.error(`Failed to cleanup extraction ${extraction.id}:`, error);
+        }
+      }
+      toast.success(`Cleaned up ${cleaned} stale extraction${cleaned !== 1 ? "s" : ""}`);
+      // Refetch history to update the list
+      refetchHistory();
+    } catch (error) {
+      console.error("Cleanup failed:", error);
+      toast.error("Failed to clean up stale extractions");
+    } finally {
+      setIsCleaningUp(false);
+    }
+  }, [staleExtractions, refetchHistory]);
+
   // Check for method query param on mount
   const methodFromUrl = searchParams.get("method") as ExtractionMethod | null;
   const methodSetRef = useRef(false);
@@ -213,6 +288,8 @@ function UnifiedExtractionContent() {
     pagesExtracted: number;
     errors: number;
     errorMessage?: string;
+    elapsedSeconds?: number;
+    startTime?: number;
   }>({
     status: "idle",
     extractionId: null,
@@ -221,7 +298,21 @@ function UnifiedExtractionContent() {
     pagesExtracted: 0,
     errors: 0,
   });
+  const [visionExtractionProgress, setVisionExtractionProgress] = useState<{
+    status: "idle" | "running" | "completed" | "failed";
+    elementsDetected: number;
+    errorMessage?: string;
+    screenshotUrl?: string;
+  }>({
+    status: "idle",
+    elementsDetected: 0,
+  });
+  const [visionResultsTab, setVisionResultsTab] = useState<"results" | "annotations">("results");
+  const [webResultsTab, setWebResultsTab] = useState<"explorer" | "annotations">("explorer");
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Annotation store for results editing
+  const annotationStore = useExtractionAnnotationStore();
 
   // Extraction data state (for showing results)
   const [extractionDetail, setExtractionDetail] = useState<ExtractionSessionDetail | null>(null);
@@ -237,6 +328,7 @@ function UnifiedExtractionContent() {
   const [stateDescriptions, setStateDescriptions] = useState<Record<string, string>>({});
   const [uploadedRenders, setUploadedRenders] = useState<unknown[] | null>(null);
   const [configName, setConfigName] = useState("default");
+  const [discoveryStrategy, setDiscoveryStrategy] = useState<DiscoveryStrategy>("auto");
   const [savedConfigs, setSavedConfigs] = useState<SavedConfig[]>([]);
   const [selectedConfigId, setSelectedConfigId] = useState<string | null>(null);
   const [currentSavedConfigId, setCurrentSavedConfigId] = useState<string | null>(null);
@@ -285,7 +377,13 @@ function UnifiedExtractionContent() {
   }, []);
 
   // Helper to construct runner URL from connection
+  // For extension mode, always use localhost since extension connects directly to local runner
   const getRunnerUrl = useCallback((connectionId: number | null): string | null => {
+    // For extension mode, always use localhost - no backend connection needed
+    if (exploration.config.targetType === "extension") {
+      return 'http://127.0.0.1:9876';
+    }
+
     if (connectionId === null) return null;
 
     const conn = connections.find(c => c.id === connectionId);
@@ -298,46 +396,44 @@ function UnifiedExtractionContent() {
       return 'http://127.0.0.1:9876';
     }
     return `http://${ip}:9876`;
-  }, [connections]);
+  }, [connections, exploration.config.targetType]);
 
-  // Fetch browser tabs when extension target type is selected and runner is connected
+  // Fetch browser tabs when extension target type is selected
+  // For extension mode, runnerUrl can be null (works via extension messaging on cloud)
   const handleRefreshBrowserTabs = useCallback(() => {
-    const runnerUrl = getRunnerUrl(selectedConnectionId);
-    if (!runnerUrl) {
-      toast.error("Please select a runner connection first");
-      return;
-    }
     if (exploration.config.targetType !== "extension") {
       return;
     }
-    console.log("[Extraction] Fetching browser tabs from:", runnerUrl);
+    const runnerUrl = getRunnerUrl(selectedConnectionId);
+    // runnerUrl can be null for cloud - the hook will use extension messaging
+    console.log("[Extraction] Fetching browser tabs, runnerUrl:", runnerUrl);
     exploration.fetchBrowserTabs(runnerUrl);
   }, [exploration, getRunnerUrl, selectedConnectionId]);
 
   // Auto-fetch browser tabs when extension mode is selected
   useEffect(() => {
-    if (exploration.config.targetType === "extension" && selectedConnectionId !== null) {
+    if (exploration.config.targetType === "extension") {
+      // For extension mode, we don't need a backend connection - fetch immediately
       handleRefreshBrowserTabs();
     }
-  }, [exploration.config.targetType, selectedConnectionId, handleRefreshBrowserTabs]);
+  }, [exploration.config.targetType, handleRefreshBrowserTabs]);
 
   // Handle selecting a browser tab for exploration
   const handleSelectBrowserTab = useCallback(async (tabId: number | null) => {
     const runnerUrl = getRunnerUrl(selectedConnectionId);
-    if (runnerUrl) {
-      await exploration.selectBrowserTab(runnerUrl, tabId);
-    }
+    // runnerUrl can be null for cloud - the hook will use extension messaging
+    await exploration.selectBrowserTab(runnerUrl, tabId);
   }, [exploration, getRunnerUrl, selectedConnectionId]);
 
   // Get renders to analyze (priority: exploration > recording > session > uploaded)
   const rendersToAnalyze = explorationRenders || recordingRenders || sessionRenders || uploadedRenders;
 
-  const { config, setMethod, setUitarsConfig, isLoaded } = extractionConfig;
+  const { config, setMethod, setUitarsConfig, setVisionConfig, isLoaded } = extractionConfig;
 
   // Set method from URL parameter if present (used for redirects from old pages)
   useEffect(() => {
     if (isLoaded && methodFromUrl && !methodSetRef.current) {
-      const validMethods: ExtractionMethod[] = ["web", "ui-bridge", "uitars-web", "uitars-desktop", "image"];
+      const validMethods: ExtractionMethod[] = ["web", "ui-bridge", "uitars-web", "uitars-desktop", "image", "vision"];
       if (validMethods.includes(methodFromUrl)) {
         setMethod(methodFromUrl);
         methodSetRef.current = true;
@@ -384,6 +480,42 @@ function UnifiedExtractionContent() {
       }
     }
   }, []);
+
+  // Auto-load latest completed extraction on page load (unless an extraction is in progress)
+  const autoLoadedRef = useRef(false);
+  useEffect(() => {
+    // Skip if already auto-loaded, history is loading, or an extraction is currently running
+    if (autoLoadedRef.current || isLoadingHistory || webExtractionProgress.status === "running") {
+      return;
+    }
+    // Skip if we already have a selected history item or current extraction
+    if (selectedHistoryExtractionId || webExtractionProgress.extractionId) {
+      return;
+    }
+    // Find the latest completed extraction
+    const latestCompleted = extractionHistory.find(
+      (ext) => ext.status === "completed" && ext.state_machine?.states?.length
+    );
+    if (latestCompleted) {
+      console.log("[Extraction] Auto-loading latest completed extraction:", latestCompleted.id);
+      autoLoadedRef.current = true;
+      setSelectedHistoryExtractionId(latestCompleted.id);
+      setWebExtractionProgress((prev) => ({
+        ...prev,
+        status: "completed",
+        extractionId: latestCompleted.id,
+        statesFound: latestCompleted.state_machine?.states?.length ?? 0,
+        transitionsFound: latestCompleted.state_machine?.transitions?.length ?? 0,
+      }));
+    }
+  }, [extractionHistory, isLoadingHistory, webExtractionProgress.status, webExtractionProgress.extractionId, selectedHistoryExtractionId]);
+
+  // Load extraction details when a history item is selected
+  useEffect(() => {
+    if (selectedHistoryExtractionId) {
+      loadExtractionDetail(selectedHistoryExtractionId);
+    }
+  }, [selectedHistoryExtractionId, loadExtractionDetail]);
 
   // Convert extraction data to StateMachineState format for StateExplorerView
   const stateMachineStates: StateMachineState[] = useMemo(() => {
@@ -529,6 +661,75 @@ function UnifiedExtractionContent() {
     return [];
   }, [extractionDetail?.state_machine?.states, annotations]);
 
+  // Load web extraction elements into annotation store
+  const loadWebElementsToAnnotationStore = useCallback(() => {
+    if (!annotations.length && !stateMachineStates.length) return;
+
+    const extractionId = webExtractionProgress.extractionId;
+    if (!extractionId) return;
+
+    // Set session first to enable backend persistence
+    const firstAnnotation = annotations[0];
+    const sourceUrl = firstAnnotation?.source_url;
+    annotationStore.setSession(extractionId, firstAnnotation?.screenshot_id, sourceUrl);
+
+    // Build elements from annotations (ElementAnnotation)
+    const elements: AnnotatedElement[] = [];
+
+    // First, collect elements from annotations
+    for (const annotation of annotations) {
+      if (annotation.elements) {
+        for (const el of annotation.elements) {
+          elements.push({
+            id: el.id,
+            bbox: el.bbox,
+            label: el.name || el.text || "Element",
+            elementType: el.element_type || "other",
+            text: el.text || undefined,
+            confidence: el.confidence || 0.5,
+            isGroundTruth: false,
+            isAutoDetected: true,
+            detectionTechnique: "web-extraction",
+          });
+        }
+      }
+    }
+
+    // If no elements from annotations, try to extract from state machine states
+    if (elements.length === 0 && stateMachineStates.length > 0) {
+      for (const state of stateMachineStates) {
+        for (const stateImage of state.stateImages || []) {
+          if (stateImage.bbox) {
+            elements.push({
+              id: stateImage.id,
+              bbox: stateImage.bbox,
+              label: stateImage.name || `${state.name} Element`,
+              elementType: stateImage.extractionCategory?.split(":")[0] || "other",
+              confidence: 1.0,
+              isGroundTruth: false,
+              isAutoDetected: true,
+              detectionTechnique: stateImage.extractionCategory || "state-machine",
+            });
+          }
+        }
+      }
+    }
+
+    if (elements.length > 0) {
+      annotationStore.setElements(elements);
+
+      // Try to set a screenshot if available
+      if (firstAnnotation?.screenshot_id) {
+        const screenshotUrl = `${process.env.NEXT_PUBLIC_API_URL}/api/v1/extractions/${extractionId}/screenshots/${firstAnnotation.screenshot_id}`;
+        annotationStore.setScreenshot(
+          screenshotUrl,
+          firstAnnotation.viewport_width || 1920,
+          firstAnnotation.viewport_height || 1080
+        );
+      }
+    }
+  }, [annotations, stateMachineStates, webExtractionProgress.extractionId, annotationStore]);
+
   // Poll for UI-TARS extraction status
   const pollExtractionStatus = useCallback(async () => {
     const runnerUrl = getRunnerUrl(selectedConnectionId);
@@ -605,10 +806,19 @@ function UnifiedExtractionContent() {
           clearInterval(pollingRef.current);
           pollingRef.current = null;
         }
-        setWebExtractionProgress((prev) => ({
-          ...prev,
-          status: "completed",
-        }));
+        // Calculate final elapsed time using startTime from state
+        setWebExtractionProgress((prev) => {
+          const finalElapsedSeconds = prev.startTime
+            ? Math.floor((Date.now() - prev.startTime) / 1000)
+            : undefined;
+          console.log("[Extraction] Completed - startTime:", prev.startTime, "finalElapsedSeconds:", finalElapsedSeconds);
+          return {
+            ...prev,
+            status: "completed",
+            elapsedSeconds: finalElapsedSeconds,
+            startTime: undefined,
+          };
+        });
         toast.success("Web extraction completed successfully!");
       } else if (detail.status === "failed") {
         setIsExtracting(false);
@@ -616,11 +826,19 @@ function UnifiedExtractionContent() {
           clearInterval(pollingRef.current);
           pollingRef.current = null;
         }
-        setWebExtractionProgress((prev) => ({
-          ...prev,
-          status: "failed",
-          errorMessage: detail.error_message || "Extraction failed",
-        }));
+        // Calculate final elapsed time using startTime from state
+        setWebExtractionProgress((prev) => {
+          const finalElapsedSeconds = prev.startTime
+            ? Math.floor((Date.now() - prev.startTime) / 1000)
+            : undefined;
+          return {
+            ...prev,
+            status: "failed",
+            errorMessage: detail.error_message || "Extraction failed",
+            elapsedSeconds: finalElapsedSeconds,
+            startTime: undefined,
+          };
+        });
         toast.error(`Extraction failed: ${detail.error_message || "Unknown error"}`);
       }
     } catch (error) {
@@ -862,6 +1080,7 @@ function UnifiedExtractionContent() {
           body: JSON.stringify({
             renders: rendersToAnalyze,
             include_html_ids: false,
+            strategy: discoveryStrategy,
           }),
         }
       );
@@ -877,8 +1096,11 @@ function UnifiedExtractionContent() {
       setStateDescriptions({});
       setCurrentSavedConfigId(null);
       setStateUuidMap({});
+
+      const strategyLabel = result.strategy_used === "fingerprint" ? " (fingerprint)" :
+                           result.strategy_used === "legacy" ? " (legacy)" : "";
       toast.success(
-        `Discovered ${result.states.length} states from ${result.render_count} renders`
+        `Discovered ${result.states.length} states from ${result.render_count} renders${strategyLabel}`
       );
     } catch (error) {
       console.error("State discovery error:", error);
@@ -886,7 +1108,7 @@ function UnifiedExtractionContent() {
     } finally {
       setIsDiscovering(false);
     }
-  }, [rendersToAnalyze]);
+  }, [rendersToAnalyze, discoveryStrategy]);
 
   // UI Bridge: Save discovered states
   const saveDiscoveredStates = useCallback(async () => {
@@ -912,6 +1134,7 @@ function UnifiedExtractionContent() {
             config_name: configName,
             renders: rendersToAnalyze,
             include_html_ids: false,
+            strategy: discoveryStrategy,
           }),
         }
       );
@@ -957,7 +1180,7 @@ function UnifiedExtractionContent() {
     } finally {
       setIsSaving(false);
     }
-  }, [projectId, rendersToAnalyze, configName, discoveryResult, loadConfigs]);
+  }, [projectId, rendersToAnalyze, configName, discoveryResult, loadConfigs, discoveryStrategy]);
 
   // UI Bridge: Update state description
   const updateStateDescription = useCallback(
@@ -1201,8 +1424,14 @@ function UnifiedExtractionContent() {
           return;
         }
 
+        // Clear previous extraction state
         setExtractionDetail(null);
         setAnnotations([]);
+        setSelectedHistoryExtractionId(null);
+
+        // Track extraction start time in state
+        const startTime = Date.now();
+        console.log("[Extraction] Started - set startTime:", startTime);
 
         setWebExtractionProgress({
           status: "running",
@@ -1211,6 +1440,8 @@ function UnifiedExtractionContent() {
           transitionsFound: 0,
           pagesExtracted: 0,
           errors: 0,
+          elapsedSeconds: 0,
+          startTime,
         });
 
         const sessionResult = await createExtraction.mutateAsync({
@@ -1261,6 +1492,112 @@ function UnifiedExtractionContent() {
         toast.info("Starting web extraction...");
         setIsExtracting(true);
         setMainTab("results");
+      } else if (config.method === "vision") {
+        // Vision extraction
+        const runnerUrl = getRunnerUrl(selectedConnectionId);
+        if (!runnerUrl) {
+          toast.error("Please select a connected runner");
+          return;
+        }
+
+        setVisionExtractionProgress({
+          status: "running",
+          elementsDetected: 0,
+        });
+
+        // Build screenshot source based on config
+        let screenshotSource = "";
+        if (config.visionConfig.source === "upload" && config.visionConfig.screenshotPath) {
+          screenshotSource = config.visionConfig.screenshotPath;
+        } else if (config.visionConfig.source === "window" && config.visionConfig.windowTitle) {
+          screenshotSource = `window:${config.visionConfig.windowTitle}`;
+        } else if (config.visionConfig.source === "monitor") {
+          screenshotSource = `monitor:${config.visionConfig.monitorIndex ?? 0}`;
+        }
+
+        // Build techniques array based on enabled detection methods
+        const techniques: string[] = [];
+        if (config.visionConfig.edgeDetection.enabled) techniques.push("edge");
+        if (config.visionConfig.sam3.enabled) techniques.push("sam3");
+        if (config.visionConfig.ocr.enabled) techniques.push("ocr");
+
+        const requestBody = {
+          screenshot: screenshotSource,
+          techniques: techniques.length > 0 ? techniques : undefined,
+          canny_low: config.visionConfig.edgeDetection.cannyLow,
+          canny_high: config.visionConfig.edgeDetection.cannyHigh,
+          min_contour_area: config.visionConfig.edgeDetection.minContourArea,
+          max_contour_area: config.visionConfig.edgeDetection.maxContourArea,
+          sam_model_type: config.visionConfig.sam3.modelType,
+          points_per_side: config.visionConfig.sam3.pointsPerSide,
+          pred_iou_threshold: config.visionConfig.sam3.predIouThreshold,
+          stability_score_threshold: config.visionConfig.sam3.stabilityScoreThreshold,
+          ocr_engine: config.visionConfig.ocr.engine,
+          ocr_min_confidence: config.visionConfig.ocr.minConfidence,
+          iou_threshold: config.visionConfig.fusion.iouThreshold,
+          max_candidates: config.visionConfig.fusion.maxCandidates,
+        };
+
+        const response = await fetch(`${runnerUrl}/extraction/vision`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        if (data.success && data.data) {
+          // Generate a unique session ID for vision extraction
+          // Vision extractions don't have a backend extraction ID, so we create a local one
+          const visionSessionId = `vision_${Date.now()}`;
+
+          // Set session for localStorage persistence (vision extractions are local-only)
+          annotationStore.setSession(visionSessionId, undefined, screenshotSource);
+
+          // Parse and load results into annotation store
+          const elements: AnnotatedElement[] = (data.data.elements || []).map(
+            (el: { bbox: { x: number; y: number; width: number; height: number }; label?: string; element_type?: string; text?: string; confidence?: number; detection_technique?: string }, idx: number) => ({
+              id: `vision_${Date.now()}_${idx}`,
+              bbox: el.bbox,
+              label: el.label || `Element ${idx + 1}`,
+              elementType: el.element_type || "other",
+              text: el.text,
+              confidence: el.confidence || 0.5,
+              isGroundTruth: false,
+              isAutoDetected: true,
+              detectionTechnique: el.detection_technique,
+            })
+          );
+
+          annotationStore.setElements(elements);
+
+          // Set screenshot URL if provided
+          if (data.data.screenshot_url) {
+            annotationStore.setScreenshot(
+              data.data.screenshot_url,
+              data.data.screenshot_width || 1920,
+              data.data.screenshot_height || 1080
+            );
+            setVisionExtractionProgress((prev) => ({
+              ...prev,
+              screenshotUrl: data.data.screenshot_url,
+            }));
+          }
+
+          setVisionExtractionProgress({
+            status: "completed",
+            elementsDetected: elements.length,
+            screenshotUrl: data.data.screenshot_url,
+          });
+          toast.success(`Vision extraction completed: ${elements.length} elements detected`);
+          setMainTab("results");
+        } else {
+          throw new Error(data.error || "Vision extraction failed");
+        }
       } else {
         // UI-TARS extraction
         const runnerUrl = getRunnerUrl(selectedConnectionId);
@@ -1324,6 +1661,8 @@ function UnifiedExtractionContent() {
       setIsExtracting(false);
       if (config.method === "web") {
         setWebExtractionProgress((prev) => ({ ...prev, status: "failed", errorMessage: String(error) }));
+      } else if (config.method === "vision") {
+        setVisionExtractionProgress((prev) => ({ ...prev, status: "failed", errorMessage: String(error) }));
       } else {
         setUitarsProgress((prev) => ({ ...prev, status: "failed", errorMessage: String(error) }));
       }
@@ -1348,6 +1687,8 @@ function UnifiedExtractionContent() {
       case "uitars-web":
       case "uitars-desktop":
         return "var(--brand-secondary)";
+      case "vision":
+        return "#9B59B6";
       case "image":
         return "var(--brand-success)";
       default:
@@ -1454,6 +1795,21 @@ function UnifiedExtractionContent() {
           </div>
         </header>
 
+        {/* Hidden test helper element for automation tests to read page state */}
+        <div
+          id="extraction-page-state"
+          data-ui-id="extraction-page-state"
+          data-extraction-status={webExtractionProgress.status}
+          data-states-count={stateMachineStates.length}
+          data-history-count={extractionHistory.length}
+          data-is-loading={isLoadingDetail ? "true" : "false"}
+          data-selected-extraction={selectedHistoryExtractionId || "none"}
+          data-extraction-method={config.method}
+          data-main-tab={mainTab}
+          aria-hidden="true"
+          style={{ display: "none" }}
+        />
+
         {/* Tabs & Content */}
         <div className="container mx-auto px-6 py-6 layout-full-height">
           <Tabs
@@ -1465,6 +1821,7 @@ function UnifiedExtractionContent() {
               <TabsList className="bg-surface-raised/80 border border-border-subtle p-1 backdrop-blur-sm h-11">
                 <TabsTrigger
                   value="configuration"
+                  id="extraction-config-tab"
                   data-ui-id="extraction-config-tab"
                   className="data-[state=active]:bg-opacity-20 font-mono px-6 h-9 transition-all"
                   style={{ "--tw-bg-opacity": "0.2" } as React.CSSProperties}
@@ -1473,6 +1830,7 @@ function UnifiedExtractionContent() {
                 </TabsTrigger>
                 <TabsTrigger
                   value="results"
+                  id="extraction-results-tab"
                   data-ui-id="extraction-results-tab"
                   className="data-[state=active]:bg-opacity-20 font-mono px-6 h-9 transition-all"
                 >
@@ -1485,6 +1843,7 @@ function UnifiedExtractionContent() {
                 <Button
                   onClick={handleStartExtraction}
                   disabled={isExtracting}
+                  id="extraction-start-btn"
                   data-ui-id="extraction-start-btn"
                   className="font-mono h-11 px-6 transition-all"
                   style={{
@@ -1596,6 +1955,8 @@ function UnifiedExtractionContent() {
                           setStateDescriptions={setStateDescriptions}
                           setCurrentSavedConfigId={setCurrentSavedConfigId}
                           setStateUuidMap={setStateUuidMap}
+                          discoveryStrategy={discoveryStrategy}
+                          setDiscoveryStrategy={setDiscoveryStrategy}
                           connections={connections}
                           connectionsLoading={connectionsLoading}
                           selectedConnectionId={selectedConnectionId}
@@ -1611,6 +1972,13 @@ function UnifiedExtractionContent() {
                           method={config.method}
                           config={config.uitarsConfig}
                           onConfigChange={setUitarsConfig}
+                        />
+                      )}
+
+                      {config.method === "vision" && (
+                        <VisionConfigPanel
+                          config={config.visionConfig}
+                          onConfigChange={setVisionConfig}
                         />
                       )}
 
@@ -1731,6 +2099,37 @@ function UnifiedExtractionContent() {
                           </>
                         )}
 
+                        {config.method === "vision" && (
+                          <>
+                            <p>
+                              Vision Extraction uses computer vision algorithms to
+                              detect GUI elements from screenshots.
+                            </p>
+                            <div className="space-y-2">
+                              <p className="font-medium" style={{ color: methodColor }}>
+                                Detection Methods:
+                              </p>
+                              <ul className="list-disc list-inside space-y-1 text-xs">
+                                <li>Edge Detection: Canny + contour analysis</li>
+                                <li>SAM3: Segment Anything Model 3</li>
+                                <li>OCR: Text region detection</li>
+                                <li>Result Fusion: Deduplicate & merge</li>
+                              </ul>
+                            </div>
+                            <div className="space-y-2">
+                              <p className="font-medium" style={{ color: methodColor }}>
+                                Best for:
+                              </p>
+                              <ul className="list-disc list-inside space-y-1 text-xs">
+                                <li>Non-web applications (no DOM access)</li>
+                                <li>Legacy desktop software</li>
+                                <li>Remote desktop sessions</li>
+                                <li>Creating training datasets</li>
+                              </ul>
+                            </div>
+                          </>
+                        )}
+
                         {config.method === "image" && (
                           <>
                             <p>
@@ -1775,47 +2174,121 @@ function UnifiedExtractionContent() {
             <TabsContent
               value="results"
               className="mt-0 layout-full-height data-[state=inactive]:hidden flex flex-col"
+              id="extraction-results-content"
+              data-ui-id="extraction-results-content"
+              data-history-count={extractionHistory.length}
+              data-extraction-method={config.method}
+              data-extraction-status={webExtractionProgress.status}
+              data-states-count={stateMachineStates.length}
+              data-is-loading={isLoadingDetail ? "true" : "false"}
+              data-selected-extraction={selectedHistoryExtractionId || "none"}
             >
               <div className="flex flex-col gap-4 flex-1 min-h-0">
-                {/* Web Extraction progress */}
-                {config.method === "web" && webExtractionProgress.status === "running" && (
-                  <Card className="p-6 bg-surface-raised/60 border-border-subtle">
-                    <div className="flex items-center justify-between mb-4">
+                {/* Extraction History Selector - Only show for web extraction method */}
+                {config.method === "web" && extractionHistory.length > 0 && (
+                  <Card className="p-4 bg-surface-raised/60 border-border-subtle">
+                    <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <Loader2 className="h-5 w-5 animate-spin" style={{ color: methodColor }} />
-                        <h3 className="text-lg font-semibold" style={{ color: methodColor }}>
-                          Web Extraction Running
-                        </h3>
+                        <History className="h-5 w-5 text-text-muted" />
+                        <Label className="text-sm font-medium">Extraction History</Label>
+                        {staleExtractions.length > 0 && (
+                          <Badge variant="outline" className="text-yellow-500 border-yellow-500/50">
+                            {staleExtractions.length} stale
+                          </Badge>
+                        )}
                       </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleStopExtraction}
-                        data-ui-id="extraction-web-stop-btn"
-                        className="text-red-500 border-red-500/50 hover:bg-red-500/10"
+                      <div className="flex items-center gap-2">
+                        {staleExtractions.length > 0 && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={cleanupStaleExtractions}
+                            disabled={isCleaningUp}
+                            className="text-yellow-500 border-yellow-500/50 hover:bg-yellow-500/10"
+                          >
+                            {isCleaningUp ? (
+                              <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                            ) : (
+                              <Trash2 className="h-4 w-4 mr-1" />
+                            )}
+                            Clean up
+                          </Button>
+                        )}
+                        <Select
+                        value={selectedHistoryExtractionId || ""}
+                        onValueChange={(value) => {
+                          if (!value) return;
+                          const extraction = extractionHistory.find((e) => e.id === value);
+                          if (extraction) {
+                            setSelectedHistoryExtractionId(value);
+                            setWebExtractionProgress({
+                              status: extraction.status === "completed" ? "completed" :
+                                      extraction.status === "failed" ? "failed" : "idle",
+                              extractionId: value,
+                              statesFound: extraction.state_machine?.states?.length ?? 0,
+                              transitionsFound: extraction.state_machine?.transitions?.length ?? 0,
+                              pagesExtracted: (extraction.stats as Record<string, unknown>)?.pages_extracted as number ?? 0,
+                              errors: (extraction.stats as Record<string, unknown>)?.errors as number ?? 0,
+                              errorMessage: extraction.error_message ?? undefined,
+                            });
+                          }
+                        }}
+                        disabled={isLoadingHistory || webExtractionProgress.status === "running"}
                       >
-                        Stop
-                      </Button>
-                    </div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <p className="text-text-muted">Pages Extracted</p>
-                        <p className="text-lg font-mono">{webExtractionProgress.pagesExtracted}</p>
-                      </div>
-                      <div>
-                        <p className="text-text-muted">States Found</p>
-                        <p className="text-lg font-mono">{webExtractionProgress.statesFound}</p>
-                      </div>
-                      <div>
-                        <p className="text-text-muted">Transitions Found</p>
-                        <p className="text-lg font-mono">{webExtractionProgress.transitionsFound}</p>
-                      </div>
-                      <div>
-                        <p className="text-text-muted">Errors</p>
-                        <p className="text-lg font-mono">{webExtractionProgress.errors}</p>
+                        <SelectTrigger className="w-[350px]" id="extraction-history-select" data-ui-id="extraction-history-select">
+                          <SelectValue placeholder={isLoadingHistory ? "Loading..." : "Select an extraction"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {extractionHistory.map((extraction) => {
+                            // Check if this is a stale "running" extraction (older than 1 hour)
+                            const isStale = (extraction.status === "running" || extraction.status === "pending") &&
+                              (Date.now() - new Date(extraction.created_at).getTime() > 60 * 60 * 1000);
+
+                            return (
+                              <SelectItem key={extraction.id} value={extraction.id}>
+                                <div className="flex items-center gap-2">
+                                  {extraction.status === "completed" ? (
+                                    <CheckCircle2 className="h-3 w-3 text-brand-success" />
+                                  ) : extraction.status === "failed" ? (
+                                    <AlertCircle className="h-3 w-3 text-red-500" />
+                                  ) : isStale ? (
+                                    <span title="Possibly stale - extraction may have been interrupted">
+                                      <AlertCircle className="h-3 w-3 text-yellow-500" />
+                                    </span>
+                                  ) : extraction.status === "running" ? (
+                                    <Loader2 className="h-3 w-3 animate-spin text-brand-primary" />
+                                  ) : (
+                                    <Clock className="h-3 w-3 text-text-muted" />
+                                  )}
+                                  <span className="font-mono text-xs">
+                                    {new Date(extraction.created_at).toLocaleDateString()}{" "}
+                                    {new Date(extraction.created_at).toLocaleTimeString()}
+                                  </span>
+                                  <span className="text-text-muted">
+                                    ({extraction.source_urls?.length ?? 0} URLs,{" "}
+                                    {extraction.state_machine?.states?.length ?? 0} states)
+                                    {isStale && " - interrupted?"}
+                                  </span>
+                                </div>
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                        </Select>
                       </div>
                     </div>
                   </Card>
+                )}
+
+                {/* Web Extraction progress */}
+                {config.method === "web" && webExtractionProgress.status === "running" && (
+                  <WebExtractionProgressPanel
+                    progress={{
+                      ...webExtractionProgress,
+                      maxPages: config.webConfig.maxPages,
+                    }}
+                    onStop={handleStopExtraction}
+                  />
                 )}
 
                 {/* UI-TARS progress */}
@@ -1848,23 +2321,173 @@ function UnifiedExtractionContent() {
                   />
                 )}
 
+                {/* Vision Extraction Results */}
+                {config.method === "vision" && visionExtractionProgress.status === "running" && (
+                  <Card className="p-6 bg-surface-raised/60 border-[#9B59B6]/30">
+                    <div className="flex items-center gap-3">
+                      <Loader2 className="h-5 w-5 animate-spin text-[#9B59B6]" />
+                      <h3 className="text-lg font-semibold text-[#9B59B6]">
+                        Running Vision Extraction...
+                      </h3>
+                    </div>
+                    <p className="text-sm text-text-muted mt-2">
+                      Analyzing screenshot with edge detection, SAM3, and OCR...
+                    </p>
+                  </Card>
+                )}
+
+                {config.method === "vision" && visionExtractionProgress.status === "completed" && (
+                  <div className="flex flex-col gap-4 flex-1 min-h-0">
+                    {/* Success Header */}
+                    <Card className="p-4 bg-surface-raised/60 border-[#9B59B6]/30">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <CheckCircle2 className="h-5 w-5 text-[#9B59B6]" />
+                          <h3 className="text-lg font-semibold text-[#9B59B6]">
+                            Vision Extraction Complete
+                          </h3>
+                          <span className="text-sm text-text-muted">
+                            Detected {visionExtractionProgress.elementsDetected} elements
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-[10px] px-2 border-[#9B59B6]/50 text-[#9B59B6]">
+                            {annotationStore.elements.filter((e) => e.isGroundTruth).length} ground truth
+                          </Badge>
+                          <TrainingDataExportDialog projectName="Vision Extraction" />
+                        </div>
+                      </div>
+                    </Card>
+
+                    {/* Results/Annotations Tabs */}
+                    <Tabs value={visionResultsTab} onValueChange={(v) => setVisionResultsTab(v as "results" | "annotations")}>
+                      <TabsList className="bg-surface-raised/80 border border-border-subtle p-1">
+                        <TabsTrigger value="results" className="flex items-center gap-2">
+                          <Eye className="h-4 w-4" />
+                          Results
+                        </TabsTrigger>
+                        <TabsTrigger value="annotations" className="flex items-center gap-2">
+                          <Pencil className="h-4 w-4" />
+                          Edit Annotations
+                        </TabsTrigger>
+                      </TabsList>
+
+                      {/* Results View */}
+                      <TabsContent value="results" className="mt-4">
+                        <Card className="p-4 bg-surface-raised/60">
+                          <h4 className="text-sm font-semibold mb-4 text-[#9B59B6]">
+                            Detected Elements ({annotationStore.elements.length})
+                          </h4>
+                          <ScrollArea className="h-[400px]">
+                            <div className="space-y-2">
+                              {annotationStore.elements.map((element) => (
+                                <div
+                                  key={element.id}
+                                  className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                                    annotationStore.selectedElementIds.includes(element.id)
+                                      ? "border-[#9B59B6] bg-[#9B59B6]/10"
+                                      : "border-border-subtle hover:border-[#9B59B6]/50"
+                                  }`}
+                                  onClick={() => annotationStore.selectElement(element.id)}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <Badge variant="outline" className="text-[10px]">
+                                        {element.elementType}
+                                      </Badge>
+                                      <span className="text-sm font-medium">{element.label}</span>
+                                      {element.isGroundTruth && (
+                                        <Badge className="text-[10px] bg-green-500/20 text-green-500 border-green-500/50">
+                                          Ground Truth
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <span className="text-xs text-text-muted font-mono">
+                                      {Math.round(element.confidence * 100)}%
+                                    </span>
+                                  </div>
+                                  {element.text && (
+                                    <p className="text-xs text-text-muted mt-1 truncate">
+                                      {element.text}
+                                    </p>
+                                  )}
+                                  <div className="text-[10px] text-text-muted mt-1 font-mono">
+                                    {element.bbox.x}, {element.bbox.y} - {element.bbox.width}x{element.bbox.height}
+                                  </div>
+                                </div>
+                              ))}
+                              {annotationStore.elements.length === 0 && (
+                                <div className="text-center py-8 text-text-muted">
+                                  No elements detected
+                                </div>
+                              )}
+                            </div>
+                          </ScrollArea>
+                        </Card>
+                      </TabsContent>
+
+                      {/* Annotations Editor View */}
+                      <TabsContent value="annotations" className="mt-4 flex-1 min-h-0">
+                        <div className="grid grid-cols-[1fr_320px] gap-4 h-[600px]">
+                          {/* Canvas Editor */}
+                          <div className="flex flex-col gap-2 min-h-0">
+                            <AnnotationToolbar />
+                            <AnnotationEditor className="flex-1" />
+                          </div>
+
+                          {/* Properties Panel */}
+                          <div className="min-h-0 overflow-auto">
+                            <ElementAnnotationForm />
+                          </div>
+                        </div>
+                      </TabsContent>
+                    </Tabs>
+                  </div>
+                )}
+
+                {config.method === "vision" && visionExtractionProgress.status === "failed" && (
+                  <Card className="p-6 bg-surface-raised/60 border-red-500/30">
+                    <div className="flex items-center gap-3 mb-4">
+                      <AlertCircle className="h-5 w-5 text-red-500" />
+                      <h3 className="text-lg font-semibold text-red-500">
+                        Vision Extraction Failed
+                      </h3>
+                    </div>
+                    <p className="text-sm text-text-muted">
+                      {visionExtractionProgress.errorMessage || "An error occurred during vision extraction."}
+                    </p>
+                  </Card>
+                )}
+
                 {/* Idle message for non-UI-Bridge methods */}
                 {config.method !== "ui-bridge" &&
-                  ((config.method === "web" && webExtractionProgress.status === "idle") ||
+                  ((config.method === "web" && webExtractionProgress.status === "idle" && extractionHistory.length === 0) ||
                     ((config.method === "uitars-web" || config.method === "uitars-desktop") && uitarsProgress.status === "idle") ||
+                    (config.method === "vision" && visionExtractionProgress.status === "idle") ||
                     config.method === "image") && (
                     <Alert className="bg-surface-raised/60 border-border-subtle backdrop-blur-sm">
                       <AlertCircle className="h-4 w-4" style={{ color: methodColor }} />
                       <AlertDescription className="text-text-secondary font-mono">
                         No extraction results yet. Configure your extraction settings and
-                        click "Start Extraction" to begin.
+                        click &quot;Start Extraction&quot; to begin.
                       </AlertDescription>
                     </Alert>
                   )}
 
+                {/* Loading history message */}
+                {config.method === "web" && isLoadingHistory && (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="flex flex-col items-center gap-4">
+                      <Loader2 className="h-8 w-8 animate-spin text-text-muted" />
+                      <p className="text-text-muted text-sm">Loading extraction history...</p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Web Extraction completed results */}
                 {config.method === "web" && webExtractionProgress.status === "completed" && (
-                  <>
+                  <div className="flex flex-col gap-4 flex-1 min-h-0">
+                    {/* Success Header */}
                     <Card className="p-4 bg-surface-raised/60 border-brand-success/30">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
@@ -1872,25 +2495,39 @@ function UnifiedExtractionContent() {
                           <h3 className="text-lg font-semibold text-brand-success">
                             Web Extraction Complete
                           </h3>
+                          {webExtractionProgress.elapsedSeconds !== undefined && (
+                            <span className="text-sm text-text-muted font-mono flex items-center gap-1">
+                              <Clock className="h-3.5 w-3.5" />
+                              {webExtractionProgress.elapsedSeconds >= 60
+                                ? `${Math.floor(webExtractionProgress.elapsedSeconds / 60)}m ${webExtractionProgress.elapsedSeconds % 60}s`
+                                : `${webExtractionProgress.elapsedSeconds}s`}
+                            </span>
+                          )}
                           <span className="text-sm text-text-muted">
                             Discovered {webExtractionProgress.statesFound} states and{" "}
                             {webExtractionProgress.transitionsFound} transitions from{" "}
                             {webExtractionProgress.pagesExtracted} pages.
                           </span>
                         </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          data-ui-id="extraction-web-import-btn"
-                          className="border-brand-success/50 text-brand-success hover:bg-brand-success/10"
-                        >
-                          Import to State Machine
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-[10px] px-2 border-brand-success/50 text-brand-success">
+                            {annotationStore.elements.filter((e) => e.isGroundTruth).length} ground truth
+                          </Badge>
+                          <TrainingDataExportDialog projectName="Web Extraction" />
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            data-ui-id="extraction-web-import-btn"
+                            className="border-brand-success/50 text-brand-success hover:bg-brand-success/10"
+                          >
+                            Import to State Machine
+                          </Button>
+                        </div>
                       </div>
                     </Card>
 
                     {isLoadingDetail ? (
-                      <div className="flex items-center justify-center py-24">
+                      <div className="flex items-center justify-center py-24" id="extraction-results-loading" data-ui-id="extraction-results-loading">
                         <div className="flex flex-col items-center gap-4">
                           <Loader2 className="h-12 w-12 animate-spin text-brand-success" />
                           <p className="text-brand-success font-mono animate-pulse uppercase tracking-widest text-xs">
@@ -1899,26 +2536,63 @@ function UnifiedExtractionContent() {
                         </div>
                       </div>
                     ) : stateMachineStates.length > 0 ? (
-                      <div className="flex-1 min-h-[500px]">
-                        <StateExplorerView
-                          states={stateMachineStates}
-                          annotations={annotations}
-                          extractionId={
-                            extractionDetail?.stats?.screenshot_extraction_id ||
-                            webExtractionProgress.extractionId ||
-                            undefined
-                          }
-                        />
-                      </div>
+                      <Tabs value={webResultsTab} onValueChange={(v) => {
+                        setWebResultsTab(v as "explorer" | "annotations");
+                        if (v === "annotations") {
+                          loadWebElementsToAnnotationStore();
+                        }
+                      }}>
+                        <TabsList className="bg-surface-raised/80 border border-border-subtle p-1">
+                          <TabsTrigger value="explorer" className="flex items-center gap-2">
+                            <Layers className="h-4 w-4" />
+                            State Explorer
+                          </TabsTrigger>
+                          <TabsTrigger value="annotations" className="flex items-center gap-2">
+                            <Pencil className="h-4 w-4" />
+                            Edit Annotations
+                          </TabsTrigger>
+                        </TabsList>
+
+                        {/* State Explorer View */}
+                        <TabsContent value="explorer" className="mt-4">
+                          <div className="flex-1 min-h-[500px]" id="extraction-results-states-container" data-ui-id="extraction-results-states-container" data-state-count={stateMachineStates.length} data-visible="true">
+                            <StateExplorerView
+                              states={stateMachineStates}
+                              annotations={annotations}
+                              extractionId={
+                                extractionDetail?.stats?.screenshot_extraction_id ||
+                                webExtractionProgress.extractionId ||
+                                undefined
+                              }
+                            />
+                          </div>
+                        </TabsContent>
+
+                        {/* Annotations Editor View */}
+                        <TabsContent value="annotations" className="mt-4 flex-1 min-h-0">
+                          <div className="grid grid-cols-[1fr_320px] gap-4 h-[600px]">
+                            {/* Canvas Editor */}
+                            <div className="flex flex-col gap-2 min-h-0">
+                              <AnnotationToolbar />
+                              <AnnotationEditor className="flex-1" />
+                            </div>
+
+                            {/* Properties Panel */}
+                            <div className="min-h-0 overflow-auto">
+                              <ElementAnnotationForm />
+                            </div>
+                          </div>
+                        </TabsContent>
+                      </Tabs>
                     ) : (
-                      <Alert className="bg-surface-raised/60 border-brand-primary/30 backdrop-blur-sm">
+                      <Alert className="bg-surface-raised/60 border-brand-primary/30 backdrop-blur-sm" id="extraction-results-no-states" data-ui-id="extraction-results-no-states">
                         <AlertCircle className="h-4 w-4 text-brand-primary" />
                         <AlertDescription className="text-text-secondary font-mono">
                           No states found in the extraction results. The extraction may still be syncing data.
                         </AlertDescription>
                       </Alert>
                     )}
-                  </>
+                  </div>
                 )}
 
                 {/* Web Extraction failed */}
@@ -2006,6 +2680,9 @@ interface UIBridgeConfigSectionProps {
   setStateDescriptions: (descriptions: Record<string, string>) => void;
   setCurrentSavedConfigId: (id: string | null) => void;
   setStateUuidMap: (map: Record<string, string>) => void;
+  // Discovery strategy
+  discoveryStrategy: DiscoveryStrategy;
+  setDiscoveryStrategy: (strategy: DiscoveryStrategy) => void;
   // Runner connection props
   connections: RunnerConnection[];
   connectionsLoading: boolean;
@@ -2053,6 +2730,8 @@ function UIBridgeConfigSection({
   setStateDescriptions,
   setCurrentSavedConfigId,
   setStateUuidMap,
+  discoveryStrategy,
+  setDiscoveryStrategy,
   connections,
   connectionsLoading,
   selectedConnectionId,
@@ -2070,6 +2749,42 @@ function UIBridgeConfigSection({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Discovery Strategy Selector */}
+        <div className="flex items-center gap-4 p-3 bg-surface-raised/50 rounded-lg border border-border-subtle">
+          <span className="text-sm font-medium text-text-secondary">Discovery Strategy:</span>
+          <div className="flex gap-2">
+            <Button
+              variant={discoveryStrategy === "auto" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setDiscoveryStrategy("auto")}
+              className="text-xs"
+            >
+              Auto
+            </Button>
+            <Button
+              variant={discoveryStrategy === "legacy" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setDiscoveryStrategy("legacy")}
+              className="text-xs"
+            >
+              Legacy (ID-based)
+            </Button>
+            <Button
+              variant={discoveryStrategy === "fingerprint" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setDiscoveryStrategy("fingerprint")}
+              className="text-xs"
+            >
+              Fingerprint
+            </Button>
+          </div>
+          <span className="text-xs text-text-muted ml-auto">
+            {discoveryStrategy === "auto" && "Uses fingerprint if available, otherwise legacy"}
+            {discoveryStrategy === "legacy" && "ID-based co-occurrence (data-ui-id, data-testid)"}
+            {discoveryStrategy === "fingerprint" && "Enhanced cross-page element matching"}
+          </span>
+        </div>
+
         <Tabs defaultValue="explore" className="w-full">
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="explore" className="flex items-center gap-2">

@@ -551,7 +551,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
             success: true,
             executedAction: `${parsed.action} on ${targetElement.id}`,
             elementUsed: targetElement,
-            confidence: searchResults[0].confidence,
+            confidence: firstResult.confidence,
             durationMs: performance.now() - startTime,
             timestamp: Date.now(),
           };
@@ -559,13 +559,15 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
 
         case "aiAssert": {
           const { createAssertionExecutor } = await import("ui-bridge/ai");
+          type AssertionType = import("ui-bridge/ai").AssertionType;
           // elements is available from hook scope
           const executor = createAssertionExecutor({});
-          executor.updateElements(elements);
+          // Cast RegisteredElement[] to the expected type - both share the same core structure
+          executor.updateElements(elements as unknown as Parameters<typeof executor.updateElements>[0]);
           const assertionRequest = payload as { target: string; type: string; expected?: unknown };
           const result = await executor.assert({
             target: assertionRequest.target,
-            type: assertionRequest.type as "visible" | "hidden" | "enabled" | "disabled" | "exists" | "notExists" | "hasText" | "containsText" | "hasValue" | "checked" | "unchecked" | "focused" | "custom",
+            type: assertionRequest.type as AssertionType,
             expected: assertionRequest.expected,
           });
           return result;
@@ -573,14 +575,16 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
 
         case "aiAssertBatch": {
           const { createAssertionExecutor } = await import("ui-bridge/ai");
+          type AssertionType = import("ui-bridge/ai").AssertionType;
           // elements is available from hook scope
           const executor = createAssertionExecutor({});
-          executor.updateElements(elements);
+          // Cast RegisteredElement[] to the expected type - both share the same core structure
+          executor.updateElements(elements as unknown as Parameters<typeof executor.updateElements>[0]);
           const batchRequest = payload as { assertions: Array<{ target: string; type: string; expected?: unknown }>; mode?: "all" | "any" };
           const result = await executor.assertBatch({
             assertions: batchRequest.assertions.map(a => ({
               target: a.target,
-              type: a.type as "visible" | "hidden" | "enabled" | "disabled" | "exists" | "notExists" | "hasText" | "containsText" | "hasValue" | "checked" | "unchecked" | "focused" | "custom",
+              type: a.type as AssertionType,
               expected: a.expected,
             })),
             mode: batchRequest.mode || "all",
@@ -609,25 +613,28 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         }
 
         case "getSemanticDiff": {
-          const { createDiffManager } = await import("ui-bridge/ai");
-          // elements is available from hook scope
-          const manager = createDiffManager({});
-          const { since } = payload as { since?: number };
-          // This would need previous snapshot tracking - for now return null
+          // Semantic diff requires previous snapshot tracking - not implemented
+          // payload expected: { since?: number }
           return null;
         }
 
         case "getPageSummary": {
           const { generatePageSummary } = await import("ui-bridge/ai");
           // elements is available from hook scope
-          const snapshot = {
-            timestamp: Date.now(),
-            elements,
-            components: [],
-            workflows: [],
-            activeRuns: [],
-          };
-          return generatePageSummary(snapshot);
+          // Convert RegisteredElement[] to minimal AIDiscoveredElement-like objects for the summary
+          const aiElements = elements.map((e) => ({
+            id: e.id,
+            type: e.type,
+            label: e.label,
+            tagName: e.element.tagName.toLowerCase(),
+            actions: e.actions as string[],
+            state: e.getState(),
+            registered: true,
+            description: e.description || e.label || e.id,
+            aliases: e.aliases || [],
+            suggestedActions: [],
+          }));
+          return generatePageSummary(aiElements as Parameters<typeof generatePageSummary>[0]);
         }
 
         // ========== Debug ==========
@@ -660,7 +667,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
 
         // ========== Component State ==========
         case "getComponentState": {
-          const { id } = payload;
+          // payload expected: { id: string }
           // Components are not fully implemented in this handler yet
           // Return empty state as placeholder
           return {
@@ -676,15 +683,17 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           // For now, fall back to text-based search
           const criteria = payload as { query: string; threshold?: number; limit?: number };
           const { createSearchEngine } = await import("ui-bridge/ai");
-          const searchEngine = createSearchEngine({}, elements);
-          const results = searchEngine.search({
+          const searchEngine = createSearchEngine({});
+          searchEngine.updateElements(elements);
+          const searchResponse = searchEngine.search({
             text: criteria.query,
             fuzzy: true,
             fuzzyThreshold: criteria.threshold ?? 0.5,
           });
-          const limitedResults = criteria.limit ? results.slice(0, criteria.limit) : results;
+          const allResults = searchResponse.results;
+          const limitedResults = criteria.limit ? allResults.slice(0, criteria.limit) : allResults;
           return {
-            results: limitedResults.map((r, idx) => ({
+            results: limitedResults.map((r: { element: { description?: string; id: string }; confidence: number }, idx: number) => ({
               element: r.element,
               similarity: r.confidence,
               rank: idx + 1,
@@ -697,7 +706,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
               embeddedText: limitedResults[0]!.element.description || limitedResults[0]!.element.id,
             } : null,
             scannedCount: elements.length,
-            durationMs: 0,
+            durationMs: searchResponse.durationMs,
             query: criteria.query,
             timestamp: Date.now(),
           };
