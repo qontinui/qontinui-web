@@ -93,6 +93,7 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
     ctx.fillText(stateImage.name, 10, 25);
 
     redrawComposite();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- redrawComposite is intentionally excluded to prevent re-initialization loops
   }, [stateImage, initialMask]);
 
   // Redraw composite image

@@ -3,14 +3,18 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { GoogleAnalytics } from "@next/third-parties/google";
 import { Toaster } from "sonner";
 import { AuthProvider } from "@/contexts/auth-context";
+import { TutorialProvider } from "@/contexts/tutorial";
 import { UIBridgeWrapper, RenderLogWrapper } from "@/lib/ui-bridge";
 import { QueryProvider } from "@/lib/providers/query-provider";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { RefreshTokenExpiryWarning } from "@/components/refresh-token-expiry-warning";
 import { OfflineIndicator } from "@/components/offline-indicator";
 import { OnboardingTour } from "@/components/onboarding-tour";
+import { ContextualTutorialEnhanced } from "@/components/tutorial";
 import { DevDebugInit } from "@/components/dev-debug-init";
+import { DBErrorHandler } from "@/components/db-error-handler";
 import "./globals.css";
+import "@/styles/tutorial.css";
 
 export const dynamic = "force-dynamic";
 export const dynamicParams = true;
@@ -42,24 +46,28 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <DevDebugInit />
+        <DBErrorHandler />
         <ErrorBoundary>
           <QueryProvider>
             <AuthProvider>
-              <UIBridgeWrapper>
-                <RenderLogWrapper
-                  enableOnMount={true}
-                  enableMutationObserver={true}
-                  mutationDebounceMs={500}
-                >
-                  {/* <ActivityTracker /> */}
-                  {/* BetaBanner moved to app layout to properly respect sidebar */}
-                  {children}
-                  {/* <SessionTimeoutWarning /> */}
-                  <RefreshTokenExpiryWarning />
-                  <OfflineIndicator />
-                  <OnboardingTour />
-                </RenderLogWrapper>
-              </UIBridgeWrapper>
+              <TutorialProvider>
+                <UIBridgeWrapper>
+                  <RenderLogWrapper
+                    enableOnMount={true}
+                    enableMutationObserver={true}
+                    mutationDebounceMs={500}
+                  >
+                    {/* <ActivityTracker /> */}
+                    {/* BetaBanner moved to app layout to properly respect sidebar */}
+                    {children}
+                    {/* <SessionTimeoutWarning /> */}
+                    <RefreshTokenExpiryWarning />
+                    <OfflineIndicator />
+                    <OnboardingTour />
+                    <ContextualTutorialEnhanced />
+                  </RenderLogWrapper>
+                </UIBridgeWrapper>
+              </TutorialProvider>
             </AuthProvider>
           </QueryProvider>
         </ErrorBoundary>

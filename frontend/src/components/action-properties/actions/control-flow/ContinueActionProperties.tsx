@@ -19,6 +19,8 @@ import { ContinueActionConfig } from "@/lib/action-schema";
 export function ContinueActionProperties({
   action,
   updateConfig,
+  images = [],
+  variableNames = [],
 }: ActionPropertiesComponentProps) {
   const config = action.config as ContinueActionConfig;
 
@@ -67,6 +69,8 @@ export function ContinueActionProperties({
               onChange={(condition) => updateConfig("condition", condition)}
               label=""
               allowEmpty={false}
+              images={images.map((img) => ({ id: img.id, name: img.name }))}
+              existingVariables={variableNames}
             />
           </div>
         )}

@@ -220,6 +220,7 @@ export function AccessibilityBoundsOverlay({
   return (
     <div className={cn("relative overflow-auto h-full", className)}>
       {/* Screenshot image */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={screenshotUrl}
         alt="Screenshot with accessibility bounds"

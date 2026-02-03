@@ -15,7 +15,6 @@ import {
   Server,
   Home,
   Activity,
-  Tag,
   Network,
   Smartphone,
   Bell,
@@ -152,15 +151,6 @@ export default function AdminDashboard() {
               >
                 <Smartphone className="h-4 w-4" />
                 Mobile
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => router.push("/admin/annotations")}
-                className="flex items-center gap-2"
-                data-ui-id="admin-page-annotations-btn"
-              >
-                <Tag className="h-4 w-4" />
-                Annotations
               </Button>
               <Button
                 variant="outline"

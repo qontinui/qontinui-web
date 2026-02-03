@@ -432,9 +432,9 @@ export function RecordingPanel({
             <p><strong>How to use manual recording:</strong></p>
             <ol className="list-decimal list-inside space-y-1 text-text-muted">
               <li>Select the browser tab you want to record</li>
-              <li>Click "Start Recording"</li>
+              <li>Click &quot;Start Recording&quot;</li>
               <li>Navigate through the app (click buttons, fill forms, etc.)</li>
-              <li>Click "Stop" when done</li>
+              <li>Click &quot;Stop&quot; when done</li>
               <li>Run state discovery on the captured snapshots</li>
             </ol>
           </AlertDescription>

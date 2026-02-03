@@ -61,6 +61,7 @@ export function CaptureListPage() {
 
   useEffect(() => {
     loadCaptures();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadCaptures is intentionally not in deps to avoid re-creating effect on every render
   }, [projectId]);
 
   // Filter captures by search query

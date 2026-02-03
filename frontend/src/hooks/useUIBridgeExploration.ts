@@ -277,6 +277,15 @@ export interface UIBridgeRenderLog {
 }
 
 /**
+ * Action result details from UI Bridge exploration
+ */
+export interface UIBridgeActionResult {
+  response_time_ms: number;
+  new_elements: string[];
+  removed_elements: string[];
+}
+
+/**
  * Exploration step from UI Bridge
  */
 export interface UIBridgeExplorationStep {
@@ -287,6 +296,53 @@ export interface UIBridgeExplorationStep {
   success: boolean;
   state_changed?: boolean;
   depth: number;
+  // Enhanced fields for transition discovery
+  parent_step_id?: string;
+  action_result?: UIBridgeActionResult;
+  snapshot_before_hash?: string;
+  snapshot_after_hash?: string;
+  elements_before?: string[];
+  elements_after?: string[];
+}
+
+/**
+ * Suggested transition discovered from exploration steps
+ */
+export interface SuggestedTransition {
+  /** Unique identifier for this transition */
+  id: string;
+  /** Hash of the state before the transition */
+  fromStateHash: string;
+  /** Hash of the state after the transition */
+  toStateHash: string;
+  /** Element ID that triggers this transition */
+  triggerElementId: string;
+  /** Action type (e.g., 'click') */
+  triggerAction: string;
+  /** Elements that become active/visible after this transition */
+  activateElements: string[];
+  /** Elements that become inactive/hidden after this transition */
+  deactivateElements: string[];
+  /** Confidence score based on occurrence frequency (0-1) */
+  confidence: number;
+  /** Step IDs where this transition was observed */
+  stepIds: string[];
+  /** Optional: human-readable name for the from state */
+  fromStateName?: string;
+  /** Optional: human-readable name for the to state */
+  toStateName?: string;
+}
+
+/**
+ * Result of building transitions from exploration steps
+ */
+export interface TransitionBuildResult {
+  /** Discovered transitions */
+  transitions: SuggestedTransition[];
+  /** Mapping of state hash to element IDs present in that state */
+  stateHashes: Map<string, string[]>;
+  /** Steps that could not be mapped to transitions */
+  unmappedSteps: UIBridgeExplorationStep[];
 }
 
 /**
@@ -307,6 +363,169 @@ export interface UIBridgeRawResults {
 
 
 const STORAGE_KEY = "qontinui-exploration-config";
+
+/**
+ * Exploration session stored in the database
+ */
+export interface ExplorationSession {
+  id: string;
+  projectId: string;
+  name: string;
+  status: string;
+  targetType: string;
+  targetUrl: string | null;
+  explorationConfig: Record<string, unknown>;
+  renderCount: number;
+  elementsDiscovered: number;
+  elementsExplored: number;
+  errorMessage: string | null;
+  discoveryCompleted: boolean;
+  savedConfigId: string | null;
+  startedAt: string;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * API response for exploration session
+ */
+interface ExplorationSessionResponse {
+  id: string;
+  project_id: string;
+  name: string;
+  status: string;
+  target_type: string;
+  target_url: string | null;
+  exploration_config: Record<string, unknown>;
+  render_count: number;
+  elements_discovered: number;
+  elements_explored: number;
+  error_message: string | null;
+  discovery_completed: boolean;
+  saved_config_id: string | null;
+  started_at: string;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Convert API response to frontend model
+ */
+function toExplorationSession(response: ExplorationSessionResponse): ExplorationSession {
+  return {
+    id: response.id,
+    projectId: response.project_id,
+    name: response.name,
+    status: response.status,
+    targetType: response.target_type,
+    targetUrl: response.target_url,
+    explorationConfig: response.exploration_config,
+    renderCount: response.render_count,
+    elementsDiscovered: response.elements_discovered,
+    elementsExplored: response.elements_explored,
+    errorMessage: response.error_message,
+    discoveryCompleted: response.discovery_completed,
+    savedConfigId: response.saved_config_id,
+    startedAt: response.started_at,
+    completedAt: response.completed_at,
+    createdAt: response.created_at,
+    updatedAt: response.updated_at,
+  };
+}
+
+/**
+ * Check if we're running on a cloud environment (not localhost)
+ */
+function isCloudEnvironment(): boolean {
+  if (typeof window === "undefined") return false;
+  const hostname = window.location.hostname;
+  return hostname !== "localhost" && hostname !== "127.0.0.1" && !hostname.startsWith("192.168.");
+}
+
+/**
+ * Send a command to the runner through the Chrome extension.
+ * This is used when running on cloud (qontinui.io) where direct HTTP to localhost isn't possible.
+ */
+async function sendCommandViaExtension(action: string, params: Record<string, unknown> = {}): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const requestId = `ext-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    const handleResponse = (event: MessageEvent) => {
+      if (event.source !== window) return;
+      if (!event.data || event.data.type !== "__QONTINUI_RUNNER_RESPONSE__") return;
+      if (event.data.requestId !== requestId) return;
+
+      window.removeEventListener("message", handleResponse);
+
+      if (event.data.success) {
+        resolve(event.data.data);
+      } else {
+        reject(new Error(event.data.error || "Extension command failed"));
+      }
+    };
+
+    window.addEventListener("message", handleResponse);
+
+    // Set a timeout
+    setTimeout(() => {
+      window.removeEventListener("message", handleResponse);
+      reject(new Error("Extension command timed out. Make sure the Qontinui extension is installed and the runner is connected."));
+    }, 15000);
+
+    // Send command to extension via postMessage
+    window.postMessage({
+      type: "__QONTINUI_RUNNER_COMMAND__",
+      requestId,
+      action,
+      params,
+    }, "*");
+  });
+}
+
+/**
+ * Send a command to the runner - automatically chooses between direct HTTP or extension based on environment
+ */
+async function sendRunnerCommand(
+  runnerUrl: string | null,
+  action: string,
+  params: Record<string, unknown> = {},
+  timeoutSecs: number = 10
+): Promise<{ success: boolean; data?: unknown; error?: string }> {
+  // For cloud environment or when runnerUrl is null, use extension
+  if (isCloudEnvironment() || !runnerUrl) {
+    try {
+      const data = await sendCommandViaExtension(action, params);
+      return { success: true, data };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
+    }
+  }
+
+  // For local development, use direct HTTP
+  try {
+    const response = await fetch(`${runnerUrl}/extension/command`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action,
+        params,
+        timeout_secs: timeoutSecs,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      return { success: false, error: error.error || "Request failed" };
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
+  }
+}
 
 /**
  * Load config from localStorage
@@ -387,6 +606,10 @@ export function useUIBridgeExploration() {
   const [browserTabsLoading, setBrowserTabsLoading] = useState(false);
   const [browserTabsError, setBrowserTabsError] = useState<string | null>(null);
 
+  // Database-persisted exploration session
+  const [currentSession, setCurrentSession] = useState<ExplorationSession | null>(null);
+  const currentSessionRef = useRef<ExplorationSession | null>(null);
+
   const abortRef = useRef(false);
   const visitedStatesRef = useRef(new Set<string>());
 
@@ -416,44 +639,22 @@ export function useUIBridgeExploration() {
 
   /**
    * Fetch available browser tabs from the Chrome extension via runner
-   * @param runnerUrl - The runner URL (e.g., "http://localhost:9876")
+   * @param runnerUrl - The runner URL (e.g., "http://localhost:9876") - can be null for cloud
    */
-  const fetchBrowserTabs = useCallback(async (runnerUrl: string) => {
-    console.log("[useUIBridgeExploration] fetchBrowserTabs called with:", runnerUrl);
+  const fetchBrowserTabs = useCallback(async (runnerUrl: string | null) => {
+    console.log("[useUIBridgeExploration] fetchBrowserTabs called with:", runnerUrl, "isCloud:", isCloudEnvironment());
     setBrowserTabsLoading(true);
     setBrowserTabsError(null);
 
-    // Create an AbortController for timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
-
     try {
-      console.log("[useUIBridgeExploration] Sending listTabs request...");
-      const response = await fetch(`${runnerUrl}/extension/command`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "listTabs",
-          params: {},
-          timeout_secs: 10,
-        }),
-        signal: controller.signal,
-      });
+      const result = await sendRunnerCommand(runnerUrl, "listTabs", {}, 10);
 
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.error || "Failed to fetch browser tabs");
-      }
-
-      const result = await response.json();
       if (!result.success) {
         throw new Error(result.error || "Failed to fetch browser tabs");
       }
 
-      const data = result.data;
-      const tabs: BrowserTab[] = data.tabs || [];
+      const data = result.data as { tabs?: BrowserTab[]; selectedTabId?: number | null };
+      const tabs: BrowserTab[] = data?.tabs || [];
       console.log("[useUIBridgeExploration] Got", tabs.length, "browser tabs");
       setBrowserTabs(tabs);
 
@@ -470,8 +671,8 @@ export function useUIBridgeExploration() {
     } catch (error) {
       let message = "Failed to fetch browser tabs";
       if (error instanceof Error) {
-        if (error.name === "AbortError") {
-          message = "Request timed out. Make sure the Chrome extension is connected.";
+        if (error.message.includes("timed out")) {
+          message = "Request timed out. Make sure the Qontinui extension is installed and the runner is connected.";
         } else if (error.message.includes("Unknown action")) {
           message = "Extension needs to be reloaded. Go to chrome://extensions and click the refresh icon on Qontinui DevTools.";
         } else {
@@ -482,67 +683,181 @@ export function useUIBridgeExploration() {
       setBrowserTabs([]);
       return [];
     } finally {
-      clearTimeout(timeoutId);
       setBrowserTabsLoading(false);
     }
   }, [config.selectedBrowserTabId]);
 
   /**
    * Select a browser tab for exploration
-   * @param runnerUrl - The runner URL
+   * @param runnerUrl - The runner URL (can be null for cloud)
    * @param tabId - The tab ID to select (null to use active tab)
    */
-  const selectBrowserTab = useCallback(async (runnerUrl: string, tabId: number | null) => {
-    console.log("[useUIBridgeExploration] selectBrowserTab called:", { runnerUrl, tabId });
+  const selectBrowserTab = useCallback(async (runnerUrl: string | null, tabId: number | null) => {
+    console.log("[useUIBridgeExploration] selectBrowserTab called:", { runnerUrl, tabId, isCloud: isCloudEnvironment() });
     try {
       if (tabId === null) {
         // Clear selection - use active tab
-        const response = await fetch(`${runnerUrl}/extension/command`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "clearSelectedTab",
-            params: {},
-            timeout_secs: 10,
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error("Failed to clear tab selection");
+        const result = await sendRunnerCommand(runnerUrl, "clearSelectedTab", {}, 10);
+        if (!result.success) {
+          throw new Error(result.error || "Failed to clear tab selection");
         }
-
         setConfig(prev => ({ ...prev, selectedBrowserTabId: null }));
         return { success: true };
       }
 
       // Select specific tab
-      const response = await fetch(`${runnerUrl}/extension/command`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "selectTab",
-          params: { tabId },
-          timeout_secs: 10,
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.error || "Failed to select tab");
-      }
-
-      const result = await response.json();
+      const result = await sendRunnerCommand(runnerUrl, "selectTab", { tabId }, 10);
       if (!result.success) {
         throw new Error(result.error || "Failed to select tab");
       }
 
       console.log("[useUIBridgeExploration] Setting selectedBrowserTabId to:", tabId);
       setConfig(prev => ({ ...prev, selectedBrowserTabId: tabId }));
-      return { success: true, ...result.data };
+      return { success: true, ...(result.data as Record<string, unknown>) };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to select tab";
       console.error("selectBrowserTab error:", message);
       return { success: false, error: message };
+    }
+  }, []);
+
+  /**
+   * Create an exploration session in the database
+   */
+  const createExplorationSession = useCallback(async (
+    projectId: string,
+    authToken: string,
+    apiUrl: string
+  ): Promise<ExplorationSession | null> => {
+    try {
+      const response = await fetch(
+        `${apiUrl}/api/v1/projects/${projectId}/exploration-sessions`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${authToken}`,
+          },
+          body: JSON.stringify({
+            name: `Exploration ${new Date().toLocaleString()}`,
+            target_type: config.targetType,
+            target_url: config.targetType !== "extension" ? config.targetUrl : null,
+            exploration_config: {
+              maxDepth: config.maxDepth,
+              maxElementsPerPage: config.maxElementsPerPage,
+              maxTotalElements: config.maxTotalElements,
+              actionDelayMs: config.actionDelayMs,
+              blockedKeywords: config.blockedKeywords,
+              safeKeywords: config.safeKeywords,
+              blockedSelectors: config.blockedSelectors,
+            },
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        console.error("[useUIBridgeExploration] Failed to create exploration session:", response.statusText);
+        return null;
+      }
+
+      const data = await response.json() as ExplorationSessionResponse;
+      const session = toExplorationSession(data);
+      setCurrentSession(session);
+      currentSessionRef.current = session;
+      return session;
+    } catch (error) {
+      console.error("[useUIBridgeExploration] Failed to create exploration session:", error);
+      return null;
+    }
+  }, [config]);
+
+  /**
+   * Append render logs to the current session
+   */
+  const appendRendersToSession = useCallback(async (
+    projectId: string,
+    sessionId: string,
+    authToken: string,
+    apiUrl: string,
+    renderLogs: unknown[],
+    elementsDiscovered?: number,
+    elementsExplored?: number
+  ): Promise<boolean> => {
+    if (renderLogs.length === 0) return true;
+
+    try {
+      const response = await fetch(
+        `${apiUrl}/api/v1/projects/${projectId}/exploration-sessions/${sessionId}/renders`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${authToken}`,
+          },
+          body: JSON.stringify({
+            render_logs: renderLogs,
+            elements_discovered: elementsDiscovered,
+            elements_explored: elementsExplored,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        console.error("[useUIBridgeExploration] Failed to append renders:", response.statusText);
+        return false;
+      }
+
+      const data = await response.json() as ExplorationSessionResponse;
+      const session = toExplorationSession(data);
+      setCurrentSession(session);
+      currentSessionRef.current = session;
+      return true;
+    } catch (error) {
+      console.error("[useUIBridgeExploration] Failed to append renders:", error);
+      return false;
+    }
+  }, []);
+
+  /**
+   * Update exploration session status
+   */
+  const updateSessionStatus = useCallback(async (
+    projectId: string,
+    sessionId: string,
+    authToken: string,
+    apiUrl: string,
+    status: "running" | "completed" | "failed" | "cancelled",
+    errorMessage?: string
+  ): Promise<boolean> => {
+    try {
+      const response = await fetch(
+        `${apiUrl}/api/v1/projects/${projectId}/exploration-sessions/${sessionId}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${authToken}`,
+          },
+          body: JSON.stringify({
+            status,
+            error_message: errorMessage,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        console.error("[useUIBridgeExploration] Failed to update session status:", response.statusText);
+        return false;
+      }
+
+      const data = await response.json() as ExplorationSessionResponse;
+      const session = toExplorationSession(data);
+      setCurrentSession(session);
+      currentSessionRef.current = session;
+      return true;
+    } catch (error) {
+      console.error("[useUIBridgeExploration] Failed to update session status:", error);
+      return false;
     }
   }, []);
 
@@ -942,15 +1257,34 @@ export function useUIBridgeExploration() {
    * Start UI Bridge exploration via runner API
    * The runner uses the qontinui library's UIBridgeExplorer for proper target type handling
    * @param runnerUrl - The runner URL to use for exploration (e.g., "http://localhost:9876")
+   * @param options - Optional parameters for persistence
+   * @param options.projectId - Project ID for persisting exploration to database
+   * @param options.authToken - Auth token for API calls
+   * @param options.apiUrl - Backend API URL (e.g., "http://localhost:8000")
    */
-  const startUIBridgeExploration = useCallback(async (runnerUrl: string) => {
-    if (!config.targetUrl) {
+  const startUIBridgeExploration = useCallback(async (
+    runnerUrl: string,
+    options?: {
+      projectId?: string;
+      authToken?: string;
+      apiUrl?: string;
+    }
+  ) => {
+    // For extension mode, targetUrl is not required - we use the browser tab
+    if (config.targetType !== "extension" && !config.targetUrl) {
       throw new Error("Target URL is required");
     }
 
     if (!runnerUrl) {
       throw new Error("Runner URL is required");
     }
+
+    // For extension mode, use the runner URL as the connection URL
+    // The ExtensionTargetConnection in qontinui library will communicate with
+    // the runner's /extension/* endpoints to reach the Chrome extension
+    const connectionUrl = config.targetType === "extension"
+      ? runnerUrl
+      : config.targetUrl;
 
     // Reset state before starting new exploration
     abortRef.current = false;
@@ -967,14 +1301,14 @@ export function useUIBridgeExploration() {
         elementsSkipped: 0,
         pagesVisited: 0,
         renderLogsCollected: 0,
-        currentUrl: config.targetUrl,
+        currentUrl: connectionUrl,
       },
     });
     // Reset UI Bridge state
     setUIBridgeJob({
       job_id: "",
       status: "pending",
-      connection_url: config.targetUrl,
+      connection_url: connectionUrl,
       target_type: config.targetType,
     });
     setUIBridgeResults(null);
@@ -987,16 +1321,75 @@ export function useUIBridgeExploration() {
       elementsSkipped: 0,
       pagesVisited: 0,
       renderLogsCollected: 0,
-      currentUrl: config.targetUrl,
+      currentUrl: connectionUrl,
       startTime: Date.now(),
     };
 
     setProgress(initialProgress);
 
+    // Create exploration session in database if persistence is enabled
+    let session: ExplorationSession | null = null;
+    const enablePersistence = options?.projectId && options?.authToken && options?.apiUrl;
+    if (enablePersistence) {
+      session = await createExplorationSession(
+        options.projectId!,
+        options.authToken!,
+        options.apiUrl!
+      );
+      if (session) {
+        console.log("[useUIBridgeExploration] Created exploration session:", session.id);
+      }
+    }
+
+    // Track render logs for periodic persistence
+    let lastPersistedRenderCount = 0;
+    const persistRendersBatch = async (renderLogs: unknown[], elementsDiscovered: number, elementsExplored: number) => {
+      if (!enablePersistence || !session) return;
+
+      // Only persist new renders
+      const newRenders = renderLogs.slice(lastPersistedRenderCount);
+      if (newRenders.length === 0) return;
+
+      const success = await appendRendersToSession(
+        options.projectId!,
+        session.id,
+        options.authToken!,
+        options.apiUrl!,
+        newRenders,
+        elementsDiscovered,
+        elementsExplored
+      );
+
+      if (success) {
+        lastPersistedRenderCount = renderLogs.length;
+        console.log(`[useUIBridgeExploration] Persisted ${newRenders.length} renders (total: ${renderLogs.length})`);
+      }
+    };
+
     try {
       // Start the exploration job via runner's UI Bridge explore endpoint
       let startResponse: Response;
       try {
+        // Build the request body
+        const requestBody: Record<string, unknown> = {
+          target_type: config.targetType,
+          connection_url: connectionUrl,
+          max_depth: config.maxDepth,
+          max_elements_per_page: config.maxElementsPerPage,
+          max_total_elements: config.maxTotalElements,
+          action_delay_ms: config.actionDelayMs,
+          blocked_keywords: config.blockedKeywords,
+          safe_keywords: config.safeKeywords,
+          blocked_selectors: config.blockedSelectors,
+          capture_screenshots: false,
+          run_state_discovery: true,
+        };
+
+        // For extension mode, include the selected browser tab ID if specified
+        if (config.targetType === "extension" && config.selectedBrowserTabId !== null) {
+          requestBody.browser_tab_id = config.selectedBrowserTabId;
+        }
+
         startResponse = await fetch(
           `${runnerUrl}/ui-bridge/explore`,
           {
@@ -1004,19 +1397,7 @@ export function useUIBridgeExploration() {
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({
-              target_type: config.targetType,
-              connection_url: config.targetUrl,
-              max_depth: config.maxDepth,
-              max_elements_per_page: config.maxElementsPerPage,
-              max_total_elements: config.maxTotalElements,
-              action_delay_ms: config.actionDelayMs,
-              blocked_keywords: config.blockedKeywords,
-              safe_keywords: config.safeKeywords,
-              blocked_selectors: config.blockedSelectors,
-              capture_screenshots: false,
-              run_state_discovery: true,
-            }),
+            body: JSON.stringify(requestBody),
           }
         );
       } catch (fetchError) {
@@ -1247,6 +1628,24 @@ export function useUIBridgeExploration() {
             (finalResults as ExplorationResults & { stateDiscovery?: unknown }).stateDiscovery = stateDiscovery;
           }
 
+          // Persist final render logs to database
+          if (enablePersistence && session) {
+            await persistRendersBatch(
+              renderLogs,
+              results?.elements_discovered || exploredElements.length,
+              results?.elements_explored || exploredElements.filter((e) => e.clicked).length
+            );
+            await updateSessionStatus(
+              options.projectId!,
+              session.id,
+              options.authToken!,
+              options.apiUrl!,
+              status.status === "completed" ? "completed" : "failed",
+              status.error
+            );
+            console.log(`[useUIBridgeExploration] Session ${session.id} marked as ${status.status}`);
+          }
+
           setProgress(finalResults.progress);
           setResults(finalResults);
           return finalResults;
@@ -1288,9 +1687,21 @@ export function useUIBridgeExploration() {
         error: errorMessage,
       }));
 
+      // Update session status on error
+      if (enablePersistence && session) {
+        await updateSessionStatus(
+          options.projectId!,
+          session.id,
+          options.authToken!,
+          options.apiUrl!,
+          "failed",
+          errorMessage
+        );
+      }
+
       throw error;
     }
-  }, [config]);
+  }, [config, createExplorationSession, appendRendersToSession, updateSessionStatus]);
 
   /**
    * Convert render logs to format expected by state discovery
@@ -1329,5 +1740,7 @@ export function useUIBridgeExploration() {
     browserTabsError,
     fetchBrowserTabs,
     selectBrowserTab,
+    // Database-persisted exploration session
+    currentSession,
   };
 }

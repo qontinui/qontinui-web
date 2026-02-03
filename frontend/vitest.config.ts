@@ -28,4 +28,10 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  css: {
+    // Disable PostCSS processing in tests to avoid Tailwind v4 compatibility issues
+    postcss: {
+      plugins: [],
+    },
+  },
 });

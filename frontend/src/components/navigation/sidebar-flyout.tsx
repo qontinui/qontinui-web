@@ -12,7 +12,7 @@ interface FlyoutChild {
   icon: React.ReactNode;
   route: string;
   color?: string;
-  badge?: "beta" | "experimental";
+  badge?: "beta" | "experimental" | "hidden";
 }
 
 interface SidebarFlyoutProps {
@@ -76,6 +76,9 @@ export function SidebarFlyout({
     }
     if (badge === "experimental") {
       return "bg-purple-500/20 text-purple-400 border border-purple-500/30";
+    }
+    if (badge === "hidden") {
+      return "bg-gray-500/20 text-gray-400 border border-gray-500/30";
     }
     return "";
   };

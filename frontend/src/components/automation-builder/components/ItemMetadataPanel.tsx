@@ -84,6 +84,7 @@ export function ItemMetadataPanel({
     setTempCategory(item.category || "Main");
     setTempViewMode(item.metadata?.viewMode || getSuggestedMode(item));
     setIsEditing(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Only reset when item.id changes, not on every item property change
   }, [item.id]);
 
   /**
@@ -187,7 +188,7 @@ export function ItemMetadataPanel({
   const currentViewMode = item.metadata?.viewMode || getSuggestedMode(item);
 
   return (
-    <div className={className}>
+    <div className={`pb-8 ${className || ""}`}>
       {/* Type Badge */}
       <div className="mb-4 flex items-center justify-between gap-2">
         <span

@@ -91,6 +91,7 @@ export function ThumbnailCard({
 
       {/* Thumbnail Image */}
       <div className="relative w-full aspect-video overflow-hidden rounded-t-md">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={url}
           alt={`Screenshot ${index + 1}`}

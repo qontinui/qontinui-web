@@ -53,10 +53,6 @@ import {
   validateProject,
   type ProjectValidationResult,
 } from "@/lib/project-validator";
-import { AccessibilityExplorer } from "@/components/accessibility";
-import { Accessibility, ChevronUp, ChevronDown } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { runnerClient } from "@/lib/runner-client";
 
 export function AutomationBuilder() {
@@ -71,8 +67,6 @@ export function AutomationBuilder() {
   const [validationDialogOpen, setValidationDialogOpen] = useState(false);
   const [validationResults, setValidationResults] =
     useState<ProjectValidationResult | null>(null);
-  const [accessibilityPanelOpen, setAccessibilityPanelOpen] = useState(false);
-  const accessibilityPanelHeight = 300; // Fixed height for now, can add resize later
 
   // Context
   const {
@@ -596,7 +590,7 @@ export function AutomationBuilder() {
       data-tutorial-id="automation-builder-container"
     >
       {/* Main content area */}
-      <div className="flex flex-1 min-h-0">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Left Panel - Library */}
         <div
           className="w-64 xl:w-72 2xl:w-80 flex-shrink-0 border-r border-border-subtle bg-surface-raised/50 overflow-hidden flex flex-col"
@@ -625,52 +619,25 @@ export function AutomationBuilder() {
           </div>
         </div>
 
-        {/* Center Panel - Editor */}
+        {/* Center Panel - Editor (constrained width for action timeline) */}
         <div
-          className="flex-1 min-w-0 flex flex-col overflow-hidden"
+          className="flex-1 min-w-0 max-w-2xl flex flex-col overflow-hidden"
           data-tutorial-id="workflow-editor"
         >
           {/* Toolbar */}
-          <div className="flex items-center justify-between border-b border-border-subtle bg-surface-canvas">
-            <EditorToolbar
-              item={selectedItem}
-              mode={mode}
-              onDelete={() => selectedItem && handleDeleteItem(selectedItem)}
-              onDuplicate={handleDuplicateItem}
-              onConvert={() => selectedItem && openConversion(selectedItem)}
-              onRun={handleRun}
-              onShare={handleShare}
-              onExport={handleExport}
-              onImport={handleImport}
-              onVerifyProject={handleVerifyProject}
-              onExportProject={handleExportProject}
-              className="border-b-0"
-            />
-            {/* Accessibility Toggle */}
-            <div className="flex items-center gap-2 px-4">
-              <Button
-                variant={accessibilityPanelOpen ? "default" : "ghost"}
-                size="sm"
-                onClick={() => setAccessibilityPanelOpen(!accessibilityPanelOpen)}
-                className={cn(
-                  "gap-2",
-                  accessibilityPanelOpen
-                    ? "bg-purple-500/20 text-purple-400 border border-purple-500/50 hover:bg-purple-500/30"
-                    : "text-text-muted hover:text-white hover:bg-surface-raised"
-                )}
-                title="Toggle Accessibility Explorer"
-                data-ui-id="automation-accessibility-toggle-btn"
-              >
-                <Accessibility className="h-4 w-4" />
-                <span className="hidden xl:inline">Accessibility</span>
-                {accessibilityPanelOpen ? (
-                  <ChevronDown className="h-3 w-3" />
-                ) : (
-                  <ChevronUp className="h-3 w-3" />
-                )}
-              </Button>
-            </div>
-          </div>
+          <EditorToolbar
+            item={selectedItem}
+            mode={mode}
+            onDelete={() => selectedItem && handleDeleteItem(selectedItem)}
+            onDuplicate={handleDuplicateItem}
+            onConvert={() => selectedItem && openConversion(selectedItem)}
+            onRun={handleRun}
+            onShare={handleShare}
+            onExport={handleExport}
+            onImport={handleImport}
+            onVerifyProject={handleVerifyProject}
+            onExportProject={handleExportProject}
+          />
 
           {/* Editor Content */}
           <div className="flex-1 overflow-y-auto">{renderEditor()}</div>
@@ -678,11 +645,7 @@ export function AutomationBuilder() {
 
         {/* Right Panel - Properties */}
         <div
-          className={`${
-            mode === "graph"
-              ? "w-[20rem] xl:w-[22rem] 2xl:w-[24rem]"
-              : "w-[22rem] xl:w-[26rem] 2xl:w-[30rem]"
-          } flex-shrink-0 border-l border-border-subtle bg-surface-raised/50 p-4 overflow-y-auto`}
+          className="flex-1 min-w-[20rem] border-l border-border-subtle bg-surface-raised/50 p-4 overflow-y-auto"
           data-tutorial-id="properties-panel"
         >
           {selectedItem && !selectedAction ? (
@@ -706,24 +669,11 @@ export function AutomationBuilder() {
                   action: import("@/components/action-properties/types").Action
                 ) => void
               }
+              workflow={selectedItem}
             />
           )}
         </div>
       </div>
-
-      {/* Bottom Panel - Accessibility Explorer (collapsible) */}
-      {accessibilityPanelOpen && (
-        <div
-          className="flex-shrink-0 border-t border-border-subtle bg-surface-panel"
-          style={{ height: accessibilityPanelHeight }}
-        >
-          <AccessibilityExplorer
-            apiUrl="http://127.0.0.1:9876"
-            showSettings={true}
-            className="h-full"
-          />
-        </div>
-      )}
 
       {/* Conversion Dialog */}
       <ConversionDialog />

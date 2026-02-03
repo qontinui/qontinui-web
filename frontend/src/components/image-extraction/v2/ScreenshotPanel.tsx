@@ -161,6 +161,7 @@ export const ScreenshotPanel: React.FC<ScreenshotPanelProps> = ({
                 }`}
                 title={`Monitor ${screenshot.monitor.index}`}
               >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={screenshot.dataUrl}
                   alt={screenshot.name}

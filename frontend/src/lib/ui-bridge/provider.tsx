@@ -5,13 +5,19 @@
  *
  * Configures UIBridgeProvider with appropriate features based on environment.
  * Includes AutoRegisterProvider for automatic element registration.
- * Includes UIBridgeCommandListener for remote automation support.
+ * Supports both WebSocket and HTTP polling for remote automation.
+ *
+ * Transport modes:
+ * - 'auto' (default): Try WebSocket first, fall back to HTTP polling
+ * - 'websocket': Use WebSocket only
+ * - 'http': Use HTTP polling only
  */
 
 import React from "react";
 import { UIBridgeProvider, AutoRegisterProvider } from "ui-bridge/react";
 import type { UIBridgeFeatures, UIBridgeConfig } from "ui-bridge/core";
-import { UIBridgeCommandListener } from "./UIBridgeCommandListener";
+import { UIBridgeTransportListener } from "./UIBridgeTransportListener";
+import type { TransportMode } from "./useUIBridgeTransport";
 
 /**
  * Feature configuration for UI Bridge
@@ -38,6 +44,18 @@ interface UIBridgeWrapperProps {
    * Defaults to true in development.
    */
   enableRemoteCommands?: boolean;
+  /**
+   * Transport mode for remote commands.
+   * - 'auto' (default): Try WebSocket first, fall back to HTTP polling
+   * - 'websocket': Use WebSocket only
+   * - 'http': Use HTTP polling only
+   */
+  transport?: TransportMode;
+  /**
+   * WebSocket URL for remote commands.
+   * Defaults to current host with /api/ui-bridge/ws path.
+   */
+  wsUrl?: string;
 }
 
 /**
@@ -48,12 +66,14 @@ interface UIBridgeWrapperProps {
  *
  * Features:
  * - Automatic element registration via AutoRegisterProvider
- * - Remote command listening via UIBridgeCommandListener
+ * - Remote command listening via WebSocket (primary) or HTTP polling (fallback)
  * - SWC plugin integration for compile-time instrumentation
  */
 export function UIBridgeWrapper({
   children,
   enableRemoteCommands = process.env.NODE_ENV === "development",
+  transport = "auto",
+  wsUrl,
 }: UIBridgeWrapperProps) {
   return (
     <UIBridgeProvider features={features} config={config}>
@@ -65,8 +85,12 @@ export function UIBridgeWrapper({
         debounceMs={100}
         excludeSelectors={["[data-no-register]"]}
       >
-        {/* Command listener for remote automation */}
-        <UIBridgeCommandListener enabled={enableRemoteCommands} />
+        {/* Transport listener for remote automation (WebSocket primary, HTTP fallback) */}
+        <UIBridgeTransportListener
+          enabled={enableRemoteCommands}
+          mode={transport}
+          wsUrl={wsUrl}
+        />
         {children as Parameters<typeof AutoRegisterProvider>[0]["children"]}
       </AutoRegisterProvider>
     </UIBridgeProvider>

@@ -196,6 +196,7 @@ export function GlobalSearch({
         setOpen(false);
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleResultClick is stable and depends on router/query/activeFilters which are already tracked
     [results, selectedIndex, setOpen]
   );
 

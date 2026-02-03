@@ -44,6 +44,7 @@ import {
 } from "lucide-react";
 import type { UnifiedExecutionStep } from "@/types/tree-events";
 import { getStepTypeIcon, getStepTypeLabel } from "@/lib/tree-event-adapter";
+import { StepProgressMarker } from "./StepProgressMarker";
 
 interface UnifiedStepCardProps {
   step: UnifiedExecutionStep;
@@ -52,6 +53,10 @@ interface UnifiedStepCardProps {
   isCurrent?: boolean;
   /** Map of state/element IDs to display names */
   nameMap?: Map<string, string>;
+  /** Task run ID for progress tracking */
+  taskRunId?: string;
+  /** Enable real-time progress tracking for running steps */
+  enableProgressTracking?: boolean;
 }
 
 /**
@@ -77,6 +82,8 @@ export function UnifiedStepCard({
   onToggle,
   isCurrent = false,
   nameMap,
+  taskRunId,
+  enableProgressTracking = false,
 }: UnifiedStepCardProps) {
   const [localExpanded, setLocalExpanded] = useState(isExpanded);
   const expanded = onToggle ? isExpanded : localExpanded;
@@ -263,7 +270,12 @@ export function UnifiedStepCard({
         <CollapsibleContent>
           <div className="px-4 pb-4 pt-0 border-t border-border-subtle/50">
             <div className="pt-4">
-              <StepDetails step={step} nameMap={nameMap} />
+              <StepDetails
+                step={step}
+                nameMap={nameMap}
+                taskRunId={taskRunId}
+                enableProgressTracking={enableProgressTracking}
+              />
             </div>
           </div>
         </CollapsibleContent>
@@ -278,12 +290,31 @@ export function UnifiedStepCard({
 function StepDetails({
   step,
   nameMap,
+  taskRunId,
+  enableProgressTracking,
 }: {
   step: UnifiedExecutionStep;
   nameMap?: Map<string, string>;
+  taskRunId?: string;
+  enableProgressTracking?: boolean;
 }) {
+  const isRunning = step.status === "running";
+  const showProgressMarker =
+    enableProgressTracking && taskRunId && step.nodeId;
+
   return (
     <div className="space-y-4">
+      {/* Progress Marker for Running Steps */}
+      {showProgressMarker && (
+        <StepProgressMarker
+          taskRunId={taskRunId}
+          checkpointId={step.nodeId!}
+          isRunning={isRunning}
+          autoRefresh={isRunning}
+          compact={false}
+        />
+      )}
+
       {/* Basic Info Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {step.actionType && (

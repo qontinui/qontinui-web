@@ -148,6 +148,7 @@ export const CompositeScreenshotCanvas: React.FC<
 
   // Use controlled values if provided
   const zoom = isControlled ? propZoom : internalZoom;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- pan object is intentionally recreated; using useMemo would add complexity without benefit since pan values change frequently during interactions
   const pan = isControlled
     ? { x: propPanX ?? 0, y: propPanY ?? 0 }
     : internalPan;
@@ -339,6 +340,7 @@ export const CompositeScreenshotCanvas: React.FC<
       setZoom(newZoom);
       setPan({ x: centeredX, y: centeredY });
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setZoom and setPan are stable callbacks; including them would cause unnecessary re-renders
   }, [compositeBounds]);
 
   // Stable fitToView function that uses the ref
@@ -542,6 +544,7 @@ export const CompositeScreenshotCanvas: React.FC<
 
     canvas.addEventListener("wheel", handleWheelEvent, { passive: false });
     return () => canvas.removeEventListener("wheel", handleWheelEvent);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setZoom and setPan are stable callbacks; they don't need to be in the dependency array
   }, [zoom, pan]);
 
   // Convert screen coordinates to image coordinates
@@ -750,6 +753,7 @@ export const CompositeScreenshotCanvas: React.FC<
         }
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setPan is a stable callback; including it would not change behavior
     [
       screenToImage,
       isPanning,

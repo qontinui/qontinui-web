@@ -168,6 +168,7 @@ export function MissingMonitorsDialog({
   const getElementIcon = (type: "image" | "region" | "location" | "string") => {
     switch (type) {
       case "image":
+        // eslint-disable-next-line jsx-a11y/alt-text -- This is a Lucide icon component, not an img element
         return <Image className="w-4 h-4" />;
       case "region":
         return <Square className="w-4 h-4" />;
@@ -320,6 +321,7 @@ export function MissingMonitorsDialog({
           >
             <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="image" className="flex items-center gap-1">
+                {/* eslint-disable-next-line jsx-a11y/alt-text -- This is a Lucide icon component, not an img element */}
                 <Image className="w-3 h-3" />
                 Images ({errorsByType.image.length})
               </TabsTrigger>

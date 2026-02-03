@@ -76,6 +76,8 @@ import { toast } from "sonner";
 import { ConfigImporter } from "@/lib/config-importer";
 import { getProjectLoader } from "@/lib/project";
 import { ProjectExportDialog } from "@/components/automation-builder/components/ProjectExportDialog";
+import { useTutorialStore } from "@/stores/tutorial-store";
+import { getTutorialById } from "@/components/tutorial/data";
 
 // =============================================================================
 // Types
@@ -195,6 +197,7 @@ const navItems: NavItem[] = [
         icon: <Database className="size-4" />,
         route: "/projects/:projectId/rag",
         color: "#8B5CF6",
+        hidden: true,
       },
     ],
   },
@@ -214,9 +217,9 @@ const navItems: NavItem[] = [
         color: "var(--brand-success)",
       },
       {
-        id: "optimize-patterns",
-        label: "Optimize Patterns",
-        description: "Improve pattern image quality",
+        id: "pattern-extraction",
+        label: "Pattern Extraction",
+        description: "Extract robust patterns from screenshots",
         icon: <Sparkles className="size-4" />,
         route: "/automation-builder/pattern-optimization",
         color: "var(--brand-success)",
@@ -229,6 +232,14 @@ const navItems: NavItem[] = [
         route: "/automation-builder/annotations",
         color: "var(--brand-success)",
         adminOnly: true,
+      },
+      {
+        id: "template-capture",
+        label: "Template Capture",
+        description: "Click-to-template element detection",
+        icon: <Target className="size-4" />,
+        route: "/automation-builder/template-capture",
+        color: "var(--brand-success)",
       },
     ],
   },
@@ -416,6 +427,7 @@ const navItems: NavItem[] = [
     icon: <Box className="size-5" />,
     route: "/automation-builder/overview",
     color: "var(--brand-primary)",
+    hidden: true,
     children: [
       {
         id: "overview",
@@ -440,6 +452,7 @@ const navItems: NavItem[] = [
         icon: <FileText className="size-4" />,
         route: "/automation-builder/documentation",
         color: "var(--brand-primary)",
+        hidden: true,
       },
       {
         id: "automation-analytics",
@@ -448,6 +461,7 @@ const navItems: NavItem[] = [
         icon: <BarChart3 className="size-4" />,
         route: "/automation-builder/analytics",
         color: "var(--brand-primary)",
+        hidden: true,
       },
       {
         id: "issues",
@@ -617,6 +631,7 @@ function ProjectSwitcher({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
+          data-tutorial-id="sidebar-project-switcher"
           className={cn(
             "flex w-full items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-colors hover:bg-surface-hover",
             isCollapsed && "justify-center px-0"
@@ -667,7 +682,7 @@ function ProjectSwitcher({
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={onCreateProject}>
+        <DropdownMenuItem onClick={onCreateProject} data-tutorial-id="sidebar-create-project">
           <div className="flex items-center gap-2 text-text-muted">
             <span>+ Create new project</span>
           </div>
@@ -696,7 +711,10 @@ function SearchTrigger({ isCollapsed }: { isCollapsed: boolean }) {
   }
 
   return (
-    <button className="flex h-9 w-full items-center gap-2 rounded-md border border-border-subtle bg-surface-canvas px-3 text-sm text-text-muted transition-colors hover:border-border-default hover:bg-surface-hover">
+    <button
+      data-tutorial-id="sidebar-search"
+      className="flex h-9 w-full items-center gap-2 rounded-md border border-border-subtle bg-surface-canvas px-3 text-sm text-text-muted transition-colors hover:border-border-default hover:bg-surface-hover"
+    >
       <Search className="size-4" />
       <span>Search...</span>
       <kbd className="pointer-events-none ml-auto hidden h-5 select-none items-center gap-1 rounded border border-border-subtle bg-surface-canvas px-1.5 font-mono text-[10px] font-medium text-text-muted sm:flex">
@@ -729,6 +747,7 @@ function NavItemButton({
     <button
       onClick={onClick}
       data-nav-id={item.id}
+      data-tutorial-id={`nav-${item.id}`}
       className={cn(
         "flex w-full items-center gap-3 rounded-md px-2 py-2 text-sm transition-colors",
         isActive
@@ -826,6 +845,7 @@ function CollapsibleNavItem({
             <DropdownMenuTrigger asChild>
               <button
                 data-nav-id={item.id}
+                data-tutorial-id={`nav-${item.id}`}
                 className={cn(
                   "flex size-10 items-center justify-center rounded-md transition-colors",
                   isParentActive
@@ -885,6 +905,7 @@ function CollapsibleNavItem({
       <CollapsibleTrigger asChild>
         <button
           data-nav-id={item.id}
+          data-tutorial-id={`nav-${item.id}`}
           className={cn(
             "flex w-full items-center gap-3 rounded-md px-2 py-2 text-sm transition-colors",
             isParentActive
@@ -1045,7 +1066,10 @@ function UserMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="flex w-full items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-surface-hover">
+        <button
+          data-tutorial-id="sidebar-user-menu"
+          className="flex w-full items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-surface-hover"
+        >
           <Avatar className="size-8">
             <AvatarFallback
               className="text-xs"
@@ -1086,6 +1110,49 @@ function UserMenu({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+// =============================================================================
+// Help/Tutorial Button
+// =============================================================================
+
+function HelpButton({ isCollapsed }: { isCollapsed: boolean }) {
+  const openTutorial = useTutorialStore((s) => s.openTutorial);
+
+  const handleStartTutorial = useCallback(() => {
+    const tutorial = getTutorialById("getting-started-web");
+    if (tutorial) {
+      openTutorial(tutorial, "contextual");
+    }
+  }, [openTutorial]);
+
+  if (isCollapsed) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={handleStartTutorial}
+            data-tutorial-id="sidebar-help"
+            className="flex size-10 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
+          >
+            <BookOpen className="size-4" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="right">Help &amp; Tutorials</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <button
+      onClick={handleStartTutorial}
+      data-tutorial-id="sidebar-help"
+      className="flex h-9 w-full items-center justify-center gap-2 rounded-md text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
+    >
+      <BookOpen className="size-4" />
+      <span className="text-sm">Help &amp; Tutorials</span>
+    </button>
   );
 }
 
@@ -1425,6 +1492,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
     <TooltipProvider delayDuration={0}>
       <aside
         data-sidebar="true"
+        data-tutorial-id="sidebar-main"
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex flex-col border-r border-border-subtle bg-surface-canvas transition-all duration-200 ease-linear",
           isCollapsed ? "w-16" : "w-64",
@@ -1442,9 +1510,11 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
           )}
         >
           {isCollapsed ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
             <img src="/q-logo.png" alt="Qontinui" className="h-10 w-auto" />
           ) : (
             <div className="flex items-center gap-1">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/q-logo.png" alt="Qontinui" className="h-9 w-auto" />
               <span className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
                 ontinui
@@ -1501,6 +1571,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
         {/* Navigation Area */}
         <ScrollArea className="flex-1 px-3">
           <nav
+            data-tutorial-id="sidebar-nav"
             className={cn(
               "flex flex-col gap-1 py-3",
               isCollapsed && "items-center"
@@ -1540,6 +1611,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
             isCollapsed && "items-center"
           )}
         >
+          <HelpButton isCollapsed={isCollapsed} />
           <UserMenu
             isCollapsed={isCollapsed}
             user={user}

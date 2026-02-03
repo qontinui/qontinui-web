@@ -5,6 +5,25 @@
  * receiving screenshots, logs, and status updates as the runner executes automations.
  */
 
+/**
+ * UI Bridge command received via WebSocket
+ */
+export interface UIBridgeCommandEvent {
+  type: "ui_bridge_command";
+  command_id: string;
+  action: string;
+  payload: Record<string, unknown>;
+  timestamp: string;
+}
+
+/**
+ * UI Bridge command handler function type
+ */
+export type UIBridgeCommandHandler = (
+  action: string,
+  payload: Record<string, unknown>
+) => Promise<unknown>;
+
 export interface RunnerWebSocketConfig {
   url: string;
   token?: string;
@@ -27,6 +46,8 @@ export interface RunnerWebSocketConfig {
   onExtractionError?: (data: ExtractionErrorEvent) => void;
   // Command response callback
   onCommandResponse?: (data: CommandResponseEvent) => void;
+  // UI Bridge command handler for WebSocket-based commands
+  uiBridgeCommandHandler?: UIBridgeCommandHandler;
 }
 
 export interface CommandResponseEvent {
@@ -595,12 +616,85 @@ export class RunnerWebSocket {
         console.debug("[RunnerWebSocket] Ping received");
         break;
 
+      case "ui_bridge_command":
+        // UI Bridge command from runner via backend WebSocket
+        this.handleUIBridgeCommand(message as unknown as UIBridgeCommandEvent);
+        break;
+
       default:
         console.warn(
           "[RunnerWebSocket] Unknown message type:",
           message.type,
           message
         );
+    }
+  }
+
+  /**
+   * Handle UI Bridge command received via WebSocket
+   * Executes the command and sends response back via WebSocket
+   */
+  private async handleUIBridgeCommand(command: UIBridgeCommandEvent): Promise<void> {
+    const { command_id, action, payload } = command;
+
+    console.log(
+      "[RunnerWebSocket] UI Bridge command received:",
+      action,
+      "command_id:",
+      command_id
+    );
+
+    // Check if handler is configured
+    if (!this.config.uiBridgeCommandHandler) {
+      console.warn(
+        "[RunnerWebSocket] No UI Bridge command handler configured, ignoring command:",
+        action
+      );
+      // Send error response
+      this.send({
+        type: "ui_bridge_response",
+        command_id,
+        success: false,
+        error: "No UI Bridge command handler configured",
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
+    try {
+      // Execute the command
+      const result = await this.config.uiBridgeCommandHandler(action, payload);
+
+      // Send success response
+      this.send({
+        type: "ui_bridge_response",
+        command_id,
+        success: true,
+        result,
+        timestamp: new Date().toISOString(),
+      });
+
+      console.log(
+        "[RunnerWebSocket] UI Bridge command completed successfully:",
+        action
+      );
+    } catch (error) {
+      // Send error response
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.send({
+        type: "ui_bridge_response",
+        command_id,
+        success: false,
+        error: errorMessage,
+        timestamp: new Date().toISOString(),
+      });
+
+      console.error(
+        "[RunnerWebSocket] UI Bridge command failed:",
+        action,
+        errorMessage
+      );
     }
   }
 }

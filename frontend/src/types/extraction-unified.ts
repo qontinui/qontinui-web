@@ -12,7 +12,8 @@ export type ExtractionMethod =
   | "uitars-web"
   | "uitars-desktop"
   | "image"
-  | "ui-bridge";
+  | "ui-bridge"
+  | "vision";
 
 export type UITarsProvider = "local_transformers" | "local_vllm" | "cloud";
 export type UITarsModelSize = "2B" | "7B" | "72B";
@@ -55,6 +56,46 @@ export interface ImageExtractionConfig {
   confidenceThreshold: number;
 }
 
+export type VisionExtractionSource = "upload" | "monitor" | "window";
+export type OcrEngine = "easyocr" | "tesseract";
+export type Sam3ModelType = "vit_h" | "vit_l" | "vit_b";
+
+export interface VisionExtractionConfig {
+  source: VisionExtractionSource;
+  screenshotPath?: string;
+  windowTitle?: string;
+  monitorIndex?: number;
+
+  edgeDetection: {
+    enabled: boolean;
+    cannyLow: number;
+    cannyHigh: number;
+    minContourArea: number;
+    maxContourArea: number;
+  };
+
+  sam3: {
+    enabled: boolean;
+    modelType: Sam3ModelType;
+    pointsPerSide: number;
+    predIouThreshold: number;
+    stabilityScoreThreshold: number;
+  };
+
+  ocr: {
+    enabled: boolean;
+    engine: OcrEngine;
+    minConfidence: number;
+    languages: string[];
+  };
+
+  fusion: {
+    iouThreshold: number;
+    maxCandidates: number;
+    preferHigherConfidence: boolean;
+  };
+}
+
 export interface UnifiedExtractionConfig {
   method: ExtractionMethod;
   selectedMonitors: number[];
@@ -63,6 +104,7 @@ export interface UnifiedExtractionConfig {
   webConfig: WebExtractionConfig;
   uitarsConfig: UITarsExtractionConfig;
   imageConfig: ImageExtractionConfig;
+  visionConfig: VisionExtractionConfig;
 }
 
 export const DEFAULT_WEB_CONFIG: WebExtractionConfig = {
@@ -100,10 +142,47 @@ export const DEFAULT_IMAGE_CONFIG: ImageExtractionConfig = {
   confidenceThreshold: 0.8,
 };
 
+export const DEFAULT_VISION_CONFIG: VisionExtractionConfig = {
+  source: "upload",
+  screenshotPath: undefined,
+  windowTitle: undefined,
+  monitorIndex: 0,
+
+  edgeDetection: {
+    enabled: true,
+    cannyLow: 50,
+    cannyHigh: 150,
+    minContourArea: 100,
+    maxContourArea: 500000,
+  },
+
+  sam3: {
+    enabled: false, // Off by default (requires model download)
+    modelType: "vit_b",
+    pointsPerSide: 32,
+    predIouThreshold: 0.88,
+    stabilityScoreThreshold: 0.95,
+  },
+
+  ocr: {
+    enabled: true,
+    engine: "easyocr",
+    minConfidence: 0.6,
+    languages: ["en"],
+  },
+
+  fusion: {
+    iouThreshold: 0.5,
+    maxCandidates: 500,
+    preferHigherConfidence: true,
+  },
+};
+
 export const DEFAULT_UNIFIED_CONFIG: UnifiedExtractionConfig = {
   method: "web",
   selectedMonitors: [0],
   webConfig: DEFAULT_WEB_CONFIG,
   uitarsConfig: DEFAULT_UITARS_CONFIG,
   imageConfig: DEFAULT_IMAGE_CONFIG,
+  visionConfig: DEFAULT_VISION_CONFIG,
 };

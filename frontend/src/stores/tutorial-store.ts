@@ -154,6 +154,11 @@ export interface TutorialActions {
   markInProgress: (tutorialId: string) => void;
 
   /**
+   * Mark a tutorial as completed (without running through it)
+   */
+  markTutorialCompleted: (tutorialId: string) => void;
+
+  /**
    * Get the current step
    */
   getCurrentStep: () => TutorialStep | null;
@@ -472,6 +477,22 @@ export const useTutorialStore = create<TutorialStore>()(
         if (!inProgressTutorials.includes(tutorialId)) {
           set({
             inProgressTutorials: [...inProgressTutorials, tutorialId],
+          });
+        }
+      },
+
+      markTutorialCompleted: (tutorialId: string) => {
+        const { completedTutorials, inProgressTutorials } = get();
+        if (!completedTutorials.includes(tutorialId)) {
+          const updated = new Set(completedTutorials);
+          updated.add(tutorialId);
+
+          const inProgress = new Set(inProgressTutorials);
+          inProgress.delete(tutorialId);
+
+          set({
+            completedTutorials: Array.from(updated),
+            inProgressTutorials: Array.from(inProgress),
           });
         }
       },

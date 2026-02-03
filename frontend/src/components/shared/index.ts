@@ -6,3 +6,10 @@
 
 export { UnifiedStepCard } from "./UnifiedStepCard";
 export { TreeExecutionResults } from "./TreeExecutionResults";
+export {
+  StepProgressMarker,
+  useStepProgressMarkers,
+  stepProgressKeys,
+  type StepProgressData,
+  type StepProgressMarkerProps,
+} from "./StepProgressMarker";

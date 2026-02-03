@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import {
   CheckCircle2,
   XCircle,
@@ -12,6 +12,7 @@ import {
   Search,
   ChevronDown,
   ChevronRight,
+  GitBranch,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -42,11 +43,16 @@ import type {
   UIBridgeDiscoveredElement,
   UIBridgeExplorationStep,
   UIBridgeRenderLog,
+  SuggestedTransition,
 } from "@/hooks/useUIBridgeExploration";
+import { buildTransitionsFromSteps } from "@/lib/ui-bridge/transition-builder";
+import { TransitionPreviewPanel } from "@/components/ui-bridge";
 
 interface UIBridgeResultsViewProps {
   job: UIBridgeJobStatus;
   results?: UIBridgeRawResults | null;
+  onAcceptTransition?: (transition: SuggestedTransition) => void;
+  onAcceptAllTransitions?: (transitions: SuggestedTransition[]) => void;
 }
 
 function MetricsCard({ results }: { results: UIBridgeRawResults }) {
@@ -413,7 +419,48 @@ function ErrorsList({ errors }: { errors: string[] }) {
   );
 }
 
-export function UIBridgeResultsView({ job, results }: UIBridgeResultsViewProps) {
+export function UIBridgeResultsView({
+  job,
+  results,
+  onAcceptTransition,
+  onAcceptAllTransitions,
+}: UIBridgeResultsViewProps) {
+  // Build suggested transitions from steps
+  const transitionBuildResult = useMemo(() => {
+    if (!results?.steps?.length) {
+      return { transitions: [], stateHashes: new Map(), unmappedSteps: [] };
+    }
+    return buildTransitionsFromSteps(
+      results.steps,
+      results.state_discovery?.states
+    );
+  }, [results?.steps, results?.state_discovery?.states]);
+
+  const suggestedTransitions = transitionBuildResult.transitions;
+
+  // Check if we have enhanced step data for transition discovery
+  const hasEnhancedStepData = useMemo(() => {
+    if (!results?.steps?.length) return false;
+    // Check if the first step has the enhanced fields
+    const firstStep = results.steps[0];
+    return firstStep?.action_result !== undefined || firstStep?.snapshot_before_hash !== undefined;
+  }, [results?.steps]);
+
+  // Handlers for transition acceptance
+  const handleAcceptTransition = useCallback(
+    (transition: SuggestedTransition) => {
+      onAcceptTransition?.(transition);
+    },
+    [onAcceptTransition]
+  );
+
+  const handleAcceptAllTransitions = useCallback(
+    (transitions: SuggestedTransition[]) => {
+      onAcceptAllTransitions?.(transitions);
+    },
+    [onAcceptAllTransitions]
+  );
+
   // Handle case where job is not yet available
   if (!job) {
     return (
@@ -464,13 +511,22 @@ export function UIBridgeResultsView({ job, results }: UIBridgeResultsViewProps) 
 
       {/* Results Tabs */}
       <Tabs defaultValue="states" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="states" className="flex items-center gap-1">
             <Layers className="h-4 w-4" />
             States
             <Badge variant="secondary" className="ml-1">
               {states.length}
             </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="transitions" className="flex items-center gap-1">
+            <GitBranch className="h-4 w-4" />
+            Transitions
+            {suggestedTransitions.length > 0 && (
+              <Badge variant="secondary" className="ml-1">
+                {suggestedTransitions.length}
+              </Badge>
+            )}
           </TabsTrigger>
           <TabsTrigger value="elements" className="flex items-center gap-1">
             <Box className="h-4 w-4" />
@@ -481,7 +537,7 @@ export function UIBridgeResultsView({ job, results }: UIBridgeResultsViewProps) 
           </TabsTrigger>
           <TabsTrigger value="renders" className="flex items-center gap-1">
             <FileText className="h-4 w-4" />
-            Render Logs
+            Logs
             <Badge variant="secondary" className="ml-1">
               {renderLogs.length}
             </Badge>
@@ -513,6 +569,23 @@ export function UIBridgeResultsView({ job, results }: UIBridgeResultsViewProps) 
             </div>
           ) : (
             <StatesTable states={states} />
+          )}
+        </TabsContent>
+
+        <TabsContent value="transitions" className="mt-4">
+          {hasEnhancedStepData ? (
+            <TransitionPreviewPanel
+              suggestedTransitions={suggestedTransitions}
+              discoveredStates={states}
+              onAccept={handleAcceptTransition}
+              onAcceptAll={handleAcceptAllTransitions}
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
+              <GitBranch className="h-12 w-12 mb-4" />
+              <p>Transition discovery requires updated runner</p>
+              <p className="text-sm">Please update qontinui-runner to enable transition discovery</p>
+            </div>
           )}
         </TabsContent>
 

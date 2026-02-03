@@ -80,6 +80,7 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
   });
 
   // Initialize canvases when image loads
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- initializeCanvases is intentionally excluded to prevent re-initialization loops
   useEffect(() => {
     if (!open || !imageUrl) return;
 

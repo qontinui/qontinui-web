@@ -101,6 +101,7 @@ export function SaveScreenshotDialog({
           {imageData && (
             <div className="flex justify-center">
               <div className="border rounded-lg overflow-hidden max-w-full max-h-[200px]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={`data:image/jpeg;base64,${imageData}`}
                   alt="Screenshot preview"

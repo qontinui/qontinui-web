@@ -81,6 +81,7 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
     if (projectId) {
       loadExportStatus();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadExportStatus is defined below and depends on projectId
   }, [projectId]);
 
   const loadExportStatus = async () => {

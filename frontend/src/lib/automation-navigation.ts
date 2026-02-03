@@ -2,7 +2,6 @@ import {
   LayoutDashboard,
   GitBranch,
   Network,
-  Package,
   TestTube,
   BarChart3,
   FileText,
@@ -36,12 +35,6 @@ export const automationBuilderRoutes: AutomationRoute[] = [
     path: "/automation-builder/dependencies",
     icon: Network,
     description: "Visualize workflow dependencies",
-  },
-  {
-    name: "Components",
-    path: "/automation-builder/components",
-    icon: Package,
-    description: "Reusable workflow components",
   },
   {
     name: "Testing",

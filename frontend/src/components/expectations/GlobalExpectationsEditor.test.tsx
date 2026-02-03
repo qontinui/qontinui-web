@@ -266,8 +266,6 @@ describe("GlobalExpectationsEditor", () => {
     });
 
     it("should update min_confidence_threshold", async () => {
-      const user = userEvent.setup();
-
       render(
         <GlobalExpectationsEditor
           expectations={undefined}

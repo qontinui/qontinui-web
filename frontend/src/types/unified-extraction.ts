@@ -6,9 +6,20 @@
  * - Playwright extraction (interactive web crawling)
  * - Pattern matching (template matching)
  * - Web extraction (full page extraction with state discovery)
+ * - UI Bridge extraction (state exploration with transition discovery)
  *
  * These types enable a single status tracking system and consistent UI components.
  */
+
+// Re-export transition types from the hook for unified access
+export type {
+  SuggestedTransition,
+  TransitionBuildResult,
+  UIBridgeExplorationStep,
+  UIBridgeDiscoveredState,
+  UIBridgeDiscoveredElement,
+  UIBridgeRawResults,
+} from "@/hooks/useUIBridgeExploration";
 
 // ============================================================================
 // Core Types
@@ -32,6 +43,7 @@ export type ExtractionMethod =
   | "playwright"
   | "pattern"
   | "web"
+  | "ui-bridge"
   | "composite";
 
 /**
@@ -210,13 +222,7 @@ export interface UnifiedExtractionResult {
   elements: UnifiedElement[];
 
   /** Raw technique-specific results (for advanced use) */
-  rawResults?: {
-    edge?: unknown[];
-    sam3?: unknown[];
-    ocr?: unknown[];
-    playwright?: unknown[];
-    pattern?: unknown[];
-  };
+  rawResults?: UnifiedExtractionRawResults;
 
   /** Overlay images (base64 encoded) */
   overlays?: {
@@ -246,6 +252,45 @@ export interface UnifiedExtractionResult {
 
   /** Project ID if associated with a project */
   projectId?: string;
+
+  // --- Transition discovery (UI Bridge) ---
+
+  /** Suggested transitions discovered from exploration */
+  transitions?: import("@/hooks/useUIBridgeExploration").SuggestedTransition[];
+}
+
+/**
+ * Raw results from various extraction techniques.
+ */
+export interface UnifiedExtractionRawResults {
+  /** Edge detection raw results */
+  edge?: unknown[];
+
+  /** SAM3 segmentation raw results */
+  sam3?: unknown[];
+
+  /** OCR raw results */
+  ocr?: unknown[];
+
+  /** Playwright extraction raw results */
+  playwright?: unknown[];
+
+  /** Pattern matching raw results */
+  pattern?: unknown[];
+
+  /** UI Bridge exploration raw results */
+  uiBridge?: {
+    /** Discovered states from co-occurrence analysis */
+    states: import("@/hooks/useUIBridgeExploration").UIBridgeDiscoveredState[];
+    /** Discovered elements */
+    elements: import("@/hooks/useUIBridgeExploration").UIBridgeDiscoveredElement[];
+    /** Exploration steps with transition data */
+    steps: import("@/hooks/useUIBridgeExploration").UIBridgeExplorationStep[];
+    /** Render logs captured during exploration */
+    renderLogs: import("@/hooks/useUIBridgeExploration").UIBridgeRenderLog[];
+    /** Discovered transitions */
+    transitions: import("@/hooks/useUIBridgeExploration").SuggestedTransition[];
+  };
 }
 
 /**
@@ -280,6 +325,17 @@ export interface UnifiedExtractionMetrics {
 
   /** Average confidence score */
   avgConfidence?: number;
+
+  // --- UI Bridge specific ---
+
+  /** Number of states discovered */
+  statesDiscovered?: number;
+
+  /** Number of transitions discovered */
+  transitionsDiscovered?: number;
+
+  /** Number of elements explored */
+  elementsExplored?: number;
 
   // --- Error tracking ---
 

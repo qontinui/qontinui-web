@@ -40,6 +40,7 @@ export function TypeActionProperties({
       // Default to manual text mode
       updateConfig("text", "");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Only run on mount to set default value
   }, []);
 
   return (

@@ -342,13 +342,29 @@ builtInComponents.forEach(component => {
     { name: 'url', type: 'string', required: true },
     { name: 'method', type: 'string', required: true },
     { name: 'headers', type: 'object', required: false },
-    { name: 'body', type: 'object', required: false }
+    { name: 'body', type: 'object', required: false },
+    { name: 'output_variable', type: 'string', required: false }
   ],
   outputs: [
     { name: 'response', type: 'object' },
     { name: 'statusCode', type: 'number' }
   ]
 }
+```
+
+**Output Variable (API Request Chaining)**
+
+The `output_variable` parameter enables API request chaining by storing the response body in a variable that subsequent steps can reference using `{{variable_name}}` syntax.
+
+```typescript
+// Store entire response
+{ output_variable: 'auth_response' }
+// Reference in next step: {{auth_response}}
+
+// Extract specific field using JSON path syntax
+{ output_variable: 'token.access_token' }
+// Extracts $.access_token and stores in variable 'token'
+// Reference in next step: {{token}}
 ```
 
 #### 4. Wait for Element Component

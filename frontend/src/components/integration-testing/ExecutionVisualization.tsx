@@ -89,6 +89,7 @@ export function ExecutionVisualization({
       <Card className="p-0 overflow-hidden">
         <div className="relative bg-surface-canvas">
           {/* Screenshot */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={screenshotUrl}
             alt={`Action ${currentIndex + 1}`}

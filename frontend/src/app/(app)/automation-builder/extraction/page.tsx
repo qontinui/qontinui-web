@@ -108,6 +108,8 @@ import type {
   ElementAnnotation,
 } from "@/types/extraction";
 import type { RunnerConnection } from "@/types/runner";
+import { useStateDiscoveryResults } from "@/hooks/useStateDiscoveryResults";
+import { UnifiedResultsSection } from "@/components/state-machine/UnifiedResultsSection";
 
 type MainTab = "configuration" | "results";
 
@@ -150,7 +152,7 @@ interface DiscoveredState {
   domain_knowledge?: DomainKnowledge[];
 }
 
-interface StateDiscoveryResult {
+interface UIBridgeDiscoveryResult {
   states: DiscoveredState[];
   elements: UIBridgeElement[];
   element_to_renders: Record<string, string[]>;
@@ -217,6 +219,19 @@ function UnifiedExtractionContent() {
     projectId || "",
     !!projectId
   );
+
+  // Fetch unified state discovery results
+  const {
+    results: unifiedResults,
+    isLoading: isLoadingUnifiedResults,
+    error: unifiedResultsError,
+    selectedResult: selectedUnifiedResult,
+    isLoadingDetail: isLoadingUnifiedDetail,
+    selectResult: selectUnifiedResult,
+    clearSelection: clearUnifiedSelection,
+    deleteResult: deleteUnifiedResult,
+    refresh: refreshUnifiedResults,
+  } = useStateDiscoveryResults({ projectId });
 
   // Track which extraction from history is currently selected for viewing
   const [selectedHistoryExtractionId, setSelectedHistoryExtractionId] = useState<string | null>(null);
@@ -323,7 +338,7 @@ function UnifiedExtractionContent() {
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingConfigs, setIsLoadingConfigs] = useState(false);
-  const [discoveryResult, setDiscoveryResult] = useState<StateDiscoveryResult | null>(null);
+  const [discoveryResult, setDiscoveryResult] = useState<UIBridgeDiscoveryResult | null>(null);
   const [selectedStateId, setSelectedStateId] = useState<string | null>(null);
   const [stateDescriptions, setStateDescriptions] = useState<Record<string, string>>({});
   const [uploadedRenders, setUploadedRenders] = useState<unknown[] | null>(null);
@@ -401,14 +416,12 @@ function UnifiedExtractionContent() {
   // Fetch browser tabs when extension target type is selected
   // For extension mode, runnerUrl can be null (works via extension messaging on cloud)
   const handleRefreshBrowserTabs = useCallback(() => {
-    if (exploration.config.targetType !== "extension") {
-      return;
-    }
     const runnerUrl = getRunnerUrl(selectedConnectionId);
     // runnerUrl can be null for cloud - the hook will use extension messaging
     console.log("[Extraction] Fetching browser tabs, runnerUrl:", runnerUrl);
     exploration.fetchBrowserTabs(runnerUrl);
-  }, [exploration, getRunnerUrl, selectedConnectionId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only depend on specific method, not whole exploration object
+  }, [exploration.fetchBrowserTabs, getRunnerUrl, selectedConnectionId]);
 
   // Auto-fetch browser tabs when extension mode is selected
   useEffect(() => {
@@ -423,7 +436,8 @@ function UnifiedExtractionContent() {
     const runnerUrl = getRunnerUrl(selectedConnectionId);
     // runnerUrl can be null for cloud - the hook will use extension messaging
     await exploration.selectBrowserTab(runnerUrl, tabId);
-  }, [exploration, getRunnerUrl, selectedConnectionId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only depend on specific method, not whole exploration object
+  }, [exploration.selectBrowserTab, getRunnerUrl, selectedConnectionId]);
 
   // Get renders to analyze (priority: exploration > recording > session > uploaded)
   const rendersToAnalyze = explorationRenders || recordingRenders || sessionRenders || uploadedRenders;
@@ -1090,7 +1104,7 @@ function UnifiedExtractionContent() {
         throw new Error(error.detail || "State discovery failed");
       }
 
-      const result: StateDiscoveryResult = await response.json();
+      const result: UIBridgeDiscoveryResult = await response.json();
       setDiscoveryResult(result);
       setSelectedStateId(result.states[0]?.id || null);
       setStateDescriptions({});
@@ -2041,18 +2055,30 @@ function UnifiedExtractionContent() {
                         {config.method === "ui-bridge" && (
                           <>
                             <p>
-                              UI Bridge States discovers application states by analyzing
-                              render logs using co-occurrence patterns.
+                              UI Bridge discovers application states by capturing render logs
+                              (UI snapshots) during exploration, then using co-occurrence
+                              analysis to identify distinct states.
                             </p>
                             <div className="space-y-2">
                               <p className="font-medium" style={{ color: methodColor }}>
-                                Features:
+                                How it works:
                               </p>
                               <ul className="list-disc list-inside space-y-1 text-xs">
-                                <li>Automated exploration via Playwright</li>
-                                <li>Co-occurrence analysis for state grouping</li>
-                                <li>Domain knowledge management</li>
-                                <li>Works with any web application</li>
+                                <li>Explores interactive elements (clicks buttons, tabs, links)</li>
+                                <li>Captures UI snapshots after each action</li>
+                                <li>Groups co-occurring elements into states</li>
+                                <li>Discovers transitions between states</li>
+                              </ul>
+                            </div>
+                            <div className="space-y-2">
+                              <p className="font-medium" style={{ color: methodColor }}>
+                                Supported Targets:
+                              </p>
+                              <ul className="list-disc list-inside space-y-1 text-xs">
+                                <li>Browser Extension (any website via Chrome)</li>
+                                <li>Web apps with UI Bridge SDK</li>
+                                <li>Desktop apps (Tauri, Electron)</li>
+                                <li>Mobile apps (React Native)</li>
                               </ul>
                             </div>
                             <div className="space-y-2">
@@ -2060,10 +2086,10 @@ function UnifiedExtractionContent() {
                                 Input Sources:
                               </p>
                               <ul className="list-disc list-inside space-y-1 text-xs">
-                                <li>Auto Explore: Automated Playwright collection</li>
-                                <li>Manual Recording: Navigate manually while capturing</li>
-                                <li>From Session: Previously captured render logs</li>
-                                <li>Upload/Load: JSON files or saved configs</li>
+                                <li>Auto Explore: Automated element discovery</li>
+                                <li>Manual Recording: Navigate while capturing</li>
+                                <li>From Session: Load previous exploration</li>
+                                <li>Upload/Load: Import JSON or saved configs</li>
                               </ul>
                             </div>
                           </>
@@ -2184,6 +2210,42 @@ function UnifiedExtractionContent() {
               data-selected-extraction={selectedHistoryExtractionId || "none"}
             >
               <div className="flex flex-col gap-4 flex-1 min-h-0">
+                {/* Unified State Discovery Results */}
+                {unifiedResults.length > 0 && projectId && (
+                  <Collapsible defaultOpen={true}>
+                    <Card className="bg-surface-raised/60 border-border-subtle">
+                      <CollapsibleTrigger className="w-full">
+                        <div className="flex items-center justify-between p-4">
+                          <div className="flex items-center gap-3">
+                            <Layers className="h-5 w-5 text-brand-primary" />
+                            <span className="text-sm font-medium">Unified State Machines</span>
+                            <Badge variant="outline" className="text-brand-primary border-brand-primary/50">
+                              {unifiedResults.length}
+                            </Badge>
+                          </div>
+                          <ChevronRight className="h-4 w-4 text-text-muted transition-transform ui-expanded:rotate-90" />
+                        </div>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <div className="px-4 pb-4">
+                          <UnifiedResultsSection
+                            results={unifiedResults}
+                            isLoading={isLoadingUnifiedResults}
+                            error={unifiedResultsError}
+                            selectedResult={selectedUnifiedResult}
+                            isLoadingDetail={isLoadingUnifiedDetail}
+                            onSelectResult={selectUnifiedResult}
+                            onClearSelection={clearUnifiedSelection}
+                            onDeleteResult={deleteUnifiedResult}
+                            onRefresh={refreshUnifiedResults}
+                            projectId={projectId}
+                          />
+                        </div>
+                      </CollapsibleContent>
+                    </Card>
+                  </Collapsible>
+                )}
+
                 {/* Extraction History Selector - Only show for web extraction method */}
                 {config.method === "web" && extractionHistory.length > 0 && (
                   <Card className="p-4 bg-surface-raised/60 border-border-subtle">
@@ -2669,14 +2731,14 @@ interface UIBridgeConfigSectionProps {
   loadSavedConfig: (id: string) => void;
   handleFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   rendersToAnalyze: unknown[] | null | undefined;
-  discoveryResult: StateDiscoveryResult | null;
+  discoveryResult: UIBridgeDiscoveryResult | null;
   configName: string;
   setConfigName: (name: string) => void;
   isDiscovering: boolean;
   runDiscovery: () => void;
   isSaving: boolean;
   saveDiscoveredStates: () => void;
-  setDiscoveryResult: (result: StateDiscoveryResult | null) => void;
+  setDiscoveryResult: (result: UIBridgeDiscoveryResult | null) => void;
   setStateDescriptions: (descriptions: Record<string, string>) => void;
   setCurrentSavedConfigId: (id: string | null) => void;
   setStateUuidMap: (map: Record<string, string>) => void;
@@ -3163,7 +3225,7 @@ function UIBridgeConfigSection({
 
 // UI Bridge Results Section Component
 interface UIBridgeResultsSectionProps {
-  discoveryResult: StateDiscoveryResult | null;
+  discoveryResult: UIBridgeDiscoveryResult | null;
   isLoadingConfigs: boolean;
   selectedStateId: string | null;
   setSelectedStateId: (id: string | null) => void;

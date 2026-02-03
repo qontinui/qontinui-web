@@ -54,6 +54,10 @@ interface TreeExecutionResultsProps {
   nameMap?: Map<string, string>;
   /** Callback when a step is clicked */
   onStepClick?: (step: UnifiedExecutionStep, index: number) => void;
+  /** Task run ID for progress tracking */
+  taskRunId?: string;
+  /** Enable real-time progress tracking for running steps */
+  enableProgressTracking?: boolean;
 }
 
 /**
@@ -78,6 +82,8 @@ export function TreeExecutionResults({
   isLive = false,
   nameMap,
   onStepClick,
+  taskRunId,
+  enableProgressTracking = false,
 }: TreeExecutionResultsProps) {
   const [expandedStepIndex, setExpandedStepIndex] = useState<number | null>(
     null
@@ -291,6 +297,8 @@ export function TreeExecutionResults({
                   onToggle={() => handleStepToggle(index)}
                   isCurrent={isLive && index === unifiedSteps.length - 1}
                   nameMap={nameMap}
+                  taskRunId={taskRunId}
+                  enableProgressTracking={enableProgressTracking && isLive}
                 />
               ))}
             </div>

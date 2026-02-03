@@ -45,12 +45,6 @@ export type {
   TimeRange,
   AnalyticsData,
 
-  // Reusable Components
-  ComponentParameter,
-  SubflowComponent,
-  ComponentLibrary,
-  ComponentUsage,
-
   // Documentation
   DocumentationSection,
   TocEntry,
@@ -99,7 +93,6 @@ export {
   isTestSuccessful,
   hasCircularDependencies,
   isRootFolder,
-  isComponentUsed,
 } from "./types";
 
 // Re-export constants

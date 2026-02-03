@@ -55,6 +55,9 @@ class DevDebugLogger {
     debug: typeof console.debug;
   };
   private originalFetch: typeof fetch | null = null;
+  // Deduplication for repeated errors
+  private recentErrors: Map<string, { count: number; lastTime: number }> = new Map();
+  private errorDedupeWindow: number = 10000; // 10 seconds
 
   constructor() {
     // Only enable in development
@@ -91,6 +94,38 @@ class DevDebugLogger {
 
   private addLog(entry: Omit<DevLogEntry, "id" | "timestamp">) {
     if (!this.enabled) return;
+
+    // Deduplicate repeated error messages within a time window
+    if (entry.level === "error") {
+      const errorKey = entry.message;
+      const now = Date.now();
+      const existing = this.recentErrors.get(errorKey);
+
+      if (existing && now - existing.lastTime < this.errorDedupeWindow) {
+        // Update count but don't add new log entry
+        existing.count++;
+        existing.lastTime = now;
+
+        // Only log every 10th occurrence to reduce noise
+        if (existing.count % 10 !== 0) {
+          return;
+        }
+        // Add note about repetition
+        entry = { ...entry, message: `${entry.message} (repeated ${existing.count}x)` };
+      } else {
+        // New error or outside dedup window
+        this.recentErrors.set(errorKey, { count: 1, lastTime: now });
+
+        // Clean up old entries periodically
+        if (this.recentErrors.size > 100) {
+          for (const [key, value] of this.recentErrors.entries()) {
+            if (now - value.lastTime > this.errorDedupeWindow * 2) {
+              this.recentErrors.delete(key);
+            }
+          }
+        }
+      }
+    }
 
     const fullEntry: DevLogEntry = {
       id: this.generateId(),

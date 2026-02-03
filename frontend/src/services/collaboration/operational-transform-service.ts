@@ -886,6 +886,20 @@ export class OperationalTransformService {
       }
     }
 
+    // If all common segments match and path is longer, check the next segment
+    // This handles the case where insertPath is ["actions"] and path is ["actions", "2", "name"]
+    if (insertPath.length < path.length) {
+      const nextSegment = path[insertPath.length];
+      if (nextSegment) {
+        const pathIndex = parseInt(nextSegment, 10);
+        if (!isNaN(pathIndex) && pathIndex >= position) {
+          const newPath = [...path];
+          newPath[insertPath.length] = String(pathIndex + 1);
+          return newPath;
+        }
+      }
+    }
+
     return path;
   }
 

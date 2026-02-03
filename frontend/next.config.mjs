@@ -15,6 +15,18 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  // Handle local symlinked packages with subpath exports
+  transpilePackages: ['ui-bridge', 'ui-bridge-server'],
+  experimental: {
+    swcPlugins: [
+      ['@qontinui/ui-bridge-swc-plugin/ui_bridge_swc_plugin.wasm', {
+        elements: ['button', 'input', 'select', 'textarea', 'a', 'form'],
+        idPrefix: 'ui',
+        includeComponentName: true,
+        generateAliases: true,
+      }]
+    ]
+  },
   webpack: (config) => {
     config.resolve.alias['@qontinui/schemas'] = path.resolve(__dirname, '../../qontinui-schemas/generated/typescript');
     return config;

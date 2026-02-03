@@ -5,13 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import {
-  render,
-  screen,
-  fireEvent,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CheckpointListEditor } from "./CheckpointListEditor";
 import type { CheckpointDefinition } from "@/lib/expectations/types";
@@ -586,7 +580,7 @@ describe("CheckpointListEditor", () => {
 
   describe("Badges Display", () => {
     it("should display Screenshot badge when screenshot_required is true", async () => {
-      const user = userEvent.setup();
+      const _user = userEvent.setup();
       const checkpoints: Record<string, CheckpointDefinition> = {
         "checkpoint-1": {
           screenshot_required: true,
@@ -604,7 +598,7 @@ describe("CheckpointListEditor", () => {
     });
 
     it("should display Claude Review badge when claude_review has items", async () => {
-      const user = userEvent.setup();
+      const _user = userEvent.setup();
       const checkpoints: Record<string, CheckpointDefinition> = {
         "checkpoint-1": {
           screenshot_required: true,

@@ -312,6 +312,7 @@ function CheckpointResultDisplay({
       {/* Screenshot */}
       {checkpoint.screenshot_path && (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          {/* eslint-disable-next-line jsx-a11y/alt-text -- This is a lucide-react icon component, not an img element */}
           <Image className="h-3 w-3" />
           <span>Screenshot: {checkpoint.screenshot_path}</span>
         </div>

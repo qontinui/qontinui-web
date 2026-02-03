@@ -232,6 +232,7 @@ export default function WorkflowVisualizationPage() {
     if (user) {
       loadData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   // Fetch test runs when project changes

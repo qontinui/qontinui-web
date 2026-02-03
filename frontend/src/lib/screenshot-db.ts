@@ -23,6 +23,12 @@
  * Server is the source of truth for all screenshot data.
  */
 
+import {
+  classifyError,
+  DBErrorType,
+  handleStorageCorruption,
+} from "./db/error-handler";
+
 const DB_NAME = "qontinui-screenshots-db";
 const STORE_NAME = "screenshots";
 const DB_VERSION = 3; // Version 3: Added s3Key, projectId, urlExpiresAt for URL refresh
@@ -83,6 +89,7 @@ export interface StoredScreenshot {
 class ScreenshotDB {
   private dbPromise: Promise<IDBDatabase> | null = null;
   private db: IDBDatabase | null = null;
+  private recoveryAttempted: boolean = false;
 
   private getDB(): Promise<IDBDatabase> {
     // Check if existing connection is still valid
@@ -98,25 +105,64 @@ class ScreenshotDB {
 
     if (this.dbPromise) return this.dbPromise;
 
-    this.dbPromise = new Promise((resolve, reject) => {
-      if (typeof window === "undefined") {
-        reject(new Error("IndexedDB not available on server"));
-        return;
+    this.dbPromise = this.openDatabase();
+
+    return this.dbPromise;
+  }
+
+  private async openDatabase(): Promise<IDBDatabase> {
+    if (typeof window === "undefined") {
+      throw new Error("IndexedDB not available on server");
+    }
+
+    try {
+      const db = await this.openDatabaseInternal();
+      this.db = db;
+      this.recoveryAttempted = false; // Reset on successful connection
+      return db;
+    } catch (error) {
+      // Check if this is a storage corruption error
+      const errorType = classifyError(error);
+      if (errorType === DBErrorType.STORAGE_CORRUPTED && !this.recoveryAttempted) {
+        this.recoveryAttempted = true;
+        console.warn("[ScreenshotDB] Storage corruption detected, attempting recovery...");
+
+        // Attempt recovery by deleting the corrupted database
+        const recovered = await handleStorageCorruption(DB_NAME, "openDatabase");
+
+        if (recovered) {
+          // Retry opening after recovery
+          try {
+            const db = await this.openDatabaseInternal();
+            this.db = db;
+            console.log("[ScreenshotDB] Successfully recovered and reconnected");
+            return db;
+          } catch (retryError) {
+            console.error("[ScreenshotDB] Failed to reconnect after recovery:", retryError);
+            throw retryError;
+          }
+        }
       }
 
+      throw error;
+    }
+  }
+
+  private openDatabaseInternal(): Promise<IDBDatabase> {
+    return new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
-        this.db = request.result;
+        const db = request.result;
 
         // Handle connection close events
-        this.db.onclose = () => {
+        db.onclose = () => {
           this.db = null;
           this.dbPromise = null;
         };
 
-        resolve(request.result);
+        resolve(db);
       };
 
       request.onupgradeneeded = (event) => {
@@ -149,8 +195,6 @@ class ScreenshotDB {
         }
       };
     });
-
-    return this.dbPromise;
   }
 
   private isConnectionClosed(db: IDBDatabase): boolean {

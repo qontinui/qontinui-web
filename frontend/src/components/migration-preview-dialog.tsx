@@ -55,6 +55,7 @@ export function MigrationPreviewDialog({
   } | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- loadPreview is intentionally excluded to prevent infinite loops
   useEffect(() => {
     if (open && config) {
       loadPreview();

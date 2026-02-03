@@ -102,6 +102,7 @@ export function ProcessBuilder() {
         }
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedProcess and selectedAction are derived from workflows, adding them causes infinite loops
   }, [workflows, selectedProcess?.id, selectedAction?.id]);
 
   const createNewProcess = (category: string = "Main") => {

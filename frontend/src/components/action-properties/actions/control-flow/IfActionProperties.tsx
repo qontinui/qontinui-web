@@ -21,6 +21,7 @@ export function IfActionProperties({
   action,
   updateConfig,
   images,
+  variableNames = [],
 }: ActionPropertiesComponentProps) {
   const config = action.config as unknown as IfActionConfig;
 
@@ -81,6 +82,7 @@ export function IfActionProperties({
             label=""
             allowEmpty={false}
             images={images.map((img) => ({ id: img.id, name: img.name }))}
+            existingVariables={variableNames}
           />
         </div>
         <p className="text-xs text-text-muted">

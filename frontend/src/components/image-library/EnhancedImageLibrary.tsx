@@ -353,6 +353,7 @@ export function EnhancedImageLibrary() {
         });
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- uploadMonitors is stable state that doesn't change frequently; including it would cause unnecessary callback recreation
     [projectId, projectName, selectedFolderId, addImage]
   );
 

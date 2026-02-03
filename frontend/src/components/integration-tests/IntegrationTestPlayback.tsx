@@ -316,6 +316,7 @@ export const IntegrationTestPlayback: React.FC<
         {currentFrame?.frame_base64 ? (
           <div className="relative w-full h-full flex items-center justify-center">
             {/* Screenshot */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={`data:image/jpeg;base64,${currentFrame.frame_base64}`}
               alt={`Step ${currentIndex + 1}`}

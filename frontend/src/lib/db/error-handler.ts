@@ -24,6 +24,8 @@ export enum DBErrorType {
   VERSION_ERROR = "VERSION_ERROR",
   /** Operation not allowed */
   NOT_ALLOWED = "NOT_ALLOWED",
+  /** Storage corrupted - requires clearing browser data */
+  STORAGE_CORRUPTED = "STORAGE_CORRUPTED",
   /** Unknown error */
   UNKNOWN = "UNKNOWN",
 }
@@ -67,6 +69,7 @@ export class DBError extends Error {
       case DBErrorType.QUOTA_EXCEEDED:
       case DBErrorType.VERSION_ERROR:
       case DBErrorType.NOT_ALLOWED:
+      case DBErrorType.STORAGE_CORRUPTED:
         return false;
       default:
         return false;
@@ -84,6 +87,17 @@ export function classifyError(error: unknown): DBErrorType {
 
   const message = error.message.toLowerCase();
   const name = error.name.toLowerCase();
+
+  // Storage corruption errors - check first as they're specific
+  // "Internal error opening backing store" indicates corrupted IndexedDB
+  if (
+    message.includes("internal error") ||
+    message.includes("backing store") ||
+    message.includes("corrupted") ||
+    message.includes("leveldb")
+  ) {
+    return DBErrorType.STORAGE_CORRUPTED;
+  }
 
   // Connection errors
   if (
@@ -305,6 +319,101 @@ export async function handleQuotaExceeded(
         detail: { database: dbName, suggestions },
       })
     );
+  }
+}
+
+/**
+ * Handle storage corruption errors
+ *
+ * This is typically caused by disk full conditions or browser crashes during
+ * IndexedDB operations. The only recovery is to delete the corrupted database.
+ */
+export async function handleStorageCorruption(
+  dbName: string,
+  operation: string
+): Promise<boolean> {
+  projectLogger.error("DBErrorHandler", "Storage corruption detected", {
+    database: dbName,
+    operation,
+  });
+
+  // Emit event for UI to show a warning
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("db-storage-corrupted", {
+        detail: {
+          database: dbName,
+          message:
+            "Browser storage is corrupted. This may have been caused by running out of disk space. Attempting automatic recovery...",
+        },
+      })
+    );
+  }
+
+  // Attempt to delete and recreate the corrupted database
+  try {
+    projectLogger.info("DBErrorHandler", "Attempting database deletion", {
+      database: dbName,
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.deleteDatabase(dbName);
+      request.onsuccess = () => {
+        projectLogger.info("DBErrorHandler", "Database deleted successfully", {
+          database: dbName,
+        });
+        resolve();
+      };
+      request.onerror = () => {
+        projectLogger.error("DBErrorHandler", "Failed to delete database", {
+          database: dbName,
+          error: request.error?.message,
+        });
+        reject(request.error);
+      };
+      request.onblocked = () => {
+        projectLogger.warn("DBErrorHandler", "Database deletion blocked", {
+          database: dbName,
+        });
+        // Continue waiting - it may unblock
+      };
+    });
+
+    // Emit success event
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("db-storage-recovered", {
+          detail: {
+            database: dbName,
+            message:
+              "Storage recovered. Please refresh the page to reload your data.",
+          },
+        })
+      );
+    }
+
+    return true;
+  } catch (deleteError) {
+    projectLogger.error("DBErrorHandler", "Recovery failed", {
+      database: dbName,
+      error:
+        deleteError instanceof Error ? deleteError.message : String(deleteError),
+    });
+
+    // Emit failure event with manual instructions
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("db-storage-recovery-failed", {
+          detail: {
+            database: dbName,
+            message:
+              "Automatic recovery failed. Please clear your browser data for this site manually: Open DevTools (F12) → Application tab → Storage → Clear site data.",
+          },
+        })
+      );
+    }
+
+    return false;
   }
 }
 

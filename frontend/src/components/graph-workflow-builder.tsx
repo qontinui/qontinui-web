@@ -39,6 +39,7 @@ export function GraphWorkflowBuilder() {
     if (workflows.length > 0 && !selectedWorkflow) {
       setSelectedWorkflow(workflows[0] ?? null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Only run when workflows change, not when selectedWorkflow changes
   }, [workflows]);
 
   /**

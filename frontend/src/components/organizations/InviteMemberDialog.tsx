@@ -148,6 +148,7 @@ export function InviteMemberDialog({
     useState<Invitation | null>(null);
 
   // Load invitations when dialog opens
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- loadInvitations is memoized with organizationId
   useEffect(() => {
     if (open) {
       loadInvitations();

@@ -111,8 +111,8 @@ export function ExplorationConfigPanel({
       : 0;
 
   // Check if we can start exploration
-  // Extension type doesn't need a targetUrl - it uses the active browser tab
-  const canStart = selectedConnectionId !== null &&
+  // Extension type doesn't need a targetUrl or selectedConnectionId - it uses localhost:9876 directly
+  const canStart = (config.targetType === "extension" || selectedConnectionId !== null) &&
     (config.targetType === "extension" || !!config.targetUrl) &&
     progress.status !== "completed";
 
@@ -170,7 +170,7 @@ export function ExplorationConfigPanel({
             className="bg-brand-success hover:bg-brand-success/80 text-white"
             disabled={!canStart}
             title={
-              !selectedConnectionId
+              config.targetType !== "extension" && !selectedConnectionId
                 ? "Select a connected runner"
                 : config.targetType !== "extension" && !config.targetUrl
                   ? "Enter a target URL to explore"
@@ -315,7 +315,7 @@ export function ExplorationConfigPanel({
         </Card>
       )}
 
-      {/* Runner Selection */}
+      {/* Runner Selection - Different UI for extension vs other modes */}
       <Card className="p-4 bg-surface-raised/60 border-brand-primary/30">
         <div className="flex items-center gap-2 mb-4">
           <Compass className="w-4 h-4 text-brand-primary" />
@@ -325,7 +325,19 @@ export function ExplorationConfigPanel({
         </div>
 
         <div className="space-y-4">
-          {connectionsLoading ? (
+          {config.targetType === "extension" ? (
+            // For extension mode: direct localhost connection, no backend registration needed
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 p-2 bg-surface-canvas/50 rounded border border-brand-primary/20">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                <span className="text-sm text-text-primary">Local Runner (localhost:9876)</span>
+              </div>
+              <p className="text-xs text-text-muted">
+                Browser Extension mode connects directly to the local runner.
+                Make sure the runner is running and the extension shows &quot;Runner connected&quot;.
+              </p>
+            </div>
+          ) : connectionsLoading ? (
             <div className="flex items-center gap-2 text-text-muted">
               <Loader2 className="w-4 h-4 animate-spin" />
               <span className="text-sm">Loading runners...</span>
@@ -334,7 +346,8 @@ export function ExplorationConfigPanel({
             <Alert variant="destructive" className="border-red-500/30 bg-red-500/10">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription className="text-xs">
-                No runners connected. Connect a runner from the Runners page first.
+                No runners connected. Connect a runner from the Runners page first,
+                or use Browser Extension mode for local exploration.
               </AlertDescription>
             </Alert>
           ) : (
@@ -567,7 +580,7 @@ export function ExplorationConfigPanel({
               )}
 
               <p className="text-[10px] text-text-muted">
-                Select which browser tab to explore. If "Use Active Tab" is selected,
+                Select which browser tab to explore. If &quot;Use Active Tab&quot; is selected,
                 the currently focused tab will be used when exploration starts.
               </p>
             </div>

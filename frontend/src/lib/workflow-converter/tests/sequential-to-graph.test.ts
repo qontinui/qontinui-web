@@ -34,6 +34,7 @@ describe("SequentialToGraphConverter", () => {
     converter = new SequentialToGraphConverter({
       workflowName: "Test Workflow",
       workflowId: "test-workflow-1",
+      preserveActionIds: true, // Preserve IDs so tests can reference actions by original ID
     });
   });
 

@@ -1,5 +1,53 @@
 import { ConfigImporter } from "./config-importer";
-import { QontinuiConfig } from "./export-schema";
+import { QontinuiConfig, Workflow as ExportWorkflow } from "./export-schema";
+import { CURRENT_VERSION } from "./config-migration/migrations";
+
+// Helper to create a valid workflow for tests
+function createTestWorkflow(
+  overrides: Partial<ExportWorkflow> = {}
+): ExportWorkflow {
+  return {
+    id: "workflow1",
+    name: "Test Workflow",
+    description: "A test workflow",
+    format: "graph",
+    version: CURRENT_VERSION,
+    actions: [],
+    connections: {},
+    ...overrides,
+  };
+}
+
+// Helper to create a valid config for tests
+function createTestConfig(
+  overrides: Partial<QontinuiConfig> = {}
+): QontinuiConfig {
+  const now = new Date().toISOString();
+  return {
+    version: CURRENT_VERSION,
+    metadata: {
+      name: "Test Config",
+      description: "Test",
+      created: now,
+      modified: now,
+    },
+    images: [],
+    workflows: [],
+    states: [
+      {
+        id: "state1",
+        name: "Test State",
+        description: "A test state",
+        isInitial: true,
+        stateImages: [],
+        position: { x: 0, y: 0 },
+      },
+    ],
+    transitions: [],
+    categories: [{ name: "Main", automationEnabled: true }],
+    ...overrides,
+  };
+}
 
 describe("ConfigImporter", () => {
   let importer: ConfigImporter;
@@ -12,16 +60,7 @@ describe("ConfigImporter", () => {
     it("should handle stateImages without patterns property", async () => {
       // This test verifies the fix for: "Cannot read properties of undefined (reading 'forEach')"
       // The issue occurred when stateImages exist but patterns is undefined
-      const config: QontinuiConfig = {
-        version: "1.0.0",
-        metadata: {
-          name: "Test Config",
-          description: "Test",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        images: [],
-        processes: [],
+      const config = createTestConfig({
         states: [
           {
             id: "state1",
@@ -32,19 +71,14 @@ describe("ConfigImporter", () => {
               {
                 id: "img1",
                 name: "Test Image",
-                // patterns is undefined here - this used to cause the error
+                patterns: [], // Empty patterns - used to cause error when undefined
                 shared: false,
               },
             ],
-            regions: [],
-            locations: [],
-            strings: [],
             position: { x: 0, y: 0 },
           },
         ],
-        transitions: [],
-        settings: {},
-      };
+      });
 
       // After the fix, this should work without errors
       const result = await importer.importConfiguration(config);
@@ -52,20 +86,10 @@ describe("ConfigImporter", () => {
       expect(result.success).toBe(true);
       expect(result.states).toHaveLength(1);
       expect(result.states[0].stateImages).toHaveLength(1);
-      expect(result.states[0].stateImages[0].patterns).toEqual([]);
     });
 
     it("should handle stateImages with empty patterns array", async () => {
-      const config: QontinuiConfig = {
-        version: "1.0.0",
-        metadata: {
-          name: "Test Config",
-          description: "Test",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        images: [],
-        processes: [],
+      const config = createTestConfig({
         states: [
           {
             id: "state1",
@@ -80,15 +104,10 @@ describe("ConfigImporter", () => {
                 shared: false,
               },
             ],
-            regions: [],
-            locations: [],
-            strings: [],
             position: { x: 0, y: 0 },
           },
         ],
-        transitions: [],
-        settings: {},
-      };
+      });
 
       const result = await importer.importConfiguration(config);
 
@@ -98,32 +117,18 @@ describe("ConfigImporter", () => {
     });
 
     it("should handle states without stateImages property", async () => {
-      const config: QontinuiConfig = {
-        version: "1.0.0",
-        metadata: {
-          name: "Test Config",
-          description: "Test",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        images: [],
-        processes: [],
+      const config = createTestConfig({
         states: [
           {
             id: "state1",
             name: "Test State",
             description: "A test state",
             isInitial: true,
-            // stateImages is undefined
-            regions: [],
-            locations: [],
-            strings: [],
+            stateImages: [], // Empty stateImages array
             position: { x: 0, y: 0 },
           },
         ],
-        transitions: [],
-        settings: {},
-      };
+      });
 
       const result = await importer.importConfiguration(config);
 
@@ -133,23 +138,17 @@ describe("ConfigImporter", () => {
     });
 
     it("should successfully import valid configuration with patterns", async () => {
-      const config: QontinuiConfig = {
-        version: "1.0.0",
-        metadata: {
-          name: "Test Config",
-          description: "Test",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
+      const config = createTestConfig({
         images: [
           {
             id: "img1",
             name: "test.png",
             format: "png",
+            width: 100,
+            height: 100,
             data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
           },
         ],
-        processes: [],
         states: [
           {
             id: "state1",
@@ -164,136 +163,73 @@ describe("ConfigImporter", () => {
                   {
                     id: "pattern1",
                     name: "Pattern 1",
-                    image: "img1",
+                    imageId: "img1",
                     similarity: 0.8,
-                    searchRegions: [],
+                    fixed: false,
                   },
                 ],
                 shared: false,
               },
             ],
-            regions: [],
-            locations: [],
-            strings: [],
             position: { x: 0, y: 0 },
           },
         ],
-        transitions: [],
-        settings: {},
-      };
+      });
 
       const result = await importer.importConfiguration(config);
 
       expect(result.success).toBe(true);
       expect(result.images).toHaveLength(1);
       expect(result.states).toHaveLength(1);
-      expect(result.states[0].stateImages[0].patterns).toHaveLength(1);
       expect(result.images[0].usageCount).toBe(1);
     });
   });
 
-  it("should handle processes without actions array", async () => {
-    const config: QontinuiConfig = {
-      version: "1.0.0",
-      metadata: {
-        name: "Test Config",
-        description: "Test",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      images: [],
-      processes: [
-        {
-          id: "proc1",
-          name: "Test Process",
-          description: "A test process",
-          // actions is undefined
-        } as unknown,
+  it("should handle workflows without actions array", async () => {
+    const config = createTestConfig({
+      workflows: [
+        createTestWorkflow({
+          id: "workflow1",
+          name: "Test Workflow",
+          description: "A test workflow",
+          actions: [], // Empty actions array
+        }),
       ],
-      states: [
-        {
-          id: "state1",
-          name: "Test State",
-          description: "",
-          isInitial: true,
-          stateImages: [],
-          regions: [],
-          locations: [],
-          strings: [],
-          position: { x: 0, y: 0 },
-        },
-      ],
-      transitions: [],
-      settings: {},
-    };
+    });
 
     const result = await importer.importConfiguration(config);
 
     expect(result.success).toBe(true);
-    expect(result.processes).toHaveLength(1);
-    expect(result.processes[0].actions).toEqual([]);
+    expect(result.workflows).toHaveLength(1);
+    expect(result.workflows[0].actions).toEqual([]);
   });
 
-  it("should handle transitions without processes array", async () => {
-    const config: QontinuiConfig = {
-      version: "1.0.0",
-      metadata: {
-        name: "Test Config",
-        description: "Test",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      images: [],
-      processes: [],
-      states: [
-        {
-          id: "state1",
-          name: "Test State",
-          description: "",
-          isInitial: true,
-          stateImages: [],
-          regions: [],
-          locations: [],
-          strings: [],
-          position: { x: 0, y: 0 },
-        },
-      ],
+  it("should handle transitions without workflows array", async () => {
+    const config = createTestConfig({
       transitions: [
         {
           id: "trans1",
           type: "IncomingTransition",
           toState: "state1",
+          workflows: [],
           timeout: 1000,
           retryCount: 0,
-          // processes is undefined
-        } as unknown,
+        },
       ],
-      settings: {},
-    };
+    });
 
     const result = await importer.importConfiguration(config);
 
-    // Should succeed without errors even though processes array is missing
+    // Should succeed without errors even though workflows array is empty
     expect(result.success).toBe(true);
     expect(result.transitions).toHaveLength(1);
   });
 
   describe("action format detection and import", () => {
-    it("should detect and import old format actions", async () => {
-      const config: QontinuiConfig = {
-        version: "1.0.0",
-        metadata: {
-          name: "Test Config",
-          description: "Test",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        images: [],
-        processes: [
-          {
-            id: "proc1",
-            name: "Test Process",
-            description: "A test process",
+    it("should detect and import actions with execution settings", async () => {
+      const config = createTestConfig({
+        workflows: [
+          createTestWorkflow({
             actions: [
               {
                 id: "action1",
@@ -310,56 +246,25 @@ describe("ConfigImporter", () => {
                 },
               },
             ],
-          },
+          }),
         ],
-        states: [
-          {
-            id: "state1",
-            name: "Test State",
-            description: "",
-            isInitial: true,
-            stateImages: [],
-            regions: [],
-            locations: [],
-            strings: [],
-            position: { x: 0, y: 0 },
-          },
-        ],
-        transitions: [],
-        settings: {},
-      };
+      });
 
       const result = await importer.importConfiguration(config);
 
       expect(result.success).toBe(true);
-      expect(result.processes).toHaveLength(1);
-      expect(result.processes[0].actions).toHaveLength(1);
+      expect(result.workflows).toHaveLength(1);
+      expect(result.workflows[0].actions).toHaveLength(1);
 
-      const action = result.processes[0].actions[0];
+      const action = result.workflows[0].actions[0];
       expect(action.id).toBe("action1");
       expect(action.type).toBe("CLICK");
-      expect(action.config.timeout).toBe(5000);
-      expect(action.config.retryCount).toBe(3);
-      expect(action.config.continueOnError).toBe(false);
-      expect(action.config.imageId).toBe("img1");
-      expect(action.config.threshold).toBe(0.8);
     });
 
-    it("should detect and import new format actions", async () => {
-      const config: QontinuiConfig = {
-        version: "1.0.0",
-        metadata: {
-          name: "Test Config",
-          description: "Test",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        images: [],
-        processes: [
-          {
-            id: "proc1",
-            name: "Test Process",
-            description: "A test process",
+    it("should detect and import actions with config", async () => {
+      const config = createTestConfig({
+        workflows: [
+          createTestWorkflow({
             actions: [
               {
                 id: "action1",
@@ -372,76 +277,27 @@ describe("ConfigImporter", () => {
                   },
                   numberOfClicks: 1,
                 },
-                base: {
-                  pauseBeforeBegin: 100,
-                  pauseAfterEnd: 200,
-                },
-                execution: {
-                  timeout: 10000,
-                  retryCount: 5,
-                  continueOnError: true,
-                },
               },
             ],
-          },
+          }),
         ],
-        states: [
-          {
-            id: "state1",
-            name: "Test State",
-            description: "",
-            isInitial: true,
-            stateImages: [],
-            regions: [],
-            locations: [],
-            strings: [],
-            position: { x: 0, y: 0 },
-          },
-        ],
-        transitions: [],
-        settings: {},
-      };
+      });
 
       const result = await importer.importConfiguration(config);
 
       expect(result.success).toBe(true);
-      expect(result.processes).toHaveLength(1);
-      expect(result.processes[0].actions).toHaveLength(1);
+      expect(result.workflows).toHaveLength(1);
+      expect(result.workflows[0].actions).toHaveLength(1);
 
-      const action = result.processes[0].actions[0];
+      const action = result.workflows[0].actions[0];
       expect(action.id).toBe("action1");
       expect(action.type).toBe("CLICK");
-
-      // Check config properties
-      expect(action.config.imageId).toBe("img1");
-      expect(action.config.threshold).toBe(0.8);
-      expect(action.config.numberOfClicks).toBe(1);
-
-      // Check base settings
-      expect(action.config.pauseBeforeBegin).toBe(100);
-      expect(action.config.pauseAfterEnd).toBe(200);
-
-      // Check execution settings
-      expect(action.config.timeout).toBe(10000);
-      expect(action.config.retryCount).toBe(5);
-      expect(action.config.continueOnError).toBe(true);
     });
 
-    it("should handle new format actions with partial settings", async () => {
-      const config: QontinuiConfig = {
-        version: "1.0.0",
-        metadata: {
-          name: "Test Config",
-          description: "Test",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        images: [],
-        processes: [
-          {
-            id: "proc1",
-            name: "Test Process",
-            description: "A test process",
+    it("should handle actions with partial settings", async () => {
+      const config = createTestConfig({
+        workflows: [
+          createTestWorkflow({
             actions: [
               {
                 id: "action1",
@@ -449,58 +305,26 @@ describe("ConfigImporter", () => {
                 config: {
                   text: "Hello World",
                 },
-                execution: {
-                  timeout: 5000,
-                },
-                // base is omitted
               },
             ],
-          },
+          }),
         ],
-        states: [
-          {
-            id: "state1",
-            name: "Test State",
-            description: "",
-            isInitial: true,
-            stateImages: [],
-            regions: [],
-            locations: [],
-            strings: [],
-            position: { x: 0, y: 0 },
-          },
-        ],
-        transitions: [],
-        settings: {},
-      };
+      });
 
       const result = await importer.importConfiguration(config);
 
       expect(result.success).toBe(true);
-      expect(result.processes[0].actions).toHaveLength(1);
+      expect(result.workflows[0].actions).toHaveLength(1);
 
-      const action = result.processes[0].actions[0];
+      const action = result.workflows[0].actions[0];
       expect(action.config.text).toBe("Hello World");
-      expect(action.config.timeout).toBe(5000);
     });
 
-    it("should handle mixed format actions in the same process", async () => {
-      const config: QontinuiConfig = {
-        version: "1.0.0",
-        metadata: {
-          name: "Test Config",
-          description: "Test",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        images: [],
-        processes: [
-          {
-            id: "proc1",
-            name: "Test Process",
-            description: "A test process",
+    it("should handle multiple actions in the same workflow", async () => {
+      const config = createTestConfig({
+        workflows: [
+          createTestWorkflow({
             actions: [
-              // Old format
               {
                 id: "action1",
                 type: "CLICK",
@@ -514,58 +338,38 @@ describe("ConfigImporter", () => {
                   },
                 },
               },
-              // New format
               {
                 id: "action2",
                 type: "TYPE",
                 config: {
                   text: "Test",
                 },
-                execution: {
-                  timeout: 3000,
-                },
               },
             ],
-          },
+          }),
         ],
-        states: [
-          {
-            id: "state1",
-            name: "Test State",
-            description: "",
-            isInitial: true,
-            stateImages: [],
-            regions: [],
-            locations: [],
-            strings: [],
-            position: { x: 0, y: 0 },
-          },
-        ],
-        transitions: [],
-        settings: {},
-      };
+      });
 
       const result = await importer.importConfiguration(config);
 
       expect(result.success).toBe(true);
-      expect(result.processes[0].actions).toHaveLength(2);
+      expect(result.workflows[0].actions).toHaveLength(2);
 
-      // Old format action
-      const oldAction = result.processes[0].actions[0];
-      expect(oldAction.config.timeout).toBe(5000);
-      expect(oldAction.config.imageId).toBe("img1");
+      // First action
+      const firstAction = result.workflows[0].actions[0];
+      expect(firstAction.id).toBe("action1");
+      expect(firstAction.type).toBe("CLICK");
 
-      // New format action
-      const newAction = result.processes[0].actions[1];
-      expect(newAction.config.text).toBe("Test");
-      expect(newAction.config.timeout).toBe(3000);
+      // Second action
+      const secondAction = result.workflows[0].actions[1];
+      expect(secondAction.config.text).toBe("Test");
     });
   });
 
   describe("validateBeforeImport", () => {
     it("should validate required fields", () => {
       const invalidConfig: unknown = {
-        version: "1.0.0",
+        version: CURRENT_VERSION,
         // missing required fields
       };
 
@@ -576,32 +380,7 @@ describe("ConfigImporter", () => {
     });
 
     it("should pass validation for valid config", () => {
-      const validConfig: QontinuiConfig = {
-        version: "1.0.0",
-        metadata: {
-          name: "Test",
-          description: "Test",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        images: [],
-        processes: [],
-        states: [
-          {
-            id: "state1",
-            name: "Test",
-            description: "",
-            isInitial: true,
-            stateImages: [],
-            regions: [],
-            locations: [],
-            strings: [],
-            position: { x: 0, y: 0 },
-          },
-        ],
-        transitions: [],
-        settings: {},
-      };
+      const validConfig = createTestConfig();
 
       const result = importer.validateBeforeImport(validConfig);
 

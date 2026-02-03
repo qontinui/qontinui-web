@@ -11,6 +11,12 @@
  * - Any operation that should work offline
  */
 
+import {
+  classifyError,
+  DBErrorType,
+  handleStorageCorruption,
+} from "./db/error-handler";
+
 const SYNC_DB_NAME = "qontinui-sync-queue-db";
 const SYNC_STORE_NAME = "sync_queue";
 const DB_VERSION = 1;
@@ -94,6 +100,7 @@ class SyncQueue {
   private db: IDBDatabase | null = null;
   private syncInProgress = false;
   private syncListeners: Set<(stats: SyncQueueStats) => void> = new Set();
+  private recoveryAttempted = false;
 
   /**
    * Get or create database connection
@@ -112,25 +119,60 @@ class SyncQueue {
 
     if (this.dbPromise) return this.dbPromise;
 
-    this.dbPromise = new Promise((resolve, reject) => {
-      if (typeof window === "undefined") {
-        reject(new Error("IndexedDB not available on server"));
-        return;
+    this.dbPromise = this.openDatabase();
+
+    return this.dbPromise;
+  }
+
+  private async openDatabase(): Promise<IDBDatabase> {
+    if (typeof window === "undefined") {
+      throw new Error("IndexedDB not available on server");
+    }
+
+    try {
+      const db = await this.openDatabaseInternal();
+      this.db = db;
+      this.recoveryAttempted = false;
+      return db;
+    } catch (error) {
+      const errorType = classifyError(error);
+      if (errorType === DBErrorType.STORAGE_CORRUPTED && !this.recoveryAttempted) {
+        this.recoveryAttempted = true;
+        console.warn("[SyncQueue] Storage corruption detected, attempting recovery...");
+
+        const recovered = await handleStorageCorruption(SYNC_DB_NAME, "openDatabase");
+
+        if (recovered) {
+          try {
+            const db = await this.openDatabaseInternal();
+            this.db = db;
+            console.log("[SyncQueue] Successfully recovered and reconnected");
+            return db;
+          } catch (retryError) {
+            console.error("[SyncQueue] Failed to reconnect after recovery:", retryError);
+            throw retryError;
+          }
+        }
       }
 
+      throw error;
+    }
+  }
+
+  private openDatabaseInternal(): Promise<IDBDatabase> {
+    return new Promise((resolve, reject) => {
       const request = indexedDB.open(SYNC_DB_NAME, DB_VERSION);
 
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
-        this.db = request.result;
+        const db = request.result;
 
-        // Handle connection close events
-        this.db.onclose = () => {
+        db.onclose = () => {
           this.db = null;
           this.dbPromise = null;
         };
 
-        resolve(request.result);
+        resolve(db);
       };
 
       request.onupgradeneeded = (event) => {
@@ -151,8 +193,6 @@ class SyncQueue {
         }
       };
     });
-
-    return this.dbPromise;
   }
 
   private isConnectionClosed(db: IDBDatabase): boolean {

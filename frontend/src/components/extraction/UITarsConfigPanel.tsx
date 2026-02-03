@@ -140,7 +140,7 @@ export function UITarsConfigPanel({
 
           <p className="text-[10px] text-text-muted mt-2 font-mono">
             The default goal discovers clickable elements to build a state machine.
-            Customize to narrow focus (e.g., "Explore only the Settings menu").
+            Customize to narrow focus (e.g., &quot;Explore only the Settings menu&quot;).
           </p>
         </Card>
 

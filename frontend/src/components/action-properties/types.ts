@@ -86,4 +86,6 @@ export interface ActionPropertiesComponentProps {
   textAreaRef?: React.RefObject<HTMLTextAreaElement | null>;
   shouldOpenImageSelector?: boolean;
   onUpdateAction?: (action: Action) => void;
+  /** List of available variable names for autocomplete/dropdown */
+  variableNames?: string[];
 }

@@ -1026,7 +1026,7 @@ export default function DocumentationPage() {
       }
     });
     return map;
-  }, [workflows]);
+  }, [workflows, docService]);
 
   // Build tree
   const tree = useMemo(

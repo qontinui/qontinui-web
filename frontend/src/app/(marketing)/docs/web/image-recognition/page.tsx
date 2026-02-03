@@ -1,6 +1,6 @@
 import Link from "next/link";
 import {
-  Image,
+  ImageIcon,
   Layers,
   Target,
   CheckCircle2,
@@ -187,7 +187,7 @@ export default function ImageRecognitionDocPage() {
             </ConceptCard>
 
             <ConceptCard
-              icon={<Image className="w-6 h-6 text-green-600" />}
+              icon={<ImageIcon className="w-6 h-6 text-green-600" aria-hidden="true" />}
               title="Masks"
               description="Optional masks that define which pixels to compare"
             >

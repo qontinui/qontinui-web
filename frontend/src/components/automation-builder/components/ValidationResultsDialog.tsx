@@ -22,7 +22,7 @@ import {
   XCircle,
   ExternalLink,
   ClipboardCheck,
-  Image,
+  Image as ImageIcon,
   Monitor,
   Workflow,
   Settings,
@@ -50,7 +50,7 @@ function getCategoryIcon(category: IssueCategory) {
     case "monitor":
       return <Monitor className="w-3 h-3" />;
     case "image_reference":
-      return <Image className="w-3 h-3" />;
+      return <ImageIcon className="w-3 h-3" />;
     case "action_config":
       return <Settings className="w-3 h-3" />;
     case "state":

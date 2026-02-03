@@ -220,6 +220,7 @@ export function ImageSelector({
             selectedImageData || isBase64 ? (
               <div className="flex items-center gap-2 w-full">
                 <div className="w-8 h-8 bg-surface-raised rounded flex items-center justify-center flex-shrink-0">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={
                       isBase64
@@ -450,6 +451,7 @@ export function ImageSelector({
                         )}
                         <div className="space-y-2">
                           <div className="aspect-square bg-surface-raised rounded overflow-hidden p-2">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                               src={image.url || "/placeholder.svg"}
                               alt={image.name}

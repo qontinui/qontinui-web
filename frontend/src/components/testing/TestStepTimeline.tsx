@@ -21,17 +21,24 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { StepProgressMarker } from "@/components/shared/StepProgressMarker";
 
 interface TestStepTimelineProps {
   steps: TestStep[];
   currentStepId?: string;
   autoScroll?: boolean;
+  /** Task run ID for progress tracking */
+  taskRunId?: string;
+  /** Enable real-time progress tracking for running steps */
+  enableProgressTracking?: boolean;
 }
 
 export function TestStepTimeline({
   steps,
   currentStepId,
   autoScroll = true,
+  taskRunId,
+  enableProgressTracking = false,
 }: TestStepTimelineProps) {
   const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set());
   const [selectedScreenshot, setSelectedScreenshot] = useState<{
@@ -238,6 +245,19 @@ export function TestStepTimeline({
                     {/* Expanded content */}
                     {isExpanded && (
                       <div className="mt-3 space-y-3">
+                        {/* Progress Marker for Running Steps */}
+                        {enableProgressTracking &&
+                          taskRunId &&
+                          step.status === "running" && (
+                            <StepProgressMarker
+                              taskRunId={taskRunId}
+                              checkpointId={step.id}
+                              isRunning={true}
+                              autoRefresh={true}
+                              compact={false}
+                            />
+                          )}
+
                         {/* Screenshot thumbnail */}
                         {hasScreenshot && (
                           <div className="space-y-2">

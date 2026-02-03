@@ -66,8 +66,8 @@ export interface PythonFileBrowserProps {
   error?: string | null;
   /** Refresh callback */
   onRefresh?: () => void;
-  /** Optional: Validate file on selection */
-  validateOnSelect?: boolean;
+  /** Optional: Validate file on selection (reserved for future use) */
+  _validateOnSelect?: boolean;
   /** Optional: Custom height */
   height?: string;
   /** Optional: Show file metadata */
@@ -276,7 +276,7 @@ function TreeNode({
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       tabIndex={0}
-      role="button"
+      role="option"
       aria-selected={isSelected}
     >
       <FileCode className="w-4 h-4 text-green-600 dark:text-green-400 flex-shrink-0" />

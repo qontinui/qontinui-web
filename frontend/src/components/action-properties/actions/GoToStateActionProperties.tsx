@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ActionPropertiesComponentProps } from "../types";
@@ -24,7 +24,11 @@ export function GoToStateActionProperties({
   states,
 }: ActionPropertiesComponentProps) {
   const config = action.config as unknown as GoToStateActionConfig;
-  const selectedStates = (config.stateIds as string[]) || [];
+  // Memoize to prevent dependency arrays from changing on every render
+  const selectedStates = useMemo(
+    () => (config.stateIds as string[]) || [],
+    [config.stateIds]
+  );
 
   // Get transitions from automation context for pathfinding validation
   const { transitions } = useAutomation();

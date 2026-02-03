@@ -1,18 +1,26 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Settings } from "lucide-react";
 import { useAutomation } from "@/contexts/automation-context";
+import { useGlobalVariables } from "@/hooks/useGlobalVariables";
 import { actionConfigRegistry } from "./ActionConfigRegistry";
 import { Action } from "./types";
 import { ActionExpectationsEditor } from "@/components/expectations/ActionExpectationsEditor";
 import { ActionExpectations } from "@/lib/expectations";
+import {
+  getWorkflowVariableNames,
+  mergeVariables,
+} from "@/lib/workflow-variables";
+import type { Workflow } from "@/lib/action-schema/action-types";
 import "./actions"; // Import to trigger registration
 
 interface ActionPropertiesProps {
   action: Action | null;
   onUpdateAction: (action: Action) => void;
+  /** Current workflow being edited - used to extract workflow-local variables */
+  workflow?: Workflow | null;
 }
 
 /**
@@ -25,11 +33,43 @@ interface ActionPropertiesProps {
 export function ActionProperties({
   action,
   onUpdateAction,
+  workflow,
 }: ActionPropertiesProps) {
-  const { images, updateImageUsage, removeImageUsage, states, workflows } =
-    useAutomation();
+  const {
+    images,
+    updateImageUsage,
+    removeImageUsage,
+    states,
+    workflows,
+    projectId,
+  } = useAutomation();
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const [shouldOpenImageSelector, setShouldOpenImageSelector] = useState(false);
+
+  // Fetch global variables for the current project
+  const { variables: globalVariables } = useGlobalVariables({
+    projectId: projectId || "",
+    enabled: !!projectId,
+  });
+
+  // Extract global variable names
+  const globalVariableNames = useMemo(
+    () => globalVariables.map((v) => v.name),
+    [globalVariables]
+  );
+
+  // Extract workflow-local variable names (from SET_VARIABLE, LOOP iterators, etc.)
+  const workflowVariableNames = useMemo(
+    () => getWorkflowVariableNames(workflow),
+    [workflow]
+  );
+
+  // Merge workflow variables with global variables for the dropdown
+  // Workflow variables appear first since they're more contextually relevant
+  const variableNames = useMemo(
+    () => mergeVariables(globalVariableNames, workflowVariableNames),
+    [globalVariableNames, workflowVariableNames]
+  );
 
   // Detect when a new FIND action is selected without an image
   useEffect(() => {
@@ -38,6 +78,7 @@ export function ActionProperties({
     } else {
       setShouldOpenImageSelector(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Only trigger on action change, not on config.image change (would cause loop)
   }, [action?.id, action?.type]);
 
   if (!action) {
@@ -139,7 +180,7 @@ export function ActionProperties({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-8">
       <Card className="border-border-default bg-surface-raised">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium text-brand-primary">
@@ -156,6 +197,7 @@ export function ActionProperties({
             textAreaRef={textAreaRef}
             shouldOpenImageSelector={shouldOpenImageSelector}
             onUpdateAction={onUpdateAction}
+            variableNames={variableNames}
           />
         </CardContent>
       </Card>

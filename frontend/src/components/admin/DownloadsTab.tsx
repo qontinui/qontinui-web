@@ -61,6 +61,7 @@ export default function DownloadsTab() {
 
   useEffect(() => {
     loadAnalytics();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadAnalytics is stable, only re-run when days changes
   }, [days]);
 
   const loadAnalytics = async () => {

@@ -58,6 +58,10 @@ const ACTION_GROUPS = {
     { type: "GO_TO_STATE", label: "Go to State", color: "bg-indigo-500" },
     { type: "RUN_WORKFLOW", label: "Run Workflow", color: "bg-pink-500" },
   ],
+  Variables: [
+    { type: "SET_VARIABLE", label: "Set Variable", color: "bg-emerald-500" },
+    { type: "GET_VARIABLE", label: "Get Variable", color: "bg-emerald-600" },
+  ],
   Verification: [
     { type: "VANISH", label: "Wait for Vanish", color: "bg-red-500" },
   ],

@@ -4,6 +4,8 @@
  * Comprehensive type system for the Qontinui tutorial framework, supporting
  * interactive learning experiences with screenshots, annotations, and interactive
  * "Try It" moments for hands-on practice.
+ *
+ * Event-driven interactive tutorial system inspired by Node-RED and Appsmith.
  */
 
 /**
@@ -13,6 +15,77 @@
  * - hybrid: Combination of both modes, switching as needed
  */
 export type TutorialMode = "overlay" | "contextual" | "hybrid";
+
+// ============================================================================
+// Event-Driven Step Progression Types
+// ============================================================================
+
+/**
+ * Types of events that can trigger step advancement
+ * - dom-event: Standard DOM events (click, input, change, focus, blur)
+ * - dom-appear: Wait for DOM element to appear (MutationObserver)
+ * - app-action: Custom application actions via notifyAction()
+ * - route-change: Navigation to a specific route (web-specific)
+ */
+export type WaitEventType = "dom-event" | "dom-appear" | "app-action" | "route-change";
+
+/**
+ * Behavior when a wait condition times out
+ */
+export type TimeoutBehavior = "show-hint" | "allow-skip";
+
+/**
+ * Shared state across tutorial steps for filter functions
+ */
+export interface TourState {
+  stepIndex: number;
+  tutorialId: string;
+  data: Record<string, unknown>;
+}
+
+/**
+ * Condition for waiting on an event before advancing to the next step
+ */
+export interface StepWaitCondition {
+  /** Type of event to wait for */
+  type: WaitEventType;
+
+  /** DOM event name (for dom-event type) */
+  event?: string;
+
+  /** CSS selector for target element (for dom-event and dom-appear) */
+  selector?: string;
+
+  /** Action name to match (for app-action type) */
+  actionName?: string;
+
+  /** Route path to match (for route-change type) */
+  route?: string;
+
+  /** Optional filter function to conditionally match events */
+  filter?: (eventData: unknown, tourState: TourState) => boolean;
+
+  /** Timeout in milliseconds before triggering timeout behavior */
+  timeout?: number;
+
+  /** What to do when timeout occurs */
+  onTimeout?: TimeoutBehavior;
+
+  /** Hint message to show on timeout */
+  hint?: string;
+
+  /** Delay after event before advancing (for visual feedback) */
+  advanceDelay?: number;
+}
+
+/**
+ * Validation feedback messages
+ */
+export interface ValidationFeedback {
+  success: string;
+  failure: string;
+  hint?: string;
+}
 
 /**
  * Highlight types for contextual tutorials
@@ -326,9 +399,37 @@ export interface TutorialStep {
   /** Optional flag to wait for user action before auto-advancing */
   waitForUserAction?: boolean;
 
+  /** Optional wait condition for event-driven progression */
+  wait?: StepWaitCondition;
+
+  /** Whether user can interact with the target element during this step */
+  interactive?: boolean;
+
+  /** Optional prepare function to run before step is shown */
+  prepare?: () => void | Promise<void>;
+
+  /** Optional complete function to run after step is completed */
+  complete?: () => void | Promise<void>;
+
   /** Optional custom component to render for this step */
   customComponent?: string;
 }
+
+/**
+ * Focus pages where tutorials can be triggered
+ * Web-specific pages for contextual tutorials
+ */
+export type TutorialFocusPage =
+  | "dashboard"
+  | "projects"
+  | "project-editor"
+  | "workflow-builder"
+  | "state-machine"
+  | "image-library"
+  | "settings"
+  | "help"
+  | "connect-runner"
+  | "admin";
 
 /**
  * Complete tutorial definition
@@ -360,6 +461,9 @@ export interface Tutorial {
 
   /** Tutorial display mode */
   mode: TutorialMode;
+
+  /** Focus page for contextual tutorials (typed version of targetPage) */
+  focusPage?: TutorialFocusPage;
 
   /** Optional target page/route for contextual tutorials */
   targetPage?: string;
@@ -539,6 +643,17 @@ export interface TutorialSystemConfig {
 }
 
 /**
+ * Persisted tutorial state for localStorage
+ * Compatible with runner's PersistedTutorialState for future unification
+ */
+export interface PersistedTutorialState {
+  completedTutorials: string[];
+  inProgressTutorials: string[];
+  dontShowAgain: boolean;
+  progressRecords: Record<string, TutorialProgress>;
+}
+
+/**
  * Type guard to check if a value is a valid AnnotationType
  */
 export function isAnnotationType(value: unknown): value is AnnotationType {
@@ -566,4 +681,27 @@ export function isTryItType(value: unknown): value is TryItType {
  */
 export function isDifficultyLevel(value: unknown): value is DifficultyLevel {
   return ["beginner", "intermediate", "advanced"].includes(value as string);
+}
+
+/**
+ * Type guard to check if a value is a valid TutorialMode
+ */
+export function isTutorialMode(value: unknown): value is TutorialMode {
+  return ["overlay", "contextual", "hybrid"].includes(value as string);
+}
+
+/**
+ * Type guard to check if a value is a valid HighlightType
+ */
+export function isHighlightType(value: unknown): value is HighlightType {
+  return ["spotlight", "border", "pulse", "arrow"].includes(value as string);
+}
+
+/**
+ * Type guard to check if a value is a valid WaitEventType
+ */
+export function isWaitEventType(value: unknown): value is WaitEventType {
+  return ["dom-event", "dom-appear", "app-action", "route-change"].includes(
+    value as string
+  );
 }

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import {
   Box,
-  Image,
+  ImageIcon,
   MapPin,
   FileText,
   CheckCircle2,
@@ -195,7 +195,7 @@ export default function StatesDocPage() {
             </h3>
 
             <PropertyCard
-              icon={<Image className="w-5 h-5 text-purple-600" />}
+              icon={<ImageIcon className="w-5 h-5 text-purple-600" aria-hidden="true" />}
               title="Similarity Threshold"
               description="Controls how closely the screen image must match your uploaded image (0.7-0.95 typical). Lower = more fuzzy matching, higher = exact matching required."
               defaultValue="0.85"

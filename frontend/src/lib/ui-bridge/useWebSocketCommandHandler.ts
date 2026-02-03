@@ -107,18 +107,16 @@ export function useWebSocketCommandHandler() {
         case "getControlSnapshot": {
           const snapshot: ControlSnapshot = {
             timestamp: Date.now(),
-            elements: bridge.elements.map((e) => ({
-              id: e.id,
-              tagName: e.tagName,
-              type: e.type,
-              text: e.text,
-              isVisible: e.isVisible,
-              isEnabled: e.isEnabled,
-              rect: e.rect,
-              attributes: e.attributes,
-              componentName: e.componentName,
-              aliases: e.aliases,
-            })),
+            elements: bridge.elements.map((e) => {
+              const state = e.getState();
+              return {
+                id: e.id,
+                type: e.type,
+                label: e.label,
+                actions: e.actions,
+                state: state,
+              };
+            }),
             components: [],
             workflows: [],
             activeRuns: [],
@@ -133,14 +131,15 @@ export function useWebSocketCommandHandler() {
           if (!element) {
             throw new Error(`Element ${id} not found`);
           }
+          const state = element.getState();
           return {
             id: element.id,
-            isVisible: element.isVisible,
-            isEnabled: element.isEnabled,
-            text: element.text,
-            value: element.value,
-            checked: element.checked,
-            rect: element.rect,
+            isVisible: state.visible,
+            isEnabled: state.enabled,
+            text: state.textContent,
+            value: state.value,
+            checked: state.checked,
+            rect: state.rect,
           };
         }
 
@@ -243,16 +242,20 @@ export function useWebSocketCommandHandler() {
         case "discover": {
           const elements = bridge.elements;
           return {
-            elements: elements.map((e) => ({
-              id: e.id,
-              tagName: e.tagName,
-              type: e.type,
-              text: e.text,
-              isVisible: e.isVisible,
-              isEnabled: e.isEnabled,
-              rect: e.rect,
-              aliases: e.aliases,
-            })),
+            elements: elements.map((e) => {
+              const state = e.getState();
+              return {
+                id: e.id,
+                type: e.type,
+                label: e.label,
+                tagName: e.element.tagName.toLowerCase(),
+                role: e.element.getAttribute("role") ?? undefined,
+                accessibleName: e.element.getAttribute("aria-label") ?? e.label,
+                actions: e.actions,
+                state: state,
+                registered: true,
+              };
+            }),
             total: elements.length,
             durationMs: 0,
             timestamp: Date.now(),
@@ -263,8 +266,8 @@ export function useWebSocketCommandHandler() {
         case "aiSearch": {
           // Import AI search functionality dynamically
           const { createSearchEngine } = await import("ui-bridge/ai");
-          const elements = bridge.elements;
-          const searchEngine = createSearchEngine({}, elements);
+          const searchEngine = createSearchEngine({});
+          searchEngine.updateElements(bridge.elements);
           const response = searchEngine.search(
             payload as Parameters<typeof searchEngine.search>[0]
           );
@@ -287,8 +290,8 @@ export function useWebSocketCommandHandler() {
 
           // Find the target element
           const { createSearchEngine } = await import("ui-bridge/ai");
-          const elements = bridge.elements;
-          const searchEngine = createSearchEngine({}, elements);
+          const searchEngine = createSearchEngine({});
+          searchEngine.updateElements(bridge.elements);
 
           const searchResponse = searchEngine.search({
             text: parsed.targetDescription,
@@ -301,7 +304,7 @@ export function useWebSocketCommandHandler() {
             );
           }
 
-          const targetElement = searchResponse.results[0].element;
+          const targetElement = searchResponse.results[0]!.element;
           const domElement = document.querySelector(
             `[data-ui-id="${targetElement.id}"]`
           ) as HTMLElement | null;
@@ -359,86 +362,81 @@ export function useWebSocketCommandHandler() {
             success: true,
             executedAction: `${parsed.action} on ${targetElement.id}`,
             elementUsed: targetElement,
-            confidence: searchResponse.results[0].confidence,
+            confidence: searchResponse.results[0]!.confidence,
           };
         }
 
         case "aiAssert": {
           const { createAssertionExecutor } = await import("ui-bridge/ai");
-          const elements = bridge.elements;
-          const executor = createAssertionExecutor({}, elements, (id: string) => {
-            const el = document.querySelector(
-              `[data-ui-id="${id}"]`
-            ) as HTMLElement | null;
-            if (!el) return null;
-            return {
-              isVisible:
-                el.offsetParent !== null &&
-                getComputedStyle(el).visibility !== "hidden",
-              isEnabled: !(el as HTMLButtonElement).disabled,
-              isFocused: document.activeElement === el,
-              isChecked: (el as HTMLInputElement).checked,
-              text: el.textContent || "",
-              value: (el as HTMLInputElement).value,
-            };
+          type AssertionType = import("ui-bridge/ai").AssertionType;
+          const executor = createAssertionExecutor({});
+          executor.updateElements(bridge.elements as unknown as Parameters<typeof executor.updateElements>[0]);
+          const assertionRequest = payload as { target: string; type: string; expected?: unknown };
+          const result = await executor.assert({
+            target: assertionRequest.target,
+            type: assertionRequest.type as AssertionType,
+            expected: assertionRequest.expected,
           });
-          const result = await executor.assert(
-            payload as Parameters<typeof executor.assert>[0]
-          );
           return result;
         }
 
         case "aiAssertBatch": {
           const { createAssertionExecutor } = await import("ui-bridge/ai");
-          const elements = bridge.elements;
-          const executor = createAssertionExecutor({}, elements, (id: string) => {
-            const el = document.querySelector(
-              `[data-ui-id="${id}"]`
-            ) as HTMLElement | null;
-            if (!el) return null;
-            return {
-              isVisible:
-                el.offsetParent !== null &&
-                getComputedStyle(el).visibility !== "hidden",
-              isEnabled: !(el as HTMLButtonElement).disabled,
-              isFocused: document.activeElement === el,
-              isChecked: (el as HTMLInputElement).checked,
-              text: el.textContent || "",
-              value: (el as HTMLInputElement).value,
-            };
+          type AssertionType = import("ui-bridge/ai").AssertionType;
+          const executor = createAssertionExecutor({});
+          executor.updateElements(bridge.elements as unknown as Parameters<typeof executor.updateElements>[0]);
+          const batchRequest = payload as { assertions: Array<{ target: string; type: string; expected?: unknown }>; mode?: "all" | "any" };
+          const result = await executor.assertBatch({
+            assertions: batchRequest.assertions.map(a => ({
+              target: a.target,
+              type: a.type as AssertionType,
+              expected: a.expected,
+            })),
+            mode: batchRequest.mode || "all",
           });
-          const result = await executor.assertBatch(
-            payload as Parameters<typeof executor.assertBatch>[0]
-          );
           return result;
         }
 
         case "getSemanticSnapshot": {
           const { createSnapshotManager } = await import("ui-bridge/ai");
-          const elements = bridge.elements;
-          const manager = createSnapshotManager({}, elements);
-          return manager.capture();
+          const manager = createSnapshotManager({});
+          const controlSnapshot = {
+            timestamp: Date.now(),
+            elements: bridge.elements.map((e) => ({
+              id: e.id,
+              type: e.type,
+              label: e.label,
+              actions: e.actions,
+              state: e.getState(),
+            })),
+            components: [],
+            workflows: [],
+            activeRuns: [],
+          };
+          return manager.createSnapshot(controlSnapshot);
         }
 
         case "getSemanticDiff": {
-          const { createDiffManager } = await import("ui-bridge/ai");
-          const elements = bridge.elements;
-          const manager = createDiffManager({}, elements);
-          // This would need previous snapshot tracking - for now return null
+          // Semantic diff requires previous snapshot tracking - not implemented
           return null;
         }
 
         case "getPageSummary": {
           const { generatePageSummary } = await import("ui-bridge/ai");
-          const elements = bridge.elements;
-          const snapshot = {
-            timestamp: Date.now(),
-            elements,
-            components: [],
-            workflows: [],
-            activeRuns: [],
-          };
-          return generatePageSummary(snapshot);
+          // Convert RegisteredElement[] to minimal AIDiscoveredElement-like objects for the summary
+          const aiElements = bridge.elements.map((e) => ({
+            id: e.id,
+            type: e.type,
+            label: e.label,
+            tagName: e.element.tagName.toLowerCase(),
+            actions: e.actions as string[],
+            state: e.getState(),
+            registered: true,
+            description: e.description || e.label || e.id,
+            aliases: e.aliases || [],
+            suggestedActions: [],
+          }));
+          return generatePageSummary(aiElements as Parameters<typeof generatePageSummary>[0]);
         }
 
         // ========== Debug ==========
@@ -455,8 +453,8 @@ export function useWebSocketCommandHandler() {
             elements: elements.length,
             tree: elements.slice(0, 50).map((e) => ({
               id: e.id,
-              tag: e.tagName,
-              text: e.text?.slice(0, 50),
+              tag: e.element.tagName.toLowerCase(),
+              text: (e.label ?? e.element.textContent ?? "").slice(0, 50),
             })),
           };
         }

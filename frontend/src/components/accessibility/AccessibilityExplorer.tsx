@@ -135,7 +135,7 @@ export function AccessibilityExplorer({
     try {
       await capture();
       toast.success("Accessibility tree captured");
-    } catch (err) {
+    } catch {
       toast.error("Failed to capture accessibility tree");
     }
   }, [capture]);
@@ -150,7 +150,7 @@ export function AccessibilityExplorer({
       } else {
         toast.success(`Found ${matches.length} matching element(s)`);
       }
-    } catch (err) {
+    } catch {
       toast.error("Failed to test selector");
     }
   }, [currentSelector, findElements]);
@@ -476,7 +476,7 @@ export function AccessibilityExplorer({
                   </div>
                   {selectedNode.name && (
                     <p className="text-sm text-muted-foreground">
-                      "{selectedNode.name}"
+                      &quot;{selectedNode.name}&quot;
                     </p>
                   )}
                   {selectedNode.value && (
@@ -513,7 +513,7 @@ export function AccessibilityExplorer({
             </ScrollArea>
             <p className="text-xs text-muted-foreground">
               This context can be included in AI prompts for ref-based automation.
-              The AI can then use commands like "click @e3" or "type 'hello' into @e5".
+              The AI can then use commands like &quot;click @e3&quot; or &quot;type &apos;hello&apos; into @e5&quot;.
             </p>
           </div>
         </TabsContent>

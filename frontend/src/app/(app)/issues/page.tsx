@@ -24,7 +24,7 @@ import {
   RefreshCw,
   Bug,
   FileText,
-  Image,
+  ImageIcon,
   Terminal,
   Brain,
 } from "lucide-react";
@@ -60,7 +60,7 @@ function IssueCard({
       case "log":
         return <FileText className="w-3 h-3" />;
       case "screenshot":
-        return <Image className="w-3 h-3" />;
+        return <ImageIcon className="w-3 h-3" aria-hidden="true" />;
       case "console":
         return <Terminal className="w-3 h-3" />;
       case "ai_analysis":

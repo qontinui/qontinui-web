@@ -19,12 +19,14 @@ import type {
   WebExtractionConfig,
   UITarsExtractionConfig,
   ImageExtractionConfig,
+  VisionExtractionConfig,
 } from "@/types/extraction-unified";
 import {
   DEFAULT_UNIFIED_CONFIG,
   DEFAULT_WEB_CONFIG,
   DEFAULT_UITARS_CONFIG,
   DEFAULT_IMAGE_CONFIG,
+  DEFAULT_VISION_CONFIG,
 } from "@/types/extraction-unified";
 
 const STORAGE_KEY = "qontinui_unified_extraction_config";
@@ -104,6 +106,7 @@ export function useUnifiedExtractionConfig() {
           webConfig: { ...DEFAULT_WEB_CONFIG, ...parsed.webConfig },
           uitarsConfig: { ...DEFAULT_UITARS_CONFIG, ...parsed.uitarsConfig },
           imageConfig: { ...DEFAULT_IMAGE_CONFIG, ...parsed.imageConfig },
+          visionConfig: { ...DEFAULT_VISION_CONFIG, ...parsed.visionConfig },
         });
       } else {
         // Try to migrate legacy config
@@ -204,6 +207,23 @@ export function useUnifiedExtractionConfig() {
     [setConfig]
   );
 
+  const setVisionConfig = useCallback(
+    (
+      visionConfig:
+        | VisionExtractionConfig
+        | ((prev: VisionExtractionConfig) => VisionExtractionConfig)
+    ) => {
+      setConfig((prev) => ({
+        ...prev,
+        visionConfig:
+          typeof visionConfig === "function"
+            ? visionConfig(prev.visionConfig)
+            : visionConfig,
+      }));
+    },
+    [setConfig]
+  );
+
   const resetConfig = useCallback(() => {
     setConfig(DEFAULT_UNIFIED_CONFIG);
   }, [setConfig]);
@@ -253,6 +273,7 @@ export function useUnifiedExtractionConfig() {
     setWebConfig,
     setUitarsConfig,
     setImageConfig,
+    setVisionConfig,
     resetConfig,
     // Web config convenience setters (for backward compatibility)
     setUrls,

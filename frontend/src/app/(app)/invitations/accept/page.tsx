@@ -103,17 +103,6 @@ function AcceptInvitationContent() {
   const [isDeclining, setIsDeclining] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>("");
 
-  // Load invitation details
-  useEffect(() => {
-    if (!token) {
-      setStatus("error");
-      setErrorMessage("No invitation token provided");
-      return;
-    }
-
-    loadInvitationDetails();
-  }, [token]);
-
   const loadInvitationDetails = useCallback(async () => {
     if (!token) return;
 
@@ -141,6 +130,17 @@ function AcceptInvitationContent() {
       toast.error(message);
     }
   }, [token]);
+
+  // Load invitation details
+  useEffect(() => {
+    if (!token) {
+      setStatus("error");
+      setErrorMessage("No invitation token provided");
+      return;
+    }
+
+    loadInvitationDetails();
+  }, [token, loadInvitationDetails]);
 
   // Accept invitation
   const handleAccept = useCallback(async () => {

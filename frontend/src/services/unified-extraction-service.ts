@@ -220,6 +220,38 @@ function convertPatternResults(data: Record<string, unknown>): UnifiedElement[] 
   return elements;
 }
 
+/**
+ * Convert UI Bridge results to unified format.
+ */
+function convertUIBridgeResults(
+  data: import("@/hooks/useUIBridgeExploration").UIBridgeRawResults,
+  _transitions: import("@/hooks/useUIBridgeExploration").SuggestedTransition[]
+): UnifiedElement[] {
+  const elements: UnifiedElement[] = [];
+
+  // Convert discovered elements from state discovery
+  const discoveredElements = data.state_discovery?.elements || [];
+  for (const el of discoveredElements) {
+    elements.push({
+      id: el.id,
+      bbox: { x: 0, y: 0, width: 0, height: 0 }, // UI Bridge doesn't capture bbox
+      confidence: 1.0,
+      detectionMethod: "ui-bridge",
+      name: el.name,
+      category: el.type,
+      text: el.text_content,
+      tagName: el.tag_name,
+      isInteractive: true,
+      metadata: {
+        render_ids: el.render_ids,
+        component_name: el.component_name,
+      },
+    });
+  }
+
+  return elements;
+}
+
 // ============================================================================
 // Unified Extraction Service
 // ============================================================================
@@ -901,6 +933,70 @@ class UnifiedExtractionService {
       source: data.source as string,
       elements,
       sessionId: data.session_id as string,
+    };
+  }
+
+  /**
+   * Convert UI Bridge exploration results to unified extraction format.
+   *
+   * This method allows UI Bridge results to be integrated with the unified
+   * extraction system, enabling consistent handling across all extraction methods.
+   *
+   * @param results - Raw UI Bridge exploration results
+   * @param suggestedTransitions - Transitions built from exploration steps
+   * @param options - Additional metadata options
+   * @returns UnifiedExtractionResult compatible with the unified system
+   */
+  convertUIBridgeToUnified(
+    results: import("@/hooks/useUIBridgeExploration").UIBridgeRawResults,
+    suggestedTransitions: import("@/hooks/useUIBridgeExploration").SuggestedTransition[],
+    options?: {
+      sessionId?: string;
+      connectionUrl?: string;
+      startTime?: Date;
+      endTime?: Date;
+    }
+  ): UnifiedExtractionResult {
+    const elements = convertUIBridgeResults(results, suggestedTransitions);
+
+    const startedAt = options?.startTime?.toISOString() ||
+      results.start_time ||
+      new Date().toISOString();
+    const completedAt = options?.endTime?.toISOString() ||
+      results.end_time ||
+      new Date().toISOString();
+
+    return {
+      jobId: results.exploration_id,
+      method: "ui-bridge",
+      status: "completed",
+      techniquesRun: ["ui-bridge", "state-discovery", "transition-discovery"],
+      startedAt,
+      completedAt,
+      durationMs: options?.startTime && options?.endTime
+        ? options.endTime.getTime() - options.startTime.getTime()
+        : undefined,
+      source: options?.connectionUrl,
+      elements,
+      transitions: suggestedTransitions,
+      rawResults: {
+        uiBridge: {
+          states: results.state_discovery?.states || [],
+          elements: results.state_discovery?.elements || [],
+          steps: results.steps,
+          renderLogs: results.render_logs,
+          transitions: suggestedTransitions,
+        },
+      },
+      metrics: {
+        totalFound: results.elements_discovered,
+        elementsExplored: results.elements_explored,
+        statesDiscovered: results.state_discovery?.states.length || 0,
+        transitionsDiscovered: suggestedTransitions.length,
+        errors: results.errors.length,
+        errorMessages: results.errors.length > 0 ? results.errors : undefined,
+      },
+      sessionId: options?.sessionId || this.sessionId,
     };
   }
 }

@@ -3,6 +3,12 @@
  * Stores large image data separately from session metadata
  */
 
+import {
+  classifyError,
+  DBErrorType,
+  handleStorageCorruption,
+} from "./db/error-handler";
+
 const DB_NAME = "PatternOptimizationDB";
 const DB_VERSION = 1;
 const IMAGES_STORE = "images";
@@ -10,17 +16,45 @@ const SESSIONS_STORE = "sessions";
 
 class PatternOptimizationStorage {
   private db: IDBDatabase | null = null;
+  private recoveryAttempted = false;
 
   async init(): Promise<void> {
     if (this.db) return;
 
+    try {
+      this.db = await this.openDatabaseInternal();
+      this.recoveryAttempted = false;
+    } catch (error) {
+      const errorType = classifyError(error);
+      if (errorType === DBErrorType.STORAGE_CORRUPTED && !this.recoveryAttempted) {
+        this.recoveryAttempted = true;
+        console.warn("[PatternOptimizationStorage] Storage corruption detected, attempting recovery...");
+
+        const recovered = await handleStorageCorruption(DB_NAME, "init");
+
+        if (recovered) {
+          try {
+            this.db = await this.openDatabaseInternal();
+            console.log("[PatternOptimizationStorage] Successfully recovered and reconnected");
+            return;
+          } catch (retryError) {
+            console.error("[PatternOptimizationStorage] Failed to reconnect after recovery:", retryError);
+            throw retryError;
+          }
+        }
+      }
+
+      throw error;
+    }
+  }
+
+  private openDatabaseInternal(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
-        this.db = request.result;
-        resolve();
+        resolve(request.result);
       };
 
       request.onupgradeneeded = (event) => {

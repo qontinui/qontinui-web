@@ -42,7 +42,7 @@ export function SnapshotListCard({
       await deleteSnapshot(snapshot.run_id, false);
       toast.success(`Snapshot ${snapshot.run_id} deleted`);
       await reload();
-    } catch (err) {
+    } catch (_err) {
       toast.error("Failed to delete snapshot");
     } finally {
       setDeleting(null);

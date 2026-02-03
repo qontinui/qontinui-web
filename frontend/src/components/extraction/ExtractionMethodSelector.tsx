@@ -11,7 +11,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Globe, Bot, Monitor, ImageIcon, Link } from "lucide-react";
+import { Globe, Bot, Monitor, ImageIcon, Link, Eye } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { ExtractionMethod } from "@/types/extraction-unified";
 
@@ -57,6 +57,13 @@ const methodOptions: MethodOption[] = [
     badge: "AI",
   },
   {
+    id: "vision",
+    label: "Vision Extraction",
+    description: "Detect GUI elements from screenshots using CV algorithms",
+    icon: <Eye className="h-8 w-8" />,
+    color: "#9B59B6",
+  },
+  {
     id: "image",
     label: "Image Extraction",
     description: "Template matching for simple patterns",
@@ -82,7 +89,7 @@ export function ExtractionMethodSelector({
         </span>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         {methodOptions.map((option) => {
           const isSelected = selectedMethod === option.id;
 

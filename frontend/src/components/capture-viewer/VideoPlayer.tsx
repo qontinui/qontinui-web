@@ -204,6 +204,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     return () => {
       window.removeEventListener("keydown", handleKeyPress);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Handler functions are stable within the effect scope; adding them would cause unnecessary re-subscriptions
   }, [isPlaying, isMuted, isFullscreen]);
 
   const formatTime = (seconds: number): string => {

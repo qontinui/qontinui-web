@@ -424,9 +424,9 @@ export function StateExplorerView({
   }, []);
 
   return (
-    <div className="flex gap-4 min-h-0 flex-1 h-full overflow-hidden">
+    <div className="flex gap-4 min-h-0 flex-1 h-full overflow-hidden" id="extraction-results-container" data-ui-id="extraction-results-container">
       {/* Panel 1: States List */}
-      <ExplorerPanel accent="primary" width="w-[16%]" className="shrink-0">
+      <ExplorerPanel accent="primary" width="w-[16%]" className="shrink-0" id="extraction-results-states-panel" data-ui-id="extraction-results-states-panel">
         <ExplorerPanelHeader title="States" icon={Layers} accent="primary">
           <Badge
             variant="outline"
@@ -457,6 +457,7 @@ export function StateExplorerView({
                   selected={state.id === selectedStateId}
                   accent="primary"
                   onClick={() => setSelectedStateId(state.id)}
+                  id={`extraction-results-state-${state.id}`}
                   data-ui-id={`extraction-results-state-${state.id}`}
                   className="overflow-hidden"
                 >
@@ -485,7 +486,7 @@ export function StateExplorerView({
       </ExplorerPanel>
 
       {/* Panel 2: State Images */}
-      <ExplorerPanel accent="secondary" width="w-[14%]" className="shrink-0">
+      <ExplorerPanel accent="secondary" width="w-[14%]" className="shrink-0" data-ui-id="extraction-results-images-panel">
         <ExplorerPanelHeader
           title="State Images"
           icon={ImageIcon}

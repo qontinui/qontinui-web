@@ -34,6 +34,7 @@ export function LoopActionProperties({
   action,
   updateConfig,
   images,
+  variableNames = [],
 }: ActionPropertiesComponentProps) {
   const config = action.config as unknown as LoopActionConfig;
 
@@ -147,6 +148,7 @@ export function LoopActionProperties({
             onChange={(name) =>
               updateConfig("iteratorVariable", name || undefined)
             }
+            existingVariables={variableNames}
             placeholder="i"
             required={false}
           />
@@ -167,6 +169,7 @@ export function LoopActionProperties({
               label=""
               allowEmpty={false}
               images={images.map((img) => ({ id: img.id, name: img.name }))}
+              existingVariables={variableNames}
             />
           </div>
           <p className="text-xs text-text-muted">
@@ -212,6 +215,7 @@ export function LoopActionProperties({
                   variableName: name,
                 })
               }
+              existingVariables={variableNames}
               placeholder="myArray"
               required
             />
@@ -281,6 +285,7 @@ export function LoopActionProperties({
             onChange={(name) =>
               updateConfig("iteratorVariable", name || undefined)
             }
+            existingVariables={variableNames}
             placeholder="item"
             required={false}
           />

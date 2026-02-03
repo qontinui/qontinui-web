@@ -57,6 +57,7 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({
                   backgroundColor: "#ffffff",
                 }}
               >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={extractedResult.croppedImage}
                   alt="Extracted"
@@ -77,6 +78,7 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({
                   Mask
                 </h3>
                 <div className="border border-border-default rounded bg-surface-canvas p-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={extractedResult.mask}
                     alt="Mask"

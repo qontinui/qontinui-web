@@ -72,6 +72,7 @@ export function LazyImage({
 
       {/* Actual image */}
       {imageSrc && (
+        // eslint-disable-next-line @next/next/no-img-element
         <img
           src={imageSrc}
           alt={alt}

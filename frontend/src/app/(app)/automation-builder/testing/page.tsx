@@ -165,10 +165,6 @@ export default function WorkflowTestingPage() {
   // Load Data
   // ========================================================================
 
-  React.useEffect(() => {
-    loadData();
-  }, []);
-
   const loadData = React.useCallback(() => {
     setTestCases(testingService.getAllTestCases());
     setTestSuites(testingService.getAllTestSuites());
@@ -177,6 +173,10 @@ export default function WorkflowTestingPage() {
     // Load mock workflows (in real app, fetch from API)
     setWorkflows([]);
   }, [testingService]);
+
+  React.useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   // ========================================================================
   // Computed Values

@@ -487,6 +487,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                     ))}
                   </div>
                   <div className="flex-1 border border-border-default rounded bg-surface-raised overflow-auto">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={selectedScreenshot.url}
                       alt={selectedScreenshot.name}
@@ -521,6 +522,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                       backgroundColor: "hsl(var(--surface-raised))",
                     }}
                   >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={result.maskedScreenshots[selectedScreenshotIndex]}
                       alt="Processed"
@@ -542,6 +544,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                     <div className="p-2 bg-surface-raised font-semibold text-sm text-white border-b border-border-default">
                       Original
                     </div>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={selectedScreenshot?.url}
                       alt="Original"
@@ -565,6 +568,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                     <div className="p-2 bg-surface-raised font-semibold text-sm text-white border-b border-border-default">
                       Processed
                     </div>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={result.maskedScreenshots[selectedScreenshotIndex]}
                       alt="Processed"

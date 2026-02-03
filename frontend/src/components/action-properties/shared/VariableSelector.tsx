@@ -3,6 +3,15 @@
 import * as React from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Pencil, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface VariableSelectorProps {
@@ -12,7 +21,7 @@ export interface VariableSelectorProps {
   /** Called when variable name changes */
   onChange: (name: string) => void;
 
-  /** Optional list of existing variables for autocomplete */
+  /** Optional list of existing variables for dropdown */
   existingVariables?: string[];
 
   /** Optional label text */
@@ -28,13 +37,17 @@ export interface VariableSelectorProps {
   required?: boolean;
 }
 
+const CUSTOM_VALUE = "__custom__";
+
 /**
- * VariableSelector component - provides a validated text input for variable names.
+ * VariableSelector component - provides a dropdown for selecting existing variables
+ * or entering a custom variable name.
  *
  * Features:
- * - Validates variable names (alphanumeric and underscore only, must start with letter or underscore)
- * - Optional autocomplete suggestions from existing variables
- * - Clean, consistent styling with the rest of the app
+ * - Dropdown with all existing variables when available
+ * - Option to enter a custom variable name
+ * - Validates variable names (alphanumeric and underscore only)
+ * - Shows dropdown by default, with "Enter custom name" option
  */
 export function VariableSelector({
   value,
@@ -45,49 +58,62 @@ export function VariableSelector({
   className,
   required = false,
 }: VariableSelectorProps) {
-  const [showSuggestions, setShowSuggestions] = React.useState(false);
+  // Track if user wants to enter a custom value
+  const [isCustomMode, setIsCustomMode] = React.useState(false);
   const [isInvalid, setIsInvalid] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
 
-  // Validate variable name (must start with letter or underscore, then alphanumeric or underscore)
+  // Check if current value is custom (not in the list and not empty)
+  const isValueInList = existingVariables.includes(value);
+  const isCurrentValueCustom = value && !isValueInList;
+
+  // Show text input only if:
+  // 1. User explicitly clicked "Enter custom name" (isCustomMode), OR
+  // 2. Current value is custom AND not empty (user typed something not in list)
+  // Always start with dropdown, even if no variables exist yet
+  const showCustomInput = isCustomMode || (isCurrentValueCustom && value !== "");
+
+  // Reset custom mode when switching to a value in the list
+  React.useEffect(() => {
+    if (isValueInList && isCustomMode) {
+      setIsCustomMode(false);
+    }
+  }, [isValueInList, isCustomMode]);
+
+  // Validate variable name
   const validateVariableName = (name: string): boolean => {
-    if (!name) return true; // Empty is valid (unless required)
+    if (!name) return true;
     const variableNamePattern = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
     return variableNamePattern.test(name);
   };
 
-  // Filter suggestions based on current input
-  const filteredSuggestions = React.useMemo(() => {
-    if (!value || !existingVariables.length) return [];
-    const lowerValue = value.toLowerCase();
-    return existingVariables
-      .filter((v) => v.toLowerCase().includes(lowerValue) && v !== value)
-      .slice(0, 5); // Limit to 5 suggestions
-  }, [value, existingVariables]);
+  const handleSelectChange = (selectedValue: string) => {
+    if (selectedValue === CUSTOM_VALUE) {
+      setIsCustomMode(true);
+      onChange("");
+      // Focus the input after React re-renders
+      setTimeout(() => inputRef.current?.focus(), 0);
+    } else {
+      setIsCustomMode(false);
+      setIsInvalid(false);
+      onChange(selectedValue);
+    }
+  };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value;
     const valid = validateVariableName(newValue);
     setIsInvalid(!valid);
     onChange(newValue);
-
-    // Show suggestions if we have matches
-    if (newValue && filteredSuggestions.length > 0) {
-      setShowSuggestions(true);
-    } else {
-      setShowSuggestions(false);
-    }
   };
 
-  const handleSuggestionClick = (suggestion: string) => {
-    onChange(suggestion);
-    setShowSuggestions(false);
+  const handleSwitchToDropdown = () => {
+    setIsCustomMode(false);
     setIsInvalid(false);
-  };
-
-  const handleBlur = () => {
-    // Delay hiding suggestions to allow click events to fire
-    setTimeout(() => setShowSuggestions(false), 200);
+    // If current value exists in the list, keep it; otherwise clear
+    if (!existingVariables.includes(value)) {
+      onChange("");
+    }
   };
 
   return (
@@ -99,50 +125,72 @@ export function VariableSelector({
         </Label>
       )}
 
-      <div className="relative">
-        <Input
-          ref={inputRef}
-          type="text"
-          value={value}
-          onChange={handleChange}
-          onFocus={() => {
-            if (value && filteredSuggestions.length > 0) {
-              setShowSuggestions(true);
-            }
-          }}
-          onBlur={handleBlur}
-          placeholder={placeholder}
-          className={cn(
-            "bg-transparent border-border-default font-mono text-sm",
-            isInvalid &&
-              "border-red-500 focus-visible:border-red-500 focus-visible:ring-red-500/50"
-          )}
-          aria-invalid={isInvalid}
-        />
-
-        {isInvalid && value && (
-          <p className="text-xs text-red-400 mt-1">
-            Variable name must start with a letter or underscore, followed by
-            letters, numbers, or underscores
-          </p>
-        )}
-
-        {/* Autocomplete suggestions */}
-        {showSuggestions && filteredSuggestions.length > 0 && (
-          <div className="absolute z-50 w-full mt-1 bg-surface-raised border border-border-default rounded-md shadow-lg max-h-40 overflow-auto">
-            {filteredSuggestions.map((suggestion, index) => (
-              <button
-                key={index}
-                type="button"
-                onClick={() => handleSuggestionClick(suggestion)}
-                className="w-full text-left px-3 py-2 text-sm font-mono hover:bg-surface-raised focus:bg-surface-raised focus:outline-none text-text-default first:rounded-t-md last:rounded-b-md"
-              >
-                {suggestion}
-              </button>
-            ))}
+      {showCustomInput ? (
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <Input
+              ref={inputRef}
+              type="text"
+              value={value}
+              onChange={handleInputChange}
+              placeholder={placeholder}
+              className={cn(
+                "flex-1 bg-transparent border-border-default font-mono text-sm",
+                isInvalid &&
+                  "border-red-500 focus-visible:border-red-500 focus-visible:ring-red-500/50"
+              )}
+              aria-invalid={isInvalid}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={handleSwitchToDropdown}
+              title="Select from existing variables"
+              className="shrink-0 border-border-default"
+            >
+              <ChevronDown className="h-4 w-4" />
+            </Button>
           </div>
-        )}
-      </div>
+
+          {isInvalid && value && (
+            <p className="text-xs text-red-400">
+              Variable name must start with a letter or underscore, followed by
+              letters, numbers, or underscores
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          <Select value={value || ""} onValueChange={handleSelectChange}>
+            <SelectTrigger className="flex-1 bg-transparent border-border-default font-mono">
+              <SelectValue placeholder="Select a variable" />
+            </SelectTrigger>
+            <SelectContent>
+              {existingVariables.length === 0 ? (
+                <div className="px-3 py-2 text-sm text-text-muted italic">
+                  No variables defined yet
+                </div>
+              ) : (
+                existingVariables.map((varName) => (
+                  <SelectItem key={varName} value={varName} className="font-mono">
+                    {varName}
+                  </SelectItem>
+                ))
+              )}
+              <SelectItem
+                value={CUSTOM_VALUE}
+                className="text-text-muted border-t border-border-default mt-1 pt-1"
+              >
+                <span className="flex items-center gap-2">
+                  <Pencil className="h-3 w-3" />
+                  Enter custom name...
+                </span>
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
     </div>
   );
 }

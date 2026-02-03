@@ -45,7 +45,7 @@ export class OrganizationService {
     const data: OrganizationCreate = { name, description };
 
     const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/organizations/`,
+      `${this.apiUrl}/api/v1/organizations`,
       {
         method: "POST",
         body: JSON.stringify(data),
@@ -68,7 +68,7 @@ export class OrganizationService {
    */
   async getOrganizations(): Promise<Organization[]> {
     const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/organizations/`
+      `${this.apiUrl}/api/v1/organizations`
     );
 
     // 404 means no organizations exist for this user - return empty array

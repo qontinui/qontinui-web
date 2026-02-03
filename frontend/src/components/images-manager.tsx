@@ -592,6 +592,7 @@ export function ImagesManager() {
                 <div className="space-y-1">
                   {/* Image Preview - reduced by 50% */}
                   <div className="aspect-square bg-surface-canvas rounded overflow-hidden relative w-20 h-20">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={image.url || "/placeholder.svg"}
                       alt={image.name}

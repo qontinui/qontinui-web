@@ -168,7 +168,7 @@ export const ArchitectureDiagrams: React.FC<ArchitectureDiagramsProps> = ({
                   <div className="flex items-center gap-2 mb-4">
                     <Monitor className="w-4 h-4 text-primary" />
                     <span className="text-sm font-medium text-primary">
-                      LOCAL (User's Machine)
+                      LOCAL (User&apos;s Machine)
                     </span>
                   </div>
 

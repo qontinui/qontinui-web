@@ -21,6 +21,7 @@ export function Header() {
             className="flex items-center gap-1 cursor-pointer"
             onClick={() => router.push("/")}
           >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/q-logo.png"
               alt="Qontinui"

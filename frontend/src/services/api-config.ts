@@ -1,7 +1,9 @@
 export class ApiConfig {
   // Main API (authentication, users, projects)
-  // Use empty string to make relative URLs that go through Next.js proxy
-  static readonly API_BASE_URL = "";
+  // Use environment variable to call backend directly (required for cookie-based auth)
+  // Next.js rewrites don't forward cookies, so direct calls are needed
+  static readonly API_BASE_URL =
+    process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
   // Runner URL for local automation (pattern matching, state discovery, extraction)
   // The runner provides a unified API that calls the qontinui library via IPC

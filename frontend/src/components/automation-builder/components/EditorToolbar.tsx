@@ -2,11 +2,8 @@
  * EditorToolbar Component
  *
  * Provides common actions for the automation builder:
- * - Save/Undo/Redo
- * - Delete item
- * - Duplicate item
- * - Format conversion
- * - Run/Test
+ * - Run (primary action)
+ * - More menu with secondary actions (Share, Verify, Export, Import, Duplicate, Delete)
  *
  * Adapts its appearance and actions based on the current mode and item type.
  */
@@ -14,18 +11,22 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import {
-  Save,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Trash2,
   Copy,
   Play,
-  TestTube,
-  Undo,
-  Redo,
   Download,
   Upload,
   Share2,
   FolderDown,
   ClipboardCheck,
+  MoreHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { LibraryItem, BuilderMode } from "../types";
@@ -55,21 +56,14 @@ export interface EditorToolbarProps {
 export function EditorToolbar({
   item,
   mode,
-  onSave,
   onDelete,
   onDuplicate,
   onRun,
-  onTest,
-  onUndo,
-  onRedo,
   onExport,
   onImport,
   onExportProject,
   onVerifyProject,
   onShare,
-  canUndo = false,
-  canRedo = false,
-  isSaving = false,
   className,
 }: EditorToolbarProps) {
   const isSequential = mode === "sequential";
@@ -80,125 +74,41 @@ export function EditorToolbar({
   return (
     <div
       className={cn(
-        "flex items-center justify-between px-4 py-3 border-b border-border-subtle bg-surface-canvas",
+        "flex items-center justify-between px-4 py-2 border-b border-border-subtle bg-surface-canvas",
         className
       )}
     >
-      {/* Left side - Primary actions */}
+      {/* Left side - Primary action */}
       <div className="flex items-center gap-2">
-        {/* Save Button */}
-        {onSave && (
+        {/* Run Button - Primary action */}
+        {item && onRun && (
           <Button
-            onClick={onSave}
-            disabled={!item || isSaving}
+            onClick={onRun}
             size="sm"
-            data-tutorial-id="save-workflow"
-            data-ui-id="automation-toolbar-save-btn"
+            data-tutorial-id="run-workflow"
+            data-ui-id="automation-toolbar-run-btn"
             style={{
-              backgroundColor: item ? `${accentColor}22` : undefined,
-              borderColor: item ? `${accentColor}44` : undefined,
-              color: item ? accentColor : undefined,
+              backgroundColor: `${accentColor}22`,
+              borderColor: `${accentColor}44`,
+              color: accentColor,
             }}
-            className={cn(
-              "border transition-colors",
-              !item && "bg-surface-raised border-border-default text-text-muted"
-            )}
+            className="border transition-colors"
           >
-            <Save className="w-4 h-4 mr-2" />
-            {isSaving ? "Saving..." : "Save"}
+            <Play className="w-4 h-4 mr-2" />
+            Run
           </Button>
         )}
 
-        {/* Undo/Redo */}
-        {(onUndo || onRedo) && (
-          <div className="flex items-center gap-1 ml-2">
-            {onUndo && (
-              <Button
-                onClick={onUndo}
-                disabled={!canUndo}
-                size="sm"
-                variant="ghost"
-                className="text-text-muted hover:text-white hover:bg-surface-raised"
-                title="Undo (Ctrl+Z)"
-                data-ui-id="automation-toolbar-undo-btn"
-              >
-                <Undo className="w-4 h-4" />
-              </Button>
-            )}
-            {onRedo && (
-              <Button
-                onClick={onRedo}
-                disabled={!canRedo}
-                size="sm"
-                variant="ghost"
-                className="text-text-muted hover:text-white hover:bg-surface-raised"
-                title="Redo (Ctrl+Y)"
-                data-ui-id="automation-toolbar-redo-btn"
-              >
-                <Redo className="w-4 h-4" />
-              </Button>
-            )}
-          </div>
-        )}
-
-        {/* Divider */}
-        {(onSave || onUndo || onRedo) && item && (
-          <div className="h-6 w-px bg-border-default mx-2" />
-        )}
-
-        {/* Run/Test Buttons */}
-        {item && (
-          <>
-            {onRun && (
-              <Button
-                onClick={onRun}
-                size="sm"
-                variant="ghost"
-                data-tutorial-id="run-workflow"
-                data-ui-id="automation-toolbar-run-btn"
-                className="text-text-muted hover:text-white hover:bg-surface-raised"
-              >
-                <Play className="w-4 h-4 mr-2" />
-                Run
-              </Button>
-            )}
-            {onTest && (
-              <Button
-                onClick={onTest}
-                size="sm"
-                variant="ghost"
-                className="text-text-muted hover:text-white hover:bg-surface-raised"
-                data-ui-id="automation-toolbar-test-btn"
-              >
-                <TestTube className="w-4 h-4 mr-2" />
-                Test
-              </Button>
-            )}
-          </>
+        {!item && (
+          <span className="text-sm text-text-muted">
+            Select a workflow to edit
+          </span>
         )}
       </div>
 
-      {/* Right side - Secondary actions */}
+      {/* Right side - Secondary actions in dropdown */}
       <div className="flex items-center gap-2">
-        {/* Share Button */}
-        {item && onShare && (
-          <Button
-            onClick={onShare}
-            size="sm"
-            variant="ghost"
-            className="text-text-muted hover:text-white hover:bg-surface-raised"
-            title="Share Project"
-            data-ui-id="automation-toolbar-share-btn"
-          >
-            <Share2 className="w-4 h-4 mr-2" />
-            Share
-          </Button>
-        )}
-
-        {/* Divider */}
-        {item && onShare && <div className="h-6 w-px bg-border-default mx-1" />}
-
-        {/* Verify Project */}
+        {/* Project-level actions (always available) */}
         {onVerifyProject && (
           <Button
             onClick={onVerifyProject}
@@ -208,12 +118,11 @@ export function EditorToolbar({
             title="Verify project configuration"
             data-ui-id="automation-toolbar-verify-btn"
           >
-            <ClipboardCheck className="w-4 h-4 mr-2" />
-            Verify
+            <ClipboardCheck className="w-4 h-4 mr-1" />
+            <span className="hidden sm:inline">Verify</span>
           </Button>
         )}
 
-        {/* Export Project */}
         {onExportProject && (
           <Button
             onClick={onExportProject}
@@ -223,79 +132,69 @@ export function EditorToolbar({
             title="Export entire project for qontinui-runner"
             data-ui-id="automation-toolbar-exportproject-btn"
           >
-            <FolderDown className="w-4 h-4 mr-2" />
-            Export Project
+            <FolderDown className="w-4 h-4 mr-1" />
+            <span className="hidden sm:inline">Export</span>
           </Button>
         )}
 
-        {/* Divider */}
-        {(onVerifyProject || onExportProject) && (
-          <div className="h-6 w-px bg-border-default mx-1" />
-        )}
-
-        {/* Import/Export Workflow */}
+        {/* Workflow-specific actions in dropdown */}
         {item && (
-          <>
-            {onExport && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <Button
-                onClick={onExport}
                 size="sm"
                 variant="ghost"
                 className="text-text-muted hover:text-white hover:bg-surface-raised"
-                title="Export Workflow"
-                data-ui-id="automation-toolbar-export-btn"
+                data-ui-id="automation-toolbar-more-btn"
               >
-                <Download className="w-4 h-4" />
+                <MoreHorizontal className="w-4 h-4" />
               </Button>
-            )}
-            {onImport && (
-              <Button
-                onClick={onImport}
-                size="sm"
-                variant="ghost"
-                className="text-text-muted hover:text-white hover:bg-surface-raised"
-                title="Import Workflow"
-                data-ui-id="automation-toolbar-import-btn"
-              >
-                <Upload className="w-4 h-4" />
-              </Button>
-            )}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {onShare && (
+                <DropdownMenuItem onClick={onShare} data-ui-id="automation-toolbar-share-btn">
+                  <Share2 className="w-4 h-4 mr-2" />
+                  Share
+                </DropdownMenuItem>
+              )}
 
-            {/* Divider */}
-            {(onExport || onImport) && (
-              <div className="h-6 w-px bg-border-default mx-1" />
-            )}
-          </>
-        )}
+              {onShare && <DropdownMenuSeparator />}
 
-        {/* Duplicate Button */}
-        {item && onDuplicate && (
-          <Button
-            onClick={onDuplicate}
-            size="sm"
-            variant="ghost"
-            className="text-text-muted hover:text-white hover:bg-surface-raised"
-            title="Duplicate"
-            data-ui-id="automation-toolbar-duplicate-btn"
-          >
-            <Copy className="w-4 h-4 mr-2" />
-            Duplicate
-          </Button>
-        )}
+              {onExport && (
+                <DropdownMenuItem onClick={onExport} data-ui-id="automation-toolbar-export-btn">
+                  <Download className="w-4 h-4 mr-2" />
+                  Export Workflow
+                </DropdownMenuItem>
+              )}
 
-        {/* Delete Button */}
-        {item && onDelete && (
-          <Button
-            onClick={onDelete}
-            size="sm"
-            variant="ghost"
-            className="text-red-400 hover:text-red-300 hover:bg-red-950/30"
-            title="Delete"
-            data-ui-id="automation-toolbar-delete-btn"
-          >
-            <Trash2 className="w-4 h-4 mr-2" />
-            Delete
-          </Button>
+              {onImport && (
+                <DropdownMenuItem onClick={onImport} data-ui-id="automation-toolbar-import-btn">
+                  <Upload className="w-4 h-4 mr-2" />
+                  Import Workflow
+                </DropdownMenuItem>
+              )}
+
+              {(onExport || onImport) && <DropdownMenuSeparator />}
+
+              {onDuplicate && (
+                <DropdownMenuItem onClick={onDuplicate} data-ui-id="automation-toolbar-duplicate-btn">
+                  <Copy className="w-4 h-4 mr-2" />
+                  Duplicate
+                </DropdownMenuItem>
+              )}
+
+              {onDelete && (
+                <DropdownMenuItem
+                  onClick={onDelete}
+                  className="text-red-400 focus:text-red-300"
+                  data-ui-id="automation-toolbar-delete-btn"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </div>
     </div>
@@ -312,15 +211,9 @@ export interface CompactToolbarProps extends EditorToolbarProps {
 export function CompactToolbar({
   item,
   mode,
-  onSave,
   onDelete,
   onDuplicate,
   onRun,
-  canUndo = false,
-  canRedo = false,
-  onUndo,
-  onRedo,
-  isSaving = false,
   className,
 }: CompactToolbarProps) {
   const isSequential = mode === "sequential";
@@ -333,50 +226,6 @@ export function CompactToolbar({
         className
       )}
     >
-      {/* Save */}
-      {onSave && (
-        <Button
-          onClick={onSave}
-          disabled={!item || isSaving}
-          size="sm"
-          variant="ghost"
-          data-tutorial-id="save-workflow"
-          className="h-8 w-8 p-0"
-          style={{
-            color: item ? accentColor : undefined,
-          }}
-          title="Save"
-        >
-          <Save className="w-4 h-4" />
-        </Button>
-      )}
-
-      {/* Undo/Redo */}
-      {onUndo && (
-        <Button
-          onClick={onUndo}
-          disabled={!canUndo}
-          size="sm"
-          variant="ghost"
-          className="h-8 w-8 p-0"
-          title="Undo"
-        >
-          <Undo className="w-4 h-4" />
-        </Button>
-      )}
-      {onRedo && (
-        <Button
-          onClick={onRedo}
-          disabled={!canRedo}
-          size="sm"
-          variant="ghost"
-          className="h-8 w-8 p-0"
-          title="Redo"
-        >
-          <Redo className="w-4 h-4" />
-        </Button>
-      )}
-
       <div className="flex-1" />
 
       {/* Run */}
@@ -387,6 +236,7 @@ export function CompactToolbar({
           variant="ghost"
           data-tutorial-id="run-workflow"
           className="h-8 w-8 p-0"
+          style={{ color: accentColor }}
           title="Run"
         >
           <Play className="w-4 h-4" />

@@ -24,6 +24,7 @@ export { ScreenshotActionProperties } from "./ScreenshotActionProperties";
 
 // Import Phase 1 components
 export { GetVariableActionProperties } from "./data-operations/GetVariableActionProperties";
+export { SetVariableActionProperties } from "./data-operations/SetVariableActionProperties";
 export { BreakActionProperties } from "./control-flow/BreakActionProperties";
 export { ContinueActionProperties } from "./control-flow/ContinueActionProperties";
 export { IfActionProperties } from "./control-flow/IfActionProperties";
@@ -61,6 +62,7 @@ import { ScreenshotActionProperties } from "./ScreenshotActionProperties";
 
 // Import Phase 1 components
 import { GetVariableActionProperties } from "./data-operations/GetVariableActionProperties";
+import { SetVariableActionProperties } from "./data-operations/SetVariableActionProperties";
 import { BreakActionProperties } from "./control-flow/BreakActionProperties";
 import { ContinueActionProperties } from "./control-flow/ContinueActionProperties";
 import { IfActionProperties } from "./control-flow/IfActionProperties";
@@ -123,6 +125,11 @@ actionConfigRegistry.register(
   "GET_VARIABLE",
   GetVariableActionProperties,
   "GET_VARIABLE"
+);
+actionConfigRegistry.register(
+  "SET_VARIABLE",
+  SetVariableActionProperties,
+  "SET_VARIABLE"
 );
 actionConfigRegistry.register("BREAK", BreakActionProperties, "BREAK");
 actionConfigRegistry.register("CONTINUE", ContinueActionProperties, "CONTINUE");

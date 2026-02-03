@@ -17,6 +17,7 @@ import {
   LogIn,
   Globe,
 } from "lucide-react";
+import Image from "next/image";
 import { AuthDialog } from "@/components/auth-dialog";
 import { AuthProvider, useAuth } from "@/contexts/auth-context";
 import { Footer } from "@/components/marketing/footer";
@@ -44,9 +45,11 @@ function LandingContent() {
             className="flex items-center gap-1 cursor-pointer"
             onClick={() => router.push("/")}
           >
-            <img
+            <Image
               src="/q-logo.png"
               alt="Qontinui"
+              width={32}
+              height={32}
               className="h-8 w-auto"
             />
             <span className="text-2xl font-bold text-primary">ontinui</span>

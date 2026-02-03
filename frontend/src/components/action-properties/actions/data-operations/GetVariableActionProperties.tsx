@@ -18,6 +18,7 @@ import { GetVariableActionConfig } from "@/lib/action-schema";
 export function GetVariableActionProperties({
   action,
   updateConfig,
+  variableNames = [],
 }: ActionPropertiesComponentProps) {
   const config = action.config as unknown as GetVariableActionConfig;
 
@@ -28,6 +29,7 @@ export function GetVariableActionProperties({
         label="Variable Name"
         value={config.variableName || ""}
         onChange={(name) => updateConfig("variableName", name)}
+        existingVariables={variableNames}
         placeholder="variableToGet"
         required
       />
@@ -37,6 +39,7 @@ export function GetVariableActionProperties({
         label="Output Variable (Optional)"
         value={config.outputVariable || ""}
         onChange={(name) => updateConfig("outputVariable", name || undefined)}
+        existingVariables={variableNames}
         placeholder="outputVariable"
       />
       <p className="text-xs text-text-muted -mt-1">

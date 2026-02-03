@@ -19,7 +19,7 @@ export class ProjectService {
   }
 
   async getProjects(): Promise<Project[]> {
-    const url = `${this.apiUrl}/api/v1/projects/`;
+    const url = `${this.apiUrl}/api/v1/projects`;
     console.log("[ProjectService] Fetching projects from:", url);
 
     const response = await this.httpClient.fetch(url);
@@ -56,7 +56,7 @@ export class ProjectService {
 
   async createProject(data: ProjectCreate): Promise<Project> {
     const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/projects/`,
+      `${this.apiUrl}/api/v1/projects`,
       {
         method: "POST",
         body: JSON.stringify(data),
@@ -98,5 +98,51 @@ export class ProjectService {
     if (!response.ok) {
       throw new Error("Failed to delete project");
     }
+  }
+
+  /**
+   * Import a configuration into a project.
+   *
+   * @param projectId - The project to import into
+   * @param configuration - The configuration object to import
+   * @param merge - If true, merge with existing config. If false, replace.
+   */
+  async importConfiguration(
+    projectId: string,
+    configuration: Record<string, unknown>,
+    merge: boolean = false
+  ): Promise<{ success: boolean; message: string; project_id: string }> {
+    const response = await this.httpClient.fetch(
+      `${this.apiUrl}/api/v1/export/${projectId}/import`,
+      {
+        method: "POST",
+        body: JSON.stringify({ configuration, merge }),
+      }
+    );
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error("[ProjectService] Import failed:", {
+        status: response.status,
+        statusText: response.statusText,
+        errorData,
+      });
+      throw new Error(
+        errorData.detail || `Failed to import configuration: ${response.statusText}`
+      );
+    }
+    return response.json();
+  }
+
+  /**
+   * Get the raw configuration JSON for a project.
+   */
+  async getConfiguration(projectId: string): Promise<Record<string, unknown>> {
+    const response = await this.httpClient.fetch(
+      `${this.apiUrl}/api/v1/export/${projectId}/configuration`
+    );
+    if (!response.ok) {
+      throw new Error("Failed to get project configuration");
+    }
+    return response.json();
   }
 }

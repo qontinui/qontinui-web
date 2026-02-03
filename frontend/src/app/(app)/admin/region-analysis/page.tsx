@@ -83,6 +83,7 @@ export default function RegionAnalysisPage() {
     if (token) {
       loadAnnotationSets();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadAnnotationSets is stable, only reload when token changes
   }, [token]);
 
   const loadAnnotationSets = async () => {
@@ -146,18 +147,11 @@ export default function RegionAnalysisPage() {
         </Button>
         <Button
           variant="ghost"
-          onClick={() => router.push("/admin/annotations")}
-          className="hover:bg-accent/10"
-        >
-          Annotations
-        </Button>
-        <Button
-          variant="ghost"
-          onClick={() => router.push("/admin/analysis")}
+          onClick={() => router.push("/automation-builder/extraction")}
           className="hover:bg-accent/10"
         >
           <Sparkles className="mr-2 h-4 w-4" />
-          Element Analysis
+          Extraction
         </Button>
       </div>
 
@@ -188,10 +182,10 @@ export default function RegionAnalysisPage() {
           ) : annotationSets.length === 0 ? (
             <div className="text-center py-4">
               <p className="text-muted-foreground mb-4">
-                No annotation sets found. Create one first.
+                No annotation sets found. Run an extraction first.
               </p>
-              <Button onClick={() => router.push("/admin/annotations")}>
-                Go to Annotations
+              <Button onClick={() => router.push("/automation-builder/extraction")}>
+                Go to Extraction
               </Button>
             </div>
           ) : (
@@ -275,6 +269,7 @@ export default function RegionAnalysisPage() {
                 <CardContent>
                   {selectedSet && (
                     <div className="border rounded-lg overflow-hidden bg-muted">
+                      {/* eslint-disable-next-line @next/next/no-img-element -- External URL from backend, dimensions unknown */}
                       <img
                         src={selectedSet.screenshot_url}
                         alt={selectedSet.screenshot_name}

@@ -339,6 +339,7 @@ export function SemanticAnalysisTab() {
       });
     };
     img.src = selectedImage;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- typeColors is stable (defined inline but constant values)
   }, [
     selectedImage,
     scene,

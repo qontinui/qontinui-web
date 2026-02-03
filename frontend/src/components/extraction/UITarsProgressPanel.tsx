@@ -218,7 +218,7 @@ export function UITarsProgressPanel({
             </div>
             <div className="p-2 rounded bg-surface-canvas/50 border border-brand-secondary/10">
               <p className="text-sm text-text-secondary italic line-clamp-2">
-                "{lastThought}"
+                &quot;{lastThought}&quot;
               </p>
             </div>
           </div>
@@ -353,6 +353,7 @@ export function useSimulatedUITarsProgress(
       clearTimeout(initTimer);
       clearInterval(interval);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- progress.status is read inside setProgress callback, not needed as a dependency
   }, [isExtracting, maxSteps]);
 
   return progress;

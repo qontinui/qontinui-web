@@ -35,6 +35,7 @@ export function EarlyAccessSignupWarning() {
         <div className="flex items-start gap-3">
           <div className="flex-shrink-0 mt-0.5">
             <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src="/early-access.svg"
                 alt="Early Access"

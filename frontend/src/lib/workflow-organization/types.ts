@@ -6,7 +6,6 @@
  * - Dependency tracking and analysis
  * - Testing framework and assertions
  * - Metrics, analytics, and performance monitoring
- * - Reusable components and subflows
  * - Documentation and collaboration
  * - Version control and branching
  * - Search, filtering, and bulk operations
@@ -631,134 +630,6 @@ export interface AnalyticsData {
 
   /** When analytics were calculated */
   calculatedAt: string;
-}
-
-// ============================================================================
-// Reusable Components
-// ============================================================================
-
-/**
- * Parameter definition for a component
- */
-export interface ComponentParameter {
-  /** Parameter name */
-  name: string;
-
-  /** Parameter data type */
-  type: "string" | "number" | "boolean" | "object" | "array" | "any";
-
-  /** Whether parameter is required */
-  required: boolean;
-
-  /** Default value if not provided */
-  defaultValue?: unknown;
-
-  /** Human-readable description */
-  description?: string;
-
-  /** Validation rules */
-  validation?: {
-    min?: number;
-    max?: number;
-    pattern?: string;
-    enum?: unknown[];
-  };
-}
-
-/**
- * Reusable subflow component
- *
- * A subflow is a reusable piece of workflow logic that can be
- * embedded in multiple workflows, similar to a function.
- */
-export interface SubflowComponent {
-  /** Unique component identifier */
-  id: string;
-
-  /** Component name */
-  name: string;
-
-  /** Component description */
-  description?: string;
-
-  /** Actions that make up this component */
-  actions: Action[];
-
-  /** Input parameters */
-  parameters: ComponentParameter[];
-
-  /** Output parameters */
-  outputs?: ComponentParameter[];
-
-  /** Tags for categorization */
-  tags?: string[];
-
-  /** Category for organization */
-  category?: string;
-
-  /** Number of times this component is used */
-  usageCount: number;
-
-  /** When component was created */
-  createdAt: string;
-
-  /** When component was last updated */
-  updatedAt: string;
-
-  /** Version of the component */
-  version: string;
-
-  /** Author */
-  author?: string;
-
-  /** Icon for visual identification */
-  icon?: string;
-
-  /** Custom metadata */
-  metadata?: Record<string, unknown>;
-}
-
-/**
- * Component library for organizing reusable components
- */
-export interface ComponentLibrary {
-  /** Library name */
-  name: string;
-
-  /** Library description */
-  description?: string;
-
-  /** Components in this library */
-  components: SubflowComponent[];
-
-  /** Categories for organization */
-  categories: string[];
-
-  /** When library was created */
-  createdAt: string;
-
-  /** When library was last updated */
-  updatedAt: string;
-
-  /** Custom metadata */
-  metadata?: Record<string, unknown>;
-}
-
-/**
- * Component usage reference
- */
-export interface ComponentUsage {
-  /** Component ID */
-  componentId: string;
-
-  /** Workflow ID where it's used */
-  workflowId: string;
-
-  /** Action ID where it's instantiated */
-  actionId: string;
-
-  /** Parameter values passed to the component */
-  parameterValues: Record<string, unknown>;
 }
 
 // ============================================================================
@@ -1393,13 +1264,6 @@ export function hasCircularDependencies(analysis: DependencyAnalysis): boolean {
  */
 export function isRootFolder(folder: WorkflowFolder): boolean {
   return folder.parentId === null;
-}
-
-/**
- * Type guard to check if a component is used
- */
-export function isComponentUsed(component: SubflowComponent): boolean {
-  return component.usageCount > 0;
 }
 
 // ============================================================================

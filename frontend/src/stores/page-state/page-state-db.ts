@@ -7,6 +7,12 @@
  * until explicit logout.
  */
 
+import {
+  classifyError,
+  DBErrorType,
+  handleStorageCorruption,
+} from "@/lib/db/error-handler";
+
 const DB_NAME = "qontinui-page-state-db";
 const DB_VERSION = 1;
 
@@ -63,8 +69,17 @@ function generateBlobId(): string {
 class PageStateDB {
   private dbPromise: Promise<IDBDatabase> | null = null;
   private db: IDBDatabase | null = null;
+  private recoveryAttempted = false;
+  // Circuit breaker to prevent repeated access attempts after fatal errors
+  private isFatallyFailed = false;
+  private fatalError: Error | null = null;
 
   private getDB(): Promise<IDBDatabase> {
+    // Circuit breaker: don't retry after fatal failure
+    if (this.isFatallyFailed) {
+      return Promise.reject(this.fatalError || new Error("IndexedDB unavailable (storage corrupted)"));
+    }
+
     // Check if existing connection is still valid
     if (this.db && !this.isConnectionClosed(this.db)) {
       return Promise.resolve(this.db);
@@ -78,25 +93,79 @@ class PageStateDB {
 
     if (this.dbPromise) return this.dbPromise;
 
-    this.dbPromise = new Promise((resolve, reject) => {
-      if (typeof window === "undefined") {
-        reject(new Error("IndexedDB not available on server"));
-        return;
+    this.dbPromise = this.openDatabase();
+
+    return this.dbPromise;
+  }
+
+  private async openDatabase(): Promise<IDBDatabase> {
+    if (typeof window === "undefined") {
+      throw new Error("IndexedDB not available on server");
+    }
+
+    try {
+      const db = await this.openDatabaseInternal();
+      this.db = db;
+      this.recoveryAttempted = false;
+      this.isFatallyFailed = false;
+      this.fatalError = null;
+      return db;
+    } catch (error) {
+      const errorType = classifyError(error);
+      if (errorType === DBErrorType.STORAGE_CORRUPTED && !this.recoveryAttempted) {
+        this.recoveryAttempted = true;
+        console.warn("[PageStateDB] Storage corruption detected, attempting recovery...");
+
+        const recovered = await handleStorageCorruption(DB_NAME, "openDatabase");
+
+        if (recovered) {
+          try {
+            const db = await this.openDatabaseInternal();
+            this.db = db;
+            this.isFatallyFailed = false;
+            this.fatalError = null;
+            console.log("[PageStateDB] Successfully recovered and reconnected");
+            return db;
+          } catch (retryError) {
+            console.error("[PageStateDB] Failed to reconnect after recovery:", retryError);
+            // Mark as fatally failed to prevent further retries
+            this.isFatallyFailed = true;
+            this.fatalError = retryError instanceof Error ? retryError : new Error(String(retryError));
+            this.dbPromise = null;
+            throw retryError;
+          }
+        } else {
+          // Recovery failed, mark as fatally failed
+          console.error("[PageStateDB] Storage recovery failed. Please clear site data manually.");
+          this.isFatallyFailed = true;
+          this.fatalError = error instanceof Error ? error : new Error(String(error));
+          this.dbPromise = null;
+        }
+      } else if (errorType === DBErrorType.STORAGE_CORRUPTED) {
+        // Already tried recovery once, mark as fatally failed
+        this.isFatallyFailed = true;
+        this.fatalError = error instanceof Error ? error : new Error(String(error));
+        this.dbPromise = null;
       }
 
+      throw error;
+    }
+  }
+
+  private openDatabaseInternal(): Promise<IDBDatabase> {
+    return new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
-        this.db = request.result;
+        const db = request.result;
 
-        // Handle connection close events
-        this.db.onclose = () => {
+        db.onclose = () => {
           this.db = null;
           this.dbPromise = null;
         };
 
-        resolve(request.result);
+        resolve(db);
       };
 
       request.onupgradeneeded = (event) => {
@@ -123,8 +192,6 @@ class PageStateDB {
         }
       };
     });
-
-    return this.dbPromise;
   }
 
   private isConnectionClosed(db: IDBDatabase): boolean {

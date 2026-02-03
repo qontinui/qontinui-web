@@ -335,6 +335,7 @@ export function ExecutionControls({
                       </div>
                       {startScreenshot.screenshotUrl && (
                         <div className="mt-2 pt-2 border-t border-purple-200">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={startScreenshot.screenshotUrl}
                             alt="Start screenshot"

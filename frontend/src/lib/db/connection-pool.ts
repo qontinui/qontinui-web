@@ -11,6 +11,11 @@
  */
 
 import { projectLogger } from "@/lib/project-logger";
+import {
+  classifyError,
+  DBErrorType,
+  handleStorageCorruption,
+} from "./error-handler";
 
 /**
  * Database configuration
@@ -66,6 +71,8 @@ interface ConnectionState {
   lastError: Error | null;
   /** Connection opened timestamp */
   connectedAt: number | null;
+  /** Whether recovery has been attempted for this database */
+  recoveryAttempted: boolean;
 }
 
 /**
@@ -176,6 +183,7 @@ class ConnectionPoolImpl {
         connecting: false,
         lastError: null,
         connectedAt: null,
+        recoveryAttempted: false,
       };
       this.connections.set(config.name, state);
     }
@@ -208,10 +216,56 @@ class ConnectionPoolImpl {
       state.db = db;
       state.connectedAt = Date.now();
       state.lastError = null;
+      state.recoveryAttempted = false; // Reset on successful connection
       return db;
     } catch (error) {
       state.lastError =
         error instanceof Error ? error : new Error(String(error));
+      state.promise = null;
+
+      // Check if this is a storage corruption error
+      const errorType = classifyError(error);
+      if (
+        errorType === DBErrorType.STORAGE_CORRUPTED &&
+        !state.recoveryAttempted
+      ) {
+        state.recoveryAttempted = true;
+        projectLogger.warn("ConnectionPool", "Attempting storage recovery", {
+          database: config.name,
+        });
+
+        // Attempt recovery by deleting the corrupted database
+        const recovered = await handleStorageCorruption(
+          config.name,
+          "getConnection"
+        );
+
+        if (recovered) {
+          // Retry the connection after recovery
+          state.promise = this.openConnection(config, state);
+          try {
+            const db = await state.promise;
+            state.db = db;
+            state.connectedAt = Date.now();
+            state.lastError = null;
+            projectLogger.info(
+              "ConnectionPool",
+              "Connection established after recovery",
+              {
+                database: config.name,
+              }
+            );
+            return db;
+          } catch (retryError) {
+            state.lastError =
+              retryError instanceof Error
+                ? retryError
+                : new Error(String(retryError));
+            throw retryError;
+          }
+        }
+      }
+
       throw error;
     } finally {
       state.connecting = false;

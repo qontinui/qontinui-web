@@ -783,6 +783,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
               <div className="relative inline-block">
                 {selectedScreenshot.imageData ? (
                   <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={selectedScreenshot.imageData}
                       alt={selectedScreenshot.name}
@@ -809,7 +810,8 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
           ) : (
             <div className="flex-1 flex items-center justify-center text-text-muted">
               <div className="text-center">
-                <Image className="w-12 h-12 mx-auto mb-2" />
+                {/* eslint-disable-next-line jsx-a11y/alt-text -- This is a Lucide icon component, not an img element */}
+                <Image className="w-12 h-12 mx-auto mb-2" aria-hidden="true" />
                 <p>Upload screenshots to begin</p>
               </div>
             </div>
