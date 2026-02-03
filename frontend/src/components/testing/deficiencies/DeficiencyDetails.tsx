@@ -94,7 +94,10 @@ export function DeficiencyDetails({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[90vh] p-0" data-ui-id="testing-deficiency-details-modal">
+      <DialogContent
+        className="max-w-5xl max-h-[90vh] p-0"
+        data-ui-id="testing-deficiency-details-modal"
+      >
         <ScrollArea className="h-full max-h-[90vh]">
           <div className="p-6">
             <DialogHeader className="space-y-4">
@@ -192,12 +195,28 @@ export function DeficiencyDetails({
               data-ui-id="testing-deficiency-details-tabs"
             >
               <TabsList className="grid w-full grid-cols-4">
-                <TabsTrigger value="overview" data-ui-id="testing-deficiency-details-overview-tab">Overview</TabsTrigger>
-                <TabsTrigger value="workflow" data-ui-id="testing-deficiency-details-workflow-tab">Workflow</TabsTrigger>
-                <TabsTrigger value="comments" data-ui-id="testing-deficiency-details-comments-tab">
+                <TabsTrigger
+                  value="overview"
+                  data-ui-id="testing-deficiency-details-overview-tab"
+                >
+                  Overview
+                </TabsTrigger>
+                <TabsTrigger
+                  value="workflow"
+                  data-ui-id="testing-deficiency-details-workflow-tab"
+                >
+                  Workflow
+                </TabsTrigger>
+                <TabsTrigger
+                  value="comments"
+                  data-ui-id="testing-deficiency-details-comments-tab"
+                >
                   Comments {comments.length > 0 && `(${comments.length})`}
                 </TabsTrigger>
-                <TabsTrigger value="activity" data-ui-id="testing-deficiency-details-activity-tab">
+                <TabsTrigger
+                  value="activity"
+                  data-ui-id="testing-deficiency-details-activity-tab"
+                >
                   Activity {activities.length > 0 && `(${activities.length})`}
                 </TabsTrigger>
               </TabsList>

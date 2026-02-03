@@ -78,7 +78,9 @@ function toBackendFormat(element: AnnotatedElement): ExtendedElementAnnotation {
 /**
  * Convert backend ElementAnnotation to frontend AnnotatedElement format
  */
-function toFrontendFormat(element: ExtendedElementAnnotation): AnnotatedElement {
+function toFrontendFormat(
+  element: ExtendedElementAnnotation
+): AnnotatedElement {
   return {
     id: element.id,
     bbox: element.bbox,
@@ -163,9 +165,7 @@ export async function saveAnnotations(
 /**
  * Load annotations from the backend
  */
-export async function loadAnnotations(
-  extractionId: string
-): Promise<{
+export async function loadAnnotations(extractionId: string): Promise<{
   success: boolean;
   annotations?: Array<{
     screenshotId: string;
@@ -204,7 +204,9 @@ export async function loadAnnotations(
 
     const annotations = data.map((ann) => ({
       screenshotId: ann.screenshot_id,
-      elements: (ann.elements as ExtendedElementAnnotation[]).map(toFrontendFormat),
+      elements: (ann.elements as ExtendedElementAnnotation[]).map(
+        toFrontendFormat
+      ),
       sourceUrl: ann.source_url,
       viewportWidth: ann.viewport_width,
       viewportHeight: ann.viewport_height,

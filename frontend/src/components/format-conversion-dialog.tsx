@@ -104,7 +104,10 @@ export function FormatConversionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px] bg-surface-overlay border-border-default" data-ui-id="dialog-format-conversion">
+      <DialogContent
+        className="sm:max-w-[500px] bg-surface-overlay border-border-default"
+        data-ui-id="dialog-format-conversion"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-brand-primary">
             {isSequentialToGraph ? (

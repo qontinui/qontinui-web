@@ -174,11 +174,19 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
           className="flex-1 flex flex-col"
         >
           <TabsList className="w-full justify-start border-b border-border-default rounded-none bg-transparent p-0">
-            <TabsTrigger value="properties" className="rounded-none" data-ui-id="canvas-props-properties-tab-btn">
+            <TabsTrigger
+              value="properties"
+              className="rounded-none"
+              data-ui-id="canvas-props-properties-tab-btn"
+            >
               <Settings className="w-3 h-3 mr-1.5" />
               Properties
             </TabsTrigger>
-            <TabsTrigger value="history" className="rounded-none" data-ui-id="canvas-props-history-tab-btn">
+            <TabsTrigger
+              value="history"
+              className="rounded-none"
+              data-ui-id="canvas-props-history-tab-btn"
+            >
               <History className="w-3 h-3 mr-1.5" />
               History
             </TabsTrigger>

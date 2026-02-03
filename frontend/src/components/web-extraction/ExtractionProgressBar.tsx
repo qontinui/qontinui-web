@@ -31,9 +31,7 @@ interface ExtractionProgressBarProps {
   session: ExtractionSession;
 }
 
-export function ExtractionProgressBar({
-  session,
-}: ExtractionProgressBarProps) {
+export function ExtractionProgressBar({ session }: ExtractionProgressBarProps) {
   const getStatusIcon = () => {
     switch (session.status) {
       case "completed":

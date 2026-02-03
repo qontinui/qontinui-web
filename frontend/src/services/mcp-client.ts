@@ -755,7 +755,7 @@ export class MCPClient {
         version: response.version,
         capabilities: response.capabilities,
       };
-    } catch (error) {
+    } catch (_error) {
       return {
         available: false,
       };

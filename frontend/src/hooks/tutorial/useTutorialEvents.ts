@@ -17,7 +17,10 @@ const TUTORIAL_ACTION_EVENT = "tutorial-action";
 /**
  * Dispatch a tutorial action event
  */
-export function dispatchTutorialAction(actionName: string, data?: unknown): void {
+export function dispatchTutorialAction(
+  actionName: string,
+  data?: unknown
+): void {
   if (typeof window === "undefined") {
     return;
   }
@@ -210,7 +213,10 @@ export function useTutorialEvents(
         }
 
         const handleAction = (e: Event) => {
-          const customEvent = e as CustomEvent<{ actionName: string; data?: unknown }>;
+          const customEvent = e as CustomEvent<{
+            actionName: string;
+            data?: unknown;
+          }>;
           if (
             customEvent.detail.actionName === actionName &&
             checkFilter(customEvent.detail.data)
@@ -220,7 +226,8 @@ export function useTutorialEvents(
         };
 
         window.addEventListener(TUTORIAL_ACTION_EVENT, handleAction);
-        cleanup = () => window.removeEventListener(TUTORIAL_ACTION_EVENT, handleAction);
+        cleanup = () =>
+          window.removeEventListener(TUTORIAL_ACTION_EVENT, handleAction);
         break;
       }
 
@@ -264,7 +271,8 @@ export function useTutorialEvents(
     // Check if route changed to target
     if (
       pathname !== previousPathRef.current &&
-      (pathname === waitCondition.route || pathname?.startsWith(waitCondition.route))
+      (pathname === waitCondition.route ||
+        pathname?.startsWith(waitCondition.route))
     ) {
       handleEventSuccess();
     }
@@ -284,7 +292,10 @@ export function useTutorialEvents(
 /**
  * Hook to access the notifyAction function without the full event system
  */
-export function useTutorialNotify(): (actionName: string, data?: unknown) => void {
+export function useTutorialNotify(): (
+  actionName: string,
+  data?: unknown
+) => void {
   return useCallback((actionName: string, data?: unknown) => {
     dispatchTutorialAction(actionName, data);
   }, []);

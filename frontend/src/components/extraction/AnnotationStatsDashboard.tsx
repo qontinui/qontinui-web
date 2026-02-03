@@ -19,7 +19,10 @@ import {
   Clock,
   History,
 } from "lucide-react";
-import { useExtractionAnnotationStore, type ReviewStatus } from "@/stores/extraction-annotation-store";
+import {
+  useExtractionAnnotationStore,
+  type ReviewStatus,
+} from "@/stores/extraction-annotation-store";
 
 interface StatCardProps {
   title: string;
@@ -29,7 +32,13 @@ interface StatCardProps {
   color?: string;
 }
 
-function StatCard({ title, value, subtitle, icon, color = "#9B59B6" }: StatCardProps) {
+function StatCard({
+  title,
+  value,
+  subtitle,
+  icon,
+  color = "#9B59B6",
+}: StatCardProps) {
   return (
     <div className="bg-surface-raised rounded-lg border border-border-subtle p-4">
       <div className="flex items-center justify-between">
@@ -60,7 +69,12 @@ interface ProgressBarProps {
   color?: string;
 }
 
-function ProgressBar({ label, value, total, color = "#9B59B6" }: ProgressBarProps) {
+function ProgressBar({
+  label,
+  value,
+  total,
+  color = "#9B59B6",
+}: ProgressBarProps) {
   const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
 
   return (
@@ -120,7 +134,7 @@ function PieChart({ data, size = 120 }: PieChartProps) {
     });
 
   const center = size / 2;
-  const radius = (size / 2) - 10;
+  const radius = size / 2 - 10;
 
   // Convert polar coordinates to cartesian
   const polarToCartesian = (angle: number) => {
@@ -169,7 +183,9 @@ interface AnnotationStatsDashboardProps {
   className?: string;
 }
 
-export function AnnotationStatsDashboard({ className }: AnnotationStatsDashboardProps) {
+export function AnnotationStatsDashboard({
+  className,
+}: AnnotationStatsDashboardProps) {
   const { elements, versions, lastSavedAt } = useExtractionAnnotationStore();
 
   // Calculate statistics
@@ -207,7 +223,8 @@ export function AnnotationStatsDashboard({ className }: AnnotationStatsDashboard
     return {
       total,
       groundTruth,
-      groundTruthPercentage: total > 0 ? Math.round((groundTruth / total) * 100) : 0,
+      groundTruthPercentage:
+        total > 0 ? Math.round((groundTruth / total) * 100) : 0,
       autoDetected,
       manual,
       reviewCounts,

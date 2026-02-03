@@ -130,7 +130,9 @@ export function StateExplorerView({
     if (!selectedState) return allScreenshotIds;
 
     // Check if state has screensFound array (from new image-matching algorithm)
-    const screensFound = (selectedState as StateMachineState & { screensFound?: string[] }).screensFound;
+    const screensFound = (
+      selectedState as StateMachineState & { screensFound?: string[] }
+    ).screensFound;
     if (screensFound && screensFound.length > 0) {
       return screensFound;
     }
@@ -139,9 +141,11 @@ export function StateExplorerView({
     const ids = new Set<string>();
     for (const img of selectedState.stateImages) {
       // Check for screensFound on image (new format)
-      const imgScreensFound = (img as StateMachineStateImage & { screensFound?: string[] }).screensFound;
+      const imgScreensFound = (
+        img as StateMachineStateImage & { screensFound?: string[] }
+      ).screensFound;
       if (imgScreensFound) {
-        imgScreensFound.forEach(id => ids.add(id));
+        imgScreensFound.forEach((id) => ids.add(id));
       } else if (img.screenshotId) {
         ids.add(img.screenshotId);
       }
@@ -289,7 +293,9 @@ export function StateExplorerView({
       const imagesOnThisScreenshot = imagesWithBboxes.filter(
         ({ stateImage }) => {
           // Check for screensFound array (new format from image-matching)
-          const screensFound = (stateImage as StateMachineStateImage & { screensFound?: string[] }).screensFound;
+          const screensFound = (
+            stateImage as StateMachineStateImage & { screensFound?: string[] }
+          ).screensFound;
           if (screensFound && screensFound.length > 0) {
             return screensFound.includes(selectedScreenshotId!);
           }
@@ -311,9 +317,11 @@ export function StateExplorerView({
       // Determine which images to draw:
       // - If hovering a specific image, only show that image's box prominently
       // - If not hovering, show all boxes faintly for overview
-      const hasHoveredImage = hoveredImageId && imagesOnThisScreenshot.some(
-        ({ stateImage }) => stateImage.id === hoveredImageId
-      );
+      const hasHoveredImage =
+        hoveredImageId &&
+        imagesOnThisScreenshot.some(
+          ({ stateImage }) => stateImage.id === hoveredImageId
+        );
 
       for (const { stateImage, bbox } of imagesOnThisScreenshot) {
         const x = bbox.x * scaleX;
@@ -408,8 +416,8 @@ export function StateExplorerView({
           // Use the Clipboard API to write the blob
           await navigator.clipboard.write([
             new ClipboardItem({
-              [blob.type]: blob
-            })
+              [blob.type]: blob,
+            }),
           ]);
           toast.success("Image copied to clipboard");
         } catch (err) {
@@ -424,9 +432,19 @@ export function StateExplorerView({
   }, []);
 
   return (
-    <div className="flex gap-4 min-h-0 flex-1 h-full overflow-hidden" id="extraction-results-container" data-ui-id="extraction-results-container">
+    <div
+      className="flex gap-4 min-h-0 flex-1 h-full overflow-hidden"
+      id="extraction-results-container"
+      data-ui-id="extraction-results-container"
+    >
       {/* Panel 1: States List */}
-      <ExplorerPanel accent="primary" width="w-[16%]" className="shrink-0" id="extraction-results-states-panel" data-ui-id="extraction-results-states-panel">
+      <ExplorerPanel
+        accent="primary"
+        width="w-[16%]"
+        className="shrink-0"
+        id="extraction-results-states-panel"
+        data-ui-id="extraction-results-states-panel"
+      >
         <ExplorerPanelHeader title="States" icon={Layers} accent="primary">
           <Badge
             variant="outline"
@@ -449,7 +467,10 @@ export function StateExplorerView({
         <ExplorerPanelContent scrollable padding="sm">
           <ExplorerPanelList>
             {filteredStates.length === 0 ? (
-              <ExplorerPanelEmptyState message="No states found" icon={Layers} />
+              <ExplorerPanelEmptyState
+                message="No states found"
+                icon={Layers}
+              />
             ) : (
               filteredStates.map((state) => (
                 <ExplorerPanelItem
@@ -486,7 +507,12 @@ export function StateExplorerView({
       </ExplorerPanel>
 
       {/* Panel 2: State Images */}
-      <ExplorerPanel accent="secondary" width="w-[14%]" className="shrink-0" data-ui-id="extraction-results-images-panel">
+      <ExplorerPanel
+        accent="secondary"
+        width="w-[14%]"
+        className="shrink-0"
+        data-ui-id="extraction-results-images-panel"
+      >
         <ExplorerPanelHeader
           title="State Images"
           icon={ImageIcon}
@@ -589,7 +615,10 @@ export function StateExplorerView({
 
         <ExplorerPanelContent scrollable={false} padding="none">
           {/* Two-layer scroll structure matching ScrollArea pattern exactly */}
-          <div data-slot="custom-scroll-root" className="absolute inset-0 overflow-hidden">
+          <div
+            data-slot="custom-scroll-root"
+            className="absolute inset-0 overflow-hidden"
+          >
             <div
               ref={containerRef}
               data-slot="custom-scroll-viewport"
@@ -664,10 +693,7 @@ export function StateExplorerView({
 
         <ExplorerPanelContent scrollable padding="sm">
           {stateScreenshotIds.length === 0 ? (
-            <ExplorerPanelEmptyState
-              message="No screenshots"
-              icon={Monitor}
-            />
+            <ExplorerPanelEmptyState message="No screenshots" icon={Monitor} />
           ) : (
             <ExplorerPanelList gap="md">
               {stateScreenshotIds.map((ssId) => (
@@ -768,9 +794,10 @@ function StateImageThumbnail({
       onMouseLeave={onMouseLeave}
       className={`
         p-1.5 rounded border cursor-pointer transition-all w-full max-w-full overflow-hidden
-        ${isSelected
-          ? "border-brand-success bg-brand-success/20 shadow-[0_0_8px_rgba(77,184,157,0.2)]"
-          : "border-border-subtle bg-surface-canvas/50 hover:border-brand-secondary/50"
+        ${
+          isSelected
+            ? "border-brand-success bg-brand-success/20 shadow-[0_0_8px_rgba(77,184,157,0.2)]"
+            : "border-border-subtle bg-surface-canvas/50 hover:border-brand-secondary/50"
         }
       `}
     >
@@ -787,7 +814,10 @@ function StateImageThumbnail({
           <ImageIcon className="h-3 w-3 text-brand-secondary/30" />
         )}
       </div>
-      <div className="text-[9px] font-semibold text-white truncate w-full" title={stateImage.name}>
+      <div
+        className="text-[9px] font-semibold text-white truncate w-full"
+        title={stateImage.name}
+      >
         {stateImage.name}
       </div>
     </div>
@@ -827,8 +857,9 @@ function ScreenshotThumbnail({
           <img
             src={imageUrl}
             alt={screenshotId}
-            className={`w-full h-full object-cover object-top transition-opacity duration-300 ${isSelected ? "opacity-100" : "opacity-60 hover:opacity-100"
-              }`}
+            className={`w-full h-full object-cover object-top transition-opacity duration-300 ${
+              isSelected ? "opacity-100" : "opacity-60 hover:opacity-100"
+            }`}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
@@ -840,8 +871,9 @@ function ScreenshotThumbnail({
         className={`p-1.5 ${isSelected ? "bg-brand-primary/20" : "bg-surface-canvas/70"}`}
       >
         <div
-          className={`text-[9px] font-mono truncate ${isSelected ? "text-brand-primary" : "text-text-muted"
-            }`}
+          className={`text-[9px] font-mono truncate ${
+            isSelected ? "text-brand-primary" : "text-text-muted"
+          }`}
         >
           {screenshotId.slice(-8)}
         </div>

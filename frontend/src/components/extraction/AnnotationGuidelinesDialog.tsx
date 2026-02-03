@@ -235,7 +235,8 @@ export function AnnotationGuidelinesDialog({
                     </li>
                     <li>Press Escape to deselect all elements.</li>
                     <li>
-                      Selected elements can be edited, deleted, or bulk-approved.
+                      Selected elements can be edited, deleted, or
+                      bulk-approved.
                     </li>
                   </ul>
                 </div>
@@ -253,9 +254,7 @@ export function AnnotationGuidelinesDialog({
                       Click at the top-left corner of the element and drag to
                       the bottom-right.
                     </li>
-                    <li>
-                      Release the mouse to complete the bounding box.
-                    </li>
+                    <li>Release the mouse to complete the bounding box.</li>
                     <li>
                       The element type selector will appear - choose the
                       appropriate type.
@@ -296,8 +295,9 @@ export function AnnotationGuidelinesDialog({
                   <p className="text-text-secondary">
                     When adding custom labels, use clear and descriptive names
                     that identify the element&apos;s purpose. For example, use
-                    &quot;Submit Button&quot; instead of just &quot;Button&quot;, or &quot;Email Input
-                    Field&quot; instead of &quot;Input&quot;.
+                    &quot;Submit Button&quot; instead of just
+                    &quot;Button&quot;, or &quot;Email Input Field&quot; instead
+                    of &quot;Input&quot;.
                   </p>
                 </div>
 
@@ -366,8 +366,8 @@ export function AnnotationGuidelinesDialog({
                     </li>
                     <li>
                       <strong>Partially overlapping:</strong> Draw boxes that
-                      accurately represent each element&apos;s boundaries, even if
-                      they overlap.
+                      accurately represent each element&apos;s boundaries, even
+                      if they overlap.
                     </li>
                     <li>
                       <strong>Stacked elements:</strong> Annotate visible
@@ -414,15 +414,13 @@ export function AnnotationGuidelinesDialog({
                       Do not include browser chrome or window decorations in
                       annotations.
                     </li>
-                    <li>
-                      Do not annotate disabled or invisible elements.
-                    </li>
+                    <li>Do not annotate disabled or invisible elements.</li>
                     <li>
                       Do not create duplicate annotations for the same element.
                     </li>
                     <li>
-                      Do not use overly generic labels like &quot;Element 1&quot; or
-                      &quot;Thing&quot;.
+                      Do not use overly generic labels like &quot;Element
+                      1&quot; or &quot;Thing&quot;.
                     </li>
                     <li>
                       Do not leave bounding boxes that extend beyond the image

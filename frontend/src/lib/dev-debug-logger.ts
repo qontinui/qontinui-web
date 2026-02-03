@@ -56,7 +56,8 @@ class DevDebugLogger {
   };
   private originalFetch: typeof fetch | null = null;
   // Deduplication for repeated errors
-  private recentErrors: Map<string, { count: number; lastTime: number }> = new Map();
+  private recentErrors: Map<string, { count: number; lastTime: number }> =
+    new Map();
   private errorDedupeWindow: number = 10000; // 10 seconds
 
   constructor() {
@@ -111,7 +112,10 @@ class DevDebugLogger {
           return;
         }
         // Add note about repetition
-        entry = { ...entry, message: `${entry.message} (repeated ${existing.count}x)` };
+        entry = {
+          ...entry,
+          message: `${entry.message} (repeated ${existing.count}x)`,
+        };
       } else {
         // New error or outside dedup window
         this.recentErrors.set(errorKey, { count: 1, lastTime: now });

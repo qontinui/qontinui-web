@@ -113,7 +113,10 @@ export function AccessibilityTreeViewer({
           .filter((child): child is AccessibilityNode => child !== null) ?? [];
 
       // Include node if it matches or has matching descendants
-      if ((matchesSearch && matchesRole && matchesInteractive) || filteredChildren.length > 0) {
+      if (
+        (matchesSearch && matchesRole && matchesInteractive) ||
+        filteredChildren.length > 0
+      ) {
         return {
           ...node,
           children: filteredChildren,
@@ -140,14 +143,18 @@ export function AccessibilityTreeViewer({
   }, [snapshot?.root]);
 
   return (
-    <div className={cn("flex flex-col h-full", className)} data-slot="accessibility-tree-viewer">
+    <div
+      className={cn("flex flex-col h-full", className)}
+      data-slot="accessibility-tree-viewer"
+    >
       {/* Header */}
       <div className="flex items-center justify-between p-3 border-b">
         <div className="flex items-center gap-2">
           <h3 className="font-semibold text-sm">Accessibility Tree</h3>
           {snapshot && (
             <span className="text-xs text-muted-foreground">
-              {snapshot.total_nodes ?? 0} nodes ({snapshot.interactive_nodes ?? 0} interactive)
+              {snapshot.total_nodes ?? 0} nodes (
+              {snapshot.interactive_nodes ?? 0} interactive)
             </span>
           )}
         </div>
@@ -196,7 +203,11 @@ export function AccessibilityTreeViewer({
 
         <Collapsible open={filtersOpen} onOpenChange={setFiltersOpen}>
           <CollapsibleTrigger asChild>
-            <Button variant="ghost" size="sm" className="w-full justify-between">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-between"
+            >
               <span className="flex items-center gap-2">
                 <Filter className="h-4 w-4" />
                 Filters
@@ -226,7 +237,11 @@ export function AccessibilityTreeViewer({
                 <select
                   value={roleFilter ?? ""}
                   onChange={(e) =>
-                    setRoleFilter(e.target.value ? (e.target.value as AccessibilityRole) : null)
+                    setRoleFilter(
+                      e.target.value
+                        ? (e.target.value as AccessibilityRole)
+                        : null
+                    )
                   }
                   className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
                 >
@@ -295,7 +310,9 @@ export function AccessibilityTreeViewer({
         <div className="p-2 border-t text-xs text-muted-foreground">
           {snapshot.title && <div className="truncate">{snapshot.title}</div>}
           {snapshot.url && (
-            <div className="truncate text-[10px] opacity-75">{snapshot.url}</div>
+            <div className="truncate text-[10px] opacity-75">
+              {snapshot.url}
+            </div>
           )}
         </div>
       )}

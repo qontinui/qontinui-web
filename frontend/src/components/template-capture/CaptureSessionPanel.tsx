@@ -141,20 +141,28 @@ export function CaptureSessionPanel({
                   <Circle className="h-5 w-5 text-red-500 fill-red-500 absolute inset-0 animate-ping opacity-75" />
                 </div>
                 <div>
-                  <p className="font-medium text-red-700 dark:text-red-400">Recording in Progress</p>
+                  <p className="font-medium text-red-700 dark:text-red-400">
+                    Recording in Progress
+                  </p>
                   {state.applicationName && (
-                    <p className="text-sm text-red-600 dark:text-red-500">{state.applicationName}</p>
+                    <p className="text-sm text-red-600 dark:text-red-500">
+                      {state.applicationName}
+                    </p>
                   )}
                 </div>
               </div>
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2 text-red-700 dark:text-red-400">
                   <MousePointerClick className="h-4 w-4" />
-                  <span className="font-mono">{state.clickCount || 0} clicks</span>
+                  <span className="font-mono">
+                    {state.clickCount || 0} clicks
+                  </span>
                 </div>
                 <div className="flex items-center gap-2 text-red-700 dark:text-red-400">
                   <Clock className="h-4 w-4" />
-                  <span className="font-mono text-lg">{formatDuration(state.duration)}</span>
+                  <span className="font-mono text-lg">
+                    {formatDuration(state.duration)}
+                  </span>
                 </div>
               </div>
             </div>
@@ -167,7 +175,9 @@ export function CaptureSessionPanel({
                 <ul className="list-disc list-inside text-xs mt-1 space-y-0.5">
                   <li>Click in the center of buttons and UI elements</li>
                   <li>Avoid clicking on moving or animated elements</li>
-                  <li>Click on distinct visual elements with clear boundaries</li>
+                  <li>
+                    Click on distinct visual elements with clear boundaries
+                  </li>
                 </ul>
               </div>
             </div>
@@ -269,8 +279,19 @@ export function CaptureSessionPanel({
                 <div className="text-xs text-amber-600 dark:text-amber-500 space-y-1">
                   <p className="font-medium">To start the runner:</p>
                   <ol className="list-decimal list-inside space-y-0.5">
-                    <li>Open a terminal in the <code className="bg-amber-100 dark:bg-amber-900 px-1 rounded">qontinui-runner</code> directory</li>
-                    <li>Run <code className="bg-amber-100 dark:bg-amber-900 px-1 rounded">npm run tauri dev</code></li>
+                    <li>
+                      Open a terminal in the{" "}
+                      <code className="bg-amber-100 dark:bg-amber-900 px-1 rounded">
+                        qontinui-runner
+                      </code>{" "}
+                      directory
+                    </li>
+                    <li>
+                      Run{" "}
+                      <code className="bg-amber-100 dark:bg-amber-900 px-1 rounded">
+                        npm run tauri dev
+                      </code>
+                    </li>
                     <li>Wait for the desktop app to launch</li>
                   </ol>
                 </div>

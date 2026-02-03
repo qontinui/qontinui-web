@@ -73,7 +73,8 @@ export function VersionHistoryDialog({
               <History className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No versions saved yet.</p>
               <p className="text-sm mt-1">
-                Use &quot;Save Version&quot; from the toolbar to create a snapshot.
+                Use &quot;Save Version&quot; from the toolbar to create a
+                snapshot.
               </p>
             </div>
           ) : (

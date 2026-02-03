@@ -639,7 +639,10 @@ function ProjectSwitcher({
         >
           <div
             className="flex size-8 shrink-0 items-center justify-center rounded-md"
-            style={{ backgroundColor: "var(--brand-secondary)", color: "white" }}
+            style={{
+              backgroundColor: "var(--brand-secondary)",
+              color: "white",
+            }}
           >
             <Workflow className="size-4" />
           </div>
@@ -682,7 +685,10 @@ function ProjectSwitcher({
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={onCreateProject} data-tutorial-id="sidebar-create-project">
+        <DropdownMenuItem
+          onClick={onCreateProject}
+          data-tutorial-id="sidebar-create-project"
+        >
           <div className="flex items-center gap-2 text-text-muted">
             <span>+ Create new project</span>
           </div>
@@ -853,7 +859,9 @@ function CollapsibleNavItem({
                     : "text-text-muted hover:bg-surface-hover hover:text-text-primary"
                 )}
               >
-                <span style={{ color: isParentActive ? item.color : undefined }}>
+                <span
+                  style={{ color: isParentActive ? item.color : undefined }}
+                >
                   {item.icon}
                 </span>
               </button>
@@ -1085,7 +1093,9 @@ function UserMenu({
             <span className="text-sm font-medium text-text-primary">
               {user.username || user.email.split("@")[0]}
             </span>
-            <span className="truncate text-xs text-text-muted">{user.email}</span>
+            <span className="truncate text-xs text-text-muted">
+              {user.email}
+            </span>
           </div>
           <ChevronDown className="size-4 shrink-0 text-text-muted" />
         </button>

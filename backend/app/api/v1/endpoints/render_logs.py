@@ -5,7 +5,7 @@ This module provides REST API endpoints for storing and retrieving DOM snapshots
 captured by the frontend for UI Bridge state discovery.
 """
 
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 

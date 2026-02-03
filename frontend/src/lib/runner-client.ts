@@ -846,7 +846,8 @@ class RunnerClient {
         screenshot_height: 0,
         template_width: 0,
         template_height: 0,
-        error: error instanceof Error ? error.message : "Failed to find pattern",
+        error:
+          error instanceof Error ? error.message : "Failed to find pattern",
       };
     }
   }
@@ -908,7 +909,9 @@ class RunnerClient {
         template_width: 0,
         template_height: 0,
         error:
-          error instanceof Error ? error.message : "Failed to find all patterns",
+          error instanceof Error
+            ? error.message
+            : "Failed to find all patterns",
       };
     }
   }
@@ -938,7 +941,11 @@ class RunnerClient {
 
       const data = await response.json();
       if (data.data) {
-        return { success: true, models: data.data.models || [], error: data.error };
+        return {
+          success: true,
+          models: data.data.models || [],
+          error: data.error,
+        };
       }
       return data;
     } catch (error) {
@@ -954,7 +961,10 @@ class RunnerClient {
    * Download a model
    * Note: This is a long-running operation that returns when complete
    */
-  async downloadModel(modelId: string, force = false): Promise<ModelDownloadResponse> {
+  async downloadModel(
+    modelId: string,
+    force = false
+  ): Promise<ModelDownloadResponse> {
     const controller = new AbortController();
     // 10 minute timeout for model downloads
     const timeoutId = setTimeout(() => controller.abort(), 600000);
@@ -989,7 +999,8 @@ class RunnerClient {
       clearTimeout(timeoutId);
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to download model",
+        error:
+          error instanceof Error ? error.message : "Failed to download model",
       };
     }
   }
@@ -997,7 +1008,9 @@ class RunnerClient {
   /**
    * Delete a downloaded model
    */
-  async deleteModel(modelId: string): Promise<{ success: boolean; deleted?: boolean; error?: string }> {
+  async deleteModel(
+    modelId: string
+  ): Promise<{ success: boolean; deleted?: boolean; error?: string }> {
     try {
       const response = await fetch(`${this.baseUrl}/models/delete`, {
         method: "POST",
@@ -1024,7 +1037,8 @@ class RunnerClient {
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to delete model",
+        error:
+          error instanceof Error ? error.message : "Failed to delete model",
       };
     }
   }
@@ -1063,7 +1077,8 @@ class RunnerClient {
         available: false,
         path: null,
         info: null,
-        error: error instanceof Error ? error.message : "Failed to get model status",
+        error:
+          error instanceof Error ? error.message : "Failed to get model status",
       };
     }
   }
@@ -1100,7 +1115,8 @@ class RunnerClient {
         total_bytes: 0,
         models: {},
         models_dir: "",
-        error: error instanceof Error ? error.message : "Failed to get disk usage",
+        error:
+          error instanceof Error ? error.message : "Failed to get disk usage",
       };
     }
   }
@@ -1150,7 +1166,9 @@ class RunnerClient {
       return {
         success: false,
         error:
-          error instanceof Error ? error.message : "Failed to start integration test",
+          error instanceof Error
+            ? error.message
+            : "Failed to start integration test",
       };
     }
   }
@@ -1158,12 +1176,15 @@ class RunnerClient {
   /**
    * Get test run status
    */
-  async getTestRunStatus(
-    runId: string
-  ): Promise<{
+  async getTestRunStatus(runId: string): Promise<{
     success: boolean;
     status?: TestRunStatus;
-    progress?: { total: number; passed: number; failed: number; pending: number };
+    progress?: {
+      total: number;
+      passed: number;
+      failed: number;
+      pending: number;
+    };
     error?: string;
   }> {
     try {
@@ -1174,7 +1195,10 @@ class RunnerClient {
       });
 
       if (!response.ok) {
-        return { success: false, error: `Failed to get status: ${response.status}` };
+        return {
+          success: false,
+          error: `Failed to get status: ${response.status}`,
+        };
       }
 
       const data = await response.json();
@@ -1186,7 +1210,8 @@ class RunnerClient {
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to get test status",
+        error:
+          error instanceof Error ? error.message : "Failed to get test status",
       };
     }
   }
@@ -1205,7 +1230,10 @@ class RunnerClient {
       });
 
       if (!response.ok) {
-        return { success: false, error: `Failed to get results: ${response.status}` };
+        return {
+          success: false,
+          error: `Failed to get results: ${response.status}`,
+        };
       }
 
       const data = await response.json();
@@ -1216,7 +1244,8 @@ class RunnerClient {
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to get test results",
+        error:
+          error instanceof Error ? error.message : "Failed to get test results",
       };
     }
   }
@@ -1228,14 +1257,20 @@ class RunnerClient {
     limit = 50
   ): Promise<{ success: boolean; runs?: TestRunSummary[]; error?: string }> {
     try {
-      const response = await fetch(`${this.baseUrl}/testing/runs?limit=${limit}`, {
-        method: "GET",
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(10000),
-      });
+      const response = await fetch(
+        `${this.baseUrl}/testing/runs?limit=${limit}`,
+        {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          signal: AbortSignal.timeout(10000),
+        }
+      );
 
       if (!response.ok) {
-        return { success: false, error: `Failed to list runs: ${response.status}` };
+        return {
+          success: false,
+          error: `Failed to list runs: ${response.status}`,
+        };
       }
 
       const data = await response.json();
@@ -1246,7 +1281,8 @@ class RunnerClient {
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to list test runs",
+        error:
+          error instanceof Error ? error.message : "Failed to list test runs",
       };
     }
   }
@@ -1265,7 +1301,10 @@ class RunnerClient {
       });
 
       if (!response.ok) {
-        return { success: false, error: `Failed to end test: ${response.status}` };
+        return {
+          success: false,
+          error: `Failed to end test: ${response.status}`,
+        };
       }
 
       const data = await response.json();
@@ -1276,7 +1315,8 @@ class RunnerClient {
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to end test run",
+        error:
+          error instanceof Error ? error.message : "Failed to end test run",
       };
     }
   }
@@ -1297,7 +1337,10 @@ class RunnerClient {
       });
 
       if (!response.ok) {
-        return { success: false, error: `Failed to get states: ${response.status}` };
+        return {
+          success: false,
+          error: `Failed to get states: ${response.status}`,
+        };
       }
 
       const data = await response.json();
@@ -1329,7 +1372,10 @@ class RunnerClient {
       });
 
       if (!response.ok) {
-        return { success: false, error: `Failed to get transitions: ${response.status}` };
+        return {
+          success: false,
+          error: `Failed to get transitions: ${response.status}`,
+        };
       }
 
       const data = await response.json();
@@ -1340,7 +1386,8 @@ class RunnerClient {
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to get transitions",
+        error:
+          error instanceof Error ? error.message : "Failed to get transitions",
       };
     }
   }
@@ -1364,7 +1411,10 @@ class RunnerClient {
       });
 
       if (!response.ok) {
-        return { success: false, error: `Failed to find path: ${response.status}` };
+        return {
+          success: false,
+          error: `Failed to find path: ${response.status}`,
+        };
       }
 
       const data = await response.json();
@@ -1400,7 +1450,10 @@ class RunnerClient {
       });
 
       if (!response.ok) {
-        return { success: false, error: `Failed to traverse: ${response.status}` };
+        return {
+          success: false,
+          error: `Failed to traverse: ${response.status}`,
+        };
       }
 
       const data = await response.json();
@@ -1412,7 +1465,10 @@ class RunnerClient {
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to traverse to state",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to traverse to state",
       };
     }
   }
@@ -1433,7 +1489,10 @@ class RunnerClient {
       });
 
       if (!response.ok) {
-        return { success: false, error: `Failed to get active states: ${response.status}` };
+        return {
+          success: false,
+          error: `Failed to get active states: ${response.status}`,
+        };
       }
 
       const data = await response.json();
@@ -1444,7 +1503,10 @@ class RunnerClient {
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to get active states",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to get active states",
       };
     }
   }
@@ -1452,7 +1514,9 @@ class RunnerClient {
   /**
    * Set mock mode
    */
-  async setMockMode(mode: MockMode): Promise<{ success: boolean; error?: string }> {
+  async setMockMode(
+    mode: MockMode
+  ): Promise<{ success: boolean; error?: string }> {
     try {
       const response = await fetch(`${this.baseUrl}/testing/mock-mode`, {
         method: "POST",
@@ -1465,14 +1529,18 @@ class RunnerClient {
       });
 
       if (!response.ok) {
-        return { success: false, error: `Failed to set mock mode: ${response.status}` };
+        return {
+          success: false,
+          error: `Failed to set mock mode: ${response.status}`,
+        };
       }
 
       return { success: true };
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to set mock mode",
+        error:
+          error instanceof Error ? error.message : "Failed to set mock mode",
       };
     }
   }
@@ -1496,7 +1564,10 @@ class RunnerClient {
       });
 
       if (!response.ok) {
-        return { success: false, error: `Failed to mock action: ${response.status}` };
+        return {
+          success: false,
+          error: `Failed to mock action: ${response.status}`,
+        };
       }
 
       const data = await response.json();
@@ -1528,7 +1599,10 @@ class RunnerClient {
       });
 
       if (!response.ok) {
-        return { success: false, error: `Failed to get mocked actions: ${response.status}` };
+        return {
+          success: false,
+          error: `Failed to get mocked actions: ${response.status}`,
+        };
       }
 
       const data = await response.json();
@@ -1539,7 +1613,10 @@ class RunnerClient {
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to get mocked actions",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to get mocked actions",
       };
     }
   }
@@ -1549,21 +1626,30 @@ class RunnerClient {
    */
   async clearMockedActions(): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await fetch(`${this.baseUrl}/testing/clear-mocked-actions`, {
-        method: "POST",
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(10000),
-      });
+      const response = await fetch(
+        `${this.baseUrl}/testing/clear-mocked-actions`,
+        {
+          method: "POST",
+          headers: { Accept: "application/json" },
+          signal: AbortSignal.timeout(10000),
+        }
+      );
 
       if (!response.ok) {
-        return { success: false, error: `Failed to clear mocked actions: ${response.status}` };
+        return {
+          success: false,
+          error: `Failed to clear mocked actions: ${response.status}`,
+        };
       }
 
       return { success: true };
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to clear mocked actions",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to clear mocked actions",
       };
     }
   }
@@ -1576,7 +1662,11 @@ class RunnerClient {
     target: string,
     expected?: unknown,
     timeoutSeconds = 30
-  ): Promise<{ success: boolean; assertion?: AssertionResult; error?: string }> {
+  ): Promise<{
+    success: boolean;
+    assertion?: AssertionResult;
+    error?: string;
+  }> {
     try {
       const response = await fetch(`${this.baseUrl}/testing/assertion`, {
         method: "POST",
@@ -1594,7 +1684,10 @@ class RunnerClient {
       });
 
       if (!response.ok) {
-        return { success: false, error: `Failed to run assertion: ${response.status}` };
+        return {
+          success: false,
+          error: `Failed to run assertion: ${response.status}`,
+        };
       }
 
       const data = await response.json();
@@ -1605,7 +1698,8 @@ class RunnerClient {
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to run assertion",
+        error:
+          error instanceof Error ? error.message : "Failed to run assertion",
       };
     }
   }
@@ -1675,7 +1769,8 @@ class RunnerClient {
       return {
         success: false,
         workflow_name: workflowName,
-        error: error instanceof Error ? error.message : "Failed to run workflow",
+        error:
+          error instanceof Error ? error.message : "Failed to run workflow",
       };
     }
   }
@@ -1705,7 +1800,8 @@ class RunnerClient {
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to stop workflow",
+        error:
+          error instanceof Error ? error.message : "Failed to stop workflow",
       };
     }
   }
@@ -1758,7 +1854,10 @@ class RunnerClient {
       clearTimeout(timeoutId);
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to start click capture",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to start click capture",
       };
     }
   }
@@ -1802,7 +1901,10 @@ class RunnerClient {
       clearTimeout(timeoutId);
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to stop click capture",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to stop click capture",
       };
     }
   }
@@ -1841,7 +1943,10 @@ class RunnerClient {
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to get click capture status",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to get click capture status",
       };
     }
   }

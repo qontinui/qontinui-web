@@ -234,7 +234,8 @@ export function getRecommendedNextTutorial(
       advanced: 2,
     };
 
-    const diffDiff = difficultyOrder[a.difficulty] - difficultyOrder[b.difficulty];
+    const diffDiff =
+      difficultyOrder[a.difficulty] - difficultyOrder[b.difficulty];
     if (diffDiff !== 0) return diffDiff;
 
     return (a.estimatedTime ?? 0) - (b.estimatedTime ?? 0);
@@ -269,7 +270,10 @@ export function getTutorialStats(completedTutorialIds: string[]): {
   byDifficulty: Record<DifficultyLevel, { total: number; completed: number }>;
   byCategory: Record<string, { total: number; completed: number }>;
 } {
-  const byDifficulty: Record<DifficultyLevel, { total: number; completed: number }> = {
+  const byDifficulty: Record<
+    DifficultyLevel,
+    { total: number; completed: number }
+  > = {
     beginner: { total: 0, completed: 0 },
     intermediate: { total: 0, completed: 0 },
     advanced: { total: 0, completed: 0 },

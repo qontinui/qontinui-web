@@ -220,14 +220,21 @@ function exportToCSV(
 export function exportTrainingData(
   elements: AnnotatedElement[],
   options: ExportOptions
-): { data: string | object; filename: string; mimeType: string; extra?: { filename: string; data: string } } {
+): {
+  data: string | object;
+  filename: string;
+  mimeType: string;
+  extra?: { filename: string; data: string };
+} {
   // Filter elements if needed
   const filteredElements = options.includeAllElements
     ? elements
     : elements.filter((el) => el.isGroundTruth);
 
   if (filteredElements.length === 0) {
-    throw new Error("No elements to export. Mark some elements as ground truth or enable 'Include all elements'.");
+    throw new Error(
+      "No elements to export. Mark some elements as ground truth or enable 'Include all elements'."
+    );
   }
 
   switch (options.format) {
@@ -275,7 +282,8 @@ export function downloadExport(
   filename: string,
   mimeType: string
 ): void {
-  const content = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+  const content =
+    typeof data === "string" ? data : JSON.stringify(data, null, 2);
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
 
@@ -291,22 +299,28 @@ export function downloadExport(
 /**
  * Get format display info
  */
-export function getFormatInfo(format: ExportFormat): { name: string; description: string } {
+export function getFormatInfo(format: ExportFormat): {
+  name: string;
+  description: string;
+} {
   switch (format) {
     case "coco":
       return {
         name: "COCO JSON",
-        description: "Standard COCO format for object detection. Compatible with most ML frameworks.",
+        description:
+          "Standard COCO format for object detection. Compatible with most ML frameworks.",
       };
     case "yolo":
       return {
         name: "YOLO",
-        description: "YOLO format with normalized coordinates. Creates annotations.txt and classes.txt.",
+        description:
+          "YOLO format with normalized coordinates. Creates annotations.txt and classes.txt.",
       };
     case "csv":
       return {
         name: "CSV",
-        description: "Simple spreadsheet format. Easy to view and edit in Excel or Google Sheets.",
+        description:
+          "Simple spreadsheet format. Easy to view and edit in Excel or Google Sheets.",
       };
   }
 }

@@ -54,7 +54,9 @@ export function DBErrorHandler() {
 
   useEffect(() => {
     // Handler for storage corruption detection from our custom events
-    const handleStorageCorrupted = (event: CustomEvent<StorageCorruptedDetail>) => {
+    const handleStorageCorrupted = (
+      event: CustomEvent<StorageCorruptedDetail>
+    ) => {
       if (!hasShownCorruptionMessage.current) {
         hasShownCorruptionMessage.current = true;
         setShowBanner(true);
@@ -66,7 +68,9 @@ export function DBErrorHandler() {
     };
 
     // Handler for successful recovery
-    const handleStorageRecovered = (event: CustomEvent<StorageRecoveredDetail>) => {
+    const handleStorageRecovered = (
+      event: CustomEvent<StorageRecoveredDetail>
+    ) => {
       hasShownCorruptionMessage.current = false;
       setShowBanner(false);
       toast.success("Storage Recovered", {
@@ -80,7 +84,9 @@ export function DBErrorHandler() {
     };
 
     // Handler for failed recovery
-    const handleRecoveryFailed = (event: CustomEvent<StorageRecoveryFailedDetail>) => {
+    const handleRecoveryFailed = (
+      event: CustomEvent<StorageRecoveryFailedDetail>
+    ) => {
       setShowBanner(true);
       toast.error("Storage Recovery Failed", {
         description: event.detail.message,
@@ -125,7 +131,10 @@ export function DBErrorHandler() {
             ? reason
             : "";
 
-      if (isStorageCorruptionError(message) && !hasShownCorruptionMessage.current) {
+      if (
+        isStorageCorruptionError(message) &&
+        !hasShownCorruptionMessage.current
+      ) {
         hasShownCorruptionMessage.current = true;
         setShowBanner(true);
 
@@ -187,7 +196,10 @@ export function DBErrorHandler() {
         "db-quota-exceeded",
         handleQuotaExceeded as EventListener
       );
-      window.removeEventListener("unhandledrejection", handleUnhandledRejection);
+      window.removeEventListener(
+        "unhandledrejection",
+        handleUnhandledRejection
+      );
     };
   }, []);
 
@@ -198,8 +210,8 @@ export function DBErrorHandler() {
         <div className="flex items-center gap-2">
           <span className="font-medium">Browser Storage Error:</span>
           <span>
-            Local storage is corrupted. Clear site data to fix (F12 → Application
-            → Storage → Clear site data).
+            Local storage is corrupted. Clear site data to fix (F12 →
+            Application → Storage → Clear site data).
           </span>
         </div>
         <button

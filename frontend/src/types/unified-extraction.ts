@@ -588,7 +588,9 @@ export function isVisionElement(element: UnifiedElement): boolean {
  * Type guard to check if an element is from pattern matching.
  */
 export function isPatternElement(element: UnifiedElement): boolean {
-  return element.detectionMethod === "pattern" || element.similarity !== undefined;
+  return (
+    element.detectionMethod === "pattern" || element.similarity !== undefined
+  );
 }
 
 /**

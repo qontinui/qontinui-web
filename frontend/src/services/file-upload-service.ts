@@ -25,7 +25,7 @@ export class FileUploadService {
           this.csrfToken = match[1] ?? null;
         }
       }
-    } catch (error) {
+    } catch (_error) {
       console.warn("CSRF token not found");
     }
   }

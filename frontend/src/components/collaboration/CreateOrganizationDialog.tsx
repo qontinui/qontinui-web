@@ -66,7 +66,10 @@ export function CreateOrganizationDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]" data-ui-id="dialog-create-organization">
+      <DialogContent
+        className="sm:max-w-[500px]"
+        data-ui-id="dialog-create-organization"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Building2 className="h-5 w-5" />
@@ -121,7 +124,11 @@ export function CreateOrganizationDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={loading || !name.trim()} data-ui-id="dialog-create-organization-confirm-btn">
+            <Button
+              type="submit"
+              disabled={loading || !name.trim()}
+              data-ui-id="dialog-create-organization-confirm-btn"
+            >
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

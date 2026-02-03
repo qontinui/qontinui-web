@@ -168,7 +168,10 @@ export const QuickAddMenu: React.FC<QuickAddMenuProps> = ({
       </div>
 
       {/* Results */}
-      <div className="quick-add-menu__results" data-ui-id="canvas-quickadd-results-list">
+      <div
+        className="quick-add-menu__results"
+        data-ui-id="canvas-quickadd-results-list"
+      >
         {/* Header */}
         {!query && recentTypes.length > 0 && (
           <div className="quick-add-menu__section-header">
@@ -356,7 +359,10 @@ export const QuickActionsPanel: React.FC<QuickActionsPanelProps> = ({
         ].slice(0, maxItems);
 
   return (
-    <div className={cn("quick-actions-panel", className)} data-ui-id="canvas-quickactions-panel">
+    <div
+      className={cn("quick-actions-panel", className)}
+      data-ui-id="canvas-quickactions-panel"
+    >
       <div className="quick-actions-panel__header">
         <Zap className="h-4 w-4 text-yellow-500" />
         <span className="text-sm font-medium text-text-secondary">

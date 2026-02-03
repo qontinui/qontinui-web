@@ -87,10 +87,7 @@ export function BoundaryAdjustmentEditor({
 
   // Mouse handlers for drag operations
   const handleMouseDown = useCallback(
-    (
-      e: React.MouseEvent,
-      type: DragState["type"]
-    ) => {
+    (e: React.MouseEvent, type: DragState["type"]) => {
       e.preventDefault();
       e.stopPropagation();
       setDragState({
@@ -121,22 +118,46 @@ export function BoundaryAdjustmentEditor({
           case "resize-nw":
             newBoundary.x = Math.max(0, dragState.startBoundary.x + dx);
             newBoundary.y = Math.max(0, dragState.startBoundary.y + dy);
-            newBoundary.width = Math.max(10, dragState.startBoundary.width - dx);
-            newBoundary.height = Math.max(10, dragState.startBoundary.height - dy);
+            newBoundary.width = Math.max(
+              10,
+              dragState.startBoundary.width - dx
+            );
+            newBoundary.height = Math.max(
+              10,
+              dragState.startBoundary.height - dy
+            );
             break;
           case "resize-ne":
             newBoundary.y = Math.max(0, dragState.startBoundary.y + dy);
-            newBoundary.width = Math.max(10, dragState.startBoundary.width + dx);
-            newBoundary.height = Math.max(10, dragState.startBoundary.height - dy);
+            newBoundary.width = Math.max(
+              10,
+              dragState.startBoundary.width + dx
+            );
+            newBoundary.height = Math.max(
+              10,
+              dragState.startBoundary.height - dy
+            );
             break;
           case "resize-sw":
             newBoundary.x = Math.max(0, dragState.startBoundary.x + dx);
-            newBoundary.width = Math.max(10, dragState.startBoundary.width - dx);
-            newBoundary.height = Math.max(10, dragState.startBoundary.height + dy);
+            newBoundary.width = Math.max(
+              10,
+              dragState.startBoundary.width - dx
+            );
+            newBoundary.height = Math.max(
+              10,
+              dragState.startBoundary.height + dy
+            );
             break;
           case "resize-se":
-            newBoundary.width = Math.max(10, dragState.startBoundary.width + dx);
-            newBoundary.height = Math.max(10, dragState.startBoundary.height + dy);
+            newBoundary.width = Math.max(
+              10,
+              dragState.startBoundary.width + dx
+            );
+            newBoundary.height = Math.max(
+              10,
+              dragState.startBoundary.height + dy
+            );
             break;
         }
 
@@ -162,7 +183,10 @@ export function BoundaryAdjustmentEditor({
 
   // Zoom controls
   const zoomIn = useCallback(() => setZoom((z) => Math.min(z * 1.25, 5)), []);
-  const zoomOut = useCallback(() => setZoom((z) => Math.max(z / 1.25, 0.25)), []);
+  const zoomOut = useCallback(
+    () => setZoom((z) => Math.max(z / 1.25, 0.25)),
+    []
+  );
 
   return (
     <Dialog open onOpenChange={(open) => !open && onCancel()}>
@@ -286,7 +310,11 @@ export function BoundaryAdjustmentEditor({
                     ["nw", boundary.x, boundary.y],
                     ["ne", boundary.x + boundary.width, boundary.y],
                     ["sw", boundary.x, boundary.y + boundary.height],
-                    ["se", boundary.x + boundary.width, boundary.y + boundary.height],
+                    [
+                      "se",
+                      boundary.x + boundary.width,
+                      boundary.y + boundary.height,
+                    ],
                   ] as const
                 ).map(([dir, cx, cy]) => (
                   <circle

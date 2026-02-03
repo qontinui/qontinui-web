@@ -31,7 +31,11 @@ export interface BoundingBox {
   height: number;
 }
 
-export type ReviewStatus = "pending" | "approved" | "rejected" | "needs_revision";
+export type ReviewStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "needs_revision";
 
 export interface AnnotatedElement {
   id: string;
@@ -177,7 +181,11 @@ interface ExtractionAnnotationState {
   isCollaborating: boolean;
 
   // Actions - Session
-  setSession: (extractionId: string, screenshotId?: string, sourceUrl?: string) => void;
+  setSession: (
+    extractionId: string,
+    screenshotId?: string,
+    sourceUrl?: string
+  ) => void;
 
   // Actions - Elements
   setElements: (elements: AnnotatedElement[], description?: string) => void;
@@ -217,7 +225,10 @@ interface ExtractionAnnotationState {
   setScreenshot: (url: string | null, width: number, height: number) => void;
   setZoom: (zoom: number) => void;
   setPan: (pan: { x: number; y: number }) => void;
-  setDrawing: (isDrawing: boolean, start: { x: number; y: number } | null) => void;
+  setDrawing: (
+    isDrawing: boolean,
+    start: { x: number; y: number } | null
+  ) => void;
 
   // Actions - Grid
   setGridEnabled: (enabled: boolean) => void;
@@ -233,7 +244,11 @@ interface ExtractionAnnotationState {
   cancelAutoSave: () => void;
 
   // Actions - Review workflow
-  setReviewStatus: (ids: string[], status: ReviewStatus, comment?: string) => void;
+  setReviewStatus: (
+    ids: string[],
+    status: ReviewStatus,
+    comment?: string
+  ) => void;
   bulkApprove: () => void;
   bulkReject: (comment?: string) => void;
 
@@ -250,13 +265,23 @@ interface ExtractionAnnotationState {
   setCollaborators: (collaborators: CollaboratorInfo[]) => void;
   addCollaborator: (collaborator: CollaboratorInfo) => void;
   removeCollaborator: (userId: string) => void;
-  updateCollaboratorCursor: (userId: string, cursor: { x: number; y: number; viewport_id?: string } | null) => void;
+  updateCollaboratorCursor: (
+    userId: string,
+    cursor: { x: number; y: number; viewport_id?: string } | null
+  ) => void;
   updateCollaboratorSelection: (userId: string, selection: string[]) => void;
   setIsCollaborating: (isCollaborating: boolean) => void;
-  applyRemoteElementUpdate: (elementId: string, changes: Partial<AnnotatedElement>) => void;
+  applyRemoteElementUpdate: (
+    elementId: string,
+    changes: Partial<AnnotatedElement>
+  ) => void;
   applyRemoteElementAdd: (element: AnnotatedElement) => void;
   applyRemoteElementDelete: (elementIds: string[]) => void;
-  applyRemoteElementMove: (elementIds: string[], deltaX: number, deltaY: number) => void;
+  applyRemoteElementMove: (
+    elementIds: string[],
+    deltaX: number,
+    deltaY: number
+  ) => void;
   applyRemoteElementResize: (elementId: string, bbox: BoundingBox) => void;
 
   // Actions - History
@@ -266,7 +291,9 @@ interface ExtractionAnnotationState {
 
   // Backend sync
   saveToBackend: () => Promise<{ success: boolean; error?: string }>;
-  loadFromBackend: (extractionId: string) => Promise<{ success: boolean; error?: string }>;
+  loadFromBackend: (
+    extractionId: string
+  ) => Promise<{ success: boolean; error?: string }>;
 
   // Helpers
   canUndo: () => boolean;
@@ -292,9 +319,15 @@ function generateVersionId(): string {
 }
 
 function saveToHistory(
-  state: Pick<ExtractionAnnotationState, "elements" | "selectedElementIds" | "history" | "historyIndex">,
+  state: Pick<
+    ExtractionAnnotationState,
+    "elements" | "selectedElementIds" | "history" | "historyIndex"
+  >,
   description?: string
-): Pick<ExtractionAnnotationState, "history" | "historyIndex" | "hasUnsavedChanges"> {
+): Pick<
+  ExtractionAnnotationState,
+  "history" | "historyIndex" | "hasUnsavedChanges"
+> {
   const entry: HistoryEntry = {
     elements: JSON.parse(JSON.stringify(state.elements)),
     selectedElementIds: [...state.selectedElementIds],
@@ -327,7 +360,10 @@ function boxesIntersect(a: BoundingBox, b: BoundingBox): boolean {
   );
 }
 
-function normalizeBox(start: { x: number; y: number }, end: { x: number; y: number }): BoundingBox {
+function normalizeBox(
+  start: { x: number; y: number },
+  end: { x: number; y: number }
+): BoundingBox {
   return {
     x: Math.min(start.x, end.x),
     y: Math.min(start.y, end.y),
@@ -390,7 +426,8 @@ export const useExtractionAnnotationStore = create<ExtractionAnnotationState>()(
       // Set current session
       setSession: (extractionId, screenshotId, sourceUrl) => {
         const state = get();
-        const newScreenshotId = screenshotId || generateScreenshotId(extractionId, 0);
+        const newScreenshotId =
+          screenshotId || generateScreenshotId(extractionId, 0);
 
         // If switching to a different session, reset state
         if (state.extractionId !== extractionId) {
@@ -422,7 +459,14 @@ export const useExtractionAnnotationStore = create<ExtractionAnnotationState>()(
         const state = get();
         set({
           elements,
-          ...saveToHistory({ ...state, elements, selectedElementIds: state.selectedElementIds }, description || "Set elements"),
+          ...saveToHistory(
+            {
+              ...state,
+              elements,
+              selectedElementIds: state.selectedElementIds,
+            },
+            description || "Set elements"
+          ),
         });
         get().triggerAutoSave();
       },
@@ -430,7 +474,9 @@ export const useExtractionAnnotationStore = create<ExtractionAnnotationState>()(
       addElement: (elementData) => {
         const state = get();
         const id = generateId();
-        const bbox = state.grid.enabled ? state.snapBboxToGrid(elementData.bbox) : elementData.bbox;
+        const bbox = state.grid.enabled
+          ? state.snapBboxToGrid(elementData.bbox)
+          : elementData.bbox;
         const element: AnnotatedElement = {
           ...elementData,
           bbox,
@@ -442,7 +488,10 @@ export const useExtractionAnnotationStore = create<ExtractionAnnotationState>()(
         set({
           elements: newElements,
           selectedElementIds: [id],
-          ...saveToHistory({ ...state, elements: newElements, selectedElementIds: [id] }, "Add element"),
+          ...saveToHistory(
+            { ...state, elements: newElements, selectedElementIds: [id] },
+            "Add element"
+          ),
         });
         get().triggerAutoSave();
         return id;
@@ -456,7 +505,9 @@ export const useExtractionAnnotationStore = create<ExtractionAnnotationState>()(
         for (const elementData of elementsData) {
           const id = generateId();
           ids.push(id);
-          const bbox = state.grid.enabled ? state.snapBboxToGrid(elementData.bbox) : elementData.bbox;
+          const bbox = state.grid.enabled
+            ? state.snapBboxToGrid(elementData.bbox)
+            : elementData.bbox;
           newElements.push({
             ...elementData,
             bbox,
@@ -468,7 +519,10 @@ export const useExtractionAnnotationStore = create<ExtractionAnnotationState>()(
         set({
           elements: newElements,
           selectedElementIds: ids,
-          ...saveToHistory({ ...state, elements: newElements, selectedElementIds: ids }, `Add ${ids.length} elements`),
+          ...saveToHistory(
+            { ...state, elements: newElements, selectedElementIds: ids },
+            `Add ${ids.length} elements`
+          ),
         });
         get().triggerAutoSave();
         return ids;
@@ -481,7 +535,10 @@ export const useExtractionAnnotationStore = create<ExtractionAnnotationState>()(
         );
         set({
           elements: newElements,
-          ...saveToHistory({ ...state, elements: newElements }, "Update element"),
+          ...saveToHistory(
+            { ...state, elements: newElements },
+            "Update element"
+          ),
         });
         get().triggerAutoSave();
       },
@@ -494,7 +551,10 @@ export const useExtractionAnnotationStore = create<ExtractionAnnotationState>()(
         );
         set({
           elements: newElements,
-          ...saveToHistory({ ...state, elements: newElements }, `Update ${ids.length} elements`),
+          ...saveToHistory(
+            { ...state, elements: newElements },
+            `Update ${ids.length} elements`
+          ),
         });
         get().triggerAutoSave();
       },
@@ -502,15 +562,20 @@ export const useExtractionAnnotationStore = create<ExtractionAnnotationState>()(
       deleteElement: (id) => {
         const state = get();
         const newElements = state.elements.filter((el) => el.id !== id);
-        const newSelectedIds = state.selectedElementIds.filter((eid) => eid !== id);
+        const newSelectedIds = state.selectedElementIds.filter(
+          (eid) => eid !== id
+        );
         set({
           elements: newElements,
           selectedElementIds: newSelectedIds,
-          ...saveToHistory({
-            ...state,
-            elements: newElements,
-            selectedElementIds: newSelectedIds,
-          }, "Delete element"),
+          ...saveToHistory(
+            {
+              ...state,
+              elements: newElements,
+              selectedElementIds: newSelectedIds,
+            },
+            "Delete element"
+          ),
         });
         get().triggerAutoSave();
       },
@@ -519,15 +584,20 @@ export const useExtractionAnnotationStore = create<ExtractionAnnotationState>()(
         const state = get();
         const idSet = new Set(ids);
         const newElements = state.elements.filter((el) => !idSet.has(el.id));
-        const newSelectedIds = state.selectedElementIds.filter((eid) => !idSet.has(eid));
+        const newSelectedIds = state.selectedElementIds.filter(
+          (eid) => !idSet.has(eid)
+        );
         set({
           elements: newElements,
           selectedElementIds: newSelectedIds,
-          ...saveToHistory({
-            ...state,
-            elements: newElements,
-            selectedElementIds: newSelectedIds,
-          }, `Delete ${ids.length} elements`),
+          ...saveToHistory(
+            {
+              ...state,
+              elements: newElements,
+              selectedElementIds: newSelectedIds,
+            },
+            `Delete ${ids.length} elements`
+          ),
         });
         get().triggerAutoSave();
       },
@@ -549,20 +619,28 @@ export const useExtractionAnnotationStore = create<ExtractionAnnotationState>()(
         });
         set({
           elements: newElements,
-          ...saveToHistory({ ...state, elements: newElements }, "Move elements"),
+          ...saveToHistory(
+            { ...state, elements: newElements },
+            "Move elements"
+          ),
         });
         get().triggerAutoSave();
       },
 
       resizeElement: (id, newBbox) => {
         const state = get();
-        const bbox = state.grid.enabled ? state.snapBboxToGrid(newBbox) : newBbox;
+        const bbox = state.grid.enabled
+          ? state.snapBboxToGrid(newBbox)
+          : newBbox;
         const newElements = state.elements.map((el) =>
           el.id === id ? { ...el, bbox } : el
         );
         set({
           elements: newElements,
-          ...saveToHistory({ ...state, elements: newElements }, "Resize element"),
+          ...saveToHistory(
+            { ...state, elements: newElements },
+            "Resize element"
+          ),
         });
         get().triggerAutoSave();
       },
@@ -629,7 +707,11 @@ export const useExtractionAnnotationStore = create<ExtractionAnnotationState>()(
 
       endSelectionBox: () => {
         const state = get();
-        if (state.selectionBox && state.selectionBox.width > 5 && state.selectionBox.height > 5) {
+        if (
+          state.selectionBox &&
+          state.selectionBox.width > 5 &&
+          state.selectionBox.height > 5
+        ) {
           const elementsInBox = state.getElementsInBox(state.selectionBox);
           set({ selectedElementIds: elementsInBox.map((el) => el.id) });
         }
@@ -662,15 +744,16 @@ export const useExtractionAnnotationStore = create<ExtractionAnnotationState>()(
         const state = get();
         if (!state.clipboard || state.clipboard.elements.length === 0) return;
 
-        const newElements: Omit<AnnotatedElement, "id">[] = state.clipboard.elements.map((el) => ({
-          ...el,
-          bbox: {
-            ...el.bbox,
-            x: el.bbox.x + offset.x,
-            y: el.bbox.y + offset.y,
-          },
-          reviewStatus: "pending" as ReviewStatus,
-        }));
+        const newElements: Omit<AnnotatedElement, "id">[] =
+          state.clipboard.elements.map((el) => ({
+            ...el,
+            bbox: {
+              ...el.bbox,
+              x: el.bbox.x + offset.x,
+              y: el.bbox.y + offset.y,
+            },
+            reviewStatus: "pending" as ReviewStatus,
+          }));
 
         state.addElements(newElements);
       },
@@ -754,7 +837,9 @@ export const useExtractionAnnotationStore = create<ExtractionAnnotationState>()(
       },
 
       setAutoSaveDebounce: (ms) => {
-        set((state) => ({ autoSave: { ...state.autoSave, debounceMs: Math.max(500, ms) } }));
+        set((state) => ({
+          autoSave: { ...state.autoSave, debounceMs: Math.max(500, ms) },
+        }));
       },
 
       triggerAutoSave: () => {
@@ -801,7 +886,10 @@ export const useExtractionAnnotationStore = create<ExtractionAnnotationState>()(
         );
         set({
           elements: newElements,
-          ...saveToHistory({ ...state, elements: newElements }, `Set review status: ${status}`),
+          ...saveToHistory(
+            { ...state, elements: newElements },
+            `Set review status: ${status}`
+          ),
         });
         get().triggerAutoSave();
       },
@@ -843,7 +931,10 @@ export const useExtractionAnnotationStore = create<ExtractionAnnotationState>()(
           elements: JSON.parse(JSON.stringify(version.elements)),
           currentVersionId: versionId,
           selectedElementIds: [],
-          ...saveToHistory({ ...state, elements: version.elements, selectedElementIds: [] }, `Load version from ${new Date(version.timestamp).toLocaleString()}`),
+          ...saveToHistory(
+            { ...state, elements: version.elements, selectedElementIds: [] },
+            `Load version from ${new Date(version.timestamp).toLocaleString()}`
+          ),
         });
       },
 
@@ -851,7 +942,10 @@ export const useExtractionAnnotationStore = create<ExtractionAnnotationState>()(
         const state = get();
         set({
           versions: state.versions.filter((v) => v.id !== versionId),
-          currentVersionId: state.currentVersionId === versionId ? null : state.currentVersionId,
+          currentVersionId:
+            state.currentVersionId === versionId
+              ? null
+              : state.currentVersionId,
         });
       },
 
@@ -862,7 +956,11 @@ export const useExtractionAnnotationStore = create<ExtractionAnnotationState>()(
 
         try {
           const result = await loadAnnotations(state.extractionId);
-          if (result.success && result.annotations && result.annotations.length > 0) {
+          if (
+            result.success &&
+            result.annotations &&
+            result.annotations.length > 0
+          ) {
             const remoteAnnotation = result.annotations[0]!;
 
             // Simple conflict detection: compare element counts and last saved times
@@ -913,7 +1011,9 @@ export const useExtractionAnnotationStore = create<ExtractionAnnotationState>()(
               const localIds = new Set(state.elements.map((el) => el.id));
               const mergedElements = [
                 ...state.elements,
-                ...state.conflict.remoteElements.filter((el) => !localIds.has(el.id)),
+                ...state.conflict.remoteElements.filter(
+                  (el) => !localIds.has(el.id)
+                ),
               ];
               set({
                 elements: mergedElements,
@@ -996,7 +1096,9 @@ export const useExtractionAnnotationStore = create<ExtractionAnnotationState>()(
         const idSet = new Set(elementIds);
         set((state) => ({
           elements: state.elements.filter((el) => !idSet.has(el.id)),
-          selectedElementIds: state.selectedElementIds.filter((id) => !idSet.has(id)),
+          selectedElementIds: state.selectedElementIds.filter(
+            (id) => !idSet.has(id)
+          ),
         }));
       },
 
@@ -1148,7 +1250,11 @@ export const useExtractionAnnotationStore = create<ExtractionAnnotationState>()(
         try {
           const result = await loadAnnotations(extractionId);
 
-          if (result.success && result.annotations && result.annotations.length > 0) {
+          if (
+            result.success &&
+            result.annotations &&
+            result.annotations.length > 0
+          ) {
             const firstAnnotation = result.annotations[0]!;
 
             set({
@@ -1202,7 +1308,9 @@ export const useExtractionAnnotationStore = create<ExtractionAnnotationState>()(
 
       getSelectedElements: () => {
         const state = get();
-        return state.elements.filter((el) => state.selectedElementIds.includes(el.id));
+        return state.elements.filter((el) =>
+          state.selectedElementIds.includes(el.id)
+        );
       },
 
       getVisibleElements: () => {
@@ -1246,9 +1354,13 @@ export const useExtractionAnnotationStore = create<ExtractionAnnotationState>()(
 
 // Legacy compatibility - map single selection to multi-selection
 // This helps components that still use selectedElementId
-Object.defineProperty(useExtractionAnnotationStore.getState(), 'selectedElementId', {
-  get() {
-    const ids = useExtractionAnnotationStore.getState().selectedElementIds;
-    return ids.length > 0 ? ids[0] : null;
-  },
-});
+Object.defineProperty(
+  useExtractionAnnotationStore.getState(),
+  "selectedElementId",
+  {
+    get() {
+      const ids = useExtractionAnnotationStore.getState().selectedElementIds;
+      return ids.length > 0 ? ids[0] : null;
+    },
+  }
+);

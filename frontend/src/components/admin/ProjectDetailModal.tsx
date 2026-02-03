@@ -48,7 +48,10 @@ export default function ProjectDetailModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh]" data-ui-id="dialog-project-detail">
+      <DialogContent
+        className="max-w-4xl max-h-[90vh]"
+        data-ui-id="dialog-project-detail"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5" />

@@ -109,7 +109,10 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
   const currentPage = data?.page || 1;
 
   return (
-    <Card className="bg-surface-raised/50 border-border-subtle/50" data-ui-id="testing-deficiency-list">
+    <Card
+      className="bg-surface-raised/50 border-border-subtle/50"
+      data-ui-id="testing-deficiency-list"
+    >
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="text-xl">Deficiencies</CardTitle>
@@ -150,7 +153,10 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
             </div>
           </div>
           <Select value={severityFilter} onValueChange={handleSeverityChange}>
-            <SelectTrigger className="bg-surface-canvas/50 border-border-default" data-ui-id="testing-deficiency-list-severity-select">
+            <SelectTrigger
+              className="bg-surface-canvas/50 border-border-default"
+              data-ui-id="testing-deficiency-list-severity-select"
+            >
               <SelectValue placeholder="Severity" />
             </SelectTrigger>
             <SelectContent>
@@ -162,7 +168,10 @@ export function DeficiencyList({ projectId, testRunId }: DeficiencyListProps) {
             </SelectContent>
           </Select>
           <Select value={statusFilter} onValueChange={handleStatusChange}>
-            <SelectTrigger className="bg-surface-canvas/50 border-border-default" data-ui-id="testing-deficiency-list-status-select">
+            <SelectTrigger
+              className="bg-surface-canvas/50 border-border-default"
+              data-ui-id="testing-deficiency-list-status-select"
+            >
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>

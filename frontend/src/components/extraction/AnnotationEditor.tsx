@@ -64,7 +64,10 @@ const REVIEW_COLORS: Record<ReviewStatus, string> = {
  * Check if an element's bounding box is visible within the viewport.
  * Used for viewport culling to skip rendering off-screen elements.
  */
-function isElementVisible(element: AnnotatedElement, viewport: Viewport): boolean {
+function isElementVisible(
+  element: AnnotatedElement,
+  viewport: Viewport
+): boolean {
   const { x, y, width, height } = element.bbox;
   return !(
     x + width < viewport.x ||
@@ -94,9 +97,13 @@ export function AnnotationEditor({ className }: AnnotationEditorProps) {
   const imageRef = useRef<HTMLImageElement | null>(null);
   const rafRef = useRef<number | null>(null);
   const [imageLoaded, setImageLoaded] = useState(false);
-  const [currentDrawRect, setCurrentDrawRect] = useState<BoundingBox | null>(null);
+  const [currentDrawRect, setCurrentDrawRect] = useState<BoundingBox | null>(
+    null
+  );
   const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState<{ x: number; y: number } | null>(null);
+  const [panStart, setPanStart] = useState<{ x: number; y: number } | null>(
+    null
+  );
 
   const store = useExtractionAnnotationStore();
   const {
@@ -250,8 +257,14 @@ export function AnnotationEditor({ className }: AnnotationEditorProps) {
           const viewport = getViewport();
           const startX = Math.floor(viewport.x / grid.size) * grid.size;
           const startY = Math.floor(viewport.y / grid.size) * grid.size;
-          const endX = Math.min(img.width, viewport.x + viewport.width + grid.size);
-          const endY = Math.min(img.height, viewport.y + viewport.height + grid.size);
+          const endX = Math.min(
+            img.width,
+            viewport.x + viewport.width + grid.size
+          );
+          const endY = Math.min(
+            img.height,
+            viewport.y + viewport.height + grid.size
+          );
 
           for (let x = startX; x <= endX; x += grid.size) {
             ctx.beginPath();
@@ -284,155 +297,151 @@ export function AnnotationEditor({ className }: AnnotationEditorProps) {
       ctx.translate(pan.x, pan.y);
       ctx.scale(zoom, zoom);
 
-    for (const element of elementsToRender) {
-      const isSelected = selectedElementIds.includes(element.id);
-      const isHovered = element.id === hoveredElementId;
-      const isGroundTruth = element.isGroundTruth;
+      for (const element of elementsToRender) {
+        const isSelected = selectedElementIds.includes(element.id);
+        const isHovered = element.id === hoveredElementId;
+        const isGroundTruth = element.isGroundTruth;
 
-      // Determine colors
-      let colors = COLORS.normal;
-      if (isGroundTruth) {
-        colors = isSelected ? COLORS.groundTruthSelected : COLORS.groundTruth;
-      } else if (isSelected) {
-        colors = COLORS.selected;
-      } else if (isHovered) {
-        colors = COLORS.hovered;
-      }
-
-      // Draw filled rectangle
-      ctx.fillStyle = colors.fill;
-      ctx.fillRect(
-        element.bbox.x,
-        element.bbox.y,
-        element.bbox.width,
-        element.bbox.height
-      );
-
-      // Draw border
-      ctx.strokeStyle = colors.stroke;
-      ctx.lineWidth = isSelected ? 3 / zoom : 2 / zoom;
-      ctx.strokeRect(
-        element.bbox.x,
-        element.bbox.y,
-        element.bbox.width,
-        element.bbox.height
-      );
-
-      // Draw review status indicator
-      if (showReviewStatus && element.reviewStatus) {
-        const indicatorSize = 12 / zoom;
-        const indicatorX = element.bbox.x + element.bbox.width - indicatorSize - 4 / zoom;
-        const indicatorY = element.bbox.y + 4 / zoom;
-
-        ctx.fillStyle = REVIEW_COLORS[element.reviewStatus];
-        ctx.beginPath();
-        ctx.arc(
-          indicatorX + indicatorSize / 2,
-          indicatorY + indicatorSize / 2,
-          indicatorSize / 2,
-          0,
-          Math.PI * 2
-        );
-        ctx.fill();
-      }
-
-      // Draw label
-      if (showLabels && element.label) {
-        const fontSize = Math.max(10, 12 / zoom);
-        ctx.font = `${fontSize}px monospace`;
-        ctx.fillStyle = colors.stroke;
-
-        let labelText = element.label;
-        if (showConfidence) {
-          labelText += ` (${(element.confidence * 100).toFixed(0)}%)`;
+        // Determine colors
+        let colors = COLORS.normal;
+        if (isGroundTruth) {
+          colors = isSelected ? COLORS.groundTruthSelected : COLORS.groundTruth;
+        } else if (isSelected) {
+          colors = COLORS.selected;
+        } else if (isHovered) {
+          colors = COLORS.hovered;
         }
 
-        // Background for label
-        const metrics = ctx.measureText(labelText);
-        const labelHeight = fontSize + 4;
-        const labelY = element.bbox.y - labelHeight - 2;
-
-        ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+        // Draw filled rectangle
+        ctx.fillStyle = colors.fill;
         ctx.fillRect(
           element.bbox.x,
-          labelY,
-          metrics.width + 6,
-          labelHeight
+          element.bbox.y,
+          element.bbox.width,
+          element.bbox.height
         );
 
-        ctx.fillStyle = colors.stroke;
-        ctx.fillText(labelText, element.bbox.x + 3, element.bbox.y - 6);
-      }
+        // Draw border
+        ctx.strokeStyle = colors.stroke;
+        ctx.lineWidth = isSelected ? 3 / zoom : 2 / zoom;
+        ctx.strokeRect(
+          element.bbox.x,
+          element.bbox.y,
+          element.bbox.width,
+          element.bbox.height
+        );
 
-      // Draw resize handles for selected elements
-      if (isSelected) {
-        const handleSize = 8 / zoom;
-        ctx.fillStyle = colors.stroke;
+        // Draw review status indicator
+        if (showReviewStatus && element.reviewStatus) {
+          const indicatorSize = 12 / zoom;
+          const indicatorX =
+            element.bbox.x + element.bbox.width - indicatorSize - 4 / zoom;
+          const indicatorY = element.bbox.y + 4 / zoom;
 
-        const handles = [
-          { x: element.bbox.x, y: element.bbox.y }, // top-left
-          { x: element.bbox.x + element.bbox.width, y: element.bbox.y }, // top-right
-          { x: element.bbox.x, y: element.bbox.y + element.bbox.height }, // bottom-left
-          {
-            x: element.bbox.x + element.bbox.width,
-            y: element.bbox.y + element.bbox.height,
-          }, // bottom-right
-        ];
-
-        for (const handle of handles) {
-          ctx.fillRect(
-            handle.x - handleSize / 2,
-            handle.y - handleSize / 2,
-            handleSize,
-            handleSize
+          ctx.fillStyle = REVIEW_COLORS[element.reviewStatus];
+          ctx.beginPath();
+          ctx.arc(
+            indicatorX + indicatorSize / 2,
+            indicatorY + indicatorSize / 2,
+            indicatorSize / 2,
+            0,
+            Math.PI * 2
           );
+          ctx.fill();
+        }
+
+        // Draw label
+        if (showLabels && element.label) {
+          const fontSize = Math.max(10, 12 / zoom);
+          ctx.font = `${fontSize}px monospace`;
+          ctx.fillStyle = colors.stroke;
+
+          let labelText = element.label;
+          if (showConfidence) {
+            labelText += ` (${(element.confidence * 100).toFixed(0)}%)`;
+          }
+
+          // Background for label
+          const metrics = ctx.measureText(labelText);
+          const labelHeight = fontSize + 4;
+          const labelY = element.bbox.y - labelHeight - 2;
+
+          ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+          ctx.fillRect(element.bbox.x, labelY, metrics.width + 6, labelHeight);
+
+          ctx.fillStyle = colors.stroke;
+          ctx.fillText(labelText, element.bbox.x + 3, element.bbox.y - 6);
+        }
+
+        // Draw resize handles for selected elements
+        if (isSelected) {
+          const handleSize = 8 / zoom;
+          ctx.fillStyle = colors.stroke;
+
+          const handles = [
+            { x: element.bbox.x, y: element.bbox.y }, // top-left
+            { x: element.bbox.x + element.bbox.width, y: element.bbox.y }, // top-right
+            { x: element.bbox.x, y: element.bbox.y + element.bbox.height }, // bottom-left
+            {
+              x: element.bbox.x + element.bbox.width,
+              y: element.bbox.y + element.bbox.height,
+            }, // bottom-right
+          ];
+
+          for (const handle of handles) {
+            ctx.fillRect(
+              handle.x - handleSize / 2,
+              handle.y - handleSize / 2,
+              handleSize,
+              handleSize
+            );
+          }
         }
       }
-    }
 
-    // Draw current drawing rectangle
-    if (currentDrawRect) {
-      ctx.fillStyle = COLORS.drawing.fill;
-      ctx.fillRect(
-        currentDrawRect.x,
-        currentDrawRect.y,
-        currentDrawRect.width,
-        currentDrawRect.height
-      );
+      // Draw current drawing rectangle
+      if (currentDrawRect) {
+        ctx.fillStyle = COLORS.drawing.fill;
+        ctx.fillRect(
+          currentDrawRect.x,
+          currentDrawRect.y,
+          currentDrawRect.width,
+          currentDrawRect.height
+        );
 
-      ctx.strokeStyle = COLORS.drawing.stroke;
-      ctx.lineWidth = 2 / zoom;
-      ctx.setLineDash([5 / zoom, 5 / zoom]);
-      ctx.strokeRect(
-        currentDrawRect.x,
-        currentDrawRect.y,
-        currentDrawRect.width,
-        currentDrawRect.height
-      );
-      ctx.setLineDash([]);
-    }
+        ctx.strokeStyle = COLORS.drawing.stroke;
+        ctx.lineWidth = 2 / zoom;
+        ctx.setLineDash([5 / zoom, 5 / zoom]);
+        ctx.strokeRect(
+          currentDrawRect.x,
+          currentDrawRect.y,
+          currentDrawRect.width,
+          currentDrawRect.height
+        );
+        ctx.setLineDash([]);
+      }
 
-    // Draw selection box
-    if (selectionBox && isSelectingBox) {
-      ctx.fillStyle = COLORS.selectionBox.fill;
-      ctx.fillRect(
-        selectionBox.x,
-        selectionBox.y,
-        selectionBox.width,
-        selectionBox.height
-      );
+      // Draw selection box
+      if (selectionBox && isSelectingBox) {
+        ctx.fillStyle = COLORS.selectionBox.fill;
+        ctx.fillRect(
+          selectionBox.x,
+          selectionBox.y,
+          selectionBox.width,
+          selectionBox.height
+        );
 
-      ctx.strokeStyle = COLORS.selectionBox.stroke;
-      ctx.lineWidth = 1 / zoom;
-      ctx.setLineDash([4 / zoom, 4 / zoom]);
-      ctx.strokeRect(
-        selectionBox.x,
-        selectionBox.y,
-        selectionBox.width,
-        selectionBox.height
-      );
-      ctx.setLineDash([]);
-    }
+        ctx.strokeStyle = COLORS.selectionBox.stroke;
+        ctx.lineWidth = 1 / zoom;
+        ctx.setLineDash([4 / zoom, 4 / zoom]);
+        ctx.strokeRect(
+          selectionBox.x,
+          selectionBox.y,
+          selectionBox.width,
+          selectionBox.height
+        );
+        ctx.setLineDash([]);
+      }
 
       ctx.restore();
       rafRef.current = null;
@@ -502,7 +511,16 @@ export function AnnotationEditor({ className }: AnnotationEditorProps) {
         setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
       }
     },
-    [activeTool, screenToImage, getElementAtPoint, selectElement, setDrawing, deleteElement, pan, startSelectionBox]
+    [
+      activeTool,
+      screenToImage,
+      getElementAtPoint,
+      selectElement,
+      setDrawing,
+      deleteElement,
+      pan,
+      startSelectionBox,
+    ]
   );
 
   const handleMouseMove = useCallback(
@@ -589,7 +607,15 @@ export function AnnotationEditor({ className }: AnnotationEditorProps) {
 
     setDrawing(false, null);
     setCurrentDrawRect(null);
-  }, [isDrawing, isPanning, isSelectingBox, currentDrawRect, addElement, setDrawing, endSelectionBox]);
+  }, [
+    isDrawing,
+    isPanning,
+    isSelectingBox,
+    currentDrawRect,
+    addElement,
+    setDrawing,
+    endSelectionBox,
+  ]);
 
   const handleMouseLeave = useCallback(() => {
     setHoveredElement(null);
@@ -604,7 +630,14 @@ export function AnnotationEditor({ className }: AnnotationEditorProps) {
     if (isSelectingBox) {
       endSelectionBox();
     }
-  }, [isDrawing, isPanning, isSelectingBox, setHoveredElement, setDrawing, endSelectionBox]);
+  }, [
+    isDrawing,
+    isPanning,
+    isSelectingBox,
+    setHoveredElement,
+    setDrawing,
+    endSelectionBox,
+  ]);
 
   // Wheel handler for zoom
   const handleWheel = useCallback(

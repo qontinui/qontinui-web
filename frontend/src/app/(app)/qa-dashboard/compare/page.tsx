@@ -54,7 +54,10 @@ function ComparePageContent() {
   }
 
   return (
-    <div className="container mx-auto p-8 space-y-6" data-ui-id="qa-compare-page">
+    <div
+      className="container mx-auto p-8 space-y-6"
+      data-ui-id="qa-compare-page"
+    >
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold mb-2">Compare Test Runs</h1>

@@ -77,7 +77,10 @@ class PageStateDB {
   private getDB(): Promise<IDBDatabase> {
     // Circuit breaker: don't retry after fatal failure
     if (this.isFatallyFailed) {
-      return Promise.reject(this.fatalError || new Error("IndexedDB unavailable (storage corrupted)"));
+      return Promise.reject(
+        this.fatalError ||
+          new Error("IndexedDB unavailable (storage corrupted)")
+      );
     }
 
     // Check if existing connection is still valid
@@ -112,11 +115,19 @@ class PageStateDB {
       return db;
     } catch (error) {
       const errorType = classifyError(error);
-      if (errorType === DBErrorType.STORAGE_CORRUPTED && !this.recoveryAttempted) {
+      if (
+        errorType === DBErrorType.STORAGE_CORRUPTED &&
+        !this.recoveryAttempted
+      ) {
         this.recoveryAttempted = true;
-        console.warn("[PageStateDB] Storage corruption detected, attempting recovery...");
+        console.warn(
+          "[PageStateDB] Storage corruption detected, attempting recovery..."
+        );
 
-        const recovered = await handleStorageCorruption(DB_NAME, "openDatabase");
+        const recovered = await handleStorageCorruption(
+          DB_NAME,
+          "openDatabase"
+        );
 
         if (recovered) {
           try {
@@ -127,24 +138,34 @@ class PageStateDB {
             console.log("[PageStateDB] Successfully recovered and reconnected");
             return db;
           } catch (retryError) {
-            console.error("[PageStateDB] Failed to reconnect after recovery:", retryError);
+            console.error(
+              "[PageStateDB] Failed to reconnect after recovery:",
+              retryError
+            );
             // Mark as fatally failed to prevent further retries
             this.isFatallyFailed = true;
-            this.fatalError = retryError instanceof Error ? retryError : new Error(String(retryError));
+            this.fatalError =
+              retryError instanceof Error
+                ? retryError
+                : new Error(String(retryError));
             this.dbPromise = null;
             throw retryError;
           }
         } else {
           // Recovery failed, mark as fatally failed
-          console.error("[PageStateDB] Storage recovery failed. Please clear site data manually.");
+          console.error(
+            "[PageStateDB] Storage recovery failed. Please clear site data manually."
+          );
           this.isFatallyFailed = true;
-          this.fatalError = error instanceof Error ? error : new Error(String(error));
+          this.fatalError =
+            error instanceof Error ? error : new Error(String(error));
           this.dbPromise = null;
         }
       } else if (errorType === DBErrorType.STORAGE_CORRUPTED) {
         // Already tried recovery once, mark as fatally failed
         this.isFatallyFailed = true;
-        this.fatalError = error instanceof Error ? error : new Error(String(error));
+        this.fatalError =
+          error instanceof Error ? error : new Error(String(error));
         this.dbPromise = null;
       }
 

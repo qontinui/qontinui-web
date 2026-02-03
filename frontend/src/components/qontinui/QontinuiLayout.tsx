@@ -45,7 +45,10 @@ export function QontinuiHeader({
 }: QontinuiHeaderProps) {
   return (
     <header
-      className={cn("bg-surface-raised border-b border-border-subtle px-6 py-4", className)}
+      className={cn(
+        "bg-surface-raised border-b border-border-subtle px-6 py-4",
+        className
+      )}
       {...props}
     >
       {children}
@@ -71,10 +74,7 @@ export function QontinuiHeaderTitle({
 }: QontinuiHeaderTitleProps) {
   return (
     <div>
-      <h1
-        className={cn("text-h2 text-foreground", className)}
-        {...props}
-      >
+      <h1 className={cn("text-h2 text-foreground", className)} {...props}>
         {children}
       </h1>
       {subtitle && <p className="text-caption mt-1">{subtitle}</p>}
@@ -171,7 +171,10 @@ export function QontinuiSidebar({
 }: QontinuiSidebarProps) {
   return (
     <aside
-      className={cn("bg-surface-raised/50 border-r border-border-subtle w-64 p-4 overflow-y-auto", className)}
+      className={cn(
+        "bg-surface-raised/50 border-r border-border-subtle w-64 p-4 overflow-y-auto",
+        className
+      )}
       {...props}
     >
       {children}
@@ -191,7 +194,10 @@ export function QontinuiToolbar({
 }: QontinuiToolbarProps) {
   return (
     <div
-      className={cn("bg-surface-raised border-b border-border-subtle px-6 py-3", className)}
+      className={cn(
+        "bg-surface-raised border-b border-border-subtle px-6 py-3",
+        className
+      )}
       {...props}
     >
       {children}
@@ -224,9 +230,7 @@ export function QontinuiSection({
     <section className={cn("space-y-4", className)} {...props}>
       {(title || description) && (
         <div className="space-y-1">
-          {title && (
-            <h2 className="text-h3 text-foreground">{title}</h2>
-          )}
+          {title && <h2 className="text-h3 text-foreground">{title}</h2>}
           {description && (
             <p className="text-body-sm text-muted-foreground">{description}</p>
           )}

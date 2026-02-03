@@ -51,7 +51,8 @@ export function RenderLogWrapper({
   const isCapturingRef = useRef(false);
 
   // Full URL for change detection
-  const fullPath = pathname + (searchParams?.toString() ? `?${searchParams.toString()}` : "");
+  const fullPath =
+    pathname + (searchParams?.toString() ? `?${searchParams.toString()}` : "");
 
   /**
    * Capture a DOM snapshot via ui-bridge RenderLogManager
@@ -132,7 +133,10 @@ export function RenderLogWrapper({
       // Filter for significant mutations
       const significantMutation = mutations.some((mutation) => {
         // Added/removed element nodes
-        if (mutation.addedNodes.length > 0 || mutation.removedNodes.length > 0) {
+        if (
+          mutation.addedNodes.length > 0 ||
+          mutation.removedNodes.length > 0
+        ) {
           for (const node of mutation.addedNodes) {
             if (node.nodeType === Node.ELEMENT_NODE) {
               const el = node as Element;
@@ -163,7 +167,8 @@ export function RenderLogWrapper({
             const classAttr = el.getAttribute("class");
             if (
               typeof classAttr === "string" &&
-              (classAttr.includes("animate-") || classAttr.includes("transition-"))
+              (classAttr.includes("animate-") ||
+                classAttr.includes("transition-"))
             ) {
               return false;
             }
@@ -190,7 +195,13 @@ export function RenderLogWrapper({
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ["class", "data-state", "data-selected", "aria-expanded", "aria-hidden"],
+      attributeFilter: [
+        "class",
+        "data-state",
+        "data-selected",
+        "aria-expanded",
+        "aria-hidden",
+      ],
     });
 
     observerRef.current = observer;
@@ -202,7 +213,13 @@ export function RenderLogWrapper({
         clearTimeout(mutationTimeoutRef.current);
       }
     };
-  }, [isDev, bridge, enableMutationObserver, mutationDebounceMs, captureSnapshot]);
+  }, [
+    isDev,
+    bridge,
+    enableMutationObserver,
+    mutationDebounceMs,
+    captureSnapshot,
+  ]);
 
   return <>{children}</>;
 }

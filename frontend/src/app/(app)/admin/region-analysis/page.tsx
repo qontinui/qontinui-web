@@ -184,7 +184,9 @@ export default function RegionAnalysisPage() {
               <p className="text-muted-foreground mb-4">
                 No annotation sets found. Run an extraction first.
               </p>
-              <Button onClick={() => router.push("/automation-builder/extraction")}>
+              <Button
+                onClick={() => router.push("/automation-builder/extraction")}
+              >
                 Go to Extraction
               </Button>
             </div>

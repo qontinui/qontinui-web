@@ -173,7 +173,11 @@ export function CollaboratorCursors({
         return false;
       }
       // Filter by viewport if specified
-      if (viewportId && c.cursor.viewport_id && c.cursor.viewport_id !== viewportId) {
+      if (
+        viewportId &&
+        c.cursor.viewport_id &&
+        c.cursor.viewport_id !== viewportId
+      ) {
         return false;
       }
       return true;
@@ -234,7 +238,9 @@ export function CollaboratorIndicator({
   avatarSize = 28,
 }: CollaboratorIndicatorProps) {
   const otherCollaborators = useMemo(() => {
-    return collaborators.filter((c) => !currentUserId || c.id !== currentUserId);
+    return collaborators.filter(
+      (c) => !currentUserId || c.id !== currentUserId
+    );
   }, [collaborators, currentUserId]);
 
   if (otherCollaborators.length === 0) {
@@ -310,7 +316,9 @@ export function CollaboratorIndicator({
           marginLeft: "8px",
         }}
       >
-        {otherCollaborators.length === 1 ? "1 collaborator" : `${otherCollaborators.length} collaborators`}
+        {otherCollaborators.length === 1
+          ? "1 collaborator"
+          : `${otherCollaborators.length} collaborators`}
       </span>
     </div>
   );
@@ -326,7 +334,10 @@ export interface CollaboratorSelectionsProps {
   /** Current user ID to exclude */
   currentUserId?: string;
   /** Map of element ID to bounding box for positioning highlights */
-  elementBounds: Map<string, { x: number; y: number; width: number; height: number }>;
+  elementBounds: Map<
+    string,
+    { x: number; y: number; width: number; height: number }
+  >;
   /** Zoom level */
   zoom?: number;
   /** Pan offset */
@@ -441,7 +452,9 @@ function getInitials(nameOrEmail: string): string {
   // For names, get initials of first and last name
   const parts = nameOrEmail.trim().split(/\s+/);
   if (parts.length >= 2) {
-    return (parts[0]!.charAt(0) + parts[parts.length - 1]!.charAt(0)).toUpperCase();
+    return (
+      parts[0]!.charAt(0) + parts[parts.length - 1]!.charAt(0)
+    ).toUpperCase();
   }
 
   return nameOrEmail.charAt(0).toUpperCase();

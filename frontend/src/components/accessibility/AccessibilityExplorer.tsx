@@ -20,22 +20,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Collapsible,
-  CollapsibleContent,
-} from "@/components/ui/collapsible";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { AccessibilityTreeViewer } from "./AccessibilityTreeViewer";
 import { AccessibilitySelectorBuilder } from "./AccessibilitySelectorBuilder";
@@ -48,7 +35,10 @@ import type {
 
 interface AccessibilityExplorerProps {
   /** Callback when a selector is configured for use in automation */
-  onSelectorConfigured?: (selector: AccessibilitySelector, node: AccessibilityNode) => void;
+  onSelectorConfigured?: (
+    selector: AccessibilitySelector,
+    node: AccessibilityNode
+  ) => void;
   /** Initial CDP host */
   initialCdpHost?: string;
   /** Initial CDP port */
@@ -94,7 +84,9 @@ export function AccessibilityExplorer({
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Selector state
-  const [currentSelector, setCurrentSelector] = useState<AccessibilitySelector>({});
+  const [currentSelector, setCurrentSelector] = useState<AccessibilitySelector>(
+    {}
+  );
   const [matchCount, setMatchCount] = useState(0);
 
   // Quick action state
@@ -246,7 +238,10 @@ export function AccessibilityExplorer({
               Connected
             </Badge>
           ) : (
-            <Badge variant="outline" className="gap-1 text-xs text-muted-foreground">
+            <Badge
+              variant="outline"
+              className="gap-1 text-xs text-muted-foreground"
+            >
               <WifiOff className="h-3 w-3" />
               Disconnected
             </Badge>
@@ -298,7 +293,9 @@ export function AccessibilityExplorer({
                   <Input
                     type="number"
                     value={cdpPort}
-                    onChange={(e) => setCdpPort(parseInt(e.target.value) || 9222)}
+                    onChange={(e) =>
+                      setCdpPort(parseInt(e.target.value) || 9222)
+                    }
                     placeholder="9222"
                     className="h-8 text-sm"
                   />
@@ -481,7 +478,8 @@ export function AccessibilityExplorer({
                   )}
                   {selectedNode.value && (
                     <p className="text-sm">
-                      <span className="text-muted-foreground">Value:</span> {selectedNode.value}
+                      <span className="text-muted-foreground">Value:</span>{" "}
+                      {selectedNode.value}
                     </p>
                   )}
                 </CardContent>
@@ -508,12 +506,14 @@ export function AccessibilityExplorer({
             </div>
             <ScrollArea className="h-[400px] rounded border border-border-default">
               <pre className="p-3 text-xs font-mono whitespace-pre-wrap">
-                {aiContext || "Capture an accessibility tree to generate AI context."}
+                {aiContext ||
+                  "Capture an accessibility tree to generate AI context."}
               </pre>
             </ScrollArea>
             <p className="text-xs text-muted-foreground">
-              This context can be included in AI prompts for ref-based automation.
-              The AI can then use commands like &quot;click @e3&quot; or &quot;type &apos;hello&apos; into @e5&quot;.
+              This context can be included in AI prompts for ref-based
+              automation. The AI can then use commands like &quot;click
+              @e3&quot; or &quot;type &apos;hello&apos; into @e5&quot;.
             </p>
           </div>
         </TabsContent>

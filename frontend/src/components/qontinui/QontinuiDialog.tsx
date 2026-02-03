@@ -28,7 +28,10 @@ export function QontinuiDialogContent({
 }: QontinuiDialogContentProps) {
   return (
     <DialogContent
-      className={cn("bg-surface-raised border border-border-default rounded-lg", className)}
+      className={cn(
+        "bg-surface-raised border border-border-default rounded-lg",
+        className
+      )}
       {...props}
     />
   );
@@ -38,9 +41,7 @@ export function QontinuiDialogOverlay({
   className,
   ...props
 }: React.ComponentProps<typeof DialogOverlay>) {
-  return (
-    <DialogOverlay className={cn("bg-black/80", className)} {...props} />
-  );
+  return <DialogOverlay className={cn("bg-black/80", className)} {...props} />;
 }
 
 export function QontinuiDialogHeader({

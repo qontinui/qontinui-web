@@ -397,7 +397,9 @@ export async function handleStorageCorruption(
     projectLogger.error("DBErrorHandler", "Recovery failed", {
       database: dbName,
       error:
-        deleteError instanceof Error ? deleteError.message : String(deleteError),
+        deleteError instanceof Error
+          ? deleteError.message
+          : String(deleteError),
     });
 
     // Emit failure event with manual instructions

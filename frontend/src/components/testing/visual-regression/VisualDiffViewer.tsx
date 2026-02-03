@@ -145,11 +145,17 @@ export function VisualDiffViewer({
   };
 
   return (
-    <div className={cn("flex flex-col gap-4", className)} data-ui-id="testing-visual-diff-viewer">
+    <div
+      className={cn("flex flex-col gap-4", className)}
+      data-ui-id="testing-visual-diff-viewer"
+    >
       {/* Controls Bar */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         {/* Mode Selector */}
-        <div className="flex items-center gap-1 border rounded-lg p-1" data-ui-id="testing-visual-diff-mode-selector">
+        <div
+          className="flex items-center gap-1 border rounded-lg p-1"
+          data-ui-id="testing-visual-diff-mode-selector"
+        >
           <Button
             variant={mode === "side-by-side" ? "secondary" : "ghost"}
             size="sm"

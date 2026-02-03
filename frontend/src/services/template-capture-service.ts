@@ -668,9 +668,13 @@ export class TemplateCaptureService {
         const minute = parseInt(dateStr.slice(11, 13));
         const second = parseInt(dateStr.slice(13, 15));
 
-        const signedAt = new Date(Date.UTC(year, month, day, hour, minute, second));
+        const signedAt = new Date(
+          Date.UTC(year, month, day, hour, minute, second)
+        );
         const expiresInSeconds = parseInt(expires);
-        const expiresAt = new Date(signedAt.getTime() + expiresInSeconds * 1000);
+        const expiresAt = new Date(
+          signedAt.getTime() + expiresInSeconds * 1000
+        );
 
         return new Date() > expiresAt;
       }
@@ -687,7 +691,10 @@ export class TemplateCaptureService {
    * Get image URL, refreshing if the current URL is expired
    */
   async getImageUrlWithRefresh(candidate: TemplateCandidate): Promise<string> {
-    if (candidate.pixel_data_url && !this.isUrlExpired(candidate.pixel_data_url)) {
+    if (
+      candidate.pixel_data_url &&
+      !this.isUrlExpired(candidate.pixel_data_url)
+    ) {
       return candidate.pixel_data_url;
     }
 
@@ -708,7 +715,9 @@ export class TemplateCaptureService {
   /**
    * Get thumbnail URL, refreshing if the current URL is expired
    */
-  async getThumbnailUrlWithRefresh(candidate: TemplateCandidate): Promise<string> {
+  async getThumbnailUrlWithRefresh(
+    candidate: TemplateCandidate
+  ): Promise<string> {
     const thumbnailUrl = candidate.thumbnail_url || candidate.pixel_data_url;
     if (thumbnailUrl && !this.isUrlExpired(thumbnailUrl)) {
       return thumbnailUrl;

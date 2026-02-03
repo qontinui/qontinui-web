@@ -27,7 +27,11 @@ export type TutorialMode = "overlay" | "contextual" | "hybrid";
  * - app-action: Custom application actions via notifyAction()
  * - route-change: Navigation to a specific route (web-specific)
  */
-export type WaitEventType = "dom-event" | "dom-appear" | "app-action" | "route-change";
+export type WaitEventType =
+  | "dom-event"
+  | "dom-appear"
+  | "app-action"
+  | "route-change";
 
 /**
  * Behavior when a wait condition times out

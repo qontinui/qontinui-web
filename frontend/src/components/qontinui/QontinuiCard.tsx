@@ -35,11 +35,7 @@ export function QontinuiCard({
   return (
     <Card
       className={cn(
-        selected
-          ? "card-selected"
-          : hoverable
-            ? "card-hover"
-            : "card",
+        selected ? "card-selected" : hoverable ? "card-hover" : "card",
         className
       )}
       {...props}
@@ -54,9 +50,7 @@ export function QontinuiCardHeader({
   className,
   ...props
 }: React.ComponentProps<typeof CardHeader>) {
-  return (
-    <CardHeader className={cn("text-foreground", className)} {...props} />
-  );
+  return <CardHeader className={cn("text-foreground", className)} {...props} />;
 }
 
 /**
@@ -66,9 +60,7 @@ export function QontinuiCardTitle({
   className,
   ...props
 }: React.ComponentProps<typeof CardTitle>) {
-  return (
-    <CardTitle className={cn("text-foreground", className)} {...props} />
-  );
+  return <CardTitle className={cn("text-foreground", className)} {...props} />;
 }
 
 /**
@@ -94,7 +86,10 @@ export function QontinuiCardContent({
   ...props
 }: React.ComponentProps<typeof CardContent>) {
   return (
-    <CardContent className={cn("text-muted-foreground", className)} {...props} />
+    <CardContent
+      className={cn("text-muted-foreground", className)}
+      {...props}
+    />
   );
 }
 

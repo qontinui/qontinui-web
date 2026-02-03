@@ -32,12 +32,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -83,14 +78,20 @@ export function ApplicationProfileManager({
 
   // Dialog states
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [editingProfile, setEditingProfile] = useState<ApplicationProfile | null>(null);
-  const [deletingProfile, setDeletingProfile] = useState<ApplicationProfile | null>(null);
-  const [tuningProfile, setTuningProfile] = useState<ApplicationProfile | null>(null);
+  const [editingProfile, setEditingProfile] =
+    useState<ApplicationProfile | null>(null);
+  const [deletingProfile, setDeletingProfile] =
+    useState<ApplicationProfile | null>(null);
+  const [tuningProfile, setTuningProfile] = useState<ApplicationProfile | null>(
+    null
+  );
   const [tuningResult, setTuningResult] = useState<TuningResult | null>(null);
 
   // Form state
   const [formName, setFormName] = useState("");
-  const [formStrategies, setFormStrategies] = useState<DetectionStrategyType[]>([]);
+  const [formStrategies, setFormStrategies] = useState<DetectionStrategyType[]>(
+    []
+  );
   const [formSubmitting, setFormSubmitting] = useState(false);
 
   // Fetch profiles
@@ -102,7 +103,10 @@ export function ApplicationProfileManager({
       setProfiles(response.items);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load profiles");
-      console.error("[ApplicationProfileManager] Error fetching profiles:", err);
+      console.error(
+        "[ApplicationProfileManager] Error fetching profiles:",
+        err
+      );
     } finally {
       setLoading(false);
     }
@@ -120,7 +124,8 @@ export function ApplicationProfileManager({
     try {
       const newProfile = await service.createProfile({
         name: formName.trim(),
-        preferred_strategies: formStrategies.length > 0 ? formStrategies : undefined,
+        preferred_strategies:
+          formStrategies.length > 0 ? formStrategies : undefined,
       });
       setProfiles((prev) => [...prev, newProfile]);
       setCreateDialogOpen(false);
@@ -140,7 +145,8 @@ export function ApplicationProfileManager({
     setFormSubmitting(true);
     try {
       const updatedProfile = await service.updateProfile(editingProfile.name, {
-        preferred_strategies: formStrategies.length > 0 ? formStrategies : undefined,
+        preferred_strategies:
+          formStrategies.length > 0 ? formStrategies : undefined,
       });
       setProfiles((prev) =>
         prev.map((p) => (p.id === updatedProfile.id ? updatedProfile : p))
@@ -229,7 +235,9 @@ export function ApplicationProfileManager({
       ) : profiles.length === 0 ? (
         <div className="text-center text-muted-foreground py-8">
           <p>No profiles yet</p>
-          <p className="text-sm">Create a profile to optimize detection for specific applications</p>
+          <p className="text-sm">
+            Create a profile to optimize detection for specific applications
+          </p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -249,7 +257,9 @@ export function ApplicationProfileManager({
                     <Badge variant="outline">
                       {Math.round(profile.success_rate * 100)}% success
                     </Badge>
-                    <Badge variant="secondary">{profile.sample_count} samples</Badge>
+                    <Badge variant="secondary">
+                      {profile.sample_count} samples
+                    </Badge>
                   </div>
                   <div className="flex items-center gap-1">
                     <Button
@@ -287,18 +297,21 @@ export function ApplicationProfileManager({
                   </div>
                 </div>
               </CardHeader>
-              {profile.preferred_strategies && profile.preferred_strategies.length > 0 && (
-                <CardContent className="py-2 pt-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Strategies:</span>
-                    {profile.preferred_strategies.map((s) => (
-                      <Badge key={s} variant="outline" className="text-xs">
-                        {s}
-                      </Badge>
-                    ))}
-                  </div>
-                </CardContent>
-              )}
+              {profile.preferred_strategies &&
+                profile.preferred_strategies.length > 0 && (
+                  <CardContent className="py-2 pt-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">
+                        Strategies:
+                      </span>
+                      {profile.preferred_strategies.map((s) => (
+                        <Badge key={s} variant="outline" className="text-xs">
+                          {s}
+                        </Badge>
+                      ))}
+                    </div>
+                  </CardContent>
+                )}
             </Card>
           ))}
         </div>
@@ -326,7 +339,9 @@ export function ApplicationProfileManager({
                 {STRATEGY_OPTIONS.map((strategy) => (
                   <Badge
                     key={strategy}
-                    variant={formStrategies.includes(strategy) ? "default" : "outline"}
+                    variant={
+                      formStrategies.includes(strategy) ? "default" : "outline"
+                    }
                     className="cursor-pointer"
                     onClick={() => toggleStrategy(strategy)}
                   >
@@ -340,11 +355,19 @@ export function ApplicationProfileManager({
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setCreateDialogOpen(false)}
+            >
               Cancel
             </Button>
-            <Button onClick={handleCreate} disabled={!formName.trim() || formSubmitting}>
-              {formSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            <Button
+              onClick={handleCreate}
+              disabled={!formName.trim() || formSubmitting}
+            >
+              {formSubmitting && (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              )}
               Create
             </Button>
           </DialogFooter>
@@ -352,7 +375,10 @@ export function ApplicationProfileManager({
       </Dialog>
 
       {/* Edit Profile Dialog */}
-      <Dialog open={!!editingProfile} onOpenChange={(open) => !open && setEditingProfile(null)}>
+      <Dialog
+        open={!!editingProfile}
+        onOpenChange={(open) => !open && setEditingProfile(null)}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit Profile: {editingProfile?.name}</DialogTitle>
@@ -364,7 +390,9 @@ export function ApplicationProfileManager({
                 {STRATEGY_OPTIONS.map((strategy) => (
                   <Badge
                     key={strategy}
-                    variant={formStrategies.includes(strategy) ? "default" : "outline"}
+                    variant={
+                      formStrategies.includes(strategy) ? "default" : "outline"
+                    }
                     className="cursor-pointer"
                     onClick={() => toggleStrategy(strategy)}
                   >
@@ -377,14 +405,22 @@ export function ApplicationProfileManager({
               <div className="space-y-2">
                 <Label>Tuning Metrics</Label>
                 <div className="text-sm text-muted-foreground space-y-1">
-                  <p>Samples analyzed: {editingProfile.tuning_metrics.samples_analyzed}</p>
+                  <p>
+                    Samples analyzed:{" "}
+                    {editingProfile.tuning_metrics.samples_analyzed}
+                  </p>
                   <p>
                     Avg accuracy:{" "}
-                    {Math.round(editingProfile.tuning_metrics.avg_boundary_accuracy * 100)}%
+                    {Math.round(
+                      editingProfile.tuning_metrics.avg_boundary_accuracy * 100
+                    )}
+                    %
                   </p>
                   <p>
                     Edge thresholds:{" "}
-                    {editingProfile.tuning_metrics.optimal_edge_thresholds.join(" - ")}
+                    {editingProfile.tuning_metrics.optimal_edge_thresholds.join(
+                      " - "
+                    )}
                   </p>
                 </div>
               </div>
@@ -395,7 +431,9 @@ export function ApplicationProfileManager({
               Cancel
             </Button>
             <Button onClick={handleUpdate} disabled={formSubmitting}>
-              {formSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {formSubmitting && (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              )}
               Save
             </Button>
           </DialogFooter>
@@ -403,18 +441,24 @@ export function ApplicationProfileManager({
       </Dialog>
 
       {/* Delete Confirmation */}
-      <AlertDialog open={!!deletingProfile} onOpenChange={(open) => !open && setDeletingProfile(null)}>
+      <AlertDialog
+        open={!!deletingProfile}
+        onOpenChange={(open) => !open && setDeletingProfile(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Profile</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete the profile &quot;{deletingProfile?.name}&quot;?
-              This action cannot be undone.
+              Are you sure you want to delete the profile &quot;
+              {deletingProfile?.name}&quot;? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-red-600 hover:bg-red-700"
+            >
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -422,7 +466,10 @@ export function ApplicationProfileManager({
       </AlertDialog>
 
       {/* Tuning Dialog */}
-      <Dialog open={!!tuningProfile} onOpenChange={(open) => !open && setTuningProfile(null)}>
+      <Dialog
+        open={!!tuningProfile}
+        onOpenChange={(open) => !open && setTuningProfile(null)}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Auto-Tune: {tuningProfile?.name}</DialogTitle>
@@ -447,7 +494,10 @@ export function ApplicationProfileManager({
                   </p>
                   <p className="text-sm">
                     <strong>Boundary accuracy:</strong>{" "}
-                    {Math.round(tuningResult.metrics.avg_boundary_accuracy * 100)}%
+                    {Math.round(
+                      tuningResult.metrics.avg_boundary_accuracy * 100
+                    )}
+                    %
                   </p>
                   <p className="text-sm">
                     <strong>Recommended strategies:</strong>
@@ -464,8 +514,8 @@ export function ApplicationProfileManager({
             ) : (
               <div className="text-center space-y-4">
                 <p className="text-muted-foreground">
-                  Auto-tuning will analyze approved templates to optimize detection
-                  parameters for this application.
+                  Auto-tuning will analyze approved templates to optimize
+                  detection parameters for this application.
                 </p>
                 <Button onClick={handleTune} disabled={formSubmitting}>
                   {formSubmitting ? (

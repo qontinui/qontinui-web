@@ -122,7 +122,10 @@ export function DeficiencyComments({
   };
 
   return (
-    <Card className={cn("w-full", className)} data-ui-id="testing-deficiency-comments">
+    <Card
+      className={cn("w-full", className)}
+      data-ui-id="testing-deficiency-comments"
+    >
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <MessageSquare className="h-5 w-5" />
@@ -228,7 +231,10 @@ export function DeficiencyComments({
         <Separator />
 
         {/* Comments List */}
-        <div className="space-y-4" data-ui-id="testing-deficiency-comments-list">
+        <div
+          className="space-y-4"
+          data-ui-id="testing-deficiency-comments-list"
+        >
           {comments.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-8">
               No comments yet. Be the first to add one!

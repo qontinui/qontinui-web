@@ -152,7 +152,10 @@ export function EditorToolbar({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
               {onShare && (
-                <DropdownMenuItem onClick={onShare} data-ui-id="automation-toolbar-share-btn">
+                <DropdownMenuItem
+                  onClick={onShare}
+                  data-ui-id="automation-toolbar-share-btn"
+                >
                   <Share2 className="w-4 h-4 mr-2" />
                   Share
                 </DropdownMenuItem>
@@ -161,14 +164,20 @@ export function EditorToolbar({
               {onShare && <DropdownMenuSeparator />}
 
               {onExport && (
-                <DropdownMenuItem onClick={onExport} data-ui-id="automation-toolbar-export-btn">
+                <DropdownMenuItem
+                  onClick={onExport}
+                  data-ui-id="automation-toolbar-export-btn"
+                >
                   <Download className="w-4 h-4 mr-2" />
                   Export Workflow
                 </DropdownMenuItem>
               )}
 
               {onImport && (
-                <DropdownMenuItem onClick={onImport} data-ui-id="automation-toolbar-import-btn">
+                <DropdownMenuItem
+                  onClick={onImport}
+                  data-ui-id="automation-toolbar-import-btn"
+                >
                   <Upload className="w-4 h-4 mr-2" />
                   Import Workflow
                 </DropdownMenuItem>
@@ -177,7 +186,10 @@ export function EditorToolbar({
               {(onExport || onImport) && <DropdownMenuSeparator />}
 
               {onDuplicate && (
-                <DropdownMenuItem onClick={onDuplicate} data-ui-id="automation-toolbar-duplicate-btn">
+                <DropdownMenuItem
+                  onClick={onDuplicate}
+                  data-ui-id="automation-toolbar-duplicate-btn"
+                >
                   <Copy className="w-4 h-4 mr-2" />
                   Duplicate
                 </DropdownMenuItem>

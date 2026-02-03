@@ -87,7 +87,7 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
   });
 
   // Debug logging for mount/unmount
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- Intentionally only runs on mount/unmount
+
   useEffect(() => {
     console.log("[AdvancedRegionSelector] MOUNTED with props:", {
       isControlled,

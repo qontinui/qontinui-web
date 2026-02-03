@@ -207,9 +207,7 @@ function getPhaseInfo(phase: string): { label: string; color: string } {
 
   return (
     phaseMap[phase.toLowerCase()] ?? {
-      label: phase
-        .replace(/_/g, " ")
-        .replace(/\b\w/g, (l) => l.toUpperCase()),
+      label: phase.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()),
       color: "text-text-muted",
     }
   );
@@ -233,11 +231,15 @@ export function StepProgressMarker({
   const [localElapsedMs, setLocalElapsedMs] = useState(0);
   const [startTime] = useState(Date.now());
 
-  const { data: progress, isLoading, error } = useStepProgressMarkers(
-    taskRunId,
-    checkpointId,
-    { autoRefresh, refreshInterval, isRunning }
-  );
+  const {
+    data: progress,
+    isLoading,
+    error,
+  } = useStepProgressMarkers(taskRunId, checkpointId, {
+    autoRefresh,
+    refreshInterval,
+    isRunning,
+  });
 
   // Update local elapsed time when running
   useEffect(() => {
@@ -256,7 +258,12 @@ export function StepProgressMarker({
   // Don't render anything while loading initially
   if (isLoading && !progress) {
     return compact ? (
-      <span className={cn("inline-flex items-center gap-1 text-xs text-text-muted", className)}>
+      <span
+        className={cn(
+          "inline-flex items-center gap-1 text-xs text-text-muted",
+          className
+        )}
+      >
         <Loader2 className="w-3 h-3 animate-spin" />
         Loading...
       </span>
@@ -267,12 +274,22 @@ export function StepProgressMarker({
   if (error || progress?.error) {
     const errorMessage = progress?.error || "Failed to load progress";
     return compact ? (
-      <span className={cn("inline-flex items-center gap-1 text-xs text-red-400", className)}>
+      <span
+        className={cn(
+          "inline-flex items-center gap-1 text-xs text-red-400",
+          className
+        )}
+      >
         <AlertCircle className="w-3 h-3" />
         Error
       </span>
     ) : (
-      <div className={cn("bg-red-500/10 border border-red-500/30 rounded-lg p-3", className)}>
+      <div
+        className={cn(
+          "bg-red-500/10 border border-red-500/30 rounded-lg p-3",
+          className
+        )}
+      >
         <div className="flex items-center gap-2 text-red-400">
           <AlertCircle className="w-4 h-4" />
           <span className="text-sm font-medium">Error</span>
@@ -303,9 +320,7 @@ export function StepProgressMarker({
         )}
 
         {progress?.substep && (
-          <span className="text-xs text-text-muted">
-            {progress.substep}
-          </span>
+          <span className="text-xs text-text-muted">{progress.substep}</span>
         )}
 
         <span className="text-xs text-text-muted flex items-center gap-1">
@@ -323,7 +338,9 @@ export function StepProgressMarker({
   }
 
   // Full mode: detailed display
-  const phaseInfo = progress ? getPhaseInfo(progress.phase) : { label: "Initializing", color: "text-text-muted" };
+  const phaseInfo = progress
+    ? getPhaseInfo(progress.phase)
+    : { label: "Initializing", color: "text-text-muted" };
 
   return (
     <div className={cn("bg-surface-raised/30 rounded-lg p-3", className)}>
@@ -360,7 +377,8 @@ export function StepProgressMarker({
       <div className="space-y-1">
         {progress?.substep && (
           <div className="text-xs text-text-muted">
-            <span className="text-text-secondary">Step:</span> {progress.substep}
+            <span className="text-text-secondary">Step:</span>{" "}
+            {progress.substep}
           </div>
         )}
 
@@ -371,9 +389,7 @@ export function StepProgressMarker({
         )}
 
         {progress?.message && (
-          <div className="text-xs text-text-secondary">
-            {progress.message}
-          </div>
+          <div className="text-xs text-text-secondary">{progress.message}</div>
         )}
       </div>
     </div>

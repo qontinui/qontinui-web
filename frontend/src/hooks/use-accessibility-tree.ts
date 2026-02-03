@@ -39,11 +39,17 @@ interface UseAccessibilityTreeResult {
   /** Click an element by ref */
   clickRef: (ref: string) => Promise<boolean>;
   /** Type into an element by ref */
-  fillRef: (ref: string, value: string, clearFirst?: boolean) => Promise<boolean>;
+  fillRef: (
+    ref: string,
+    value: string,
+    clearFirst?: boolean
+  ) => Promise<boolean>;
   /** Focus an element by ref */
   focusRef: (ref: string) => Promise<boolean>;
   /** Find elements matching selector */
-  findElements: (selector: AccessibilitySelector) => Promise<AccessibilityNode[]>;
+  findElements: (
+    selector: AccessibilitySelector
+  ) => Promise<AccessibilityNode[]>;
   /** Get node by ref from current snapshot */
   getNodeByRef: (ref: string) => AccessibilityNode | null;
   /** Disconnect from accessibility source */
@@ -92,10 +98,16 @@ export function useAccessibilityTree(
   options: UseAccessibilityTreeOptions = {}
 ): UseAccessibilityTreeResult {
   // Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
-  const { apiUrl = "http://127.0.0.1:9876", cdpHost = "localhost", cdpPort = 9222 } = options;
+  const {
+    apiUrl = "http://127.0.0.1:9876",
+    cdpHost = "localhost",
+    cdpPort = 9222,
+  } = options;
 
   const [snapshot, setSnapshot] = useState<AccessibilitySnapshot | null>(null);
-  const [selectedNode, setSelectedNode] = useState<AccessibilityNode | null>(null);
+  const [selectedNode, setSelectedNode] = useState<AccessibilityNode | null>(
+    null
+  );
   const [selectedRef, setSelectedRef] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -103,7 +115,10 @@ export function useAccessibilityTree(
 
   // Helper to send commands to the runner
   const sendCommand = useCallback(
-    async <T>(command: string, params: Record<string, unknown> = {}): Promise<T> => {
+    async <T>(
+      command: string,
+      params: Record<string, unknown> = {}
+    ): Promise<T> => {
       const response = await fetch(`${apiUrl}/command`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -158,7 +173,8 @@ export function useAccessibilityTree(
 
         toast.success("Accessibility tree captured");
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to capture tree";
+        const message =
+          err instanceof Error ? err.message : "Failed to capture tree";
         setError(message);
         toast.error(message);
       } finally {
@@ -178,9 +194,12 @@ export function useAccessibilityTree(
   const clickRef = useCallback(
     async (ref: string): Promise<boolean> => {
       try {
-        const result = await sendCommand<{ success: boolean; error?: string }>("click_ref", {
-          ref,
-        });
+        const result = await sendCommand<{ success: boolean; error?: string }>(
+          "click_ref",
+          {
+            ref,
+          }
+        );
         if (result.success) {
           toast.success(`Clicked ${ref}`);
         } else {
@@ -188,7 +207,8 @@ export function useAccessibilityTree(
         }
         return result.success;
       } catch (err) {
-        const message = err instanceof Error ? err.message : `Failed to click ${ref}`;
+        const message =
+          err instanceof Error ? err.message : `Failed to click ${ref}`;
         toast.error(message);
         return false;
       }
@@ -198,13 +218,20 @@ export function useAccessibilityTree(
 
   // Fill element by ref
   const fillRef = useCallback(
-    async (ref: string, value: string, clearFirst = false): Promise<boolean> => {
+    async (
+      ref: string,
+      value: string,
+      clearFirst = false
+    ): Promise<boolean> => {
       try {
-        const result = await sendCommand<{ success: boolean; error?: string }>("fill_ref", {
-          ref,
-          value,
-          clear_first: clearFirst,
-        });
+        const result = await sendCommand<{ success: boolean; error?: string }>(
+          "fill_ref",
+          {
+            ref,
+            value,
+            clear_first: clearFirst,
+          }
+        );
         if (result.success) {
           toast.success(`Filled ${ref}`);
         } else {
@@ -212,7 +239,8 @@ export function useAccessibilityTree(
         }
         return result.success;
       } catch (err) {
-        const message = err instanceof Error ? err.message : `Failed to fill ${ref}`;
+        const message =
+          err instanceof Error ? err.message : `Failed to fill ${ref}`;
         toast.error(message);
         return false;
       }
@@ -224,9 +252,12 @@ export function useAccessibilityTree(
   const focusRef = useCallback(
     async (ref: string): Promise<boolean> => {
       try {
-        const result = await sendCommand<{ success: boolean; error?: string }>("focus_ref", {
-          ref,
-        });
+        const result = await sendCommand<{ success: boolean; error?: string }>(
+          "focus_ref",
+          {
+            ref,
+          }
+        );
         if (result.success) {
           toast.success(`Focused ${ref}`);
         } else {
@@ -234,7 +265,8 @@ export function useAccessibilityTree(
         }
         return result.success;
       } catch (err) {
-        const message = err instanceof Error ? err.message : `Failed to focus ${ref}`;
+        const message =
+          err instanceof Error ? err.message : `Failed to focus ${ref}`;
         toast.error(message);
         return false;
       }
@@ -250,7 +282,10 @@ export function useAccessibilityTree(
           success: boolean;
           elements?: Record<string, unknown>[];
           error?: string;
-        }>("find_accessibility_elements", selector as unknown as Record<string, unknown>);
+        }>(
+          "find_accessibility_elements",
+          selector as unknown as Record<string, unknown>
+        );
         return (result.elements ?? []) as unknown as AccessibilityNode[];
       } catch (err) {
         console.error("Failed to find elements:", err);

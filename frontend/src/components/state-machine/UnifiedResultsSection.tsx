@@ -82,13 +82,16 @@ export function UnifiedResultsSection({
   onRefresh,
   projectId,
 }: UnifiedResultsSectionProps) {
-  const [sourceFilter, setSourceFilter] = useState<DiscoverySourceType | "all">("all");
+  const [sourceFilter, setSourceFilter] = useState<DiscoverySourceType | "all">(
+    "all"
+  );
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
 
-  const filteredResults = sourceFilter === "all"
-    ? results
-    : results.filter((r) => r.sourceType === sourceFilter);
+  const filteredResults =
+    sourceFilter === "all"
+      ? results
+      : results.filter((r) => r.sourceType === sourceFilter);
 
   const handleDelete = async (resultId: string) => {
     setDeletingId(resultId);
@@ -114,7 +117,9 @@ export function UnifiedResultsSection({
       const data = await response.json();
 
       // Download as JSON file
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: "application/json",
+      });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -164,8 +169,8 @@ export function UnifiedResultsSection({
           <Layers className="h-16 w-16 mx-auto mb-4 opacity-50" />
           <h3 className="text-lg font-medium mb-2">No State Machines Found</h3>
           <p className="text-sm max-w-md">
-            Run a state discovery from any source (Web Extraction, UI Bridge, Recording, etc.)
-            to see unified state machine results here.
+            Run a state discovery from any source (Web Extraction, UI Bridge,
+            Recording, etc.) to see unified state machine results here.
           </p>
         </div>
       </Card>
@@ -225,7 +230,9 @@ export function UnifiedResultsSection({
           <div className="flex items-center gap-2">
             <Select
               value={sourceFilter}
-              onValueChange={(v) => setSourceFilter(v as DiscoverySourceType | "all")}
+              onValueChange={(v) =>
+                setSourceFilter(v as DiscoverySourceType | "all")
+              }
             >
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="Filter by source" />
@@ -340,7 +347,10 @@ function ResultCard({
           <span className="text-[10px] text-text-muted">
             {result.imageCount} images
           </span>
-          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="flex items-center gap-1"
+            onClick={(e) => e.stopPropagation()}
+          >
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button
@@ -360,8 +370,8 @@ function ResultCard({
                 <AlertDialogHeader>
                   <AlertDialogTitle>Delete State Machine?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This will permanently delete &quot;{result.name}&quot; and all its
-                    associated data. This action cannot be undone.
+                    This will permanently delete &quot;{result.name}&quot; and
+                    all its associated data. This action cannot be undone.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>

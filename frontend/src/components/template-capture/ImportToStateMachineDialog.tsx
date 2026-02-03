@@ -124,7 +124,8 @@ export function ImportToStateMachineDialog({
         <DialogHeader>
           <DialogTitle>Import Template to State Machine</DialogTitle>
           <DialogDescription>
-            Add this template as a StateImage to identify UI elements during automation.
+            Add this template as a StateImage to identify UI elements during
+            automation.
           </DialogDescription>
         </DialogHeader>
 
@@ -163,7 +164,10 @@ export function ImportToStateMachineDialog({
           {/* Configuration */}
           <div className="space-y-4">
             {/* Target State */}
-            <Tabs value={mode} onValueChange={(v) => setMode(v as "existing" | "new")}>
+            <Tabs
+              value={mode}
+              onValueChange={(v) => setMode(v as "existing" | "new")}
+            >
               <Label>Target State</Label>
               <TabsList className="grid w-full grid-cols-2 mt-2">
                 <TabsTrigger value="existing">Existing State</TabsTrigger>
@@ -171,7 +175,10 @@ export function ImportToStateMachineDialog({
               </TabsList>
 
               <TabsContent value="existing" className="mt-3">
-                <Select value={selectedStateId} onValueChange={setSelectedStateId}>
+                <Select
+                  value={selectedStateId}
+                  onValueChange={setSelectedStateId}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select a state..." />
                   </SelectTrigger>
@@ -221,7 +228,9 @@ export function ImportToStateMachineDialog({
                 min={0.5}
                 max={1}
                 step={0.01}
-                onValueChange={([v]) => v !== undefined && setSimilarityThreshold(v)}
+                onValueChange={([v]) =>
+                  v !== undefined && setSimilarityThreshold(v)
+                }
               />
               <p className="text-xs text-muted-foreground">
                 Higher values require closer matches. Recommended: 85-95%

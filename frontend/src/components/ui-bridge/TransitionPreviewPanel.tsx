@@ -19,7 +19,10 @@ import type {
   SuggestedTransition,
   UIBridgeDiscoveredState,
 } from "@/hooks/useUIBridgeExploration";
-import { getConfidenceDistribution, getUniqueStates } from "@/lib/ui-bridge/transition-builder";
+import {
+  getConfidenceDistribution,
+  getUniqueStates,
+} from "@/lib/ui-bridge/transition-builder";
 import { TransitionTable } from "./TransitionTable";
 import { TransitionGraph } from "./TransitionGraph";
 
@@ -40,7 +43,8 @@ export function TransitionPreviewPanel({
 }: TransitionPreviewPanelProps) {
   const [acceptedIds, setAcceptedIds] = useState<Set<string>>(new Set());
   const [rejectedIds, setRejectedIds] = useState<Set<string>>(new Set());
-  const [selectedTransition, setSelectedTransition] = useState<SuggestedTransition | null>(null);
+  const [selectedTransition, setSelectedTransition] =
+    useState<SuggestedTransition | null>(null);
 
   // Calculate metrics
   const metrics = useMemo(() => {
@@ -51,7 +55,8 @@ export function TransitionPreviewPanel({
       uniqueStates: uniqueStates.size,
       accepted: acceptedIds.size,
       rejected: rejectedIds.size,
-      pending: suggestedTransitions.length - acceptedIds.size - rejectedIds.size,
+      pending:
+        suggestedTransitions.length - acceptedIds.size - rejectedIds.size,
       ...distribution,
     };
   }, [suggestedTransitions, acceptedIds, rejectedIds]);
@@ -94,10 +99,12 @@ export function TransitionPreviewPanel({
 
   const handleAcceptHighConfidence = useCallback(() => {
     const highConfidenceTransitions = suggestedTransitions.filter(
-      (t) => t.confidence >= 0.7 && !acceptedIds.has(t.id) && !rejectedIds.has(t.id)
+      (t) =>
+        t.confidence >= 0.7 && !acceptedIds.has(t.id) && !rejectedIds.has(t.id)
     );
     setAcceptedIds(
-      (prev) => new Set([...prev, ...highConfidenceTransitions.map((t) => t.id)])
+      (prev) =>
+        new Set([...prev, ...highConfidenceTransitions.map((t) => t.id)])
     );
     onAcceptAll?.(highConfidenceTransitions);
   }, [suggestedTransitions, acceptedIds, rejectedIds, onAcceptAll]);
@@ -178,16 +185,22 @@ export function TransitionPreviewPanel({
             </div>
             <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <p className="text-2xl font-bold text-green-500">{metrics.high}</p>
+                <p className="text-2xl font-bold text-green-500">
+                  {metrics.high}
+                </p>
                 <Badge variant="default" className="bg-green-500 text-xs">
                   High
                 </Badge>
               </div>
-              <p className="text-xs text-muted-foreground">Confidence &gt;70%</p>
+              <p className="text-xs text-muted-foreground">
+                Confidence &gt;70%
+              </p>
             </div>
             <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <p className="text-2xl font-bold text-yellow-500">{metrics.medium}</p>
+                <p className="text-2xl font-bold text-yellow-500">
+                  {metrics.medium}
+                </p>
                 <Badge variant="secondary" className="text-xs">
                   Medium
                 </Badge>
@@ -201,7 +214,9 @@ export function TransitionPreviewPanel({
                   Low
                 </Badge>
               </div>
-              <p className="text-xs text-muted-foreground">Confidence &lt;40%</p>
+              <p className="text-xs text-muted-foreground">
+                Confidence &lt;40%
+              </p>
             </div>
           </div>
 
@@ -212,15 +227,21 @@ export function TransitionPreviewPanel({
               <div className="flex items-center gap-4 text-sm">
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  <span className="text-green-500">{metrics.accepted} accepted</span>
+                  <span className="text-green-500">
+                    {metrics.accepted} accepted
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <XCircle className="h-4 w-4 text-red-500" />
-                  <span className="text-red-500">{metrics.rejected} rejected</span>
+                  <span className="text-red-500">
+                    {metrics.rejected} rejected
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <AlertTriangle className="h-4 w-4 text-yellow-500" />
-                  <span className="text-yellow-500">{metrics.pending} pending</span>
+                  <span className="text-yellow-500">
+                    {metrics.pending} pending
+                  </span>
                 </div>
               </div>
             </>
@@ -271,18 +292,22 @@ export function TransitionPreviewPanel({
                   <div>
                     <p className="text-muted-foreground">From</p>
                     <p className="font-mono text-xs">
-                      {selectedTransition.fromStateName || selectedTransition.fromStateHash}
+                      {selectedTransition.fromStateName ||
+                        selectedTransition.fromStateHash}
                     </p>
                   </div>
                   <div>
                     <p className="text-muted-foreground">To</p>
                     <p className="font-mono text-xs">
-                      {selectedTransition.toStateName || selectedTransition.toStateHash}
+                      {selectedTransition.toStateName ||
+                        selectedTransition.toStateHash}
                     </p>
                   </div>
                   <div>
                     <p className="text-muted-foreground">Trigger</p>
-                    <p className="font-mono text-xs">{selectedTransition.triggerElementId}</p>
+                    <p className="font-mono text-xs">
+                      {selectedTransition.triggerElementId}
+                    </p>
                   </div>
                   <div>
                     <p className="text-muted-foreground">Confidence</p>

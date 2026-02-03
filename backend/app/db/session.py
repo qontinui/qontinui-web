@@ -1,5 +1,8 @@
+import os
+import ssl
 from collections.abc import AsyncGenerator
 
+import structlog
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
@@ -26,7 +29,6 @@ else:
 
 # Handle SSL configuration for asyncpg
 # asyncpg doesn't accept sslmode in the URL, so we parse it and configure separately
-import ssl
 
 connect_args = {}
 if "sslmode=require" in async_database_url:
@@ -48,7 +50,6 @@ else:
 # ============================================================================
 
 # Get pool settings from environment or use defaults based on environment
-import os
 
 environment = getattr(settings, "ENVIRONMENT", "development")
 num_instances = int(os.getenv("APP_INSTANCE_COUNT", "1"))
@@ -92,7 +93,6 @@ async_engine = create_async_engine(
 )
 
 # Log pool configuration on startup
-import structlog
 
 logger = structlog.get_logger(__name__)
 logger.info(
@@ -143,17 +143,23 @@ async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
         async with AsyncSessionLocal() as session:
             # ... your code ...
     """
-    async with AsyncSessionLocal() as session:
-        try:
-            yield session
-            await session.commit()
-        except GeneratorExit:
-            # Generator was closed prematurely (e.g., client disconnect, break from loop)
-            # Don't try to commit or rollback - just let the context manager handle cleanup
-            # This prevents IllegalStateChangeError when close() is called while
-            # another operation is in progress
-            pass
-        except Exception:
-            await session.rollback()
-            raise
-        # Note: No explicit session.close() needed - the async context manager handles it
+    session = AsyncSessionLocal()
+    generator_exited = False
+    try:
+        yield session
+        await session.commit()
+    except GeneratorExit:
+        # Generator was closed prematurely (e.g., client disconnect, break from loop)
+        # Don't try to commit, rollback, or close - the session may have an
+        # operation in progress (_connection_for_bind) and calling close() would
+        # trigger IllegalStateChangeError. The connection pool will reclaim it.
+        generator_exited = True
+    except Exception:
+        await session.rollback()
+        raise
+    finally:
+        if not generator_exited:
+            try:
+                await session.close()
+            except Exception:
+                pass

@@ -135,7 +135,9 @@ export function ExtractionMethodSelector({
                   "mb-3 transition-all duration-300",
                   isSelected && "scale-110"
                 )}
-                style={{ color: isSelected ? option.color : "var(--text-muted)" }}
+                style={{
+                  color: isSelected ? option.color : "var(--text-muted)",
+                }}
               >
                 {option.icon}
               </div>

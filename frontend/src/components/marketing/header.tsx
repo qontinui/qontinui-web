@@ -22,11 +22,7 @@ export function Header() {
             onClick={() => router.push("/")}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/q-logo.png"
-              alt="Qontinui"
-              className="h-8 w-auto"
-            />
+            <img src="/q-logo.png" alt="Qontinui" className="h-8 w-auto" />
             <span className="text-2xl font-bold text-primary">ontinui</span>
           </div>
           <div className="flex items-center gap-4">

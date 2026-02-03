@@ -62,9 +62,7 @@ export function convertToQontinuiConfig(
   };
 
   // Create default category
-  const categories: Category[] = [
-    { name: "Main", automationEnabled: true },
-  ];
+  const categories: Category[] = [{ name: "Main", automationEnabled: true }];
 
   // Create empty workflows array (will be populated by user)
   const workflows: Workflow[] = [];
@@ -122,7 +120,10 @@ function extractImageFormat(base64: string): "png" | "jpg" | "jpeg" {
   if (base64.startsWith("data:image/png")) {
     return "png";
   }
-  if (base64.startsWith("data:image/jpeg") || base64.startsWith("data:image/jpg")) {
+  if (
+    base64.startsWith("data:image/jpeg") ||
+    base64.startsWith("data:image/jpg")
+  ) {
     return "jpeg";
   }
   // Default to png
@@ -195,7 +196,8 @@ function convertTransitions(
       id: `transition_${index}`,
       type: "OutgoingTransition",
       name: `${fromState?.name || td.from_state_id} → ${toState?.name || td.to_state_id}`,
-      description: td.action_type === "click" ? "Click-based transition" : undefined,
+      description:
+        td.action_type === "click" ? "Click-based transition" : undefined,
       fromState: td.from_state_id,
       toState: td.to_state_id,
       staysVisible: true,
@@ -262,8 +264,12 @@ export function mergeWithExistingConfig(
         id: newTransId,
         fromState: idMapping.get(outgoing.fromState) || outgoing.fromState,
         toState: idMapping.get(outgoing.toState) || outgoing.toState,
-        activateStates: outgoing.activateStates.map((s) => idMapping.get(s) || s),
-        deactivateStates: outgoing.deactivateStates.map((s) => idMapping.get(s) || s),
+        activateStates: outgoing.activateStates.map(
+          (s) => idMapping.get(s) || s
+        ),
+        deactivateStates: outgoing.deactivateStates.map(
+          (s) => idMapping.get(s) || s
+        ),
       };
     }
 
@@ -322,7 +328,9 @@ export function validateGeneratedConfig(config: QontinuiConfig): {
     for (const si of state.stateImages) {
       for (const pattern of si.patterns) {
         if (!imageIds.has(pattern.imageId)) {
-          errors.push(`State image "${si.name}" references missing image "${pattern.imageId}"`);
+          errors.push(
+            `State image "${si.name}" references missing image "${pattern.imageId}"`
+          );
         }
       }
     }
@@ -334,10 +342,14 @@ export function validateGeneratedConfig(config: QontinuiConfig): {
     if (trans.type === "OutgoingTransition") {
       const outgoing = trans as OutgoingTransition;
       if (!stateIds.has(outgoing.fromState)) {
-        errors.push(`Transition "${trans.id}" references missing state "${outgoing.fromState}"`);
+        errors.push(
+          `Transition "${trans.id}" references missing state "${outgoing.fromState}"`
+        );
       }
       if (!stateIds.has(outgoing.toState)) {
-        errors.push(`Transition "${trans.id}" references missing state "${outgoing.toState}"`);
+        errors.push(
+          `Transition "${trans.id}" references missing state "${outgoing.toState}"`
+        );
       }
     }
   }

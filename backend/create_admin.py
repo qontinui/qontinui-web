@@ -39,7 +39,7 @@ password = (
 db = SessionLocal()
 try:
     # Check if admin user exists
-    admin = db.query(User).filter(User.email == email).first()
+    admin = db.query(User).filter(User.email == email).first()  # type: ignore[arg-type]
     if not admin:
         admin = User(
             email=email,

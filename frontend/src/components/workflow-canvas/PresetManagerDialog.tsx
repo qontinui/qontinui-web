@@ -238,7 +238,11 @@ function EditPresetDialog({ preset, onClose, onSave }: EditPresetDialogProps) {
         </div>
 
         <div className="dialog-footer">
-          <button className="cancel-button" onClick={onClose} data-ui-id="dialog-edit-preset-cancel-btn">
+          <button
+            className="cancel-button"
+            onClick={onClose}
+            data-ui-id="dialog-edit-preset-cancel-btn"
+          >
             Cancel
           </button>
           <button
@@ -539,7 +543,7 @@ export function PresetManagerDialog({
             JSON.stringify(customPresets)
           );
           loadPresets();
-        } catch (err) {
+        } catch (_err) {
           alert("Failed to import preset: Invalid file format");
         }
       };
@@ -585,7 +589,11 @@ export function PresetManagerDialog({
       <div className="preset-manager-dialog" data-ui-id="dialog-preset-manager">
         <div className="dialog-header">
           <h2>Manage Layout Presets</h2>
-          <button className="close-button" onClick={onClose} data-ui-id="dialog-preset-manager-close-btn">
+          <button
+            className="close-button"
+            onClick={onClose}
+            data-ui-id="dialog-preset-manager-close-btn"
+          >
             ×
           </button>
         </div>
@@ -599,7 +607,11 @@ export function PresetManagerDialog({
             className="search-input"
             data-ui-id="dialog-preset-manager-search-input"
           />
-          <button className="import-button" onClick={handleImport} data-ui-id="dialog-preset-manager-import-btn">
+          <button
+            className="import-button"
+            onClick={handleImport}
+            data-ui-id="dialog-preset-manager-import-btn"
+          >
             📥 Import
           </button>
         </div>

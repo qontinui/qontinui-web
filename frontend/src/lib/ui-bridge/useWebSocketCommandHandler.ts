@@ -370,8 +370,16 @@ export function useWebSocketCommandHandler() {
           const { createAssertionExecutor } = await import("ui-bridge/ai");
           type AssertionType = import("ui-bridge/ai").AssertionType;
           const executor = createAssertionExecutor({});
-          executor.updateElements(bridge.elements as unknown as Parameters<typeof executor.updateElements>[0]);
-          const assertionRequest = payload as { target: string; type: string; expected?: unknown };
+          executor.updateElements(
+            bridge.elements as unknown as Parameters<
+              typeof executor.updateElements
+            >[0]
+          );
+          const assertionRequest = payload as {
+            target: string;
+            type: string;
+            expected?: unknown;
+          };
           const result = await executor.assert({
             target: assertionRequest.target,
             type: assertionRequest.type as AssertionType,
@@ -384,10 +392,21 @@ export function useWebSocketCommandHandler() {
           const { createAssertionExecutor } = await import("ui-bridge/ai");
           type AssertionType = import("ui-bridge/ai").AssertionType;
           const executor = createAssertionExecutor({});
-          executor.updateElements(bridge.elements as unknown as Parameters<typeof executor.updateElements>[0]);
-          const batchRequest = payload as { assertions: Array<{ target: string; type: string; expected?: unknown }>; mode?: "all" | "any" };
+          executor.updateElements(
+            bridge.elements as unknown as Parameters<
+              typeof executor.updateElements
+            >[0]
+          );
+          const batchRequest = payload as {
+            assertions: Array<{
+              target: string;
+              type: string;
+              expected?: unknown;
+            }>;
+            mode?: "all" | "any";
+          };
           const result = await executor.assertBatch({
-            assertions: batchRequest.assertions.map(a => ({
+            assertions: batchRequest.assertions.map((a) => ({
               target: a.target,
               type: a.type as AssertionType,
               expected: a.expected,
@@ -436,7 +455,9 @@ export function useWebSocketCommandHandler() {
             aliases: e.aliases || [],
             suggestedActions: [],
           }));
-          return generatePageSummary(aiElements as Parameters<typeof generatePageSummary>[0]);
+          return generatePageSummary(
+            aiElements as Parameters<typeof generatePageSummary>[0]
+          );
         }
 
         // ========== Debug ==========
@@ -478,12 +499,7 @@ export function useWebSocketCommandHandler() {
    * Send a response back via WebSocket
    */
   const sendResponse = useCallback(
-    (
-      commandId: string,
-      success: boolean,
-      result?: unknown,
-      error?: string
-    ) => {
+    (commandId: string, success: boolean, result?: unknown, error?: string) => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         const response = {
           type: "command_response",
@@ -521,7 +537,10 @@ export function useWebSocketCommandHandler() {
           }
         } else if (message.type === "command_ack") {
           // Acknowledgment received
-          console.log("[WebSocketCommandHandler] Command acknowledged:", message.commandId);
+          console.log(
+            "[WebSocketCommandHandler] Command acknowledged:",
+            message.commandId
+          );
         }
       } catch (e) {
         console.error("[WebSocketCommandHandler] Failed to parse message:", e);

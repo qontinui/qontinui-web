@@ -146,7 +146,7 @@ function StateImageThumbnail({
         };
 
         img.src = fullUrl;
-      } catch (e) {
+      } catch (_e) {
         if (!mounted) return;
         setError("Error loading");
         setLoading(false);

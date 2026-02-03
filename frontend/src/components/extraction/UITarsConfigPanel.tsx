@@ -10,7 +10,16 @@
 
 "use client";
 
-import { Bot, Globe, Monitor, Server, Cloud, Cpu, Zap, Info } from "lucide-react";
+import {
+  Bot,
+  Globe,
+  Monitor,
+  Server,
+  Cloud,
+  Cpu,
+  Zap,
+  Info,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -86,7 +95,9 @@ export function UITarsConfigPanel({
                 data-ui-id="extraction-uitars-urls-input"
                 value={config.urls?.join("\n") || ""}
                 onChange={(e) =>
-                  updateConfig({ urls: e.target.value.split("\n").filter(Boolean) })
+                  updateConfig({
+                    urls: e.target.value.split("\n").filter(Boolean),
+                  })
                 }
                 placeholder="https://example.com&#10;https://example.com/login"
                 className="font-mono text-sm min-h-[80px]"
@@ -94,14 +105,19 @@ export function UITarsConfigPanel({
             </div>
           ) : (
             <div className="space-y-2">
-              <Label htmlFor="applicationName" className="text-sm text-text-muted">
+              <Label
+                htmlFor="applicationName"
+                className="text-sm text-text-muted"
+              >
                 Application name or window title
               </Label>
               <Input
                 id="applicationName"
                 data-ui-id="extraction-uitars-app-name-input"
                 value={config.applicationName || ""}
-                onChange={(e) => updateConfig({ applicationName: e.target.value })}
+                onChange={(e) =>
+                  updateConfig({ applicationName: e.target.value })
+                }
                 placeholder="e.g., Notepad, Chrome, Calculator"
                 className="font-mono"
               />
@@ -116,15 +132,18 @@ export function UITarsConfigPanel({
             <Label className="text-brand-secondary font-mono uppercase tracking-wider">
               Exploration Goal
             </Label>
-            <span className="text-[10px] text-text-muted font-mono">(Optional)</span>
+            <span className="text-[10px] text-text-muted font-mono">
+              (Optional)
+            </span>
             <Tooltip>
               <TooltipTrigger>
                 <Info className="h-4 w-4 text-text-muted" />
               </TooltipTrigger>
               <TooltipContent className="max-w-xs">
                 <p>
-                  The default goal discovers clickable elements and states for building
-                  automation. Customize to focus on specific areas or workflows.
+                  The default goal discovers clickable elements and states for
+                  building automation. Customize to focus on specific areas or
+                  workflows.
                 </p>
               </TooltipContent>
             </Tooltip>
@@ -139,8 +158,9 @@ export function UITarsConfigPanel({
           />
 
           <p className="text-[10px] text-text-muted mt-2 font-mono">
-            The default goal discovers clickable elements to build a state machine.
-            Customize to narrow focus (e.g., &quot;Explore only the Settings menu&quot;).
+            The default goal discovers clickable elements to build a state
+            machine. Customize to narrow focus (e.g., &quot;Explore only the
+            Settings menu&quot;).
           </p>
         </Card>
 
@@ -204,7 +224,9 @@ export function UITarsConfigPanel({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="2B">2B (GTX 1080 compatible)</SelectItem>
-                    <SelectItem value="7B">7B (RTX 3080+ recommended)</SelectItem>
+                    <SelectItem value="7B">
+                      7B (RTX 3080+ recommended)
+                    </SelectItem>
                     <SelectItem value="72B">72B (Cloud only)</SelectItem>
                   </SelectContent>
                 </Select>
@@ -235,10 +257,16 @@ export function UITarsConfigPanel({
             <div className="p-3 rounded-lg bg-surface-canvas/50 border border-border-subtle">
               <div className="flex items-center gap-4 text-xs text-text-muted">
                 <span>
-                  VRAM: <span className="text-brand-secondary">{MODEL_INFO[config.modelSize].vram}</span>
+                  VRAM:{" "}
+                  <span className="text-brand-secondary">
+                    {MODEL_INFO[config.modelSize].vram}
+                  </span>
                 </span>
                 <span>
-                  Speed: <span className="text-brand-secondary">{MODEL_INFO[config.modelSize].speed}</span>
+                  Speed:{" "}
+                  <span className="text-brand-secondary">
+                    {MODEL_INFO[config.modelSize].speed}
+                  </span>
                 </span>
               </div>
             </div>
@@ -247,11 +275,15 @@ export function UITarsConfigPanel({
             {config.provider === "cloud" && (
               <div className="space-y-3 p-3 rounded-lg border border-brand-secondary/20 bg-brand-secondary/5">
                 <div className="space-y-2">
-                  <Label className="text-sm text-text-muted">HuggingFace Endpoint</Label>
+                  <Label className="text-sm text-text-muted">
+                    HuggingFace Endpoint
+                  </Label>
                   <Input
                     data-ui-id="extraction-uitars-hf-endpoint-input"
                     value={config.huggingfaceEndpoint || ""}
-                    onChange={(e) => updateConfig({ huggingfaceEndpoint: e.target.value })}
+                    onChange={(e) =>
+                      updateConfig({ huggingfaceEndpoint: e.target.value })
+                    }
                     placeholder="https://xyz.endpoints.huggingface.cloud"
                     className="font-mono text-sm"
                   />
@@ -262,7 +294,9 @@ export function UITarsConfigPanel({
                     type="password"
                     data-ui-id="extraction-uitars-hf-token-input"
                     value={config.huggingfaceApiToken || ""}
-                    onChange={(e) => updateConfig({ huggingfaceApiToken: e.target.value })}
+                    onChange={(e) =>
+                      updateConfig({ huggingfaceApiToken: e.target.value })
+                    }
                     placeholder="hf_xxxxx"
                     className="font-mono text-sm"
                   />
@@ -273,11 +307,15 @@ export function UITarsConfigPanel({
             {/* vLLM-specific settings */}
             {config.provider === "local_vllm" && (
               <div className="space-y-2 p-3 rounded-lg border border-brand-secondary/20 bg-brand-secondary/5">
-                <Label className="text-sm text-text-muted">vLLM Server URL</Label>
+                <Label className="text-sm text-text-muted">
+                  vLLM Server URL
+                </Label>
                 <Input
                   data-ui-id="extraction-uitars-vllm-url-input"
                   value={config.vllmServerUrl || ""}
-                  onChange={(e) => updateConfig({ vllmServerUrl: e.target.value })}
+                  onChange={(e) =>
+                    updateConfig({ vllmServerUrl: e.target.value })
+                  }
                   placeholder="http://localhost:8000"
                   className="font-mono text-sm"
                 />
@@ -303,19 +341,25 @@ export function UITarsConfigPanel({
                   type="number"
                   data-ui-id="extraction-uitars-max-steps-input"
                   value={config.maxSteps}
-                  onChange={(e) => updateConfig({ maxSteps: parseInt(e.target.value) || 50 })}
+                  onChange={(e) =>
+                    updateConfig({ maxSteps: parseInt(e.target.value) || 50 })
+                  }
                   min={1}
                   max={200}
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-sm text-text-muted">Timeout (seconds)</Label>
+                <Label className="text-sm text-text-muted">
+                  Timeout (seconds)
+                </Label>
                 <Input
                   type="number"
                   data-ui-id="extraction-uitars-timeout-input"
                   value={config.timeoutSeconds}
                   onChange={(e) =>
-                    updateConfig({ timeoutSeconds: parseInt(e.target.value) || 600 })
+                    updateConfig({
+                      timeoutSeconds: parseInt(e.target.value) || 600,
+                    })
                   }
                   min={60}
                   max={3600}
@@ -333,7 +377,9 @@ export function UITarsConfigPanel({
               <Switch
                 data-ui-id="extraction-uitars-save-screenshots-toggle"
                 checked={config.saveScreenshots}
-                onCheckedChange={(checked) => updateConfig({ saveScreenshots: checked })}
+                onCheckedChange={(checked) =>
+                  updateConfig({ saveScreenshots: checked })
+                }
               />
             </div>
           </div>
@@ -346,8 +392,8 @@ export function UITarsConfigPanel({
             UI-TARS uses vision-language models to autonomously explore GUIs.
             {config.provider === "local_transformers" && (
               <span className="block mt-1">
-                Local inference requires a CUDA-capable GPU. The 2B model with int4
-                quantization works on 8GB GPUs.
+                Local inference requires a CUDA-capable GPU. The 2B model with
+                int4 quantization works on 8GB GPUs.
               </span>
             )}
           </AlertDescription>

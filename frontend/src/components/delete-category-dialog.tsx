@@ -30,7 +30,11 @@ export function DeleteCategoryDialog({
 }: DeleteCategoryDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[425px]" onSubmit={onMoveToMain} data-ui-id="dialog-delete-category">
+      <DialogContent
+        className="sm:max-w-[425px]"
+        onSubmit={onMoveToMain}
+        data-ui-id="dialog-delete-category"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-yellow-500" />
@@ -69,7 +73,12 @@ export function DeleteCategoryDialog({
           >
             Delete All Workflows
           </Button>
-          <Button onClick={onClose} variant="outline" className="w-full" data-ui-id="dialog-delete-category-cancel-btn">
+          <Button
+            onClick={onClose}
+            variant="outline"
+            className="w-full"
+            data-ui-id="dialog-delete-category-cancel-btn"
+          >
             Cancel
           </Button>
         </DialogFooter>

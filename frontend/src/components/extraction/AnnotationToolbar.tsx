@@ -138,12 +138,25 @@ export function AnnotationToolbar({
     resolveConflict,
   } = store;
 
-  const tools: { id: AnnotationTool; icon: React.ReactNode; label: string }[] = [
-    { id: "select", icon: <MousePointer2 className="h-4 w-4" />, label: "Select (S)" },
-    { id: "draw", icon: <Square className="h-4 w-4" />, label: "Draw Box (D)" },
-    { id: "delete", icon: <Trash2 className="h-4 w-4" />, label: "Delete (X)" },
-    { id: "pan", icon: <Move className="h-4 w-4" />, label: "Pan (P)" },
-  ];
+  const tools: { id: AnnotationTool; icon: React.ReactNode; label: string }[] =
+    [
+      {
+        id: "select",
+        icon: <MousePointer2 className="h-4 w-4" />,
+        label: "Select (S)",
+      },
+      {
+        id: "draw",
+        icon: <Square className="h-4 w-4" />,
+        label: "Draw Box (D)",
+      },
+      {
+        id: "delete",
+        icon: <Trash2 className="h-4 w-4" />,
+        label: "Delete (X)",
+      },
+      { id: "pan", icon: <Move className="h-4 w-4" />, label: "Pan (P)" },
+    ];
 
   const handleZoomIn = () => setZoom(zoom * 1.2);
   const handleZoomOut = () => setZoom(zoom / 1.2);
@@ -505,7 +518,9 @@ export function AnnotationToolbar({
                 size="sm"
                 pressed={showConfidence}
                 onPressedChange={setShowConfidence}
-                className={showConfidence ? "bg-[#9B59B6]/20 text-[#9B59B6]" : ""}
+                className={
+                  showConfidence ? "bg-[#9B59B6]/20 text-[#9B59B6]" : ""
+                }
               >
                 <Percent className="h-4 w-4" />
               </Toggle>
@@ -777,7 +792,9 @@ export function AnnotationToolbar({
                 <DropdownMenuItem onClick={() => resolveConflict("keep_local")}>
                   Keep Local Changes
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => resolveConflict("keep_remote")}>
+                <DropdownMenuItem
+                  onClick={() => resolveConflict("keep_remote")}
+                >
                   Use Remote Version
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => resolveConflict("merge")}>

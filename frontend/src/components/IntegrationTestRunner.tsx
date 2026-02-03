@@ -244,7 +244,9 @@ export function IntegrationTestRunner() {
       <div className="flex items-center gap-2">
         <span
           className={`font-medium ${
-            assertion.passed ? "text-green-700 dark:text-green-300" : "text-red-700 dark:text-red-300"
+            assertion.passed
+              ? "text-green-700 dark:text-green-300"
+              : "text-red-700 dark:text-red-300"
           }`}
         >
           {assertion.passed ? "PASS" : "FAIL"}

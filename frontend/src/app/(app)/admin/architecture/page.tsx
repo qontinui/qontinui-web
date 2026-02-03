@@ -12,11 +12,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import {
-  Home,
-  Shield,
-  ArrowLeft,
-} from "lucide-react";
+import { Home, Shield, ArrowLeft } from "lucide-react";
 import ArchitectureDiagrams from "@/components/admin/architecture/ArchitectureDiagrams";
 
 export default function ArchitecturePage() {

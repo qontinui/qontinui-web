@@ -13,17 +13,27 @@
 
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { useExtractionAnnotationStore } from "./extraction-annotation-store";
-import type { AnnotatedElement, BoundingBox } from "./extraction-annotation-store";
+import type {
+  AnnotatedElement,
+  BoundingBox,
+} from "./extraction-annotation-store";
 
 // Mock the annotation persistence service
 vi.mock("@/services/annotation-persistence", () => ({
   saveAnnotations: vi.fn().mockResolvedValue({ success: true }),
-  loadAnnotations: vi.fn().mockResolvedValue({ success: true, annotations: [] }),
-  generateScreenshotId: vi.fn((extractionId: string, pageIndex: number) => `${extractionId}-page-${pageIndex}`),
+  loadAnnotations: vi
+    .fn()
+    .mockResolvedValue({ success: true, annotations: [] }),
+  generateScreenshotId: vi.fn(
+    (extractionId: string, pageIndex: number) =>
+      `${extractionId}-page-${pageIndex}`
+  ),
 }));
 
 // Helper to create mock elements
-function createMockElement(overrides: Partial<AnnotatedElement> = {}): Omit<AnnotatedElement, "id"> {
+function createMockElement(
+  overrides: Partial<AnnotatedElement> = {}
+): Omit<AnnotatedElement, "id"> {
   return {
     bbox: { x: 100, y: 100, width: 50, height: 50 },
     label: "Test Element",
@@ -100,7 +110,7 @@ describe("ExtractionAnnotationStore", () => {
       const { addElement } = useExtractionAnnotationStore.getState();
       const mockElement = createMockElement();
 
-      const id = addElement(mockElement);
+      const _id = addElement(mockElement);
 
       const state = useExtractionAnnotationStore.getState();
       expect(state.elements[0].reviewStatus).toBe("pending");
@@ -136,10 +146,7 @@ describe("ExtractionAnnotationStore", () => {
 
     it("should generate unique IDs for each element", () => {
       const { addElements } = useExtractionAnnotationStore.getState();
-      const mockElements = [
-        createMockElement(),
-        createMockElement(),
-      ];
+      const mockElements = [createMockElement(), createMockElement()];
 
       const ids = addElements(mockElements);
 
@@ -149,7 +156,8 @@ describe("ExtractionAnnotationStore", () => {
 
   describe("Element CRUD - updateElement", () => {
     it("should update a single element", () => {
-      const { addElement, updateElement } = useExtractionAnnotationStore.getState();
+      const { addElement, updateElement } =
+        useExtractionAnnotationStore.getState();
       const id = addElement(createMockElement());
 
       updateElement(id, { label: "Updated Label", confidence: 0.99 });
@@ -160,7 +168,8 @@ describe("ExtractionAnnotationStore", () => {
     });
 
     it("should not modify other elements", () => {
-      const { addElements, updateElement } = useExtractionAnnotationStore.getState();
+      const { addElements, updateElement } =
+        useExtractionAnnotationStore.getState();
       const ids = addElements([
         createMockElement({ label: "Element 1" }),
         createMockElement({ label: "Element 2" }),
@@ -176,7 +185,8 @@ describe("ExtractionAnnotationStore", () => {
 
   describe("Element CRUD - updateElements", () => {
     it("should update multiple elements with same updates", () => {
-      const { addElements, updateElements } = useExtractionAnnotationStore.getState();
+      const { addElements, updateElements } =
+        useExtractionAnnotationStore.getState();
       const ids = addElements([
         createMockElement({ label: "Element 1" }),
         createMockElement({ label: "Element 2" }),
@@ -194,7 +204,8 @@ describe("ExtractionAnnotationStore", () => {
 
   describe("Element CRUD - deleteElement", () => {
     it("should delete a single element", () => {
-      const { addElement, deleteElement } = useExtractionAnnotationStore.getState();
+      const { addElement, deleteElement } =
+        useExtractionAnnotationStore.getState();
       const id = addElement(createMockElement());
 
       deleteElement(id);
@@ -204,7 +215,8 @@ describe("ExtractionAnnotationStore", () => {
     });
 
     it("should remove deleted element from selection", () => {
-      const { addElement, selectElement, deleteElement } = useExtractionAnnotationStore.getState();
+      const { addElement, selectElement, deleteElement } =
+        useExtractionAnnotationStore.getState();
       const id = addElement(createMockElement());
       selectElement(id);
 
@@ -217,7 +229,8 @@ describe("ExtractionAnnotationStore", () => {
 
   describe("Element CRUD - deleteElements", () => {
     it("should delete multiple elements", () => {
-      const { addElements, deleteElements } = useExtractionAnnotationStore.getState();
+      const { addElements, deleteElements } =
+        useExtractionAnnotationStore.getState();
       const ids = addElements([
         createMockElement({ label: "Element 1" }),
         createMockElement({ label: "Element 2" }),
@@ -232,7 +245,8 @@ describe("ExtractionAnnotationStore", () => {
     });
 
     it("should remove deleted elements from selection", () => {
-      const { addElements, selectElements, deleteElements } = useExtractionAnnotationStore.getState();
+      const { addElements, selectElements, deleteElements } =
+        useExtractionAnnotationStore.getState();
       const ids = addElements([
         createMockElement({ label: "Element 1" }),
         createMockElement({ label: "Element 2" }),
@@ -248,7 +262,8 @@ describe("ExtractionAnnotationStore", () => {
 
   describe("Selection - selectElement", () => {
     it("should select a single element", () => {
-      const { addElements, selectElement } = useExtractionAnnotationStore.getState();
+      const { addElements, selectElement } =
+        useExtractionAnnotationStore.getState();
       const ids = addElements([
         createMockElement({ label: "Element 1" }),
         createMockElement({ label: "Element 2" }),
@@ -261,7 +276,8 @@ describe("ExtractionAnnotationStore", () => {
     });
 
     it("should replace selection when addToSelection is false", () => {
-      const { addElements, selectElement } = useExtractionAnnotationStore.getState();
+      const { addElements, selectElement } =
+        useExtractionAnnotationStore.getState();
       const ids = addElements([
         createMockElement({ label: "Element 1" }),
         createMockElement({ label: "Element 2" }),
@@ -275,7 +291,8 @@ describe("ExtractionAnnotationStore", () => {
     });
 
     it("should add to selection when addToSelection is true", () => {
-      const { addElements, selectElement } = useExtractionAnnotationStore.getState();
+      const { addElements, selectElement } =
+        useExtractionAnnotationStore.getState();
       const ids = addElements([
         createMockElement({ label: "Element 1" }),
         createMockElement({ label: "Element 2" }),
@@ -290,7 +307,8 @@ describe("ExtractionAnnotationStore", () => {
     });
 
     it("should toggle selection when element is already selected with addToSelection", () => {
-      const { addElements, selectElement } = useExtractionAnnotationStore.getState();
+      const { addElements, selectElement } =
+        useExtractionAnnotationStore.getState();
       const ids = addElements([
         createMockElement({ label: "Element 1" }),
         createMockElement({ label: "Element 2" }),
@@ -305,7 +323,8 @@ describe("ExtractionAnnotationStore", () => {
     });
 
     it("should clear selection when id is null", () => {
-      const { addElement, selectElement } = useExtractionAnnotationStore.getState();
+      const { addElement, selectElement } =
+        useExtractionAnnotationStore.getState();
       const id = addElement(createMockElement());
       selectElement(id);
 
@@ -318,7 +337,8 @@ describe("ExtractionAnnotationStore", () => {
 
   describe("Selection - selectElements", () => {
     it("should select multiple elements", () => {
-      const { addElements, selectElements } = useExtractionAnnotationStore.getState();
+      const { addElements, selectElements } =
+        useExtractionAnnotationStore.getState();
       const ids = addElements([
         createMockElement({ label: "Element 1" }),
         createMockElement({ label: "Element 2" }),
@@ -334,7 +354,8 @@ describe("ExtractionAnnotationStore", () => {
 
   describe("Selection - selectAll", () => {
     it("should select all elements", () => {
-      const { addElements, selectAll } = useExtractionAnnotationStore.getState();
+      const { addElements, selectAll } =
+        useExtractionAnnotationStore.getState();
       const ids = addElements([
         createMockElement({ label: "Element 1" }),
         createMockElement({ label: "Element 2" }),
@@ -351,7 +372,8 @@ describe("ExtractionAnnotationStore", () => {
 
   describe("Selection - deselectAll", () => {
     it("should clear all selections", () => {
-      const { addElements, selectAll, deselectAll } = useExtractionAnnotationStore.getState();
+      const { addElements, selectAll, deselectAll } =
+        useExtractionAnnotationStore.getState();
       addElements([
         createMockElement({ label: "Element 1" }),
         createMockElement({ label: "Element 2" }),
@@ -367,7 +389,8 @@ describe("ExtractionAnnotationStore", () => {
 
   describe("Clipboard - copySelected", () => {
     it("should copy selected elements to clipboard", () => {
-      const { addElements, selectElements, copySelected } = useExtractionAnnotationStore.getState();
+      const { addElements, selectElements, copySelected } =
+        useExtractionAnnotationStore.getState();
       const ids = addElements([
         createMockElement({ label: "Element 1" }),
         createMockElement({ label: "Element 2" }),
@@ -383,7 +406,8 @@ describe("ExtractionAnnotationStore", () => {
     });
 
     it("should not modify clipboard if nothing is selected", () => {
-      const { addElement, deselectAll, copySelected } = useExtractionAnnotationStore.getState();
+      const { addElement, deselectAll, copySelected } =
+        useExtractionAnnotationStore.getState();
       addElement(createMockElement());
       deselectAll();
 
@@ -396,7 +420,8 @@ describe("ExtractionAnnotationStore", () => {
 
   describe("Clipboard - cutSelected", () => {
     it("should copy to clipboard and delete selected elements", () => {
-      const { addElements, selectElements, cutSelected } = useExtractionAnnotationStore.getState();
+      const { addElements, selectElements, cutSelected } =
+        useExtractionAnnotationStore.getState();
       const ids = addElements([
         createMockElement({ label: "Element 1" }),
         createMockElement({ label: "Element 2" }),
@@ -414,8 +439,11 @@ describe("ExtractionAnnotationStore", () => {
 
   describe("Clipboard - paste", () => {
     it("should paste elements from clipboard with offset", () => {
-      const { addElement, selectElement, copySelected, paste } = useExtractionAnnotationStore.getState();
-      const id = addElement(createMockElement({ bbox: { x: 100, y: 100, width: 50, height: 50 } }));
+      const { addElement, selectElement, copySelected, paste } =
+        useExtractionAnnotationStore.getState();
+      const id = addElement(
+        createMockElement({ bbox: { x: 100, y: 100, width: 50, height: 50 } })
+      );
       selectElement(id);
       copySelected();
 
@@ -430,8 +458,11 @@ describe("ExtractionAnnotationStore", () => {
     });
 
     it("should use default offset when not specified", () => {
-      const { addElement, selectElement, copySelected, paste } = useExtractionAnnotationStore.getState();
-      const id = addElement(createMockElement({ bbox: { x: 100, y: 100, width: 50, height: 50 } }));
+      const { addElement, selectElement, copySelected, paste } =
+        useExtractionAnnotationStore.getState();
+      const id = addElement(
+        createMockElement({ bbox: { x: 100, y: 100, width: 50, height: 50 } })
+      );
       selectElement(id);
       copySelected();
 
@@ -444,7 +475,8 @@ describe("ExtractionAnnotationStore", () => {
     });
 
     it("should reset review status to pending on pasted elements", () => {
-      const { addElement, selectElement, updateElement, copySelected, paste } = useExtractionAnnotationStore.getState();
+      const { addElement, selectElement, updateElement, copySelected, paste } =
+        useExtractionAnnotationStore.getState();
       const id = addElement(createMockElement());
       updateElement(id, { reviewStatus: "approved" });
       selectElement(id);
@@ -470,7 +502,8 @@ describe("ExtractionAnnotationStore", () => {
 
   describe("History - undo", () => {
     it("should undo the last action", () => {
-      const { addElement, deleteElement, undo } = useExtractionAnnotationStore.getState();
+      const { addElement, deleteElement, undo } =
+        useExtractionAnnotationStore.getState();
       const id = addElement(createMockElement({ label: "Original" }));
 
       deleteElement(id);
@@ -482,7 +515,8 @@ describe("ExtractionAnnotationStore", () => {
     });
 
     it("should restore selection state", () => {
-      const { addElements, selectElement, deleteElement, undo } = useExtractionAnnotationStore.getState();
+      const { addElements, selectElement, deleteElement, undo } =
+        useExtractionAnnotationStore.getState();
       const ids = addElements([
         createMockElement({ label: "Element 1" }),
         createMockElement({ label: "Element 2" }),
@@ -510,7 +544,8 @@ describe("ExtractionAnnotationStore", () => {
 
   describe("History - redo", () => {
     it("should redo the undone action", () => {
-      const { addElement, deleteElement, undo, redo } = useExtractionAnnotationStore.getState();
+      const { addElement, deleteElement, undo, redo } =
+        useExtractionAnnotationStore.getState();
       const id = addElement(createMockElement());
 
       deleteElement(id);
@@ -522,7 +557,8 @@ describe("ExtractionAnnotationStore", () => {
     });
 
     it("should not redo if at end of history", () => {
-      const { addElement, canRedo, redo } = useExtractionAnnotationStore.getState();
+      const { addElement, canRedo, redo } =
+        useExtractionAnnotationStore.getState();
       addElement(createMockElement());
 
       expect(canRedo()).toBe(false);
@@ -533,14 +569,15 @@ describe("ExtractionAnnotationStore", () => {
     });
 
     it("should clear redo history when new action is performed", () => {
-      const { addElement, deleteElement, undo, canRedo } = useExtractionAnnotationStore.getState();
+      const { addElement, deleteElement, undo, canRedo } =
+        useExtractionAnnotationStore.getState();
       const id = addElement(createMockElement());
       deleteElement(id);
       undo();
 
       addElement(createMockElement({ label: "New Element" }));
 
-      const state = useExtractionAnnotationStore.getState();
+      const _state = useExtractionAnnotationStore.getState();
       expect(canRedo()).toBe(false);
     });
   });
@@ -563,7 +600,8 @@ describe("ExtractionAnnotationStore", () => {
     });
 
     it("should correctly report canRedo", () => {
-      const { addElement, deleteElement, undo, canRedo } = useExtractionAnnotationStore.getState();
+      const { addElement, deleteElement, undo, canRedo } =
+        useExtractionAnnotationStore.getState();
       const id = addElement(createMockElement());
 
       expect(canRedo()).toBe(false);
@@ -576,7 +614,8 @@ describe("ExtractionAnnotationStore", () => {
 
   describe("Version History - saveVersion", () => {
     it("should save current state as a version", () => {
-      const { addElement, saveVersion } = useExtractionAnnotationStore.getState();
+      const { addElement, saveVersion } =
+        useExtractionAnnotationStore.getState();
       addElement(createMockElement({ label: "Test Element" }));
 
       saveVersion("Initial version");
@@ -589,7 +628,8 @@ describe("ExtractionAnnotationStore", () => {
     });
 
     it("should limit versions to MAX_VERSIONS", () => {
-      const { addElement, saveVersion } = useExtractionAnnotationStore.getState();
+      const { addElement, saveVersion } =
+        useExtractionAnnotationStore.getState();
       addElement(createMockElement());
 
       // Save 25 versions (MAX_VERSIONS is 20)
@@ -604,7 +644,8 @@ describe("ExtractionAnnotationStore", () => {
 
   describe("Version History - loadVersion", () => {
     it("should restore elements from a saved version", () => {
-      const { addElement, updateElement, saveVersion, loadVersion } = useExtractionAnnotationStore.getState();
+      const { addElement, updateElement, saveVersion, loadVersion } =
+        useExtractionAnnotationStore.getState();
       const id = addElement(createMockElement({ label: "Original" }));
       saveVersion("Version 1");
 
@@ -621,7 +662,8 @@ describe("ExtractionAnnotationStore", () => {
     });
 
     it("should clear selection when loading version", () => {
-      const { addElement, selectElement, saveVersion, loadVersion } = useExtractionAnnotationStore.getState();
+      const { addElement, selectElement, saveVersion, loadVersion } =
+        useExtractionAnnotationStore.getState();
       const id = addElement(createMockElement());
       saveVersion("Version 1");
       selectElement(id);
@@ -634,7 +676,8 @@ describe("ExtractionAnnotationStore", () => {
     });
 
     it("should do nothing if version not found", () => {
-      const { addElement, loadVersion } = useExtractionAnnotationStore.getState();
+      const { addElement, loadVersion } =
+        useExtractionAnnotationStore.getState();
       addElement(createMockElement({ label: "Current" }));
 
       loadVersion("non-existent-version");
@@ -646,7 +689,8 @@ describe("ExtractionAnnotationStore", () => {
 
   describe("Version History - deleteVersion", () => {
     it("should delete a saved version", () => {
-      const { addElement, saveVersion, deleteVersion } = useExtractionAnnotationStore.getState();
+      const { addElement, saveVersion, deleteVersion } =
+        useExtractionAnnotationStore.getState();
       addElement(createMockElement());
       saveVersion("Version 1");
 
@@ -660,7 +704,8 @@ describe("ExtractionAnnotationStore", () => {
     });
 
     it("should clear currentVersionId if deleted version was current", () => {
-      const { addElement, saveVersion, deleteVersion } = useExtractionAnnotationStore.getState();
+      const { addElement, saveVersion, deleteVersion } =
+        useExtractionAnnotationStore.getState();
       addElement(createMockElement());
       saveVersion("Version 1");
 
@@ -676,7 +721,8 @@ describe("ExtractionAnnotationStore", () => {
 
   describe("Review Workflow - setReviewStatus", () => {
     it("should set review status for specified elements", () => {
-      const { addElements, setReviewStatus } = useExtractionAnnotationStore.getState();
+      const { addElements, setReviewStatus } =
+        useExtractionAnnotationStore.getState();
       const ids = addElements([
         createMockElement({ label: "Element 1" }),
         createMockElement({ label: "Element 2" }),
@@ -693,7 +739,8 @@ describe("ExtractionAnnotationStore", () => {
     });
 
     it("should set reviewedAt timestamp", () => {
-      const { addElement, setReviewStatus } = useExtractionAnnotationStore.getState();
+      const { addElement, setReviewStatus } =
+        useExtractionAnnotationStore.getState();
       const id = addElement(createMockElement());
       const before = Date.now();
 
@@ -708,7 +755,8 @@ describe("ExtractionAnnotationStore", () => {
 
   describe("Review Workflow - bulkApprove", () => {
     it("should approve all selected elements", () => {
-      const { addElements, selectAll, bulkApprove } = useExtractionAnnotationStore.getState();
+      const { addElements, selectAll, bulkApprove } =
+        useExtractionAnnotationStore.getState();
       addElements([
         createMockElement({ label: "Element 1" }),
         createMockElement({ label: "Element 2" }),
@@ -718,13 +766,16 @@ describe("ExtractionAnnotationStore", () => {
       bulkApprove();
 
       const state = useExtractionAnnotationStore.getState();
-      expect(state.elements.every((el) => el.reviewStatus === "approved")).toBe(true);
+      expect(state.elements.every((el) => el.reviewStatus === "approved")).toBe(
+        true
+      );
     });
   });
 
   describe("Review Workflow - bulkReject", () => {
     it("should reject all selected elements with comment", () => {
-      const { addElements, selectAll, bulkReject } = useExtractionAnnotationStore.getState();
+      const { addElements, selectAll, bulkReject } =
+        useExtractionAnnotationStore.getState();
       addElements([
         createMockElement({ label: "Element 1" }),
         createMockElement({ label: "Element 2" }),
@@ -734,8 +785,12 @@ describe("ExtractionAnnotationStore", () => {
       bulkReject("Incorrect labels");
 
       const state = useExtractionAnnotationStore.getState();
-      expect(state.elements.every((el) => el.reviewStatus === "rejected")).toBe(true);
-      expect(state.elements.every((el) => el.reviewComment === "Incorrect labels")).toBe(true);
+      expect(state.elements.every((el) => el.reviewStatus === "rejected")).toBe(
+        true
+      );
+      expect(
+        state.elements.every((el) => el.reviewComment === "Incorrect labels")
+      ).toBe(true);
     });
   });
 
@@ -752,7 +807,8 @@ describe("ExtractionAnnotationStore", () => {
 
   describe("Grid - snapToGrid", () => {
     it("should snap value to grid when enabled", () => {
-      const { setGridEnabled, setGridSize, snapToGrid } = useExtractionAnnotationStore.getState();
+      const { setGridEnabled, setGridSize, snapToGrid } =
+        useExtractionAnnotationStore.getState();
       setGridEnabled(true);
       setGridSize(10);
 
@@ -762,7 +818,8 @@ describe("ExtractionAnnotationStore", () => {
     });
 
     it("should round down when closer to lower grid line", () => {
-      const { setGridEnabled, setGridSize, snapToGrid } = useExtractionAnnotationStore.getState();
+      const { setGridEnabled, setGridSize, snapToGrid } =
+        useExtractionAnnotationStore.getState();
       setGridEnabled(true);
       setGridSize(10);
 
@@ -772,7 +829,8 @@ describe("ExtractionAnnotationStore", () => {
     });
 
     it("should not snap when grid is disabled", () => {
-      const { setGridEnabled, snapToGrid } = useExtractionAnnotationStore.getState();
+      const { setGridEnabled, snapToGrid } =
+        useExtractionAnnotationStore.getState();
       setGridEnabled(false);
 
       const snapped = snapToGrid(57);
@@ -783,7 +841,8 @@ describe("ExtractionAnnotationStore", () => {
 
   describe("Grid - snapBboxToGrid", () => {
     it("should snap bounding box to grid when enabled", () => {
-      const { setGridEnabled, setGridSize, snapBboxToGrid } = useExtractionAnnotationStore.getState();
+      const { setGridEnabled, setGridSize, snapBboxToGrid } =
+        useExtractionAnnotationStore.getState();
       setGridEnabled(true);
       setGridSize(10);
 
@@ -797,7 +856,8 @@ describe("ExtractionAnnotationStore", () => {
     });
 
     it("should ensure minimum size equals grid size", () => {
-      const { setGridEnabled, setGridSize, snapBboxToGrid } = useExtractionAnnotationStore.getState();
+      const { setGridEnabled, setGridSize, snapBboxToGrid } =
+        useExtractionAnnotationStore.getState();
       setGridEnabled(true);
       setGridSize(10);
 
@@ -809,7 +869,8 @@ describe("ExtractionAnnotationStore", () => {
     });
 
     it("should not snap when grid is disabled", () => {
-      const { setGridEnabled, snapBboxToGrid } = useExtractionAnnotationStore.getState();
+      const { setGridEnabled, snapBboxToGrid } =
+        useExtractionAnnotationStore.getState();
       setGridEnabled(false);
 
       const bbox: BoundingBox = { x: 57, y: 43, width: 98, height: 73 };
@@ -821,13 +882,16 @@ describe("ExtractionAnnotationStore", () => {
 
   describe("Grid - addElement with grid enabled", () => {
     it("should snap new element bbox to grid", () => {
-      const { setGridEnabled, setGridSize, addElement } = useExtractionAnnotationStore.getState();
+      const { setGridEnabled, setGridSize, addElement } =
+        useExtractionAnnotationStore.getState();
       setGridEnabled(true);
       setGridSize(10);
 
-      const id = addElement(createMockElement({
-        bbox: { x: 57, y: 43, width: 98, height: 73 },
-      }));
+      const id = addElement(
+        createMockElement({
+          bbox: { x: 57, y: 43, width: 98, height: 73 },
+        })
+      );
 
       const state = useExtractionAnnotationStore.getState();
       const element = state.elements.find((el) => el.id === id);
@@ -838,7 +902,8 @@ describe("ExtractionAnnotationStore", () => {
 
   describe("Helpers", () => {
     it("getSelectedElements should return selected elements", () => {
-      const { addElements, selectElements, getSelectedElements } = useExtractionAnnotationStore.getState();
+      const { addElements, selectElements, getSelectedElements } =
+        useExtractionAnnotationStore.getState();
       const ids = addElements([
         createMockElement({ label: "Element 1" }),
         createMockElement({ label: "Element 2" }),
@@ -849,11 +914,15 @@ describe("ExtractionAnnotationStore", () => {
       const selected = getSelectedElements();
 
       expect(selected).toHaveLength(2);
-      expect(selected.map((el) => el.label)).toEqual(["Element 1", "Element 3"]);
+      expect(selected.map((el) => el.label)).toEqual([
+        "Element 1",
+        "Element 3",
+      ]);
     });
 
     it("getVisibleElements should filter by ground truth when showOnlyGroundTruth is true", () => {
-      const { addElements, setShowOnlyGroundTruth, getVisibleElements } = useExtractionAnnotationStore.getState();
+      const { addElements, setShowOnlyGroundTruth, getVisibleElements } =
+        useExtractionAnnotationStore.getState();
       addElements([
         createMockElement({ label: "GT Element", isGroundTruth: true }),
         createMockElement({ label: "Non-GT Element", isGroundTruth: false }),
@@ -867,7 +936,8 @@ describe("ExtractionAnnotationStore", () => {
     });
 
     it("hasSelection should return true when elements are selected", () => {
-      const { addElement, deselectAll, selectElement, hasSelection } = useExtractionAnnotationStore.getState();
+      const { addElement, deselectAll, selectElement, hasSelection } =
+        useExtractionAnnotationStore.getState();
       const id = addElement(createMockElement());
 
       // addElement automatically selects the new element, so we need to deselect first
@@ -879,11 +949,21 @@ describe("ExtractionAnnotationStore", () => {
     });
 
     it("getElementsInBox should return elements that intersect with the box", () => {
-      const { addElements, getElementsInBox } = useExtractionAnnotationStore.getState();
+      const { addElements, getElementsInBox } =
+        useExtractionAnnotationStore.getState();
       addElements([
-        createMockElement({ label: "Inside", bbox: { x: 50, y: 50, width: 50, height: 50 } }),
-        createMockElement({ label: "Partial", bbox: { x: 80, y: 80, width: 50, height: 50 } }),
-        createMockElement({ label: "Outside", bbox: { x: 200, y: 200, width: 50, height: 50 } }),
+        createMockElement({
+          label: "Inside",
+          bbox: { x: 50, y: 50, width: 50, height: 50 },
+        }),
+        createMockElement({
+          label: "Partial",
+          bbox: { x: 80, y: 80, width: 50, height: 50 },
+        }),
+        createMockElement({
+          label: "Outside",
+          bbox: { x: 200, y: 200, width: 50, height: 50 },
+        }),
       ]);
 
       const selectionBox: BoundingBox = { x: 40, y: 40, width: 60, height: 60 };
@@ -897,7 +977,8 @@ describe("ExtractionAnnotationStore", () => {
 
   describe("Reset", () => {
     it("should reset all state to initial values", () => {
-      const { addElement, selectElement, setSession, reset } = useExtractionAnnotationStore.getState();
+      const { addElement, selectElement, setSession, reset } =
+        useExtractionAnnotationStore.getState();
       setSession("extraction-123");
       addElement(createMockElement());
       selectElement(useExtractionAnnotationStore.getState().elements[0].id);

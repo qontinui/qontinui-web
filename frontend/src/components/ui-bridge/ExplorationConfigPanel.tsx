@@ -106,18 +106,29 @@ export function ExplorationConfigPanel({
   const progressPercent =
     progress.elementsDiscovered > 0
       ? Math.round(
-          (progress.elementsClicked / Math.min(progress.elementsDiscovered, config.maxTotalElements)) * 100
+          (progress.elementsClicked /
+            Math.min(progress.elementsDiscovered, config.maxTotalElements)) *
+            100
         )
       : 0;
 
   // Check if we can start exploration
   // Extension type doesn't need a targetUrl or selectedConnectionId - it uses localhost:9876 directly
-  const canStart = (config.targetType === "extension" || selectedConnectionId !== null) &&
+  const canStart =
+    (config.targetType === "extension" || selectedConnectionId !== null) &&
     (config.targetType === "extension" || !!config.targetUrl) &&
     progress.status !== "completed";
 
   // Target type descriptions for the requirements section
-  const targetTypeRequirements: Record<TargetType, { title: string; requirements: string[]; icon: React.ReactNode; recommended?: boolean }> = {
+  const targetTypeRequirements: Record<
+    TargetType,
+    {
+      title: string;
+      requirements: string[];
+      icon: React.ReactNode;
+      recommended?: boolean;
+    }
+  > = {
     extension: {
       title: "Browser Extension (Recommended)",
       icon: <Chrome className="h-4 w-4" />,
@@ -158,7 +169,8 @@ export function ExplorationConfigPanel({
   };
 
   const currentTargetType = config.targetType || "web";
-  const currentRequirements = targetTypeRequirements[currentTargetType as TargetType];
+  const currentRequirements =
+    targetTypeRequirements[currentTargetType as TargetType];
 
   return (
     <div className="space-y-4">
@@ -181,10 +193,7 @@ export function ExplorationConfigPanel({
             Start Exploration
           </Button>
         ) : (
-          <Button
-            onClick={onStop}
-            variant="destructive"
-          >
+          <Button onClick={onStop} variant="destructive">
             <Square className="w-4 h-4 mr-2" />
             Stop
           </Button>
@@ -211,7 +220,10 @@ export function ExplorationConfigPanel({
       </div>
 
       {/* Requirements Info Section */}
-      <Collapsible open={isRequirementsOpen} onOpenChange={setIsRequirementsOpen}>
+      <Collapsible
+        open={isRequirementsOpen}
+        onOpenChange={setIsRequirementsOpen}
+      >
         <CollapsibleTrigger asChild>
           <Button
             variant="ghost"
@@ -235,10 +247,13 @@ export function ExplorationConfigPanel({
               <p>
                 UI Bridge exploration connects to applications that have the{" "}
                 <strong>UI Bridge SDK</strong> installed. This is different from
-                browser automation (like Playwright) which can work with any website.
+                browser automation (like Playwright) which can work with any
+                website.
               </p>
               <div className="mt-3 space-y-2">
-                <p className="font-medium">Requirements for {currentRequirements.title}:</p>
+                <p className="font-medium">
+                  Requirements for {currentRequirements.title}:
+                </p>
                 <ul className="list-disc list-inside space-y-1 text-text-muted">
                   {currentRequirements.requirements.map((req, idx) => (
                     <li key={idx}>{req}</li>
@@ -247,7 +262,10 @@ export function ExplorationConfigPanel({
               </div>
               <p className="mt-3 text-text-muted">
                 For browser automation without SDK requirements, use{" "}
-                <span className="text-brand-primary">Playwright extraction</span> instead.
+                <span className="text-brand-primary">
+                  Playwright extraction
+                </span>{" "}
+                instead.
               </p>
             </AlertDescription>
           </Alert>
@@ -260,7 +278,9 @@ export function ExplorationConfigPanel({
           <div className="space-y-3">
             <div className="flex items-center justify-between text-sm">
               <span className="text-text-muted">Progress</span>
-              <span className="text-brand-primary font-mono">{progressPercent}%</span>
+              <span className="text-brand-primary font-mono">
+                {progressPercent}%
+              </span>
             </div>
             <Progress value={progressPercent} className="h-2" />
 
@@ -302,7 +322,9 @@ export function ExplorationConfigPanel({
             {progress.currentElement && isRunning && (
               <div className="mt-3 p-2 bg-surface-canvas/50 rounded text-xs">
                 <span className="text-text-muted">Current: </span>
-                <span className="text-white font-mono">{progress.currentElement}</span>
+                <span className="text-white font-mono">
+                  {progress.currentElement}
+                </span>
               </div>
             )}
 
@@ -330,11 +352,14 @@ export function ExplorationConfigPanel({
             <div className="space-y-2">
               <div className="flex items-center gap-2 p-2 bg-surface-canvas/50 rounded border border-brand-primary/20">
                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                <span className="text-sm text-text-primary">Local Runner (localhost:9876)</span>
+                <span className="text-sm text-text-primary">
+                  Local Runner (localhost:9876)
+                </span>
               </div>
               <p className="text-xs text-text-muted">
                 Browser Extension mode connects directly to the local runner.
-                Make sure the runner is running and the extension shows &quot;Runner connected&quot;.
+                Make sure the runner is running and the extension shows
+                &quot;Runner connected&quot;.
               </p>
             </div>
           ) : connectionsLoading ? (
@@ -343,17 +368,22 @@ export function ExplorationConfigPanel({
               <span className="text-sm">Loading runners...</span>
             </div>
           ) : connections.length === 0 ? (
-            <Alert variant="destructive" className="border-red-500/30 bg-red-500/10">
+            <Alert
+              variant="destructive"
+              className="border-red-500/30 bg-red-500/10"
+            >
               <AlertCircle className="h-4 w-4" />
               <AlertDescription className="text-xs">
-                No runners connected. Connect a runner from the Runners page first,
-                or use Browser Extension mode for local exploration.
+                No runners connected. Connect a runner from the Runners page
+                first, or use Browser Extension mode for local exploration.
               </AlertDescription>
             </Alert>
           ) : (
             <Select
               value={selectedConnectionId?.toString() || ""}
-              onValueChange={(value) => onConnectionChange(value ? parseInt(value, 10) : null)}
+              onValueChange={(value) =>
+                onConnectionChange(value ? parseInt(value, 10) : null)
+              }
               disabled={isRunning}
             >
               <SelectTrigger className="bg-surface-canvas border-brand-primary/20">
@@ -366,7 +396,9 @@ export function ExplorationConfigPanel({
                       <div className="w-2 h-2 bg-green-500 rounded-full" />
                       <span>{conn.runner_name}</span>
                       {conn.project_name && (
-                        <span className="text-text-muted text-xs">({conn.project_name})</span>
+                        <span className="text-text-muted text-xs">
+                          ({conn.project_name})
+                        </span>
                       )}
                     </div>
                   </SelectItem>
@@ -391,8 +423,8 @@ export function ExplorationConfigPanel({
               </TooltipTrigger>
               <TooltipContent side="right" className="max-w-xs">
                 <p className="text-xs">
-                  The target app must have the UI Bridge SDK installed.
-                  Select the target type that matches your application.
+                  The target app must have the UI Bridge SDK installed. Select
+                  the target type that matches your application.
                 </p>
               </TooltipContent>
             </Tooltip>
@@ -405,7 +437,9 @@ export function ExplorationConfigPanel({
             <Label className="text-text-muted text-xs">Target Type</Label>
             <Select
               value={config.targetType}
-              onValueChange={(value: TargetType) => onConfigChange({ targetType: value })}
+              onValueChange={(value: TargetType) =>
+                onConfigChange({ targetType: value })
+              }
               disabled={isRunning}
             >
               <SelectTrigger className="bg-surface-canvas border-brand-primary/20">
@@ -416,7 +450,10 @@ export function ExplorationConfigPanel({
                   <div className="flex items-center gap-2">
                     <Chrome className="h-4 w-4" />
                     <span>Browser Extension</span>
-                    <Badge variant="outline" className="ml-1 text-[10px] py-0 px-1 bg-brand-success/10 text-brand-success border-brand-success/30">
+                    <Badge
+                      variant="outline"
+                      className="ml-1 text-[10px] py-0 px-1 bg-brand-success/10 text-brand-success border-brand-success/30"
+                    >
                       Recommended
                     </Badge>
                   </div>
@@ -447,7 +484,9 @@ export function ExplorationConfigPanel({
           {config.targetType !== "extension" && (
             <div className="space-y-2">
               <Label className="text-text-muted text-xs">
-                {config.targetType === "web" ? "Application URL" : "Connection URL"}
+                {config.targetType === "web"
+                  ? "Application URL"
+                  : "Connection URL"}
               </Label>
               <Input
                 type="url"
@@ -467,7 +506,10 @@ export function ExplorationConfigPanel({
                 {config.targetType === "web" ? (
                   <>
                     The URL where your web app is running. The app must have{" "}
-                    <span className="text-brand-primary">@qontinui/ui-bridge</span> installed.
+                    <span className="text-brand-primary">
+                      @qontinui/ui-bridge
+                    </span>{" "}
+                    installed.
                   </>
                 ) : config.targetType === "desktop" ? (
                   <>
@@ -476,8 +518,9 @@ export function ExplorationConfigPanel({
                   </>
                 ) : (
                   <>
-                    Your React Native app must connect to the runner via WebSocket.
-                    Enter the WebSocket URL or leave blank to use the default.
+                    Your React Native app must connect to the runner via
+                    WebSocket. Enter the WebSocket URL or leave blank to use the
+                    default.
                   </>
                 )}
               </p>
@@ -488,7 +531,9 @@ export function ExplorationConfigPanel({
           {config.targetType === "extension" && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label className="text-text-muted text-xs">Target Browser Tab</Label>
+                <Label className="text-text-muted text-xs">
+                  Target Browser Tab
+                </Label>
                 {onRefreshBrowserTabs && (
                   <Button
                     variant="ghost"
@@ -497,14 +542,19 @@ export function ExplorationConfigPanel({
                     disabled={isRunning || browserTabsLoading}
                     className="h-7 px-2"
                   >
-                    <RefreshCw className={`h-3 w-3 mr-1 ${browserTabsLoading ? "animate-spin" : ""}`} />
+                    <RefreshCw
+                      className={`h-3 w-3 mr-1 ${browserTabsLoading ? "animate-spin" : ""}`}
+                    />
                     <span className="text-xs">Refresh</span>
                   </Button>
                 )}
               </div>
 
               {browserTabsError && (
-                <Alert variant="destructive" className="border-red-500/30 bg-red-500/10">
+                <Alert
+                  variant="destructive"
+                  className="border-red-500/30 bg-red-500/10"
+                >
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription className="text-xs">
                     {browserTabsError}
@@ -521,16 +571,24 @@ export function ExplorationConfigPanel({
                 <Alert className="border-yellow-500/30 bg-yellow-500/5">
                   <AlertCircle className="h-4 w-4 text-yellow-500" />
                   <AlertDescription className="text-xs text-yellow-600">
-                    No browser tabs found. Make sure the Chrome extension is connected and click Refresh.
+                    No browser tabs found. Make sure the Chrome extension is
+                    connected and click Refresh.
                   </AlertDescription>
                 </Alert>
               ) : (
                 <Select
                   value={config.selectedBrowserTabId?.toString() || "active"}
                   onValueChange={(value) => {
-                    console.log("[ExplorationConfigPanel] Tab selection changed:", value);
-                    const tabId = value === "active" ? null : parseInt(value, 10);
-                    console.log("[ExplorationConfigPanel] Calling onSelectBrowserTab with:", tabId);
+                    console.log(
+                      "[ExplorationConfigPanel] Tab selection changed:",
+                      value
+                    );
+                    const tabId =
+                      value === "active" ? null : parseInt(value, 10);
+                    console.log(
+                      "[ExplorationConfigPanel] Calling onSelectBrowserTab with:",
+                      tabId
+                    );
                     onSelectBrowserTab?.(tabId);
                   }}
                   disabled={isRunning}
@@ -549,7 +607,11 @@ export function ExplorationConfigPanel({
                       <SelectItem key={tab.id} value={tab.id.toString()}>
                         <div className="flex items-center gap-2 max-w-[400px]">
                           {tab.favIconUrl ? (
-                            <img src={tab.favIconUrl} alt="" className="w-4 h-4" />
+                            <img
+                              src={tab.favIconUrl}
+                              alt=""
+                              className="w-4 h-4"
+                            />
                           ) : (
                             <Globe className="w-4 h-4 text-text-muted" />
                           )}
@@ -557,7 +619,10 @@ export function ExplorationConfigPanel({
                             {tab.title || tab.url}
                           </span>
                           {tab.active && (
-                            <Badge variant="outline" className="text-[9px] py-0 px-1">
+                            <Badge
+                              variant="outline"
+                              className="text-[9px] py-0 px-1"
+                            >
                               Active
                             </Badge>
                           )}
@@ -573,15 +638,18 @@ export function ExplorationConfigPanel({
                   <div className="flex items-center gap-2">
                     <span className="text-text-muted">Selected:</span>
                     <span className="text-brand-primary font-mono truncate flex-1">
-                      {browserTabs.find(t => t.id === config.selectedBrowserTabId)?.url || "Unknown"}
+                      {browserTabs.find(
+                        (t) => t.id === config.selectedBrowserTabId
+                      )?.url || "Unknown"}
                     </span>
                   </div>
                 </div>
               )}
 
               <p className="text-[10px] text-text-muted">
-                Select which browser tab to explore. If &quot;Use Active Tab&quot; is selected,
-                the currently focused tab will be used when exploration starts.
+                Select which browser tab to explore. If &quot;Use Active
+                Tab&quot; is selected, the currently focused tab will be used
+                when exploration starts.
               </p>
             </div>
           )}
@@ -593,13 +661,14 @@ export function ExplorationConfigPanel({
               <AlertDescription className="text-xs text-yellow-600">
                 {config.targetType === "desktop" ? (
                   <>
-                    Your desktop app must be running and connected to the qontinui-runner.
-                    The runner acts as a WebSocket server that your app connects to.
+                    Your desktop app must be running and connected to the
+                    qontinui-runner. The runner acts as a WebSocket server that
+                    your app connects to.
                   </>
                 ) : (
                   <>
-                    Your React Native app must be running on a device or emulator
-                    and connected to the qontinui-runner via WebSocket.
+                    Your React Native app must be running on a device or
+                    emulator and connected to the qontinui-runner via WebSocket.
                   </>
                 )}
               </AlertDescription>
@@ -621,7 +690,9 @@ export function ExplorationConfigPanel({
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label className="text-text-muted text-xs">Max Navigation Depth</Label>
+              <Label className="text-text-muted text-xs">
+                Max Navigation Depth
+              </Label>
               <Input
                 type="number"
                 min={0}
@@ -656,7 +727,9 @@ export function ExplorationConfigPanel({
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-text-muted text-xs">Total Elements</Label>
+                <Label className="text-text-muted text-xs">
+                  Total Elements
+                </Label>
                 <Input
                   type="number"
                   min={1}
@@ -686,7 +759,9 @@ export function ExplorationConfigPanel({
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label className="text-text-muted text-xs">Action Delay (ms)</Label>
+              <Label className="text-text-muted text-xs">
+                Action Delay (ms)
+              </Label>
               <Input
                 type="number"
                 min={100}
@@ -694,7 +769,9 @@ export function ExplorationConfigPanel({
                 step={100}
                 value={config.actionDelayMs}
                 onChange={(e) =>
-                  onConfigChange({ actionDelayMs: parseInt(e.target.value) || 500 })
+                  onConfigChange({
+                    actionDelayMs: parseInt(e.target.value) || 500,
+                  })
                 }
                 disabled={isRunning}
                 className="bg-surface-canvas border-brand-success/20"

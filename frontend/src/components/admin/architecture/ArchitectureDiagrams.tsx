@@ -38,14 +38,7 @@ const ComponentBox: React.FC<{
   items?: string[];
   variant?: "primary" | "secondary" | "accent" | "muted";
   className?: string;
-}> = ({
-  title,
-  subtitle,
-  icon,
-  items,
-  variant = "secondary",
-  className,
-}) => {
+}> = ({ title, subtitle, icon, items, variant = "secondary", className }) => {
   const variantStyles = {
     primary: "border-primary bg-primary/10",
     secondary: "border-border bg-card",
@@ -89,7 +82,12 @@ const Arrow: React.FC<{
 }> = ({ direction = "right", label, className }) => {
   const ArrowIcon =
     direction === "down" || direction === "up" ? ArrowDown : ArrowRight;
-  const rotate = direction === "up" ? "rotate-180" : direction === "left" ? "rotate-180" : "";
+  const rotate =
+    direction === "up"
+      ? "rotate-180"
+      : direction === "left"
+        ? "rotate-180"
+        : "";
 
   return (
     <div
@@ -324,7 +322,10 @@ export const ArchitectureDiagrams: React.FC<ArchitectureDiagramsProps> = ({
                   <Arrow label="IPC: pattern_find" />
                   <Badge className="px-4 py-2">Python Bridge</Badge>
                   <Arrow label="cv2.matchTemplate" />
-                  <Badge variant="outline" className="px-4 py-2 bg-green-500/10">
+                  <Badge
+                    variant="outline"
+                    className="px-4 py-2 bg-green-500/10"
+                  >
                     OpenCV
                   </Badge>
                 </div>
@@ -370,7 +371,10 @@ export const ArchitectureDiagrams: React.FC<ArchitectureDiagramsProps> = ({
                   <Arrow label="IPC: start_playwright_collection" />
                   <Badge className="px-4 py-2">Python Bridge</Badge>
                   <Arrow label="Playwright API" />
-                  <Badge variant="outline" className="px-4 py-2 bg-purple-500/10">
+                  <Badge
+                    variant="outline"
+                    className="px-4 py-2 bg-purple-500/10"
+                  >
                     Browser
                   </Badge>
                 </div>
@@ -432,7 +436,9 @@ export const ArchitectureDiagrams: React.FC<ArchitectureDiagramsProps> = ({
 
                 {/* Infrastructure Services */}
                 <div>
-                  <h4 className="font-semibold mb-4">Infrastructure Services</h4>
+                  <h4 className="font-semibold mb-4">
+                    Infrastructure Services
+                  </h4>
                   <div className="space-y-3">
                     <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
                       <div className="flex items-center gap-2">

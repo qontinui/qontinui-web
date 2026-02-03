@@ -129,28 +129,32 @@ const AI_ACTION_USE_CASES = [
     title: "Dynamic Decision Making",
     description:
       "AI decides the next action based on current screen state (e.g., handling different dialog types, choosing branches).",
-    example: "If there's a captcha, solve it. If there's an error, extract the message and decide how to proceed.",
+    example:
+      "If there's a captcha, solve it. If there's an error, extract the message and decide how to proceed.",
   },
   {
     icon: Eye,
     title: "Unstructured Data Extraction",
     description:
       "Read and interpret variable text from the screen that can't be captured with fixed selectors.",
-    example: "Extract order confirmation number, shipping date, and total from a receipt screenshot.",
+    example:
+      "Extract order confirmation number, shipping date, and total from a receipt screenshot.",
   },
   {
     icon: MessageSquare,
     title: "Handling Unpredictable UI States",
     description:
       "When the application can be in many possible states and model-based navigation isn't practical.",
-    example: "Navigate to user settings by analyzing the current screen and determining what to click.",
+    example:
+      "Navigate to user settings by analyzing the current screen and determining what to click.",
   },
   {
     icon: FormInput,
     title: "Context-Aware Form Filling",
     description:
       "Fill forms where field values require understanding context from the screen or external data.",
-    example: "Based on customer data and visible form fields, determine appropriate values considering labels and validation hints.",
+    example:
+      "Based on customer data and visible form fields, determine appropriate values considering labels and validation hints.",
   },
 ];
 
@@ -213,9 +217,12 @@ function ContextsHelpSection() {
               </h4>
               <p className="text-sm text-text-muted mb-4">
                 Contexts are particularly valuable when your GUI automation
-                workflow includes <code className="px-1 py-0.5 bg-surface-canvas rounded text-xs">AI_PROMPT</code> actions.
-                These inline AI steps allow real-time decision making during
-                automation:
+                workflow includes{" "}
+                <code className="px-1 py-0.5 bg-surface-canvas rounded text-xs">
+                  AI_PROMPT
+                </code>{" "}
+                actions. These inline AI steps allow real-time decision making
+                during automation:
               </p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {AI_ACTION_USE_CASES.map((useCase) => (
@@ -333,13 +340,23 @@ function ContextsHelpSection() {
                 </p>
                 <ul className="text-xs text-text-muted mt-2 space-y-1 list-disc list-inside">
                   <li>
-                    Boolean: <code className="px-1 bg-surface-canvas rounded">&quot;Return only &apos;yes&apos; or &apos;no&apos;&quot;</code>
+                    Boolean:{" "}
+                    <code className="px-1 bg-surface-canvas rounded">
+                      &quot;Return only &apos;yes&apos; or &apos;no&apos;&quot;
+                    </code>
                   </li>
                   <li>
-                    Category: <code className="px-1 bg-surface-canvas rounded">&quot;Return &apos;CRITICAL&apos;, &apos;WARNING&apos;, or &apos;MINOR&apos;&quot;</code>
+                    Category:{" "}
+                    <code className="px-1 bg-surface-canvas rounded">
+                      &quot;Return &apos;CRITICAL&apos;, &apos;WARNING&apos;, or
+                      &apos;MINOR&apos;&quot;
+                    </code>
                   </li>
                   <li>
-                    Structured: <code className="px-1 bg-surface-canvas rounded">&quot;Return JSON: {`{action, target}`}&quot;</code>
+                    Structured:{" "}
+                    <code className="px-1 bg-surface-canvas rounded">
+                      &quot;Return JSON: {`{action, target}`}&quot;
+                    </code>
                   </li>
                 </ul>
               </div>

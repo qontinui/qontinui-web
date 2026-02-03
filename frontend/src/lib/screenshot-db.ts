@@ -123,22 +123,35 @@ class ScreenshotDB {
     } catch (error) {
       // Check if this is a storage corruption error
       const errorType = classifyError(error);
-      if (errorType === DBErrorType.STORAGE_CORRUPTED && !this.recoveryAttempted) {
+      if (
+        errorType === DBErrorType.STORAGE_CORRUPTED &&
+        !this.recoveryAttempted
+      ) {
         this.recoveryAttempted = true;
-        console.warn("[ScreenshotDB] Storage corruption detected, attempting recovery...");
+        console.warn(
+          "[ScreenshotDB] Storage corruption detected, attempting recovery..."
+        );
 
         // Attempt recovery by deleting the corrupted database
-        const recovered = await handleStorageCorruption(DB_NAME, "openDatabase");
+        const recovered = await handleStorageCorruption(
+          DB_NAME,
+          "openDatabase"
+        );
 
         if (recovered) {
           // Retry opening after recovery
           try {
             const db = await this.openDatabaseInternal();
             this.db = db;
-            console.log("[ScreenshotDB] Successfully recovered and reconnected");
+            console.log(
+              "[ScreenshotDB] Successfully recovered and reconnected"
+            );
             return db;
           } catch (retryError) {
-            console.error("[ScreenshotDB] Failed to reconnect after recovery:", retryError);
+            console.error(
+              "[ScreenshotDB] Failed to reconnect after recovery:",
+              retryError
+            );
             throw retryError;
           }
         }

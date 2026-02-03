@@ -76,7 +76,10 @@ export function TypeActionProperties({
             }
           }}
         >
-          <SelectTrigger className="bg-transparent border-border-default" data-ui-id="action-props-type-textsource-select">
+          <SelectTrigger
+            className="bg-transparent border-border-default"
+            data-ui-id="action-props-type-textsource-select"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="bg-surface-raised border-border-default">
@@ -104,7 +107,10 @@ export function TypeActionProperties({
                 }
               }}
             >
-              <SelectTrigger className="bg-transparent border-border-default" data-ui-id="action-props-type-state-select">
+              <SelectTrigger
+                className="bg-transparent border-border-default"
+                data-ui-id="action-props-type-state-select"
+              >
                 <SelectValue placeholder="Select a state" />
               </SelectTrigger>
               <SelectContent className="bg-surface-raised border-border-default">

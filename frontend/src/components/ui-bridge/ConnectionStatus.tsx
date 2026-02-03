@@ -75,7 +75,9 @@ function getStatusLabel(
 ): string {
   switch (state) {
     case "connected":
-      return transport === "websocket" ? "WebSocket Connected" : "HTTP Connected";
+      return transport === "websocket"
+        ? "WebSocket Connected"
+        : "HTTP Connected";
     case "connecting":
       return "Connecting...";
     case "reconnecting":
@@ -137,9 +139,7 @@ export function ConnectionStatus({
 
   const containerClasses = [
     "inline-flex items-center gap-2",
-    isClickable
-      ? "cursor-pointer hover:opacity-80 transition-opacity"
-      : "",
+    isClickable ? "cursor-pointer hover:opacity-80 transition-opacity" : "",
     className,
   ]
     .filter(Boolean)
@@ -201,9 +201,12 @@ export function ConnectionStatusBadge({
   const isClickable = !!onClick;
 
   const badgeColor = {
-    connected: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
-    connecting: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
-    reconnecting: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
+    connected:
+      "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+    connecting:
+      "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
+    reconnecting:
+      "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
     disconnected: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
   }[connectionState];
 

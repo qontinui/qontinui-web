@@ -31,7 +31,10 @@ export function ScrollActionProperties({
           value={(config.direction as string) || "down"}
           onValueChange={(value) => updateConfig("direction", value)}
         >
-          <SelectTrigger className="bg-transparent border-border-default" data-ui-id="action-props-scroll-direction-select">
+          <SelectTrigger
+            className="bg-transparent border-border-default"
+            data-ui-id="action-props-scroll-direction-select"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="bg-surface-raised border-border-default">

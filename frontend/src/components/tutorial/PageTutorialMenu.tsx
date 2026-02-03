@@ -15,7 +15,11 @@ import {
   PlayCircle,
   BarChart3,
 } from "lucide-react";
-import type { Tutorial, DifficultyLevel, TutorialFocusPage } from "@/types/tutorial";
+import type {
+  Tutorial,
+  DifficultyLevel,
+  TutorialFocusPage,
+} from "@/types/tutorial";
 import { useTutorialStore } from "@/stores/tutorial-store";
 
 export interface PageTutorialMenuProps {
@@ -48,8 +52,12 @@ export const PageTutorialMenu: React.FC<PageTutorialMenuProps> = ({
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
-  const { completedTutorials, inProgressTutorials, isOpen: tutorialIsOpen, openTutorial } =
-    useTutorialStore();
+  const {
+    completedTutorials,
+    inProgressTutorials,
+    isOpen: tutorialIsOpen,
+    openTutorial,
+  } = useTutorialStore();
 
   // Filter tutorials for this page
   const pageTutorials = tutorials.filter(
@@ -214,8 +222,8 @@ export const PageTutorialMenu: React.FC<PageTutorialMenuProps> = ({
                           isCompleted
                             ? "bg-green-500/10 text-green-500"
                             : isInProgress
-                            ? "bg-primary/10 text-primary"
-                            : "bg-surface-hover text-text-muted group-hover:text-text-secondary"
+                              ? "bg-primary/10 text-primary"
+                              : "bg-surface-hover text-text-muted group-hover:text-text-secondary"
                         }
                       `}
                     >

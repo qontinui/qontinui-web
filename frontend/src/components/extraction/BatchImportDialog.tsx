@@ -83,13 +83,16 @@ export function BatchImportDialog({
   const formatInfo = getImportFormatInfo(format);
 
   // Filter files by supported extensions
-  const filterSupportedFiles = useCallback((fileList: FileList | File[]): File[] => {
-    const supportedExtensions = [".json", ".txt", ".csv"];
-    return Array.from(fileList).filter((file) => {
-      const ext = "." + file.name.split(".").pop()?.toLowerCase();
-      return supportedExtensions.includes(ext) && !file.name.startsWith(".");
-    });
-  }, []);
+  const filterSupportedFiles = useCallback(
+    (fileList: FileList | File[]): File[] => {
+      const supportedExtensions = [".json", ".txt", ".csv"];
+      return Array.from(fileList).filter((file) => {
+        const ext = "." + file.name.split(".").pop()?.toLowerCase();
+        return supportedExtensions.includes(ext) && !file.name.startsWith(".");
+      });
+    },
+    []
+  );
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = e.target.files;
@@ -125,7 +128,9 @@ export function BatchImportDialog({
     e.target.value = "";
   };
 
-  const handleClassesFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleClassesFileSelect = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -174,9 +179,7 @@ export function BatchImportDialog({
 
       // Update status to importing
       setResults((prev) =>
-        prev.map((r, idx) =>
-          idx === i ? { ...r, status: "importing" } : r
-        )
+        prev.map((r, idx) => (idx === i ? { ...r, status: "importing" } : r))
       );
 
       try {
@@ -192,9 +195,7 @@ export function BatchImportDialog({
         if (result.error) {
           setResults((prev) =>
             prev.map((r, idx) =>
-              idx === i
-                ? { ...r, status: "error", error: result.error }
-                : r
+              idx === i ? { ...r, status: "error", error: result.error } : r
             )
           );
           errorCount++;
@@ -292,9 +293,10 @@ export function BatchImportDialog({
 
   const completedCount = results.filter((r) => r.status === "success").length;
   const errorCount = results.filter((r) => r.status === "error").length;
-  const progress = results.length > 0
-    ? ((completedCount + errorCount) / results.length) * 100
-    : 0;
+  const progress =
+    results.length > 0
+      ? ((completedCount + errorCount) / results.length) * 100
+      : 0;
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -392,7 +394,9 @@ export function BatchImportDialog({
                   className="hidden"
                 />
                 {classesContent ? (
-                  <span className="text-sm text-primary">classes.txt loaded</span>
+                  <span className="text-sm text-primary">
+                    classes.txt loaded
+                  </span>
                 ) : (
                   <p className="text-sm text-muted-foreground">
                     Upload classes.txt for class names
@@ -454,7 +458,8 @@ export function BatchImportDialog({
                 <div className="space-y-1">
                   <Progress value={progress} className="h-2" />
                   <p className="text-xs text-muted-foreground text-center">
-                    Processing {completedCount + errorCount} of {results.length} files...
+                    Processing {completedCount + errorCount} of {results.length}{" "}
+                    files...
                   </p>
                 </div>
               )}
@@ -544,7 +549,8 @@ export function BatchImportDialog({
               )}
               <div className="flex-1" />
               <span className="text-sm text-muted-foreground">
-                {results.reduce((sum, r) => sum + (r.elementCount || 0), 0)} total elements
+                {results.reduce((sum, r) => sum + (r.elementCount || 0), 0)}{" "}
+                total elements
               </span>
             </div>
           )}

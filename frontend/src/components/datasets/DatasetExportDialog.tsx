@@ -392,7 +392,11 @@ export function DatasetExportDialog({
               </p>
             </div>
             <div className="flex justify-center">
-              <Button onClick={handleDownload} size="lg" data-ui-id="dialog-dataset-export-download-btn">
+              <Button
+                onClick={handleDownload}
+                size="lg"
+                data-ui-id="dialog-dataset-export-download-btn"
+              >
                 <Download className="mr-2 h-5 w-5" />
                 Download Export
               </Button>
@@ -424,10 +428,18 @@ export function DatasetExportDialog({
         <DialogFooter>
           {step === "configure" && (
             <>
-              <Button variant="outline" onClick={handleClose} data-ui-id="dialog-dataset-export-cancel-btn">
+              <Button
+                variant="outline"
+                onClick={handleClose}
+                data-ui-id="dialog-dataset-export-cancel-btn"
+              >
                 Cancel
               </Button>
-              <Button onClick={handleExport} disabled={useSplit && !splitValid} data-ui-id="dialog-dataset-export-confirm-btn">
+              <Button
+                onClick={handleExport}
+                disabled={useSplit && !splitValid}
+                data-ui-id="dialog-dataset-export-confirm-btn"
+              >
                 <Download className="mr-2 h-4 w-4" />
                 Export Dataset
               </Button>
@@ -441,14 +453,30 @@ export function DatasetExportDialog({
             </Button>
           )}
 
-          {step === "complete" && <Button onClick={handleClose} data-ui-id="dialog-dataset-export-done-btn">Done</Button>}
+          {step === "complete" && (
+            <Button
+              onClick={handleClose}
+              data-ui-id="dialog-dataset-export-done-btn"
+            >
+              Done
+            </Button>
+          )}
 
           {step === "error" && (
             <>
-              <Button variant="outline" onClick={handleReset} data-ui-id="dialog-dataset-export-retry-btn">
+              <Button
+                variant="outline"
+                onClick={handleReset}
+                data-ui-id="dialog-dataset-export-retry-btn"
+              >
                 Try Again
               </Button>
-              <Button onClick={handleClose} data-ui-id="dialog-dataset-export-close-btn">Close</Button>
+              <Button
+                onClick={handleClose}
+                data-ui-id="dialog-dataset-export-close-btn"
+              >
+                Close
+              </Button>
             </>
           )}
         </DialogFooter>

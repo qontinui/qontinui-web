@@ -301,7 +301,10 @@ export function ItemMetadataPanel({
         </Label>
         {isEditing ? (
           <Select value={tempCategory} onValueChange={setTempCategory}>
-            <SelectTrigger className="bg-surface-canvas border-border-default text-white" data-ui-id="automation-metadata-category-select">
+            <SelectTrigger
+              className="bg-surface-canvas border-border-default text-white"
+              data-ui-id="automation-metadata-category-select"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -335,7 +338,10 @@ export function ItemMetadataPanel({
             value={tempViewMode}
             onValueChange={(v) => setTempViewMode(v as BuilderMode)}
           >
-            <SelectTrigger className="bg-surface-canvas border-border-default text-white" data-ui-id="automation-metadata-viewmode-select">
+            <SelectTrigger
+              className="bg-surface-canvas border-border-default text-white"
+              data-ui-id="automation-metadata-viewmode-select"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

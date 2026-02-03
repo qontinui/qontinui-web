@@ -48,7 +48,17 @@ function getRoleColor(role: string): string {
     return "rgba(139, 92, 246, 0.5)"; // Purple
   }
   // Form inputs
-  if (["textbox", "searchbox", "combobox", "checkbox", "radio", "slider", "spinbutton"].includes(role)) {
+  if (
+    [
+      "textbox",
+      "searchbox",
+      "combobox",
+      "checkbox",
+      "radio",
+      "slider",
+      "spinbutton",
+    ].includes(role)
+  ) {
     return "rgba(59, 130, 246, 0.5)"; // Blue
   }
   // Containers
@@ -56,7 +66,11 @@ function getRoleColor(role: string): string {
     return "rgba(34, 197, 94, 0.5)"; // Green
   }
   // Navigation
-  if (["navigation", "banner", "main", "complementary", "contentinfo"].includes(role)) {
+  if (
+    ["navigation", "banner", "main", "complementary", "contentinfo"].includes(
+      role
+    )
+  ) {
     return "rgba(245, 158, 11, 0.5)"; // Amber
   }
   // Default
@@ -93,8 +107,13 @@ export function AccessibilityBoundsOverlay({
   overlayOpacity = 0.5,
   className,
 }: AccessibilityBoundsOverlayProps) {
-  const [internalHoveredRef, setInternalHoveredRef] = useState<string | null>(null);
-  const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
+  const [internalHoveredRef, setInternalHoveredRef] = useState<string | null>(
+    null
+  );
+  const [imageSize, setImageSize] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
 
   // Collect all nodes with bounds
   const nodesWithBounds = useMemo(() => {
@@ -134,10 +153,13 @@ export function AccessibilityBoundsOverlay({
   }, [snapshot, interactiveOnly]);
 
   // Handle image load to get dimensions
-  const handleImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
-    const img = e.target as HTMLImageElement;
-    setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
-  }, []);
+  const handleImageLoad = useCallback(
+    (e: React.SyntheticEvent<HTMLImageElement>) => {
+      const img = e.target as HTMLImageElement;
+      setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
+    },
+    []
+  );
 
   // Handle node click
   const handleNodeClick = useCallback(
@@ -163,10 +185,12 @@ export function AccessibilityBoundsOverlay({
   // No data state
   if (!snapshot) {
     return (
-      <div className={cn(
-        "flex items-center justify-center h-full bg-surface-canvas/50 border border-dashed border-border-subtle rounded-lg",
-        className
-      )}>
+      <div
+        className={cn(
+          "flex items-center justify-center h-full bg-surface-canvas/50 border border-dashed border-border-subtle rounded-lg",
+          className
+        )}
+      >
         <p className="text-sm text-muted-foreground">
           No accessibility data. Capture a tree first.
         </p>
@@ -177,10 +201,16 @@ export function AccessibilityBoundsOverlay({
   // No screenshot state - show bounds in a grid
   if (!screenshotUrl) {
     return (
-      <div className={cn("relative h-full bg-surface-canvas/50 border border-border-subtle rounded-lg overflow-hidden", className)}>
+      <div
+        className={cn(
+          "relative h-full bg-surface-canvas/50 border border-border-subtle rounded-lg overflow-hidden",
+          className
+        )}
+      >
         <div className="absolute inset-0 p-4">
           <div className="text-xs text-muted-foreground mb-4">
-            {nodesWithBounds.length} elements with bounds (no screenshot available)
+            {nodesWithBounds.length} elements with bounds (no screenshot
+            available)
           </div>
           <div className="space-y-1 overflow-auto h-[calc(100%-2rem)]">
             {nodesWithBounds.slice(0, 50).map((boundsNode) => {
@@ -200,10 +230,16 @@ export function AccessibilityBoundsOverlay({
                     !isSelected && !isHovered && "bg-surface-canvas/50"
                   )}
                 >
-                  <span className="font-mono text-xs text-purple-400">{boundsNode.node.ref}</span>
-                  <span className="text-muted-foreground">{boundsNode.node.role}</span>
+                  <span className="font-mono text-xs text-purple-400">
+                    {boundsNode.node.ref}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {boundsNode.node.role}
+                  </span>
                   {boundsNode.node.name && (
-                    <span className="truncate text-text-default">{boundsNode.node.name}</span>
+                    <span className="truncate text-text-default">
+                      {boundsNode.node.name}
+                    </span>
                   )}
                   <span className="text-xs text-muted-foreground ml-auto">
                     {boundsNode.width}x{boundsNode.height}
@@ -256,7 +292,13 @@ export function AccessibilityBoundsOverlay({
                   width={boundsNode.width}
                   height={boundsNode.height}
                   fill={isSelected || isHovered ? roleColor : "transparent"}
-                  stroke={isSelected ? "#a855f7" : isHovered ? "#8b5cf6" : roleColor.replace(/0\.[45]/, "0.8")}
+                  stroke={
+                    isSelected
+                      ? "#a855f7"
+                      : isHovered
+                        ? "#8b5cf6"
+                        : roleColor.replace(/0\.[45]/, "0.8")
+                  }
                   strokeWidth={isSelected ? 3 : isHovered ? 2 : 1}
                   style={{
                     opacity: isSelected || isHovered ? 1 : overlayOpacity,
@@ -269,31 +311,38 @@ export function AccessibilityBoundsOverlay({
                 />
 
                 {/* Ref label */}
-                {showLabels && (isSelected || isHovered || overlayOpacity > 0.3) && (
-                  <>
-                    {/* Label background */}
-                    <rect
-                      x={boundsNode.x}
-                      y={boundsNode.y - 16}
-                      width={boundsNode.node.ref.length * 8 + 8}
-                      height={14}
-                      fill={isSelected ? "#a855f7" : isHovered ? "#8b5cf6" : "#374151"}
-                      rx={2}
-                      style={{ pointerEvents: "none" }}
-                    />
-                    {/* Label text */}
-                    <text
-                      x={boundsNode.x + 4}
-                      y={boundsNode.y - 5}
-                      fill="white"
-                      fontSize="10"
-                      fontFamily="monospace"
-                      style={{ pointerEvents: "none" }}
-                    >
-                      {boundsNode.node.ref}
-                    </text>
-                  </>
-                )}
+                {showLabels &&
+                  (isSelected || isHovered || overlayOpacity > 0.3) && (
+                    <>
+                      {/* Label background */}
+                      <rect
+                        x={boundsNode.x}
+                        y={boundsNode.y - 16}
+                        width={boundsNode.node.ref.length * 8 + 8}
+                        height={14}
+                        fill={
+                          isSelected
+                            ? "#a855f7"
+                            : isHovered
+                              ? "#8b5cf6"
+                              : "#374151"
+                        }
+                        rx={2}
+                        style={{ pointerEvents: "none" }}
+                      />
+                      {/* Label text */}
+                      <text
+                        x={boundsNode.x + 4}
+                        y={boundsNode.y - 5}
+                        fill="white"
+                        fontSize="10"
+                        fontFamily="monospace"
+                        style={{ pointerEvents: "none" }}
+                      >
+                        {boundsNode.node.ref}
+                      </text>
+                    </>
+                  )}
               </g>
             );
           })}

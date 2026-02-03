@@ -108,11 +108,21 @@ export default function SettingsPage() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={handleReset} data-ui-id="automation-settings-reset-btn">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleReset}
+              data-ui-id="automation-settings-reset-btn"
+            >
               <RotateCcw className="w-4 h-4 mr-2" />
               Reset
             </Button>
-            <Button variant="outline" size="sm" onClick={handleExport} data-ui-id="automation-settings-export-btn">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExport}
+              data-ui-id="automation-settings-export-btn"
+            >
               <Download className="w-4 h-4 mr-2" />
               Export
             </Button>
@@ -218,7 +228,10 @@ export default function SettingsPage() {
                     value={settings.theme}
                     onValueChange={(value) => updateSetting("theme", value)}
                   >
-                    <SelectTrigger id="theme" data-ui-id="automation-settings-theme-select">
+                    <SelectTrigger
+                      id="theme"
+                      data-ui-id="automation-settings-theme-select"
+                    >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -476,7 +489,10 @@ export default function SettingsPage() {
                     value={settings.logLevel}
                     onValueChange={(value) => updateSetting("logLevel", value)}
                   >
-                    <SelectTrigger id="logLevel" data-ui-id="automation-settings-log-level-select">
+                    <SelectTrigger
+                      id="logLevel"
+                      data-ui-id="automation-settings-log-level-select"
+                    >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -523,7 +539,11 @@ export default function SettingsPage() {
                       Delete all workflows, settings, and data
                     </p>
                   </div>
-                  <Button variant="destructive" size="sm" data-ui-id="automation-settings-clear-data-btn">
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    data-ui-id="automation-settings-clear-data-btn"
+                  >
                     <Trash2 className="w-4 h-4 mr-2" />
                     Clear Data
                   </Button>

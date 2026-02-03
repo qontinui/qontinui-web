@@ -13,7 +13,7 @@ import { WorkflowProperties } from "./WorkflowProperties";
 import { ConnectionProperties } from "./ConnectionProperties";
 import { useCanvasStore } from "@/stores/canvas-store";
 import { usePropertiesPanelStore } from "@/stores/properties-panel-store";
-import type { Workflow, Action } from "@/lib/action-schema/action-types";
+import type { Workflow } from "@/lib/action-schema/action-types";
 
 // Mock stores
 vi.mock("@/stores/canvas-store");

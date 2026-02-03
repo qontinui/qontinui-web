@@ -53,12 +53,20 @@ export function useDOMObserver(
   selector: string,
   options: DOMObserverOptions
 ): DOMObserverResult {
-  const { type, onTrigger, enabled = true, visibilityThreshold = 0.5, debounce = 0 } = options;
+  const {
+    type,
+    onTrigger,
+    enabled = true,
+    visibilityThreshold = 0.5,
+    debounce = 0,
+  } = options;
 
   const [isTriggered, setIsTriggered] = useState(false);
   const [element, setElement] = useState<HTMLElement | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const observerRef = useRef<MutationObserver | IntersectionObserver | null>(null);
+  const observerRef = useRef<MutationObserver | IntersectionObserver | null>(
+    null
+  );
 
   const reset = useCallback(() => {
     setIsTriggered(false);
@@ -178,7 +186,10 @@ export function useDOMObserver(
       const intersectionObserver = new IntersectionObserver(
         (entries) => {
           for (const entry of entries) {
-            if (entry.isIntersecting && entry.intersectionRatio >= visibilityThreshold) {
+            if (
+              entry.isIntersecting &&
+              entry.intersectionRatio >= visibilityThreshold
+            ) {
               handleTrigger();
               intersectionObserver.disconnect();
               return;
@@ -203,7 +214,14 @@ export function useDOMObserver(
         clearTimeout(debounceRef.current);
       }
     };
-  }, [selector, type, enabled, handleTrigger, visibilityThreshold, options.root]);
+  }, [
+    selector,
+    type,
+    enabled,
+    handleTrigger,
+    visibilityThreshold,
+    options.root,
+  ]);
 
   return { isTriggered, element, reset };
 }
@@ -214,7 +232,11 @@ export function useDOMObserver(
 export function useDOMObserverMultiple(
   selectors: string[],
   options: Omit<DOMObserverOptions, "type"> & { type: "appear" }
-): { isTriggered: boolean; elements: (HTMLElement | null)[]; reset: () => void } {
+): {
+  isTriggered: boolean;
+  elements: (HTMLElement | null)[];
+  reset: () => void;
+} {
   const [isTriggered, setIsTriggered] = useState(false);
   const [elements, setElements] = useState<(HTMLElement | null)[]>(
     selectors.map(() => null)
@@ -310,10 +332,7 @@ export function useElementExists(selector: string): boolean {
 /**
  * Simple hook to check if an element is visible in the viewport
  */
-export function useElementVisible(
-  selector: string,
-  threshold = 0.5
-): boolean {
+export function useElementVisible(selector: string, threshold = 0.5): boolean {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
@@ -330,7 +349,9 @@ export function useElementVisible(
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          setIsVisible(entry.isIntersecting && entry.intersectionRatio >= threshold);
+          setIsVisible(
+            entry.isIntersecting && entry.intersectionRatio >= threshold
+          );
         }
       },
       { threshold }

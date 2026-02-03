@@ -109,7 +109,7 @@ export function WelcomeModal() {
   };
 
   // Handle Escape key
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- handleSkipToDashboard uses dontShowAgain internally
+
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape" && showWelcomeModal) {

@@ -27,10 +27,7 @@ export const QontinuiInput = React.forwardRef<
   return (
     <div className="form-group">
       {label && (
-        <label
-          htmlFor={inputId}
-          className="form-label"
-        >
+        <label htmlFor={inputId} className="form-label">
           {label}
         </label>
       )}
@@ -41,9 +38,7 @@ export const QontinuiInput = React.forwardRef<
         aria-invalid={!!error}
         {...props}
       />
-      {error && (
-        <span className="form-error">{error}</span>
-      )}
+      {error && <span className="form-error">{error}</span>}
     </div>
   );
 });

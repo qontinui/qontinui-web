@@ -38,7 +38,10 @@ export default function TestRunsPage() {
 
   return (
     <RequireProject pageName="Test Runs">
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-surface-sunken to-surface-canvas text-white" data-ui-id="testing-page-runs">
+      <div
+        className="min-h-screen bg-gradient-to-br from-surface-canvas via-surface-sunken to-surface-canvas text-white"
+        data-ui-id="testing-page-runs"
+      >
         {/* Header */}
         <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
           <div className="flex items-center justify-between px-6 py-4">

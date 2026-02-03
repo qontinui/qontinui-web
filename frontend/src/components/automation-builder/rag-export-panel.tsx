@@ -393,7 +393,10 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
                 setOptions((prev) => ({ ...prev, embedding_model: value }))
               }
             >
-              <SelectTrigger className="bg-surface-canvas border-border-default" data-ui-id="automation-rag-model-select">
+              <SelectTrigger
+                className="bg-surface-canvas border-border-default"
+                data-ui-id="automation-rag-model-select"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -442,7 +445,10 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
                   value={selectedRunnerId || undefined}
                   onValueChange={setSelectedRunnerId}
                 >
-                  <SelectTrigger className="bg-surface-canvas border-border-default" data-ui-id="automation-rag-runner-select">
+                  <SelectTrigger
+                    className="bg-surface-canvas border-border-default"
+                    data-ui-id="automation-rag-runner-select"
+                  >
                     <SelectValue placeholder="Choose a runner..." />
                   </SelectTrigger>
                   <SelectContent>

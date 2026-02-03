@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 def main():
     """Run the ARQ worker."""
     logger.info("Starting ARQ worker...")
-    run_worker(WorkerSettings)
+    run_worker(WorkerSettings)  # type: ignore[arg-type]
 
 
 if __name__ == "__main__":

@@ -170,7 +170,10 @@ export default function UsersTab() {
               />
             </div>
             <Select value={tierFilter} onValueChange={setTierFilter}>
-              <SelectTrigger className="w-full md:w-[180px]" data-ui-id="admin-users-tier-select">
+              <SelectTrigger
+                className="w-full md:w-[180px]"
+                data-ui-id="admin-users-tier-select"
+              >
                 <SelectValue placeholder="Subscription Tier" />
               </SelectTrigger>
               <SelectContent>
@@ -181,7 +184,10 @@ export default function UsersTab() {
               </SelectContent>
             </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-full md:w-[180px]" data-ui-id="admin-users-status-select">
+              <SelectTrigger
+                className="w-full md:w-[180px]"
+                data-ui-id="admin-users-status-select"
+              >
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
@@ -329,7 +335,11 @@ export default function UsersTab() {
                 </div>
               )}
               <div className="flex gap-2 mt-4">
-                <Button variant="outline" onClick={() => setSelectedUser(null)} data-ui-id="admin-users-close-btn">
+                <Button
+                  variant="outline"
+                  onClick={() => setSelectedUser(null)}
+                  data-ui-id="admin-users-close-btn"
+                >
                   Close
                 </Button>
                 <Button

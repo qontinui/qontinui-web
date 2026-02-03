@@ -84,7 +84,6 @@ export function StateCoveragePanel({
     }
   };
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- analyzeCoverage is intentionally excluded to avoid infinite loops
   useEffect(() => {
     if (autoRefresh && workflowId && snapshotRunIds.length > 0) {
       analyzeCoverage();

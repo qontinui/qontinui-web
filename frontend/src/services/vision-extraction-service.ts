@@ -144,9 +144,7 @@ export class VisionExtractionService {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(
-        `Vision extraction failed: ${JSON.stringify(errorData)}`
-      );
+      throw new Error(`Vision extraction failed: ${JSON.stringify(errorData)}`);
     }
 
     // Runner wraps response in ApiResponse { success, data, error }

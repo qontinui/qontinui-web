@@ -92,7 +92,9 @@ function ShortcutKey({ keyText }: { keyText: string }) {
 function ShortcutRow({ shortcut }: { shortcut: ShortcutItem }) {
   return (
     <div className="flex items-center justify-between py-2 px-3 rounded hover:bg-surface-hover">
-      <span className="text-sm text-text-secondary">{shortcut.description}</span>
+      <span className="text-sm text-text-secondary">
+        {shortcut.description}
+      </span>
       <ShortcutKey keyText={shortcut.key} />
     </div>
   );
@@ -150,7 +152,11 @@ export function KeyboardShortcutsDialog({
           ))}
         </div>
         <div className="text-xs text-text-muted text-center pt-2 border-t border-border-subtle">
-          Press <kbd className="px-1.5 py-0.5 text-xs font-mono bg-surface-hover rounded">?</kbd> anytime to show this dialog
+          Press{" "}
+          <kbd className="px-1.5 py-0.5 text-xs font-mono bg-surface-hover rounded">
+            ?
+          </kbd>{" "}
+          anytime to show this dialog
         </div>
       </DialogContent>
     </Dialog>

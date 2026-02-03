@@ -59,7 +59,10 @@ function formatDate(dateString: string | null): string {
   });
 }
 
-function formatDuration(startedAt: string | null, completedAt: string | null): string {
+function formatDuration(
+  startedAt: string | null,
+  completedAt: string | null
+): string {
   if (!startedAt) return "-";
   const start = new Date(startedAt);
   const end = completedAt ? new Date(completedAt) : new Date();
@@ -86,7 +89,9 @@ export function TrainingJobsList({
       setJobs(response.jobs);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load training jobs");
+      setError(
+        err instanceof Error ? err.message : "Failed to load training jobs"
+      );
     } finally {
       setIsLoading(false);
     }
@@ -244,7 +249,8 @@ export function TrainingJobsList({
                   <div className="mt-3">
                     <div className="flex items-center justify-between text-xs text-text-muted mb-1">
                       <span>
-                        Epoch {job.current_epoch || 0}/{job.total_epochs || job.config.epochs}
+                        Epoch {job.current_epoch || 0}/
+                        {job.total_epochs || job.config.epochs}
                       </span>
                       <span>{job.progress}%</span>
                     </div>
@@ -258,11 +264,13 @@ export function TrainingJobsList({
                 )}
 
                 {/* Duration for completed jobs */}
-                {(job.status === "completed" || job.status === "failed") && job.started_at && (
-                  <div className="mt-2 text-sm text-text-muted">
-                    Duration: {formatDuration(job.started_at, job.completed_at)}
-                  </div>
-                )}
+                {(job.status === "completed" || job.status === "failed") &&
+                  job.started_at && (
+                    <div className="mt-2 text-sm text-text-muted">
+                      Duration:{" "}
+                      {formatDuration(job.started_at, job.completed_at)}
+                    </div>
+                  )}
 
                 {/* Error message for failed jobs */}
                 {job.status === "failed" && job.error && (
@@ -318,7 +326,11 @@ export function TrainingJobsList({
                     asChild
                     className="border-brand-primary/50 text-brand-primary hover:bg-brand-primary/10"
                   >
-                    <a href={job.model_url} target="_blank" rel="noopener noreferrer">
+                    <a
+                      href={job.model_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
                       <Download className="w-4 h-4" />
                       Model
                     </a>

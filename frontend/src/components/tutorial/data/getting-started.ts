@@ -211,7 +211,8 @@ export const quickTourTutorial: Tutorial = {
     {
       id: "sidebar",
       title: "Navigation",
-      content: "Use the sidebar to navigate between different sections of the app.",
+      content:
+        "Use the sidebar to navigate between different sections of the app.",
       targetElement: {
         selector: '[data-tutorial-id="sidebar-nav"]',
         highlightType: "spotlight",
@@ -222,7 +223,8 @@ export const quickTourTutorial: Tutorial = {
     {
       id: "projects",
       title: "Projects",
-      content: "Switch between projects or create new ones using the project switcher.",
+      content:
+        "Switch between projects or create new ones using the project switcher.",
       targetElement: {
         selector: '[data-tutorial-id="sidebar-project-switcher"]',
         highlightType: "spotlight",

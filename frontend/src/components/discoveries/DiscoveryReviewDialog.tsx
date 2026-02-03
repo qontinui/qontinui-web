@@ -51,7 +51,10 @@ export function DiscoveryReviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="bg-surface-raised border-border-subtle sm:max-w-lg" data-ui-id="dialog-discovery-review">
+      <DialogContent
+        className="bg-surface-raised border-border-subtle sm:max-w-lg"
+        data-ui-id="dialog-discovery-review"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {isAccepting ? (

@@ -285,7 +285,10 @@ export function EdgePropertiesPanel({
                   setConditionType(val as EdgeCondition["type"])
                 }
               >
-                <SelectTrigger className="bg-surface-canvas border-border-default text-white" data-ui-id="automation-edge-conditiontype-select">
+                <SelectTrigger
+                  className="bg-surface-canvas border-border-default text-white"
+                  data-ui-id="automation-edge-conditiontype-select"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -343,7 +346,10 @@ export function EdgePropertiesPanel({
                         setConditionOperator(val as EdgeCondition["operator"])
                       }
                     >
-                      <SelectTrigger className="bg-surface-canvas border-border-default text-white" data-ui-id="automation-edge-operator-select">
+                      <SelectTrigger
+                        className="bg-surface-canvas border-border-default text-white"
+                        data-ui-id="automation-edge-operator-select"
+                      >
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>

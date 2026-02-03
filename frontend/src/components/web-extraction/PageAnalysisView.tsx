@@ -185,7 +185,9 @@ export function PageAnalysisView({
         // Filter states to only those visible on this screenshot
         // and compute per-screenshot bounding boxes (not union across all screenshots)
         const screenshotId = selectedAnnotation.screenshot_id;
-        const isFirstAnnotation = annotations.length > 0 && annotations[0]?.screenshot_id === screenshotId;
+        const isFirstAnnotation =
+          annotations.length > 0 &&
+          annotations[0]?.screenshot_id === screenshotId;
         const statesForThisPage: Array<{
           state: StateMachineState;
           bbox: BoundingBox;
@@ -195,14 +197,12 @@ export function PageAnalysisView({
         for (const { state, color } of statesWithColors) {
           // Get only stateImages that belong to this screenshot
           // If stateImage has no screenshotId, only show on first screenshot to avoid duplicates
-          const imagesOnThisScreenshot = state.stateImages.filter(
-            (img) => {
-              if (!img.screenshotId) {
-                return isFirstAnnotation;
-              }
-              return img.screenshotId === screenshotId;
+          const imagesOnThisScreenshot = state.stateImages.filter((img) => {
+            if (!img.screenshotId) {
+              return isFirstAnnotation;
             }
-          );
+            return img.screenshotId === screenshotId;
+          });
 
           if (imagesOnThisScreenshot.length === 0) continue;
 

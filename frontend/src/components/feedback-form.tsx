@@ -175,7 +175,11 @@ export function FeedbackForm({ open, onOpenChange }: FeedbackFormProps) {
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={!isFormValid || isSubmitting} data-ui-id="dialog-feedback-confirm-btn">
+            <Button
+              type="submit"
+              disabled={!isFormValid || isSubmitting}
+              data-ui-id="dialog-feedback-confirm-btn"
+            >
               {isSubmitting ? (
                 <>Sending...</>
               ) : (

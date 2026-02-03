@@ -148,7 +148,7 @@ export function InviteMemberDialog({
     useState<Invitation | null>(null);
 
   // Load invitations when dialog opens
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- loadInvitations is memoized with organizationId
+
   useEffect(() => {
     if (open) {
       loadInvitations();
@@ -258,7 +258,10 @@ export function InviteMemberDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={handleClose}>
-        <DialogContent className="sm:max-w-[600px] max-h-[80vh]" data-ui-id="dialog-invite-member">
+        <DialogContent
+          className="sm:max-w-[600px] max-h-[80vh]"
+          data-ui-id="dialog-invite-member"
+        >
           <DialogHeader>
             <DialogTitle>Invite Members to {organizationName}</DialogTitle>
             <DialogDescription>
@@ -300,7 +303,10 @@ export function InviteMemberDialog({
                   value={role}
                   onValueChange={(value) => setRole(value as MemberRole)}
                 >
-                  <SelectTrigger id="role" data-ui-id="dialog-invite-member-role-select">
+                  <SelectTrigger
+                    id="role"
+                    data-ui-id="dialog-invite-member-role-select"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -433,7 +439,11 @@ export function InviteMemberDialog({
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={handleClose} data-ui-id="dialog-invite-member-close-btn">
+            <Button
+              variant="outline"
+              onClick={handleClose}
+              data-ui-id="dialog-invite-member-close-btn"
+            >
               Close
             </Button>
           </DialogFooter>
@@ -458,7 +468,9 @@ export function InviteMemberDialog({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel data-ui-id="dialog-cancel-invitation-cancel-btn">Keep Invitation</AlertDialogCancel>
+            <AlertDialogCancel data-ui-id="dialog-cancel-invitation-cancel-btn">
+              Keep Invitation
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleCancelInvitation}
               className="bg-destructive hover:bg-destructive/90"

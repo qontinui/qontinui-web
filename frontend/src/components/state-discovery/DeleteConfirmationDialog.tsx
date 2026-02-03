@@ -69,7 +69,10 @@ const DeleteConfirmationDialog: React.FC<DeleteConfirmationDialogProps> = ({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent className="max-w-lg" data-ui-id="dialog-delete-state-image">
+      <DialogContent
+        className="max-w-lg"
+        data-ui-id="dialog-delete-state-image"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-yellow-500" />
@@ -203,7 +206,11 @@ const DeleteConfirmationDialog: React.FC<DeleteConfirmationDialogProps> = ({
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={onCancel} data-ui-id="dialog-delete-state-image-cancel-btn">
+          <Button
+            variant="outline"
+            onClick={onCancel}
+            data-ui-id="dialog-delete-state-image-cancel-btn"
+          >
             Cancel
           </Button>
           <Button

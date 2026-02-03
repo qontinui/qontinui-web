@@ -154,7 +154,7 @@ export function TabbedDocumentationView({ workflow }: { workflow: Workflow }) {
       }
       setMode("view");
       toast.success("Documentation saved");
-    } catch (error) {
+    } catch (_error) {
       toast.error("Failed to save");
     }
   };
@@ -164,7 +164,7 @@ export function TabbedDocumentationView({ workflow }: { workflow: Workflow }) {
       docService.addActionComment(workflow.id, actionId, comment);
       loadData();
       toast.success("Comment added");
-    } catch (error) {
+    } catch (_error) {
       toast.error("Failed to add comment");
     }
   };
@@ -174,7 +174,7 @@ export function TabbedDocumentationView({ workflow }: { workflow: Workflow }) {
       docService.updateActionComment(commentId, comment);
       loadData();
       toast.success("Comment updated");
-    } catch (error) {
+    } catch (_error) {
       toast.error("Failed to update comment");
     }
   };
@@ -184,7 +184,7 @@ export function TabbedDocumentationView({ workflow }: { workflow: Workflow }) {
       docService.deleteActionComment(commentId);
       loadData();
       toast.success("Comment deleted");
-    } catch (error) {
+    } catch (_error) {
       toast.error("Failed to delete comment");
     }
   };

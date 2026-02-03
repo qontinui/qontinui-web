@@ -42,7 +42,9 @@ export function useClickCapture(): UseClickCaptureResult {
 
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const statusPollingRef = useRef<NodeJS.Timeout | null>(null);
-  const { data: isAvailable } = useRunnerAvailability({ refetchInterval: 5000 });
+  const { data: isAvailable } = useRunnerAvailability({
+    refetchInterval: 5000,
+  });
 
   // Update duration every second when active
   useEffect(() => {
@@ -79,7 +81,7 @@ export function useClickCapture(): UseClickCaptureResult {
               clickCount: response.click_count || 0,
             }));
           }
-        } catch (error) {
+        } catch (_error) {
           // Silently ignore polling errors
         }
       }, 2000); // Poll every 2 seconds
@@ -136,38 +138,50 @@ export function useClickCapture(): UseClickCaptureResult {
   }, [isAvailable, refresh]);
 
   // Start capture session
-  const start = useCallback(async (applicationName?: string): Promise<boolean> => {
-    setState((prev) => ({ ...prev, error: null }));
+  const start = useCallback(
+    async (applicationName?: string): Promise<boolean> => {
+      setState((prev) => ({ ...prev, error: null }));
 
-    const sessionId = `capture-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const sessionId = `capture-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-    try {
-      const response = await runnerClient.startClickCapture(sessionId, applicationName);
+      try {
+        const response = await runnerClient.startClickCapture(
+          sessionId,
+          applicationName
+        );
 
-      if (response.success) {
-        setState({
-          isActive: true,
-          sessionId: response.session_id || sessionId,
-          startTime: Date.now(),
-          applicationName: applicationName || null,
-          duration: 0,
-          clickCount: 0,
-          error: null,
-        });
-        return true;
-      } else {
-        setState((prev) => ({ ...prev, error: response.error || "Failed to start capture" }));
+        if (response.success) {
+          setState({
+            isActive: true,
+            sessionId: response.session_id || sessionId,
+            startTime: Date.now(),
+            applicationName: applicationName || null,
+            duration: 0,
+            clickCount: 0,
+            error: null,
+          });
+          return true;
+        } else {
+          setState((prev) => ({
+            ...prev,
+            error: response.error || "Failed to start capture",
+          }));
+          return false;
+        }
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : "Failed to start capture";
+        setState((prev) => ({ ...prev, error: errorMessage }));
         return false;
       }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Failed to start capture";
-      setState((prev) => ({ ...prev, error: errorMessage }));
-      return false;
-    }
-  }, []);
+    },
+    []
+  );
 
   // Stop capture session
-  const stop = useCallback(async (): Promise<{ candidatesCount: number } | null> => {
+  const stop = useCallback(async (): Promise<{
+    candidatesCount: number;
+  } | null> => {
     setState((prev) => ({ ...prev, error: null }));
 
     try {
@@ -188,7 +202,8 @@ export function useClickCapture(): UseClickCaptureResult {
       }
       return null;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Failed to stop capture";
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to stop capture";
       setState((prev) => ({
         ...prev,
         isActive: false,

@@ -62,10 +62,15 @@ export function AccessibilitySelectorBuilder({
   availableRoles = COMMON_ROLES,
   className,
 }: AccessibilitySelectorBuilderProps) {
-  const [localSelector, setLocalSelector] = useState<AccessibilitySelector>(selector);
+  const [localSelector, setLocalSelector] =
+    useState<AccessibilitySelector>(selector);
   const [multiRole, setMultiRole] = useState(false);
   const [selectedRoles, setSelectedRoles] = useState<AccessibilityRole[]>(
-    Array.isArray(selector.role) ? selector.role : selector.role ? [selector.role] : []
+    Array.isArray(selector.role)
+      ? selector.role
+      : selector.role
+        ? [selector.role]
+        : []
   );
 
   // Sync local state with props
@@ -160,11 +165,16 @@ export function AccessibilitySelectorBuilder({
   }, [onChange]);
 
   return (
-    <Card className={cn("w-full", className)} data-slot="accessibility-selector-builder">
+    <Card
+      className={cn("w-full", className)}
+      data-slot="accessibility-selector-builder"
+    >
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle className="text-sm font-semibold">Selector Builder</CardTitle>
+            <CardTitle className="text-sm font-semibold">
+              Selector Builder
+            </CardTitle>
             <CardDescription className="text-xs">
               Build accessibility selectors for element targeting
             </CardDescription>
@@ -207,7 +217,10 @@ export function AccessibilitySelectorBuilder({
           <div className="flex items-center justify-between">
             <Label className="text-sm">Role</Label>
             <div className="flex items-center gap-2">
-              <Label htmlFor="multi-role" className="text-xs text-muted-foreground">
+              <Label
+                htmlFor="multi-role"
+                className="text-xs text-muted-foreground"
+              >
                 Multiple
               </Label>
               <Switch
@@ -261,7 +274,9 @@ export function AccessibilitySelectorBuilder({
           <Label className="text-sm">Name</Label>
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Exact match</Label>
+              <Label className="text-xs text-muted-foreground">
+                Exact match
+              </Label>
               <Input
                 placeholder="Button text..."
                 value={localSelector.name ?? ""}
@@ -296,7 +311,9 @@ export function AccessibilitySelectorBuilder({
           <Label className="text-sm">Value</Label>
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Exact match</Label>
+              <Label className="text-xs text-muted-foreground">
+                Exact match
+              </Label>
               <Input
                 placeholder="Input value..."
                 value={localSelector.value ?? ""}
@@ -385,7 +402,9 @@ export function AccessibilitySelectorBuilder({
             </Button>
             <Badge
               variant={matchCount > 0 ? "default" : "secondary"}
-              className={cn(matchCount > 0 && "bg-green-500 hover:bg-green-600")}
+              className={cn(
+                matchCount > 0 && "bg-green-500 hover:bg-green-600"
+              )}
             >
               {matchCount} {matchCount === 1 ? "match" : "matches"}
             </Badge>

@@ -42,7 +42,9 @@ export function SetStateHintDialog({
   const [error, setError] = useState<string | null>(null);
   const [selectedHint, setSelectedHint] = useState<string | null>(null);
   const [newHint, setNewHint] = useState("");
-  const [isCreatingNew, setIsCreatingNew] = useState(existingHints.length === 0);
+  const [isCreatingNew, setIsCreatingNew] = useState(
+    existingHints.length === 0
+  );
 
   // Get the hint to apply
   const hintToApply = useMemo(() => {
@@ -72,9 +74,7 @@ export function SetStateHintDialog({
       );
       onSave(hintToApply);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to set state hint"
-      );
+      setError(err instanceof Error ? err.message : "Failed to set state hint");
       console.error("[SetStateHintDialog] Error:", err);
     } finally {
       setSaving(false);
@@ -165,7 +165,8 @@ export function SetStateHintDialog({
             <div className="flex flex-wrap gap-2">
               {candidates.slice(0, 5).map((c) => (
                 <Badge key={c.id} variant="secondary" className="text-xs">
-                  {c.user_metadata?.name || `${c.element_type}_${c.id.slice(0, 6)}`}
+                  {c.user_metadata?.name ||
+                    `${c.element_type}_${c.id.slice(0, 6)}`}
                 </Badge>
               ))}
               {candidates.length > 5 && (

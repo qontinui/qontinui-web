@@ -268,10 +268,14 @@ export function ModelManager() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{model.name}</span>
-                      <Badge variant={model.available ? "default" : "secondary"}>
+                      <Badge
+                        variant={model.available ? "default" : "secondary"}
+                      >
                         {model.available ? "Downloaded" : "Not Downloaded"}
                       </Badge>
-                      <Badge variant="outline">{formatBytes(model.size_bytes)}</Badge>
+                      <Badge variant="outline">
+                        {formatBytes(model.size_bytes)}
+                      </Badge>
                     </div>
                     <p className="text-sm text-muted-foreground mt-1">
                       {model.description}
@@ -317,11 +321,13 @@ export function ModelManager() {
                               </AlertDialogTrigger>
                               <AlertDialogContent>
                                 <AlertDialogHeader>
-                                  <AlertDialogTitle>Delete Model?</AlertDialogTitle>
+                                  <AlertDialogTitle>
+                                    Delete Model?
+                                  </AlertDialogTitle>
                                   <AlertDialogDescription>
                                     This will delete {model.name} (
-                                    {formatBytes(model.size_bytes)}) from disk. You
-                                    can re-download it later if needed.
+                                    {formatBytes(model.size_bytes)}) from disk.
+                                    You can re-download it later if needed.
                                   </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>

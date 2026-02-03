@@ -71,7 +71,8 @@ export function VariableSelector({
   // 1. User explicitly clicked "Enter custom name" (isCustomMode), OR
   // 2. Current value is custom AND not empty (user typed something not in list)
   // Always start with dropdown, even if no variables exist yet
-  const showCustomInput = isCustomMode || (isCurrentValueCustom && value !== "");
+  const showCustomInput =
+    isCustomMode || (isCurrentValueCustom && value !== "");
 
   // Reset custom mode when switching to a value in the list
   React.useEffect(() => {
@@ -173,7 +174,11 @@ export function VariableSelector({
                 </div>
               ) : (
                 existingVariables.map((varName) => (
-                  <SelectItem key={varName} value={varName} className="font-mono">
+                  <SelectItem
+                    key={varName}
+                    value={varName}
+                    className="font-mono"
+                  >
                     {varName}
                   </SelectItem>
                 ))

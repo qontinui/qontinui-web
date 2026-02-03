@@ -87,7 +87,9 @@ export function WebExtractionProgressPanel({
 
       const timer = setInterval(() => {
         if (startTimeRef.current) {
-          const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+          const elapsed = Math.floor(
+            (Date.now() - startTimeRef.current) / 1000
+          );
           setElapsedSeconds(elapsed);
         }
 
@@ -119,7 +121,11 @@ export function WebExtractionProgressPanel({
         transitionsFound !== lastProgressRef.current.transitionsFound;
 
       if (hasProgress) {
-        lastProgressRef.current = { pagesExtracted, statesFound, transitionsFound };
+        lastProgressRef.current = {
+          pagesExtracted,
+          statesFound,
+          transitionsFound,
+        };
         lastProgressTimeRef.current = Date.now();
         setIsStuck(false);
         setStuckSeconds(0);
@@ -145,7 +151,9 @@ export function WebExtractionProgressPanel({
         return <Clock className="h-5 w-5 text-text-muted" />;
       case "running":
         if (isStuck) {
-          return <AlertTriangle className="h-5 w-5 text-yellow-500 animate-pulse" />;
+          return (
+            <AlertTriangle className="h-5 w-5 text-yellow-500 animate-pulse" />
+          );
         }
         return <Globe className="h-5 w-5 text-brand-secondary animate-pulse" />;
       case "completed":

@@ -27,7 +27,10 @@ export function BatchDeleteWorkflowsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[425px]" data-ui-id="dialog-batch-delete-workflows">
+      <DialogContent
+        className="sm:max-w-[425px]"
+        data-ui-id="dialog-batch-delete-workflows"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-yellow-500" />

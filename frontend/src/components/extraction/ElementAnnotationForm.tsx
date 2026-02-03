@@ -107,7 +107,9 @@ interface ElementAnnotationFormProps {
   className?: string;
 }
 
-export function ElementAnnotationForm({ className }: ElementAnnotationFormProps) {
+export function ElementAnnotationForm({
+  className,
+}: ElementAnnotationFormProps) {
   const selectedElementIds = useExtractionAnnotationStore(
     (state) => state.selectedElementIds
   );
@@ -222,9 +224,9 @@ export function ElementAnnotationForm({ className }: ElementAnnotationFormProps)
   const multiSelectStats = useMemo(() => {
     if (!isMultiSelect) return null;
     return {
-      types: Array.from(new Set(selectedElements.map((e) => e.elementType))).join(
-        ", "
-      ),
+      types: Array.from(
+        new Set(selectedElements.map((e) => e.elementType))
+      ).join(", "),
       groundTruthCount: selectedElements.filter((e) => e.isGroundTruth).length,
       totalCount: selectedElements.length,
     };
@@ -352,7 +354,9 @@ export function ElementAnnotationForm({ className }: ElementAnnotationFormProps)
     <Card className={`p-4 bg-surface-raised/60 space-y-4 ${className}`}>
       {/* Header with badges */}
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-[#9B59B6]">Element Properties</h3>
+        <h3 className="text-sm font-semibold text-[#9B59B6]">
+          Element Properties
+        </h3>
         <div className="flex gap-1">
           {selectedElement?.isAutoDetected && (
             <Badge variant="outline" className="text-[10px] px-1.5">
@@ -451,7 +455,9 @@ export function ElementAnnotationForm({ className }: ElementAnnotationFormProps)
         </Label>
         <Select
           value={watchedValues.reviewStatus}
-          onValueChange={(value) => setValue("reviewStatus", value as ReviewStatus)}
+          onValueChange={(value) =>
+            setValue("reviewStatus", value as ReviewStatus)
+          }
         >
           <SelectTrigger className="text-sm">
             <SelectValue />

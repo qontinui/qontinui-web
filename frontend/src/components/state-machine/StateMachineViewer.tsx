@@ -403,7 +403,9 @@ function StateListItem({
         <CollapsibleContent>
           <div className="px-3 pb-3 border-t border-border-subtle pt-2 mt-1">
             {state.description && (
-              <p className="text-sm text-text-muted mb-2">{state.description}</p>
+              <p className="text-sm text-text-muted mb-2">
+                {state.description}
+              </p>
             )}
             {images.length > 0 && (
               <div className="flex flex-wrap gap-2">
@@ -476,7 +478,9 @@ function StateDetails({
           </div>
           <div className="p-2 rounded bg-surface-default/50">
             <div className="text-text-muted text-xs">Confidence</div>
-            <div className="font-medium">{Math.round(state.confidence * 100)}%</div>
+            <div className="font-medium">
+              {Math.round(state.confidence * 100)}%
+            </div>
           </div>
         </div>
 
@@ -514,11 +518,19 @@ function StateDetails({
                     className="flex items-center gap-2 text-sm p-2 rounded bg-surface-default/50 cursor-pointer hover:bg-surface-default"
                     onClick={() => onTransitionClick?.(t)}
                   >
-                    <span className={isOutgoing ? "text-brand-primary" : "text-text-muted"}>
+                    <span
+                      className={
+                        isOutgoing ? "text-brand-primary" : "text-text-muted"
+                      }
+                    >
                       {fromState?.name || t.fromStateId}
                     </span>
                     <ArrowRight className="h-3 w-3 text-text-muted" />
-                    <span className={!isOutgoing ? "text-brand-primary" : "text-text-muted"}>
+                    <span
+                      className={
+                        !isOutgoing ? "text-brand-primary" : "text-text-muted"
+                      }
+                    >
                       {toState?.name || t.toStateId}
                     </span>
                     {t.trigger && (
@@ -584,11 +596,15 @@ function TransitionListItem({
       <div className="flex-1 flex items-center gap-2">
         <div className="flex items-center gap-2 flex-1">
           <div className="flex-1 text-right">
-            <span className="font-medium">{fromState?.name || transition.fromStateId}</span>
+            <span className="font-medium">
+              {fromState?.name || transition.fromStateId}
+            </span>
           </div>
           <ArrowRight className="h-4 w-4 text-text-muted flex-shrink-0" />
           <div className="flex-1">
-            <span className="font-medium">{toState?.name || transition.toStateId}</span>
+            <span className="font-medium">
+              {toState?.name || transition.toStateId}
+            </span>
           </div>
         </div>
       </div>
@@ -612,7 +628,10 @@ interface CooccurrenceMatrixProps {
   states: DiscoveredState[];
 }
 
-function CooccurrenceMatrix({ elementToRenders, states: _states }: CooccurrenceMatrixProps) {
+function CooccurrenceMatrix({
+  elementToRenders,
+  states: _states,
+}: CooccurrenceMatrixProps) {
   // Get elements that appear in at least 2 renders (interesting for co-occurrence)
   const elements = Object.entries(elementToRenders)
     .filter(([, renders]) => renders.length >= 2)
@@ -630,7 +649,10 @@ function CooccurrenceMatrix({ elementToRenders, states: _states }: CooccurrenceM
   }
 
   // Calculate co-occurrence between elements
-  const calculateCooccurrence = (el1Renders: string[], el2Renders: string[]) => {
+  const calculateCooccurrence = (
+    el1Renders: string[],
+    el2Renders: string[]
+  ) => {
     const intersection = el1Renders.filter((r) => el2Renders.includes(r));
     const union = [...new Set([...el1Renders, ...el2Renders])];
     return union.length > 0 ? intersection.length / union.length : 0;
@@ -639,7 +661,8 @@ function CooccurrenceMatrix({ elementToRenders, states: _states }: CooccurrenceM
   return (
     <div className="overflow-x-auto">
       <div className="text-sm text-text-muted mb-4">
-        Showing top {elements.length} elements by render count. Higher values indicate elements that frequently appear together.
+        Showing top {elements.length} elements by render count. Higher values
+        indicate elements that frequently appear together.
       </div>
       <table className="w-full text-xs">
         <thead>
@@ -659,7 +682,10 @@ function CooccurrenceMatrix({ elementToRenders, states: _states }: CooccurrenceM
         <tbody>
           {elements.map(([id1, renders1]) => (
             <tr key={id1}>
-              <td className="p-1 font-medium truncate max-w-[100px]" title={id1}>
+              <td
+                className="p-1 font-medium truncate max-w-[100px]"
+                title={id1}
+              >
                 {id1.slice(0, 12)}...
               </td>
               {elements.map(([id2, renders2]) => {

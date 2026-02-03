@@ -212,7 +212,10 @@ export default function DatasetsPage() {
             Manage and curate training datasets for GUI element detection models
           </p>
         </div>
-        <Button onClick={() => setShowImportDialog(true)} data-ui-id="admin-page-datasets-import-btn">
+        <Button
+          onClick={() => setShowImportDialog(true)}
+          data-ui-id="admin-page-datasets-import-btn"
+        >
           <Upload className="mr-2 h-4 w-4" />
           Import Dataset
         </Button>

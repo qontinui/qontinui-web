@@ -245,19 +245,25 @@ export function GenerateStateMachineDialog({
       }
 
       // Call the runner to generate state machine
-      const response = await runnerClient.sendCommand<GenerateStateMachineResponse>(
-        "generate_state_machine",
-        {
-          templates: approvedTemplates,
-          grouping_method: groupingMethod,
-          grouping_config: Object.keys(groupingConfig).length > 0 ? groupingConfig : undefined,
-          state_machine_name: stateMachineName,
-          include_transitions: includeTransitions,
-        }
-      );
+      const response =
+        await runnerClient.sendCommand<GenerateStateMachineResponse>(
+          "generate_state_machine",
+          {
+            templates: approvedTemplates,
+            grouping_method: groupingMethod,
+            grouping_config:
+              Object.keys(groupingConfig).length > 0
+                ? groupingConfig
+                : undefined,
+            state_machine_name: stateMachineName,
+            include_transitions: includeTransitions,
+          }
+        );
 
       if (!response.success || response.error || !response.result) {
-        throw new Error(response.error || "Generation failed - no result returned");
+        throw new Error(
+          response.error || "Generation failed - no result returned"
+        );
       }
 
       setResult(response.result);
@@ -431,7 +437,8 @@ export function GenerateStateMachineDialog({
             </div>
 
             <div className="text-xs text-muted-foreground">
-              Processing time: {result.grouping_result.processing_time_ms.toFixed(1)}ms
+              Processing time:{" "}
+              {result.grouping_result.processing_time_ms.toFixed(1)}ms
             </div>
 
             {/* Import Success Message */}
@@ -506,32 +513,36 @@ export function GenerateStateMachineDialog({
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                {GROUPING_METHODS.find((m) => m.value === groupingMethod)
-                  ?.description}
+                {
+                  GROUPING_METHODS.find((m) => m.value === groupingMethod)
+                    ?.description
+                }
               </p>
             </div>
 
             {/* Method-specific Options */}
-            {groupingMethod === "state_hints" && uniqueStateHints.length === 0 && (
-              <div className="flex items-center gap-2 p-3 bg-yellow-50 text-yellow-700 rounded-lg text-sm">
-                <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                No state hints have been assigned. Go back to the review panel
-                and assign state hints to templates.
-              </div>
-            )}
-
-            {groupingMethod === "state_hints" && uniqueStateHints.length > 0 && (
-              <div className="space-y-2">
-                <Label>State Hints Preview</Label>
-                <div className="flex flex-wrap gap-2">
-                  {uniqueStateHints.map((hint) => (
-                    <Badge key={hint} variant="outline">
-                      {hint} ({templatesByHint.byHint[hint]})
-                    </Badge>
-                  ))}
+            {groupingMethod === "state_hints" &&
+              uniqueStateHints.length === 0 && (
+                <div className="flex items-center gap-2 p-3 bg-yellow-50 text-yellow-700 rounded-lg text-sm">
+                  <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                  No state hints have been assigned. Go back to the review panel
+                  and assign state hints to templates.
                 </div>
-              </div>
-            )}
+              )}
+
+            {groupingMethod === "state_hints" &&
+              uniqueStateHints.length > 0 && (
+                <div className="space-y-2">
+                  <Label>State Hints Preview</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {uniqueStateHints.map((hint) => (
+                      <Badge key={hint} variant="outline">
+                        {hint} ({templatesByHint.byHint[hint]})
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
 
             {groupingMethod === "co_occurrence" && (
               <div className="space-y-4 p-4 border rounded-lg">
@@ -569,7 +580,9 @@ export function GenerateStateMachineDialog({
                   <Input
                     type="number"
                     value={sampleInterval}
-                    onChange={(e) => setSampleInterval(parseInt(e.target.value) || 30)}
+                    onChange={(e) =>
+                      setSampleInterval(parseInt(e.target.value) || 30)
+                    }
                     min={1}
                     max={120}
                   />

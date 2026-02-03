@@ -168,7 +168,9 @@ export function TransitionGraph({
 
   const onEdgeClick = useCallback(
     (_event: React.MouseEvent, edge: Edge) => {
-      const transition = edge.data?.transition as SuggestedTransition | undefined;
+      const transition = edge.data?.transition as
+        | SuggestedTransition
+        | undefined;
       if (transition && onTransitionSelect) {
         onTransitionSelect(transition);
       }

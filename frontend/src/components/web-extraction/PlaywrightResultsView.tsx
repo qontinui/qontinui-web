@@ -136,21 +136,28 @@ function MetricsCard({ metrics }: { metrics: ExtractionMetrics | undefined }) {
                 <span className="text-muted-foreground">Verification Rate</span>
                 <span className="font-medium">
                   {metrics.total_found > 0
-                    ? ((metrics.verified / metrics.total_found) * 100).toFixed(1)
-                    : 0}%
+                    ? ((metrics.verified / metrics.total_found) * 100).toFixed(
+                        1
+                      )
+                    : 0}
+                  %
                 </span>
               </div>
               <Progress
-                value={metrics.total_found > 0
-                  ? (metrics.verified / metrics.total_found) * 100
-                  : 0}
+                value={
+                  metrics.total_found > 0
+                    ? (metrics.verified / metrics.total_found) * 100
+                    : 0
+                }
                 className="h-2"
               />
               <div className="flex justify-between text-xs text-muted-foreground">
                 <span className="text-green-500">
                   {metrics.verified} verified
                 </span>
-                <span className="text-red-500">{metrics.unverified || 0} unverified</span>
+                <span className="text-red-500">
+                  {metrics.unverified || 0} unverified
+                </span>
               </div>
             </div>
           </>
@@ -218,11 +225,7 @@ function ElementImage({ element }: { element: PlaywrightClickable }) {
   );
 }
 
-function ElementsTable({
-  elements,
-}: {
-  elements: PlaywrightClickable[];
-}) {
+function ElementsTable({ elements }: { elements: PlaywrightClickable[] }) {
   const [search, setSearch] = useState("");
   const [filterVerified, setFilterVerified] = useState<
     "all" | "verified" | "unverified"
@@ -331,7 +334,11 @@ function ElementsTable({
                 <TableCell>
                   <div className="flex items-center gap-1">
                     {getRiskIcon(element.risk_level || "unknown")}
-                    <Badge variant={getRiskBadgeVariant(element.risk_level || "unknown")}>
+                    <Badge
+                      variant={getRiskBadgeVariant(
+                        element.risk_level || "unknown"
+                      )}
+                    >
                       {element.risk_level || "unknown"}
                     </Badge>
                   </div>
@@ -357,7 +364,10 @@ function ElementsTable({
                       <XCircle className="h-4 w-4 text-red-500" />
                     )}
                     <span className="text-sm">
-                      {((element.verification_confidence || 0) * 100).toFixed(0)}%
+                      {((element.verification_confidence || 0) * 100).toFixed(
+                        0
+                      )}
+                      %
                     </span>
                   </div>
                 </TableCell>
@@ -374,13 +384,11 @@ function ElementsTable({
   );
 }
 
-type SkippedElement = NonNullable<PlaywrightExtractionResults["skipped_dangerous"]>[number];
+type SkippedElement = NonNullable<
+  PlaywrightExtractionResults["skipped_dangerous"]
+>[number];
 
-function SkippedElementsList({
-  elements,
-}: {
-  elements: SkippedElement[];
-}) {
+function SkippedElementsList({ elements }: { elements: SkippedElement[] }) {
   const [expandedUrls, setExpandedUrls] = useState<Set<string>>(new Set());
 
   // Group by URL
@@ -506,7 +514,10 @@ function ErrorsList({ errors }: { errors: string[] }) {
   );
 }
 
-export function PlaywrightResultsView({ job, results }: PlaywrightResultsViewProps) {
+export function PlaywrightResultsView({
+  job,
+  results,
+}: PlaywrightResultsViewProps) {
   // Show progress when job is running
   if (job.status === "running" || job.status === "pending") {
     return (

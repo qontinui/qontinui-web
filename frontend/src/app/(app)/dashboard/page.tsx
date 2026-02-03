@@ -108,7 +108,14 @@ export default function Dashboard() {
     }
 
     return undefined;
-  }, [user, authLoading, router, hasCompletedWelcome, toggleWelcomeModal, isNewUser]);
+  }, [
+    user,
+    authLoading,
+    router,
+    hasCompletedWelcome,
+    toggleWelcomeModal,
+    isNewUser,
+  ]);
 
   // Clear old localStorage project data (one-time cleanup)
   useEffect(() => {
@@ -504,151 +511,151 @@ export default function Dashboard() {
 
         {/* Projects Section */}
         <div data-tour="projects">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-semibold">Your Projects</h3>
-              <Button
-                onClick={handleNewProject}
-                className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
-                data-tour="new-project"
-                data-awas-action="create_project"
-                data-ui-id="new-project-button"
-                data-awas-trigger="click"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                New Project
-              </Button>
-            </div>
-
-            {loading ? (
-              <div className="text-center py-8 text-text-muted">
-                Loading projects...
-              </div>
-            ) : projects.length === 0 ? (
-              <Card className="bg-surface-raised/30 border-border-subtle/50 border-dashed backdrop-blur-sm">
-                <CardContent className="p-12 text-center">
-                  <div className="w-16 h-16 bg-brand-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <FolderOpen className="w-8 h-8 text-brand-primary" />
-                  </div>
-                  <h4 className="text-xl font-semibold mb-2 text-text-secondary">
-                    No projects yet
-                  </h4>
-                  <p className="text-text-muted mb-6">
-                    Create your first automation project to get started
-                  </p>
-                  <Button
-                    onClick={handleNewProject}
-                    className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
-                    data-awas-action="create_project"
-                    data-ui-id="create-first-project-button"
-                    data-awas-trigger="click"
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Create First Project
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : (
-              <div
-                className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
-                data-awas-action="list_projects"
-                data-ui-id="projects-grid"
-              >
-                {projects.map((project) => {
-                  const isSelected = selectedProjectId === project.id;
-                  return (
-                    <Card
-                      key={project.id}
-                      className={`bg-surface-raised/50 backdrop-blur-sm transition-all duration-300 group ${
-                        isSelected
-                          ? "border-brand-primary shadow-[0_0_20px_var(--glow-primary)] ring-1 ring-brand-primary/50"
-                          : "border-border-subtle/50 hover:border-brand-primary/30 hover:shadow-[0_0_20px_var(--glow-primary)]"
-                      }`}
-                      data-awas-action="get_project"
-                      data-ui-id={`project-card-${project.id}`}
-                      data-awas-param-project_id={project.id}
-                    >
-                      <CardContent className="p-6">
-                        <div className="mb-4">
-                          <div className="flex items-start justify-between mb-2">
-                            <div className="flex items-center gap-2 min-w-0 flex-1">
-                              {isSelected && (
-                                <div className="w-5 h-5 rounded-full bg-brand-primary flex items-center justify-center flex-shrink-0">
-                                  <Check className="w-3 h-3 text-black" />
-                                </div>
-                              )}
-                              <EditableProjectName
-                                name={project.name}
-                                onSave={(newName) =>
-                                  handleUpdateProjectName(project.id, newName)
-                                }
-                                isSelected={isSelected}
-                              />
-                            </div>
-                            <Badge
-                              className={`${getStatusColor(project.status)} text-xs`}
-                            >
-                              {project.status}
-                            </Badge>
-                          </div>
-                          <p className="text-text-muted text-sm mb-3 line-clamp-2">
-                            {project.description}
-                          </p>
-                          <p className="text-xs text-text-muted">
-                            Modified {getRelativeTime(project.updated_at)}
-                          </p>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <Button
-                            size="sm"
-                            onClick={() =>
-                              handleOpenProject(project.id, project.name)
-                            }
-                            className={`flex-1 ${
-                              isSelected
-                                ? "bg-brand-primary/30 text-brand-primary border border-brand-primary/50"
-                                : "bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary border border-brand-primary/30 hover:border-brand-primary/50"
-                            }`}
-                            data-awas-action="get_project"
-                            data-ui-id={`select-project-${project.id}`}
-                            data-awas-trigger="click"
-                            data-awas-param-project_id={project.id}
-                          >
-                            {isSelected ? (
-                              <>
-                                <Check className="w-4 h-4 mr-1" />
-                                Selected
-                              </>
-                            ) : (
-                              <>
-                                <Play className="w-4 h-4 mr-1" />
-                                Select
-                              </>
-                            )}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteProject(project);
-                            }}
-                            className="border-border-default hover:border-red-500 hover:text-red-400 bg-transparent"
-                            data-awas-action="delete_project"
-                            data-ui-id={`delete-project-${project.id}`}
-                            data-awas-trigger="click"
-                            data-awas-param-project_id={project.id}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-xl font-semibold">Your Projects</h3>
+            <Button
+              onClick={handleNewProject}
+              className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
+              data-tour="new-project"
+              data-awas-action="create_project"
+              data-ui-id="new-project-button"
+              data-awas-trigger="click"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              New Project
+            </Button>
           </div>
+
+          {loading ? (
+            <div className="text-center py-8 text-text-muted">
+              Loading projects...
+            </div>
+          ) : projects.length === 0 ? (
+            <Card className="bg-surface-raised/30 border-border-subtle/50 border-dashed backdrop-blur-sm">
+              <CardContent className="p-12 text-center">
+                <div className="w-16 h-16 bg-brand-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <FolderOpen className="w-8 h-8 text-brand-primary" />
+                </div>
+                <h4 className="text-xl font-semibold mb-2 text-text-secondary">
+                  No projects yet
+                </h4>
+                <p className="text-text-muted mb-6">
+                  Create your first automation project to get started
+                </p>
+                <Button
+                  onClick={handleNewProject}
+                  className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
+                  data-awas-action="create_project"
+                  data-ui-id="create-first-project-button"
+                  data-awas-trigger="click"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create First Project
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div
+              className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
+              data-awas-action="list_projects"
+              data-ui-id="projects-grid"
+            >
+              {projects.map((project) => {
+                const isSelected = selectedProjectId === project.id;
+                return (
+                  <Card
+                    key={project.id}
+                    className={`bg-surface-raised/50 backdrop-blur-sm transition-all duration-300 group ${
+                      isSelected
+                        ? "border-brand-primary shadow-[0_0_20px_var(--glow-primary)] ring-1 ring-brand-primary/50"
+                        : "border-border-subtle/50 hover:border-brand-primary/30 hover:shadow-[0_0_20px_var(--glow-primary)]"
+                    }`}
+                    data-awas-action="get_project"
+                    data-ui-id={`project-card-${project.id}`}
+                    data-awas-param-project_id={project.id}
+                  >
+                    <CardContent className="p-6">
+                      <div className="mb-4">
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            {isSelected && (
+                              <div className="w-5 h-5 rounded-full bg-brand-primary flex items-center justify-center flex-shrink-0">
+                                <Check className="w-3 h-3 text-black" />
+                              </div>
+                            )}
+                            <EditableProjectName
+                              name={project.name}
+                              onSave={(newName) =>
+                                handleUpdateProjectName(project.id, newName)
+                              }
+                              isSelected={isSelected}
+                            />
+                          </div>
+                          <Badge
+                            className={`${getStatusColor(project.status)} text-xs`}
+                          >
+                            {project.status}
+                          </Badge>
+                        </div>
+                        <p className="text-text-muted text-sm mb-3 line-clamp-2">
+                          {project.description}
+                        </p>
+                        <p className="text-xs text-text-muted">
+                          Modified {getRelativeTime(project.updated_at)}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() =>
+                            handleOpenProject(project.id, project.name)
+                          }
+                          className={`flex-1 ${
+                            isSelected
+                              ? "bg-brand-primary/30 text-brand-primary border border-brand-primary/50"
+                              : "bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary border border-brand-primary/30 hover:border-brand-primary/50"
+                          }`}
+                          data-awas-action="get_project"
+                          data-ui-id={`select-project-${project.id}`}
+                          data-awas-trigger="click"
+                          data-awas-param-project_id={project.id}
+                        >
+                          {isSelected ? (
+                            <>
+                              <Check className="w-4 h-4 mr-1" />
+                              Selected
+                            </>
+                          ) : (
+                            <>
+                              <Play className="w-4 h-4 mr-1" />
+                              Select
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteProject(project);
+                          }}
+                          className="border-border-default hover:border-red-500 hover:text-red-400 bg-transparent"
+                          data-awas-action="delete_project"
+                          data-ui-id={`delete-project-${project.id}`}
+                          data-awas-trigger="click"
+                          data-awas-param-project_id={project.id}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </main>
 
       {/* Create Project Dialog */}

@@ -119,7 +119,10 @@ export function ValidationResultsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] bg-surface-canvas border-border-subtle" data-ui-id="dialog-validation-results">
+      <DialogContent
+        className="sm:max-w-[600px] bg-surface-canvas border-border-subtle"
+        data-ui-id="dialog-validation-results"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ClipboardCheck className="w-5 h-5 text-brand-primary" />

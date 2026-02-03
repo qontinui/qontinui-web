@@ -125,8 +125,10 @@ export async function listTrainingJobs(params?: {
 
   if (params?.project_id) searchParams.set("project_id", params.project_id);
   if (params?.status) searchParams.set("status", params.status);
-  if (params?.skip !== undefined) searchParams.set("skip", params.skip.toString());
-  if (params?.limit !== undefined) searchParams.set("limit", params.limit.toString());
+  if (params?.skip !== undefined)
+    searchParams.set("skip", params.skip.toString());
+  if (params?.limit !== undefined)
+    searchParams.set("limit", params.limit.toString());
 
   const response = await fetch(`/api/v1/training/jobs?${searchParams}`);
 
@@ -234,18 +236,46 @@ export function getStatusDisplay(status: TrainingJobStatus): {
 } {
   switch (status) {
     case "pending":
-      return { color: "text-gray-400", text: "Pending", bgColor: "bg-gray-500/20" };
+      return {
+        color: "text-gray-400",
+        text: "Pending",
+        bgColor: "bg-gray-500/20",
+      };
     case "queued":
-      return { color: "text-blue-400", text: "Queued", bgColor: "bg-blue-500/20" };
+      return {
+        color: "text-blue-400",
+        text: "Queued",
+        bgColor: "bg-blue-500/20",
+      };
     case "running":
-      return { color: "text-yellow-400", text: "Running", bgColor: "bg-yellow-500/20" };
+      return {
+        color: "text-yellow-400",
+        text: "Running",
+        bgColor: "bg-yellow-500/20",
+      };
     case "completed":
-      return { color: "text-green-400", text: "Completed", bgColor: "bg-green-500/20" };
+      return {
+        color: "text-green-400",
+        text: "Completed",
+        bgColor: "bg-green-500/20",
+      };
     case "failed":
-      return { color: "text-red-400", text: "Failed", bgColor: "bg-red-500/20" };
+      return {
+        color: "text-red-400",
+        text: "Failed",
+        bgColor: "bg-red-500/20",
+      };
     case "cancelled":
-      return { color: "text-orange-400", text: "Cancelled", bgColor: "bg-orange-500/20" };
+      return {
+        color: "text-orange-400",
+        text: "Cancelled",
+        bgColor: "bg-orange-500/20",
+      };
     default:
-      return { color: "text-gray-400", text: status, bgColor: "bg-gray-500/20" };
+      return {
+        color: "text-gray-400",
+        text: status,
+        bgColor: "bg-gray-500/20",
+      };
   }
 }

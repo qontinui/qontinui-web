@@ -281,11 +281,15 @@ export const ContextualTutorialEnhanced: React.FC<
   // Expose notifyAction globally for components to use
   useEffect(() => {
     if (typeof window !== "undefined") {
-      (window as unknown as { __tutorialNotifyAction?: typeof notifyAction }).__tutorialNotifyAction = notifyAction;
+      (
+        window as unknown as { __tutorialNotifyAction?: typeof notifyAction }
+      ).__tutorialNotifyAction = notifyAction;
     }
     return () => {
       if (typeof window !== "undefined") {
-        delete (window as unknown as { __tutorialNotifyAction?: typeof notifyAction }).__tutorialNotifyAction;
+        delete (
+          window as unknown as { __tutorialNotifyAction?: typeof notifyAction }
+        ).__tutorialNotifyAction;
       }
     };
   }, [notifyAction]);
@@ -297,7 +301,8 @@ export const ContextualTutorialEnhanced: React.FC<
   const targetElement = currentStep.targetElement;
   const targetSelector = targetElement?.selector || null;
   const tooltipPosition = targetElement?.position || "bottom";
-  const allowInteraction = targetElement?.allowInteraction ?? currentStep.interactive ?? false;
+  const allowInteraction =
+    targetElement?.allowInteraction ?? currentStep.interactive ?? false;
   const hasTarget = !!targetSelector;
 
   return (

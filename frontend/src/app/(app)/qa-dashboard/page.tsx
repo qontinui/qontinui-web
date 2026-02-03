@@ -59,7 +59,10 @@ export default function QADashboard() {
 
   return (
     <RequireProject pageName="QA Dashboard">
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white" data-ui-id="qa-dashboard-page">
+      <div
+        className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white"
+        data-ui-id="qa-dashboard-page"
+      >
         {/* Header */}
         <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
           <div className="flex items-center justify-between px-6 py-4">
@@ -113,7 +116,10 @@ export default function QADashboard() {
           </div>
 
           {/* View Selector */}
-          <div className="flex items-center gap-2 mb-6" data-ui-id="qa-dashboard-view-selector">
+          <div
+            className="flex items-center gap-2 mb-6"
+            data-ui-id="qa-dashboard-view-selector"
+          >
             <Button
               variant={selectedView === "overview" ? "default" : "outline"}
               onClick={() => setSelectedView("overview")}

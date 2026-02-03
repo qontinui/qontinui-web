@@ -58,7 +58,8 @@ export function TemplateCandidateCard({
   thumbnailUrl,
 }: TemplateCandidateCardProps) {
   const { primary_boundary } = candidate;
-  const imageUrl = thumbnailUrl || candidate.thumbnail_url || candidate.pixel_data_url;
+  const imageUrl =
+    thumbnailUrl || candidate.thumbnail_url || candidate.pixel_data_url;
 
   return (
     <div
@@ -74,7 +75,10 @@ export function TemplateCandidateCard({
       {/* Status Badge */}
       <Badge
         variant="outline"
-        className={cn("absolute top-2 left-2 z-10 text-xs", getStatusColor(candidate.status))}
+        className={cn(
+          "absolute top-2 left-2 z-10 text-xs",
+          getStatusColor(candidate.status)
+        )}
       >
         {candidate.status}
       </Badge>
@@ -82,7 +86,10 @@ export function TemplateCandidateCard({
       {/* Confidence Badge */}
       <Badge
         variant="secondary"
-        className={cn("absolute top-2 right-2 z-10 text-xs", getConfidenceColor(candidate.confidence_score))}
+        className={cn(
+          "absolute top-2 right-2 z-10 text-xs",
+          getConfidenceColor(candidate.confidence_score)
+        )}
       >
         {Math.round(candidate.confidence_score * 100)}%
       </Badge>
@@ -132,7 +139,9 @@ export function TemplateCandidateCard({
       <div className="p-3 space-y-2">
         {/* Element Type */}
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium capitalize">{candidate.element_type}</span>
+          <span className="text-sm font-medium capitalize">
+            {candidate.element_type}
+          </span>
           <span className="text-xs text-muted-foreground">
             {primary_boundary.width} x {primary_boundary.height}
           </span>
@@ -150,7 +159,10 @@ export function TemplateCandidateCard({
 
         {/* Application Name */}
         {candidate.application_name && (
-          <div className="text-xs text-muted-foreground truncate" title={candidate.application_name}>
+          <div
+            className="text-xs text-muted-foreground truncate"
+            title={candidate.application_name}
+          >
             {candidate.application_name}
           </div>
         )}

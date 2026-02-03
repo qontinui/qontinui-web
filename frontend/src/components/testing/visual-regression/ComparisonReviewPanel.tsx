@@ -120,7 +120,10 @@ export function ComparisonReviewPanel({
   }
 
   return (
-    <div className={cn("space-y-4", className)} data-ui-id="testing-comparison-review-panel">
+    <div
+      className={cn("space-y-4", className)}
+      data-ui-id="testing-comparison-review-panel"
+    >
       {/* Summary */}
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-medium">
@@ -132,7 +135,11 @@ export function ComparisonReviewPanel({
       {/* Comparison List */}
       <div className="space-y-3" data-ui-id="testing-comparison-list">
         {comparisons.map((comparison) => (
-          <Card key={comparison.id} className="overflow-hidden" data-ui-id={`testing-comparison-item-${comparison.id}`}>
+          <Card
+            key={comparison.id}
+            className="overflow-hidden"
+            data-ui-id={`testing-comparison-item-${comparison.id}`}
+          >
             <CardContent className="p-4">
               <div className="flex items-start gap-4">
                 {/* Thumbnail */}

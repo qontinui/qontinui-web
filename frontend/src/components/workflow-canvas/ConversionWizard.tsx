@@ -195,7 +195,11 @@ export function ConversionWizard({
       <div className="conversion-wizard">
         <div className="wizard-header">
           <h2>Convert Workflow Format</h2>
-          <button className="close-button" onClick={onCancel} aria-label="Close">
+          <button
+            className="close-button"
+            onClick={onCancel}
+            aria-label="Close"
+          >
             ×
           </button>
         </div>

@@ -64,10 +64,7 @@ export function QontinuiSelect({
   return (
     <div className="form-group">
       {label && (
-        <label
-          htmlFor={selectId}
-          className="form-label"
-        >
+        <label htmlFor={selectId} className="form-label">
           {label}
         </label>
       )}
@@ -93,9 +90,7 @@ export function QontinuiSelect({
           </SelectGroup>
         </SelectContent>
       </Select>
-      {error && (
-        <span className="form-error">{error}</span>
-      )}
+      {error && <span className="form-error">{error}</span>}
     </div>
   );
 }

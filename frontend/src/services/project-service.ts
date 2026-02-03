@@ -127,7 +127,8 @@ export class ProjectService {
         errorData,
       });
       throw new Error(
-        errorData.detail || `Failed to import configuration: ${response.statusText}`
+        errorData.detail ||
+          `Failed to import configuration: ${response.statusText}`
       );
     }
     return response.json();

@@ -188,7 +188,9 @@ const ElementRow = memo(function ElementRow({
         </div>
 
         <div className="flex items-center gap-2 text-xs text-text-muted">
-          <span>{ELEMENT_TYPE_LABELS[element.elementType] || element.elementType}</span>
+          <span>
+            {ELEMENT_TYPE_LABELS[element.elementType] || element.elementType}
+          </span>
           <span className="opacity-50">|</span>
           <span className="font-mono text-[10px]">
             {element.bbox.width}x{element.bbox.height}
@@ -260,7 +262,10 @@ export function VirtualizedElementList({
   // Calculate virtualization parameters
   const totalHeight = filteredElements.length * ITEM_HEIGHT;
   const visibleCount = Math.ceil(containerHeight / ITEM_HEIGHT);
-  const startIndex = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - OVERSCAN);
+  const startIndex = Math.max(
+    0,
+    Math.floor(scrollTop / ITEM_HEIGHT) - OVERSCAN
+  );
   const endIndex = Math.min(
     filteredElements.length,
     startIndex + visibleCount + OVERSCAN * 2
@@ -300,14 +305,21 @@ export function VirtualizedElementList({
   // Handle keyboard navigation
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      const currentIndex = selectedElementIds.length > 0
-        ? filteredElements.findIndex((el) => el.id === selectedElementIds[selectedElementIds.length - 1])
-        : -1;
+      const currentIndex =
+        selectedElementIds.length > 0
+          ? filteredElements.findIndex(
+              (el) =>
+                el.id === selectedElementIds[selectedElementIds.length - 1]
+            )
+          : -1;
 
       switch (e.key) {
         case "ArrowDown": {
           e.preventDefault();
-          const nextIndex = Math.min(currentIndex + 1, filteredElements.length - 1);
+          const nextIndex = Math.min(
+            currentIndex + 1,
+            filteredElements.length - 1
+          );
           const nextElement = filteredElements[nextIndex];
           if (nextElement) {
             selectElement(nextElement.id, e.shiftKey);
@@ -354,7 +366,9 @@ export function VirtualizedElementList({
           const lastElement = filteredElements[filteredElements.length - 1];
           if (lastElement) {
             selectElement(lastElement.id, false);
-            containerRef.current?.scrollTo({ top: totalHeight - containerHeight });
+            containerRef.current?.scrollTo({
+              top: totalHeight - containerHeight,
+            });
           }
           break;
         }
@@ -407,7 +421,8 @@ export function VirtualizedElementList({
       {/* Element count */}
       <div className="px-3 py-2 border-b border-border-subtle text-xs text-text-muted flex items-center justify-between">
         <span>
-          {filteredElements.length} element{filteredElements.length !== 1 ? "s" : ""}
+          {filteredElements.length} element
+          {filteredElements.length !== 1 ? "s" : ""}
         </span>
         {selectedElementIds.length > 0 && (
           <span className="text-[#9B59B6]">

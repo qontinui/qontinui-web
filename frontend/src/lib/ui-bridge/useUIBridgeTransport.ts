@@ -465,8 +465,14 @@ export function useUIBridgeTransport(
           const { createAssertionExecutor } = await import("ui-bridge/ai");
           type AssertionType = import("ui-bridge/ai").AssertionType;
           const executor = createAssertionExecutor({});
-          executor.updateElements(elements as unknown as Parameters<typeof executor.updateElements>[0]);
-          const assertionRequest = payload as { target: string; type: string; expected?: unknown };
+          executor.updateElements(
+            elements as unknown as Parameters<typeof executor.updateElements>[0]
+          );
+          const assertionRequest = payload as {
+            target: string;
+            type: string;
+            expected?: unknown;
+          };
           const result = await executor.assert({
             target: assertionRequest.target,
             type: assertionRequest.type as AssertionType,
@@ -479,10 +485,19 @@ export function useUIBridgeTransport(
           const { createAssertionExecutor } = await import("ui-bridge/ai");
           type AssertionType = import("ui-bridge/ai").AssertionType;
           const executor = createAssertionExecutor({});
-          executor.updateElements(elements as unknown as Parameters<typeof executor.updateElements>[0]);
-          const batchRequest = payload as { assertions: Array<{ target: string; type: string; expected?: unknown }>; mode?: "all" | "any" };
+          executor.updateElements(
+            elements as unknown as Parameters<typeof executor.updateElements>[0]
+          );
+          const batchRequest = payload as {
+            assertions: Array<{
+              target: string;
+              type: string;
+              expected?: unknown;
+            }>;
+            mode?: "all" | "any";
+          };
           const result = await executor.assertBatch({
-            assertions: batchRequest.assertions.map(a => ({
+            assertions: batchRequest.assertions.map((a) => ({
               target: a.target,
               type: a.type as AssertionType,
               expected: a.expected,
@@ -529,7 +544,9 @@ export function useUIBridgeTransport(
             aliases: e.aliases || [],
             suggestedActions: [],
           }));
-          return generatePageSummary(aiElements as Parameters<typeof generatePageSummary>[0]);
+          return generatePageSummary(
+            aiElements as Parameters<typeof generatePageSummary>[0]
+          );
         }
 
         // ========== Debug ==========
@@ -632,7 +649,10 @@ export function useUIBridgeTransport(
             log("Unknown WebSocket message type:", message.type);
         }
       } catch (parseError: unknown) {
-        console.error("[UIBridgeTransport] Failed to parse WebSocket message:", parseError);
+        console.error(
+          "[UIBridgeTransport] Failed to parse WebSocket message:",
+          parseError
+        );
       }
     },
     [handleWSCommand, log]
@@ -719,9 +739,13 @@ export function useUIBridgeTransport(
         // In 'auto' mode, we'll fall back to HTTP polling silently.
         // Only log in verbose mode or when WebSocket is explicitly required.
         if (mode === "websocket") {
-          console.error("[UIBridgeTransport] WebSocket connection failed (websocket-only mode)");
+          console.error(
+            "[UIBridgeTransport] WebSocket connection failed (websocket-only mode)"
+          );
         } else if (verbose) {
-          console.debug("[UIBridgeTransport] WebSocket unavailable, will use HTTP fallback");
+          console.debug(
+            "[UIBridgeTransport] WebSocket unavailable, will use HTTP fallback"
+          );
         }
       };
 
@@ -729,9 +753,15 @@ export function useUIBridgeTransport(
     } catch (wsError: unknown) {
       // WebSocket creation can fail in environments that don't support it
       if (mode === "websocket") {
-        console.error("[UIBridgeTransport] Failed to create WebSocket:", wsError);
+        console.error(
+          "[UIBridgeTransport] Failed to create WebSocket:",
+          wsError
+        );
       } else if (verbose) {
-        console.debug("[UIBridgeTransport] WebSocket creation failed, using HTTP fallback:", wsError);
+        console.debug(
+          "[UIBridgeTransport] WebSocket creation failed, using HTTP fallback:",
+          wsError
+        );
       }
       setConnectionState("disconnected");
 

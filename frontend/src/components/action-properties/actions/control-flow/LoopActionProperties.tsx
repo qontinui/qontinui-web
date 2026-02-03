@@ -96,7 +96,10 @@ export function LoopActionProperties({
       <div className="space-y-2">
         <Label className="text-xs text-text-muted">Loop Type</Label>
         <Select value={loopType} onValueChange={handleLoopTypeChange}>
-          <SelectTrigger className="bg-transparent border-border-default" data-ui-id="action-props-loop-type-select">
+          <SelectTrigger
+            className="bg-transparent border-border-default"
+            data-ui-id="action-props-loop-type-select"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -193,7 +196,10 @@ export function LoopActionProperties({
                 })
               }
             >
-              <SelectTrigger className="bg-transparent border-border-default" data-ui-id="action-props-loop-collection-select">
+              <SelectTrigger
+                className="bg-transparent border-border-default"
+                data-ui-id="action-props-loop-collection-select"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

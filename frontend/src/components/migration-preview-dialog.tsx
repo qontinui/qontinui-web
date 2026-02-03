@@ -55,7 +55,6 @@ export function MigrationPreviewDialog({
   } | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- loadPreview is intentionally excluded to prevent infinite loops
   useEffect(() => {
     if (open && config) {
       loadPreview();
@@ -80,7 +79,10 @@ export function MigrationPreviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onCancel()}>
-      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col" data-ui-id="dialog-migration-preview">
+      <DialogContent
+        className="max-w-2xl max-h-[80vh] flex flex-col"
+        data-ui-id="dialog-migration-preview"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <RefreshCw className="h-5 w-5 text-primary" />
@@ -190,7 +192,11 @@ export function MigrationPreviewDialog({
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={onCancel} data-ui-id="dialog-migration-preview-cancel-btn">
+          <Button
+            variant="outline"
+            onClick={onCancel}
+            data-ui-id="dialog-migration-preview-cancel-btn"
+          >
             Cancel Import
           </Button>
           <Button

@@ -139,7 +139,10 @@ export default function ProjectsTab() {
               />
             </div>
             <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger className="w-full md:w-[200px]" data-ui-id="admin-projects-sort-select">
+              <SelectTrigger
+                className="w-full md:w-[200px]"
+                data-ui-id="admin-projects-sort-select"
+              >
                 <SelectValue placeholder="Sort by" />
               </SelectTrigger>
               <SelectContent>

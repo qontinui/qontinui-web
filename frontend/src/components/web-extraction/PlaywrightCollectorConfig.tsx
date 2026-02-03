@@ -173,7 +173,10 @@ export function PlaywrightCollectorConfig({
       !config.blockedSelectors.includes(newBlockedSelector.trim())
     ) {
       updateConfig({
-        blockedSelectors: [...config.blockedSelectors, newBlockedSelector.trim()],
+        blockedSelectors: [
+          ...config.blockedSelectors,
+          newBlockedSelector.trim(),
+        ],
       });
       setNewBlockedSelector("");
     }
@@ -293,7 +296,9 @@ export function PlaywrightCollectorConfig({
                 max={200}
                 value={config.maxElementsPerPage}
                 onChange={(e) =>
-                  updateConfig({ maxElementsPerPage: parseInt(e.target.value) || 50 })
+                  updateConfig({
+                    maxElementsPerPage: parseInt(e.target.value) || 50,
+                  })
                 }
               />
             </div>
@@ -351,17 +356,19 @@ export function PlaywrightCollectorConfig({
                     </TooltipTrigger>
                     <TooltipContent side="top" className="max-w-xs">
                       <p className="text-xs">
-                        <strong>How it works:</strong> Each extracted element is captured as an image,
-                        then pattern matching searches for it in the full page screenshot.
-                        Elements that can be reliably found are marked as &quot;verified&quot;.
+                        <strong>How it works:</strong> Each extracted element is
+                        captured as an image, then pattern matching searches for
+                        it in the full page screenshot. Elements that can be
+                        reliably found are marked as &quot;verified&quot;.
                       </p>
                       <p className="text-xs mt-2">
-                        <strong>No existing patterns required</strong> - patterns are created
-                        automatically from the extracted elements.
+                        <strong>No existing patterns required</strong> -
+                        patterns are created automatically from the extracted
+                        elements.
                       </p>
                       <p className="text-xs mt-2 text-muted-foreground">
-                        This helps filter out elements that may be too generic or visually
-                        ambiguous for reliable automation.
+                        This helps filter out elements that may be too generic
+                        or visually ambiguous for reliable automation.
                       </p>
                     </TooltipContent>
                   </Tooltip>
@@ -397,7 +404,9 @@ export function PlaywrightCollectorConfig({
                 step={0.05}
                 value={config.verificationThreshold}
                 onChange={(e) =>
-                  updateConfig({ verificationThreshold: parseFloat(e.target.value) })
+                  updateConfig({
+                    verificationThreshold: parseFloat(e.target.value),
+                  })
                 }
                 className="h-2"
               />
@@ -422,10 +431,15 @@ export function PlaywrightCollectorConfig({
             </Label>
             <Collapsible>
               <CollapsibleTrigger asChild>
-                <Button variant="outline" size="sm" className="w-full justify-between text-xs h-8">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-between text-xs h-8"
+                >
                   <span className="flex items-center gap-2">
                     <ShieldAlert className="h-3 w-3 text-red-500" />
-                    View {DEFAULT_DANGEROUS_KEYWORDS.length} default blocked keywords
+                    View {DEFAULT_DANGEROUS_KEYWORDS.length} default blocked
+                    keywords
                   </span>
                   <ChevronDown className="h-3 w-3" />
                 </Button>
@@ -466,7 +480,9 @@ export function PlaywrightCollectorConfig({
             </div>
             {config.dangerousKeywords.length > 0 && (
               <div className="space-y-1">
-                <p className="text-xs text-muted-foreground">Custom blocked keywords:</p>
+                <p className="text-xs text-muted-foreground">
+                  Custom blocked keywords:
+                </p>
                 <ScrollArea className="h-20">
                   <div className="flex flex-wrap gap-1">
                     {config.dangerousKeywords.map((keyword) => (
@@ -493,7 +509,11 @@ export function PlaywrightCollectorConfig({
             </Label>
             <Collapsible>
               <CollapsibleTrigger asChild>
-                <Button variant="outline" size="sm" className="w-full justify-between text-xs h-8">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-between text-xs h-8"
+                >
                   <span className="flex items-center gap-2">
                     <ShieldCheck className="h-3 w-3 text-green-500" />
                     View {DEFAULT_SAFE_KEYWORDS.length} default safe keywords
@@ -535,7 +555,9 @@ export function PlaywrightCollectorConfig({
             </div>
             {config.safeKeywords.length > 0 && (
               <div className="space-y-1">
-                <p className="text-xs text-muted-foreground">Custom safe keywords:</p>
+                <p className="text-xs text-muted-foreground">
+                  Custom safe keywords:
+                </p>
                 <ScrollArea className="h-20">
                   <div className="flex flex-wrap gap-1">
                     {config.safeKeywords.map((keyword) => (
@@ -623,7 +645,8 @@ export function PlaywrightCollectorConfig({
 
       {config.maxRiskLevel !== "dry_run" && (
         <p className="text-xs text-yellow-500 text-center">
-          Warning: The collector will click on elements. Use &quot;Dry Run&quot; mode for safe exploration.
+          Warning: The collector will click on elements. Use &quot;Dry Run&quot;
+          mode for safe exploration.
         </p>
       )}
     </div>

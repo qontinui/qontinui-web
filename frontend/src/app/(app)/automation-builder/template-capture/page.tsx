@@ -60,9 +60,12 @@ export default function TemplateCapturePanel() {
     toast.info("Template rejected");
   }, []);
 
-  const handleCandidateImported = useCallback((_id: string, _stateId: string) => {
-    toast.success("Template imported to state machine");
-  }, []);
+  const handleCandidateImported = useCallback(
+    (_id: string, _stateId: string) => {
+      toast.success("Template imported to state machine");
+    },
+    []
+  );
 
   return (
     <RequireProject pageName="Template Capture">

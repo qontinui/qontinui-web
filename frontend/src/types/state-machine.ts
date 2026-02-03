@@ -129,7 +129,9 @@ export interface StateDiscoveryResultListResponse {
 /**
  * Convert API response (snake_case) to frontend types (camelCase)
  */
-export function toStateDiscoveryResult(data: Record<string, unknown>): StateDiscoveryResult {
+export function toStateDiscoveryResult(
+  data: Record<string, unknown>
+): StateDiscoveryResult {
   return {
     id: data.id as string,
     projectId: data.project_id as string,
@@ -141,14 +143,16 @@ export function toStateDiscoveryResult(data: Record<string, unknown>): StateDisc
     images: ((data.images as unknown[]) || []).map(toStateImage),
     states: ((data.states as unknown[]) || []).map(toDiscoveredState),
     transitions: ((data.transitions as unknown[]) || []).map(toStateTransition),
-    elementToRenders: (data.element_to_renders as Record<string, string[]>) || {},
+    elementToRenders:
+      (data.element_to_renders as Record<string, string[]>) || {},
     imageCount: data.image_count as number,
     stateCount: data.state_count as number,
     transitionCount: data.transition_count as number,
     renderCount: data.render_count as number,
     uniqueElementCount: data.unique_element_count as number,
     confidence: data.confidence as number,
-    discoveryMetadata: (data.discovery_metadata as Record<string, unknown>) || {},
+    discoveryMetadata:
+      (data.discovery_metadata as Record<string, unknown>) || {},
     createdAt: data.created_at as string,
     updatedAt: data.updated_at as string,
   };
@@ -191,19 +195,23 @@ export function toStateTransition(data: unknown): StateTransition {
     id: d.id as string,
     fromStateId: d.from_state_id as string,
     toStateId: d.to_state_id as string,
-    trigger: trigger ? {
-      type: trigger.type as TransitionTrigger["type"],
-      imageId: trigger.image_id as string | undefined,
-      elementId: trigger.element_id as string | undefined,
-      selector: trigger.selector as string | undefined,
-      value: trigger.value as string | undefined,
-    } : undefined,
+    trigger: trigger
+      ? {
+          type: trigger.type as TransitionTrigger["type"],
+          imageId: trigger.image_id as string | undefined,
+          elementId: trigger.element_id as string | undefined,
+          selector: trigger.selector as string | undefined,
+          value: trigger.value as string | undefined,
+        }
+      : undefined,
     confidence: (d.confidence as number) ?? 1.0,
     metadata: d.metadata as Record<string, unknown> | undefined,
   };
 }
 
-export function toStateDiscoveryResultSummary(data: Record<string, unknown>): StateDiscoveryResultSummary {
+export function toStateDiscoveryResultSummary(
+  data: Record<string, unknown>
+): StateDiscoveryResultSummary {
   return {
     id: data.id as string,
     projectId: data.project_id as string,

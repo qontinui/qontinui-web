@@ -166,7 +166,6 @@ export default function WebExtractionTab() {
     return () => window.removeEventListener("resize", logHeights);
   }, [mainTab, configSubTab, resultsSubTab]);
 
-
   // Get vision results from annotations (populated by runner during extraction)
   // Aggregate results from all annotations that have vision_results
   const annotationVisionResults = useMemo(() => {
@@ -267,22 +266,25 @@ export default function WebExtractionTab() {
       // appears on multiple screenshots. We need to make IDs unique.
       let globalImageIndex = 0;
 
-      const processedStates = extractionDetail.state_machine.states.map((state) => ({
-        ...state,
-        stateImages: state.stateImages.map((img) => {
-          globalImageIndex++;
-          // Create a truly unique ID by combining state id, image index, and global counter
-          const uniqueId = `${state.id}-img-${globalImageIndex}`;
-          return {
-            ...img,
-            id: uniqueId,
-            patterns: img.patterns?.map((p, pIdx) => ({
-              ...p,
-              id: `${uniqueId}-pattern-${pIdx}`,
-            })) || [],
-          };
-        }),
-      }));
+      const processedStates = extractionDetail.state_machine.states.map(
+        (state) => ({
+          ...state,
+          stateImages: state.stateImages.map((img) => {
+            globalImageIndex++;
+            // Create a truly unique ID by combining state id, image index, and global counter
+            const uniqueId = `${state.id}-img-${globalImageIndex}`;
+            return {
+              ...img,
+              id: uniqueId,
+              patterns:
+                img.patterns?.map((p, pIdx) => ({
+                  ...p,
+                  id: `${uniqueId}-pattern-${pIdx}`,
+                })) || [],
+            };
+          }),
+        })
+      );
 
       return processedStates;
     }
@@ -484,8 +486,11 @@ export default function WebExtractionTab() {
       if (detail.status === "completed") {
         const annots = await extractionService.getAnnotations(extractionId);
         // Debug: log annotation screenshot_ids
-        console.log('[WebExtractionTab] annotations loaded:', annots.length);
-        console.log('[WebExtractionTab] annotation screenshot_ids:', annots.map(a => a.screenshot_id));
+        console.log("[WebExtractionTab] annotations loaded:", annots.length);
+        console.log(
+          "[WebExtractionTab] annotation screenshot_ids:",
+          annots.map((a) => a.screenshot_id)
+        );
         setAnnotations(annots);
         // Load transitions from detail (if available)
         setTransitions(detail.transitions || []);
@@ -679,7 +684,11 @@ export default function WebExtractionTab() {
       // Derive dry_run from maxRiskLevel
       const isDryRun = config.maxRiskLevel === "dry_run";
       // Map risk level: dry_run behaves like safe mode for element identification
-      const riskLevel: "safe" | "caution" = isDryRun ? "safe" : config.maxRiskLevel === "caution" ? "caution" : "safe";
+      const riskLevel: "safe" | "caution" = isDryRun
+        ? "safe"
+        : config.maxRiskLevel === "caution"
+          ? "caution"
+          : "safe";
 
       await startPlaywrightExtraction({
         url: config.url,
@@ -767,9 +776,10 @@ export default function WebExtractionTab() {
                     key={extraction.id}
                     className={`
                       p-3 rounded-lg border transition-all cursor-pointer group relative
-                      ${isSelected
-                        ? "explorer-panel-item-selected"
-                        : "explorer-panel-item"
+                      ${
+                        isSelected
+                          ? "explorer-panel-item-selected"
+                          : "explorer-panel-item"
                       }
                     `}
                     onClick={() =>
@@ -858,7 +868,10 @@ export default function WebExtractionTab() {
   const extractionIsComplete = extractionDetail?.status === "completed";
 
   return (
-    <div ref={rootRef} className="layout-full-height bg-surface-canvas relative web-extraction-root">
+    <div
+      ref={rootRef}
+      className="layout-full-height bg-surface-canvas relative web-extraction-root"
+    >
       {/* Background dot grid pattern */}
       <div
         className="absolute inset-0 opacity-20 pointer-events-none"
@@ -882,7 +895,10 @@ export default function WebExtractionTab() {
         </header>
 
         {/* Tabs & Content */}
-        <div ref={containerRef} className="container mx-auto px-6 py-6 layout-full-height">
+        <div
+          ref={containerRef}
+          className="container mx-auto px-6 py-6 layout-full-height"
+        >
           <Tabs
             ref={tabsRef}
             value={mainTab}
@@ -1014,7 +1030,9 @@ export default function WebExtractionTab() {
                       <ScrollArea className="h-full pr-4 text-green-400">
                         <PlaywrightCollectorConfig
                           onStartExtraction={handleStartPlaywrightExtraction}
-                          isLoading={isStartingPlaywright || isPollingPlaywright}
+                          isLoading={
+                            isStartingPlaywright || isPollingPlaywright
+                          }
                         />
                       </ScrollArea>
                     </div>
@@ -1068,8 +1086,8 @@ export default function WebExtractionTab() {
                             </div>
                             <div className="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-md">
                               <p className="text-xs text-yellow-400">
-                                <strong>Note:</strong> This feature requires
-                                the runner to be running on port 9876.
+                                <strong>Note:</strong> This feature requires the
+                                runner to be running on port 9876.
                               </p>
                             </div>
                           </div>
@@ -1312,7 +1330,10 @@ export default function WebExtractionTab() {
                         )}
                       </TabsContent>
 
-                      <TabsContent value="ocr" className="layout-full-height mt-0">
+                      <TabsContent
+                        value="ocr"
+                        className="layout-full-height mt-0"
+                      >
                         {visionResults ? (
                           <OCRDetectionView
                             screenshotSource={selectedScreenshotForVision || ""}
@@ -1340,10 +1361,16 @@ export default function WebExtractionTab() {
                         value="playwright"
                         className="mt-0 layout-full-height data-[state=inactive]:hidden"
                       >
-                        {playwrightJob?.status === "completed" && playwrightResults ? (
-                          <PlaywrightStateExplorerView results={playwrightResults} />
+                        {playwrightJob?.status === "completed" &&
+                        playwrightResults ? (
+                          <PlaywrightStateExplorerView
+                            results={playwrightResults}
+                          />
                         ) : playwrightJob ? (
-                          <PlaywrightResultsView job={playwrightJob} results={playwrightResults} />
+                          <PlaywrightResultsView
+                            job={playwrightJob}
+                            results={playwrightResults}
+                          />
                         ) : (
                           <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
                             <MousePointerClick className="h-16 w-16 text-green-400/30" />

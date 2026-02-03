@@ -12,7 +12,10 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@/contexts/auth-context";
-import type { AnnotatedElement, BoundingBox } from "@/stores/extraction-annotation-store";
+import type {
+  AnnotatedElement,
+  BoundingBox,
+} from "@/stores/extraction-annotation-store";
 
 // ============================================================================
 // Types
@@ -86,10 +89,17 @@ export interface UseAnnotationSyncReturn {
   // Methods for sending updates
   sendCursorMove: (x: number, y: number, viewportId?: string) => void;
   sendElementSelect: (elementIds: string[]) => void;
-  sendElementUpdate: (elementId: string, changes: Partial<AnnotatedElement>) => void;
+  sendElementUpdate: (
+    elementId: string,
+    changes: Partial<AnnotatedElement>
+  ) => void;
   sendElementAdd: (element: AnnotatedElement) => void;
   sendElementDelete: (elementIds: string[]) => void;
-  sendElementMove: (elementIds: string[], deltaX: number, deltaY: number) => void;
+  sendElementMove: (
+    elementIds: string[],
+    deltaX: number,
+    deltaY: number
+  ) => void;
   sendElementResize: (elementId: string, bbox: BoundingBox) => void;
 
   // Connection management
@@ -346,7 +356,9 @@ export function useAnnotationSync(
     try {
       const url = await getWebSocketUrl();
       if (!url) {
-        setError(new Error("Cannot connect: missing annotation set ID or token"));
+        setError(
+          new Error("Cannot connect: missing annotation set ID or token")
+        );
         setIsConnecting(false);
         return;
       }
@@ -389,7 +401,13 @@ export function useAnnotationSync(
       setError(err instanceof Error ? err : new Error("Failed to connect"));
       setIsConnecting(false);
     }
-  }, [getWebSocketUrl, handleMessage, startHeartbeat, stopHeartbeat, annotationSetId]);
+  }, [
+    getWebSocketUrl,
+    handleMessage,
+    startHeartbeat,
+    stopHeartbeat,
+    annotationSetId,
+  ]);
 
   /**
    * Disconnect from WebSocket
@@ -481,7 +499,11 @@ export function useAnnotationSync(
    */
   const sendElementMove = useCallback(
     (elementIds: string[], deltaX: number, deltaY: number) => {
-      send("element_move", { element_ids: elementIds, delta_x: deltaX, delta_y: deltaY });
+      send("element_move", {
+        element_ids: elementIds,
+        delta_x: deltaX,
+        delta_y: deltaY,
+      });
     },
     [send]
   );

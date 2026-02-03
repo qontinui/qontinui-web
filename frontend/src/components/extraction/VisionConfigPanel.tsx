@@ -88,11 +88,12 @@ const SOURCE_OPTIONS: {
   },
 ];
 
-const SAM3_MODEL_INFO: Record<Sam3ModelType, { size: string; speed: string }> = {
-  vit_h: { size: "~2.5GB", speed: "Slowest, most accurate" },
-  vit_l: { size: "~1.2GB", speed: "Balanced" },
-  vit_b: { size: "~375MB", speed: "Fastest, less accurate" },
-};
+const SAM3_MODEL_INFO: Record<Sam3ModelType, { size: string; speed: string }> =
+  {
+    vit_h: { size: "~2.5GB", speed: "Slowest, most accurate" },
+    vit_l: { size: "~1.2GB", speed: "Balanced" },
+    vit_b: { size: "~375MB", speed: "Fastest, less accurate" },
+  };
 
 export function VisionConfigPanel({
   config,
@@ -175,7 +176,9 @@ export function VisionConfigPanel({
                 >
                   {option.label}
                 </div>
-                <div className="text-xs text-text-muted">{option.description}</div>
+                <div className="text-xs text-text-muted">
+                  {option.description}
+                </div>
               </button>
             ))}
           </div>
@@ -187,7 +190,9 @@ export function VisionConfigPanel({
               <Input
                 data-ui-id="extraction-vision-screenshot-path-input"
                 value={config.screenshotPath || ""}
-                onChange={(e) => updateConfig({ screenshotPath: e.target.value })}
+                onChange={(e) =>
+                  updateConfig({ screenshotPath: e.target.value })
+                }
                 placeholder="C:\path\to\screenshot.png"
                 className="font-mono text-sm"
               />
@@ -301,7 +306,9 @@ export function VisionConfigPanel({
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <Layers className="h-4 w-4 text-text-muted" />
-                  <Label className="text-sm font-medium">SAM3 Segmentation</Label>
+                  <Label className="text-sm font-medium">
+                    SAM3 Segmentation
+                  </Label>
                   <Tooltip>
                     <TooltipTrigger>
                       <Info className="h-3 w-3 text-text-muted" />
@@ -317,7 +324,9 @@ export function VisionConfigPanel({
                 <Switch
                   data-ui-id="extraction-vision-sam3-toggle"
                   checked={config.sam3.enabled}
-                  onCheckedChange={(checked) => updateSam3({ enabled: checked })}
+                  onCheckedChange={(checked) =>
+                    updateSam3({ enabled: checked })
+                  }
                 />
               </div>
               {config.sam3.enabled && (
@@ -412,13 +421,16 @@ export function VisionConfigPanel({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="easyocr">EasyOCR (GPU)</SelectItem>
-                        <SelectItem value="tesseract">Tesseract (CPU)</SelectItem>
+                        <SelectItem value="tesseract">
+                          Tesseract (CPU)
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div>
                     <Label className="text-xs text-text-muted mb-1 block">
-                      Min Confidence: {(config.ocr.minConfidence * 100).toFixed(0)}%
+                      Min Confidence:{" "}
+                      {(config.ocr.minConfidence * 100).toFixed(0)}%
                     </Label>
                     <Slider
                       value={[config.ocr.minConfidence]}
@@ -525,7 +537,8 @@ export function VisionConfigPanel({
                     </div>
                     <div>
                       <Label className="text-xs text-text-muted mb-1 block">
-                        Stability: {config.sam3.stabilityScoreThreshold.toFixed(2)}
+                        Stability:{" "}
+                        {config.sam3.stabilityScoreThreshold.toFixed(2)}
                       </Label>
                       <Slider
                         value={[config.sam3.stabilityScoreThreshold]}
@@ -603,13 +616,13 @@ export function VisionConfigPanel({
         <Alert className="bg-[#9B59B6]/5 border-[#9B59B6]/20">
           <Info className="h-4 w-4 text-[#9B59B6]" />
           <AlertDescription className="text-sm text-text-muted">
-            Vision extraction detects GUI elements from screenshots using computer
-            vision algorithms. Best for non-web applications where DOM-based
-            extraction is not available.
+            Vision extraction detects GUI elements from screenshots using
+            computer vision algorithms. Best for non-web applications where
+            DOM-based extraction is not available.
             {config.sam3.enabled && (
               <span className="block mt-1">
-                SAM3 requires model download on first use and a CUDA-capable GPU for
-                reasonable performance.
+                SAM3 requires model download on first use and a CUDA-capable GPU
+                for reasonable performance.
               </span>
             )}
           </AlertDescription>

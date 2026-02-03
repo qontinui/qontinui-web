@@ -537,7 +537,7 @@ export class ConflictDetector {
             resolvedValue,
             resolvedAt: new Date(),
           });
-        } catch (error) {
+        } catch (_error) {
           // Leave conflict unresolved
         }
       }

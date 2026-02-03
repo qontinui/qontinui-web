@@ -115,7 +115,9 @@ export function TemplateReviewPanel({
         await service.listCandidates(params);
       setCandidates(response.items);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load candidates");
+      setError(
+        err instanceof Error ? err.message : "Failed to load candidates"
+      );
       console.error("[TemplateReviewPanel] Error fetching candidates:", err);
     } finally {
       setLoading(false);
@@ -206,7 +208,10 @@ export function TemplateReviewPanel({
     [service, onCandidateRejected]
   );
 
-  const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number } | null>(null);
+  const [bulkProgress, setBulkProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
 
   const handleBulkApprove = useCallback(async () => {
     const ids = Array.from(selectedIds);
@@ -227,9 +232,10 @@ export function TemplateReviewPanel({
     clearSelection();
 
     toast.success(`Approved ${successCount} templates`, {
-      description: successCount < ids.length
-        ? `${ids.length - successCount} failed`
-        : "All templates approved successfully",
+      description:
+        successCount < ids.length
+          ? `${ids.length - successCount} failed`
+          : "All templates approved successfully",
     });
   }, [selectedIds, handleApprove, clearSelection]);
 
@@ -390,10 +396,7 @@ export function TemplateReviewPanel({
 
           {/* Generate State Machine */}
           {stats.approved > 0 && (
-            <Button
-              size="sm"
-              onClick={() => setShowGenerateDialog(true)}
-            >
+            <Button size="sm" onClick={() => setShowGenerateDialog(true)}>
               <GitBranch className="h-4 w-4 mr-2" />
               Generate State Machine
             </Button>
@@ -481,7 +484,9 @@ export function TemplateReviewPanel({
               <div className="w-48 h-2 bg-muted rounded-full overflow-hidden">
                 <div
                   className="h-full bg-primary transition-all duration-300"
-                  style={{ width: `${(bulkProgress.current / bulkProgress.total) * 100}%` }}
+                  style={{
+                    width: `${(bulkProgress.current / bulkProgress.total) * 100}%`,
+                  }}
                 />
               </div>
             </div>
@@ -499,7 +504,9 @@ export function TemplateReviewPanel({
               <XCircle className="h-10 w-10 text-red-500" />
             </div>
             <div>
-              <p className="font-medium text-red-600 mb-1">Failed to load candidates</p>
+              <p className="font-medium text-red-600 mb-1">
+                Failed to load candidates
+              </p>
               <p className="text-sm text-muted-foreground">{error}</p>
             </div>
             <Button variant="outline" onClick={fetchCandidates}>
@@ -513,10 +520,13 @@ export function TemplateReviewPanel({
               <Inbox className="h-10 w-10 text-muted-foreground" />
             </div>
             <div>
-              <p className="font-medium text-muted-foreground mb-1">No candidates found</p>
+              <p className="font-medium text-muted-foreground mb-1">
+                No candidates found
+              </p>
               <p className="text-sm text-muted-foreground max-w-md">
-                Start a capture session to automatically detect UI elements.
-                Go to the Capture tab and click on buttons and elements in your target application.
+                Start a capture session to automatically detect UI elements. Go
+                to the Capture tab and click on buttons and elements in your
+                target application.
               </p>
             </div>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -562,7 +572,10 @@ export function TemplateReviewPanel({
                   candidate={candidate}
                   isSelected={selectedIds.has(candidate.id)}
                   onSelect={() => {
-                    if (candidate.status === "approved" || candidate.status === "modified") {
+                    if (
+                      candidate.status === "approved" ||
+                      candidate.status === "modified"
+                    ) {
                       setImportingCandidate(candidate);
                     } else if (candidate.status === "pending") {
                       setEditingCandidate(candidate);

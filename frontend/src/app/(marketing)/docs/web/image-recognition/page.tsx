@@ -187,7 +187,12 @@ export default function ImageRecognitionDocPage() {
             </ConceptCard>
 
             <ConceptCard
-              icon={<ImageIcon className="w-6 h-6 text-green-600" aria-hidden="true" />}
+              icon={
+                <ImageIcon
+                  className="w-6 h-6 text-green-600"
+                  aria-hidden="true"
+                />
+              }
               title="Masks"
               description="Optional masks that define which pixels to compare"
             >

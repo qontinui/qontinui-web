@@ -136,11 +136,19 @@ class SyncQueue {
       return db;
     } catch (error) {
       const errorType = classifyError(error);
-      if (errorType === DBErrorType.STORAGE_CORRUPTED && !this.recoveryAttempted) {
+      if (
+        errorType === DBErrorType.STORAGE_CORRUPTED &&
+        !this.recoveryAttempted
+      ) {
         this.recoveryAttempted = true;
-        console.warn("[SyncQueue] Storage corruption detected, attempting recovery...");
+        console.warn(
+          "[SyncQueue] Storage corruption detected, attempting recovery..."
+        );
 
-        const recovered = await handleStorageCorruption(SYNC_DB_NAME, "openDatabase");
+        const recovered = await handleStorageCorruption(
+          SYNC_DB_NAME,
+          "openDatabase"
+        );
 
         if (recovered) {
           try {
@@ -149,7 +157,10 @@ class SyncQueue {
             console.log("[SyncQueue] Successfully recovered and reconnected");
             return db;
           } catch (retryError) {
-            console.error("[SyncQueue] Failed to reconnect after recovery:", retryError);
+            console.error(
+              "[SyncQueue] Failed to reconnect after recovery:",
+              retryError
+            );
             throw retryError;
           }
         }

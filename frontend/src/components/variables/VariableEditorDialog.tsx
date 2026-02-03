@@ -214,7 +214,10 @@ export function VariableEditorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto" data-ui-id="dialog-variable-editor">
+      <DialogContent
+        className="max-w-3xl max-h-[90vh] overflow-y-auto"
+        data-ui-id="dialog-variable-editor"
+      >
         <DialogHeader>
           <DialogTitle>
             {isEditing ? "Edit Variable" : "Create Variable"}
@@ -257,7 +260,10 @@ export function VariableEditorDialog({
           <div className="space-y-2">
             <Label htmlFor="type">Type</Label>
             <Select value={valueType} onValueChange={handleTypeChange}>
-              <SelectTrigger id="type" data-ui-id="dialog-variable-editor-type-select">
+              <SelectTrigger
+                id="type"
+                data-ui-id="dialog-variable-editor-type-select"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -392,7 +398,11 @@ export function VariableEditorDialog({
           >
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={isSaving} data-ui-id="dialog-variable-editor-confirm-btn">
+          <Button
+            onClick={handleSave}
+            disabled={isSaving}
+            data-ui-id="dialog-variable-editor-confirm-btn"
+          >
             {isSaving ? "Saving..." : isEditing ? "Update" : "Create"}
           </Button>
         </DialogFooter>

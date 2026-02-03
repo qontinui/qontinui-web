@@ -138,7 +138,8 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
 
     try {
       // Extract base64 data from data URLs
-      const screenshotBase64 = screenshotDataUrl.split(",")[1] ?? screenshotDataUrl;
+      const screenshotBase64 =
+        screenshotDataUrl.split(",")[1] ?? screenshotDataUrl;
       const templateBase64 = templateDataUrl.split(",")[1] ?? templateDataUrl;
 
       const response = findAll
@@ -174,13 +175,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
     } finally {
       setIsSearching(false);
     }
-  }, [
-    screenshotDataUrl,
-    templateDataUrl,
-    similarity,
-    findAll,
-    maxMatches,
-  ]);
+  }, [screenshotDataUrl, templateDataUrl, similarity, findAll, maxMatches]);
 
   // Clear all
   const handleClear = useCallback(() => {
@@ -533,7 +528,10 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                   ) : (
                     <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
                       <XCircle className="w-12 h-12 mb-4 opacity-20" />
-                      <p>No matches found above {(similarity * 100).toFixed(0)}% threshold</p>
+                      <p>
+                        No matches found above {(similarity * 100).toFixed(0)}%
+                        threshold
+                      </p>
                     </div>
                   )}
                 </TabsContent>
@@ -558,7 +556,8 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
                           Screenshot Size
                         </p>
                         <p className="text-lg font-mono">
-                          {results.screenshot_width} x {results.screenshot_height}
+                          {results.screenshot_width} x{" "}
+                          {results.screenshot_height}
                         </p>
                       </div>
                       <div className="bg-muted/50 rounded-lg p-3">

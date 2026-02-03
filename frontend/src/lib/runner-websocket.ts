@@ -634,7 +634,9 @@ export class RunnerWebSocket {
    * Handle UI Bridge command received via WebSocket
    * Executes the command and sends response back via WebSocket
    */
-  private async handleUIBridgeCommand(command: UIBridgeCommandEvent): Promise<void> {
+  private async handleUIBridgeCommand(
+    command: UIBridgeCommandEvent
+  ): Promise<void> {
     const { command_id, action, payload } = command;
 
     console.log(

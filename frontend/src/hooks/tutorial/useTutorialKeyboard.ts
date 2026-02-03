@@ -102,7 +102,16 @@ export function useTutorialKeyboard(options: TutorialKeyboardOptions): void {
           break;
       }
     },
-    [enabled, isWaiting, isFirstStep, isLastStep, onNext, onPrevious, onClose, onComplete]
+    [
+      enabled,
+      isWaiting,
+      isFirstStep,
+      isLastStep,
+      onNext,
+      onPrevious,
+      onClose,
+      onComplete,
+    ]
   );
 
   useEffect(() => {

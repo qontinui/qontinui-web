@@ -123,7 +123,10 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-6" data-ui-id="admin-page-dashboard">
+    <div
+      className="min-h-screen bg-background p-6"
+      data-ui-id="admin-page-dashboard"
+    >
       <div className="max-w-7xl mx-auto">
         <div className="mb-8">
           <div className="flex items-center justify-between">
@@ -172,19 +175,35 @@ export default function AdminDashboard() {
           data-ui-id="admin-page-tabs"
         >
           <TabsList className="grid w-full grid-cols-8 lg:w-auto lg:inline-grid">
-            <TabsTrigger value="overview" className="flex items-center gap-2" data-ui-id="admin-page-overview-tab">
+            <TabsTrigger
+              value="overview"
+              className="flex items-center gap-2"
+              data-ui-id="admin-page-overview-tab"
+            >
               <LayoutDashboard className="h-4 w-4" />
               <span className="hidden sm:inline">Overview</span>
             </TabsTrigger>
-            <TabsTrigger value="users" className="flex items-center gap-2" data-ui-id="admin-page-users-tab">
+            <TabsTrigger
+              value="users"
+              className="flex items-center gap-2"
+              data-ui-id="admin-page-users-tab"
+            >
               <Users className="h-4 w-4" />
               <span className="hidden sm:inline">Users</span>
             </TabsTrigger>
-            <TabsTrigger value="projects" className="flex items-center gap-2" data-ui-id="admin-page-projects-tab">
+            <TabsTrigger
+              value="projects"
+              className="flex items-center gap-2"
+              data-ui-id="admin-page-projects-tab"
+            >
               <FolderOpen className="h-4 w-4" />
               <span className="hidden sm:inline">Projects</span>
             </TabsTrigger>
-            <TabsTrigger value="analytics" className="flex items-center gap-2" data-ui-id="admin-page-analytics-tab">
+            <TabsTrigger
+              value="analytics"
+              className="flex items-center gap-2"
+              data-ui-id="admin-page-analytics-tab"
+            >
               <TrendingUp className="h-4 w-4" />
               <span className="hidden sm:inline">Analytics</span>
             </TabsTrigger>
@@ -196,15 +215,27 @@ export default function AdminDashboard() {
               <Bell className="h-4 w-4" />
               <span className="hidden sm:inline">Notifications</span>
             </TabsTrigger>
-            <TabsTrigger value="health" className="flex items-center gap-2" data-ui-id="admin-page-health-tab">
+            <TabsTrigger
+              value="health"
+              className="flex items-center gap-2"
+              data-ui-id="admin-page-health-tab"
+            >
               <Activity className="h-4 w-4" />
               <span className="hidden sm:inline">Health</span>
             </TabsTrigger>
-            <TabsTrigger value="system" className="flex items-center gap-2" data-ui-id="admin-page-system-tab">
+            <TabsTrigger
+              value="system"
+              className="flex items-center gap-2"
+              data-ui-id="admin-page-system-tab"
+            >
               <Server className="h-4 w-4" />
               <span className="hidden sm:inline">System</span>
             </TabsTrigger>
-            <TabsTrigger value="downloads" className="flex items-center gap-2" data-ui-id="admin-page-downloads-tab">
+            <TabsTrigger
+              value="downloads"
+              className="flex items-center gap-2"
+              data-ui-id="admin-page-downloads-tab"
+            >
               <Download className="h-4 w-4" />
               <span className="hidden sm:inline">Downloads</span>
             </TabsTrigger>

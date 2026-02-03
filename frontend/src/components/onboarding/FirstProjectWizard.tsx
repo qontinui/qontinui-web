@@ -94,7 +94,7 @@ export function FirstProjectWizard({
   });
 
   // Save progress to localStorage
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- Only run when dialog opens, not when wizardState changes
+
   useEffect(() => {
     if (open && typeof window !== "undefined") {
       const savedState = localStorage.getItem("first-project-wizard-state");
@@ -224,7 +224,7 @@ export function FirstProjectWizard({
   };
 
   // Keyboard navigation
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- handleNext and handleClose are stable, wizardState is used for validation in handleNext
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!open) return;

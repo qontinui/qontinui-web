@@ -5,7 +5,10 @@
  * Isolated storage module following qontinui-web patterns.
  */
 
-import type { PersistedTutorialState, TutorialProgress } from "@/types/tutorial";
+import type {
+  PersistedTutorialState,
+  TutorialProgress,
+} from "@/types/tutorial";
 
 const STORAGE_KEY = "qontinui-web-tutorial-state";
 
@@ -45,8 +48,10 @@ export function loadState(): PersistedTutorialState {
 
     // Merge with defaults to handle missing fields from older versions
     return {
-      completedTutorials: parsed.completedTutorials ?? defaultState.completedTutorials,
-      inProgressTutorials: parsed.inProgressTutorials ?? defaultState.inProgressTutorials,
+      completedTutorials:
+        parsed.completedTutorials ?? defaultState.completedTutorials,
+      inProgressTutorials:
+        parsed.inProgressTutorials ?? defaultState.inProgressTutorials,
       dontShowAgain: parsed.dontShowAgain ?? defaultState.dontShowAgain,
       progressRecords: parsed.progressRecords ?? defaultState.progressRecords,
     };

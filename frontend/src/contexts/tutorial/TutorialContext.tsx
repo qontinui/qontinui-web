@@ -99,7 +99,8 @@ export interface TutorialAwareProps {
 // ============================================================================
 
 const TutorialContext = createContext<TutorialContextValue | null>(null);
-const TutorialProgressContext = createContext<TutorialProgressContextValue | null>(null);
+const TutorialProgressContext =
+  createContext<TutorialProgressContextValue | null>(null);
 
 // ============================================================================
 // Provider Component
@@ -122,16 +123,22 @@ export function TutorialProvider({ children }: TutorialProviderProps) {
   }, [store.currentTutorial, store.currentStepIndex]);
 
   // Compute tour state
-  const tourState = useMemo<TourState>(() => ({
-    stepIndex: store.currentStepIndex,
-    tutorialId: store.currentTutorial?.id ?? "",
-    data: tourData,
-  }), [store.currentStepIndex, store.currentTutorial?.id, tourData]);
+  const tourState = useMemo<TourState>(
+    () => ({
+      stepIndex: store.currentStepIndex,
+      tutorialId: store.currentTutorial?.id ?? "",
+      data: tourData,
+    }),
+    [store.currentStepIndex, store.currentTutorial?.id, tourData]
+  );
 
   // Navigation helper
-  const navigateTo = useCallback((path: string) => {
-    router.push(path);
-  }, [router]);
+  const navigateTo = useCallback(
+    (path: string) => {
+      router.push(path);
+    },
+    [router]
+  );
 
   // Target element registry
   const registerTarget = useCallback((id: string, element: HTMLElement) => {
@@ -158,83 +165,94 @@ export function TutorialProvider({ children }: TutorialProviderProps) {
   }, []);
 
   // Open tutorial with optional navigation
-  const openTutorial = useCallback((tutorial: Tutorial, mode?: TutorialMode) => {
-    // Navigate to focus page if specified
-    if (tutorial.targetPage) {
-      router.push(tutorial.targetPage);
-    }
+  const openTutorial = useCallback(
+    (tutorial: Tutorial, mode?: TutorialMode) => {
+      // Navigate to focus page if specified
+      if (tutorial.targetPage) {
+        router.push(tutorial.targetPage);
+      }
 
-    // Reset tour data
-    setTourData({});
+      // Reset tour data
+      setTourData({});
 
-    // Open via store
-    store.openTutorial(tutorial, mode);
-  }, [router, store]);
+      // Open via store
+      store.openTutorial(tutorial, mode);
+    },
+    [router, store]
+  );
 
   // Progress context value
-  const progressValue = useMemo<TutorialProgressContextValue>(() => ({
-    completedTutorials: store.completedTutorials,
-    inProgressTutorials: store.inProgressTutorials,
-    isTutorialCompleted: (id: string) => store.completedTutorials.includes(id),
-    isTutorialInProgress: (id: string) => store.inProgressTutorials.includes(id),
-    getProgress: (_id: string) => null, // TODO: Implement when progress records are added to store
-  }), [store.completedTutorials, store.inProgressTutorials]);
+  const progressValue = useMemo<TutorialProgressContextValue>(
+    () => ({
+      completedTutorials: store.completedTutorials,
+      inProgressTutorials: store.inProgressTutorials,
+      isTutorialCompleted: (id: string) =>
+        store.completedTutorials.includes(id),
+      isTutorialInProgress: (id: string) =>
+        store.inProgressTutorials.includes(id),
+      getProgress: (_id: string) => null, // TODO: Implement when progress records are added to store
+    }),
+    [store.completedTutorials, store.inProgressTutorials]
+  );
 
   // Main context value
-  const value = useMemo<TutorialContextValue>(() => ({
-    // State
-    currentTutorial: store.currentTutorial,
-    currentStepIndex: store.currentStepIndex,
-    currentStep,
-    isOpen: store.isOpen,
-    currentMode: store.currentMode,
-    completedTutorials: store.completedTutorials,
-    inProgressTutorials: store.inProgressTutorials,
-    dontShowAgain: store.dontShowTutorialsAgain,
+  const value = useMemo<TutorialContextValue>(
+    () => ({
+      // State
+      currentTutorial: store.currentTutorial,
+      currentStepIndex: store.currentStepIndex,
+      currentStep,
+      isOpen: store.isOpen,
+      currentMode: store.currentMode,
+      completedTutorials: store.completedTutorials,
+      inProgressTutorials: store.inProgressTutorials,
+      dontShowAgain: store.dontShowTutorialsAgain,
 
-    // Navigation
-    isFirstStep: store.isFirstStep(),
-    isLastStep: store.isLastStep(),
-    completionPercentage: store.getCompletionPercentage(),
+      // Navigation
+      isFirstStep: store.isFirstStep(),
+      isLastStep: store.isLastStep(),
+      completionPercentage: store.getCompletionPercentage(),
 
-    // Highlighting
-    targetElement: store.targetElement,
+      // Highlighting
+      targetElement: store.targetElement,
 
-    // Tour state
-    tourState,
+      // Tour state
+      tourState,
 
-    // Actions
-    openTutorial,
-    closeTutorial: store.closeTutorial,
-    nextStep: store.nextStep,
-    previousStep: store.previousStep,
-    goToStep: store.goToStep,
-    completeTutorial: store.completeTutorial,
-    skipTutorial: store.skipTutorial,
-    setDontShowAgain: store.setDontShowTutorials,
-    resetProgress: store.resetTutorials,
+      // Actions
+      openTutorial,
+      closeTutorial: store.closeTutorial,
+      nextStep: store.nextStep,
+      previousStep: store.previousStep,
+      goToStep: store.goToStep,
+      completeTutorial: store.completeTutorial,
+      skipTutorial: store.skipTutorial,
+      setDontShowAgain: store.setDontShowTutorials,
+      resetProgress: store.resetTutorials,
 
-    // Element registry
-    registerTarget,
-    unregisterTarget,
-    getTarget,
+      // Element registry
+      registerTarget,
+      unregisterTarget,
+      getTarget,
 
-    // Event notification
-    notifyAction,
+      // Event notification
+      notifyAction,
 
-    // Navigation
-    navigateTo,
-  }), [
-    store,
-    currentStep,
-    tourState,
-    openTutorial,
-    registerTarget,
-    unregisterTarget,
-    getTarget,
-    notifyAction,
-    navigateTo,
-  ]);
+      // Navigation
+      navigateTo,
+    }),
+    [
+      store,
+      currentStep,
+      tourState,
+      openTutorial,
+      registerTarget,
+      unregisterTarget,
+      getTarget,
+      notifyAction,
+      navigateTo,
+    ]
+  );
 
   return (
     <TutorialContext.Provider value={value}>
@@ -266,7 +284,9 @@ export function useTutorial(): TutorialContextValue {
 export function useTutorialProgress(): TutorialProgressContextValue {
   const context = useContext(TutorialProgressContext);
   if (!context) {
-    throw new Error("useTutorialProgress must be used within a TutorialProvider");
+    throw new Error(
+      "useTutorialProgress must be used within a TutorialProvider"
+    );
   }
   return context;
 }
@@ -296,9 +316,10 @@ export function useTutorialTarget(
  * HOC-like hook for tutorial-aware components
  * Returns props to spread on the target element
  */
-export function useTutorialAware(
-  tutorialId: string
-): { "data-tutorial-id": string; ref: React.RefCallback<HTMLElement> } {
+export function useTutorialAware(tutorialId: string): {
+  "data-tutorial-id": string;
+  ref: React.RefCallback<HTMLElement>;
+} {
   const { registerTarget, unregisterTarget } = useTutorial();
   const elementRef = useRef<HTMLElement | null>(null);
 

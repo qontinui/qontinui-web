@@ -19,7 +19,9 @@ import {
 import type { AnnotatedElement } from "@/stores/extraction-annotation-store";
 
 // Helper to create mock elements
-function createMockElement(overrides: Partial<AnnotatedElement> = {}): AnnotatedElement {
+function createMockElement(
+  overrides: Partial<AnnotatedElement> = {}
+): AnnotatedElement {
   return {
     id: `elem_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     bbox: { x: 100, y: 200, width: 50, height: 30 },
@@ -44,19 +46,50 @@ describe("Training Data Export", () => {
   describe("exportTrainingData - COCO format", () => {
     it("should export elements to COCO format", () => {
       const elements: AnnotatedElement[] = [
-        createMockElement({ id: "elem1", label: "Button 1", elementType: "button" }),
-        createMockElement({ id: "elem2", label: "Input 1", elementType: "input", bbox: { x: 300, y: 400, width: 200, height: 40 } }),
+        createMockElement({
+          id: "elem1",
+          label: "Button 1",
+          elementType: "button",
+        }),
+        createMockElement({
+          id: "elem2",
+          label: "Input 1",
+          elementType: "input",
+          bbox: { x: 300, y: 400, width: 200, height: 40 },
+        }),
       ];
 
-      const result = exportTrainingData(elements, { ...defaultOptions, format: "coco" });
+      const result = exportTrainingData(elements, {
+        ...defaultOptions,
+        format: "coco",
+      });
 
       expect(result.filename).toBe("annotations.json");
       expect(result.mimeType).toBe("application/json");
 
       const data = result.data as {
-        info: { description: string; version: string; year: number; contributor: string; date_created: string };
-        images: Array<{ id: number; width: number; height: number; file_name: string }>;
-        annotations: Array<{ id: number; image_id: number; category_id: number; bbox: number[]; area: number; iscrowd: number; attributes: Record<string, unknown> }>;
+        info: {
+          description: string;
+          version: string;
+          year: number;
+          contributor: string;
+          date_created: string;
+        };
+        images: Array<{
+          id: number;
+          width: number;
+          height: number;
+          file_name: string;
+        }>;
+        annotations: Array<{
+          id: number;
+          image_id: number;
+          category_id: number;
+          bbox: number[];
+          area: number;
+          iscrowd: number;
+          attributes: Record<string, unknown>;
+        }>;
         categories: Array<{ id: number; name: string; supercategory: string }>;
       };
 
@@ -77,11 +110,20 @@ describe("Training Data Export", () => {
         createMockElement({ elementType: "link" }),
       ];
 
-      const result = exportTrainingData(elements, { ...defaultOptions, format: "coco" });
-      const data = result.data as { categories: Array<{ id: number; name: string; supercategory: string }> };
+      const result = exportTrainingData(elements, {
+        ...defaultOptions,
+        format: "coco",
+      });
+      const data = result.data as {
+        categories: Array<{ id: number; name: string; supercategory: string }>;
+      };
 
       expect(data.categories).toHaveLength(3);
-      expect(data.categories.map((c: { name: string }) => c.name)).toEqual(["button", "input", "link"]);
+      expect(data.categories.map((c: { name: string }) => c.name)).toEqual([
+        "button",
+        "input",
+        "link",
+      ]);
     });
 
     it("should calculate correct bbox and area in COCO format", () => {
@@ -89,8 +131,13 @@ describe("Training Data Export", () => {
         createMockElement({ bbox: { x: 100, y: 200, width: 50, height: 30 } }),
       ];
 
-      const result = exportTrainingData(elements, { ...defaultOptions, format: "coco" });
-      const data = result.data as { annotations: Array<{ bbox: number[]; area: number }> };
+      const result = exportTrainingData(elements, {
+        ...defaultOptions,
+        format: "coco",
+      });
+      const data = result.data as {
+        annotations: Array<{ bbox: number[]; area: number }>;
+      };
 
       expect(data.annotations[0].bbox).toEqual([100, 200, 50, 30]);
       expect(data.annotations[0].area).toBe(1500); // 50 * 30
@@ -109,8 +156,13 @@ describe("Training Data Export", () => {
         }),
       ];
 
-      const result = exportTrainingData(elements, { ...defaultOptions, format: "coco" });
-      const data = result.data as { annotations: Array<{ attributes: Record<string, unknown> }> };
+      const result = exportTrainingData(elements, {
+        ...defaultOptions,
+        format: "coco",
+      });
+      const data = result.data as {
+        annotations: Array<{ attributes: Record<string, unknown> }>;
+      };
 
       expect(data.annotations[0].attributes.label).toBe("Submit");
       expect(data.annotations[0].attributes.description).toBe("Submit button");
@@ -138,7 +190,10 @@ describe("Training Data Export", () => {
   describe("exportTrainingData - YOLO format", () => {
     it("should export elements to YOLO format", () => {
       const elements: AnnotatedElement[] = [
-        createMockElement({ elementType: "button", bbox: { x: 100, y: 200, width: 50, height: 30 } }),
+        createMockElement({
+          elementType: "button",
+          bbox: { x: 100, y: 200, width: 50, height: 30 },
+        }),
       ];
 
       const result = exportTrainingData(elements, {
@@ -162,7 +217,10 @@ describe("Training Data Export", () => {
       // width = 200/1000 = 0.2
       // height = 100/1000 = 0.1
       const elements: AnnotatedElement[] = [
-        createMockElement({ elementType: "button", bbox: { x: 100, y: 200, width: 200, height: 100 } }),
+        createMockElement({
+          elementType: "button",
+          bbox: { x: 100, y: 200, width: 200, height: 100 },
+        }),
       ];
 
       const result = exportTrainingData(elements, {
@@ -190,7 +248,10 @@ describe("Training Data Export", () => {
         createMockElement({ elementType: "link" }),
       ];
 
-      const result = exportTrainingData(elements, { ...defaultOptions, format: "yolo" });
+      const result = exportTrainingData(elements, {
+        ...defaultOptions,
+        format: "yolo",
+      });
       const lines = (result.data as string).split("\n");
 
       expect(lines[0].startsWith("0 ")).toBe(true); // button -> 0
@@ -206,7 +267,10 @@ describe("Training Data Export", () => {
         createMockElement({ elementType: "link" }),
       ];
 
-      const result = exportTrainingData(elements, { ...defaultOptions, format: "yolo" });
+      const result = exportTrainingData(elements, {
+        ...defaultOptions,
+        format: "yolo",
+      });
 
       expect(result.extra?.data).toBe("button\ninput\nlink");
     });
@@ -223,7 +287,10 @@ describe("Training Data Export", () => {
         }),
       ];
 
-      const result = exportTrainingData(elements, { ...defaultOptions, format: "csv" });
+      const result = exportTrainingData(elements, {
+        ...defaultOptions,
+        format: "csv",
+      });
 
       expect(result.filename).toBe("annotations.csv");
       expect(result.mimeType).toBe("text/csv");
@@ -233,7 +300,10 @@ describe("Training Data Export", () => {
     it("should include all expected columns in CSV", () => {
       const elements: AnnotatedElement[] = [createMockElement()];
 
-      const result = exportTrainingData(elements, { ...defaultOptions, format: "csv" });
+      const result = exportTrainingData(elements, {
+        ...defaultOptions,
+        format: "csv",
+      });
       const lines = (result.data as string).split("\n");
       const headers = lines[0].split(",");
 
@@ -258,7 +328,10 @@ describe("Training Data Export", () => {
         createMockElement({ label: 'Say "Hello"' }),
       ];
 
-      const result = exportTrainingData(elements, { ...defaultOptions, format: "csv" });
+      const result = exportTrainingData(elements, {
+        ...defaultOptions,
+        format: "csv",
+      });
       const csvContent = result.data as string;
 
       // The label should be quoted and internal quotes should be doubled
@@ -270,7 +343,10 @@ describe("Training Data Export", () => {
         createMockElement({ description: "First, second, third" }),
       ];
 
-      const result = exportTrainingData(elements, { ...defaultOptions, format: "csv" });
+      const result = exportTrainingData(elements, {
+        ...defaultOptions,
+        format: "csv",
+      });
       const csvContent = result.data as string;
 
       expect(csvContent).toContain('"First, second, third"');
@@ -286,7 +362,10 @@ describe("Training Data Export", () => {
         }),
       ];
 
-      const result = exportTrainingData(elements, { ...defaultOptions, format: "csv" });
+      const result = exportTrainingData(elements, {
+        ...defaultOptions,
+        format: "csv",
+      });
       const lines = (result.data as string).split("\n");
 
       // Should have valid CSV with empty values
@@ -298,7 +377,10 @@ describe("Training Data Export", () => {
         createMockElement({ isGroundTruth: true, isClickable: false }),
       ];
 
-      const result = exportTrainingData(elements, { ...defaultOptions, format: "csv" });
+      const result = exportTrainingData(elements, {
+        ...defaultOptions,
+        format: "csv",
+      });
       const csvContent = result.data as string;
 
       expect(csvContent).toContain(",true,");
@@ -319,10 +401,15 @@ describe("Training Data Export", () => {
         format: "coco",
         includeAllElements: false,
       });
-      const data = result.data as { annotations: Array<{ attributes: { label: string } }> };
+      const data = result.data as {
+        annotations: Array<{ attributes: { label: string } }>;
+      };
 
       expect(data.annotations).toHaveLength(2);
-      expect(data.annotations.map((a) => a.attributes.label)).toEqual(["GT 1", "GT 2"]);
+      expect(data.annotations.map((a) => a.attributes.label)).toEqual([
+        "GT 1",
+        "GT 2",
+      ]);
     });
 
     it("should include all elements when includeAllElements is true", () => {
@@ -360,7 +447,9 @@ describe("Training Data Export", () => {
 
   describe("exportTrainingData - Error Handling", () => {
     it("should throw error for empty elements array", () => {
-      expect(() => exportTrainingData([], defaultOptions)).toThrow("No elements to export");
+      expect(() => exportTrainingData([], defaultOptions)).toThrow(
+        "No elements to export"
+      );
     });
 
     it("should throw error for unsupported format", () => {
@@ -407,17 +496,28 @@ describe("Training Data Export", () => {
       ];
 
       // Should not throw for any format
-      expect(() => exportTrainingData(elements, { ...defaultOptions, format: "coco" })).not.toThrow();
-      expect(() => exportTrainingData(elements, { ...defaultOptions, format: "yolo" })).not.toThrow();
-      expect(() => exportTrainingData(elements, { ...defaultOptions, format: "csv" })).not.toThrow();
+      expect(() =>
+        exportTrainingData(elements, { ...defaultOptions, format: "coco" })
+      ).not.toThrow();
+      expect(() =>
+        exportTrainingData(elements, { ...defaultOptions, format: "yolo" })
+      ).not.toThrow();
+      expect(() =>
+        exportTrainingData(elements, { ...defaultOptions, format: "csv" })
+      ).not.toThrow();
     });
 
     it("should handle very large bounding box values", () => {
       const elements: AnnotatedElement[] = [
-        createMockElement({ bbox: { x: 0, y: 0, width: 100000, height: 100000 } }),
+        createMockElement({
+          bbox: { x: 0, y: 0, width: 100000, height: 100000 },
+        }),
       ];
 
-      const result = exportTrainingData(elements, { ...defaultOptions, format: "coco" });
+      const result = exportTrainingData(elements, {
+        ...defaultOptions,
+        format: "coco",
+      });
       const data = result.data as { annotations: Array<{ bbox: number[] }> };
 
       expect(data.annotations[0].bbox).toEqual([0, 0, 100000, 100000]);
@@ -432,24 +532,35 @@ describe("Training Data Export", () => {
       ];
 
       // Should not throw
-      expect(() => exportTrainingData(elements, { ...defaultOptions, format: "csv" })).not.toThrow();
-      expect(() => exportTrainingData(elements, { ...defaultOptions, format: "coco" })).not.toThrow();
+      expect(() =>
+        exportTrainingData(elements, { ...defaultOptions, format: "csv" })
+      ).not.toThrow();
+      expect(() =>
+        exportTrainingData(elements, { ...defaultOptions, format: "coco" })
+      ).not.toThrow();
     });
 
     it("should handle many elements efficiently", () => {
-      const elements: AnnotatedElement[] = Array.from({ length: 1000 }, (_, i) =>
-        createMockElement({
-          id: `elem${i}`,
-          label: `Element ${i}`,
-          elementType: i % 2 === 0 ? "button" : "input",
-        })
+      const elements: AnnotatedElement[] = Array.from(
+        { length: 1000 },
+        (_, i) =>
+          createMockElement({
+            id: `elem${i}`,
+            label: `Element ${i}`,
+            elementType: i % 2 === 0 ? "button" : "input",
+          })
       );
 
       const startTime = Date.now();
-      const result = exportTrainingData(elements, { ...defaultOptions, format: "coco" });
+      const result = exportTrainingData(elements, {
+        ...defaultOptions,
+        format: "coco",
+      });
       const duration = Date.now() - startTime;
 
-      expect((result.data as { annotations: unknown[] }).annotations).toHaveLength(1000);
+      expect(
+        (result.data as { annotations: unknown[] }).annotations
+      ).toHaveLength(1000);
       expect(duration).toBeLessThan(1000); // Should complete in under 1 second
     });
 
@@ -460,7 +571,10 @@ describe("Training Data Export", () => {
         createMockElement({ id: "custom-id-3" }),
       ];
 
-      const result = exportTrainingData(elements, { ...defaultOptions, format: "coco" });
+      const result = exportTrainingData(elements, {
+        ...defaultOptions,
+        format: "coco",
+      });
       const data = result.data as { annotations: Array<{ id: number }> };
 
       expect(data.annotations.map((a) => a.id)).toEqual([1, 2, 3]);
@@ -472,7 +586,10 @@ describe("Training Data Export", () => {
         createMockElement(),
       ];
 
-      const result = exportTrainingData(elements, { ...defaultOptions, format: "coco" });
+      const result = exportTrainingData(elements, {
+        ...defaultOptions,
+        format: "coco",
+      });
       const data = result.data as { annotations: Array<{ iscrowd: number }> };
 
       expect(data.annotations.every((a) => a.iscrowd === 0)).toBe(true);
@@ -484,7 +601,10 @@ describe("Training Data Export", () => {
         createMockElement(),
       ];
 
-      const result = exportTrainingData(elements, { ...defaultOptions, format: "coco" });
+      const result = exportTrainingData(elements, {
+        ...defaultOptions,
+        format: "coco",
+      });
       const data = result.data as { annotations: Array<{ image_id: number }> };
 
       expect(data.annotations.every((a) => a.image_id === 1)).toBe(true);
@@ -495,7 +615,10 @@ describe("Training Data Export", () => {
         createMockElement({ isClickable: undefined }),
       ];
 
-      const result = exportTrainingData(elements, { ...defaultOptions, format: "csv" });
+      const result = exportTrainingData(elements, {
+        ...defaultOptions,
+        format: "csv",
+      });
       const csvContent = result.data as string;
 
       // Should default to true when undefined

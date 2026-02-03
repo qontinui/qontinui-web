@@ -13,23 +13,24 @@ export default function ExtensionPrivacyPolicy() {
         <h1 className="text-4xl font-bold mb-2">
           Privacy Policy for Qontinui Capture Browser Extension
         </h1>
-        <p className="text-sm text-text-muted mb-8">Last updated: January 2026</p>
+        <p className="text-sm text-text-muted mb-8">
+          Last updated: January 2026
+        </p>
 
         <div className="space-y-8 text-muted-foreground">
           <section>
             <h2 className="text-2xl font-semibold mb-4">Overview</h2>
             <p>
               Qontinui Capture is a browser extension that captures web page
-              content (DOM and HTTP requests) and sends it to the Qontinui Runner
-              application running on your local computer. This privacy policy
-              explains what data the extension accesses and how it is handled.
+              content (DOM and HTTP requests) and sends it to the Qontinui
+              Runner application running on your local computer. This privacy
+              policy explains what data the extension accesses and how it is
+              handled.
             </p>
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4">
-              Data Collection
-            </h2>
+            <h2 className="text-2xl font-semibold mb-4">Data Collection</h2>
 
             <h3 className="text-xl font-semibold mt-4 mb-2">
               What We DO NOT Collect
@@ -56,18 +57,16 @@ export default function ExtensionPrivacyPolicy() {
                 page
               </li>
               <li>
-                <strong>HTTP Requests:</strong> Network requests made by the page
-                (method, URL, headers, response data)
+                <strong>HTTP Requests:</strong> Network requests made by the
+                page (method, URL, headers, response data)
               </li>
               <li>
-                <strong>Page URL and Title:</strong> The address and title of the
-                captured page
+                <strong>Page URL and Title:</strong> The address and title of
+                the captured page
               </li>
             </ul>
 
-            <h3 className="text-xl font-semibold mt-4 mb-2">
-              Where Data Goes
-            </h3>
+            <h3 className="text-xl font-semibold mt-4 mb-2">Where Data Goes</h3>
             <p>All captured data is sent exclusively to:</p>
             <pre className="bg-gray-100 p-4 rounded-lg mt-2 text-sm">
               http://localhost:9876
@@ -166,16 +165,14 @@ export default function ExtensionPrivacyPolicy() {
 
           <section>
             <h2 className="text-2xl font-semibold mb-4">Data Storage</h2>
-            <p>
-              The extension stores minimal data locally in your browser:
-            </p>
+            <p>The extension stores minimal data locally in your browser:</p>
             <ul className="list-disc pl-6 space-y-2 mt-2">
               <li>Connection status preferences</li>
               <li>Last used CSS selector (for convenience)</li>
             </ul>
             <p className="mt-2">
-              This data is stored using Chrome&apos;s local storage API and never
-              transmitted anywhere.
+              This data is stored using Chrome&apos;s local storage API and
+              never transmitted anywhere.
             </p>
           </section>
 
@@ -220,9 +217,7 @@ export default function ExtensionPrivacyPolicy() {
 
           <section>
             <h2 className="text-2xl font-semibold mb-4">Contact</h2>
-            <p>
-              For questions about this privacy policy or the extension:
-            </p>
+            <p>For questions about this privacy policy or the extension:</p>
             <ul className="list-disc pl-6 space-y-2 mt-2">
               <li>
                 GitHub Issues:{" "}

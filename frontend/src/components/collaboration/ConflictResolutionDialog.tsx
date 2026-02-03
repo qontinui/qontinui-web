@@ -348,7 +348,10 @@ export function ConflictResolutionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col" data-ui-id="dialog-conflict-resolution">
+      <DialogContent
+        className="max-w-4xl max-h-[90vh] flex flex-col"
+        data-ui-id="dialog-conflict-resolution"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-orange-500" />
@@ -475,7 +478,11 @@ export function ConflictResolutionDialog({
               <Users className="mr-2 h-4 w-4" />
               Keep Theirs
             </Button>
-            <Button onClick={() => handleResolve("merge")} disabled={loading} data-ui-id="dialog-conflict-resolution-merge-btn">
+            <Button
+              onClick={() => handleResolve("merge")}
+              disabled={loading}
+              data-ui-id="dialog-conflict-resolution-merge-btn"
+            >
               {loading ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (

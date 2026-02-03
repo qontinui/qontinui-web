@@ -260,7 +260,10 @@ export function IntegrationTestControlPanel({
     !isLoading;
 
   return (
-    <Card className="bg-[#1A1A1B]/80 border-border-subtle/50 backdrop-blur-sm" data-ui-id="testing-integration-control-panel">
+    <Card
+      className="bg-[#1A1A1B]/80 border-border-subtle/50 backdrop-blur-sm"
+      data-ui-id="testing-integration-control-panel"
+    >
       <CardHeader className="pb-3">
         <CardTitle className="text-lg font-medium text-white flex items-center gap-2">
           <FlaskConical className="w-5 h-5 text-[#FF6B6B]" />

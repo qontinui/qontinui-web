@@ -48,7 +48,8 @@ export function useStateDiscoveryResults({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [selectedResult, setSelectedResult] = useState<StateDiscoveryResult | null>(null);
+  const [selectedResult, setSelectedResult] =
+    useState<StateDiscoveryResult | null>(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
 
@@ -69,7 +70,10 @@ export function useStateDiscoveryResults({
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
-      const data = await response.json() as { items: Record<string, unknown>[]; total: number };
+      const data = (await response.json()) as {
+        items: Record<string, unknown>[];
+        total: number;
+      };
       setResults(data.items.map(toStateDiscoveryResultSummary));
     } catch (err) {
       console.error("Failed to fetch state discovery results:", err);
@@ -80,60 +84,68 @@ export function useStateDiscoveryResults({
     }
   }, [projectId]);
 
-  const selectResult = useCallback(async (resultId: string) => {
-    if (!projectId) return;
+  const selectResult = useCallback(
+    async (resultId: string) => {
+      if (!projectId) return;
 
-    setIsLoadingDetail(true);
-    setDetailError(null);
+      setIsLoadingDetail(true);
+      setDetailError(null);
 
-    try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/v1/projects/${projectId}/state-discovery-results/${resultId}`,
-        { credentials: "include" }
-      );
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/v1/projects/${projectId}/state-discovery-results/${resultId}`,
+          { credentials: "include" }
+        );
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        const data = (await response.json()) as Record<string, unknown>;
+        setSelectedResult(toStateDiscoveryResult(data));
+      } catch (err) {
+        console.error("Failed to fetch result detail:", err);
+        setDetailError(
+          err instanceof Error ? err.message : "Failed to fetch result"
+        );
+        setSelectedResult(null);
+      } finally {
+        setIsLoadingDetail(false);
       }
-      const data = await response.json() as Record<string, unknown>;
-      setSelectedResult(toStateDiscoveryResult(data));
-    } catch (err) {
-      console.error("Failed to fetch result detail:", err);
-      setDetailError(err instanceof Error ? err.message : "Failed to fetch result");
-      setSelectedResult(null);
-    } finally {
-      setIsLoadingDetail(false);
-    }
-  }, [projectId]);
+    },
+    [projectId]
+  );
 
   const clearSelection = useCallback(() => {
     setSelectedResult(null);
     setDetailError(null);
   }, []);
 
-  const deleteResult = useCallback(async (resultId: string) => {
-    if (!projectId) return;
+  const deleteResult = useCallback(
+    async (resultId: string) => {
+      if (!projectId) return;
 
-    try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/v1/projects/${projectId}/state-discovery-results/${resultId}`,
-        { method: "DELETE", credentials: "include" }
-      );
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/v1/projects/${projectId}/state-discovery-results/${resultId}`,
+          { method: "DELETE", credentials: "include" }
+        );
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        // Remove from local state
+        setResults((prev) => prev.filter((r) => r.id !== resultId));
+
+        // Clear selection if this was the selected result
+        if (selectedResult?.id === resultId) {
+          clearSelection();
+        }
+      } catch (err) {
+        console.error("Failed to delete result:", err);
+        throw err;
       }
-
-      // Remove from local state
-      setResults((prev) => prev.filter((r) => r.id !== resultId));
-
-      // Clear selection if this was the selected result
-      if (selectedResult?.id === resultId) {
-        clearSelection();
-      }
-    } catch (err) {
-      console.error("Failed to delete result:", err);
-      throw err;
-    }
-  }, [projectId, selectedResult?.id, clearSelection]);
+    },
+    [projectId, selectedResult?.id, clearSelection]
+  );
 
   const refresh = useCallback(async () => {
     await fetchResults();

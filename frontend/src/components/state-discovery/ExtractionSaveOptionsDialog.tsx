@@ -139,8 +139,12 @@ export function ExtractionSaveOptionsDialog({
             data-ui-id="extraction-save-options-radio-group"
           >
             {(Object.keys(OPTION_DETAILS) as SaveOption[]).map((option) => {
-              const { icon: Icon, title, description, iconColor } =
-                OPTION_DETAILS[option];
+              const {
+                icon: Icon,
+                title,
+                description,
+                iconColor,
+              } = OPTION_DETAILS[option];
               return (
                 <label
                   key={option}

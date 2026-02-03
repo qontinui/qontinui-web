@@ -15,10 +15,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ContextMenu, useContextMenu } from "./ContextMenu";
-import { Tooltip, NodeTooltip, HandleTooltip, EdgeTooltip } from "./Tooltip";
-import { SelectionBox, useSelectionBox } from "./SelectionBox";
-import { AlignmentTools, alignNodes, distributeNodes } from "./AlignmentTools";
+import { ContextMenu } from "./ContextMenu";
+import { Tooltip, NodeTooltip } from "./Tooltip";
+import { SelectionBox } from "./SelectionBox";
+import { alignNodes, distributeNodes } from "./AlignmentTools";
 import {
   hoverEffects,
   getNodeHoverEffect,
@@ -38,7 +38,7 @@ describe("ContextMenu", () => {
       { label: "Delete", onClick: vi.fn(), danger: true },
     ];
 
-    const { container } = render(
+    const { container: _container } = render(
       <ContextMenu
         position={{ x: 100, y: 100 }}
         items={items}

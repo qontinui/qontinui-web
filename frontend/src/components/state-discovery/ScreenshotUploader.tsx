@@ -39,17 +39,6 @@ interface APIProjectScreenshot {
   hash: string;
 }
 
-// @ts-expect-error - Interface kept for backwards compatibility but not directly used
-interface APIDetailedScreenshot {
-  id: string;
-  name: string;
-  hash: string;
-  size: number;
-  created_at: string;
-  thumbnail_url?: string;
-  image_data: string;
-}
-
 interface ProjectScreenshot {
   id: string;
   name: string;

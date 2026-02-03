@@ -170,7 +170,10 @@ export function PublishTemplateDialog({
 
   return (
     <div className="publish-template-overlay">
-      <div className="publish-template-dialog" data-ui-id="dialog-publish-template">
+      <div
+        className="publish-template-dialog"
+        data-ui-id="dialog-publish-template"
+      >
         <div className="dialog-header">
           <h2>
             {step === "preview"

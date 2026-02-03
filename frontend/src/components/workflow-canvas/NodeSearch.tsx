@@ -292,7 +292,11 @@ export const NodeSearch: React.FC<NodeSearchProps> = ({
       )}
 
       {/* Results */}
-      <div className="node-search__results" ref={resultsRef} data-ui-id="canvas-nodesearch-results-list">
+      <div
+        className="node-search__results"
+        ref={resultsRef}
+        data-ui-id="canvas-nodesearch-results-list"
+      >
         {results.length > 0 ? (
           <>
             <div className="node-search__results-header">

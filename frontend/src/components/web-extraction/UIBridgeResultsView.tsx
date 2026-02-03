@@ -101,7 +101,9 @@ function MetricsCard({ results }: { results: UIBridgeRawResults }) {
               <Progress
                 value={
                   results.elements_discovered > 0
-                    ? (results.elements_explored / results.elements_discovered) * 100
+                    ? (results.elements_explored /
+                        results.elements_discovered) *
+                      100
                     : 0
                 }
                 className="h-2"
@@ -111,7 +113,8 @@ function MetricsCard({ results }: { results: UIBridgeRawResults }) {
                   {results.elements_explored} explored
                 </span>
                 <span className="text-yellow-500">
-                  {results.elements_discovered - results.elements_explored} remaining
+                  {results.elements_discovered - results.elements_explored}{" "}
+                  remaining
                 </span>
               </div>
             </div>
@@ -121,7 +124,9 @@ function MetricsCard({ results }: { results: UIBridgeRawResults }) {
         {results.errors.length > 0 && (
           <div className="mt-4 flex items-center gap-2 text-red-500">
             <AlertTriangle className="h-4 w-4" />
-            <span className="text-sm">{results.errors.length} errors encountered</span>
+            <span className="text-sm">
+              {results.errors.length} errors encountered
+            </span>
           </div>
         )}
       </CardContent>
@@ -175,11 +180,16 @@ function StatesTable({ states }: { states: UIBridgeDiscoveredState[] }) {
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Badge variant="outline">{state.state_image_ids.length}</Badge>
+                  <Badge variant="outline">
+                    {state.state_image_ids.length}
+                  </Badge>
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2">
-                    <Progress value={state.confidence * 100} className="h-2 w-16" />
+                    <Progress
+                      value={state.confidence * 100}
+                      className="h-2 w-16"
+                    />
                     <span className="text-sm">
                       {(state.confidence * 100).toFixed(0)}%
                     </span>
@@ -198,7 +208,11 @@ function StatesTable({ states }: { states: UIBridgeDiscoveredState[] }) {
   );
 }
 
-function ElementsTable({ elements }: { elements: UIBridgeDiscoveredElement[] }) {
+function ElementsTable({
+  elements,
+}: {
+  elements: UIBridgeDiscoveredElement[];
+}) {
   const [search, setSearch] = useState("");
 
   const filteredElements = useMemo(() => {
@@ -386,7 +400,9 @@ function StepsTable({ steps }: { steps: UIBridgeExplorationStep[] }) {
               </TableCell>
               <TableCell>
                 {step.state_changed ? (
-                  <Badge variant="default" className="bg-blue-500">Yes</Badge>
+                  <Badge variant="default" className="bg-blue-500">
+                    Yes
+                  </Badge>
                 ) : (
                   <Badge variant="outline">No</Badge>
                 )}
@@ -443,7 +459,10 @@ export function UIBridgeResultsView({
     if (!results?.steps?.length) return false;
     // Check if the first step has the enhanced fields
     const firstStep = results.steps[0];
-    return firstStep?.action_result !== undefined || firstStep?.snapshot_before_hash !== undefined;
+    return (
+      firstStep?.action_result !== undefined ||
+      firstStep?.snapshot_before_hash !== undefined
+    );
   }, [results?.steps]);
 
   // Handlers for transition acceptance
@@ -483,7 +502,8 @@ export function UIBridgeResultsView({
         )}
         {job.elements_discovered !== undefined && (
           <div className="text-sm text-muted-foreground">
-            {job.elements_explored || 0} / {job.elements_discovered} elements explored
+            {job.elements_explored || 0} / {job.elements_discovered} elements
+            explored
           </div>
         )}
       </div>
@@ -565,7 +585,9 @@ export function UIBridgeResultsView({
             <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
               <Layers className="h-12 w-12 mb-4" />
               <p>No states discovered</p>
-              <p className="text-sm">State discovery runs after exploration completes</p>
+              <p className="text-sm">
+                State discovery runs after exploration completes
+              </p>
             </div>
           ) : (
             <StatesTable states={states} />
@@ -584,7 +606,9 @@ export function UIBridgeResultsView({
             <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
               <GitBranch className="h-12 w-12 mb-4" />
               <p>Transition discovery requires updated runner</p>
-              <p className="text-sm">Please update qontinui-runner to enable transition discovery</p>
+              <p className="text-sm">
+                Please update qontinui-runner to enable transition discovery
+              </p>
             </div>
           )}
         </TabsContent>

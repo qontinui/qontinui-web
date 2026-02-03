@@ -379,17 +379,29 @@ export function DatasetImportDialog({
 
         <DialogFooter>
           {step === "select" && (
-            <Button variant="outline" onClick={handleClose} data-ui-id="dialog-dataset-import-cancel-btn">
+            <Button
+              variant="outline"
+              onClick={handleClose}
+              data-ui-id="dialog-dataset-import-cancel-btn"
+            >
               Cancel
             </Button>
           )}
 
           {step === "configure" && (
             <>
-              <Button variant="outline" onClick={handleReset} data-ui-id="dialog-dataset-import-back-btn">
+              <Button
+                variant="outline"
+                onClick={handleReset}
+                data-ui-id="dialog-dataset-import-back-btn"
+              >
                 Back
               </Button>
-              <Button onClick={handleImport} disabled={!datasetName.trim()} data-ui-id="dialog-dataset-import-confirm-btn">
+              <Button
+                onClick={handleImport}
+                disabled={!datasetName.trim()}
+                data-ui-id="dialog-dataset-import-confirm-btn"
+              >
                 <Upload className="mr-2 h-4 w-4" />
                 Import Dataset
               </Button>
@@ -404,7 +416,10 @@ export function DatasetImportDialog({
           )}
 
           {step === "complete" && (
-            <Button onClick={handleClose} data-ui-id="dialog-dataset-import-done-btn">
+            <Button
+              onClick={handleClose}
+              data-ui-id="dialog-dataset-import-done-btn"
+            >
               <CheckCircle2 className="mr-2 h-4 w-4" />
               Done
             </Button>
@@ -412,10 +427,19 @@ export function DatasetImportDialog({
 
           {step === "error" && (
             <>
-              <Button variant="outline" onClick={handleReset} data-ui-id="dialog-dataset-import-retry-btn">
+              <Button
+                variant="outline"
+                onClick={handleReset}
+                data-ui-id="dialog-dataset-import-retry-btn"
+              >
                 Try Again
               </Button>
-              <Button onClick={handleClose} data-ui-id="dialog-dataset-import-close-btn">Close</Button>
+              <Button
+                onClick={handleClose}
+                data-ui-id="dialog-dataset-import-close-btn"
+              >
+                Close
+              </Button>
             </>
           )}
         </DialogFooter>

@@ -122,8 +122,12 @@ export function AuthDialog({
           className="w-full"
         >
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="login" data-ui-id="auth-signin-tab">Login</TabsTrigger>
-            <TabsTrigger value="register" data-ui-id="auth-signup-tab">Register</TabsTrigger>
+            <TabsTrigger value="login" data-ui-id="auth-signin-tab">
+              Login
+            </TabsTrigger>
+            <TabsTrigger value="register" data-ui-id="auth-signup-tab">
+              Register
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="login">
@@ -180,7 +184,12 @@ export function AuthDialog({
                   Remember me for 90 days
                 </Label>
               </div>
-              <Button type="submit" className="w-full" disabled={loading} data-ui-id="form-login-submit-btn">
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={loading}
+                data-ui-id="form-login-submit-btn"
+              >
                 {loading ? "Signing in..." : "Sign In"}
               </Button>
               <div className="text-center mt-4">
@@ -285,7 +294,12 @@ export function AuthDialog({
                   </p>
                 )}
               </div>
-              <Button type="submit" className="w-full" disabled={loading} data-ui-id="form-register-submit-btn">
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={loading}
+                data-ui-id="form-register-submit-btn"
+              >
                 {loading ? "Creating account..." : "Create Account"}
               </Button>
             </form>

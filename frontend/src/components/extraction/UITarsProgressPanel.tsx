@@ -86,7 +86,9 @@ export function UITarsProgressPanel({
       case "idle":
         return <Clock className="h-5 w-5 text-text-muted" />;
       case "starting":
-        return <Loader2 className="h-5 w-5 text-brand-secondary animate-spin" />;
+        return (
+          <Loader2 className="h-5 w-5 text-brand-secondary animate-spin" />
+        );
       case "running":
         return <Bot className="h-5 w-5 text-brand-secondary animate-pulse" />;
       case "completed":
@@ -292,7 +294,8 @@ export function useSimulatedUITarsProgress(
       setProgress((p) => ({
         ...p,
         status: "running",
-        lastThought: "Analyzing the initial screen to identify interactive elements...",
+        lastThought:
+          "Analyzing the initial screen to identify interactive elements...",
       }));
     }, 1500);
 
@@ -328,7 +331,8 @@ export function useSimulatedUITarsProgress(
             status: "completed",
             currentStep: maxSteps,
             elapsedSeconds: p.elapsedSeconds + 2,
-            lastThought: "Exploration complete. All reachable states discovered.",
+            lastThought:
+              "Exploration complete. All reachable states discovered.",
             statesDiscovered: p.statesDiscovered + 1,
           };
         }

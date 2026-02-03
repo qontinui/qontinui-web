@@ -87,17 +87,23 @@ export function ExplorerPanelHeader({
   ...props
 }: ExplorerPanelHeaderProps) {
   return (
-    <div
-      className={cn("explorer-panel-header", className)}
-      {...props}
-    >
+    <div className={cn("explorer-panel-header", className)} {...props}>
       <div className="flex items-center gap-2 flex-1 min-w-0">
-        {Icon && <Icon className={cn("w-4 h-4 shrink-0", accentIconColors[accent])} />}
-        <h3 className={cn("explorer-panel-header-title", accentIconColors[accent])}>
+        {Icon && (
+          <Icon className={cn("w-4 h-4 shrink-0", accentIconColors[accent])} />
+        )}
+        <h3
+          className={cn(
+            "explorer-panel-header-title",
+            accentIconColors[accent]
+          )}
+        >
           {title}
         </h3>
       </div>
-      {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
+      {actions && (
+        <div className="flex items-center gap-2 shrink-0">{actions}</div>
+      )}
       {children}
     </div>
   );
@@ -132,7 +138,9 @@ export function ExplorerPanelContent({
 
   if (scrollable) {
     return (
-      <div className={cn("explorer-panel-content", "overflow-hidden", className)}>
+      <div
+        className={cn("explorer-panel-content", "overflow-hidden", className)}
+      >
         <ScrollArea className="h-full w-full">
           <div className={paddingClasses[padding]} {...props}>
             {children}
@@ -161,10 +169,7 @@ export function ExplorerPanelContent({
   return (
     <div className={cn("explorer-panel-content", "flex flex-col", className)}>
       <div
-        className={cn(
-          "flex-1 min-h-0 flex flex-col",
-          paddingClasses[padding]
-        )}
+        className={cn("flex-1 min-h-0 flex flex-col", paddingClasses[padding])}
         {...props}
       >
         {children}
@@ -271,19 +276,25 @@ export function ExplorerPanelItem({
 }: ExplorerPanelItemProps) {
   const accentColors = {
     primary: {
-      selected: "border-brand-primary bg-brand-primary/20 shadow-[0_0_15px_rgba(74,144,217,0.2)]",
+      selected:
+        "border-brand-primary bg-brand-primary/20 shadow-[0_0_15px_rgba(74,144,217,0.2)]",
       hovered: "border-brand-primary/50 bg-brand-primary/10",
-      default: "border-border-subtle bg-surface-canvas/50 hover:border-brand-primary/40 hover:bg-brand-primary/5",
+      default:
+        "border-border-subtle bg-surface-canvas/50 hover:border-brand-primary/40 hover:bg-brand-primary/5",
     },
     secondary: {
-      selected: "border-brand-secondary bg-brand-secondary/20 shadow-[0_0_15px_rgba(139,107,181,0.2)]",
+      selected:
+        "border-brand-secondary bg-brand-secondary/20 shadow-[0_0_15px_rgba(139,107,181,0.2)]",
       hovered: "border-brand-secondary/50 bg-brand-secondary/10",
-      default: "border-border-subtle bg-surface-canvas/50 hover:border-brand-secondary/40 hover:bg-brand-secondary/5",
+      default:
+        "border-border-subtle bg-surface-canvas/50 hover:border-brand-secondary/40 hover:bg-brand-secondary/5",
     },
     success: {
-      selected: "border-brand-success bg-brand-success/20 shadow-[0_0_15px_rgba(77,184,157,0.2)]",
+      selected:
+        "border-brand-success bg-brand-success/20 shadow-[0_0_15px_rgba(77,184,157,0.2)]",
       hovered: "border-brand-success/50 bg-brand-success/10",
-      default: "border-border-subtle bg-surface-canvas/50 hover:border-brand-success/40 hover:bg-brand-success/5",
+      default:
+        "border-border-subtle bg-surface-canvas/50 hover:border-brand-success/40 hover:bg-brand-success/5",
     },
   };
 
@@ -337,17 +348,20 @@ export function ExplorerPanelThumbnail({
 }: ExplorerPanelThumbnailProps) {
   const accentColors = {
     primary: {
-      selected: "border-brand-primary shadow-[0_0_15px_rgba(74,144,217,0.2)] ring-1 ring-brand-primary/50",
+      selected:
+        "border-brand-primary shadow-[0_0_15px_rgba(74,144,217,0.2)] ring-1 ring-brand-primary/50",
       hovered: "border-brand-primary/50",
       default: "border-border-subtle hover:border-brand-primary/40",
     },
     secondary: {
-      selected: "border-brand-secondary shadow-[0_0_15px_rgba(139,107,181,0.2)] ring-1 ring-brand-secondary/50",
+      selected:
+        "border-brand-secondary shadow-[0_0_15px_rgba(139,107,181,0.2)] ring-1 ring-brand-secondary/50",
       hovered: "border-brand-secondary/50",
       default: "border-border-subtle hover:border-brand-secondary/40",
     },
     success: {
-      selected: "border-brand-success shadow-[0_0_15px_rgba(77,184,157,0.2)] ring-1 ring-brand-success/50",
+      selected:
+        "border-brand-success shadow-[0_0_15px_rgba(77,184,157,0.2)] ring-1 ring-brand-success/50",
       hovered: "border-brand-success/50",
       default: "border-border-subtle hover:border-brand-success/40",
     },
@@ -397,10 +411,7 @@ export function ExplorerPanelEmptyState({
   ...props
 }: ExplorerPanelEmptyStateProps) {
   return (
-    <div
-      className={cn("empty-state", className)}
-      {...props}
-    >
+    <div className={cn("empty-state", className)} {...props}>
       {Icon && <Icon className="empty-state-icon" />}
       <p className="text-xs font-mono uppercase tracking-widest">{message}</p>
     </div>

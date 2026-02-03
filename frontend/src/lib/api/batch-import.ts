@@ -90,7 +90,9 @@ export async function listImportableFiles(
   );
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: "Unknown error" }));
+    const error = await response
+      .json()
+      .catch(() => ({ detail: "Unknown error" }));
     throw new Error(error.detail || `Failed to list files: ${response.status}`);
   }
 
@@ -125,7 +127,9 @@ export async function batchImportFromServer(
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: "Unknown error" }));
+    const error = await response
+      .json()
+      .catch(() => ({ detail: "Unknown error" }));
     throw new Error(error.detail || `Batch import failed: ${response.status}`);
   }
 

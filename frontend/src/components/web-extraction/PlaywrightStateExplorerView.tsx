@@ -136,7 +136,9 @@ export function PlaywrightStateExplorerView({
       selectedState.stateImages.map((img) => img.id.replace("stateimage-", ""))
     );
 
-    return results.clickables.filter((c: PlaywrightClickable) => elementIds.has(c.element_id));
+    return results.clickables.filter((c: PlaywrightClickable) =>
+      elementIds.has(c.element_id)
+    );
   }, [selectedState, results.clickables]);
 
   // Get screenshot IDs for selected state elements
@@ -159,8 +161,7 @@ export function PlaywrightStateExplorerView({
     if (!selectedScreenshotId) return stateElements;
     return stateElements.filter(
       (elem: PlaywrightClickable) =>
-        elem.screenshot === selectedScreenshotId ||
-        !elem.screenshot // Include elements without screenshot for backwards compatibility
+        elem.screenshot === selectedScreenshotId || !elem.screenshot // Include elements without screenshot for backwards compatibility
     );
   }, [stateElements, selectedScreenshotId]);
 

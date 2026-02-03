@@ -176,7 +176,10 @@ function OverviewPageContent() {
           <CardContent>
             <div className="flex items-center justify-between">
               <div className="text-3xl font-bold">{stats.imageCount}</div>
-              <ImageIcon className="h-8 w-8 text-green-500 opacity-50" aria-hidden="true" />
+              <ImageIcon
+                className="h-8 w-8 text-green-500 opacity-50"
+                aria-hidden="true"
+              />
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               Used for visual recognition

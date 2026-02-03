@@ -14,13 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import {
-  Loader2,
-  Clock,
-  DollarSign,
-  AlertCircle,
-  Cpu,
-} from "lucide-react";
+import { Loader2, Clock, DollarSign, AlertCircle, Cpu } from "lucide-react";
 import {
   createTrainingJob,
   getTrainingEstimate,
@@ -38,7 +32,11 @@ interface TrainingJobDialogProps {
   onSuccess?: (jobId: string) => void;
 }
 
-const MODEL_TYPE_OPTIONS: { value: TrainingJobModelType; label: string; description: string }[] = [
+const MODEL_TYPE_OPTIONS: {
+  value: TrainingJobModelType;
+  label: string;
+  description: string;
+}[] = [
   {
     value: "detection",
     label: "Object Detection",
@@ -132,7 +130,9 @@ export function TrainingJobDialog({
       onSuccess?.(job.id);
       handleClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create training job");
+      setError(
+        err instanceof Error ? err.message : "Failed to create training job"
+      );
     } finally {
       setIsLoading(false);
     }
@@ -298,7 +298,8 @@ export function TrainingJobDialog({
               <div className="flex justify-between items-center">
                 <Label>Train/Validation Split</Label>
                 <span className="text-sm text-text-muted">
-                  {Math.round(trainSplit * 100)}% / {Math.round((1 - trainSplit) * 100)}%
+                  {Math.round(trainSplit * 100)}% /{" "}
+                  {Math.round((1 - trainSplit) * 100)}%
                 </span>
               </div>
               <Slider
@@ -349,7 +350,10 @@ export function TrainingJobDialog({
                 {estimate.estimated_cost_usd && (
                   <div className="flex items-center gap-2 text-sm">
                     <DollarSign className="w-4 h-4 text-text-muted" />
-                    <span>~${estimate.estimated_cost_usd.toFixed(2)} (GPU: {estimate.gpu_type})</span>
+                    <span>
+                      ~${estimate.estimated_cost_usd.toFixed(2)} (GPU:{" "}
+                      {estimate.gpu_type})
+                    </span>
                   </div>
                 )}
                 {estimate.notes && (

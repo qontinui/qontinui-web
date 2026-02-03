@@ -13,7 +13,6 @@ import { LayoutPreview } from "./LayoutPreview";
 import { ConversionPreview } from "./ConversionPreview";
 import { LayoutSuggestions } from "./LayoutSuggestions";
 import { SequentialListView } from "../workflow-editor/SequentialListView";
-import { PresetManagerDialog } from "./PresetManagerDialog";
 import { ConversionWizard } from "./ConversionWizard";
 import type { Workflow } from "@/lib/action-schema/action-types";
 import { createAction } from "@/lib/action-schema/action-types";
@@ -132,7 +131,7 @@ vi.mock("@/services/format-converter", () => ({
     }),
   }),
   FormatConverter: vi.fn(),
-}))
+}));
 
 // ============================================================================
 // Mock Data
@@ -388,7 +387,9 @@ describe("SequentialListView", () => {
     );
 
     // Text includes emojis, so use regex
-    const actionItems = screen.getAllByText(/CLICK/)[0]?.closest(".action-item");
+    const actionItems = screen
+      .getAllByText(/CLICK/)[0]
+      ?.closest(".action-item");
     if (actionItems) {
       fireEvent.click(actionItems);
       expect(mockOnActionClick).toHaveBeenCalled();

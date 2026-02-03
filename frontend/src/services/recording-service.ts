@@ -66,7 +66,7 @@ export class RecordingService {
             const response = JSON.parse(xhr.responseText);
             console.log("[RecordingService] Upload successful:", response);
             resolve(response);
-          } catch (error) {
+          } catch (_error) {
             reject(new Error("Failed to parse response"));
           }
         } else {

@@ -122,7 +122,10 @@ export function DragActionProperties({
       <div className="space-y-2">
         <Label className="text-xs text-text-muted">From</Label>
         <Select value={fromType} onValueChange={handleFromTypeChange}>
-          <SelectTrigger className="bg-transparent border-border-default" data-ui-id="action-props-drag-from-select">
+          <SelectTrigger
+            className="bg-transparent border-border-default"
+            data-ui-id="action-props-drag-from-select"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="bg-surface-raised border-border-default">

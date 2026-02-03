@@ -97,10 +97,16 @@ export function convertPlaywrightResultsToStateMachine(
 
     for (const clickable of pageClickables) {
       // Generate element_id if not present
-      const elementId = clickable.element_id || `element-${clickable.selector?.replace(/[^a-zA-Z0-9]/g, '-') || stateIndex}-${elementIds.length}`;
+      const elementId =
+        clickable.element_id ||
+        `element-${clickable.selector?.replace(/[^a-zA-Z0-9]/g, "-") || stateIndex}-${elementIds.length}`;
 
       // Create state image with embedded base64
-      const stateImage = clickableToStateImage(clickable, screenshotId, elementId);
+      const stateImage = clickableToStateImage(
+        clickable,
+        screenshotId,
+        elementId
+      );
       stateImages.push(stateImage);
 
       // Store base64 for thumbnail display
@@ -227,7 +233,8 @@ function clickableToStateImage(
   screenshotId: string,
   elementId: string
 ): StateMachineStateImage & { base64?: string } {
-  const name = clickable.text || clickable.aria_label || `${clickable.tag_name} element`;
+  const name =
+    clickable.text || clickable.aria_label || `${clickable.tag_name} element`;
 
   return {
     id: `stateimage-${elementId}`,
@@ -254,7 +261,9 @@ function clickableToStateImage(
 /**
  * Calculate combined bounding box from clickables.
  */
-function calculateCombinedBbox(clickables: ExtendedPlaywrightClickable[]): BoundingBox {
+function calculateCombinedBbox(
+  clickables: ExtendedPlaywrightClickable[]
+): BoundingBox {
   const boxes = clickables
     .map((c) => c.bounding_box)
     .filter((b): b is BoundingBox => b != null);
@@ -291,7 +300,9 @@ function calculateAverageConfidence(
 ): number {
   if (clickables.length === 0) return 0;
 
-  const withConfidence = clickables.filter((c) => c.verification_confidence != null);
+  const withConfidence = clickables.filter(
+    (c) => c.verification_confidence != null
+  );
   if (withConfidence.length === 0) return 0;
 
   const total = withConfidence.reduce(
@@ -317,5 +328,7 @@ export function filterByConfidence(
   clickables: PlaywrightClickable[],
   minConfidence: number
 ): PlaywrightClickable[] {
-  return clickables.filter((c) => (c.verification_confidence || 0) >= minConfidence);
+  return clickables.filter(
+    (c) => (c.verification_confidence || 0) >= minConfidence
+  );
 }

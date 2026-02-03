@@ -87,7 +87,10 @@ export function SaveScreenshotDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px]" data-ui-id="dialog-save-screenshot">
+      <DialogContent
+        className="sm:max-w-[600px]"
+        data-ui-id="dialog-save-screenshot"
+      >
         <DialogHeader>
           <DialogTitle>Save Screenshot to Project</DialogTitle>
           <DialogDescription>
@@ -190,7 +193,11 @@ export function SaveScreenshotDialog({
           >
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={!name.trim() || saving} data-ui-id="dialog-save-screenshot-confirm-btn">
+          <Button
+            onClick={handleSave}
+            disabled={!name.trim() || saving}
+            data-ui-id="dialog-save-screenshot-confirm-btn"
+          >
             {saving ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

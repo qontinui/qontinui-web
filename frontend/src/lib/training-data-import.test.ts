@@ -63,7 +63,8 @@ describe("Training Data Import", () => {
     });
 
     it("should detect CSV even with different column names", () => {
-      const csvContent = "element_id,name,bbox_x,bbox_y,width,height\n1,btn,10,20,30,40";
+      const csvContent =
+        "element_id,name,bbox_x,bbox_y,width,height\n1,btn,10,20,30,40";
 
       const format = detectFormat(csvContent);
 
@@ -117,12 +118,20 @@ describe("Training Data Import", () => {
         ],
       });
 
-      const result = importTrainingData(cocoContent, { ...defaultOptions, format: "coco" });
+      const result = importTrainingData(cocoContent, {
+        ...defaultOptions,
+        format: "coco",
+      });
 
       expect(result.error).toBeUndefined();
       expect(result.format).toBe("coco");
       expect(result.elements).toHaveLength(2);
-      expect(result.elements[0].bbox).toEqual({ x: 100, y: 200, width: 50, height: 30 });
+      expect(result.elements[0].bbox).toEqual({
+        x: 100,
+        y: 200,
+        width: 50,
+        height: 30,
+      });
       expect(result.elements[0].elementType).toBe("button");
       expect(result.elements[1].elementType).toBe("input");
     });
@@ -135,7 +144,10 @@ describe("Training Data Import", () => {
         categories: [{ id: 1, name: "submit_button" }],
       });
 
-      const result = importTrainingData(cocoContent, { ...defaultOptions, format: "coco" });
+      const result = importTrainingData(cocoContent, {
+        ...defaultOptions,
+        format: "coco",
+      });
 
       expect(result.elements[0].label).toBe("submit_button");
     });
@@ -158,7 +170,10 @@ describe("Training Data Import", () => {
         categories: [{ id: 1, name: "button" }],
       });
 
-      const result = importTrainingData(cocoContent, { ...defaultOptions, format: "coco" });
+      const result = importTrainingData(cocoContent, {
+        ...defaultOptions,
+        format: "coco",
+      });
 
       expect(result.elements[0].label).toBe("Custom Label");
       expect(result.elements[0].description).toBe("A description");
@@ -173,7 +188,10 @@ describe("Training Data Import", () => {
         categories: [{ id: 1, name: "button" }],
       });
 
-      const result = importTrainingData(cocoContent, { ...defaultOptions, format: "coco" });
+      const result = importTrainingData(cocoContent, {
+        ...defaultOptions,
+        format: "coco",
+      });
 
       expect(result.elements[0].elementType).toBe("unknown");
     });
@@ -181,7 +199,10 @@ describe("Training Data Import", () => {
     it("should return error for invalid JSON", () => {
       const invalidContent = "{ this is not valid json }";
 
-      const result = importTrainingData(invalidContent, { ...defaultOptions, format: "coco" });
+      const result = importTrainingData(invalidContent, {
+        ...defaultOptions,
+        format: "coco",
+      });
 
       expect(result.error).toBeDefined();
       expect(result.elements).toHaveLength(0);
@@ -193,7 +214,10 @@ describe("Training Data Import", () => {
         categories: [{ id: 1, name: "button" }],
       });
 
-      const result = importTrainingData(cocoContent, { ...defaultOptions, format: "coco" });
+      const result = importTrainingData(cocoContent, {
+        ...defaultOptions,
+        format: "coco",
+      });
 
       expect(result.error).toBe("No annotations found in the file.");
       expect(result.elements).toHaveLength(0);
@@ -207,7 +231,10 @@ describe("Training Data Import", () => {
         categories: [{ id: 1, name: "button" }],
       });
 
-      const result = importTrainingData(cocoContent, { ...defaultOptions, format: "coco" });
+      const result = importTrainingData(cocoContent, {
+        ...defaultOptions,
+        format: "coco",
+      });
 
       expect(result.elements[0].confidence).toBe(0.5);
       expect(result.elements[0].isGroundTruth).toBe(true);
@@ -371,7 +398,10 @@ invalid line
 elem1,Submit Button,button,100,200,80,30
 elem2,Search Input,input,300,150,200,40`;
 
-      const result = importTrainingData(csvContent, { ...defaultOptions, format: "csv" });
+      const result = importTrainingData(csvContent, {
+        ...defaultOptions,
+        format: "csv",
+      });
 
       expect(result.error).toBeUndefined();
       expect(result.format).toBe("csv");
@@ -379,7 +409,12 @@ elem2,Search Input,input,300,150,200,40`;
       expect(result.elements[0].id).toBe("elem1");
       expect(result.elements[0].label).toBe("Submit Button");
       expect(result.elements[0].elementType).toBe("button");
-      expect(result.elements[0].bbox).toEqual({ x: 100, y: 200, width: 80, height: 30 });
+      expect(result.elements[0].bbox).toEqual({
+        x: 100,
+        y: 200,
+        width: 80,
+        height: 30,
+      });
     });
 
     it("should handle alternative column names", () => {
@@ -389,7 +424,10 @@ elem2,Search Input,input,300,150,200,40`;
       const csvContent = `id,name,class,left,top,w,h
 elem1,Submit,btn,100,200,80,30`;
 
-      const result = importTrainingData(csvContent, { ...defaultOptions, format: "csv" });
+      const result = importTrainingData(csvContent, {
+        ...defaultOptions,
+        format: "csv",
+      });
 
       expect(result.elements).toHaveLength(1);
       expect(result.elements[0].bbox.x).toBe(100);
@@ -402,7 +440,10 @@ elem1,Submit,btn,100,200,80,30`;
       const csvContent = `id,label,element_type,x,y,width,height,description
 elem1,"Button, Primary",button,100,200,80,30,"Click here, please"`;
 
-      const result = importTrainingData(csvContent, { ...defaultOptions, format: "csv" });
+      const result = importTrainingData(csvContent, {
+        ...defaultOptions,
+        format: "csv",
+      });
 
       expect(result.elements[0].label).toBe("Button, Primary");
       expect(result.elements[0].description).toBe("Click here, please");
@@ -412,7 +453,10 @@ elem1,"Button, Primary",button,100,200,80,30,"Click here, please"`;
       const csvContent = `id,label,element_type,x,y,width,height
 elem1,"Say ""Hello""",button,100,200,80,30`;
 
-      const result = importTrainingData(csvContent, { ...defaultOptions, format: "csv" });
+      const result = importTrainingData(csvContent, {
+        ...defaultOptions,
+        format: "csv",
+      });
 
       expect(result.elements[0].label).toBe('Say "Hello"');
     });
@@ -423,7 +467,10 @@ elem1,Button,button,100,200,80,30,true,false
 elem2,Link,link,100,300,80,30,false,yes
 elem3,Text,text,100,400,80,30,1,0`;
 
-      const result = importTrainingData(csvContent, { ...defaultOptions, format: "csv" });
+      const result = importTrainingData(csvContent, {
+        ...defaultOptions,
+        format: "csv",
+      });
 
       expect(result.elements[0].isGroundTruth).toBe(true);
       expect(result.elements[0].isClickable).toBe(false);
@@ -437,7 +484,10 @@ elem3,Text,text,100,400,80,30,1,0`;
       const csvContent = `id,label,element_type,x,y,width,height,confidence
 elem1,Button,button,100,200,80,30,0.95`;
 
-      const result = importTrainingData(csvContent, { ...defaultOptions, format: "csv" });
+      const result = importTrainingData(csvContent, {
+        ...defaultOptions,
+        format: "csv",
+      });
 
       expect(result.elements[0].confidence).toBe(0.95);
     });
@@ -446,7 +496,10 @@ elem1,Button,button,100,200,80,30,0.95`;
       const csvContent = `x,y,width,height
 100,200,80,30`;
 
-      const result = importTrainingData(csvContent, { ...defaultOptions, format: "csv" });
+      const result = importTrainingData(csvContent, {
+        ...defaultOptions,
+        format: "csv",
+      });
 
       expect(result.elements[0].id).toBeDefined();
       expect(result.elements[0].label).toBe("Imported");
@@ -458,7 +511,10 @@ elem1,Button,button,100,200,80,30,0.95`;
     it("should return error for header-only file", () => {
       const csvContent = `id,label,element_type,x,y,width,height`;
 
-      const result = importTrainingData(csvContent, { ...defaultOptions, format: "csv" });
+      const result = importTrainingData(csvContent, {
+        ...defaultOptions,
+        format: "csv",
+      });
 
       expect(result.error).toBe("No annotations found in the file.");
     });
@@ -470,7 +526,10 @@ elem1,Button,button,100,200,80,30
 elem2,Input,input,100,300,80,30
 `;
 
-      const result = importTrainingData(csvContent, { ...defaultOptions, format: "csv" });
+      const result = importTrainingData(csvContent, {
+        ...defaultOptions,
+        format: "csv",
+      });
 
       expect(result.elements).toHaveLength(2);
     });
@@ -479,7 +538,10 @@ elem2,Input,input,100,300,80,30
       const csvContent = `id,label,element_type,x,y,width,height
 elem1,Button,button,100,200,80,30`;
 
-      const result = importTrainingData(csvContent, { ...defaultOptions, format: "csv" });
+      const result = importTrainingData(csvContent, {
+        ...defaultOptions,
+        format: "csv",
+      });
 
       expect(result.elements[0].detectionTechnique).toBe("imported-csv");
     });
@@ -488,7 +550,10 @@ elem1,Button,button,100,200,80,30`;
       const csvContent = `id,label,element_type,x,y,width,height,detection_technique
 elem1,Button,button,100,200,80,30,custom-detector`;
 
-      const result = importTrainingData(csvContent, { ...defaultOptions, format: "csv" });
+      const result = importTrainingData(csvContent, {
+        ...defaultOptions,
+        format: "csv",
+      });
 
       expect(result.elements[0].detectionTechnique).toBe("custom-detector");
     });
@@ -497,11 +562,16 @@ elem1,Button,button,100,200,80,30,custom-detector`;
   describe("importTrainingData - auto detection", () => {
     it("should auto-detect COCO format", () => {
       const cocoContent = JSON.stringify({
-        annotations: [{ id: 1, image_id: 1, category_id: 1, bbox: [100, 200, 50, 30] }],
+        annotations: [
+          { id: 1, image_id: 1, category_id: 1, bbox: [100, 200, 50, 30] },
+        ],
         categories: [{ id: 1, name: "button" }],
       });
 
-      const result = importTrainingData(cocoContent, { ...defaultOptions, format: "auto" });
+      const result = importTrainingData(cocoContent, {
+        ...defaultOptions,
+        format: "auto",
+      });
 
       expect(result.format).toBe("coco");
       expect(result.elements).toHaveLength(1);
@@ -525,7 +595,10 @@ elem1,Button,button,100,200,80,30,custom-detector`;
       const csvContent = `id,label,x,y,width,height
 elem1,Button,100,200,80,30`;
 
-      const result = importTrainingData(csvContent, { ...defaultOptions, format: "auto" });
+      const result = importTrainingData(csvContent, {
+        ...defaultOptions,
+        format: "auto",
+      });
 
       expect(result.format).toBe("csv");
       expect(result.elements).toHaveLength(1);
@@ -534,9 +607,14 @@ elem1,Button,100,200,80,30`;
     it("should return error for undetectable format", () => {
       const unknownContent = "random text that matches no format";
 
-      const result = importTrainingData(unknownContent, { ...defaultOptions, format: "auto" });
+      const result = importTrainingData(unknownContent, {
+        ...defaultOptions,
+        format: "auto",
+      });
 
-      expect(result.error).toBe("Could not detect file format. Please specify the format manually.");
+      expect(result.error).toBe(
+        "Could not detect file format. Please specify the format manually."
+      );
       expect(result.format).toBe("auto");
     });
   });
@@ -605,7 +683,10 @@ elem1,Button,100,200,80,30`;
         categories: [{ id: 1, name: "button" }],
       });
 
-      const result = importTrainingData(cocoContent, { ...defaultOptions, format: "coco" });
+      const result = importTrainingData(cocoContent, {
+        ...defaultOptions,
+        format: "coco",
+      });
 
       expect(result.elements[0].bbox.width).toBe(99999);
       expect(result.elements[0].bbox.height).toBe(99999);
@@ -630,7 +711,10 @@ elem1,Button,100,200,80,30`;
       const csvContent = `id,label,element_type,x,y,width,height
 elem1,Button,button,100,200,0,0`;
 
-      const result = importTrainingData(csvContent, { ...defaultOptions, format: "csv" });
+      const result = importTrainingData(csvContent, {
+        ...defaultOptions,
+        format: "csv",
+      });
 
       expect(result.elements[0].bbox.width).toBe(0);
       expect(result.elements[0].bbox.height).toBe(0);
@@ -643,7 +727,10 @@ elem1,Button,button,100,200,0,0`;
 Button1,button,100,200,80,30
 Button2,button,100,300,80,30`;
 
-      const result = importTrainingData(csvContent, { ...defaultOptions, format: "csv" });
+      const result = importTrainingData(csvContent, {
+        ...defaultOptions,
+        format: "csv",
+      });
 
       // Each element should get a unique generated ID
       expect(result.elements[0].id).toBeDefined();
@@ -673,7 +760,10 @@ Button2,button,100,300,80,30`;
         extra_section: { ignored: true },
       });
 
-      const result = importTrainingData(cocoContent, { ...defaultOptions, format: "coco" });
+      const result = importTrainingData(cocoContent, {
+        ...defaultOptions,
+        format: "coco",
+      });
 
       expect(result.error).toBeUndefined();
       expect(result.elements).toHaveLength(1);
@@ -683,7 +773,10 @@ Button2,button,100,300,80,30`;
       const csvContent = `id,label,element_type,x,y,width,height,unknown_col1,unknown_col2
 elem1,Button,button,100,200,80,30,ignored1,ignored2`;
 
-      const result = importTrainingData(csvContent, { ...defaultOptions, format: "csv" });
+      const result = importTrainingData(csvContent, {
+        ...defaultOptions,
+        format: "csv",
+      });
 
       expect(result.error).toBeUndefined();
       expect(result.elements).toHaveLength(1);

@@ -101,60 +101,64 @@ export function useUIBridgeRecording() {
   /**
    * Start recording on a specific tab
    */
-  const startRecording = useCallback(async (
-    runnerUrl: string,
-    tabId: number | null,
-    options: RecordingOptions = {}
-  ) => {
-    setIsStarting(true);
-    setSession(prev => ({ ...prev, error: null }));
+  const startRecording = useCallback(
+    async (
+      runnerUrl: string,
+      tabId: number | null,
+      options: RecordingOptions = {}
+    ) => {
+      setIsStarting(true);
+      setSession((prev) => ({ ...prev, error: null }));
 
-    try {
-      const response = await fetch(`${runnerUrl}/extension/command`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "startRecording",
-          params: {
-            tabId,
-            captureMutations: options.captureMutations ?? true,
-          },
-          timeout_secs: 15,
-        }),
-      });
+      try {
+        const response = await fetch(`${runnerUrl}/extension/command`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "startRecording",
+            params: {
+              tabId,
+              captureMutations: options.captureMutations ?? true,
+            },
+            timeout_secs: 15,
+          }),
+        });
 
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.error || "Failed to start recording");
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.error || "Failed to start recording");
+        }
+
+        const result = await response.json();
+        if (!result.success) {
+          throw new Error(result.error || "Failed to start recording");
+        }
+
+        const data = result.data;
+        console.log("[useUIBridgeRecording] Recording started:", data);
+
+        setSession({
+          isRecording: true,
+          tabId: data.tabId,
+          tabUrl: data.initialSnapshot?.url || null,
+          tabTitle: data.initialSnapshot?.title || null,
+          startTime: Date.now(),
+          snapshots: data.initialSnapshot ? [data.initialSnapshot] : [],
+          error: null,
+        });
+
+        return { success: true, tabId: data.tabId };
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to start recording";
+        setSession((prev) => ({ ...prev, error: message }));
+        return { success: false, error: message };
+      } finally {
+        setIsStarting(false);
       }
-
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.error || "Failed to start recording");
-      }
-
-      const data = result.data;
-      console.log("[useUIBridgeRecording] Recording started:", data);
-
-      setSession({
-        isRecording: true,
-        tabId: data.tabId,
-        tabUrl: data.initialSnapshot?.url || null,
-        tabTitle: data.initialSnapshot?.title || null,
-        startTime: Date.now(),
-        snapshots: data.initialSnapshot ? [data.initialSnapshot] : [],
-        error: null,
-      });
-
-      return { success: true, tabId: data.tabId };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to start recording";
-      setSession(prev => ({ ...prev, error: message }));
-      return { success: false, error: message };
-    } finally {
-      setIsStarting(false);
-    }
-  }, []);
+    },
+    []
+  );
 
   /**
    * Stop recording and get all captured snapshots
@@ -184,10 +188,14 @@ export function useUIBridgeRecording() {
       }
 
       const data = result.data;
-      console.log("[useUIBridgeRecording] Recording stopped:", data.snapshotCount, "snapshots");
+      console.log(
+        "[useUIBridgeRecording] Recording stopped:",
+        data.snapshotCount,
+        "snapshots"
+      );
 
       // Update session with final snapshots
-      setSession(prev => ({
+      setSession((prev) => ({
         ...prev,
         isRecording: false,
         snapshots: data.snapshots || prev.snapshots,
@@ -200,8 +208,9 @@ export function useUIBridgeRecording() {
         duration: data.duration,
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to stop recording";
-      setSession(prev => ({ ...prev, error: message, isRecording: false }));
+      const message =
+        error instanceof Error ? error.message : "Failed to stop recording";
+      setSession((prev) => ({ ...prev, error: message, isRecording: false }));
       return { success: false, error: message };
     } finally {
       setIsStopping(false);
@@ -260,7 +269,8 @@ export function useUIBridgeRecording() {
       const result = await response.json();
       return result.data;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to capture";
+      const message =
+        error instanceof Error ? error.message : "Failed to capture";
       return { success: false, error: message };
     }
   }, []);
@@ -268,46 +278,52 @@ export function useUIBridgeRecording() {
   /**
    * Poll for snapshot updates during recording
    */
-  const pollSnapshots = useCallback(async (runnerUrl: string) => {
-    if (!session.isRecording) return;
+  const pollSnapshots = useCallback(
+    async (runnerUrl: string) => {
+      if (!session.isRecording) return;
 
-    try {
-      const response = await fetch(`${runnerUrl}/extension/command`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "getRecordingSnapshots",
-          params: {},
-          timeout_secs: 10,
-        }),
-      });
+      try {
+        const response = await fetch(`${runnerUrl}/extension/command`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "getRecordingSnapshots",
+            params: {},
+            timeout_secs: 10,
+          }),
+        });
 
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success && result.data?.snapshots) {
-          setSession(prev => ({
-            ...prev,
-            snapshots: result.data.snapshots,
-          }));
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success && result.data?.snapshots) {
+            setSession((prev) => ({
+              ...prev,
+              snapshots: result.data.snapshots,
+            }));
+          }
         }
+      } catch {
+        // Ignore polling errors
       }
-    } catch {
-      // Ignore polling errors
-    }
-  }, [session.isRecording]);
+    },
+    [session.isRecording]
+  );
 
   /**
    * Start polling for updates while recording
    */
-  const startPolling = useCallback((runnerUrl: string, intervalMs: number = 2000) => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-    }
+  const startPolling = useCallback(
+    (runnerUrl: string, intervalMs: number = 2000) => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+      }
 
-    pollingRef.current = setInterval(() => {
-      pollSnapshots(runnerUrl);
-    }, intervalMs);
-  }, [pollSnapshots]);
+      pollingRef.current = setInterval(() => {
+        pollSnapshots(runnerUrl);
+      }, intervalMs);
+    },
+    [pollSnapshots]
+  );
 
   /**
    * Stop polling

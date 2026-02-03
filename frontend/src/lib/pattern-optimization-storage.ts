@@ -26,19 +26,29 @@ class PatternOptimizationStorage {
       this.recoveryAttempted = false;
     } catch (error) {
       const errorType = classifyError(error);
-      if (errorType === DBErrorType.STORAGE_CORRUPTED && !this.recoveryAttempted) {
+      if (
+        errorType === DBErrorType.STORAGE_CORRUPTED &&
+        !this.recoveryAttempted
+      ) {
         this.recoveryAttempted = true;
-        console.warn("[PatternOptimizationStorage] Storage corruption detected, attempting recovery...");
+        console.warn(
+          "[PatternOptimizationStorage] Storage corruption detected, attempting recovery..."
+        );
 
         const recovered = await handleStorageCorruption(DB_NAME, "init");
 
         if (recovered) {
           try {
             this.db = await this.openDatabaseInternal();
-            console.log("[PatternOptimizationStorage] Successfully recovered and reconnected");
+            console.log(
+              "[PatternOptimizationStorage] Successfully recovered and reconnected"
+            );
             return;
           } catch (retryError) {
-            console.error("[PatternOptimizationStorage] Failed to reconnect after recovery:", retryError);
+            console.error(
+              "[PatternOptimizationStorage] Failed to reconnect after recovery:",
+              retryError
+            );
             throw retryError;
           }
         }

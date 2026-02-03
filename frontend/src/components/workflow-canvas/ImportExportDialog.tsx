@@ -260,7 +260,7 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
       if (loadResult.success && loadResult.workflow) {
         onImport(loadResult.workflow);
       }
-    } catch (err) {
+    } catch (_err) {
       setResult({
         success: false,
         errors: [{ type: "missing_action", message: "Import failed" }],
@@ -290,7 +290,7 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
       if (loadResult.success && loadResult.workflow) {
         onImport(loadResult.workflow);
       }
-    } catch (err) {
+    } catch (_err) {
       setResult({
         success: false,
         errors: [{ type: "missing_action", message: "URL import failed" }],
@@ -318,7 +318,7 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
       if (loadResult.success && loadResult.workflow) {
         onImport(loadResult.workflow);
       }
-    } catch (err) {
+    } catch (_err) {
       setResult({
         success: false,
         errors: [
@@ -507,7 +507,10 @@ export function TemplateDialog({
           />
 
           {/* Category Filter */}
-          <div className="flex space-x-2 overflow-x-auto" data-ui-id="canvas-template-category-list">
+          <div
+            className="flex space-x-2 overflow-x-auto"
+            data-ui-id="canvas-template-category-list"
+          >
             {categories.map((category) => (
               <button
                 key={category}
@@ -523,7 +526,10 @@ export function TemplateDialog({
 
         {/* Template Grid */}
         <div className="flex-1 overflow-y-auto p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-ui-id="canvas-template-grid-list">
+          <div
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+            data-ui-id="canvas-template-grid-list"
+          >
             {templates.map((template) => (
               <div
                 key={template.id}

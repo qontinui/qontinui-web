@@ -87,8 +87,9 @@ function migrateLegacyConfig(): UnifiedExtractionConfig | null {
  * Config is stored in localStorage and persists until logout.
  */
 export function useUnifiedExtractionConfig() {
-  const [config, setConfigState] =
-    useState<UnifiedExtractionConfig>(DEFAULT_UNIFIED_CONFIG);
+  const [config, setConfigState] = useState<UnifiedExtractionConfig>(
+    DEFAULT_UNIFIED_CONFIG
+  );
   const [isLoaded, setIsLoaded] = useState(false);
 
   // Load config from localStorage on mount
@@ -164,10 +165,17 @@ export function useUnifiedExtractionConfig() {
   );
 
   const setWebConfig = useCallback(
-    (webConfig: WebExtractionConfig | ((prev: WebExtractionConfig) => WebExtractionConfig)) => {
+    (
+      webConfig:
+        | WebExtractionConfig
+        | ((prev: WebExtractionConfig) => WebExtractionConfig)
+    ) => {
       setConfig((prev) => ({
         ...prev,
-        webConfig: typeof webConfig === "function" ? webConfig(prev.webConfig) : webConfig,
+        webConfig:
+          typeof webConfig === "function"
+            ? webConfig(prev.webConfig)
+            : webConfig,
       }));
     },
     [setConfig]

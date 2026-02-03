@@ -79,7 +79,11 @@ export function buildTransitionsFromSteps(
 
     // Skip steps without state_changed flag (unless they have different hashes)
     // This allows us to catch transitions even if state_changed wasn't set
-    if (!step.state_changed && !step.action_result?.new_elements?.length && !step.action_result?.removed_elements?.length) {
+    if (
+      !step.state_changed &&
+      !step.action_result?.new_elements?.length &&
+      !step.action_result?.removed_elements?.length
+    ) {
       continue;
     }
 
@@ -263,9 +267,7 @@ export function getUniqueStates(
 /**
  * Calculate confidence distribution for transitions.
  */
-export function getConfidenceDistribution(
-  transitions: SuggestedTransition[]
-): {
+export function getConfidenceDistribution(transitions: SuggestedTransition[]): {
   high: number;
   medium: number;
   low: number;

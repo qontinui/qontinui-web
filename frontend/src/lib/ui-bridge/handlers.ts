@@ -15,7 +15,11 @@
  * 2. HTTP Polling - Fallback when WebSocket is unavailable
  */
 
-import type { UIBridgeServerHandlers, RenderLogQuery, APIResponse } from "ui-bridge-server";
+import type {
+  UIBridgeServerHandlers,
+  RenderLogQuery,
+  APIResponse,
+} from "ui-bridge-server";
 import type {
   ControlActionRequest,
   ControlActionResponse,
@@ -274,23 +278,30 @@ function generateCommandId(): string {
  * Prefers WebSocket delivery when a client is connected, falls back to HTTP polling.
  * Returns a promise that resolves when the browser sends back the response.
  */
-export function queueCommand<T>(
-  action: string,
-  payload: unknown
-): Promise<T> {
+export function queueCommand<T>(action: string, payload: unknown): Promise<T> {
   const commandId = generateCommandId();
 
   return new Promise((resolve, reject) => {
     // Try WebSocket delivery first
-    const sentViaWebSocket = sendCommandViaWebSocket(commandId, action, payload);
+    const sentViaWebSocket = sendCommandViaWebSocket(
+      commandId,
+      action,
+      payload
+    );
 
     // Set timeout based on transport method
-    const timeoutMs = sentViaWebSocket ? WEBSOCKET_COMMAND_TIMEOUT_MS : HTTP_COMMAND_TIMEOUT_MS;
+    const timeoutMs = sentViaWebSocket
+      ? WEBSOCKET_COMMAND_TIMEOUT_MS
+      : HTTP_COMMAND_TIMEOUT_MS;
     const transport = sentViaWebSocket ? "WebSocket" : "HTTP";
 
     const timeout = setTimeout(() => {
       pendingCommands.delete(commandId);
-      reject(new Error(`Command ${action} timed out after ${timeoutMs}ms (${transport})`));
+      reject(
+        new Error(
+          `Command ${action} timed out after ${timeoutMs}ms (${transport})`
+        )
+      );
     }, timeoutMs);
 
     // Store the pending command
@@ -343,7 +354,10 @@ export function resolveCommand(commandId: string, result: unknown): boolean {
 /**
  * Reject a pending command with an error
  */
-export function rejectCommand(commandId: string, errorMessage: string): boolean {
+export function rejectCommand(
+  commandId: string,
+  errorMessage: string
+): boolean {
   const pending = pendingCommands.get(commandId);
   if (!pending) {
     return false;
@@ -422,7 +436,9 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
   // Render Log Endpoints
   // --------------------------------------------------------------------------
 
-  async getRenderLog(query?: RenderLogQuery): Promise<APIResponse<RenderLogEntry[]>> {
+  async getRenderLog(
+    query?: RenderLogQuery
+  ): Promise<APIResponse<RenderLogEntry[]>> {
     let results = [...renderLogEntries];
 
     if (query?.type) {
@@ -467,7 +483,9 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
     return success(latestControlSnapshot.elements);
   },
 
-  async getElement(id: string): Promise<APIResponse<ControlSnapshot["elements"][0]>> {
+  async getElement(
+    id: string
+  ): Promise<APIResponse<ControlSnapshot["elements"][0]>> {
     const element = latestControlSnapshot.elements.find((e) => e.id === id);
     if (!element) {
       return error(`Element ${id} not found`, "NOT_FOUND");
@@ -489,10 +507,13 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
     request: ControlActionRequest
   ): Promise<APIResponse<ControlActionResponse>> {
     try {
-      const result = await queueCommand<ControlActionResponse>("executeElementAction", {
-        id,
-        request,
-      });
+      const result = await queueCommand<ControlActionResponse>(
+        "executeElementAction",
+        {
+          id,
+          request,
+        }
+      );
       return success(result);
     } catch (e) {
       return error((e as Error).message, "COMMAND_FAILED");
@@ -507,7 +528,9 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
     return success(latestControlSnapshot.components);
   },
 
-  async getComponent(id: string): Promise<APIResponse<ControlSnapshot["components"][0]>> {
+  async getComponent(
+    id: string
+  ): Promise<APIResponse<ControlSnapshot["components"][0]>> {
     const component = latestControlSnapshot.components.find((c) => c.id === id);
     if (!component) {
       return error(`Component ${id} not found`, "NOT_FOUND");
@@ -520,10 +543,13 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
     request: ComponentActionRequest
   ): Promise<APIResponse<ComponentActionResponse>> {
     try {
-      const result = await queueCommand<ComponentActionResponse>("executeComponentAction", {
-        id,
-        request,
-      });
+      const result = await queueCommand<ComponentActionResponse>(
+        "executeComponentAction",
+        {
+          id,
+          request,
+        }
+      );
       return success(result);
     } catch (e) {
       return error((e as Error).message, "COMMAND_FAILED");
@@ -543,10 +569,15 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
     }
   },
 
-  async discover(request?: DiscoveryRequest): Promise<APIResponse<DiscoveryResponse>> {
+  async discover(
+    request?: DiscoveryRequest
+  ): Promise<APIResponse<DiscoveryResponse>> {
     // Deprecated - use find
     try {
-      const result = await queueCommand<DiscoveryResponse>("discover", request || {});
+      const result = await queueCommand<DiscoveryResponse>(
+        "discover",
+        request || {}
+      );
       return success(result);
     } catch (e) {
       return error((e as Error).message, "COMMAND_FAILED");
@@ -556,10 +587,13 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
   async getControlSnapshot(): Promise<APIResponse<ControlSnapshot>> {
     // Request fresh snapshot from browser
     try {
-      const result = await queueCommand<ControlSnapshot>("getControlSnapshot", {});
+      const result = await queueCommand<ControlSnapshot>(
+        "getControlSnapshot",
+        {}
+      );
       updateControlSnapshot(result);
       return success(result);
-    } catch (e) {
+    } catch (_e) {
       // Fall back to cached snapshot
       return success(latestControlSnapshot);
     }
@@ -588,9 +622,14 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
     }
   },
 
-  async getWorkflowStatus(runId: string): Promise<APIResponse<WorkflowRunResponse>> {
+  async getWorkflowStatus(
+    runId: string
+  ): Promise<APIResponse<WorkflowRunResponse>> {
     try {
-      const result = await queueCommand<WorkflowRunResponse>("getWorkflowStatus", { runId });
+      const result = await queueCommand<WorkflowRunResponse>(
+        "getWorkflowStatus",
+        { runId }
+      );
       return success(result);
     } catch (e) {
       return error((e as Error).message, "COMMAND_FAILED");
@@ -603,9 +642,11 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
 
   async getActionHistory(_limit?: number): Promise<APIResponse<unknown[]>> {
     try {
-      const result = await queueCommand<unknown[]>("getActionHistory", { limit: _limit });
+      const result = await queueCommand<unknown[]>("getActionHistory", {
+        limit: _limit,
+      });
       return success(result);
-    } catch (e) {
+    } catch (_e) {
       return success([]); // Fall back to empty
     }
   },
@@ -642,7 +683,9 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
   // AI-Native Endpoints
   // --------------------------------------------------------------------------
 
-  async aiSearch(criteria: SearchCriteria): Promise<APIResponse<SearchResponse>> {
+  async aiSearch(
+    criteria: SearchCriteria
+  ): Promise<APIResponse<SearchResponse>> {
     try {
       const result = await queueCommand<SearchResponse>("aiSearch", criteria);
       return success(result);
@@ -651,7 +694,9 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
     }
   },
 
-  async aiExecute(request: NLActionRequest): Promise<APIResponse<NLActionResponse>> {
+  async aiExecute(
+    request: NLActionRequest
+  ): Promise<APIResponse<NLActionResponse>> {
     try {
       const result = await queueCommand<NLActionResponse>("aiExecute", request);
       return success(result);
@@ -660,7 +705,9 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
     }
   },
 
-  async aiAssert(request: AssertionRequest): Promise<APIResponse<AssertionResult>> {
+  async aiAssert(
+    request: AssertionRequest
+  ): Promise<APIResponse<AssertionResult>> {
     try {
       const result = await queueCommand<AssertionResult>("aiAssert", request);
       return success(result);
@@ -673,7 +720,10 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
     request: BatchAssertionRequest
   ): Promise<APIResponse<BatchAssertionResult>> {
     try {
-      const result = await queueCommand<BatchAssertionResult>("aiAssertBatch", request);
+      const result = await queueCommand<BatchAssertionResult>(
+        "aiAssertBatch",
+        request
+      );
       return success(result);
     } catch (e) {
       return error((e as Error).message, "COMMAND_FAILED");
@@ -682,7 +732,10 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
 
   async getSemanticSnapshot(): Promise<APIResponse<SemanticSnapshot>> {
     try {
-      const result = await queueCommand<SemanticSnapshot>("getSemanticSnapshot", {});
+      const result = await queueCommand<SemanticSnapshot>(
+        "getSemanticSnapshot",
+        {}
+      );
       updateSemanticSnapshot(result);
       return success(result);
     } catch (e) {
@@ -694,9 +747,14 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
     }
   },
 
-  async getSemanticDiff(since?: number): Promise<APIResponse<SemanticDiff | null>> {
+  async getSemanticDiff(
+    since?: number
+  ): Promise<APIResponse<SemanticDiff | null>> {
     try {
-      const result = await queueCommand<SemanticDiff | null>("getSemanticDiff", { since });
+      const result = await queueCommand<SemanticDiff | null>(
+        "getSemanticDiff",
+        { since }
+      );
       return success(result);
     } catch (e) {
       return error((e as Error).message, "COMMAND_FAILED");
@@ -716,9 +774,19 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
   // Component State Endpoint
   // --------------------------------------------------------------------------
 
-  async getComponentState(id: string): Promise<APIResponse<{ state: Record<string, unknown>; computed: Record<string, unknown>; timestamp: number }>> {
+  async getComponentState(id: string): Promise<
+    APIResponse<{
+      state: Record<string, unknown>;
+      computed: Record<string, unknown>;
+      timestamp: number;
+    }>
+  > {
     try {
-      const result = await queueCommand<{ state: Record<string, unknown>; computed: Record<string, unknown>; timestamp: number }>("getComponentState", { id });
+      const result = await queueCommand<{
+        state: Record<string, unknown>;
+        computed: Record<string, unknown>;
+        timestamp: number;
+      }>("getComponentState", { id });
       return success(result);
     } catch (e) {
       return error((e as Error).message, "COMMAND_FAILED");
@@ -729,9 +797,32 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
   // Semantic Search Endpoint
   // --------------------------------------------------------------------------
 
-  async aiSemanticSearch(criteria: { query: string; threshold?: number; limit?: number; type?: string; role?: string; combineWithText?: boolean }): Promise<APIResponse<{ results: SemanticSearchResult[]; bestMatch: SemanticSearchResult | null; scannedCount: number; durationMs: number; query: string; timestamp: number }>> {
+  async aiSemanticSearch(criteria: {
+    query: string;
+    threshold?: number;
+    limit?: number;
+    type?: string;
+    role?: string;
+    combineWithText?: boolean;
+  }): Promise<
+    APIResponse<{
+      results: SemanticSearchResult[];
+      bestMatch: SemanticSearchResult | null;
+      scannedCount: number;
+      durationMs: number;
+      query: string;
+      timestamp: number;
+    }>
+  > {
     try {
-      const result = await queueCommand<{ results: SemanticSearchResult[]; bestMatch: SemanticSearchResult | null; scannedCount: number; durationMs: number; query: string; timestamp: number }>("aiSemanticSearch", criteria);
+      const result = await queueCommand<{
+        results: SemanticSearchResult[];
+        bestMatch: SemanticSearchResult | null;
+        scannedCount: number;
+        durationMs: number;
+        query: string;
+        timestamp: number;
+      }>("aiSemanticSearch", criteria);
       return success(result);
     } catch (e) {
       return error((e as Error).message, "COMMAND_FAILED");

@@ -57,7 +57,8 @@
 
 /* Target glow animation (2s duration) */
 @keyframes tutorial-target-glow {
-  0%, 100% {
+  0%,
+  100% {
     box-shadow: 0 0 0 4px hsl(var(--primary) / 0.5);
   }
   50% {
@@ -67,7 +68,8 @@
 
 /* Pulse animation (1.5s duration) */
 @keyframes tutorial-pulse {
-  0%, 100% {
+  0%,
+  100% {
     transform: scale(1);
     opacity: 1;
   }
@@ -79,7 +81,8 @@
 
 /* Spotlight pulse animation (2s duration) */
 @keyframes tutorial-spotlight-pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 0.6;
     transform: scale(1);
   }
@@ -203,7 +206,8 @@
    ============================================================================ */
 
 @keyframes tutorial-waiting-pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 0.6;
   }
   50% {
@@ -212,13 +216,15 @@
 }
 
 @keyframes tutorial-waiting-dot {
-  0%, 20% {
+  0%,
+  20% {
     opacity: 0.3;
   }
   50% {
     opacity: 1;
   }
-  80%, 100% {
+  80%,
+  100% {
     opacity: 0.3;
   }
 }
@@ -251,13 +257,17 @@
 .tutorial-step-active {
   opacity: 1;
   transform: translateY(0);
-  transition: opacity 200ms ease-out, transform 200ms ease-out;
+  transition:
+    opacity 200ms ease-out,
+    transform 200ms ease-out;
 }
 
 .tutorial-step-exit {
   opacity: 0;
   transform: translateY(-8px);
-  transition: opacity 150ms ease-in, transform 150ms ease-in;
+  transition:
+    opacity 150ms ease-in,
+    transform 150ms ease-in;
 }
 
 /* ============================================================================
@@ -280,7 +290,9 @@
 }
 
 .tutorial-tooltip-positioned {
-  transition: left 200ms ease-out, top 200ms ease-out;
+  transition:
+    left 200ms ease-out,
+    top 200ms ease-out;
 }
 
 /* ============================================================================
@@ -368,8 +380,7 @@
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius, 8px);
-  box-shadow:
-    0 25px 50px -12px rgb(0 0 0 / 0.4);
+  box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.4);
 }
 
 /* ============================================================================
@@ -470,7 +481,9 @@
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius, 8px);
   padding: 16px;
-  transition: border-color 200ms ease, box-shadow 200ms ease;
+  transition:
+    border-color 200ms ease,
+    box-shadow 200ms ease;
 }
 
 .tutorial-card:hover {
@@ -525,7 +538,8 @@
   background: hsl(var(--muted));
   border: 1px solid hsl(var(--border));
   border-radius: 4px;
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-family:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   font-size: 0.75rem;
   color: hsl(var(--muted-foreground));
 }

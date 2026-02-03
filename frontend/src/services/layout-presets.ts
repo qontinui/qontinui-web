@@ -540,7 +540,7 @@ export function importCustomPresets(json: string): {
         });
 
         success++;
-      } catch (error) {
+      } catch (_error) {
         failed++;
       }
     }

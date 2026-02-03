@@ -26,7 +26,13 @@ export interface ActionConfig {
 /**
  * Action types supported by the automation framework
  */
-export type ActionType = "FIND" | "CLICK" | "TYPE" | "DRAG" | "SCROLL" | "VANISH";
+export type ActionType =
+  | "FIND"
+  | "CLICK"
+  | "TYPE"
+  | "DRAG"
+  | "SCROLL"
+  | "VANISH";
 
 /**
  * ActionSnapshot represents a single recorded action during automation.

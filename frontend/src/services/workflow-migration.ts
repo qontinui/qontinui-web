@@ -483,7 +483,7 @@ export function listBackups(): Array<{
           timestamp: backup.timestamp,
           version: backup.version,
         });
-      } catch (e) {
+      } catch (_e) {
         // Skip invalid backups
       }
     }

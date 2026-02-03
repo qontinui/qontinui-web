@@ -292,7 +292,7 @@ describe("validateConnection", () => {
       } as CanvasEdge,
     ];
 
-    const result = validateConnection(attempt, nodes, newEdges);
+    const _result = validateConnection(attempt, nodes, newEdges);
     // Note: This specific case may pass validation since we&apos;re checking the attempt
     // The actual cycle detection happens when both edges exist
   });

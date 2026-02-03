@@ -225,7 +225,10 @@ export function FormatSwitcherDialog({
 
   return (
     <div className="format-switcher-overlay">
-      <div className="format-switcher-dialog" data-ui-id="dialog-format-switcher">
+      <div
+        className="format-switcher-dialog"
+        data-ui-id="dialog-format-switcher"
+      >
         {/* Header */}
         <div className="format-switcher-header">
           <h2>Switch Workflow Format</h2>

@@ -141,7 +141,12 @@ export function TutorialDialog() {
         <DialogFooter className="border-t pt-4 flex justify-between gap-2">
           {/* Left buttons */}
           <div className="flex gap-2">
-            <Button variant="outline" onClick={closeTutorial} className="gap-2" data-ui-id="dialog-tutorial-skip-btn">
+            <Button
+              variant="outline"
+              onClick={closeTutorial}
+              className="gap-2"
+              data-ui-id="dialog-tutorial-skip-btn"
+            >
               Skip Tutorial
             </Button>
           </div>

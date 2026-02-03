@@ -890,7 +890,8 @@ export function StatePropertiesPanel({
                                                           updatedPatterns[pIdx];
                                                         if (pattern) {
                                                           const {
-                                                            similarity,
+                                                            similarity:
+                                                              _similarity,
                                                             ...rest
                                                           } = pattern;
                                                           updatedPatterns[
@@ -1274,7 +1275,10 @@ export function StatePropertiesPanel({
                                       </Label>
                                       <Input
                                         placeholder="@e1"
-                                        value={stateImage.accessibilitySelector?.ref || ""}
+                                        value={
+                                          stateImage.accessibilitySelector
+                                            ?.ref || ""
+                                        }
                                         onChange={(e) =>
                                           updateStateImage(index, {
                                             accessibilitySelector: {
@@ -1293,9 +1297,15 @@ export function StatePropertiesPanel({
                                       <Input
                                         placeholder="button"
                                         value={
-                                          Array.isArray(stateImage.accessibilitySelector?.role)
-                                            ? stateImage.accessibilitySelector.role.join(", ")
-                                            : stateImage.accessibilitySelector?.role || ""
+                                          Array.isArray(
+                                            stateImage.accessibilitySelector
+                                              ?.role
+                                          )
+                                            ? stateImage.accessibilitySelector.role.join(
+                                                ", "
+                                              )
+                                            : stateImage.accessibilitySelector
+                                                ?.role || ""
                                         }
                                         onChange={(e) =>
                                           updateStateImage(index, {
@@ -1314,7 +1324,10 @@ export function StatePropertiesPanel({
                                       </Label>
                                       <Input
                                         placeholder="Submit"
-                                        value={stateImage.accessibilitySelector?.name || ""}
+                                        value={
+                                          stateImage.accessibilitySelector
+                                            ?.name || ""
+                                        }
                                         onChange={(e) =>
                                           updateStateImage(index, {
                                             accessibilitySelector: {
@@ -1332,12 +1345,16 @@ export function StatePropertiesPanel({
                                       </Label>
                                       <Input
                                         placeholder="Log"
-                                        value={stateImage.accessibilitySelector?.nameContains || ""}
+                                        value={
+                                          stateImage.accessibilitySelector
+                                            ?.nameContains || ""
+                                        }
                                         onChange={(e) =>
                                           updateStateImage(index, {
                                             accessibilitySelector: {
                                               ...stateImage.accessibilitySelector,
-                                              nameContains: e.target.value || undefined,
+                                              nameContains:
+                                                e.target.value || undefined,
                                             },
                                           })
                                         }
@@ -1350,12 +1367,16 @@ export function StatePropertiesPanel({
                                       </Label>
                                       <Input
                                         placeholder="submit-button"
-                                        value={stateImage.accessibilitySelector?.automationId || ""}
+                                        value={
+                                          stateImage.accessibilitySelector
+                                            ?.automationId || ""
+                                        }
                                         onChange={(e) =>
                                           updateStateImage(index, {
                                             accessibilitySelector: {
                                               ...stateImage.accessibilitySelector,
-                                              automationId: e.target.value || undefined,
+                                              automationId:
+                                                e.target.value || undefined,
                                             },
                                           })
                                         }
@@ -1386,8 +1407,10 @@ export function StatePropertiesPanel({
                                           size="sm"
                                           className="h-5 w-5 p-0 text-text-muted hover:text-red-400"
                                           onClick={() => {
-                                            const { probability, ...rest } =
-                                              stateImage;
+                                            const {
+                                              probability: _probability,
+                                              ...rest
+                                            } = stateImage;
                                             updateStateImage(
                                               index,
                                               rest as Omit<
@@ -1518,7 +1541,7 @@ export function StatePropertiesPanel({
                                                   updatedPatterns[pIdx];
                                                 if (pattern) {
                                                   const {
-                                                    similarity,
+                                                    similarity: _similarity,
                                                     ...rest
                                                   } = pattern;
                                                   updatedPatterns[pIdx] =
@@ -2098,7 +2121,8 @@ export function StatePropertiesPanel({
                 Accessibility Selectors
               </Label>
               <Badge className="bg-purple-500/20 text-purple-500 text-xs px-2 border border-purple-500/30">
-                {state.stateImages?.filter(img => img.accessibilitySelector).length || 0}
+                {state.stateImages?.filter((img) => img.accessibilitySelector)
+                  .length || 0}
               </Badge>
             </div>
 
@@ -2106,35 +2130,48 @@ export function StatePropertiesPanel({
               <div className="p-3 bg-surface-raised/50 border border-purple-500/30 rounded-lg space-y-3">
                 <div className="flex items-center gap-2">
                   <Accessibility className="w-4 h-4 text-purple-500" />
-                  <span className="text-sm font-medium">AI-Optimized Element Selection</span>
+                  <span className="text-sm font-medium">
+                    AI-Optimized Element Selection
+                  </span>
                 </div>
                 <p className="text-xs text-text-muted">
-                  Use accessibility selectors for ref-based element targeting (@e1, @e2, etc.).
-                  Configure selectors per StateImage in the Images tab, or capture the accessibility
-                  tree from a connected browser.
+                  Use accessibility selectors for ref-based element targeting
+                  (@e1, @e2, etc.). Configure selectors per StateImage in the
+                  Images tab, or capture the accessibility tree from a connected
+                  browser.
                 </p>
                 <div className="grid grid-cols-2 gap-2 pt-2">
                   <div className="p-2 bg-surface-canvas/50 rounded border border-border-subtle">
-                    <div className="text-xs font-medium text-purple-400">Total StateImages</div>
-                    <div className="text-lg font-semibold">{state.stateImages?.length || 0}</div>
+                    <div className="text-xs font-medium text-purple-400">
+                      Total StateImages
+                    </div>
+                    <div className="text-lg font-semibold">
+                      {state.stateImages?.length || 0}
+                    </div>
                   </div>
                   <div className="p-2 bg-surface-canvas/50 rounded border border-border-subtle">
-                    <div className="text-xs font-medium text-purple-400">With Accessibility</div>
+                    <div className="text-xs font-medium text-purple-400">
+                      With Accessibility
+                    </div>
                     <div className="text-lg font-semibold">
-                      {state.stateImages?.filter(img => img.searchMode === "accessibility").length || 0}
+                      {state.stateImages?.filter(
+                        (img) => img.searchMode === "accessibility"
+                      ).length || 0}
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* List StateImages with accessibility search mode */}
-              {state.stateImages?.filter(img => img.searchMode === "accessibility").length > 0 && (
+              {state.stateImages?.filter(
+                (img) => img.searchMode === "accessibility"
+              ).length > 0 && (
                 <div className="space-y-2">
                   <Label className="text-xs text-text-secondary">
                     StateImages using Accessibility Mode
                   </Label>
                   {state.stateImages
-                    .filter(img => img.searchMode === "accessibility")
+                    .filter((img) => img.searchMode === "accessibility")
                     .map((img) => (
                       <div
                         key={img.id}
@@ -2145,7 +2182,10 @@ export function StatePropertiesPanel({
                           <span className="text-sm">{img.name}</span>
                         </div>
                         {img.accessibilitySelector?.ref && (
-                          <Badge variant="outline" className="text-xs font-mono">
+                          <Badge
+                            variant="outline"
+                            className="text-xs font-mono"
+                          >
                             {img.accessibilitySelector.ref}
                           </Badge>
                         )}
@@ -2162,14 +2202,17 @@ export function StatePropertiesPanel({
               )}
 
               {/* Instructions for no accessibility configured */}
-              {state.stateImages?.filter(img => img.searchMode === "accessibility").length === 0 && (
+              {state.stateImages?.filter(
+                (img) => img.searchMode === "accessibility"
+              ).length === 0 && (
                 <div className="p-4 border border-dashed border-purple-500/30 rounded-lg text-center">
                   <Accessibility className="w-8 h-8 text-purple-500/50 mx-auto mb-2" />
                   <p className="text-sm text-text-muted">
                     No StateImages configured for accessibility mode.
                   </p>
                   <p className="text-xs text-text-muted mt-1">
-                    Set &quot;Search Mode&quot; to &quot;Accessibility&quot; on a StateImage in the Images tab.
+                    Set &quot;Search Mode&quot; to &quot;Accessibility&quot; on
+                    a StateImage in the Images tab.
                   </p>
                 </div>
               )}

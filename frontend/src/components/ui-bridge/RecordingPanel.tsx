@@ -8,7 +8,13 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -39,7 +45,10 @@ import {
   Layers,
 } from "lucide-react";
 import type { BrowserTab } from "@/hooks/useUIBridgeExploration";
-import type { RecordingSnapshot, RecordingSession } from "@/hooks/useUIBridgeRecording";
+import type {
+  RecordingSnapshot,
+  RecordingSession,
+} from "@/hooks/useUIBridgeRecording";
 
 interface RecordingPanelProps {
   /** Recording session state */
@@ -49,7 +58,10 @@ interface RecordingPanelProps {
   /** Whether recording is stopping */
   isStopping: boolean;
   /** Start recording handler */
-  onStartRecording: (tabId: number | null, options: { captureMutations: boolean }) => void;
+  onStartRecording: (
+    tabId: number | null,
+    options: { captureMutations: boolean }
+  ) => void;
   /** Stop recording handler */
   onStopRecording: () => void;
   /** Capture now handler */
@@ -155,17 +167,23 @@ export function RecordingPanel({
   }, [onStartRecording, selectedTabId, captureMutations]);
 
   // Group snapshots by URL
-  const snapshotsByUrl = session.snapshots.reduce((acc, snapshot) => {
-    const url = snapshot.url;
-    if (!acc[url]) {
-      acc[url] = [];
-    }
-    acc[url].push(snapshot);
-    return acc;
-  }, {} as Record<string, RecordingSnapshot[]>);
+  const snapshotsByUrl = session.snapshots.reduce(
+    (acc, snapshot) => {
+      const url = snapshot.url;
+      if (!acc[url]) {
+        acc[url] = [];
+      }
+      acc[url].push(snapshot);
+      return acc;
+    },
+    {} as Record<string, RecordingSnapshot[]>
+  );
 
   const uniqueUrls = Object.keys(snapshotsByUrl).length;
-  const totalElements = session.snapshots.reduce((sum, s) => sum + s.elementCount, 0);
+  const totalElements = session.snapshots.reduce(
+    (sum, s) => sum + s.elementCount,
+    0
+  );
   const uniqueElementIds = new Set(
     session.snapshots.flatMap((s) => s.elements.map((e) => e.id))
   ).size;
@@ -205,12 +223,16 @@ export function RecordingPanel({
                   disabled={browserTabsLoading}
                   className="h-6 px-2"
                 >
-                  <RefreshCw className={`w-3 h-3 ${browserTabsLoading ? "animate-spin" : ""}`} />
+                  <RefreshCw
+                    className={`w-3 h-3 ${browserTabsLoading ? "animate-spin" : ""}`}
+                  />
                 </Button>
               </div>
               <Select
                 value={selectedTabId?.toString() || "active"}
-                onValueChange={(value) => onSelectTab(value === "active" ? null : parseInt(value, 10))}
+                onValueChange={(value) =>
+                  onSelectTab(value === "active" ? null : parseInt(value, 10))
+                }
               >
                 <SelectTrigger className="bg-surface-canvas border-brand-primary/20">
                   <SelectValue placeholder="Select tab to record" />
@@ -226,13 +248,22 @@ export function RecordingPanel({
                     <SelectItem key={tab.id} value={tab.id.toString()}>
                       <div className="flex items-center gap-2 max-w-[350px]">
                         {tab.favIconUrl ? (
-                          <img src={tab.favIconUrl} alt="" className="w-4 h-4" />
+                          <img
+                            src={tab.favIconUrl}
+                            alt=""
+                            className="w-4 h-4"
+                          />
                         ) : (
                           <Globe className="w-4 h-4 text-text-muted" />
                         )}
                         <span className="truncate">{tab.title || tab.url}</span>
                         {tab.active && (
-                          <Badge variant="outline" className="text-[9px] py-0 px-1">Active</Badge>
+                          <Badge
+                            variant="outline"
+                            className="text-[9px] py-0 px-1"
+                          >
+                            Active
+                          </Badge>
                         )}
                       </div>
                     </SelectItem>
@@ -245,7 +276,10 @@ export function RecordingPanel({
           {/* Recording Options (when not recording) */}
           {!session.isRecording && (
             <div className="flex items-center justify-between">
-              <Label className="text-xs text-text-muted" htmlFor="capture-mutations">
+              <Label
+                className="text-xs text-text-muted"
+                htmlFor="capture-mutations"
+              >
                 Capture DOM changes
               </Label>
               <Switch
@@ -282,9 +316,14 @@ export function RecordingPanel({
 
           {/* Error Display */}
           {session.error && (
-            <Alert variant="destructive" className="border-red-500/30 bg-red-500/10">
+            <Alert
+              variant="destructive"
+              className="border-red-500/30 bg-red-500/10"
+            >
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription className="text-xs">{session.error}</AlertDescription>
+              <AlertDescription className="text-xs">
+                {session.error}
+              </AlertDescription>
             </Alert>
           )}
 
@@ -377,7 +416,9 @@ export function RecordingPanel({
                         <Badge variant="outline" className="text-[9px] py-0">
                           {getTriggerLabel(snapshot.trigger)}
                         </Badge>
-                        <span className="text-text-muted">{snapshot.elementCount} elements</span>
+                        <span className="text-text-muted">
+                          {snapshot.elementCount} elements
+                        </span>
                       </div>
                       {snapshot.triggerElement?.textContent && (
                         <div className="text-text-muted truncate text-[10px]">
@@ -429,11 +470,15 @@ export function RecordingPanel({
       {!session.isRecording && session.snapshots.length === 0 && (
         <Alert className="border-brand-primary/30 bg-brand-primary/5">
           <AlertDescription className="text-xs space-y-2">
-            <p><strong>How to use manual recording:</strong></p>
+            <p>
+              <strong>How to use manual recording:</strong>
+            </p>
             <ol className="list-decimal list-inside space-y-1 text-text-muted">
               <li>Select the browser tab you want to record</li>
               <li>Click &quot;Start Recording&quot;</li>
-              <li>Navigate through the app (click buttons, fill forms, etc.)</li>
+              <li>
+                Navigate through the app (click buttons, fill forms, etc.)
+              </li>
               <li>Click &quot;Stop&quot; when done</li>
               <li>Run state discovery on the captured snapshots</li>
             </ol>

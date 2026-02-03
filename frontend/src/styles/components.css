@@ -185,7 +185,7 @@
   }
 
   /* Ensure ScrollArea fills the panel content area using absolute positioning */
-  .explorer-panel-content>[data-slot="scroll-area"] {
+  .explorer-panel-content > [data-slot="scroll-area"] {
     position: absolute !important;
     inset: 0 !important;
   }
@@ -200,7 +200,7 @@
 
   /* Custom scroll container support (for panels that need custom event handlers) */
   /* Matches ScrollArea pattern: absolute positioning only, flex from JSX classes */
-  .explorer-panel-content>[data-slot="custom-scroll-root"] {
+  .explorer-panel-content > [data-slot="custom-scroll-root"] {
     position: absolute !important;
     inset: 0 !important;
   }
@@ -741,9 +741,11 @@
    * ============================================ */
 
   .grid-dots {
-    background-image: radial-gradient(circle,
-        rgba(255, 255, 255, 0.1) 1px,
-        transparent 1px);
+    background-image: radial-gradient(
+      circle,
+      rgba(255, 255, 255, 0.1) 1px,
+      transparent 1px
+    );
     background-size: 20px 20px;
   }
 
@@ -864,10 +866,12 @@
   }
 
   .gradient-text {
-    background: linear-gradient(to right,
-        var(--brand-primary),
-        var(--brand-secondary),
-        var(--brand-success));
+    background: linear-gradient(
+      to right,
+      var(--brand-primary),
+      var(--brand-secondary),
+      var(--brand-success)
+    );
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;

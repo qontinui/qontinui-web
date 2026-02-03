@@ -240,7 +240,10 @@ export function ShareProjectDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col" data-ui-id="dialog-share-project">
+      <DialogContent
+        className="max-w-2xl max-h-[85vh] flex flex-col"
+        data-ui-id="dialog-share-project"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Share2 className="h-5 w-5" />
@@ -307,7 +310,10 @@ export function ShareProjectDialog({
                       }
                       disabled={loading}
                     >
-                      <SelectTrigger id="permission" data-ui-id="automation-share-permission-select">
+                      <SelectTrigger
+                        id="permission"
+                        data-ui-id="automation-share-permission-select"
+                      >
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -361,7 +367,10 @@ export function ShareProjectDialog({
                     onValueChange={setSelectedOrg}
                     disabled={loading}
                   >
-                    <SelectTrigger id="organization" data-ui-id="automation-share-org-select">
+                    <SelectTrigger
+                      id="organization"
+                      data-ui-id="automation-share-org-select"
+                    >
                       <SelectValue placeholder="Select an organization" />
                     </SelectTrigger>
                     <SelectContent>
@@ -383,7 +392,10 @@ export function ShareProjectDialog({
                       }
                       disabled={loading}
                     >
-                      <SelectTrigger id="org-permission" data-ui-id="automation-share-orgpermission-select">
+                      <SelectTrigger
+                        id="org-permission"
+                        data-ui-id="automation-share-orgpermission-select"
+                      >
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>

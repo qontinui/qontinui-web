@@ -42,7 +42,10 @@ export {
 
 // Tutorial Cards and Menus
 export { TutorialCard, type TutorialCardProps } from "./TutorialCard";
-export { PageTutorialMenu, type PageTutorialMenuProps } from "./PageTutorialMenu";
+export {
+  PageTutorialMenu,
+  type PageTutorialMenuProps,
+} from "./PageTutorialMenu";
 export { TutorialMenuButton } from "./TutorialMenuButton";
 
 // Tutorial Data Registry

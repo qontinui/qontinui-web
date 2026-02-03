@@ -171,7 +171,8 @@ function convertPlaywrightResults(
         width: bbox?.width || 0,
         height: bbox?.height || 0,
       },
-      confidence: (r.verification_confidence as number) || (r.verified ? 0.9 : 0.5),
+      confidence:
+        (r.verification_confidence as number) || (r.verified ? 0.9 : 0.5),
       detectionMethod: "playwright",
       selector: r.selector as string,
       tagName: r.tag_name as string,
@@ -193,7 +194,9 @@ function convertPlaywrightResults(
 /**
  * Convert pattern matching results to unified format.
  */
-function convertPatternResults(data: Record<string, unknown>): UnifiedElement[] {
+function convertPatternResults(
+  data: Record<string, unknown>
+): UnifiedElement[] {
   const elements: UnifiedElement[] = [];
 
   const matches = (data.matches as unknown[]) || [];
@@ -406,12 +409,15 @@ class UnifiedExtractionService {
    */
   async cancelJob(jobId: string): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseUrl}/extraction/cancel/${jobId}`, {
-        method: "POST",
-        headers: {
-          "X-Session-ID": this.sessionId,
-        },
-      });
+      const response = await fetch(
+        `${this.baseUrl}/extraction/cancel/${jobId}`,
+        {
+          method: "POST",
+          headers: {
+            "X-Session-ID": this.sessionId,
+          },
+        }
+      );
 
       if (response.ok) {
         this.activeJobs.delete(jobId);
@@ -607,9 +613,10 @@ class UnifiedExtractionService {
 
     // Start the extraction
     // Map risk level - exclude 'dangerous' and 'blocked' as they are not valid for max_risk_level
-    const maxRiskLevel = request.maxRiskLevel === "dangerous" || request.maxRiskLevel === "blocked"
-      ? "caution"
-      : request.maxRiskLevel;
+    const maxRiskLevel =
+      request.maxRiskLevel === "dangerous" || request.maxRiskLevel === "blocked"
+        ? "caution"
+        : request.maxRiskLevel;
     const startResponse = await runnerClient.startPlaywrightCollection({
       url: request.url,
       max_depth: request.maxDepth,
@@ -686,7 +693,9 @@ class UnifiedExtractionService {
       throw new Error(response.error || "Pattern matching failed");
     }
 
-    const elements = convertPatternResults(response as unknown as Record<string, unknown>);
+    const elements = convertPatternResults(
+      response as unknown as Record<string, unknown>
+    );
 
     return {
       jobId,
@@ -897,8 +906,7 @@ class UnifiedExtractionService {
       progressMessage: data.progress_message as string | undefined,
       sessionId: data.session_id as string | undefined,
       source: (data.source || data.url) as string | undefined,
-      createdAt:
-        (data.created_at as string) || new Date().toISOString(),
+      createdAt: (data.created_at as string) || new Date().toISOString(),
       startedAt: data.started_at as string | undefined,
       completedAt: data.completed_at as string | undefined,
       error: data.error as string | undefined,
@@ -959,10 +967,12 @@ class UnifiedExtractionService {
   ): UnifiedExtractionResult {
     const elements = convertUIBridgeResults(results, suggestedTransitions);
 
-    const startedAt = options?.startTime?.toISOString() ||
+    const startedAt =
+      options?.startTime?.toISOString() ||
       results.start_time ||
       new Date().toISOString();
-    const completedAt = options?.endTime?.toISOString() ||
+    const completedAt =
+      options?.endTime?.toISOString() ||
       results.end_time ||
       new Date().toISOString();
 
@@ -973,9 +983,10 @@ class UnifiedExtractionService {
       techniquesRun: ["ui-bridge", "state-discovery", "transition-discovery"],
       startedAt,
       completedAt,
-      durationMs: options?.startTime && options?.endTime
-        ? options.endTime.getTime() - options.startTime.getTime()
-        : undefined,
+      durationMs:
+        options?.startTime && options?.endTime
+          ? options.endTime.getTime() - options.startTime.getTime()
+          : undefined,
       source: options?.connectionUrl,
       elements,
       transitions: suggestedTransitions,

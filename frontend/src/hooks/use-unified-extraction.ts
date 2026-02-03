@@ -276,7 +276,10 @@ export function useUnifiedExtraction(
   // ============================================================================
 
   const startVisionExtraction = useCallback(
-    async (screenshot: string, opts: Partial<UnifiedExtractionRequest> = {}) => {
+    async (
+      screenshot: string,
+      opts: Partial<UnifiedExtractionRequest> = {}
+    ) => {
       await startExtraction({
         method: "vision",
         screenshot,
@@ -331,8 +334,8 @@ export function useUnifiedExtraction(
 
   const isRunning =
     startExtractionMutation.isPending ||
-    (currentJob?.status === "running") ||
-    (currentJob?.status === "pending");
+    currentJob?.status === "running" ||
+    currentJob?.status === "pending";
 
   return {
     // Session

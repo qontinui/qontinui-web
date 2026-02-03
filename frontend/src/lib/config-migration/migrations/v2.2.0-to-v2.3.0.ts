@@ -33,12 +33,12 @@ export const migrationV22ToV23: Migration = {
     const migrated = structuredClone(config) as ConfigV22;
 
     // Count workflows for informational purposes
-    let workflowCount = 0;
+    let _workflowCount = 0;
     let mainCategoryCount = 0;
 
     if (migrated.workflows && Array.isArray(migrated.workflows)) {
       for (const workflow of migrated.workflows) {
-        workflowCount++;
+        _workflowCount++;
 
         // Count Main category workflows (these are the ones that typically need initialStateIds)
         if (workflow.category === "Main") {

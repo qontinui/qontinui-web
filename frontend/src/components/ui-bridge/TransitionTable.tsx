@@ -176,7 +176,9 @@ export function TransitionTable({
                       </TableCell>
                       <TableCell>
                         <div className="space-y-1">
-                          <Badge variant="outline">{transition.triggerAction}</Badge>
+                          <Badge variant="outline">
+                            {transition.triggerAction}
+                          </Badge>
                           <p className="text-xs text-muted-foreground font-mono truncate max-w-[150px]">
                             {transition.triggerElementId}
                           </p>
@@ -184,7 +186,9 @@ export function TransitionTable({
                       </TableCell>
                       <TableCell>
                         <Badge
-                          variant={getConfidenceBadgeVariant(transition.confidence)}
+                          variant={getConfidenceBadgeVariant(
+                            transition.confidence
+                          )}
                           className={getConfidenceColor(transition.confidence)}
                         >
                           {(transition.confidence * 100).toFixed(0)}%
@@ -232,54 +236,71 @@ export function TransitionTable({
                             <div className="grid grid-cols-2 gap-4">
                               <div>
                                 <p className="text-xs font-medium text-muted-foreground mb-1">
-                                  Elements Added ({transition.activateElements.length})
+                                  Elements Added (
+                                  {transition.activateElements.length})
                                 </p>
                                 <div className="flex flex-wrap gap-1">
                                   {transition.activateElements.length > 0 ? (
-                                    transition.activateElements.slice(0, 10).map((el) => (
-                                      <Badge
-                                        key={el}
-                                        variant="outline"
-                                        className="text-xs bg-green-500/10 text-green-500"
-                                      >
-                                        + {el}
-                                      </Badge>
-                                    ))
+                                    transition.activateElements
+                                      .slice(0, 10)
+                                      .map((el) => (
+                                        <Badge
+                                          key={el}
+                                          variant="outline"
+                                          className="text-xs bg-green-500/10 text-green-500"
+                                        >
+                                          + {el}
+                                        </Badge>
+                                      ))
                                   ) : (
                                     <span className="text-xs text-muted-foreground">
                                       None
                                     </span>
                                   )}
                                   {transition.activateElements.length > 10 && (
-                                    <Badge variant="outline" className="text-xs">
-                                      +{transition.activateElements.length - 10} more
+                                    <Badge
+                                      variant="outline"
+                                      className="text-xs"
+                                    >
+                                      +{transition.activateElements.length - 10}{" "}
+                                      more
                                     </Badge>
                                   )}
                                 </div>
                               </div>
                               <div>
                                 <p className="text-xs font-medium text-muted-foreground mb-1">
-                                  Elements Removed ({transition.deactivateElements.length})
+                                  Elements Removed (
+                                  {transition.deactivateElements.length})
                                 </p>
                                 <div className="flex flex-wrap gap-1">
                                   {transition.deactivateElements.length > 0 ? (
-                                    transition.deactivateElements.slice(0, 10).map((el) => (
-                                      <Badge
-                                        key={el}
-                                        variant="outline"
-                                        className="text-xs bg-red-500/10 text-red-500"
-                                      >
-                                        - {el}
-                                      </Badge>
-                                    ))
+                                    transition.deactivateElements
+                                      .slice(0, 10)
+                                      .map((el) => (
+                                        <Badge
+                                          key={el}
+                                          variant="outline"
+                                          className="text-xs bg-red-500/10 text-red-500"
+                                        >
+                                          - {el}
+                                        </Badge>
+                                      ))
                                   ) : (
                                     <span className="text-xs text-muted-foreground">
                                       None
                                     </span>
                                   )}
-                                  {transition.deactivateElements.length > 10 && (
-                                    <Badge variant="outline" className="text-xs">
-                                      +{transition.deactivateElements.length - 10} more
+                                  {transition.deactivateElements.length >
+                                    10 && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-xs"
+                                    >
+                                      +
+                                      {transition.deactivateElements.length -
+                                        10}{" "}
+                                      more
                                     </Badge>
                                   )}
                                 </div>
@@ -290,11 +311,17 @@ export function TransitionTable({
                                 Observed in {transition.stepIds.length} step(s)
                               </p>
                               <div className="flex flex-wrap gap-1">
-                                {transition.stepIds.slice(0, 5).map((stepId) => (
-                                  <Badge key={stepId} variant="secondary" className="text-xs font-mono">
-                                    {stepId.slice(0, 8)}
-                                  </Badge>
-                                ))}
+                                {transition.stepIds
+                                  .slice(0, 5)
+                                  .map((stepId) => (
+                                    <Badge
+                                      key={stepId}
+                                      variant="secondary"
+                                      className="text-xs font-mono"
+                                    >
+                                      {stepId.slice(0, 8)}
+                                    </Badge>
+                                  ))}
                                 {transition.stepIds.length > 5 && (
                                   <Badge variant="outline" className="text-xs">
                                     +{transition.stepIds.length - 5} more

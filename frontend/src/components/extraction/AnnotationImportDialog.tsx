@@ -211,7 +211,9 @@ export function AnnotationImportDialog({
                   className="hidden"
                 />
                 {classesContent ? (
-                  <span className="text-sm text-primary">classes.txt loaded</span>
+                  <span className="text-sm text-primary">
+                    classes.txt loaded
+                  </span>
                 ) : (
                   <p className="text-sm text-muted-foreground">
                     Upload classes.txt for class names
@@ -226,7 +228,10 @@ export function AnnotationImportDialog({
             <div className="space-y-2">
               <Label>Preview</Label>
               <Textarea
-                value={fileContent.slice(0, 500) + (fileContent.length > 500 ? "..." : "")}
+                value={
+                  fileContent.slice(0, 500) +
+                  (fileContent.length > 500 ? "..." : "")
+                }
                 readOnly
                 className="h-24 font-mono text-xs"
               />
@@ -246,10 +251,7 @@ export function AnnotationImportDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button
-            onClick={handleImport}
-            disabled={!fileContent || importing}
-          >
+          <Button onClick={handleImport} disabled={!fileContent || importing}>
             {importing ? "Importing..." : "Import"}
           </Button>
         </DialogFooter>

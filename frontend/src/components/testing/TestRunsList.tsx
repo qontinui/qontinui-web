@@ -156,7 +156,10 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
   const currentPage = data?.page || 1;
 
   return (
-    <Card className="bg-surface-raised/50 border-border-subtle/50" data-ui-id="testing-test-runs-list">
+    <Card
+      className="bg-surface-raised/50 border-border-subtle/50"
+      data-ui-id="testing-test-runs-list"
+    >
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="text-xl">Test Runs</CardTitle>
@@ -165,7 +168,10 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
               value={statusFilter}
               onValueChange={handleStatusFilterChange}
             >
-              <SelectTrigger className="w-[150px] bg-surface-canvas/50 border-border-default" data-ui-id="testing-test-runs-status-select">
+              <SelectTrigger
+                className="w-[150px] bg-surface-canvas/50 border-border-default"
+                data-ui-id="testing-test-runs-status-select"
+              >
                 <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
               <SelectContent>

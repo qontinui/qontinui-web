@@ -7,7 +7,10 @@
  * - CSV format (simple spreadsheet format)
  */
 
-import type { AnnotatedElement, BoundingBox } from "@/stores/extraction-annotation-store";
+import type {
+  AnnotatedElement,
+  BoundingBox,
+} from "@/stores/extraction-annotation-store";
 
 export type ImportFormat = "coco" | "yolo" | "csv" | "auto";
 
@@ -44,7 +47,12 @@ interface COCOCategory {
 
 interface COCOData {
   info?: Record<string, unknown>;
-  images?: Array<{ id: number; width?: number; height?: number; file_name?: string }>;
+  images?: Array<{
+    id: number;
+    width?: number;
+    height?: number;
+    file_name?: string;
+  }>;
   annotations: COCOAnnotation[];
   categories: COCOCategory[];
 }
@@ -103,7 +111,10 @@ export function detectFormat(content: string): ImportFormat {
 /**
  * Import from COCO format
  */
-function importFromCOCO(content: string, _options: ImportOptions): AnnotatedElement[] {
+function importFromCOCO(
+  content: string,
+  _options: ImportOptions
+): AnnotatedElement[] {
   const data: COCOData = JSON.parse(content);
   const elements: AnnotatedElement[] = [];
 
@@ -138,14 +149,22 @@ function importFromCOCO(content: string, _options: ImportOptions): AnnotatedElem
 /**
  * Import from YOLO format
  */
-function importFromYOLO(content: string, options: ImportOptions): AnnotatedElement[] {
+function importFromYOLO(
+  content: string,
+  options: ImportOptions
+): AnnotatedElement[] {
   const elements: AnnotatedElement[] = [];
   const lines = content.trim().split("\n");
 
   // Parse classes if provided
   const classes: string[] = [];
   if (options.classesContent) {
-    classes.push(...options.classesContent.trim().split("\n").map((l) => l.trim()));
+    classes.push(
+      ...options.classesContent
+        .trim()
+        .split("\n")
+        .map((l) => l.trim())
+    );
   }
 
   for (const line of lines) {
@@ -234,7 +253,10 @@ function parseCSVLine(line: string): string[] {
 /**
  * Import from CSV format
  */
-function importFromCSV(content: string, _options: ImportOptions): AnnotatedElement[] {
+function importFromCSV(
+  content: string,
+  _options: ImportOptions
+): AnnotatedElement[] {
   const elements: AnnotatedElement[] = [];
   const lines = content.trim().split("\n");
 
@@ -324,7 +346,8 @@ export function importTrainingData(
         return {
           elements: [],
           format: "auto",
-          error: "Could not detect file format. Please specify the format manually.",
+          error:
+            "Could not detect file format. Please specify the format manually.",
         };
       }
     }
@@ -370,24 +393,31 @@ export function importTrainingData(
 /**
  * Get format display info
  */
-export function getImportFormatInfo(format: ImportFormat): { name: string; description: string; extensions: string[] } {
+export function getImportFormatInfo(format: ImportFormat): {
+  name: string;
+  description: string;
+  extensions: string[];
+} {
   switch (format) {
     case "coco":
       return {
         name: "COCO JSON",
-        description: "Standard COCO format with annotations and categories arrays.",
+        description:
+          "Standard COCO format with annotations and categories arrays.",
         extensions: [".json"],
       };
     case "yolo":
       return {
         name: "YOLO",
-        description: "YOLO format with normalized coordinates (class x_center y_center width height).",
+        description:
+          "YOLO format with normalized coordinates (class x_center y_center width height).",
         extensions: [".txt"],
       };
     case "csv":
       return {
         name: "CSV",
-        description: "CSV format with headers (id, label, x, y, width, height, ...).",
+        description:
+          "CSV format with headers (id, label, x, y, width, height, ...).",
         extensions: [".csv"],
       };
     case "auto":

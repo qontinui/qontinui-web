@@ -295,7 +295,10 @@ export function BatchMonitorSettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[700px] bg-surface-canvas border-border-subtle" data-ui-id="dialog-batch-monitor-settings">
+      <DialogContent
+        className="sm:max-w-[700px] bg-surface-canvas border-border-subtle"
+        data-ui-id="dialog-batch-monitor-settings"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Monitor className="w-5 h-5 text-brand-primary" />

@@ -333,15 +333,30 @@ export function SettingsTab() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={exportSettings} data-ui-id="settings-export-btn">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={exportSettings}
+            data-ui-id="settings-export-btn"
+          >
             <Download className="w-4 h-4 mr-2" />
             Export
           </Button>
-          <Button variant="outline" size="sm" onClick={resetSettings} data-ui-id="settings-reset-btn">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={resetSettings}
+            data-ui-id="settings-reset-btn"
+          >
             <RotateCcw className="w-4 h-4 mr-2" />
             Reset
           </Button>
-          <Button size="sm" onClick={saveSettings} disabled={loading} data-ui-id="settings-save-btn">
+          <Button
+            size="sm"
+            onClick={saveSettings}
+            disabled={loading}
+            data-ui-id="settings-save-btn"
+          >
             <Save className="w-4 h-4 mr-2" />
             Save
           </Button>
@@ -719,7 +734,10 @@ export function SettingsTab() {
                   updateSetting("screenshot", "format", value)
                 }
               >
-                <SelectTrigger id="screenshot_format" data-ui-id="settings-screenshot-format-select">
+                <SelectTrigger
+                  id="screenshot_format"
+                  data-ui-id="settings-screenshot-format-select"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -821,7 +839,10 @@ export function SettingsTab() {
                   updateSetting("recording", "quality", value)
                 }
               >
-                <SelectTrigger id="recording_quality" data-ui-id="settings-recording-quality-select">
+                <SelectTrigger
+                  id="recording_quality"
+                  data-ui-id="settings-recording-quality-select"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1073,7 +1094,10 @@ export function SettingsTab() {
                   updateSetting("dataset", "format", value)
                 }
               >
-                <SelectTrigger id="dataset_format" data-ui-id="settings-dataset-format-select">
+                <SelectTrigger
+                  id="dataset_format"
+                  data-ui-id="settings-dataset-format-select"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

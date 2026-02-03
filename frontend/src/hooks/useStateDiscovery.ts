@@ -11,8 +11,7 @@ import {
 } from "@/types/stateDiscovery";
 
 // Use the main backend URL for State Discovery endpoints
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const API_PATH = "/api";
 
 export function useStateDiscovery() {

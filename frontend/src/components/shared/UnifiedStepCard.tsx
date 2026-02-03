@@ -299,8 +299,7 @@ function StepDetails({
   enableProgressTracking?: boolean;
 }) {
   const isRunning = step.status === "running";
-  const showProgressMarker =
-    enableProgressTracking && taskRunId && step.nodeId;
+  const showProgressMarker = enableProgressTracking && taskRunId && step.nodeId;
 
   return (
     <div className="space-y-4">

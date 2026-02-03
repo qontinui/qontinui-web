@@ -144,7 +144,7 @@ function serializeElement(
     "title",
     "aria-label",
     "data-testid",
-    "data-ui-id",  // UI Bridge registered elements
+    "data-ui-id", // UI Bridge registered elements
     "name",
     "type",
     "value",
@@ -189,7 +189,8 @@ function serializeElement(
     opacity: parseFloat(computedStyle.opacity || "1"),
     display: computedStyle.display,
     attributes,
-    computedStyles: Object.keys(computedStyles).length > 0 ? computedStyles : undefined,
+    computedStyles:
+      Object.keys(computedStyles).length > 0 ? computedStyles : undefined,
     children,
   };
 }
@@ -329,7 +330,10 @@ export function RenderLogProvider({ children }: { children: React.ReactNode }) {
           setLastCaptureTime(Date.now());
         } else {
           // Silently fail - render logging is non-critical
-          console.debug("[RenderLog] Failed to send snapshot:", response.status);
+          console.debug(
+            "[RenderLog] Failed to send snapshot:",
+            response.status
+          );
         }
       } catch (error) {
         // Silently fail

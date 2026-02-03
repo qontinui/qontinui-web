@@ -29,10 +29,7 @@ export const QontinuiTextarea = React.forwardRef<
   return (
     <div className="form-group">
       {label && (
-        <label
-          htmlFor={textareaId}
-          className="form-label"
-        >
+        <label htmlFor={textareaId} className="form-label">
           {label}
         </label>
       )}
@@ -43,9 +40,7 @@ export const QontinuiTextarea = React.forwardRef<
         aria-invalid={!!error}
         {...props}
       />
-      {error && (
-        <span className="form-error">{error}</span>
-      )}
+      {error && <span className="form-error">{error}</span>}
     </div>
   );
 });

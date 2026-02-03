@@ -27,14 +27,12 @@ export function OnboardingTour() {
   const pathname = usePathname();
   const [hasAutoStarted, setHasAutoStarted] = useState(false);
 
-  const {
-    openTutorial,
-    isOpen,
-    completedTutorials,
-  } = useTutorialStore();
+  const { openTutorial, isOpen, completedTutorials } = useTutorialStore();
 
   // Check if onboarding has been completed
-  const isOnboardingCompleted = completedTutorials.includes(ONBOARDING_TUTORIAL_ID);
+  const isOnboardingCompleted = completedTutorials.includes(
+    ONBOARDING_TUTORIAL_ID
+  );
 
   // Start the onboarding tour
   const startTour = useCallback(() => {
