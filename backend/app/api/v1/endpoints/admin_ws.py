@@ -6,7 +6,8 @@ import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from fastapi.exceptions import HTTPException
 
-from app.api.deps import get_async_db, get_current_user_from_ws
+from app.api.deps import get_current_user_from_ws
+from app.db.session import AsyncSessionLocal
 from app.models.user import User
 from app.services.health_service import health_service
 
@@ -116,37 +117,29 @@ async def websocket_health_monitor(
             interval=interval,
         )
 
-        # Get database session - we'll create a new one for each health check
+        # Create a new database session for each health check iteration
         # to avoid connection pool exhaustion
 
         while True:
             try:
-                # Create a new database session for this health check
-                async for db in get_async_db():
-                    try:
-                        # Get health overview
-                        overview = await health_service.get_health_overview(db)
+                # Use AsyncSessionLocal directly with context manager for proper cleanup
+                async with AsyncSessionLocal() as db:
+                    # Get health overview
+                    overview = await health_service.get_health_overview(db)
 
-                        # Send update to client
-                        await websocket.send_json(
-                            {
-                                "type": "health_update",
-                                "data": overview,
-                            }
-                        )
+                    # Send update to client
+                    await websocket.send_json(
+                        {
+                            "type": "health_update",
+                            "data": overview,
+                        }
+                    )
 
-                        logger.debug(
-                            "ws_health_update_sent",
-                            user_id=str(user.id),
-                            overall_status=overview.get("overall_status"),
-                        )
-
-                    finally:
-                        # Close the database session
-                        await db.close()
-
-                    # Only process one db session, then break
-                    break
+                    logger.debug(
+                        "ws_health_update_sent",
+                        user_id=str(user.id),
+                        overall_status=overview.get("overall_status"),
+                    )
 
                 # Wait for next interval
                 await asyncio.sleep(interval)
@@ -272,64 +265,57 @@ async def websocket_specific_metrics(
 
         while True:
             try:
-                async for db in get_async_db():
-                    try:
-                        # Collect requested metrics
-                        metrics_data = {}
+                # Use AsyncSessionLocal directly with context manager for proper cleanup
+                async with AsyncSessionLocal() as db:
+                    # Collect requested metrics
+                    metrics_data = {}
 
-                        if "redis" in requested_metrics:
-                            metrics_data["redis"] = (
-                                await health_service.get_redis_status()
-                            )
+                    if "redis" in requested_metrics:
+                        metrics_data["redis"] = await health_service.get_redis_status()
 
-                        if "database" in requested_metrics:
-                            metrics_data["database"] = (
-                                await health_service.get_database_health(db)
-                            )
-
-                        if "security" in requested_metrics:
-                            metrics_data["security"] = (
-                                await health_service.get_security_warnings(db)
-                            )
-
-                        if "sessions" in requested_metrics:
-                            metrics_data["sessions"] = (
-                                await health_service.get_session_stats(db)
-                            )
-
-                        if "blacklist" in requested_metrics:
-                            metrics_data["blacklist"] = (
-                                await health_service.get_token_blacklist_stats(db)
-                            )
-
-                        if "system" in requested_metrics:
-                            metrics_data["system"] = (
-                                await health_service.get_system_metrics()
-                            )
-
-                        # Send update
-                        from datetime import datetime
-
-                        await websocket.send_json(
-                            {
-                                "type": "metrics_update",
-                                "data": {
-                                    "timestamp": datetime.utcnow().isoformat(),
-                                    "metrics": metrics_data,
-                                },
-                            }
+                    if "database" in requested_metrics:
+                        metrics_data["database"] = (
+                            await health_service.get_database_health(db)
                         )
 
-                        logger.debug(
-                            "ws_metrics_update_sent",
-                            user_id=str(user.id),
-                            metrics=list(metrics_data.keys()),
+                    if "security" in requested_metrics:
+                        metrics_data["security"] = (
+                            await health_service.get_security_warnings(db)
                         )
 
-                    finally:
-                        await db.close()
+                    if "sessions" in requested_metrics:
+                        metrics_data["sessions"] = (
+                            await health_service.get_session_stats(db)
+                        )
 
-                    break
+                    if "blacklist" in requested_metrics:
+                        metrics_data["blacklist"] = (
+                            await health_service.get_token_blacklist_stats(db)
+                        )
+
+                    if "system" in requested_metrics:
+                        metrics_data["system"] = (
+                            await health_service.get_system_metrics()
+                        )
+
+                    # Send update
+                    from datetime import datetime
+
+                    await websocket.send_json(
+                        {
+                            "type": "metrics_update",
+                            "data": {
+                                "timestamp": datetime.utcnow().isoformat(),
+                                "metrics": metrics_data,
+                            },
+                        }
+                    )
+
+                    logger.debug(
+                        "ws_metrics_update_sent",
+                        user_id=str(user.id),
+                        metrics=list(metrics_data.keys()),
+                    )
 
                 await asyncio.sleep(interval)
 

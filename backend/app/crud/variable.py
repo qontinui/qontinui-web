@@ -7,6 +7,7 @@ Provides database operations for:
 - Querying variable history
 """
 
+import uuid
 from typing import Any
 from uuid import UUID
 
@@ -54,6 +55,7 @@ async def create_variable(
     )
 
     db_variable = WorkflowVariable(
+        id=str(uuid.uuid4()),
         project_id=project_id,
         workflow_id=(
             workflow_id if variable_data.scope == VariableScope.WORKFLOW else None

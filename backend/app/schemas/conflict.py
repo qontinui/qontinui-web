@@ -151,3 +151,68 @@ class ConflictSummary(BaseSchema):
     recent_conflicts: list[ConflictLogResponse] = Field(
         default_factory=list, description="Most recent conflicts"
     )
+
+
+# ============================================================================
+# Annotation Conflict Detection Schemas
+# ============================================================================
+
+
+class AnnotationConflictCheckRequest(BaseSchema):
+    """Request schema for checking annotation conflicts before saving."""
+
+    project_id: str = Field(..., description="Project ID to check conflicts for")
+    local_version_id: str | None = Field(
+        None, description="Version ID of local changes (null for new annotations)"
+    )
+    local_element_count: int = Field(
+        ..., ge=0, description="Number of annotation elements in local state"
+    )
+    local_elements_hash: str = Field(
+        ...,
+        description="MD5 hash of JSON-stringified elements for comparison",
+        min_length=32,
+        max_length=32,
+    )
+    local_updated_at: int = Field(
+        ..., description="Timestamp (milliseconds) of local last update"
+    )
+
+
+class AnnotationDiffSummary(BaseSchema):
+    """Summary of differences between local and remote annotation states."""
+
+    added: int = Field(..., ge=0, description="Number of elements added remotely")
+    removed: int = Field(..., ge=0, description="Number of elements removed remotely")
+    modified: int = Field(..., ge=0, description="Number of elements modified remotely")
+
+
+class AnnotationConflictCheckResponse(BaseSchema):
+    """Response schema for annotation conflict check."""
+
+    has_conflict: bool = Field(..., description="Whether a conflict exists")
+    remote_version_id: str | None = Field(
+        None, description="Version ID of remote state"
+    )
+    remote_element_count: int = Field(
+        ..., ge=0, description="Number of annotation elements in remote state"
+    )
+    remote_updated_at: int = Field(
+        ..., description="Timestamp (milliseconds) of remote last update"
+    )
+    conflict_type: str = Field(
+        ...,
+        description="Type of conflict: none, version_mismatch, concurrent_edit, element_difference",
+    )
+    diff_summary: AnnotationDiffSummary | None = Field(
+        None, description="Summary of differences if conflict exists"
+    )
+
+    @field_validator("conflict_type")
+    @classmethod
+    def validate_conflict_type(cls, v: str) -> str:
+        """Validate conflict type."""
+        allowed = ["none", "version_mismatch", "concurrent_edit", "element_difference"]
+        if v not in allowed:
+            raise ValueError(f"Conflict type must be one of: {', '.join(allowed)}")
+        return v

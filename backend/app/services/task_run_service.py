@@ -270,6 +270,24 @@ class TaskRunFindingsListResponse(BaseModel):
     summary: dict[str, Any]
 
 
+class StepProgressResponse(BaseModel):
+    """Response for step execution progress.
+
+    Provides real-time progress information for a running or completed step.
+    Used by the frontend to show progress indicators during execution.
+    """
+
+    phase: str
+    phase_description: str | None = None
+    substep: str | None = None
+    progress: float | None = None  # 0-100, null if indeterminate
+    message: str | None = None
+    elapsed_ms: int
+    is_running: bool
+    error: str | None = None
+    metadata: dict[str, Any] | None = None
+
+
 # =============================================================================
 # Response Mapping Functions
 # =============================================================================
@@ -1091,6 +1109,134 @@ class TaskRunService:
             db, task_run_id
         )
         return [model_to_automation_response(a) for a in automations]
+
+    async def get_step_progress(
+        self,
+        db: AsyncSession,
+        task_run_id: UUID,
+        checkpoint_id: str,
+    ) -> StepProgressResponse | None:
+        """
+        Get real-time progress for a specific execution step.
+
+        This endpoint provides progress information for steps that are currently
+        running or have completed. It's used by the frontend to show progress
+        indicators during execution.
+
+        Args:
+            db: Database session
+            task_run_id: ID of the task run
+            checkpoint_id: ID of the checkpoint/step
+
+        Returns:
+            StepProgressResponse if found, None otherwise
+
+        Note:
+            Progress information may come from:
+            - Live execution events (via WebSocket or polling)
+            - Cached execution state from the runner
+            - Historical data from completed executions
+        """
+        # First verify the task run exists
+        task_run = await self.task_run_repo.get_task_run_by_id(db, task_run_id)
+        if not task_run:
+            logger.warning(
+                "Task run not found for step progress",
+                task_run_id=str(task_run_id),
+                checkpoint_id=checkpoint_id,
+            )
+            return None
+
+        # Check if task is currently running
+        is_running = task_run.status == TaskRunStatus.RUNNING
+
+        # Try to get progress from the latest automation record
+        automations = await self.automation_repo.get_automations_for_task_run(
+            db, task_run_id
+        )
+
+        # Find the most recent automation that matches
+        latest_automation = None
+        for automation in sorted(
+            automations,
+            key=lambda a: a.started_at,
+            reverse=True,
+        ):
+            latest_automation = automation
+            break
+
+        if latest_automation:
+            # Calculate elapsed time from automation start
+            elapsed_ms = 0
+            if latest_automation.started_at:
+                elapsed = datetime.utcnow() - latest_automation.started_at
+                elapsed_ms = int(elapsed.total_seconds() * 1000)
+            if latest_automation.duration_ms:
+                elapsed_ms = latest_automation.duration_ms
+
+            # Determine phase from automation status
+            phase = "executing"
+            phase_description = None
+            if latest_automation.automation_status:
+                phase = latest_automation.automation_status.lower()
+                if phase == "running":
+                    phase_description = "Executing automation workflow"
+                elif phase == "completed":
+                    phase_description = "Automation completed successfully"
+                elif phase == "failed":
+                    phase_description = "Automation failed"
+
+            return StepProgressResponse(
+                phase=phase,
+                phase_description=phase_description,
+                substep=latest_automation.workflow_name,
+                progress=None,  # Indeterminate progress for now
+                message=latest_automation.actions_summary,
+                elapsed_ms=elapsed_ms,
+                is_running=is_running
+                and latest_automation.automation_status == "running",
+                error=latest_automation.error_message,
+                metadata={
+                    "automation_id": str(latest_automation.id),
+                    "iteration": latest_automation.iteration_number,
+                    "success": latest_automation.success,
+                },
+            )
+
+        # No automation found, return basic progress based on task status
+        elapsed_ms = 0
+        if task_run.created_at:
+            elapsed = datetime.utcnow() - task_run.created_at
+            elapsed_ms = int(elapsed.total_seconds() * 1000)
+        if task_run.duration_seconds:
+            elapsed_ms = task_run.duration_seconds * 1000
+
+        phase = "pending"
+        phase_description = None
+        if task_run.status == TaskRunStatus.RUNNING:
+            phase = "running"
+            phase_description = "Task is running"
+        elif task_run.status == TaskRunStatus.COMPLETE:
+            phase = "completed"
+            phase_description = "Task completed"
+        elif task_run.status == TaskRunStatus.FAILED:
+            phase = "failed"
+            phase_description = "Task failed"
+
+        return StepProgressResponse(
+            phase=phase,
+            phase_description=phase_description,
+            substep=task_run.task_name,
+            progress=None,
+            message=task_run.output_summary,
+            elapsed_ms=elapsed_ms,
+            is_running=is_running,
+            error=task_run.error_message,
+            metadata={
+                "task_run_id": str(task_run.id),
+                "sessions_count": task_run.sessions_count,
+            },
+        )
 
 
 # =============================================================================

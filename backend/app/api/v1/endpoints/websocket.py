@@ -21,8 +21,9 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from qontinui_schemas.common import utc_now
 from sqlalchemy import select
 
-from app.api.deps import get_async_db, get_current_user_from_ws
+from app.api.deps import get_current_user_from_ws
 from app.config.redis_config import get_redis
+from app.db.session import AsyncSessionLocal
 from app.models.project import Project
 from app.models.user import User
 from app.services.websocket_manager import get_websocket_manager
@@ -494,10 +495,14 @@ async def websocket_dashboard_endpoint(
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
-        # Verify project access
-        async for db_session in get_async_db():
-            db = db_session
-            break
+        # Verify project access - use AsyncSessionLocal directly to avoid generator lifecycle issues
+        try:
+            db = AsyncSessionLocal()
+        except Exception as e:
+            logger.error(
+                "ws_dashboard_db_create_failed", project_id=project_id, error=str(e)
+            )
+            db = None
 
         if not db:
             logger.error("ws_dashboard_db_failed", project_id=project_id)

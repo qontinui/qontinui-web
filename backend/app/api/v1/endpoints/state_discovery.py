@@ -5,11 +5,13 @@ Provides endpoints to trigger state discovery and retrieve discovered states
 from automation sessions.
 """
 
+from enum import Enum
 from typing import Any
 from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
@@ -245,12 +247,185 @@ async def get_discovered_states(
 
 
 # =============================================================================
-# UI Bridge State Discovery
+# UI Bridge State Discovery (Discovery Only - No Persistence)
 # =============================================================================
-# NOTE: UI Bridge state discovery and exploration endpoints are provided by
-# the qontinui-runner. The frontend should call the runner directly at:
-#   - POST /ui-bridge/explore - For automated exploration
-#   - POST /ui-bridge/discover-states - For co-occurrence state discovery
-# This is because the qontinui library runs on the local runner, not in the
-# cloud-hosted backend.
-# =============================================================================
+
+
+class UIBridgeDiscoveryStrategy(str, Enum):
+    """Discovery strategy options."""
+
+    AUTO = "auto"
+    LEGACY = "legacy"
+    FINGERPRINT = "fingerprint"
+
+
+class UIBridgeDiscoverRequest(BaseModel):
+    """Request for UI Bridge state discovery (no persistence)."""
+
+    renders: list[dict] = Field(
+        default_factory=list, description="List of render log entries to analyze"
+    )
+    include_html_ids: bool = Field(
+        default=False, description="Whether to include HTML id attributes"
+    )
+    cooccurrence_export: dict | None = Field(
+        default=None,
+        description="Co-occurrence export with fingerprint data for enhanced discovery",
+    )
+    strategy: UIBridgeDiscoveryStrategy = Field(
+        default=UIBridgeDiscoveryStrategy.AUTO,
+        description="Discovery strategy: auto, legacy, or fingerprint",
+    )
+
+
+class UIBridgeDiscoveredState(BaseModel):
+    """A discovered state from UI Bridge analysis."""
+
+    id: str
+    name: str
+    state_image_ids: list[str] = Field(alias="element_ids")
+    screenshot_ids: list[str] = Field(alias="render_ids")
+    confidence: float
+    position_zone: str | None = None
+    landmark_context: str | None = None
+    is_global: bool = False
+    is_modal: bool = False
+
+    model_config = {"populate_by_name": True}
+
+
+class UIBridgeDiscoveredElement(BaseModel):
+    """A discovered element from UI Bridge analysis."""
+
+    id: str
+    name: str
+    type: str = Field(alias="element_type")
+    render_ids: list[str]
+    fingerprint_hash: str | None = None
+    position_zone: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+
+class UIBridgeDiscoveryResponse(BaseModel):
+    """Response from UI Bridge state discovery."""
+
+    states: list[UIBridgeDiscoveredState]
+    elements: list[UIBridgeDiscoveredElement]
+    element_to_renders: dict[str, list[str]]
+    render_count: int
+    unique_element_count: int
+    strategy_used: str
+    strategy_metadata: dict = Field(default_factory=dict)
+
+
+@router.post(
+    "/ui-bridge/discover-states",
+    response_model=UIBridgeDiscoveryResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def discover_ui_bridge_states(
+    request: UIBridgeDiscoverRequest,
+    _current_user: User = Depends(get_current_active_user_async),
+) -> Any:
+    """
+    Discover states from UI Bridge render logs (no persistence).
+
+    This endpoint runs state discovery and returns the results without
+    saving to the database. Use this for previewing discovery results
+    before saving.
+
+    **Strategies:**
+    - `auto` (default): Uses fingerprint if fingerprint data provided, else legacy
+    - `legacy`: ID-based co-occurrence analysis (data-ui-id, data-testid)
+    - `fingerprint`: Enhanced discovery with element fingerprints
+
+    For fingerprint discovery, provide `cooccurrence_export` with fingerprint data.
+    """
+    # Import here to avoid circular dependency at module load
+    from qontinui.discovery.state_discovery import (
+        DiscoveryStrategyType,
+        StateDiscoveryService,
+    )
+
+    # Map request strategy to library strategy type
+    strategy_map = {
+        "auto": DiscoveryStrategyType.AUTO,
+        "legacy": DiscoveryStrategyType.LEGACY,
+        "fingerprint": DiscoveryStrategyType.FINGERPRINT,
+    }
+    strategy = strategy_map.get(request.strategy.value, DiscoveryStrategyType.AUTO)
+
+    logger.info(
+        "Running UI Bridge state discovery",
+        render_count=len(request.renders),
+        strategy=request.strategy.value,
+        has_cooccurrence_export=request.cooccurrence_export is not None,
+    )
+
+    try:
+        service = StateDiscoveryService()
+
+        if request.cooccurrence_export:
+            result = service.discover_from_export(
+                request.cooccurrence_export,
+                strategy=strategy,
+            )
+        else:
+            result = service.discover_from_renders(
+                request.renders,
+                include_html_ids=request.include_html_ids,
+                strategy=strategy,
+            )
+
+        # Convert to response format
+        states = [
+            UIBridgeDiscoveredState(
+                id=s.id,
+                name=s.name,
+                element_ids=s.element_ids,
+                render_ids=s.render_ids,
+                confidence=s.confidence,
+                position_zone=s.position_zone,
+                landmark_context=s.landmark_context,
+                is_global=s.is_global,
+                is_modal=s.is_modal,
+            )
+            for s in result.states
+        ]
+
+        elements = [
+            UIBridgeDiscoveredElement(
+                id=e.id,
+                name=e.name,
+                element_type=e.element_type,
+                render_ids=e.render_ids,
+                fingerprint_hash=e.fingerprint_hash,
+                position_zone=e.position_zone,
+            )
+            for e in result.elements
+        ]
+
+        logger.info(
+            "UI Bridge state discovery completed",
+            states_found=len(states),
+            elements_found=len(elements),
+            strategy_used=result.strategy_used.value,
+        )
+
+        return UIBridgeDiscoveryResponse(
+            states=states,
+            elements=elements,
+            element_to_renders=result.element_to_renders,
+            render_count=result.render_count,
+            unique_element_count=result.unique_element_count,
+            strategy_used=result.strategy_used.value,
+            strategy_metadata=result.strategy_metadata,
+        )
+
+    except Exception as e:
+        logger.error("UI Bridge state discovery failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"State discovery failed: {str(e)}",
+        )

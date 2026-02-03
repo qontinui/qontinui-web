@@ -8,6 +8,7 @@ Provides endpoints to:
 - Manage domain knowledge and link it to states
 """
 
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -21,6 +22,7 @@ from app.api.deps import get_async_db, get_current_active_user_async
 from app.models.project import Project
 from app.models.ui_bridge_state import (
     DomainKnowledge,
+    UIBridgeExplorationSession,
     UIBridgeState,
     UIBridgeStateConfig,
     UIBridgeStateDomainKnowledge,
@@ -31,6 +33,12 @@ from app.schemas.ui_bridge_state import (
     DomainKnowledgeListResponse,
     DomainKnowledgeResponse,
     DomainKnowledgeUpdate,
+    ExplorationSessionAppendRenders,
+    ExplorationSessionCreate,
+    ExplorationSessionListResponse,
+    ExplorationSessionResponse,
+    ExplorationSessionUpdate,
+    ExplorationSessionWithRenders,
     UIBridgeDiscoverAndSaveRequest,
     UIBridgeDiscoverAndSaveResponse,
     UIBridgeStateConfigCreate,
@@ -44,8 +52,8 @@ from app.schemas.ui_bridge_state import (
     UIBridgeStateUpdate,
 )
 
-# Import qontinui UI Bridge adapter
-from qontinui.discovery.ui_bridge_adapter import discover_states_from_renders
+# Note: qontinui imports are done lazily in endpoints that need them
+# to avoid loading torch/easyocr at application startup
 
 logger = structlog.get_logger(__name__)
 
@@ -769,13 +777,33 @@ async def discover_and_save_states(
     Discover states from render logs and save to database.
 
     This endpoint:
-    1. Runs co-occurrence analysis on the provided render logs
+    1. Runs state discovery using the selected strategy
     2. Creates a new state configuration
     3. Saves all discovered states
+
+    **Strategies:**
+    - `auto` (default): Uses fingerprint strategy if fingerprint data provided,
+      otherwise falls back to legacy
+    - `legacy`: ID-based co-occurrence analysis (data-ui-id, data-testid)
+    - `fingerprint`: Enhanced discovery with element fingerprints for cross-page matching
 
     Use this to persist discovery results for later use.
     """
     await get_project_or_404(project_id, current_user.id, db)
+
+    # Lazy import to avoid loading torch/easyocr at startup
+    from qontinui.discovery.state_discovery import (
+        DiscoveryStrategyType,
+        StateDiscoveryService,
+    )
+
+    # Map request strategy to library strategy type
+    strategy_map = {
+        "auto": DiscoveryStrategyType.AUTO,
+        "legacy": DiscoveryStrategyType.LEGACY,
+        "fingerprint": DiscoveryStrategyType.FINGERPRINT,
+    }
+    strategy = strategy_map.get(request.strategy.value, DiscoveryStrategyType.AUTO)
 
     logger.info(
         "Starting UI Bridge state discovery",
@@ -783,14 +811,26 @@ async def discover_and_save_states(
         user_id=str(current_user.id),
         render_count=len(request.renders),
         include_html_ids=request.include_html_ids,
+        strategy=request.strategy.value,
+        has_cooccurrence_export=request.cooccurrence_export is not None,
     )
 
     try:
-        # Run discovery
-        discovery_result = discover_states_from_renders(
-            request.renders,
-            include_html_ids=request.include_html_ids,
-        )
+        # Use unified state discovery service
+        service = StateDiscoveryService()
+
+        # Choose discovery method based on available data
+        if request.cooccurrence_export:
+            discovery_result = service.discover_from_export(
+                request.cooccurrence_export,
+                strategy=strategy,
+            )
+        else:
+            discovery_result = service.discover_from_renders(
+                request.renders,
+                include_html_ids=request.include_html_ids,
+                strategy=strategy,
+            )
 
         # Create config
         config = UIBridgeStateConfig(
@@ -802,6 +842,8 @@ async def discover_and_save_states(
             include_html_ids=request.include_html_ids,
             discovery_result={
                 "element_to_renders": discovery_result.element_to_renders,
+                "strategy_used": discovery_result.strategy_used.value,
+                "strategy_metadata": discovery_result.strategy_metadata,
             },
         )
         db.add(config)
@@ -814,8 +856,8 @@ async def discover_and_save_states(
                 config_id=config.id,
                 state_id=discovered_state.id,
                 name=discovered_state.name,
-                element_ids=discovered_state.state_image_ids,
-                render_ids=discovered_state.screenshot_ids,
+                element_ids=discovered_state.element_ids,
+                render_ids=discovered_state.render_ids,
                 confidence=discovered_state.confidence,
             )
             db.add(state)
@@ -833,6 +875,7 @@ async def discover_and_save_states(
             states_discovered=len(states),
             render_count=discovery_result.render_count,
             element_count=discovery_result.unique_element_count,
+            strategy_used=discovery_result.strategy_used.value,
         )
 
         return UIBridgeDiscoverAndSaveResponse(
@@ -853,3 +896,266 @@ async def discover_and_save_states(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"State discovery failed: {str(e)}",
         )
+
+
+# =============================================================================
+# Exploration Session Endpoints
+# =============================================================================
+
+
+@router.get(
+    "/projects/{project_id}/exploration-sessions",
+    response_model=ExplorationSessionListResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def list_exploration_sessions(
+    project_id: UUID,
+    include_completed: bool = Query(True, description="Include completed sessions"),
+    limit: int = Query(10, ge=1, le=100),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> Any:
+    """List exploration sessions for a project."""
+    await get_project_or_404(project_id, current_user.id, db)
+
+    query = select(UIBridgeExplorationSession).where(
+        UIBridgeExplorationSession.project_id == project_id
+    )
+
+    if not include_completed:
+        query = query.where(UIBridgeExplorationSession.status != "completed")
+
+    query = query.order_by(UIBridgeExplorationSession.created_at.desc()).limit(limit)
+
+    result = await db.execute(query)
+    sessions = result.scalars().all()
+
+    return ExplorationSessionListResponse(
+        items=[ExplorationSessionResponse.model_validate(s) for s in sessions],
+        total=len(sessions),
+    )
+
+
+@router.post(
+    "/projects/{project_id}/exploration-sessions",
+    response_model=ExplorationSessionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_exploration_session(
+    project_id: UUID,
+    request: ExplorationSessionCreate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> Any:
+    """Create a new exploration session."""
+    await get_project_or_404(project_id, current_user.id, db)
+
+    # Generate name if not provided
+    name = request.name or f"Exploration {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
+
+    session = UIBridgeExplorationSession(
+        project_id=project_id,
+        name=name,
+        status="running",
+        target_type=request.target_type,
+        target_url=request.target_url,
+        exploration_config=request.exploration_config,
+        render_logs=[],
+        elements_discovered=0,
+        elements_explored=0,
+        render_count=0,
+    )
+
+    db.add(session)
+    await db.commit()
+    await db.refresh(session)
+
+    logger.info(
+        "Created exploration session",
+        session_id=str(session.id),
+        project_id=str(project_id),
+        user_id=str(current_user.id),
+    )
+
+    return ExplorationSessionResponse.model_validate(session)
+
+
+@router.get(
+    "/projects/{project_id}/exploration-sessions/{session_id}",
+    response_model=ExplorationSessionWithRenders,
+    status_code=status.HTTP_200_OK,
+)
+async def get_exploration_session(
+    project_id: UUID,
+    session_id: UUID,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> Any:
+    """Get an exploration session with render logs."""
+    await get_project_or_404(project_id, current_user.id, db)
+
+    result = await db.execute(
+        select(UIBridgeExplorationSession).where(
+            UIBridgeExplorationSession.id == session_id,
+            UIBridgeExplorationSession.project_id == project_id,
+        )
+    )
+    session = result.scalar_one_or_none()
+
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Exploration session not found",
+        )
+
+    return ExplorationSessionWithRenders.model_validate(session)
+
+
+@router.patch(
+    "/projects/{project_id}/exploration-sessions/{session_id}",
+    response_model=ExplorationSessionResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def update_exploration_session(
+    project_id: UUID,
+    session_id: UUID,
+    request: ExplorationSessionUpdate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> Any:
+    """Update an exploration session."""
+    await get_project_or_404(project_id, current_user.id, db)
+
+    result = await db.execute(
+        select(UIBridgeExplorationSession).where(
+            UIBridgeExplorationSession.id == session_id,
+            UIBridgeExplorationSession.project_id == project_id,
+        )
+    )
+    session = result.scalar_one_or_none()
+
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Exploration session not found",
+        )
+
+    if request.status is not None:
+        session.status = request.status.value
+        if request.status.value in ("completed", "failed", "cancelled"):
+            session.completed_at = datetime.utcnow()
+
+    if request.render_logs is not None:
+        # Append new render logs
+        session.render_logs = session.render_logs + request.render_logs
+        session.render_count = len(session.render_logs)
+
+    if request.elements_discovered is not None:
+        session.elements_discovered = request.elements_discovered
+
+    if request.elements_explored is not None:
+        session.elements_explored = request.elements_explored
+
+    if request.error_message is not None:
+        session.error_message = request.error_message
+
+    if request.discovery_completed is not None:
+        session.discovery_completed = request.discovery_completed
+
+    if request.saved_config_id is not None:
+        session.saved_config_id = request.saved_config_id
+
+    await db.commit()
+    await db.refresh(session)
+
+    return ExplorationSessionResponse.model_validate(session)
+
+
+@router.post(
+    "/projects/{project_id}/exploration-sessions/{session_id}/renders",
+    response_model=ExplorationSessionResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def append_renders_to_session(
+    project_id: UUID,
+    session_id: UUID,
+    request: ExplorationSessionAppendRenders,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> Any:
+    """Append render logs to an exploration session."""
+    await get_project_or_404(project_id, current_user.id, db)
+
+    result = await db.execute(
+        select(UIBridgeExplorationSession).where(
+            UIBridgeExplorationSession.id == session_id,
+            UIBridgeExplorationSession.project_id == project_id,
+        )
+    )
+    session = result.scalar_one_or_none()
+
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Exploration session not found",
+        )
+
+    # Append render logs
+    session.render_logs = session.render_logs + request.render_logs
+    session.render_count = len(session.render_logs)
+
+    if request.elements_discovered is not None:
+        session.elements_discovered = request.elements_discovered
+
+    if request.elements_explored is not None:
+        session.elements_explored = request.elements_explored
+
+    await db.commit()
+    await db.refresh(session)
+
+    logger.debug(
+        "Appended renders to exploration session",
+        session_id=str(session_id),
+        new_renders=len(request.render_logs),
+        total_renders=session.render_count,
+    )
+
+    return ExplorationSessionResponse.model_validate(session)
+
+
+@router.delete(
+    "/projects/{project_id}/exploration-sessions/{session_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_exploration_session(
+    project_id: UUID,
+    session_id: UUID,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> None:
+    """Delete an exploration session."""
+    await get_project_or_404(project_id, current_user.id, db)
+
+    result = await db.execute(
+        select(UIBridgeExplorationSession).where(
+            UIBridgeExplorationSession.id == session_id,
+            UIBridgeExplorationSession.project_id == project_id,
+        )
+    )
+    session = result.scalar_one_or_none()
+
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Exploration session not found",
+        )
+
+    await db.delete(session)
+    await db.commit()
+
+    logger.info(
+        "Deleted exploration session",
+        session_id=str(session_id),
+        project_id=str(project_id),
+        user_id=str(current_user.id),
+    )

@@ -5,6 +5,7 @@ Provides endpoints for:
 - Listing conflicts for a project
 - Getting conflict details
 - Resolving conflicts with different strategies
+- Checking for annotation conflicts before saving
 """
 
 from typing import Any
@@ -19,8 +20,12 @@ from sqlalchemy.orm import joinedload
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.models.collaboration import ConflictLog
 from app.models.project import Project
+from app.models.project_annotation_state import ProjectAnnotationState
 from app.models.user import User
 from app.schemas.conflict import (
+    AnnotationConflictCheckRequest,
+    AnnotationConflictCheckResponse,
+    AnnotationDiffSummary,
     ConflictLogCreate,
     ConflictLogResponse,
     ConflictResolveRequest,
@@ -521,3 +526,183 @@ async def get_project_conflict_summary(
     )
 
     return summary
+
+
+# ============================================================================
+# Annotation Conflict Detection Endpoints
+# ============================================================================
+
+
+@router.post(
+    "/annotations/conflicts/check",
+    response_model=AnnotationConflictCheckResponse,
+)
+async def check_annotation_conflicts(
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    request: AnnotationConflictCheckRequest,
+    current_user: User = Depends(get_current_active_user_async),
+) -> Any:
+    """
+    Check for annotation conflicts before saving.
+
+    Compares the local annotation state with the remote (database) state
+    to detect potential conflicts and enable merge UI if needed.
+
+    Conflict types:
+    - none: No conflict, safe to save
+    - version_mismatch: Version IDs don't match (remote was updated)
+    - concurrent_edit: Both local and remote have changes since last sync
+    - element_difference: Element counts or content differ
+
+    Returns detailed conflict information including diff summary.
+    """
+    logger.info(
+        "check_annotation_conflicts_request",
+        user_id=current_user.id,
+        project_id=request.project_id,
+        local_version_id=request.local_version_id,
+        local_element_count=request.local_element_count,
+    )
+
+    # Verify project exists and user has access
+    try:
+        project_uuid = UUID(request.project_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid project_id format",
+        )
+
+    await get_project_or_404(db, project_uuid)
+    await verify_project_permission(db, project_uuid, current_user, "view")
+
+    # Get the current remote annotation state
+    result = await db.execute(
+        select(ProjectAnnotationState).filter(
+            ProjectAnnotationState.project_id == project_uuid
+        )
+    )
+    remote_state = result.scalar_one_or_none()
+
+    # If no remote state exists, there's no conflict
+    if remote_state is None:
+        logger.info(
+            "check_annotation_conflicts_no_remote",
+            project_id=request.project_id,
+        )
+        return AnnotationConflictCheckResponse(
+            has_conflict=False,
+            remote_version_id=None,
+            remote_element_count=0,
+            remote_updated_at=0,
+            conflict_type="none",
+            diff_summary=None,
+        )
+
+    # Convert remote updated_at to milliseconds timestamp
+    remote_updated_at_ms = int(remote_state.updated_at.timestamp() * 1000)
+
+    # Check for various conflict conditions
+    conflict_type = "none"
+    has_conflict = False
+    diff_summary = None
+
+    # 1. Check version mismatch (most definitive indicator)
+    if request.local_version_id is not None:
+        if request.local_version_id != remote_state.version_id:
+            conflict_type = "version_mismatch"
+            has_conflict = True
+            logger.info(
+                "check_annotation_conflicts_version_mismatch",
+                project_id=request.project_id,
+                local_version_id=request.local_version_id,
+                remote_version_id=remote_state.version_id,
+            )
+    else:
+        # Local has no version ID (new state) but remote has data
+        if remote_state.element_count > 0:
+            conflict_type = "version_mismatch"
+            has_conflict = True
+
+    # 2. Check for concurrent edit (timestamps and content differ)
+    if not has_conflict and request.local_updated_at < remote_updated_at_ms:
+        # Remote was updated after local's last known update
+        # Check if content also differs
+        if (
+            request.local_element_count != remote_state.element_count
+            or request.local_elements_hash != remote_state.elements_hash
+        ):
+            conflict_type = "concurrent_edit"
+            has_conflict = True
+            logger.info(
+                "check_annotation_conflicts_concurrent_edit",
+                project_id=request.project_id,
+                local_updated_at=request.local_updated_at,
+                remote_updated_at=remote_updated_at_ms,
+            )
+
+    # 3. Check element differences (hash mismatch with same version)
+    if not has_conflict:
+        if request.local_elements_hash != remote_state.elements_hash:
+            conflict_type = "element_difference"
+            has_conflict = True
+            logger.info(
+                "check_annotation_conflicts_element_difference",
+                project_id=request.project_id,
+                local_hash=request.local_elements_hash,
+                remote_hash=remote_state.elements_hash,
+            )
+
+    # Calculate diff summary if there's a conflict
+    if has_conflict:
+        # For detailed diff, we'd need the actual annotation data
+        # For now, provide a basic diff based on counts
+        remote_count: int = int(remote_state.element_count)  # type: ignore[arg-type]
+        count_diff = remote_count - request.local_element_count
+
+        if count_diff > 0:
+            # Remote has more elements
+            diff_summary = AnnotationDiffSummary(
+                added=count_diff,
+                removed=0,
+                modified=0,  # Can't determine without full comparison
+            )
+        elif count_diff < 0:
+            # Remote has fewer elements
+            diff_summary = AnnotationDiffSummary(
+                added=0,
+                removed=abs(count_diff),
+                modified=0,
+            )
+        else:
+            # Same count but different hash - likely modifications
+            diff_summary = AnnotationDiffSummary(
+                added=0,
+                removed=0,
+                modified=1,  # At least one modification detected
+            )
+
+    # Extract values from SQLAlchemy columns for Pydantic
+    remote_version_id: str | None = (
+        str(remote_state.version_id) if remote_state.version_id else None
+    )
+    remote_element_count: int = int(remote_state.element_count)  # type: ignore[arg-type]
+
+    response = AnnotationConflictCheckResponse(
+        has_conflict=has_conflict,
+        remote_version_id=remote_version_id,
+        remote_element_count=remote_element_count,
+        remote_updated_at=remote_updated_at_ms,
+        conflict_type=conflict_type,
+        diff_summary=diff_summary,
+    )
+
+    logger.info(
+        "check_annotation_conflicts_result",
+        project_id=request.project_id,
+        has_conflict=has_conflict,
+        conflict_type=conflict_type,
+    )
+
+    return response

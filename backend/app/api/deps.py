@@ -118,38 +118,31 @@ async def get_current_user_from_ws(token: str) -> User:
         )
 
     # Get user from database
+    # Use the db session from the generator - do NOT call close() explicitly
+    # as the async context manager in get_async_db() handles cleanup
+    from sqlalchemy import select
 
-    async for db in get_async_db():
-        try:
-            from sqlalchemy import select
+    from app.db.session import AsyncSessionLocal
 
-            result = await db.execute(
-                select(User).where(User.id == user_id)  # type: ignore[arg-type]
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(User).where(User.id == user_id)  # type: ignore[arg-type]
+        )
+        user = result.scalar_one_or_none()
+
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found",
             )
-            user = result.scalar_one_or_none()
 
-            if user is None:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="User not found",
-                )
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User is not active",
+            )
 
-            if not user.is_active:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="User is not active",
-                )
-
-            return user
-
-        finally:
-            await db.close()
-
-    # If we get here, something went wrong
-    raise HTTPException(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail="Database connection error",
-    )
+        return user
 
 
 async def get_runner_user_from_token(

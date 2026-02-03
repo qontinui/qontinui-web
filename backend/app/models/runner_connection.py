@@ -8,7 +8,7 @@ providing an audit trail and connection history.
 from datetime import datetime
 from uuid import UUID
 
-from qontinui_schemas.common import utc_now
+from qontinui_schemas.common import to_utc, utc_now
 from sqlalchemy import DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -94,9 +94,17 @@ class RunnerConnection(Base):
     )
 
     def calculate_duration(self) -> None:
-        """Calculate and set the duration_seconds field."""
+        """Calculate and set the duration_seconds field.
+
+        Uses to_utc() to ensure both datetimes are timezone-aware before
+        subtraction, preventing "can't subtract offset-naive and offset-aware
+        datetimes" errors.
+        """
         if self.connected_at and self.disconnected_at:
-            delta = self.disconnected_at - self.connected_at
+            # Ensure both datetimes are timezone-aware UTC
+            connected_utc = to_utc(self.connected_at)
+            disconnected_utc = to_utc(self.disconnected_at)
+            delta = disconnected_utc - connected_utc
             self.duration_seconds = int(delta.total_seconds())
 
     def __repr__(self) -> str:

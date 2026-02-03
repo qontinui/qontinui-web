@@ -11,9 +11,11 @@ from uuid import UUID
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
+    Integer,
     String,
     Text,
     text,
@@ -25,6 +27,97 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.project import Project
+
+
+class UIBridgeExplorationSession(Base):
+    """
+    Persisted exploration session.
+
+    Stores render logs and exploration results so they can be recovered
+    after page reloads or browser crashes.
+    """
+
+    __tablename__ = "ui_bridge_exploration_sessions"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+
+    # Link to project
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Session name (auto-generated or user-provided)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # Exploration status: "running", "completed", "failed", "cancelled"
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="running")
+
+    # Target configuration
+    target_type: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="extension"
+    )
+    target_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+
+    # Exploration configuration (max_depth, delays, filters, etc.)
+    exploration_config: Mapped[dict] = mapped_column(
+        JSON, default=dict, nullable=False, server_default="{}"
+    )
+
+    # Raw render logs (the primary data we want to persist)
+    render_logs: Mapped[list] = mapped_column(
+        JSON, default=list, nullable=False, server_default="[]"
+    )
+
+    # Exploration progress
+    elements_discovered: Mapped[int] = mapped_column(Integer, default=0)
+    elements_explored: Mapped[int] = mapped_column(Integer, default=0)
+    render_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Error message if failed
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Whether discovery has been run on this session
+    discovery_completed: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Link to saved config if discovery results were saved
+    saved_config_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("ui_bridge_state_configs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    # Timestamps
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    # Relationships
+    project: Mapped["Project"] = relationship(
+        "Project", back_populates="exploration_sessions"
+    )
+    saved_config: Mapped["UIBridgeStateConfig | None"] = relationship(
+        "UIBridgeStateConfig", foreign_keys=[saved_config_id]
+    )
+
+    def __repr__(self) -> str:
+        return f"<UIBridgeExplorationSession(id={self.id}, status='{self.status}', render_count={self.render_count})>"
 
 
 class UIBridgeStateConfig(Base):

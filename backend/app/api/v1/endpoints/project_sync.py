@@ -28,6 +28,7 @@ from app.api.deps import (
     get_current_user_from_ws,
 )
 from app.crud.project import get_project
+from app.db.session import AsyncSessionLocal
 from app.models.organization import PermissionLevel
 from app.models.sync_lock import SyncLock
 from app.models.user import User
@@ -106,10 +107,12 @@ async def websocket_sync_endpoint(
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
-        # Get database session
-        async for db_session in get_async_db():
-            db = db_session
-            break
+        # Get database session - use AsyncSessionLocal directly to avoid generator lifecycle issues
+        try:
+            db = AsyncSessionLocal()
+        except Exception as e:
+            logger.error("project_sync_ws_db_create_failed", error=str(e))
+            db = None
 
         if not db:
             await websocket.send_json(

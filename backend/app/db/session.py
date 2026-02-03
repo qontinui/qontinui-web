@@ -132,11 +132,27 @@ def get_sync_db():
 
 
 async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
-    """Dependency for getting async database sessions."""
+    """Dependency for getting async database sessions.
+
+    WARNING: This function is designed to be used as a FastAPI dependency.
+    Do NOT use it with `async for` and `break` - this leaves the generator
+    in an invalid state and causes IllegalStateChangeError.
+
+    For WebSocket handlers or other non-dependency contexts, use
+    AsyncSessionLocal() directly:
+        async with AsyncSessionLocal() as session:
+            # ... your code ...
+    """
     async with AsyncSessionLocal() as session:
         try:
             yield session
             await session.commit()
+        except GeneratorExit:
+            # Generator was closed prematurely (e.g., client disconnect, break from loop)
+            # Don't try to commit or rollback - just let the context manager handle cleanup
+            # This prevents IllegalStateChangeError when close() is called while
+            # another operation is in progress
+            pass
         except Exception:
             await session.rollback()
             raise

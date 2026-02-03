@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import current_active_user, get_async_db
 from app.models.user import User
 from app.services.task_run_service import (
+    StepProgressResponse,
     TaskRunAutomationCreate,
     TaskRunAutomationResponse,
     TaskRunAutomationUpdate,
@@ -451,3 +452,43 @@ async def get_automations(
 ) -> list[TaskRunAutomationResponse]:
     """Get all automation records for a task run."""
     return await service.get_automations(db, task_run_id)
+
+
+# =============================================================================
+# Step Progress Endpoints
+# =============================================================================
+
+
+@router.get(
+    "/{task_run_id}/steps/{checkpoint_id}/progress",
+    response_model=StepProgressResponse,
+    summary="Get step execution progress",
+    description="Get real-time progress information for a specific execution step.",
+)
+async def get_step_progress(
+    task_run_id: UUID,
+    checkpoint_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
+    service: TaskRunService = Depends(get_task_run_service),
+) -> StepProgressResponse:
+    """
+    Get real-time progress for a specific execution step.
+
+    Returns progress information including:
+    - Current phase (e.g., "image_matching", "action_execution")
+    - Phase description
+    - Substep information
+    - Progress percentage (if available)
+    - Elapsed time
+    - Error information (if failed)
+
+    Used by the frontend to display progress indicators during step execution.
+    """
+    result = await service.get_step_progress(db, task_run_id, checkpoint_id)
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Step progress not found for task run {task_run_id}, checkpoint {checkpoint_id}",
+        )
+    return result

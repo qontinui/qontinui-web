@@ -142,7 +142,7 @@ class AnnotationConnectionManager:
         user_id = str(user.id)
         color = self._assign_color(user_id)
 
-        user_info = {
+        user_info: dict[str, Any] = {
             "id": user_id,
             "name": user.full_name or user.email,
             "email": user.email,

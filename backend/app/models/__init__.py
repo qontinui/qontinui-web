@@ -13,6 +13,7 @@ from app.models.admin_notification_settings import AdminNotificationSettings
 from app.models.ai_prompt import AIPromptTemplate, PromptSequence
 from app.models.analytics_event import AnalyticsEvent
 from app.models.annotation import Annotation, AnnotationSet
+from app.models.application_profile import ApplicationProfile
 from app.models.audit_log import AuditLog
 from app.models.automation import AutomationInputEvent
 from app.models.automation_log import AutomationLog
@@ -50,6 +51,7 @@ from app.models.device_session import DeviceSession
 from app.models.discovered_state import DiscoveredState
 from app.models.discovery import Discovery
 from app.models.edit_command import EditCommand
+from app.models.element_annotation import ElementAnnotation, ElementAnnotationSet
 from app.models.embedding_generation_job import EmbeddingGenerationJob
 from app.models.execution_issue import (
     ExecutionIssue,
@@ -82,16 +84,10 @@ from app.models.organization import (
 )
 from app.models.path_discovery import PathDiscovery
 from app.models.project import Project
+from app.models.project_annotation_state import ProjectAnnotationState
 from app.models.project_assets import ProjectImage, ProjectScreenshot
 from app.models.project_embedding import ProjectEmbedding
 from app.models.project_version import ProjectVersion
-from app.models.render_log import (
-    RenderImage,
-    RenderImageType,
-    RenderLog,
-    RenderLogMutationType,
-    RenderLogTrigger,
-)
 from app.models.recording import (
     DiscoveredTransition,
     ProcessingLog,
@@ -101,6 +97,13 @@ from app.models.recording import (
     RecordingFrame,
     RecordingInteraction,
     RecordingStatus,
+)
+from app.models.render_log import (
+    RenderImage,
+    RenderImageType,
+    RenderLog,
+    RenderLogMutationType,
+    RenderLogTrigger,
 )
 from app.models.runner_connection import RunnerConnection
 from app.models.runner_device import RunnerDevice
@@ -115,6 +118,7 @@ from app.models.snapshot import (
     SnapshotRun,
 )
 from app.models.software_test_run import SoftwareTestRun, TestRunStatus
+from app.models.state_discovery_result import DiscoverySourceType, StateDiscoveryResult
 from app.models.state_transition import StateTransition
 from app.models.storage_usage import StorageUsage
 from app.models.subscription import Subscription, SubscriptionStatus, SubscriptionTier
@@ -139,6 +143,7 @@ from app.models.task_run import (  # New unified names; Backward compatibility a
     TaskRunStatus,
     TaskType,
 )
+from app.models.template_candidate import TemplateCandidate
 from app.models.test_deficiency import (
     DeficiencySeverity,
     DeficiencyStatus,
@@ -160,17 +165,19 @@ from app.models.training_dataset import (
     TrainingDatasetExportJob,
     TrainingDatasetImage,
 )
-from app.models.ui_bridge_state import (
-    DomainKnowledge,
-    UIBridgeState,
-    UIBridgeStateConfig,
-    UIBridgeStateDomainKnowledge,
-)
+from app.models.training_job import TrainingJob, TrainingJobModelType, TrainingJobStatus
 from app.models.transition_execution import (
     TransitionExecution,
     TransitionExecutionStatus,
 )
 from app.models.transition_reliability import TransitionReliability
+from app.models.ui_bridge_state import (
+    DomainKnowledge,
+    UIBridgeExplorationSession,
+    UIBridgeState,
+    UIBridgeStateConfig,
+    UIBridgeStateDomainKnowledge,
+)
 from app.models.usage_metric import UsageMetric
 from app.models.user import User
 from app.models.verification_test import (
@@ -208,6 +215,7 @@ __all__ = [
     "Project",
     "ProjectScreenshot",
     "ProjectImage",
+    "ProjectAnnotationState",
     # AI Prompt Library
     "AIPromptTemplate",
     "PromptSequence",
@@ -281,6 +289,9 @@ __all__ = [
     # Version History & Event Sourcing
     "ProjectVersion",
     "EditCommand",
+    # Element Annotations (Project-scoped)
+    "ElementAnnotation",
+    "ElementAnnotationSet",
     # Workflow Variables
     "WorkflowVariable",
     "VariableHistory",
@@ -406,6 +417,17 @@ __all__ = [
     # UI Bridge State Discovery
     "UIBridgeStateConfig",
     "UIBridgeState",
+    "UIBridgeExplorationSession",
     "DomainKnowledge",
     "UIBridgeStateDomainKnowledge",
+    # Training Jobs (ML Training Pipeline)
+    "TrainingJob",
+    "TrainingJobModelType",
+    "TrainingJobStatus",
+    # Unified State Discovery Results
+    "StateDiscoveryResult",
+    "DiscoverySourceType",
+    # Template Capture (click-to-template)
+    "TemplateCandidate",
+    "ApplicationProfile",
 ]

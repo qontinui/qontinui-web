@@ -20,7 +20,8 @@ from fastapi import WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_async_db, get_current_user_from_ws
+from app.api.deps import get_current_user_from_ws
+from app.db.session import AsyncSessionLocal
 from app.models.user import User
 from app.websockets.rate_limiter import RateLimiter
 
@@ -156,10 +157,16 @@ class BaseWebSocketHandler(ABC):
                 await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
                 return
 
-            # Get database session
-            async for db_session in get_async_db():
-                db = db_session
-                break
+            # Get database session - use AsyncSessionLocal directly to avoid generator lifecycle issues
+            # The generator pattern (get_async_db) doesn't work well outside FastAPI's dependency injection
+            # because breaking out of the generator loop leaves it in an invalid state
+            try:
+                db = AsyncSessionLocal()
+            except Exception as e:
+                self.logger.error(
+                    f"{self.endpoint_name}_db_session_create_failed", error=str(e)
+                )
+                db = None
 
             if not db:
                 self.logger.error(f"{self.endpoint_name}_db_failed")
@@ -218,9 +225,19 @@ class BaseWebSocketHandler(ABC):
 
             if db:
                 try:
+                    # Close the session without explicit rollback.
+                    # Calling rollback() or in_transaction() while an operation is in progress
+                    # can cause IllegalStateChangeError. The connection pool will handle
+                    # rolling back uncommitted changes when the connection is returned.
                     await db.close()
-                except Exception:
-                    pass
+                except Exception as e:
+                    # If close fails (e.g., operation was in progress), log and continue.
+                    # The session will be garbage collected and connection returned to pool.
+                    self.logger.debug(
+                        f"{self.endpoint_name}_db_close_error",
+                        error=str(e),
+                        error_type=type(e).__name__,
+                    )
 
             try:
                 await websocket.close()

@@ -133,8 +133,30 @@ class Project(Base):
         back_populates="project",
         cascade="all, delete-orphan",
     )
+    exploration_sessions = relationship(
+        "UIBridgeExplorationSession",
+        back_populates="project",
+        cascade="all, delete-orphan",
+        order_by="UIBridgeExplorationSession.created_at.desc()",
+    )
     domain_knowledge = relationship(
         "DomainKnowledge",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+    element_annotation_sets = relationship(
+        "ElementAnnotationSet",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+    state_discovery_results = relationship(
+        "StateDiscoveryResult",
+        back_populates="project",
+        cascade="all, delete-orphan",
+        order_by="StateDiscoveryResult.created_at.desc()",
+    )
+    template_candidates = relationship(
+        "TemplateCandidate",
         back_populates="project",
         cascade="all, delete-orphan",
     )

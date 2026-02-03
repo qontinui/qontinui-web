@@ -57,7 +57,9 @@ from app.api.v1.endpoints import (
     settings,
     snapshots,
     state_discovery,
+    state_discovery_results,
     task_runs,
+    template_capture,
 )
 from app.api.v1.endpoints import testing as testing_pkg
 from app.api.v1.endpoints import (
@@ -195,4 +197,12 @@ api_router.include_router(training.router, prefix="/training", tags=["training"]
 # Batch import annotations from folder
 api_router.include_router(
     batch_import.router, prefix="/annotations", tags=["batch-import"]
+)
+# Unified state discovery results (from any source: Playwright, UI Bridge, etc.)
+api_router.include_router(
+    state_discovery_results.router, tags=["state-discovery-results"]
+)
+# Template capture (click-to-template system)
+api_router.include_router(
+    template_capture.router, prefix="/template-capture", tags=["template-capture"]
 )

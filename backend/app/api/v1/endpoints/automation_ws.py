@@ -13,8 +13,9 @@ import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select
 
-from app.api.deps import get_async_db, get_current_user_from_ws
+from app.api.deps import get_current_user_from_ws
 from app.config.redis_config import get_redis
+from app.db.session import AsyncSessionLocal
 from app.models.automation_session import AutomationSession
 from app.services.websocket_manager import get_websocket_manager
 from app.websockets.automation import ConnectionHandler, MessageRouter, make_timestamp
@@ -304,10 +305,12 @@ async def websocket_monitor_endpoint(
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
-        # Get database session
-        async for db_session in get_async_db():
-            db = db_session
-            break
+        # Get database session - use AsyncSessionLocal directly to avoid generator lifecycle issues
+        try:
+            db = AsyncSessionLocal()
+        except Exception as e:
+            logger.error("automation_monitor_ws_db_create_failed", error=str(e))
+            db = None
 
         if not db:
             logger.error("automation_monitor_ws_db_failed")

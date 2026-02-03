@@ -12,9 +12,10 @@ from fastapi import WebSocket, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_async_db, get_current_user_from_ws
+from app.api.deps import get_current_user_from_ws
 from app.config.redis_config import get_redis
 from app.crud import runner as runner_crud
+from app.db.session import AsyncSessionLocal
 from app.models.runner_connection import RunnerConnection
 from app.models.user import User
 from app.services.runner_connection_manager import (
@@ -131,12 +132,21 @@ class ConnectionHandler:
     async def setup_database(self) -> bool:
         """Set up database session and re-fetch user.
 
+        Note: This creates a session that must be managed manually.
+        The session is NOT wrapped in a context manager because it needs
+        to persist for the lifetime of the WebSocket connection.
+
         Returns:
             True if setup succeeded, False otherwise.
         """
-        async for db_session in get_async_db():
-            self.db = db_session
-            break
+        try:
+            # Create a new session directly - we manage its lifecycle manually
+            self.db = AsyncSessionLocal()
+        except Exception as e:
+            logger.error("automation_ws_db_failed", error=str(e))
+            await self._send_error("Database connection failed")
+            await self.websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+            return False
 
         if not self.db:
             logger.error("automation_ws_db_failed")
@@ -144,11 +154,17 @@ class ConnectionHandler:
             await self.websocket.close(code=status.WS_1011_INTERNAL_ERROR)
             return False
 
-        # Re-fetch user in this session
-        user_result = await self.db.execute(
-            select(User).filter(User.id == self.user.id)  # type: ignore
-        )
-        self.user = user_result.scalar_one_or_none()
+        try:
+            # Re-fetch user in this session
+            user_result = await self.db.execute(
+                select(User).filter(User.id == self.user.id)  # type: ignore
+            )
+            self.user = user_result.scalar_one_or_none()
+        except Exception as e:
+            logger.error("automation_ws_user_fetch_failed", error=str(e))
+            await self._send_error("Failed to fetch user")
+            await self.websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+            return False
 
         if not self.user:
             logger.error("automation_ws_user_not_found")
@@ -378,13 +394,15 @@ class ConnectionHandler:
                     error=str(e),
                 )
 
-        # Close connection record
-        if self.connection_record and self.db:
+        # Close connection record - use a fresh session to avoid race conditions
+        if self.connection_record:
             try:
-                await runner_crud.close_connection_record(
-                    db=self.db,
-                    connection_id=self.connection_record.id,
-                )
+                async with AsyncSessionLocal() as cleanup_db:
+                    await runner_crud.close_connection_record(
+                        db=cleanup_db,
+                        connection_id=self.connection_record.id,
+                    )
+                    await cleanup_db.commit()
                 logger.info(
                     "runner_connection_closed",
                     connection_id=self.connection_record.id,
@@ -397,12 +415,22 @@ class ConnectionHandler:
                     error_type=type(e).__name__,
                 )
 
-        # Close database session
+        # Close the main database session safely
+        # Avoid rollback() as it can cause IllegalStateChangeError if there's an
+        # operation in progress (e.g., query was running when client disconnected).
+        # Just close the session - uncommitted changes will be rolled back by the
+        # connection pool when the connection is returned.
         if self.db:
             try:
                 await self.db.close()
-            except Exception:
-                pass
+            except Exception as e:
+                # If close fails (e.g., operation in progress), log and continue.
+                # The session will be garbage collected and connection returned to pool.
+                logger.debug(
+                    "db_close_exception",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
 
         # Close websocket
         try:

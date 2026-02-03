@@ -1,10 +1,10 @@
 """Schemas for UI Bridge state discovery and persistence."""
 
 from datetime import datetime
+from enum import Enum
 from uuid import UUID
 
 from pydantic import BaseModel, Field
-
 
 # =============================================================================
 # Domain Knowledge Schemas
@@ -172,16 +172,40 @@ class UIBridgeStateConfigListResponse(BaseModel):
 # =============================================================================
 
 
+class DiscoveryStrategy(str, Enum):
+    """Available discovery strategy types."""
+
+    LEGACY = "legacy"  # ID-based co-occurrence (original)
+    FINGERPRINT = "fingerprint"  # Enhanced with element fingerprints
+    AUTO = "auto"  # Auto-detect based on available data
+
+
 class UIBridgeDiscoverAndSaveRequest(BaseModel):
-    """Request to discover states from renders and save to database."""
+    """Request to discover states from renders and save to database.
+
+    Supports two discovery modes:
+    1. Legacy (default): Uses element IDs (data-ui-id, data-testid) with co-occurrence
+    2. Fingerprint: Enhanced discovery using element fingerprints for cross-page matching
+
+    For fingerprint discovery, provide `cooccurrence_export` from the UI Bridge.
+    """
 
     config_name: str = Field(default="default", min_length=1, max_length=255)
     config_description: str | None = None
     renders: list[dict] = Field(
-        ..., description="List of render log entries to analyze"
+        default_factory=list, description="List of render log entries to analyze"
     )
     include_html_ids: bool = Field(
         default=False, description="Whether to include HTML id attributes as elements"
+    )
+    cooccurrence_export: dict | None = Field(
+        default=None,
+        description="Co-occurrence export from UI Bridge with fingerprint data. "
+        "If provided with fingerprint data, uses enhanced discovery.",
+    )
+    strategy: DiscoveryStrategy = Field(
+        default=DiscoveryStrategy.AUTO,
+        description="Discovery strategy to use. AUTO selects based on available data.",
     )
 
 
@@ -192,3 +216,92 @@ class UIBridgeDiscoverAndSaveResponse(BaseModel):
     states: list[UIBridgeStateResponse]
     render_count: int
     unique_element_count: int
+
+
+# =============================================================================
+# UI Bridge Exploration Session Schemas
+# =============================================================================
+
+
+class ExplorationSessionStatus(str, Enum):
+    """Status of an exploration session."""
+
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class ExplorationSessionCreate(BaseModel):
+    """Schema for creating an exploration session."""
+
+    name: str | None = Field(None, max_length=255, description="Optional session name")
+    target_type: str = Field(
+        default="extension", description="Target type: extension, web, desktop, mobile"
+    )
+    target_url: str | None = Field(
+        None, max_length=2048, description="Target URL for non-extension modes"
+    )
+    exploration_config: dict = Field(
+        default_factory=dict, description="Exploration configuration"
+    )
+
+
+class ExplorationSessionUpdate(BaseModel):
+    """Schema for updating an exploration session."""
+
+    status: ExplorationSessionStatus | None = None
+    render_logs: list[dict] | None = Field(None, description="Append render logs")
+    elements_discovered: int | None = None
+    elements_explored: int | None = None
+    error_message: str | None = None
+    discovery_completed: bool | None = None
+    saved_config_id: UUID | None = None
+
+
+class ExplorationSessionAppendRenders(BaseModel):
+    """Schema for appending render logs to a session."""
+
+    render_logs: list[dict] = Field(..., description="Render logs to append")
+    elements_discovered: int | None = None
+    elements_explored: int | None = None
+
+
+class ExplorationSessionResponse(BaseModel):
+    """Schema for exploration session response."""
+
+    id: UUID
+    project_id: UUID
+    name: str
+    status: str
+    target_type: str
+    target_url: str | None
+    exploration_config: dict
+    render_count: int
+    elements_discovered: int
+    elements_explored: int
+    error_message: str | None
+    discovery_completed: bool
+    saved_config_id: UUID | None
+    started_at: datetime
+    completed_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        """Pydantic model config."""
+
+        from_attributes = True
+
+
+class ExplorationSessionWithRenders(ExplorationSessionResponse):
+    """Schema for exploration session with render logs included."""
+
+    render_logs: list[dict] = Field(default_factory=list)
+
+
+class ExplorationSessionListResponse(BaseModel):
+    """Schema for listing exploration sessions."""
+
+    items: list[ExplorationSessionResponse]
+    total: int

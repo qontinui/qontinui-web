@@ -333,11 +333,11 @@ async def export_state_machine(
         version="1.0.0",
         name=discovery_result.name,
         description=discovery_result.description,
-        source_type=discovery_result.source_type,
+        sourceType=discovery_result.source_type,
         images=discovery_result.images,
         states=discovery_result.states,
         transitions=discovery_result.transitions,
-        element_to_renders=discovery_result.element_to_renders,
+        elementToRenders=discovery_result.element_to_renders,
         metadata={
             "original_id": str(discovery_result.id),
             "original_project_id": str(discovery_result.project_id),
