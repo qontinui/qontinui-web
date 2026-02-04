@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Script to create an admin/superuser in the database."""
+
 import os
 import sys
 from pathlib import Path

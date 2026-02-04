@@ -286,7 +286,8 @@ async def acquire_lock(
 
         if existing_lock:
             lock_holder = await collaboration_repository.get_user(
-                db, existing_lock.user_id  # type: ignore
+                db,
+                existing_lock.user_id,  # type: ignore
             )
 
             raise HTTPException(

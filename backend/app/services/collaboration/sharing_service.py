@@ -191,7 +191,9 @@ class SharingService:
             )
         else:
             existing = await collaboration_repository.get_organization_access(
-                db, project_id, organization_id  # type: ignore
+                db,
+                project_id,
+                organization_id,  # type: ignore
             )
 
         if existing:

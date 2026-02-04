@@ -317,9 +317,9 @@ class IntegrationTestPDFReport:
         details = f"""
         <para>
         <b>Execution Period:</b> {start_time} to {end_time}<br/>
-        <b>Total Duration:</b> {duration:.0f}ms ({duration/1000:.2f} seconds)<br/>
-        <b>Total Actions:</b> {result.get('total_actions', 0)}<br/>
-        <b>Successful Actions:</b> {result.get('successful_actions', 0)}<br/>
+        <b>Total Duration:</b> {duration:.0f}ms ({duration / 1000:.2f} seconds)<br/>
+        <b>Total Actions:</b> {result.get("total_actions", 0)}<br/>
+        <b>Successful Actions:</b> {result.get("successful_actions", 0)}<br/>
         </para>
         """
         self.story.append(Paragraph(details, self.styles["CustomBody"]))

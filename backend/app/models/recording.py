@@ -107,8 +107,15 @@ class Recording(Base):
     upload_size_bytes = Column(Integer)
 
     # Processing status
-    status: RecordingStatus = Column(Enum(RecordingStatus), default=RecordingStatus.UPLOADED, nullable=False, index=True)  # type: ignore[assignment]
-    processing_phase: ProcessingPhase | None = Column(Enum(ProcessingPhase), nullable=True)  # type: ignore[assignment]
+    status: RecordingStatus = Column(
+        Enum(RecordingStatus),
+        default=RecordingStatus.UPLOADED,
+        nullable=False,
+        index=True,
+    )  # type: ignore[assignment]
+    processing_phase: ProcessingPhase | None = Column(
+        Enum(ProcessingPhase), nullable=True
+    )  # type: ignore[assignment]
     processing_progress = Column(Float, default=0.0)  # 0.0 to 1.0
     processing_started_at = Column(DateTime)
     processing_completed_at = Column(DateTime)

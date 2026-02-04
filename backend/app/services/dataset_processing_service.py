@@ -189,7 +189,9 @@ class DatasetProcessingService:
 
             # Check if image already exists in this dataset
             existing = await TrainingDatasetRepository.get_image_by_hash(
-                db, dataset.id, image_hash  # type: ignore[arg-type]
+                db,
+                dataset.id,
+                image_hash,  # type: ignore[arg-type]
             )
             if existing:
                 result["warning"] = f"Duplicate image skipped: {image_filename}"

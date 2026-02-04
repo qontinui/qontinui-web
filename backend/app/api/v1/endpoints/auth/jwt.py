@@ -90,15 +90,16 @@ async def login(
     )
 
     # Get or create device session
-    device_session, is_new_device = (
-        await device_session_service.get_or_create_device_session(
-            db=db,
-            user_id=user.id,
-            device_fingerprint=fingerprint,
-            ip_address=device_info["ip_address"],
-            user_agent=device_info["user_agent"],
-            accept_language=device_info.get("accept_language"),
-        )
+    (
+        device_session,
+        is_new_device,
+    ) = await device_session_service.get_or_create_device_session(
+        db=db,
+        user_id=user.id,
+        device_fingerprint=fingerprint,
+        ip_address=device_info["ip_address"],
+        user_agent=device_info["user_agent"],
+        accept_language=device_info.get("accept_language"),
     )
 
     # Calculate account age in days

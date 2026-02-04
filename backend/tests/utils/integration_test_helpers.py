@@ -32,7 +32,7 @@ def create_test_snapshot(
         Dictionary containing snapshot data structure
     """
     if states is None:
-        states = [f"state_{i+1}" for i in range(min(num_screenshots, 3))]
+        states = [f"state_{i + 1}" for i in range(min(num_screenshots, 3))]
 
     run_id = str(uuid.uuid4())
     timestamp = datetime.now().isoformat()
@@ -43,12 +43,12 @@ def create_test_snapshot(
         active_states = [states[i % len(states)]]
         screenshots.append(
             {
-                "screenshot_path": f"screenshot_{i+1}.png",
+                "screenshot_path": f"screenshot_{i + 1}.png",
                 "active_states": active_states,
                 "timestamp": timestamp,
                 "width": 1920,
                 "height": 1080,
-                "state_hash": f"hash_{i+1}",
+                "state_hash": f"hash_{i + 1}",
             }
         )
 
@@ -60,7 +60,7 @@ def create_test_snapshot(
             patterns.append(
                 {
                     "pattern_id": str(uuid.uuid4()),
-                    "name": f"pattern_{i+1}",
+                    "name": f"pattern_{i + 1}",
                     "type": pattern_types[i % len(pattern_types)],
                     "screenshot_path": screenshots[i % len(screenshots)][
                         "screenshot_path"
@@ -394,7 +394,7 @@ def generate_mock_execution_result(
 
         action_result = {
             "action_type": action["type"],
-            "screenshot_path": f"execution_step_{i+1}.png",
+            "screenshot_path": f"execution_step_{i + 1}.png",
             "action_location": [500 + i * 10, 300 + i * 10] if is_successful else None,
             "action_region": (
                 {

@@ -99,7 +99,8 @@ class DatasetExportService:
         # Get all images and annotations
         images = await TrainingDatasetRepository.get_all_images(db, dataset.id)  # type: ignore[arg-type]
         annotations = await TrainingDatasetRepository.get_all_annotations(
-            db, dataset.id  # type: ignore[arg-type]
+            db,
+            dataset.id,  # type: ignore[arg-type]
         )
 
         # Build annotations by image

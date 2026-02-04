@@ -100,8 +100,7 @@ async def beta_signup(
                 f"<p>Your temporary password is: {temp_password}</p>"
             ),
             text_content=(
-                f"Welcome {username}!\n\n"
-                f"Your temporary password is: {temp_password}"
+                f"Welcome {username}!\n\nYour temporary password is: {temp_password}"
             ),
         )
         if job_id:

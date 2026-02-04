@@ -39,12 +39,12 @@ async def create_test_snapshots(db: AsyncSession) -> list[str]:
         await snapshot_crud.add_screenshot(
             db=db,
             snapshot_run_id=snapshot1.id,
-            screenshot_path=f"test_login_flow_screenshot_{i+1}.png",
+            screenshot_path=f"test_login_flow_screenshot_{i + 1}.png",
             active_states=[state],
             timestamp=datetime.utcnow() - timedelta(days=1, hours=i),
             width=1920,
             height=1080,
-            state_hash=f"hash_login_{i+1}",
+            state_hash=f"hash_login_{i + 1}",
             metadata={"step": i + 1},
         )
 
@@ -55,7 +55,7 @@ async def create_test_snapshots(db: AsyncSession) -> list[str]:
             db=db,
             snapshot_run_id=snapshot1.id,
             pattern_id=f"pattern-login-{uuid4()}",
-            name=f"login_pattern_{i+1}",
+            name=f"login_pattern_{i + 1}",
             type=pattern_types[i % len(pattern_types)],
             screenshot_path=f"test_login_flow_screenshot_{(i % 8) + 1}.png",
             region={"x": 100 + (i * 50), "y": 100 + (i * 30), "w": 150, "h": 40},
@@ -84,12 +84,12 @@ async def create_test_snapshots(db: AsyncSession) -> list[str]:
         await snapshot_crud.add_screenshot(
             db=db,
             snapshot_run_id=snapshot2.id,
-            screenshot_path=f"test_settings_screenshot_{i+1}.png",
+            screenshot_path=f"test_settings_screenshot_{i + 1}.png",
             active_states=[state],
             timestamp=datetime.utcnow() - timedelta(hours=2, minutes=i * 10),
             width=1920,
             height=1080,
-            state_hash=f"hash_settings_{i+1}",
+            state_hash=f"hash_settings_{i + 1}",
             metadata={"step": i + 1},
         )
 
@@ -99,7 +99,7 @@ async def create_test_snapshots(db: AsyncSession) -> list[str]:
             db=db,
             snapshot_run_id=snapshot2.id,
             pattern_id=f"pattern-settings-{uuid4()}",
-            name=f"settings_pattern_{i+1}",
+            name=f"settings_pattern_{i + 1}",
             type=pattern_types[i % len(pattern_types)],
             screenshot_path=f"test_settings_screenshot_{(i % 6) + 1}.png",
             region={"x": 100 + (i * 40), "y": 100 + (i * 25), "w": 150, "h": 40},
@@ -139,12 +139,12 @@ async def create_test_snapshots(db: AsyncSession) -> list[str]:
         await snapshot_crud.add_screenshot(
             db=db,
             snapshot_run_id=snapshot3.id,
-            screenshot_path=f"test_complete_screenshot_{i+1}.png",
+            screenshot_path=f"test_complete_screenshot_{i + 1}.png",
             active_states=[states_list[i]],
             timestamp=datetime.utcnow() - timedelta(hours=1, minutes=i * 5),
             width=1920,
             height=1080,
-            state_hash=f"hash_complete_{i+1}",
+            state_hash=f"hash_complete_{i + 1}",
             metadata={"step": i + 1},
         )
 
@@ -154,7 +154,7 @@ async def create_test_snapshots(db: AsyncSession) -> list[str]:
             db=db,
             snapshot_run_id=snapshot3.id,
             pattern_id=f"pattern-complete-{uuid4()}",
-            name=f"complete_pattern_{i+1}",
+            name=f"complete_pattern_{i + 1}",
             type=pattern_types[i % len(pattern_types)],
             screenshot_path=f"test_complete_screenshot_{(i % 10) + 1}.png",
             region={"x": 100 + (i * 45), "y": 100 + (i * 28), "w": 150, "h": 40},
@@ -169,9 +169,7 @@ async def create_test_snapshots(db: AsyncSession) -> list[str]:
 
 
 async def clear_test_snapshots(db: AsyncSession) -> None:
-    """
-    Clear all test snapshot runs (snapshots with 'test' metadata)
-    """
+    """Clear all test snapshot runs (snapshots with 'test' metadata)."""
     # Get all snapshots
     snapshots, _ = await snapshot_crud.list_snapshot_runs(db, limit=1000)
 

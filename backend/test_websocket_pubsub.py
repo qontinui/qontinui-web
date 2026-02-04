@@ -24,9 +24,9 @@ async def broadcast_test_message(session_id: str, message_type: str = "test_even
         session_id: Automation session ID
         message_type: Type of message to send
     """
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("WebSocket Redis Pub/Sub Test")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     # Connect to Redis
     redis_url = (
@@ -103,9 +103,9 @@ async def broadcast_test_message(session_id: str, message_type: str = "test_even
 
     # Cleanup
     await redis.close()
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("Test complete!")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
 
 async def continuous_broadcast(session_id: str, interval: int = 5):
@@ -116,9 +116,9 @@ async def continuous_broadcast(session_id: str, interval: int = 5):
         session_id: Automation session ID
         interval: Seconds between messages
     """
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("Continuous WebSocket Broadcast Test")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
     print(f"Broadcasting to session: {session_id}")
     print(f"Interval: {interval} seconds")
     print("Press Ctrl+C to stop\n")
@@ -163,9 +163,9 @@ async def continuous_broadcast(session_id: str, interval: int = 5):
 
 async def check_redis_status():
     """Check Redis connection and active channels."""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("Redis Status Check")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     redis_url = (
         f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
@@ -218,7 +218,7 @@ async def check_redis_status():
         print("  docker-compose -f docker-compose.dev.yml up -d redis")
         sys.exit(1)
 
-    print(f"\n{'='*60}\n")
+    print(f"\n{'=' * 60}\n")
 
 
 def print_usage():

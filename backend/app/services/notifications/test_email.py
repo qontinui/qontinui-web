@@ -72,11 +72,11 @@ class TestEmailService:
             # Render template
             html_body = f"""
             <h2>Test Run {test_run.status.title()}</h2>
-            <p>Workflow: {context['workflow_name']}</p>
-            <p>Coverage: {context['coverage']}</p>
-            <p>Transitions: {context['successful_transitions']}/{context['total_transitions']} successful</p>
-            {f"<p>⚠️ Found {context['deficiencies_found']} deficiencies</p>" if int(context['deficiencies_found'] or 0) > 0 else ""}
-            <p><a href="{context['dashboard_url']}">View Dashboard</a></p>
+            <p>Workflow: {context["workflow_name"]}</p>
+            <p>Coverage: {context["coverage"]}</p>
+            <p>Transitions: {context["successful_transitions"]}/{context["total_transitions"]} successful</p>
+            {f"<p>⚠️ Found {context['deficiencies_found']} deficiencies</p>" if int(context["deficiencies_found"] or 0) > 0 else ""}
+            <p><a href="{context["dashboard_url"]}">View Dashboard</a></p>
             """
 
             # Send to all recipients
@@ -115,8 +115,8 @@ class TestEmailService:
             <p><strong>{deficiency.title}</strong></p>
             <p>{deficiency.description}</p>
             <p>Type: {deficiency.deficiency_type}</p>
-            <p>Reproducible: {'Yes' if deficiency.reproducible else 'No'}</p>
-            {f'<p><a href="{notification.deficiency_url}">View Details</a></p>' if notification.deficiency_url else ''}
+            <p>Reproducible: {"Yes" if deficiency.reproducible else "No"}</p>
+            {f'<p><a href="{notification.deficiency_url}">View Details</a></p>' if notification.deficiency_url else ""}
             """
 
             # Send to all recipients
@@ -156,7 +156,7 @@ class TestEmailService:
             <h2>⚠️ Test Coverage Drop Alert</h2>
             <p>Coverage fell to {notification.current_coverage}%{drop_text}</p>
             <p>Threshold: {notification.threshold}%</p>
-            {f'<p><a href="{notification.dashboard_url}">View Dashboard</a></p>' if notification.dashboard_url else ''}
+            {f'<p><a href="{notification.dashboard_url}">View Dashboard</a></p>' if notification.dashboard_url else ""}
             """
 
             # Send to all recipients

@@ -15,8 +15,8 @@ class StorageQuotaExceeded(HTTPException):
     def __init__(self, used_bytes: int, quota_bytes: int):
         detail = (
             f"Storage quota exceeded. "
-            f"Used: {used_bytes / (1024*1024):.2f}MB, "
-            f"Quota: {quota_bytes / (1024*1024):.2f}MB"
+            f"Used: {used_bytes / (1024 * 1024):.2f}MB, "
+            f"Quota: {quota_bytes / (1024 * 1024):.2f}MB"
         )
         super().__init__(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=detail

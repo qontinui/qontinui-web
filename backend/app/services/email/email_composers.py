@@ -182,7 +182,7 @@ New Feedback Received from Qontinui Beta
 
 Name: {name}
 Email: {email}
-Page: {page_url or 'Not provided'}
+Page: {page_url or "Not provided"}
 
 Message:
 {message}
@@ -199,13 +199,13 @@ This feedback was submitted through the Qontinui Beta feedback form.
     <div style="background-color: #f3f4f6; padding: 15px; border-radius: 5px; margin: 20px 0;">
         <p><strong>Name:</strong> {name}</p>
         <p><strong>Email:</strong> <a href="mailto:{email}">{email}</a></p>
-        <p><strong>Page:</strong> {page_url or 'Not provided'}</p>
+        <p><strong>Page:</strong> {page_url or "Not provided"}</p>
     </div>
 
     <div style="margin: 20px 0;">
         <p><strong>Message:</strong></p>
         <div style="background-color: #fff; border-left: 4px solid #6366f1; padding: 15px; margin: 10px 0;">
-            {message.replace('\n', '<br>')}
+            {message.replace("\n", "<br>")}
         </div>
     </div>
 

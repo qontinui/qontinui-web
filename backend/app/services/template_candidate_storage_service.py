@@ -284,24 +284,26 @@ class TemplateCandidateStorageService:
             )
 
             # Upload full-size image
-            image_key, image_url = (
-                await TemplateCandidateStorageService.upload_candidate_image(
-                    candidate_id=candidate_id,
-                    session_id=session_id,
-                    image_data=image_data,
-                    image_format="png",
-                )
+            (
+                image_key,
+                image_url,
+            ) = await TemplateCandidateStorageService.upload_candidate_image(
+                candidate_id=candidate_id,
+                session_id=session_id,
+                image_data=image_data,
+                image_format="png",
             )
             result["image"] = (image_key, image_url)
 
             # Generate and upload thumbnail
             try:
-                thumb_key, thumb_url = (
-                    await TemplateCandidateStorageService.upload_candidate_thumbnail(
-                        candidate_id=candidate_id,
-                        session_id=session_id,
-                        image_data=image_data,
-                    )
+                (
+                    thumb_key,
+                    thumb_url,
+                ) = await TemplateCandidateStorageService.upload_candidate_thumbnail(
+                    candidate_id=candidate_id,
+                    session_id=session_id,
+                    image_data=image_data,
                 )
                 result["thumbnail"] = (thumb_key, thumb_url)
             except Exception as e:
@@ -317,12 +319,13 @@ class TemplateCandidateStorageService:
                     mask_data = TemplateCandidateStorageService._decode_base64_image(
                         mask_base64
                     )
-                    mask_key, mask_url = (
-                        await TemplateCandidateStorageService.upload_candidate_mask(
-                            candidate_id=candidate_id,
-                            session_id=session_id,
-                            mask_data=mask_data,
-                        )
+                    (
+                        mask_key,
+                        mask_url,
+                    ) = await TemplateCandidateStorageService.upload_candidate_mask(
+                        candidate_id=candidate_id,
+                        session_id=session_id,
+                        mask_data=mask_data,
                     )
                     result["mask"] = (mask_key, mask_url)
                 except Exception as e:

@@ -73,7 +73,6 @@ def test_imports():
 
     # Test schemas
     try:
-
         print("✓ Schemas imported successfully")
         print("  - Lock schemas available")
         print("  - Comment schemas available")

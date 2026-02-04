@@ -59,7 +59,9 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     )
 
     automation_sessions_limit: Mapped[int | None] = mapped_column(
-        Integer, nullable=True, default=None  # NULL = unlimited (for paid users)
+        Integer,
+        nullable=True,
+        default=None,  # NULL = unlimited (for paid users)
     )
 
     automation_sessions_used: Mapped[int] = mapped_column(

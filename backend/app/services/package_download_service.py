@@ -91,7 +91,7 @@ class PackageDownloadService:
 
 Version: {ver_str}
 Author: {package.author_id}
-License: {pkg_license or 'Not specified'}
+License: {pkg_license or "Not specified"}
 """
 
 from .{func_name} import {func_name}
@@ -126,11 +126,11 @@ result = {func_name}(...)
 
 ## Changelog
 
-{changelog or 'No changelog available'}
+{changelog or "No changelog available"}
 
 ## License
 
-{pkg_license or 'Not specified'}
+{pkg_license or "Not specified"}
 
 ---
 
