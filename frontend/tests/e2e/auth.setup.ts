@@ -32,7 +32,9 @@ setup("authenticate", async ({ page }) => {
 
   // Navigate to homepage
   await page.goto("/");
-  await page.waitForLoadState("networkidle");
+  // Use domcontentloaded instead of networkidle because the app has continuous polling
+  // on /api/ui-bridge/commands that prevents networkidle from ever completing
+  await page.waitForLoadState("domcontentloaded");
 
   // Open login dialog
   const signInButton = page.getByRole("button", { name: /sign in/i });
