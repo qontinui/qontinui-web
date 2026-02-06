@@ -92,6 +92,7 @@ export function usePatternOptimizationBridge() {
       }
       debouncedPersist();
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [debouncedPersist]
   );
 

@@ -82,6 +82,7 @@ export function AISuggestions({
     }
 
     loadSuggestions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workflow]);
 
   const loadSuggestions = useCallback(async () => {

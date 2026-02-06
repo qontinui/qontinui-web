@@ -45,6 +45,7 @@ export function useIntersectionObserver(
     return () => {
       observer.disconnect();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ref, options?.threshold, options?.rootMargin, options?.root]);
 
   return isVisible;
@@ -83,6 +84,7 @@ export function useIntersectionObserverRepeating(
     return () => {
       observer.disconnect();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ref, options?.threshold, options?.rootMargin, options?.root]);
 
   return isVisible;

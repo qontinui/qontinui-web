@@ -38,9 +38,8 @@ class ExportImportService:
         Raises:
             ValueError: If configuration validation fails
         """
-        config: dict[str, Any] = (
-            project.configuration or self._get_default_configuration()
-        )  # type: ignore[assignment]
+        raw_config = project.configuration or self._get_default_configuration()
+        config: dict[str, Any] = dict(raw_config)  # type: ignore[arg-type]
 
         metadata = config.get("metadata", {})
         metadata.update(

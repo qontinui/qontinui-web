@@ -322,6 +322,7 @@ const StateDiscoveryTab: React.FC = () => {
       );
       setIsAnalyzing(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screenshots, uploadId, uploadScreenshots, startAnalysis]);
 
   // Handle StateImage selection

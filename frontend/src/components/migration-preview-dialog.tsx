@@ -59,6 +59,7 @@ export function MigrationPreviewDialog({
     if (open && config) {
       loadPreview();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, config]);
 
   const loadPreview = async () => {

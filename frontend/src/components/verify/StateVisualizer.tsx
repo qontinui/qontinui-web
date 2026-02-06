@@ -136,6 +136,7 @@ export function StateVisualizer({
     drawStateElements(ctx);
 
     ctx.restore();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     state,
     zoom,

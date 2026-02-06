@@ -138,6 +138,7 @@ export function TransitionAnimationCanvas({
     });
 
     return Array.from(monitorIndices);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [animation.data, monitors]);
 
   // Use the shared monitor canvas hook
@@ -163,6 +164,7 @@ export function TransitionAnimationCanvas({
     } else {
       animation.cancel();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transition?.id, monitors]); // Only reload when transition ID or monitors change
 
   // Build map of imageId -> loaded HTMLImageElement
@@ -340,6 +342,7 @@ export function TransitionAnimationCanvas({
     }
 
     ctx.restore();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     animation.state,
     animation.data,

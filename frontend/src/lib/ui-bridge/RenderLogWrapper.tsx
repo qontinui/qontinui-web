@@ -15,7 +15,7 @@
 
 import { useEffect, useRef, useCallback, type ReactNode } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useUIBridgeOptional } from "ui-bridge/react";
+import { useUIBridgeOptional } from "@qontinui/ui-bridge/react";
 
 export interface RenderLogWrapperProps {
   children: ReactNode;
@@ -121,6 +121,7 @@ export function RenderLogWrapper({
     }, 500);
 
     return () => clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDev, bridge]); // Only on mount
 
   /**

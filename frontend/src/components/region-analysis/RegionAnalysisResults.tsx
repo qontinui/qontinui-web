@@ -276,6 +276,7 @@ export function RegionAnalysisResults({
                     transformOrigin: "top left",
                   }}
                 >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={imageUrl}
                     alt="Region analysis visualization"

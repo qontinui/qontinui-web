@@ -141,6 +141,7 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
     };
 
     generateThumbnails();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screenshots]);
 
   // Clean up on unmount
@@ -151,6 +152,7 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
         URL.revokeObjectURL(url);
       });
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Load saved project screenshots on mount
@@ -180,6 +182,7 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
       }
     };
     loadProjectScreenshots();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only on mount
 
   // Handle file selection
@@ -657,6 +660,7 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
 
                     if (thumbnailUrl) {
                       return (
+                        // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={thumbnailUrl}
                           alt={file.name}

@@ -658,6 +658,7 @@ function ElementThumbnail({
     >
       <div className="aspect-video bg-surface-canvas rounded border border-border-subtle mb-2 overflow-hidden flex items-center justify-center">
         {element.screenshot ? (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={`data:image/png;base64,${element.screenshot}`}
             alt={element.text || element.selector}
@@ -706,6 +707,7 @@ function ScreenshotThumbnail({
     >
       <div className="w-full h-full bg-surface-canvas">
         {screenshotBase64 ? (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={`data:image/png;base64,${screenshotBase64}`}
             alt={screenshotId}

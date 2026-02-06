@@ -547,6 +547,7 @@ export function DocumentationEditor({
             title="Insert image"
             className="size-8"
           >
+            {/* eslint-disable-next-line jsx-a11y/alt-text */}
             <Image className="size-4" />
           </Button>
           <Button

@@ -48,6 +48,7 @@ const StateDetails: React.FC<StateDetailsProps> = ({
   const [thumbnails, setThumbnails] = useState<{ [key: string]: string }>({});
 
   // Get the StateImage objects for this state (moved before useEffect)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const stateImageObjects = state
     ? stateImages.filter((si) => state.stateImageIds?.includes(si.id))
     : [];
@@ -233,6 +234,7 @@ const StateDetails: React.FC<StateDetailsProps> = ({
                           {/* Thumbnail */}
                           {thumbnails[stateImage.id] && (
                             <div className="flex-shrink-0">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
                                 src={thumbnails[stateImage.id]}
                                 alt={stateImage.name}

@@ -376,6 +376,7 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({
                 >
                   <div className="aspect-square bg-surface-raised rounded mb-2 overflow-hidden flex items-center justify-center">
                     {pattern.image_data ? (
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={pattern.image_data}
                         alt={pattern.suggested_name}

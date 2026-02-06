@@ -26,7 +26,12 @@ interface SnapshotComparerProps {
   onBack: () => void;
 }
 
-export function SnapshotComparer({ diff, previousDate, currentDate, onBack }: SnapshotComparerProps) {
+export function SnapshotComparer({
+  diff,
+  previousDate,
+  currentDate,
+  onBack,
+}: SnapshotComparerProps) {
   if (!diff) {
     return (
       <div className="flex items-center justify-center h-full text-neutral-500 text-sm">
@@ -35,7 +40,8 @@ export function SnapshotComparer({ diff, previousDate, currentDate, onBack }: Sn
     );
   }
 
-  const totalChanges = diff.added.length + diff.removed.length + diff.changed.length;
+  const totalChanges =
+    diff.added.length + diff.removed.length + diff.changed.length;
 
   return (
     <div className="h-full overflow-auto">
@@ -48,12 +54,22 @@ export function SnapshotComparer({ diff, previousDate, currentDate, onBack }: Sn
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <h3 className="text-sm font-medium text-neutral-200">Snapshot Comparison</h3>
+          <h3 className="text-sm font-medium text-neutral-200">
+            Snapshot Comparison
+          </h3>
         </div>
         <div className="flex items-center gap-4 mt-2 text-xs text-neutral-400">
-          {previousDate && <span>Previous: {new Date(previousDate).toLocaleString()}</span>}
-          {currentDate && <span>Current: {new Date(currentDate).toLocaleString()}</span>}
-          <span className={totalChanges > 0 ? "text-yellow-400" : "text-emerald-400"}>
+          {previousDate && (
+            <span>Previous: {new Date(previousDate).toLocaleString()}</span>
+          )}
+          {currentDate && (
+            <span>Current: {new Date(currentDate).toLocaleString()}</span>
+          )}
+          <span
+            className={
+              totalChanges > 0 ? "text-yellow-400" : "text-emerald-400"
+            }
+          >
             {totalChanges > 0
               ? `${totalChanges} change${totalChanges > 1 ? "s" : ""} detected`
               : "No changes"}
@@ -65,19 +81,27 @@ export function SnapshotComparer({ diff, previousDate, currentDate, onBack }: Sn
         {/* Summary */}
         <div className="grid grid-cols-4 gap-2">
           <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded text-center">
-            <p className="text-lg font-bold text-emerald-400">{diff.added.length}</p>
+            <p className="text-lg font-bold text-emerald-400">
+              {diff.added.length}
+            </p>
             <p className="text-[10px] text-emerald-400/70">Added</p>
           </div>
           <div className="p-2 bg-red-500/10 border border-red-500/20 rounded text-center">
-            <p className="text-lg font-bold text-red-400">{diff.removed.length}</p>
+            <p className="text-lg font-bold text-red-400">
+              {diff.removed.length}
+            </p>
             <p className="text-[10px] text-red-400/70">Removed</p>
           </div>
           <div className="p-2 bg-yellow-500/10 border border-yellow-500/20 rounded text-center">
-            <p className="text-lg font-bold text-yellow-400">{diff.changed.length}</p>
+            <p className="text-lg font-bold text-yellow-400">
+              {diff.changed.length}
+            </p>
             <p className="text-[10px] text-yellow-400/70">Changed</p>
           </div>
           <div className="p-2 bg-neutral-800 border border-neutral-700 rounded text-center">
-            <p className="text-lg font-bold text-neutral-300">{diff.unchanged}</p>
+            <p className="text-lg font-bold text-neutral-300">
+              {diff.unchanged}
+            </p>
             <p className="text-[10px] text-neutral-500">Unchanged</p>
           </div>
         </div>
@@ -90,7 +114,10 @@ export function SnapshotComparer({ diff, previousDate, currentDate, onBack }: Sn
             </h4>
             <div className="space-y-1">
               {diff.added.map((el) => (
-                <div key={el.id} className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/5 border border-emerald-500/10 rounded">
+                <div
+                  key={el.id}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/5 border border-emerald-500/10 rounded"
+                >
                   <Plus className="w-3 h-3 text-emerald-400 flex-shrink-0" />
                   <span className="text-xs text-neutral-200">{el.label}</span>
                   <span className="text-xs text-neutral-500">({el.type})</span>
@@ -108,9 +135,14 @@ export function SnapshotComparer({ diff, previousDate, currentDate, onBack }: Sn
             </h4>
             <div className="space-y-1">
               {diff.removed.map((el) => (
-                <div key={el.id} className="flex items-center gap-2 px-3 py-1.5 bg-red-500/5 border border-red-500/10 rounded">
+                <div
+                  key={el.id}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-red-500/5 border border-red-500/10 rounded"
+                >
                   <Minus className="w-3 h-3 text-red-400 flex-shrink-0" />
-                  <span className="text-xs text-neutral-200 line-through">{el.label}</span>
+                  <span className="text-xs text-neutral-200 line-through">
+                    {el.label}
+                  </span>
                   <span className="text-xs text-neutral-500">({el.type})</span>
                 </div>
               ))}
@@ -126,15 +158,22 @@ export function SnapshotComparer({ diff, previousDate, currentDate, onBack }: Sn
             </h4>
             <div className="space-y-1">
               {diff.changed.map((el) => (
-                <div key={el.id} className="px-3 py-2 bg-yellow-500/5 border border-yellow-500/10 rounded">
+                <div
+                  key={el.id}
+                  className="px-3 py-2 bg-yellow-500/5 border border-yellow-500/10 rounded"
+                >
                   <div className="flex items-center gap-2">
                     <RefreshCw className="w-3 h-3 text-yellow-400 flex-shrink-0" />
                     <span className="text-xs text-neutral-200">{el.label}</span>
-                    <span className="text-xs text-neutral-500">({el.type})</span>
+                    <span className="text-xs text-neutral-500">
+                      ({el.type})
+                    </span>
                   </div>
                   <div className="mt-1 pl-5 space-y-0.5">
                     {el.changes.map((change, i) => (
-                      <p key={i} className="text-[10px] text-yellow-400/70">{change}</p>
+                      <p key={i} className="text-[10px] text-yellow-400/70">
+                        {change}
+                      </p>
                     ))}
                   </div>
                 </div>

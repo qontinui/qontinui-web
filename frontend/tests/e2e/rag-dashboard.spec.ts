@@ -24,7 +24,9 @@ test.describe("RAG Dashboard / Visual Index", () => {
 
     // Click the Sign In button INSIDE the dialog (not the one in header)
     // Use a more specific locator - the button inside the tabpanel
-    const dialogSignInButton = dialog.locator('button:has-text("Sign In")').first();
+    const dialogSignInButton = dialog
+      .locator('button:has-text("Sign In")')
+      .first();
     await expect(dialogSignInButton).toBeVisible();
     await dialogSignInButton.click();
 

@@ -47,6 +47,7 @@ export function SessionHistory() {
 
   useEffect(() => {
     loadRuns();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterStatus]);
 
   const loadRuns = async () => {

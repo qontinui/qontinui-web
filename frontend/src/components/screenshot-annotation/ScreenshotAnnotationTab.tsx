@@ -384,6 +384,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
     };
 
     loadScreenshots();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectScreenshots]);
 
   // Restore open panels when selected screenshot changes
@@ -429,6 +430,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
         setShowLocationPanel(false);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedScreenshot?.id]);
 
   // Persist screenshot annotations to context
@@ -1088,6 +1090,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
                       onClick={() => setSelectedScreenshot(screenshot)}
                     >
                       <div className="aspect-video relative overflow-hidden rounded bg-surface-overlay mb-2">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={screenshot.imageData}
                           alt={screenshot.name}

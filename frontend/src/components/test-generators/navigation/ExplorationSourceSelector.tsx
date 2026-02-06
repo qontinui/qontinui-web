@@ -63,10 +63,15 @@ export function ExplorationSourceSelector({
             {sessions.map((session) => (
               <button
                 key={session.id}
-                onClick={() => { onLoadSession(session.id); setShowSessions(false); }}
+                onClick={() => {
+                  onLoadSession(session.id);
+                  setShowSessions(false);
+                }}
                 className="w-full text-left px-3 py-2 hover:bg-neutral-700 transition-colors"
               >
-                <div className="text-xs text-neutral-200">{session.name || session.targetUrl}</div>
+                <div className="text-xs text-neutral-200">
+                  {session.name || session.targetUrl}
+                </div>
                 <div className="text-[10px] text-neutral-500 mt-0.5">
                   {session.statesFound} states &middot;{" "}
                   {new Date(session.createdAt).toLocaleDateString()}

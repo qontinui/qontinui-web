@@ -380,6 +380,7 @@ export function StateDetailsPanel({
               ) : showFullImage && fullImageUrl ? (
                 <div className="relative w-full overflow-auto max-h-[300px]">
                   <div className="relative inline-block">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={fullImageUrl}
                       alt="Full screenshot"
@@ -399,6 +400,7 @@ export function StateDetailsPanel({
                 </div>
               ) : currentImageUrl ? (
                 <div className="p-2 overflow-auto max-h-[300px]">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={currentImageUrl}
                     alt={currentTitle}

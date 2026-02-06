@@ -187,6 +187,7 @@ function ElementImage({ element }: { element: PlaywrightClickable }) {
     <Dialog>
       <DialogTrigger asChild>
         <button className="w-16 h-16 rounded overflow-hidden border border-border hover:border-primary transition-colors">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={`data:image/png;base64,${element.screenshot}`}
             alt={element.text || element.selector}
@@ -201,6 +202,7 @@ function ElementImage({ element }: { element: PlaywrightClickable }) {
           </DialogTitle>
         </DialogHeader>
         <div className="flex justify-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={`data:image/png;base64,${element.screenshot}`}
             alt={element.text || element.selector}

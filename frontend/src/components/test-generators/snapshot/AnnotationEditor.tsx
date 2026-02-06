@@ -43,15 +43,16 @@ export function AnnotationEditor({
 
   const annotatedCount = annotations.size;
   const totalCount = elements.length;
-  const coveragePercent = totalCount > 0 ? Math.round((annotatedCount / totalCount) * 100) : 0;
+  const coveragePercent =
+    totalCount > 0 ? Math.round((annotatedCount / totalCount) * 100) : 0;
 
   const unannotated = useMemo(
     () => elements.filter((e) => !annotations.has(e.id)),
-    [elements, annotations],
+    [elements, annotations]
   );
   const annotated = useMemo(
     () => elements.filter((e) => annotations.has(e.id)),
-    [elements, annotations],
+    [elements, annotations]
   );
 
   const startEdit = useCallback(
@@ -65,11 +66,11 @@ export function AnnotationEditor({
           notes: "",
           tags: [],
           relatedElements: [],
-        },
+        }
       );
       setEditingId(elementId);
     },
-    [annotations],
+    [annotations]
   );
 
   const handleSave = async () => {
@@ -96,7 +97,7 @@ export function AnnotationEditor({
           <BarChart3 className="w-4 h-4 text-emerald-400" />
           <span className="text-sm font-medium text-neutral-200">Coverage</span>
           <span className="text-sm text-neutral-400">
-            {annotatedCount}/{totalCount} elements annotated ({coveragePercent}%)
+            {coveragePercent}% annotated ({annotatedCount}/{totalCount} elements)
           </span>
         </div>
         {/* Progress bar */}
@@ -113,7 +114,8 @@ export function AnnotationEditor({
         <div className="p-4 border-b border-neutral-700 bg-neutral-800/50">
           <div className="flex items-center justify-between mb-3">
             <h4 className="text-sm font-medium text-neutral-200">
-              Editing: {elements.find((e) => e.id === editingId)?.label || editingId}
+              Editing:{" "}
+              {elements.find((e) => e.id === editingId)?.label || editingId}
             </h4>
             <button
               onClick={() => setEditingId(null)}
@@ -125,37 +127,51 @@ export function AnnotationEditor({
 
           <div className="space-y-3">
             <div>
-              <label className="block text-xs text-neutral-400 mb-1">Description</label>
+              <label className="block text-xs text-neutral-400 mb-1">
+                Description
+              </label>
               <input
                 type="text"
                 value={editForm.description}
-                onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, description: e.target.value })
+                }
                 placeholder="What is this element?"
                 className="w-full px-3 py-1.5 text-sm bg-neutral-900 border border-neutral-600 rounded-md text-neutral-200 placeholder:text-neutral-500 focus:outline-none focus:border-blue-500"
               />
             </div>
             <div>
-              <label className="block text-xs text-neutral-400 mb-1">Purpose</label>
+              <label className="block text-xs text-neutral-400 mb-1">
+                Purpose
+              </label>
               <input
                 type="text"
                 value={editForm.purpose}
-                onChange={(e) => setEditForm({ ...editForm, purpose: e.target.value })}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, purpose: e.target.value })
+                }
                 placeholder="What role does it play in the UI?"
                 className="w-full px-3 py-1.5 text-sm bg-neutral-900 border border-neutral-600 rounded-md text-neutral-200 placeholder:text-neutral-500 focus:outline-none focus:border-blue-500"
               />
             </div>
             <div>
-              <label className="block text-xs text-neutral-400 mb-1">Notes</label>
+              <label className="block text-xs text-neutral-400 mb-1">
+                Notes
+              </label>
               <textarea
                 value={editForm.notes}
-                onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, notes: e.target.value })
+                }
                 placeholder="Any additional notes..."
                 rows={2}
                 className="w-full px-3 py-1.5 text-sm bg-neutral-900 border border-neutral-600 rounded-md text-neutral-200 placeholder:text-neutral-500 focus:outline-none focus:border-blue-500 resize-none"
               />
             </div>
             <div>
-              <label className="block text-xs text-neutral-400 mb-1">Tags</label>
+              <label className="block text-xs text-neutral-400 mb-1">
+                Tags
+              </label>
               <div className="flex flex-wrap gap-1 mb-2">
                 {editForm.tags.map((tag) => (
                   <span
@@ -163,7 +179,10 @@ export function AnnotationEditor({
                     className="flex items-center gap-1 px-2 py-0.5 text-xs bg-emerald-500/20 text-emerald-400 rounded"
                   >
                     {tag}
-                    <button onClick={() => removeTag(tag)} className="hover:text-red-400">
+                    <button
+                      onClick={() => removeTag(tag)}
+                      className="hover:text-red-400"
+                    >
                       <X className="w-2.5 h-2.5" />
                     </button>
                   </span>
@@ -174,7 +193,9 @@ export function AnnotationEditor({
                   type="text"
                   value={newTag}
                   onChange={(e) => setNewTag(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addTag())}
+                  onKeyDown={(e) =>
+                    e.key === "Enter" && (e.preventDefault(), addTag())
+                  }
                   placeholder="Add tag..."
                   className="flex-1 px-2 py-1 text-xs bg-neutral-900 border border-neutral-600 rounded text-neutral-200 placeholder:text-neutral-500 focus:outline-none focus:border-blue-500"
                 />
@@ -215,7 +236,9 @@ export function AnnotationEditor({
             </button>
           ))}
           {unannotated.length === 0 && (
-            <p className="text-xs text-emerald-400">All elements are annotated!</p>
+            <p className="text-xs text-emerald-400">
+              All elements are annotated!
+            </p>
           )}
         </div>
       </div>
@@ -234,7 +257,9 @@ export function AnnotationEditor({
                 className="flex items-center gap-2 px-3 py-2 bg-neutral-800/30 rounded hover:bg-neutral-800/50"
               >
                 <Tag className="w-3 h-3 text-emerald-400 flex-shrink-0" />
-                <span className="text-xs font-medium text-neutral-200">{el.label}:</span>
+                <span className="text-xs font-medium text-neutral-200">
+                  {el.label}:
+                </span>
                 <span className="text-xs text-neutral-400 truncate flex-1">
                   {ann?.description || "No description"}
                 </span>

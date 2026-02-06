@@ -245,6 +245,7 @@ export function DirectPatternRegionSelector({
         onMouseLeave={handleMouseUp}
       >
         {imageDimensions && (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             ref={imgRef}
             src={imageUrl}

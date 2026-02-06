@@ -63,6 +63,7 @@ export function useEditLock(
     if (autoAcquire) {
       acquireLock();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, resourceType, resourceId]);
 
   /**
@@ -150,6 +151,7 @@ export function useEditLock(
         setLoading(false);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, resourceType, resourceId]);
 
   /**

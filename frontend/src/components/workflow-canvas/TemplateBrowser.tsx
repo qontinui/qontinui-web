@@ -244,6 +244,7 @@ function TemplateCard({ template, onUse, onShowDetails }: TemplateCardProps) {
       {/* Thumbnail */}
       <div className="template-thumbnail">
         {template.thumbnail ? (
+          // eslint-disable-next-line @next/next/no-img-element
           <img src={template.thumbnail} alt={template.name} />
         ) : (
           <div className="thumbnail-placeholder">

@@ -122,6 +122,7 @@ export function AvatarUpload({
           <div className="relative">
             <div className="w-32 h-32 rounded-full overflow-hidden bg-gradient-to-br from-brand-primary/20 to-brand-secondary/20 border-2 border-border-default flex items-center justify-center">
               {displayUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={displayUrl}
                   alt={userName}

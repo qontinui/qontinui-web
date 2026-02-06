@@ -434,6 +434,7 @@ export function StateImageModal({
               ) : showFullImage && fullImageUrl ? (
                 <div className="relative w-full h-full overflow-auto">
                   <div className="relative inline-block min-w-full">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={fullImageUrl}
                       alt="Full screenshot"
@@ -454,6 +455,7 @@ export function StateImageModal({
                 </div>
               ) : currentImageUrl ? (
                 <div className="flex items-center justify-center p-4 w-full h-full overflow-auto">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={currentImageUrl}
                     alt={currentTitle}

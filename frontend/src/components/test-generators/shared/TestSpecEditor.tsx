@@ -15,13 +15,13 @@ import {
   XCircle,
   Sparkles,
 } from "lucide-react";
-import type { TestSpecification, TestCategory } from "../types";
+import type { SpecGroup, SpecCategory } from "../types";
 import { CATEGORY_LABELS } from "../types";
 import { TestSpecAssertionRow } from "./TestSpecAssertionRow";
 
 interface TestSpecEditorProps {
-  specs: TestSpecification[];
-  onSpecsChange: (specs: TestSpecification[]) => void;
+  specs: SpecGroup[];
+  onSpecsChange: (specs: SpecGroup[]) => void;
   onGenerate?: () => void;
   generateLabel?: string;
   additionalActions?: React.ReactNode;
@@ -37,8 +37,8 @@ export function TestSpecEditor({
   isGenerating = false,
 }: TestSpecEditorProps) {
   const [expandedSpecs, setExpandedSpecs] = useState<Set<string>>(new Set());
-  const [categoryFilter, setCategoryFilter] = useState<TestCategory | "all">(
-    "all",
+  const [categoryFilter, setCategoryFilter] = useState<SpecCategory | "all">(
+    "all"
   );
   const [showFilterMenu, setShowFilterMenu] = useState(false);
 
@@ -49,15 +49,15 @@ export function TestSpecEditor({
 
   const totalAssertions = useMemo(
     () => specs.reduce((sum, s) => sum + s.assertions.length, 0),
-    [specs],
+    [specs]
   );
   const enabledAssertions = useMemo(
     () =>
       specs.reduce(
         (sum, s) => sum + s.assertions.filter((a) => a.enabled).length,
-        0,
+        0
       ),
-    [specs],
+    [specs]
   );
 
   const toggleSpec = useCallback((specId: string) => {
@@ -76,14 +76,13 @@ export function TestSpecEditor({
         return {
           ...s,
           assertions: s.assertions.map((a) =>
-            a.id === assertionId ? { ...a, enabled: !a.enabled } : a,
+            a.id === assertionId ? { ...a, enabled: !a.enabled } : a
           ),
-          updatedAt: new Date().toISOString(),
         };
       });
       onSpecsChange(updated);
     },
-    [specs, onSpecsChange],
+    [specs, onSpecsChange]
   );
 
   const reviewAssertion = useCallback(
@@ -93,14 +92,13 @@ export function TestSpecEditor({
         return {
           ...s,
           assertions: s.assertions.map((a) =>
-            a.id === assertionId ? { ...a, reviewed: !a.reviewed } : a,
+            a.id === assertionId ? { ...a, reviewed: !a.reviewed } : a
           ),
-          updatedAt: new Date().toISOString(),
         };
       });
       onSpecsChange(updated);
     },
-    [specs, onSpecsChange],
+    [specs, onSpecsChange]
   );
 
   const editAssertionNotes = useCallback(
@@ -110,21 +108,19 @@ export function TestSpecEditor({
         return {
           ...s,
           assertions: s.assertions.map((a) =>
-            a.id === assertionId ? { ...a, notes } : a,
+            a.id === assertionId ? { ...a, notes } : a
           ),
-          updatedAt: new Date().toISOString(),
         };
       });
       onSpecsChange(updated);
     },
-    [specs, onSpecsChange],
+    [specs, onSpecsChange]
   );
 
   const enableAll = useCallback(() => {
     const updated = specs.map((s) => ({
       ...s,
       assertions: s.assertions.map((a) => ({ ...a, enabled: true })),
-      updatedAt: new Date().toISOString(),
     }));
     onSpecsChange(updated);
   }, [specs, onSpecsChange]);
@@ -133,13 +129,12 @@ export function TestSpecEditor({
     const updated = specs.map((s) => ({
       ...s,
       assertions: s.assertions.map((a) => ({ ...a, enabled: false })),
-      updatedAt: new Date().toISOString(),
     }));
     onSpecsChange(updated);
   }, [specs, onSpecsChange]);
 
   const categories = useMemo(() => {
-    const cats = new Set<TestCategory>();
+    const cats = new Set<SpecCategory>();
     specs.forEach((s) => cats.add(s.category));
     return Array.from(cats);
   }, [specs]);
@@ -236,7 +231,7 @@ export function TestSpecEditor({
             {filteredSpecs.map((spec) => {
               const isExpanded = expandedSpecs.has(spec.id);
               const enabledCount = spec.assertions.filter(
-                (a) => a.enabled,
+                (a) => a.enabled
               ).length;
               return (
                 <div

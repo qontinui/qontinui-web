@@ -56,6 +56,7 @@ export function ActivityProvider({
     if (projectId) {
       loadActivityFeed();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, limit]);
 
   // ============================================================================

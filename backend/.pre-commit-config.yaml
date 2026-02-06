@@ -28,6 +28,7 @@ repos:
       - id: flake8
         additional_dependencies: [flake8-docstrings]
         args: ['--config=backend/.flake8']
+        exclude: ^research_env/
 
 ci:
   autofix_prs: true

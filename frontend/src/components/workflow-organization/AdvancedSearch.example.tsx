@@ -403,7 +403,8 @@ const EXAMPLE_WORKFLOWS: Workflow[] = [
 // Export for Storybook/Testing
 // ============================================================================
 
-export default {
+const storyMeta = {
   title: "Workflow Organization/Advanced Search & Bulk Operations",
   component: WorkflowManagementExample,
 };
+export default storyMeta;

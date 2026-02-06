@@ -255,6 +255,7 @@ export function useTutorialEvents(
         clearTimeout(advanceDelayRef.current);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [waitCondition, enabled, tourState, handleTimeout, handleEventSuccess]);
 
   // Handle route changes

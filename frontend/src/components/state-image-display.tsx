@@ -227,6 +227,7 @@ export const StateImageDisplay: React.FC<StateImageDisplayProps> = ({
 
   // No mask, just show the image
   return (
+    // eslint-disable-next-line @next/next/no-img-element
     <img
       src={image}
       alt={alt}

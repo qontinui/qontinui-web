@@ -1,0 +1,416 @@
+{
+  "version": "1.0.0",
+  "description": "Specs for the Snapshot Test Generator AFTER a successful snapshot capture — verifies that captured data populates correctly, tabs work, and generation flow completes",
+  "groups": [
+    {
+      "id": "stg-post-capture-elements-tab",
+      "name": "Post-Capture: Elements Tab",
+      "description": "After capturing a snapshot, the Elements tab should show captured elements in a browsable tree",
+      "category": "element-presence",
+      "assertions": [
+        {
+          "id": "stg-pc-search-input",
+          "description": "Element search input is present in the Elements tab sidebar",
+          "category": "element-presence",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "textbox", "idPattern": "search" },
+            "label": "Search elements input"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "stg-pc-element-groups-visible",
+          "description": "At least one element type group is visible (buttons, inputs, links, etc.)",
+          "category": "element-presence",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "buttons|inputs|links|selects|textareas|others" },
+            "label": "Element type group"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "stg-pc-element-detail-panel",
+          "description": "Element detail panel renders when an element is selected",
+          "category": "element-presence",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Type|Role|Visible|Enabled" },
+            "label": "Element detail panel"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true,
+          "notes": "This requires an element to be selected first. If no element is selected, the detail panel shows the empty-state message instead."
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "stg-post-capture-connected-state",
+      "name": "Post-Capture: Connected State",
+      "description": "After capturing, the connection status should show 'Connected' and the capture button should be enabled",
+      "category": "state-consistency",
+      "assertions": [
+        {
+          "id": "stg-pc-connected-status",
+          "description": "Connection status shows 'Connected' after successful capture",
+          "category": "state-consistency",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Connected" },
+            "label": "Connected status"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "stg-pc-capture-enabled",
+          "description": "Capture Snapshot button is enabled when connected",
+          "category": "state-consistency",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "button", "textContent": "Capture Snapshot" },
+            "label": "Capture Snapshot button"
+          },
+          "assertionType": "enabled",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "stg-pc-tab-selector-visible",
+          "description": "Browser tab selector is visible when connected",
+          "category": "state-consistency",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Tab:" },
+            "label": "Tab selector label"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "stg-pc-refresh-tabs-button",
+          "description": "Refresh tabs button is present when connected",
+          "category": "state-consistency",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "button", "idPattern": "refresh" },
+            "label": "Refresh tabs button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "stg-test-specs-tab",
+      "name": "Test Specs Tab",
+      "description": "Verify the Test Specs tab UI structure and generate button",
+      "category": "element-presence",
+      "assertions": [
+        {
+          "id": "stg-ts-generate-button",
+          "description": "Generate Specs button exists in the Test Specs tab toolbar",
+          "category": "element-presence",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "button", "textContent": "Generate Specs" },
+            "label": "Generate Specs button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "stg-ts-filter-button",
+          "description": "Category filter button exists",
+          "category": "element-presence",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "button", "textContent": "Filter" },
+            "label": "Filter button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "stg-ts-enable-all-button",
+          "description": "Enable All button exists",
+          "category": "element-presence",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "button", "textContent": "Enable All" },
+            "label": "Enable All button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "stg-ts-disable-all-button",
+          "description": "Disable All button exists",
+          "category": "element-presence",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "button", "textContent": "Disable All" },
+            "label": "Disable All button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "stg-ts-empty-state",
+          "description": "Shows 'No test specifications yet' message when no specs generated",
+          "category": "element-presence",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "No test specifications yet" },
+            "label": "Empty specs message"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true,
+          "notes": "Only visible when no specs have been generated yet"
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "stg-post-generate-specs",
+      "name": "Post-Generate: Spec Groups",
+      "description": "After clicking Generate Specs, verify spec groups are created with proper structure",
+      "category": "state-consistency",
+      "assertions": [
+        {
+          "id": "stg-pg-element-presence-group",
+          "description": "Element Presence spec group is generated",
+          "category": "state-consistency",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Element Presence" },
+            "label": "Element Presence group"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true,
+          "notes": "The Element Presence group should always be generated when there are elements in the snapshot"
+        },
+        {
+          "id": "stg-pg-state-consistency-group",
+          "description": "State Consistency spec group is generated for interactive elements",
+          "category": "state-consistency",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "State Consistency" },
+            "label": "State Consistency group"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true,
+          "notes": "Generated when the snapshot contains interactive elements (buttons, inputs, etc.)"
+        },
+        {
+          "id": "stg-pg-stats-bar",
+          "description": "Stats bar shows spec and assertion counts",
+          "category": "state-consistency",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "specs.*assertions enabled" },
+            "label": "Stats bar"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "stg-output-tab",
+      "name": "Output Tab",
+      "description": "Verify the Output tab shows export and copy functionality",
+      "category": "element-presence",
+      "assertions": [
+        {
+          "id": "stg-ot-export-button",
+          "description": "Export JSON button exists in the Output tab toolbar",
+          "category": "element-presence",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "button", "textContent": "Export JSON" },
+            "label": "Export JSON button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "stg-ot-copy-button",
+          "description": "Copy button exists in the Output tab toolbar",
+          "category": "element-presence",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "button", "textContent": "Copy" },
+            "label": "Copy button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "stg-ot-empty-state",
+          "description": "Output tab shows empty state message when no specs generated",
+          "category": "element-presence",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Generate test specifications to see output" },
+            "label": "Empty output message"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true,
+          "notes": "Only visible when no specs have been generated yet"
+        },
+        {
+          "id": "stg-ot-json-preview",
+          "description": "JSON preview area shows the SpecConfig output after generation",
+          "category": "element-presence",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "\"version\": \"1.0.0\"" },
+            "label": "JSON preview"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true,
+          "notes": "Only visible after specs have been generated and the Output tab is active"
+        },
+        {
+          "id": "stg-ot-groups-count",
+          "description": "Output stats bar shows group and assertion counts",
+          "category": "element-presence",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "groups.*assertions" },
+            "label": "Output stats"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true,
+          "notes": "Only visible after specs have been generated"
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "stg-snapshot-comparison",
+      "name": "Snapshot Comparison",
+      "description": "Verify the Compare to Previous feature works after a second snapshot capture",
+      "category": "state-consistency",
+      "assertions": [
+        {
+          "id": "stg-sc-compare-button",
+          "description": "Compare to Previous button appears after a second capture",
+          "category": "state-consistency",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "button", "textContent": "Compare to Previous" },
+            "label": "Compare to Previous button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true,
+          "notes": "Only visible after at least 2 snapshots have been captured in the current session"
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "stg-annotation-editor",
+      "name": "Annotation Editor",
+      "description": "Verify the Annotations tab shows coverage dashboard and editing UI",
+      "category": "element-presence",
+      "assertions": [
+        {
+          "id": "stg-ae-coverage-indicator",
+          "description": "Annotation coverage percentage is displayed",
+          "category": "element-presence",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "% annotated" },
+            "label": "Coverage percentage"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true,
+          "notes": "Shows '0% annotated' initially, percentage increases as elements are annotated"
+        }
+      ],
+      "source": "manual"
+    }
+  ],
+  "metadata": {
+    "component": "SnapshotTestGenerator",
+    "author": "Joshua Spinak",
+    "createdAt": "2026-02-04T00:00:00.000Z",
+    "pageUrl": "/automation-builder/snapshot-tests",
+    "elementSource": "control",
+    "tags": ["test-generator", "snapshot", "tier-1", "post-capture", "generation-flow"]
+  }
+}

@@ -115,6 +115,7 @@ export function usePresence(projectId: string): UsePresenceReturn {
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /**
@@ -159,6 +160,7 @@ export function usePresence(projectId: string): UsePresenceReturn {
         document.removeEventListener(event, resetIdleTimer, true);
       });
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myStatus]);
 
   /**

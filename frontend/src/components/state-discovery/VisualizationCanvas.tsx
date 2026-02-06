@@ -100,6 +100,7 @@ const VisualizationCanvas: React.FC<VisualizationCanvasProps> = ({
       drawStateImages(ctx);
     };
     img.src = imageUrl;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     imageUrl,
     stateImages,

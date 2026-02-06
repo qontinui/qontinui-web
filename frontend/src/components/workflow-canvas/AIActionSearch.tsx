@@ -62,6 +62,7 @@ export function AIActionSearch({
     }, 300);
 
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
   const performSearch = useCallback(

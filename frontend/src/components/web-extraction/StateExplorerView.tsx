@@ -246,6 +246,7 @@ export function StateExplorerView({
     return () => {
       screenshotCache.forEach((url) => URL.revokeObjectURL(url));
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -805,6 +806,7 @@ function StateImageThumbnail({
         {isLoading ? (
           <Loader2 className="h-3 w-3 animate-spin text-brand-secondary/50" />
         ) : thumbnailUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={thumbnailUrl}
             alt={stateImage.name}
@@ -854,6 +856,7 @@ function ScreenshotThumbnail({
             <Loader2 className="h-4 w-4 animate-spin text-brand-primary/40" />
           </div>
         ) : imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={imageUrl}
             alt={screenshotId}

@@ -14,8 +14,8 @@
  */
 
 import React from "react";
-import { UIBridgeProvider, AutoRegisterProvider } from "ui-bridge/react";
-import type { UIBridgeFeatures, UIBridgeConfig } from "ui-bridge/core";
+import { UIBridgeProvider, AutoRegisterProvider } from "@qontinui/ui-bridge/react";
+import type { UIBridgeFeatures, UIBridgeConfig } from "@qontinui/ui-bridge/core";
 import { UIBridgeTransportListener } from "./UIBridgeTransportListener";
 import type { TransportMode } from "./useUIBridgeTransport";
 

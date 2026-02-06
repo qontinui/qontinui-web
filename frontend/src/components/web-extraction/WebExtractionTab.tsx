@@ -471,6 +471,7 @@ export default function WebExtractionTab() {
     }, 3000); // Poll every 3 seconds
 
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeExtractionId, extractionDetail?.status]);
 
   const loadExtractionDetail = async (extractionId: string, silent = false) => {
@@ -1498,6 +1499,7 @@ function VisionExtractionPrompt({
       {selectedScreenshot ? (
         <div className="flex flex-col items-center gap-4">
           <div className="border rounded-lg overflow-hidden max-w-[600px] max-h-[300px]">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={selectedScreenshot}
               alt="Selected screenshot"

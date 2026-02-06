@@ -71,6 +71,7 @@ export const QuickAddMenu: React.FC<QuickAddMenuProps> = ({
       );
       setSelectedIndex(0);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, recentTypes]);
 
   // Keyboard navigation
@@ -114,6 +115,7 @@ export const QuickAddMenu: React.FC<QuickAddMenuProps> = ({
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, results, selectedIndex, onClose]);
 
   // Click outside to close

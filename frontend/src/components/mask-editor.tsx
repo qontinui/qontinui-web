@@ -100,6 +100,7 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
       });
     };
     img.src = imageUrl;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, imageUrl]);
 
   const initializeCanvases = (img: HTMLImageElement) => {

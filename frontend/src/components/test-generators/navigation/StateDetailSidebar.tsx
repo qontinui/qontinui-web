@@ -6,7 +6,14 @@
  */
 
 import { useState } from "react";
-import { Edit, Save, X, ChevronDown, ChevronRight, ArrowRight } from "lucide-react";
+import {
+  Edit,
+  Save,
+  X,
+  ChevronDown,
+  ChevronRight,
+  ArrowRight,
+} from "lucide-react";
 import type { NonVisualState, NonVisualTransition } from "../types";
 
 interface StateDetailSidebarProps {
@@ -65,18 +72,29 @@ export function StateDetailSidebar({
               className="flex-1 px-2 py-1 text-sm bg-neutral-900 border border-neutral-600 rounded text-neutral-200 focus:outline-none focus:border-blue-500"
               autoFocus
             />
-            <button onClick={saveEdit} className="text-emerald-400 hover:text-emerald-300">
+            <button
+              onClick={saveEdit}
+              className="text-emerald-400 hover:text-emerald-300"
+            >
               <Save className="w-4 h-4" />
             </button>
-            <button onClick={() => setIsEditingName(false)} className="text-neutral-400 hover:text-neutral-200">
+            <button
+              onClick={() => setIsEditingName(false)}
+              className="text-neutral-400 hover:text-neutral-200"
+            >
               <X className="w-4 h-4" />
             </button>
           </div>
         ) : (
           <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold text-neutral-100 flex-1">{state.name}</h3>
+            <h3 className="text-sm font-semibold text-neutral-100 flex-1">
+              {state.name}
+            </h3>
             {onUpdateState && (
-              <button onClick={startEdit} className="text-neutral-400 hover:text-neutral-200">
+              <button
+                onClick={startEdit}
+                className="text-neutral-400 hover:text-neutral-200"
+              >
                 <Edit className="w-3 h-3" />
               </button>
             )}
@@ -88,14 +106,18 @@ export function StateDetailSidebar({
       {/* URL */}
       {state.pageUrl && (
         <div className="p-2 bg-neutral-800 rounded">
-          <p className="text-[10px] text-neutral-500 uppercase tracking-wide">URL</p>
+          <p className="text-[10px] text-neutral-500 uppercase tracking-wide">
+            URL
+          </p>
           <p className="text-xs text-blue-400 truncate">{state.pageUrl}</p>
         </div>
       )}
 
       {/* Confidence */}
       <div className="p-2 bg-neutral-800 rounded">
-        <p className="text-[10px] text-neutral-500 uppercase tracking-wide">Confidence</p>
+        <p className="text-[10px] text-neutral-500 uppercase tracking-wide">
+          Confidence
+        </p>
         <div className="flex items-center gap-2 mt-1">
           <div className="flex-1 h-1.5 bg-neutral-700 rounded-full overflow-hidden">
             <div
@@ -103,14 +125,18 @@ export function StateDetailSidebar({
               style={{ width: `${state.confidence * 100}%` }}
             />
           </div>
-          <span className="text-xs text-neutral-300">{Math.round(state.confidence * 100)}%</span>
+          <span className="text-xs text-neutral-300">
+            {Math.round(state.confidence * 100)}%
+          </span>
         </div>
       </div>
 
       {/* Annotation coverage */}
       {annotationCoverage && (
         <div className="p-2 bg-neutral-800 rounded">
-          <p className="text-[10px] text-neutral-500 uppercase tracking-wide">Annotation Coverage</p>
+          <p className="text-[10px] text-neutral-500 uppercase tracking-wide">
+            Annotation Coverage
+          </p>
           <p className="text-xs text-neutral-300 mt-1">
             {annotationCoverage.annotated}/{annotationCoverage.total} elements
           </p>
@@ -125,17 +151,28 @@ export function StateDetailSidebar({
         {outgoing.map((t) => {
           const target = allStates.find((s) => s.id === t.toStateId);
           return (
-            <div key={t.id} className="flex items-center gap-2 px-2 py-1.5 bg-neutral-800/50 rounded mb-1">
+            <div
+              key={t.id}
+              className="flex items-center gap-2 px-2 py-1.5 bg-neutral-800/50 rounded mb-1"
+            >
               <ArrowRight className="w-3 h-3 text-emerald-400 flex-shrink-0" />
-              <span className="text-xs text-neutral-200">{t.triggerLabel || t.triggerElementId}</span>
-              <span className="text-[10px] text-neutral-500">{t.triggerAction}</span>
+              <span className="text-xs text-neutral-200">
+                {t.triggerLabel || t.triggerElementId}
+              </span>
+              <span className="text-[10px] text-neutral-500">
+                {t.triggerAction}
+              </span>
               <ArrowRight className="w-2 h-2 text-neutral-600 flex-shrink-0" />
-              <span className="text-xs text-blue-400">{target?.name || t.toStateId}</span>
+              <span className="text-xs text-blue-400">
+                {target?.name || t.toStateId}
+              </span>
             </div>
           );
         })}
         {outgoing.length === 0 && (
-          <p className="text-xs text-neutral-500 italic">No outgoing transitions</p>
+          <p className="text-xs text-neutral-500 italic">
+            No outgoing transitions
+          </p>
         )}
       </div>
 
@@ -147,10 +184,17 @@ export function StateDetailSidebar({
           {incoming.map((t) => {
             const source = allStates.find((s) => s.id === t.fromStateId);
             return (
-              <div key={t.id} className="flex items-center gap-2 px-2 py-1.5 bg-neutral-800/50 rounded mb-1">
-                <span className="text-xs text-blue-400">{source?.name || t.fromStateId}</span>
+              <div
+                key={t.id}
+                className="flex items-center gap-2 px-2 py-1.5 bg-neutral-800/50 rounded mb-1"
+              >
+                <span className="text-xs text-blue-400">
+                  {source?.name || t.fromStateId}
+                </span>
                 <ArrowRight className="w-2 h-2 text-neutral-600 flex-shrink-0" />
-                <span className="text-xs text-neutral-200">{t.triggerLabel || t.triggerElementId}</span>
+                <span className="text-xs text-neutral-200">
+                  {t.triggerLabel || t.triggerElementId}
+                </span>
               </div>
             );
           })}
@@ -163,13 +207,20 @@ export function StateDetailSidebar({
           onClick={() => setShowElements(!showElements)}
           className="flex items-center gap-2 text-[10px] text-neutral-500 uppercase tracking-wide"
         >
-          {showElements ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+          {showElements ? (
+            <ChevronDown className="w-3 h-3" />
+          ) : (
+            <ChevronRight className="w-3 h-3" />
+          )}
           Elements ({state.elementIds.length})
         </button>
         {showElements && (
           <div className="mt-1 space-y-0.5 max-h-[200px] overflow-auto">
             {state.elementIds.map((id) => (
-              <div key={id} className="px-2 py-1 text-xs text-neutral-300 bg-neutral-800/30 rounded font-mono">
+              <div
+                key={id}
+                className="px-2 py-1 text-xs text-neutral-300 bg-neutral-800/30 rounded font-mono"
+              >
                 {id}
               </div>
             ))}

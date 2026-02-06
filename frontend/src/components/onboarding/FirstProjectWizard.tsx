@@ -108,6 +108,7 @@ export function FirstProjectWizard({
         }
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   useEffect(() => {
@@ -240,6 +241,7 @@ export function FirstProjectWizard({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, currentStep, wizardState]);
 
   const progressPercentage = (currentStep / TOTAL_STEPS) * 100;

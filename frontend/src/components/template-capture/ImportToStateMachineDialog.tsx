@@ -135,6 +135,7 @@ export function ImportToStateMachineDialog({
             <Label>Template Preview</Label>
             <div className="relative aspect-video bg-muted rounded-lg overflow-hidden">
               {candidate.pixel_data_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={candidate.pixel_data_url}
                   alt="Template preview"
@@ -142,6 +143,7 @@ export function ImportToStateMachineDialog({
                 />
               ) : (
                 <div className="flex items-center justify-center h-full text-muted-foreground">
+                  {/* eslint-disable-next-line jsx-a11y/alt-text */}
                   <Image className="h-8 w-8" />
                 </div>
               )}

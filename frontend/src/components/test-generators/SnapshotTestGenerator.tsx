@@ -13,10 +13,22 @@ import { useState, useCallback, useMemo, useEffect } from "react";
 import { Layers, Tag, TestTube2, FileOutput } from "lucide-react";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { SnapshotCapturePanel } from "./snapshot/SnapshotCapturePanel";
-import { SnapshotElementBrowser, type BrowsableElement } from "./snapshot/SnapshotElementBrowser";
-import { ElementDetailPanel, type ElementDetail } from "./snapshot/ElementDetailPanel";
-import { AnnotationEditor, type AnnotationData } from "./snapshot/AnnotationEditor";
-import { SnapshotComparer, type SnapshotDiff } from "./snapshot/SnapshotComparer";
+import {
+  SnapshotElementBrowser,
+  type BrowsableElement,
+} from "./snapshot/SnapshotElementBrowser";
+import {
+  ElementDetailPanel,
+  type ElementDetail,
+} from "./snapshot/ElementDetailPanel";
+import {
+  AnnotationEditor,
+  type AnnotationData,
+} from "./snapshot/AnnotationEditor";
+import {
+  SnapshotComparer,
+  type SnapshotDiff,
+} from "./snapshot/SnapshotComparer";
 import { TestSpecEditor } from "./shared/TestSpecEditor";
 import { TestOutputPanel } from "./shared/TestOutputPanel";
 import {
@@ -24,11 +36,11 @@ import {
   type SnapshotData,
   type SnapshotElement,
 } from "./shared/spec-generators";
-import type {
-  TestSpecification,
-  TestGeneratorOutput,
-  NonVisualState,
-} from "./types";
+import type { SpecConfig } from "@qontinui/ui-bridge/specs";
+import type { SpecGroup, NonVisualState, GeneratorSpecMetadata } from "./types";
+import { usePageSpecs } from "@/hooks/usePageSpecs";
+import pageSpec from "./snapshot-test-generator.spec.uibridge.json";
+import postCaptureSpec from "./snapshot-post-capture.spec.uibridge.json";
 
 type Tab = "elements" | "annotations" | "specs" | "output";
 
@@ -48,7 +60,7 @@ async function extensionCommand<T = unknown>(
   runnerUrl: string,
   action: string,
   params: Record<string, unknown> = {},
-  timeoutSecs = 15,
+  timeoutSecs = 15
 ): Promise<T> {
   const res = await fetch(`${runnerUrl}/extension/command`, {
     method: "POST",
@@ -57,7 +69,9 @@ async function extensionCommand<T = unknown>(
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`Extension command "${action}" failed (${res.status}): ${text}`);
+    throw new Error(
+      `Extension command "${action}" failed (${res.status}): ${text}`
+    );
   }
   const result = await res.json();
   if (result.success === false) {
@@ -69,20 +83,35 @@ async function extensionCommand<T = unknown>(
 export function SnapshotTestGenerator({
   runnerUrl = "http://localhost:9876",
 }: SnapshotTestGeneratorProps) {
+  // Load page specs into the global SpecStore for Chrome extension discovery
+  usePageSpecs({
+    "snapshot-test-generator": pageSpec as unknown as SpecConfig,
+    "snapshot-post-capture": postCaptureSpec as unknown as SpecConfig,
+  });
+
   // Persisted state (survives navigation)
-  const [activeTab, setActiveTab] = useLocalStorage<Tab>("stg:activeTab", "elements");
-  const [selectedElementId, setSelectedElementId] = useLocalStorage<string | null>("stg:selectedElementId", null);
-  const [elements, setElements] = useLocalStorage<SnapshotElement[]>("stg:elements", []);
-  const [snapshotData, setSnapshotData] = useLocalStorage<SnapshotData | null>("stg:snapshotData", null);
-  const [annotations, setAnnotations] = useLocalStorage<Map<string, AnnotationData>>(
-    "stg:annotations",
-    new Map(),
-    {
-      serialize: (map) => JSON.stringify(Array.from(map.entries())),
-      deserialize: (str) => new Map(JSON.parse(str)),
-    },
+  const [activeTab, setActiveTab] = useLocalStorage<Tab>(
+    "stg:activeTab",
+    "elements"
   );
-  const [specs, setSpecs] = useLocalStorage<TestSpecification[]>("stg:specs", []);
+  const [selectedElementId, setSelectedElementId] = useLocalStorage<
+    string | null
+  >("stg:selectedElementId", null);
+  const [elements, setElements] = useLocalStorage<SnapshotElement[]>(
+    "stg:elements",
+    []
+  );
+  const [snapshotData, setSnapshotData] = useLocalStorage<SnapshotData | null>(
+    "stg:snapshotData",
+    null
+  );
+  const [annotations, setAnnotations] = useLocalStorage<
+    Map<string, AnnotationData>
+  >("stg:annotations", new Map(), {
+    serialize: (map) => JSON.stringify(Array.from(map.entries())),
+    deserialize: (str) => new Map(JSON.parse(str)),
+  });
+  const [specs, setSpecs] = useLocalStorage<SpecGroup[]>("stg:specs", []);
 
   // Transient state (reset on navigation)
   const [isConnected, setIsConnected] = useState(false);
@@ -93,7 +122,9 @@ export function SnapshotTestGenerator({
   const [selectedTabId, setSelectedTabId] = useState<number | null>(null);
   const [isLoadingTabs, setIsLoadingTabs] = useState(false);
   const [isSavingAnnotation, setIsSavingAnnotation] = useState(false);
-  const [previousSnapshot, setPreviousSnapshot] = useState<SnapshotData | null>(null);
+  const [previousSnapshot, setPreviousSnapshot] = useState<SnapshotData | null>(
+    null
+  );
   const [snapshotDiff, setSnapshotDiff] = useState<SnapshotDiff | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -101,22 +132,30 @@ export function SnapshotTestGenerator({
   const checkConnection = useCallback(async () => {
     try {
       const res = await fetch(`${runnerUrl}/extension/status`);
-      if (!res.ok) { setIsConnected(false); return; }
+      if (!res.ok) {
+        setIsConnected(false);
+        return;
+      }
       const data = await res.json();
-      setIsConnected(data.connected === true);
+      setIsConnected(data.data?.connected === true);
     } catch {
       setIsConnected(false);
     }
   }, [runnerUrl]);
 
   // Check connection on mount
-  useEffect(() => { checkConnection(); }, [checkConnection]);
+  useEffect(() => {
+    checkConnection();
+  }, [checkConnection]);
 
   // Fetch available browser tabs
   const handleRefreshTabs = useCallback(async () => {
     setIsLoadingTabs(true);
     try {
-      const data = await extensionCommand<{ tabs?: BrowserTab[] }>(runnerUrl, "listTabs");
+      const data = await extensionCommand<{ tabs?: BrowserTab[] }>(
+        runnerUrl,
+        "listTabs"
+      );
       const tabs = data.tabs || [];
       setBrowserTabs(tabs);
       // Auto-select the active tab if none selected
@@ -133,18 +172,23 @@ export function SnapshotTestGenerator({
 
   // Fetch tabs when connected
   useEffect(() => {
-    if (isConnected) { handleRefreshTabs(); }
+    if (isConnected) {
+      handleRefreshTabs();
+    }
   }, [isConnected, handleRefreshTabs]);
 
   // Select a browser tab for capture
-  const handleSelectTab = useCallback(async (tabId: number) => {
-    setSelectedTabId(tabId);
-    try {
-      await extensionCommand(runnerUrl, "selectTab", { tabId });
-    } catch (err) {
-      console.error("Failed to select tab:", err);
-    }
-  }, [runnerUrl]);
+  const handleSelectTab = useCallback(
+    async (tabId: number) => {
+      setSelectedTabId(tabId);
+      try {
+        await extensionCommand(runnerUrl, "selectTab", { tabId });
+      } catch (err) {
+        console.error("Failed to select tab:", err);
+      }
+    },
+    [runnerUrl]
+  );
 
   // Capture snapshot via the browser extension's getElements command
   const handleCapture = useCallback(async () => {
@@ -153,7 +197,9 @@ export function SnapshotTestGenerator({
     try {
       // If a tab is selected, ensure it's the active target
       if (selectedTabId !== null) {
-        await extensionCommand(runnerUrl, "selectTab", { tabId: selectedTabId });
+        await extensionCommand(runnerUrl, "selectTab", {
+          tabId: selectedTabId,
+        });
       }
 
       // Get elements from the selected browser tab
@@ -178,17 +224,13 @@ export function SnapshotTestGenerator({
           id: el.id || "",
           type: el.type || el.tagName || "unknown",
           label:
-            el.label ||
-            accessibility.accessibleName ||
-            el.text ||
-            el.id ||
-            "",
+            el.label || accessibility.accessibleName || el.text || el.id || "",
           role: accessibility.role || el.role,
           ariaLabel: accessibility.ariaLabel || accessibility.accessibleName,
           isInteractive:
             Array.isArray(el.actions) &&
             el.actions.some((a: string) =>
-              ["click", "type", "select", "check", "toggle"].includes(a),
+              ["click", "type", "select", "check", "toggle"].includes(a)
             ),
           isVisible: el.visible !== false,
           isEnabled: el.enabled !== false,
@@ -202,7 +244,7 @@ export function SnapshotTestGenerator({
 
       // Build form data from elements that have formId
       const formIds = new Set(
-        parsedElements.filter((e) => e.formId).map((e) => e.formId!),
+        parsedElements.filter((e) => e.formId).map((e) => e.formId!)
       );
       const forms = Array.from(formIds).map((formId) => ({
         id: formId,
@@ -213,7 +255,7 @@ export function SnapshotTestGenerator({
           (e) =>
             e.formId === formId &&
             (e.type === "submit" || e.role === "button") &&
-            /submit|sign|log\s?in|register/i.test(e.label || ""),
+            /submit|sign|log\s?in|register/i.test(e.label || "")
         ),
       }));
 
@@ -239,7 +281,9 @@ export function SnapshotTestGenerator({
       setIsConnected(true);
 
       if (parsedElements.length === 0) {
-        setCaptureError("No elements found. Make sure the target page is loaded and the extension has access.");
+        setCaptureError(
+          "No elements found. Make sure the target page is loaded and the extension has access."
+        );
       }
     } catch (err) {
       console.error("Capture failed:", err);
@@ -247,6 +291,7 @@ export function SnapshotTestGenerator({
     } finally {
       setIsCapturing(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runnerUrl, snapshotData, selectedTabId]);
 
   // Compare snapshots
@@ -269,16 +314,24 @@ export function SnapshotTestGenerator({
       const prev = previousSnapshot.elements.find((p) => p.id === el.id);
       if (!prev) continue;
       const changes: string[] = [];
-      if (el.isVisible !== prev.isVisible) changes.push(`visible: ${prev.isVisible} -> ${el.isVisible}`);
-      if (el.isEnabled !== prev.isEnabled) changes.push(`enabled: ${prev.isEnabled} -> ${el.isEnabled}`);
-      if (el.value !== prev.value) changes.push(`value: "${prev.value || ""}" -> "${el.value || ""}"`);
+      if (el.isVisible !== prev.isVisible)
+        changes.push(`visible: ${prev.isVisible} -> ${el.isVisible}`);
+      if (el.isEnabled !== prev.isEnabled)
+        changes.push(`enabled: ${prev.isEnabled} -> ${el.isEnabled}`);
+      if (el.value !== prev.value)
+        changes.push(`value: "${prev.value || ""}" -> "${el.value || ""}"`);
       if (changes.length > 0) {
-        changed.push({ id: el.id, label: el.label || el.id, type: el.type, changes });
+        changed.push({
+          id: el.id,
+          label: el.label || el.id,
+          type: el.type,
+          changes,
+        });
       }
     }
 
     const unchanged = snapshotData.elements.filter(
-      (e) => prevIds.has(e.id) && !changed.some((c) => c.id === e.id),
+      (e) => prevIds.has(e.id) && !changed.some((c) => c.id === e.id)
     ).length;
 
     setSnapshotDiff({ added, removed, changed, unchanged });
@@ -290,11 +343,14 @@ export function SnapshotTestGenerator({
     async (annotation: AnnotationData) => {
       setIsSavingAnnotation(true);
       try {
-        await fetch(`${runnerUrl}/ui-bridge/annotations/${annotation.elementId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(annotation),
-        });
+        await fetch(
+          `${runnerUrl}/ui-bridge/annotations/${annotation.elementId}`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(annotation),
+          }
+        );
         setAnnotations((prev) => {
           const next = new Map(prev);
           next.set(annotation.elementId, annotation);
@@ -306,7 +362,8 @@ export function SnapshotTestGenerator({
         setIsSavingAnnotation(false);
       }
     },
-    [runnerUrl],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [runnerUrl]
   );
 
   // Generate specs
@@ -318,6 +375,7 @@ export function SnapshotTestGenerator({
     setSpecs(generated);
     setIsGenerating(false);
     setActiveTab("specs");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snapshotData]);
 
   // Build browsable elements
@@ -331,11 +389,11 @@ export function SnapshotTestGenerator({
         isAnnotated: annotations.has(el.id),
         hasSpecs: specs.some((s) =>
           s.assertions.some(
-            (a) => a.target.type === "elementId" && a.target.elementId === el.id,
-          ),
+            (a) => a.target.type === "elementId" && a.target.elementId === el.id
+          )
         ),
       })),
-    [elements, annotations, specs],
+    [elements, annotations, specs]
   );
 
   // Build selected element detail
@@ -357,14 +415,19 @@ export function SnapshotTestGenerator({
       checked: el.checked,
       actions: el.isInteractive ? ["click", "type", "focus"] : ["focus"],
       annotation: ann
-        ? { description: ann.description, purpose: ann.purpose, notes: ann.notes, tags: ann.tags }
+        ? {
+            description: ann.description,
+            purpose: ann.purpose,
+            notes: ann.notes,
+            tags: ann.tags,
+          }
         : undefined,
       attributes: el.attributes,
     };
   }, [selectedElementId, elements, annotations]);
 
   // Build output
-  const output: TestGeneratorOutput | null = useMemo(() => {
+  const output: SpecConfig | null = useMemo(() => {
     if (specs.length === 0 || !snapshotData) return null;
     const now = new Date().toISOString();
     const state: NonVisualState = {
@@ -376,13 +439,11 @@ export function SnapshotTestGenerator({
       pageTitle: snapshotData.pageTitle,
       confidence: 1.0,
     };
-    return {
-      version: "1.0.0",
-      projectId: "",
+    const metadata: GeneratorSpecMetadata = {
       generatorType: "snapshot",
+      pageUrl: snapshotData.pageUrl,
       states: [state],
       transitions: [],
-      testSpecifications: specs,
       snapshotMetadata: {
         snapshotId: `snapshot-${Date.now()}`,
         pageUrl: snapshotData.pageUrl || "",
@@ -395,12 +456,26 @@ export function SnapshotTestGenerator({
       createdAt: now,
       updatedAt: now,
     };
+    return {
+      version: "1.0.0" as const,
+      description: `Snapshot specs for ${snapshotData.pageTitle || snapshotData.pageUrl || "page"}`,
+      groups: specs,
+      metadata,
+    };
   }, [specs, snapshotData, elements]);
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "elements", label: "Elements", icon: <Layers className="w-4 h-4" /> },
-    { id: "annotations", label: "Annotations", icon: <Tag className="w-4 h-4" /> },
-    { id: "specs", label: "Test Specs", icon: <TestTube2 className="w-4 h-4" /> },
+    {
+      id: "annotations",
+      label: "Annotations",
+      icon: <Tag className="w-4 h-4" />,
+    },
+    {
+      id: "specs",
+      label: "Test Specs",
+      icon: <TestTube2 className="w-4 h-4" />,
+    },
     { id: "output", label: "Output", icon: <FileOutput className="w-4 h-4" /> },
   ];
 
@@ -408,8 +483,10 @@ export function SnapshotTestGenerator({
     <div className="flex flex-col h-full">
       {/* Title bar */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-neutral-700">
-        <h2 className="text-lg font-semibold text-neutral-100">Snapshot Test Generator</h2>
-        <span className="px-2 py-0.5 text-[10px] bg-emerald-500/20 text-emerald-400 rounded-full font-medium">
+        <h2 className="text-lg font-semibold text-neutral-100" data-ui-element role="heading">
+          Snapshot Test Generator
+        </h2>
+        <span className="px-2 py-0.5 text-[10px] bg-emerald-500/20 text-emerald-400 rounded-full font-medium" data-ui-element>
           beta
         </span>
       </div>
@@ -435,7 +512,10 @@ export function SnapshotTestGenerator({
         {tabs.map((tab) => (
           <button
             key={tab.id}
-            onClick={() => { setActiveTab(tab.id); setShowComparison(false); }}
+            onClick={() => {
+              setActiveTab(tab.id);
+              setShowComparison(false);
+            }}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 ${
               activeTab === tab.id
                 ? "text-emerald-400 border-emerald-400 bg-neutral-900/50"
@@ -453,14 +533,26 @@ export function SnapshotTestGenerator({
         ))}
       </div>
 
-      {/* Tab content */}
-      <div className="flex-1 min-h-0 overflow-hidden">
-        {showComparison ? (
-          <SnapshotComparer
-            diff={snapshotDiff}
-            onBack={() => setShowComparison(false)}
-          />
-        ) : activeTab === "elements" ? (
+      {/* Tab content — all tabs stay mounted (visibility:hidden preserves DOM
+          presence for bridge.discover(), unlike display:none which removes from
+          layout entirely). Active tab gets visibility:visible. */}
+      <div className="flex-1 min-h-0 overflow-hidden relative">
+        {showComparison && (
+          <div className="absolute inset-0" style={{ zIndex: 3 }}>
+            <SnapshotComparer
+              diff={snapshotDiff}
+              onBack={() => setShowComparison(false)}
+            />
+          </div>
+        )}
+        <div
+          className="absolute inset-0 overflow-auto"
+          style={{
+            zIndex: activeTab === "elements" ? 2 : 0,
+            pointerEvents: activeTab === "elements" ? "auto" : "none",
+            visibility: activeTab === "elements" ? "visible" : "hidden",
+          }}
+        >
           <div className="flex h-full">
             <div className="w-72 flex-shrink-0">
               <SnapshotElementBrowser
@@ -479,23 +571,51 @@ export function SnapshotTestGenerator({
               />
             </div>
           </div>
-        ) : activeTab === "annotations" ? (
+        </div>
+        <div
+          className="absolute inset-0 overflow-auto"
+          style={{
+            zIndex: activeTab === "annotations" ? 2 : 0,
+            pointerEvents: activeTab === "annotations" ? "auto" : "none",
+            visibility: activeTab === "annotations" ? "visible" : "hidden",
+          }}
+        >
           <AnnotationEditor
-            elements={elements.map((e) => ({ id: e.id, label: e.label || e.id, type: e.type }))}
+            elements={elements.map((e) => ({
+              id: e.id,
+              label: e.label || e.id,
+              type: e.type,
+            }))}
             annotations={annotations}
             onSave={handleSaveAnnotation}
             isSaving={isSavingAnnotation}
           />
-        ) : activeTab === "specs" ? (
+        </div>
+        <div
+          className="absolute inset-0 overflow-auto"
+          style={{
+            zIndex: activeTab === "specs" ? 2 : 0,
+            pointerEvents: activeTab === "specs" ? "auto" : "none",
+            visibility: activeTab === "specs" ? "visible" : "hidden",
+          }}
+        >
           <TestSpecEditor
             specs={specs}
             onSpecsChange={setSpecs}
             onGenerate={handleGenerate}
             isGenerating={isGenerating}
           />
-        ) : (
+        </div>
+        <div
+          className="absolute inset-0 overflow-auto"
+          style={{
+            zIndex: activeTab === "output" ? 2 : 0,
+            pointerEvents: activeTab === "output" ? "auto" : "none",
+            visibility: activeTab === "output" ? "visible" : "hidden",
+          }}
+        >
           <TestOutputPanel output={output} />
-        )}
+        </div>
       </div>
     </div>
   );

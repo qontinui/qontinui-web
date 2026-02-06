@@ -127,6 +127,7 @@ export function CollaborationProvider({
    */
   useEffect(() => {
     loadOrganizations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /**
@@ -140,6 +141,7 @@ export function CollaborationProvider({
     return () => {
       disconnect();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   /**
@@ -149,6 +151,7 @@ export function CollaborationProvider({
     if (projectId) {
       loadComments();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, workflowId]);
 
   /**
@@ -158,6 +161,7 @@ export function CollaborationProvider({
     if (projectId) {
       loadActivityFeed();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   // ============================================================================
@@ -358,6 +362,7 @@ export function CollaborationProvider({
       // Disconnect WebSocket
       disconnect();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ============================================================================

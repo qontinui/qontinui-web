@@ -42,6 +42,7 @@ export function useSnapshotList(params?: UseSnapshotListParams) {
     if (params?.autoLoad !== false) {
       loadSnapshots();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params?.limit, params?.workflow_id, params?.tags]);
 
   return {

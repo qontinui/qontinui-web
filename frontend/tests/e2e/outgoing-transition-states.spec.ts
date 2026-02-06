@@ -7,10 +7,10 @@
  * - Fix: Only skip backend fetch if actual data exists in context
  */
 
-import { test, expect } from '@playwright/test';
-import { loginUser } from './fixtures';
+import { test, expect } from "@playwright/test";
+import { loginUser } from "./fixtures";
 
-test.describe('Outgoing Transition States Dropdown', () => {
+test.describe("Outgoing Transition States Dropdown", () => {
   // Increase timeout for login-heavy tests
   test.setTimeout(90000);
 
@@ -22,16 +22,18 @@ test.describe('Outgoing Transition States Dropdown', () => {
     await loginUser(page);
   });
 
-  test('states appear in Create Outgoing Transition dropdown', async ({ page }) => {
+  test("states appear in Create Outgoing Transition dropdown", async ({
+    page,
+  }) => {
     // Navigate to dashboard first
-    await page.goto('/dashboard');
-    await page.waitForLoadState('networkidle');
+    await page.goto("/dashboard");
+    await page.waitForLoadState("networkidle");
     await page.waitForTimeout(2000);
 
     // Select a project with states
     const projectSwitcher = page.locator('[aria-label="Select project"]');
     if (!(await projectSwitcher.isVisible())) {
-      console.log('No project switcher visible - skipping test');
+      console.log("No project switcher visible - skipping test");
       test.skip();
       return;
     }
@@ -43,7 +45,7 @@ test.describe('Outgoing Transition States Dropdown', () => {
     const projectCount = await projectItems.count();
 
     if (projectCount < 2) {
-      console.log('No projects available - skipping test');
+      console.log("No projects available - skipping test");
       test.skip();
       return;
     }
@@ -54,15 +56,15 @@ test.describe('Outgoing Transition States Dropdown', () => {
 
     // Get the project ID from URL
     const url = page.url();
-    console.log('URL after project selection:', url);
+    console.log("URL after project selection:", url);
 
     // Extract project ID from URL
     const urlMatch = url.match(/[?&]project=([^&]+)/);
     const projectId = urlMatch ? urlMatch[1] : null;
-    console.log('Project ID:', projectId);
+    console.log("Project ID:", projectId);
 
     if (!projectId) {
-      console.log('No project ID in URL - skipping test');
+      console.log("No project ID in URL - skipping test");
       test.skip();
       return;
     }
@@ -70,17 +72,19 @@ test.describe('Outgoing Transition States Dropdown', () => {
     // Navigate directly to the states page with project ID
     // This simulates navigating directly to the page (the bug scenario)
     await page.goto(`/automation-builder/states?project=${projectId}`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState("networkidle");
     await page.waitForTimeout(3000);
 
     // Take screenshot
     await page.screenshot({
-      path: 'test-results/outgoing-transition-01-states-page.png',
+      path: "test-results/outgoing-transition-01-states-page.png",
       fullPage: true,
     });
 
     // Click the "Create Outgoing Transition" button
-    const createTransitionButton = page.getByRole('button', { name: /create outgoing transition/i });
+    const createTransitionButton = page.getByRole("button", {
+      name: /create outgoing transition/i,
+    });
 
     if (await createTransitionButton.isVisible()) {
       await createTransitionButton.click();
@@ -88,62 +92,64 @@ test.describe('Outgoing Transition States Dropdown', () => {
 
       // Take screenshot of the dialog
       await page.screenshot({
-        path: 'test-results/outgoing-transition-02-dialog.png',
+        path: "test-results/outgoing-transition-02-dialog.png",
         fullPage: true,
       });
 
       // Look for the "Select origin state" dropdown
-      const originStateSelect = page.getByRole('combobox').first();
+      const originStateSelect = page.getByRole("combobox").first();
       if (await originStateSelect.isVisible()) {
         await originStateSelect.click();
         await page.waitForTimeout(500);
 
         // Take screenshot showing dropdown contents
         await page.screenshot({
-          path: 'test-results/outgoing-transition-03-dropdown-open.png',
+          path: "test-results/outgoing-transition-03-dropdown-open.png",
           fullPage: true,
         });
 
         // Count the state options in the dropdown
         const stateOptions = page.locator('[role="option"]');
         const stateCount = await stateOptions.count();
-        console.log('State options count:', stateCount);
+        console.log("State options count:", stateCount);
 
         // Verify there are states in the dropdown (based on bug report, should be 2)
         expect(stateCount).toBeGreaterThan(0);
       } else {
-        console.log('Origin state select not found');
+        console.log("Origin state select not found");
         await page.screenshot({
-          path: 'test-results/outgoing-transition-03-no-select.png',
+          path: "test-results/outgoing-transition-03-no-select.png",
           fullPage: true,
         });
       }
 
       // Close the dialog
-      const cancelButton = page.getByRole('button', { name: /cancel/i });
+      const cancelButton = page.getByRole("button", { name: /cancel/i });
       if (await cancelButton.isVisible()) {
         await cancelButton.click();
       }
     } else {
-      console.log('Create Outgoing Transition button not visible');
+      console.log("Create Outgoing Transition button not visible");
       await page.screenshot({
-        path: 'test-results/outgoing-transition-02-no-button.png',
+        path: "test-results/outgoing-transition-02-no-button.png",
         fullPage: true,
       });
     }
   });
 
-  test('states load correctly from backend when navigating directly to states page', async ({ page }) => {
+  test("states load correctly from backend when navigating directly to states page", async ({
+    page,
+  }) => {
     // Clear localStorage to simulate fresh navigation
     // Note: beforeEach already logged in via loginUser()
     await page.evaluate(() => {
-      localStorage.removeItem('qontinui-selected-project-id');
-      localStorage.removeItem('qontinui-project-name');
+      localStorage.removeItem("qontinui-selected-project-id");
+      localStorage.removeItem("qontinui-project-name");
     });
 
     // Navigate to dashboard to get project ID
-    await page.goto('/dashboard');
-    await page.waitForLoadState('networkidle');
+    await page.goto("/dashboard");
+    await page.waitForLoadState("networkidle");
     await page.waitForTimeout(2000);
 
     // Select a project
@@ -178,48 +184,50 @@ test.describe('Outgoing Transition States Dropdown', () => {
 
     // Clear localStorage again to simulate complete fresh state
     await page.evaluate(() => {
-      localStorage.removeItem('qontinui-selected-project-id');
-      localStorage.removeItem('qontinui-project-name');
+      localStorage.removeItem("qontinui-selected-project-id");
+      localStorage.removeItem("qontinui-project-name");
     });
 
     // Navigate directly to states page - this is the key scenario
     // When localStorage is clear but URL has project ID, it should still load data
     await page.goto(`/automation-builder/states?project=${projectId}`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState("networkidle");
     await page.waitForTimeout(5000); // Give time for backend fetch
 
     // Take screenshot
     await page.screenshot({
-      path: 'test-results/outgoing-transition-fresh-01-states-page.png',
+      path: "test-results/outgoing-transition-fresh-01-states-page.png",
       fullPage: true,
     });
 
     // Click Create Outgoing Transition
-    const createTransitionButton = page.getByRole('button', { name: /create outgoing transition/i });
+    const createTransitionButton = page.getByRole("button", {
+      name: /create outgoing transition/i,
+    });
 
     if (await createTransitionButton.isVisible()) {
       await createTransitionButton.click();
       await page.waitForTimeout(1000);
 
       await page.screenshot({
-        path: 'test-results/outgoing-transition-fresh-02-dialog.png',
+        path: "test-results/outgoing-transition-fresh-02-dialog.png",
         fullPage: true,
       });
 
       // Look for states in the dropdown
-      const originStateSelect = page.getByRole('combobox').first();
+      const originStateSelect = page.getByRole("combobox").first();
       if (await originStateSelect.isVisible()) {
         await originStateSelect.click();
         await page.waitForTimeout(500);
 
         await page.screenshot({
-          path: 'test-results/outgoing-transition-fresh-03-dropdown.png',
+          path: "test-results/outgoing-transition-fresh-03-dropdown.png",
           fullPage: true,
         });
 
         const stateOptions = page.locator('[role="option"]');
         const stateCount = await stateOptions.count();
-        console.log('Fresh load - state options count:', stateCount);
+        console.log("Fresh load - state options count:", stateCount);
 
         // This should now pass with the fix
         expect(stateCount).toBeGreaterThan(0);

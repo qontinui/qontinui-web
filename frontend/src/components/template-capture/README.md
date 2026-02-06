@@ -33,13 +33,13 @@ Click-to-Template simplifies this to:
 
 ### Benefits Over Manual Template Creation
 
-| Manual Approach | Click-to-Template |
-|----------------|-------------------|
-| Time-consuming screenshot cropping | Automatic boundary detection |
-| Guessing at detection parameters | Confidence scores guide decisions |
-| Trial and error for thresholds | Auto-tuned settings per application |
-| Separate tools for capture and config | Integrated end-to-end workflow |
-| No context about click locations | Click positions preserved for transitions |
+| Manual Approach                       | Click-to-Template                         |
+| ------------------------------------- | ----------------------------------------- |
+| Time-consuming screenshot cropping    | Automatic boundary detection              |
+| Guessing at detection parameters      | Confidence scores guide decisions         |
+| Trial and error for thresholds        | Auto-tuned settings per application       |
+| Separate tools for capture and config | Integrated end-to-end workflow            |
+| No context about click locations      | Click positions preserved for transitions |
 
 ### When to Use This Feature
 
@@ -159,11 +159,11 @@ The Review Templates tab shows a grid of all detected template candidates.
 
 **Confidence Scores Explained:**
 
-| Score | Color | Meaning |
-|-------|-------|---------|
-| 80%+ | Green | High confidence - likely accurate boundary |
-| 50-79% | Yellow | Medium confidence - review carefully |
-| Below 50% | Red | Low confidence - may need adjustment |
+| Score     | Color  | Meaning                                    |
+| --------- | ------ | ------------------------------------------ |
+| 80%+      | Green  | High confidence - likely accurate boundary |
+| 50-79%    | Yellow | Medium confidence - review carefully       |
+| Below 50% | Red    | Low confidence - may need adjustment       |
 
 **Reviewing Individual Candidates:**
 
@@ -257,13 +257,13 @@ Once you have approved templates (optionally with state hints), generate a state
 
 **Grouping Methods:**
 
-| Method | Description | Best For |
-|--------|-------------|----------|
-| **State Hints** | Groups by assigned state hints | When you have organized templates with hints |
-| **Co-Occurrence** | Automatic grouping by which templates appear together in video | When you have capture video and want automatic analysis |
-| **Single State** | All templates in one state | Simple applications or quick prototyping |
-| **One per Template** | Each template becomes its own state | When each element represents a distinct state |
-| **Manual Assignments** | Manually specify state assignments | Full control over grouping |
+| Method                 | Description                                                    | Best For                                                |
+| ---------------------- | -------------------------------------------------------------- | ------------------------------------------------------- |
+| **State Hints**        | Groups by assigned state hints                                 | When you have organized templates with hints            |
+| **Co-Occurrence**      | Automatic grouping by which templates appear together in video | When you have capture video and want automatic analysis |
+| **Single State**       | All templates in one state                                     | Simple applications or quick prototyping                |
+| **One per Template**   | Each template becomes its own state                            | When each element represents a distinct state           |
+| **Manual Assignments** | Manually specify state assignments                             | Full control over grouping                              |
 
 **Configuring Options:**
 
@@ -432,6 +432,7 @@ Create a profile when:
 **Problem**: Cannot start capture session
 
 **Solutions**:
+
 - Start the Qontinui Runner desktop application
 - Check if the runner is running on the correct port (9876)
 - Restart the runner if it becomes unresponsive
@@ -442,6 +443,7 @@ Create a profile when:
 **Problem**: Capture session produces zero candidates
 
 **Solutions**:
+
 - Ensure you clicked on visible UI elements during capture
 - Check that clicks were single-clicks, not drags
 - Verify the target application was in focus
@@ -453,6 +455,7 @@ Create a profile when:
 **Problem**: Detected boundaries are too small, too large, or misaligned
 
 **Solutions**:
+
 - Use the Boundary Adjustment Editor to manually correct
 - Try alternative boundaries shown in the editor
 - Create an application profile and run auto-tuning
@@ -464,6 +467,7 @@ Create a profile when:
 **Problem**: "No state hints have been assigned"
 
 **Solutions**:
+
 - Go back to the Review tab
 - Select templates and click "Set State Hint"
 - Assign hints to all templates you want to include
@@ -474,6 +478,7 @@ Create a profile when:
 **Problem**: "Co-occurrence analysis requires the original video file"
 
 **Solutions**:
+
 - This method requires the capture video
 - If video is unavailable, use State Hints or another method
 - Future captures will save video if enabled
@@ -483,6 +488,7 @@ Create a profile when:
 **Problem**: "Failed to import to project"
 
 **Solutions**:
+
 - Check that you have an active project selected
 - Verify you have permission to edit the project
 - Check the browser console for detailed error messages

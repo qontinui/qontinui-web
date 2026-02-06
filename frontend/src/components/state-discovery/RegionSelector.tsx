@@ -395,6 +395,7 @@ const RegionSelector: React.FC<RegionSelectorProps> = ({
             onMouseLeave={handleMouseUp}
           >
             {imageUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={imageUrl}
                 alt="Screenshot"

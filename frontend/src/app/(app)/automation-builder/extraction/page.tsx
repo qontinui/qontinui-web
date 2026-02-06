@@ -484,6 +484,7 @@ function UnifiedExtractionContent() {
       // runnerUrl can be null for cloud - the hook will use extension messaging
       await exploration.selectBrowserTab(runnerUrl, tabId);
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [exploration.selectBrowserTab, getRunnerUrl, selectedConnectionId]
   );
 

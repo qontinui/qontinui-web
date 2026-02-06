@@ -22,6 +22,7 @@ from uuid import UUID
 
 import structlog
 from fastapi import WebSocket
+from qontinui_schemas.common import utc_now
 from redis import asyncio as aioredis
 
 from app.services.runner.command_relay import CommandRelayService
@@ -90,7 +91,7 @@ class RunnerConnectionManager:
             connected_at: Connection timestamp
             project_id: Optional project ID
         """
-        connected_at = connected_at or datetime.utcnow()
+        connected_at = connected_at or utc_now()
 
         # Store in memory registry
         self._registry.register_runner(connection_id, websocket)
@@ -158,7 +159,7 @@ class RunnerConnectionManager:
         # Notify connected frontends
         await self._relay.notify_frontends(
             connection_id,
-            {"type": "runner_disconnected", "timestamp": datetime.utcnow().isoformat()},
+            {"type": "runner_disconnected", "timestamp": utc_now().isoformat()},
         )
 
         # Publish disconnected event

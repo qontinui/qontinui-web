@@ -199,6 +199,7 @@ export function VariableEditorDialog({
     } catch {
       return "Invalid value";
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [simpleValue, jsonValue, valueType, editorMode]);
 
   // Is JSON valid

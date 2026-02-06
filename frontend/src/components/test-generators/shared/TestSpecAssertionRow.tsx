@@ -6,11 +6,11 @@
  */
 
 import { Check, X, MessageSquare } from "lucide-react";
-import type { TestAssertion } from "../types";
+import type { SpecAssertion } from "../types";
 import { SEVERITY_COLORS } from "../types";
 
 interface TestSpecAssertionRowProps {
-  assertion: TestAssertion;
+  assertion: SpecAssertion;
   onToggle: (id: string) => void;
   onReview: (id: string) => void;
   onEditNotes?: (id: string, notes: string) => void;

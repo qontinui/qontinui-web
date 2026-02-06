@@ -776,6 +776,7 @@ export function EnhancedStateBuilder() {
                         onClick={() => setSelectedImageIndex(idx)}
                       >
                         {imageData ? (
+                          // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={imageData.url}
                             alt={stateImage.name}
@@ -1022,6 +1023,7 @@ export function EnhancedStateBuilder() {
                                 stateImage.patterns[0]
                               );
                               return imageData ? (
+                                // eslint-disable-next-line @next/next/no-img-element
                                 <img
                                   src={imageData.url}
                                   alt={stateImage.name}

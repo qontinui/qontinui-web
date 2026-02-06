@@ -61,6 +61,7 @@ export function CommentsProvider({
     if (projectId) {
       loadComments();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, workflowId]);
 
   // ============================================================================

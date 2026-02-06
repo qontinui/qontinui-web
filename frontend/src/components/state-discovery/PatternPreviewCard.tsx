@@ -78,6 +78,7 @@ export function PatternPreviewCard({
 
       {/* Pattern Image */}
       <div className="mb-2 bg-surface-raised rounded overflow-hidden border border-border-default">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={pattern.imageData}
           alt={pattern.name}

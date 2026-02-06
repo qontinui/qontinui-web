@@ -113,6 +113,7 @@ export function LayoutPreview({
         drawWorkflow(canvasRefAfter.current, afterWorkflow, afterBBox, true);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     viewMode,
     beforeWorkflow,

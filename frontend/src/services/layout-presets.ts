@@ -580,7 +580,7 @@ function getRecentPresetIds(): string[] {
   try {
     const recent = localStorage.getItem(RECENT_PRESETS_KEY);
     return recent ? JSON.parse(recent) : [];
-  } catch (error) {
+  } catch (_error) {
     return [];
   }
 }

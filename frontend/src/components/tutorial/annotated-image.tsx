@@ -463,6 +463,7 @@ export const AnnotatedImage = React.forwardRef<
       aria-label={`Annotated image: ${alt}`}
     >
       {/* Base image */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         ref={imgRef}
         src={src}

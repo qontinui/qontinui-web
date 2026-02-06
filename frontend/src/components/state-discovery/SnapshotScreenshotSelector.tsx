@@ -406,6 +406,7 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
                                   <Tooltip>
                                     <TooltipTrigger asChild>
                                       <div className="aspect-video bg-surface-raised rounded overflow-hidden border border-border-subtle">
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
                                         <img
                                           src={thumb.url}
                                           alt={`Thumbnail ${idx + 1}`}
@@ -614,6 +615,7 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
                           >
                             {/* Screenshot image */}
                             <div className="aspect-video bg-surface-raised flex items-center justify-center overflow-hidden">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
                                 src={screenshot.url}
                                 alt={screenshot.path}

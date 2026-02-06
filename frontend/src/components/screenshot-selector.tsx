@@ -228,6 +228,7 @@ export function ScreenshotSelector({
                     )}
                   >
                     <div className="aspect-video bg-surface-canvas">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={screenshot.url}
                         alt={screenshot.name}

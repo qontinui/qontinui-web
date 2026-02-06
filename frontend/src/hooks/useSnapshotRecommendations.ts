@@ -65,6 +65,7 @@ export function useSnapshotRecommendations(
     if (params?.autoFetch !== false && params?.process_id) {
       fetchRecommendations();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params?.process_id, params?.max_snapshots, params?.num_recommendations]);
 
   return {

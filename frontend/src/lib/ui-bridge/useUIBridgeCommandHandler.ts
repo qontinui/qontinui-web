@@ -12,8 +12,8 @@
  */
 
 import { useEffect, useRef, useCallback } from "react";
-import { useUIBridge } from "ui-bridge/react";
-import type { ControlSnapshot } from "ui-bridge/control";
+import { useUIBridge } from "@qontinui/ui-bridge/react";
+import type { ControlSnapshot } from "@qontinui/ui-bridge/control";
 
 // Command polling interval in milliseconds
 const POLL_INTERVAL_MS = 500;
@@ -437,7 +437,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         // ========== AI Commands ==========
         case "aiSearch": {
           // Import AI search functionality dynamically
-          const { createSearchEngine } = await import("ui-bridge/ai");
+          const { createSearchEngine } = await import("@qontinui/ui-bridge/ai");
           const searchEngine = createSearchEngine({});
           searchEngine.updateElements(elements);
           const searchResponse = searchEngine.search(
@@ -453,7 +453,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         case "aiExecute": {
           const startTime = performance.now();
           // Parse natural language and execute
-          const { parseNLInstruction } = await import("ui-bridge/ai");
+          const { parseNLInstruction } = await import("@qontinui/ui-bridge/ai");
           const { instruction, confidenceThreshold = 0.7 } = payload as {
             instruction: string;
             confidenceThreshold?: number;
@@ -509,7 +509,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           }
 
           // Find the target element
-          const { createSearchEngine } = await import("ui-bridge/ai");
+          const { createSearchEngine } = await import("@qontinui/ui-bridge/ai");
           // elements is available from hook scope
           const searchEngine = createSearchEngine({});
           searchEngine.updateElements(elements);
@@ -704,8 +704,8 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         }
 
         case "aiAssert": {
-          const { createAssertionExecutor } = await import("ui-bridge/ai");
-          type AssertionType = import("ui-bridge/ai").AssertionType;
+          const { createAssertionExecutor } = await import("@qontinui/ui-bridge/ai");
+          type AssertionType = import("@qontinui/ui-bridge/ai").AssertionType;
           // elements is available from hook scope
           const executor = createAssertionExecutor({});
           // Cast RegisteredElement[] to the expected type - both share the same core structure
@@ -726,8 +726,8 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         }
 
         case "aiAssertBatch": {
-          const { createAssertionExecutor } = await import("ui-bridge/ai");
-          type AssertionType = import("ui-bridge/ai").AssertionType;
+          const { createAssertionExecutor } = await import("@qontinui/ui-bridge/ai");
+          type AssertionType = import("@qontinui/ui-bridge/ai").AssertionType;
           // elements is available from hook scope
           const executor = createAssertionExecutor({});
           // Cast RegisteredElement[] to the expected type - both share the same core structure
@@ -754,7 +754,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         }
 
         case "getSemanticSnapshot": {
-          const { createSnapshotManager } = await import("ui-bridge/ai");
+          const { createSnapshotManager } = await import("@qontinui/ui-bridge/ai");
           // elements is available from hook scope
           const manager = createSnapshotManager({});
           const controlSnapshot = {
@@ -780,7 +780,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         }
 
         case "getPageSummary": {
-          const { generatePageSummary } = await import("ui-bridge/ai");
+          const { generatePageSummary } = await import("@qontinui/ui-bridge/ai");
           // elements is available from hook scope
           // Convert RegisteredElement[] to minimal AIDiscoveredElement-like objects for the summary
           const aiElements = elements.map((e) => ({
@@ -849,7 +849,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
             threshold?: number;
             limit?: number;
           };
-          const { createSearchEngine } = await import("ui-bridge/ai");
+          const { createSearchEngine } = await import("@qontinui/ui-bridge/ai");
           const searchEngine = createSearchEngine({});
           searchEngine.updateElements(elements);
           const searchResponse = searchEngine.search({

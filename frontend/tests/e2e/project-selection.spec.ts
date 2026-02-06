@@ -7,28 +7,28 @@
  * - The project parameter is preserved in the URL
  */
 
-import { test, expect } from '@playwright/test';
-import { loginUser } from './fixtures';
+import { test, expect } from "@playwright/test";
+import { loginUser } from "./fixtures";
 
-test.describe('Project Selection Persistence', () => {
+test.describe("Project Selection Persistence", () => {
   // Login before each test using auto-login with manual fallback
   test.beforeEach(async ({ page }) => {
     await loginUser(page);
   });
 
-  test('project selection persists when navigating via sidebar menu', async ({
+  test("project selection persists when navigating via sidebar menu", async ({
     page,
   }) => {
     // Navigate to dashboard
-    await page.goto('/dashboard');
-    await page.waitForLoadState('networkidle');
+    await page.goto("/dashboard");
+    await page.waitForLoadState("networkidle");
 
     // Wait for projects to load in the sidebar
     await page.waitForTimeout(2000);
 
     // Take screenshot of initial state
     await page.screenshot({
-      path: 'test-results/project-selection-initial.png',
+      path: "test-results/project-selection-initial.png",
       fullPage: true,
     });
 
@@ -42,7 +42,7 @@ test.describe('Project Selection Persistence', () => {
 
       // Take screenshot of project dropdown
       await page.screenshot({
-        path: 'test-results/project-selection-dropdown.png',
+        path: "test-results/project-selection-dropdown.png",
         fullPage: true,
       });
 
@@ -59,26 +59,28 @@ test.describe('Project Selection Persistence', () => {
 
         // Verify project is now selected
         await page.screenshot({
-          path: 'test-results/project-selection-selected.png',
+          path: "test-results/project-selection-selected.png",
           fullPage: true,
         });
 
         // Now navigate to the Workflows page via sidebar
-        const workflowsLink = page.getByRole('button', { name: /workflows/i });
+        const workflowsLink = page.getByRole("button", { name: /workflows/i });
         if (await workflowsLink.isVisible()) {
           await workflowsLink.click();
-          await page.waitForLoadState('networkidle');
+          await page.waitForLoadState("networkidle");
           await page.waitForTimeout(2000);
 
           // Take screenshot - should NOT show "No projects yet"
           await page.screenshot({
-            path: 'test-results/project-selection-workflows-page.png',
+            path: "test-results/project-selection-workflows-page.png",
             fullPage: true,
           });
 
           // Verify we don't see "No projects yet" message
-          const noProjectsMessage = page.getByText('No projects yet');
-          const noProjectSelectedMessage = page.getByText('No project selected');
+          const noProjectsMessage = page.getByText("No projects yet");
+          const noProjectSelectedMessage = page.getByText(
+            "No project selected"
+          );
 
           // Either both should be hidden, or we should see the workflows page content
           const hasNoProjectsError =
@@ -88,7 +90,7 @@ test.describe('Project Selection Persistence', () => {
           if (hasNoProjectsError) {
             // Take screenshot of the error
             await page.screenshot({
-              path: 'test-results/project-selection-error.png',
+              path: "test-results/project-selection-error.png",
               fullPage: true,
             });
           }
@@ -99,10 +101,10 @@ test.describe('Project Selection Persistence', () => {
     }
   });
 
-  test('project selection persists after page refresh', async ({ page }) => {
+  test("project selection persists after page refresh", async ({ page }) => {
     // Navigate to dashboard
-    await page.goto('/dashboard');
-    await page.waitForLoadState('networkidle');
+    await page.goto("/dashboard");
+    await page.waitForLoadState("networkidle");
 
     // Wait for page to be ready
     await page.waitForTimeout(2000);
@@ -124,12 +126,12 @@ test.describe('Project Selection Persistence', () => {
 
         // Refresh the page
         await page.reload();
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState("networkidle");
         await page.waitForTimeout(2000);
 
         // Take screenshot after refresh
         await page.screenshot({
-          path: 'test-results/project-selection-after-refresh.png',
+          path: "test-results/project-selection-after-refresh.png",
           fullPage: true,
         });
 
@@ -142,23 +144,25 @@ test.describe('Project Selection Persistence', () => {
         // Extract just the project name from the first line (name is before description)
         if (firstProjectText) {
           // Get the project name from the dropdown item
-          const projectName = firstProjectText.split('\n')[0].trim();
+          const projectName = firstProjectText.split("\n")[0].trim();
           // Get the displayed selection text
-          const displayedSelection = currentSelection?.trim() || '';
+          const displayedSelection = currentSelection?.trim() || "";
           // The displayed selection should contain the project name
           // Note: firstProjectText includes name + description, but currentSelection is just the name
-          expect(displayedSelection).toContain(projectName.split('A new')[0].trim());
+          expect(displayedSelection).toContain(
+            projectName.split("A new")[0].trim()
+          );
         }
       }
     }
   });
 
-  test('RequireProject component allows access when project is selected', async ({
+  test("RequireProject component allows access when project is selected", async ({
     page,
   }) => {
     // Navigate to dashboard
-    await page.goto('/dashboard');
-    await page.waitForLoadState('networkidle');
+    await page.goto("/dashboard");
+    await page.waitForLoadState("networkidle");
     await page.waitForTimeout(2000);
 
     // Select a project
@@ -176,33 +180,33 @@ test.describe('Project Selection Persistence', () => {
 
         // Get the current URL to see if project param is set
         const urlAfterSelection = page.url();
-        console.log('URL after project selection:', urlAfterSelection);
+        console.log("URL after project selection:", urlAfterSelection);
 
         // Navigate to a page that uses RequireProject
         // Based on the codebase, workflows page uses RequireProject
-        await page.goto('/workflows');
-        await page.waitForLoadState('networkidle');
+        await page.goto("/workflows");
+        await page.waitForLoadState("networkidle");
         await page.waitForTimeout(2000);
 
         await page.screenshot({
-          path: 'test-results/project-require-project-test.png',
+          path: "test-results/project-require-project-test.png",
           fullPage: true,
         });
 
         // Check that we don't see the "No projects yet" or "No project selected" messages
         const noProjectsText = await page
-          .getByText('No projects yet')
+          .getByText("No projects yet")
           .isVisible()
           .catch(() => false);
         const noSelectedText = await page
-          .getByText('No project selected')
+          .getByText("No project selected")
           .isVisible()
           .catch(() => false);
 
         if (noProjectsText || noSelectedText) {
-          console.log('Error: Project selection not persisted!');
-          console.log('noProjectsText:', noProjectsText);
-          console.log('noSelectedText:', noSelectedText);
+          console.log("Error: Project selection not persisted!");
+          console.log("noProjectsText:", noProjectsText);
+          console.log("noSelectedText:", noSelectedText);
         }
 
         // At minimum, we should not see these error messages

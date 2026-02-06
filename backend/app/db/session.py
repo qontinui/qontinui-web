@@ -149,10 +149,10 @@ async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
         yield session
         await session.commit()
     except GeneratorExit:
-        # Generator was closed prematurely (e.g., client disconnect, break from loop)
-        # Don't try to commit, rollback, or close - the session may have an
-        # operation in progress (_connection_for_bind) and calling close() would
-        # trigger IllegalStateChangeError. The connection pool will reclaim it.
+        # Generator closed prematurely (client disconnect, early return, etc.).
+        # The session may have an in-flight operation (_connection_for_bind).
+        # Do NOT call close() or rollback() - it would trigger
+        # IllegalStateChangeError. The connection pool reclaims the connection.
         generator_exited = True
     except Exception:
         await session.rollback()

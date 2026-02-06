@@ -169,6 +169,7 @@ function AnnotatedImage({ src, alt, annotations }: AnnotatedImageProps) {
       <CardContent className="p-0">
         <div className="relative inline-block w-full">
           {/* Image */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={src}
             alt={alt}

@@ -88,8 +88,6 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
-    "ui-bridge": "file:../../ui-bridge/packages/ui-bridge",
-    "ui-bridge-server": "file:../../ui-bridge/packages/ui-bridge-server",
     "zod": "^3.23.8",
     "zustand": "^4.5.0"
   },
@@ -97,7 +95,6 @@
     "@eslint/eslintrc": "^3",
     "@next/bundle-analyzer": "^15.5.0",
     "@playwright/test": "^1.48.0",
-    "@qontinui/ui-bridge-swc-plugin": "^0.2.0",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",

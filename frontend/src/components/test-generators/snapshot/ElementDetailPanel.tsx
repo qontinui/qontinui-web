@@ -33,10 +33,13 @@ interface ElementDetailPanelProps {
   onEditAnnotation?: (elementId: string) => void;
 }
 
-export function ElementDetailPanel({ element, onEditAnnotation }: ElementDetailPanelProps) {
+export function ElementDetailPanel({
+  element,
+  onEditAnnotation,
+}: ElementDetailPanelProps) {
   if (!element) {
     return (
-      <div className="flex items-center justify-center h-full text-neutral-500 text-sm">
+      <div className="flex items-center justify-center h-full text-neutral-500 text-sm" data-ui-element>
         Select an element to view details
       </div>
     );
@@ -46,25 +49,33 @@ export function ElementDetailPanel({ element, onEditAnnotation }: ElementDetailP
     <div className="h-full overflow-auto p-4 space-y-4">
       {/* Header */}
       <div>
-        <h3 className="text-sm font-semibold text-neutral-100">{element.label}</h3>
+        <h3 className="text-sm font-semibold text-neutral-100">
+          {element.label}
+        </h3>
         <p className="text-xs text-neutral-500 font-mono mt-1">{element.id}</p>
       </div>
 
       {/* Type & Role */}
       <div className="grid grid-cols-2 gap-2">
         <div className="p-2 bg-neutral-800 rounded">
-          <p className="text-[10px] text-neutral-500 uppercase tracking-wide">Type</p>
+          <p className="text-[10px] text-neutral-500 uppercase tracking-wide">
+            Type
+          </p>
           <p className="text-xs text-neutral-200">{element.type}</p>
         </div>
         {element.role && (
           <div className="p-2 bg-neutral-800 rounded">
-            <p className="text-[10px] text-neutral-500 uppercase tracking-wide">Role</p>
+            <p className="text-[10px] text-neutral-500 uppercase tracking-wide">
+              Role
+            </p>
             <p className="text-xs text-neutral-200">{element.role}</p>
           </div>
         )}
         {element.ariaLabel && (
           <div className="p-2 bg-neutral-800 rounded col-span-2">
-            <p className="text-[10px] text-neutral-500 uppercase tracking-wide">ARIA Label</p>
+            <p className="text-[10px] text-neutral-500 uppercase tracking-wide">
+              ARIA Label
+            </p>
             <p className="text-xs text-neutral-200">{element.ariaLabel}</p>
           </div>
         )}
@@ -72,7 +83,9 @@ export function ElementDetailPanel({ element, onEditAnnotation }: ElementDetailP
 
       {/* State */}
       <div>
-        <p className="text-[10px] text-neutral-500 uppercase tracking-wide mb-1">State</p>
+        <p className="text-[10px] text-neutral-500 uppercase tracking-wide mb-1">
+          State
+        </p>
         <div className="flex flex-wrap gap-2">
           <span
             className={`px-2 py-0.5 text-[10px] rounded ${element.isVisible ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"}`}
@@ -105,7 +118,9 @@ export function ElementDetailPanel({ element, onEditAnnotation }: ElementDetailP
       {/* Actions */}
       {element.actions.length > 0 && (
         <div>
-          <p className="text-[10px] text-neutral-500 uppercase tracking-wide mb-1">Actions</p>
+          <p className="text-[10px] text-neutral-500 uppercase tracking-wide mb-1">
+            Actions
+          </p>
           <div className="flex flex-wrap gap-1">
             {element.actions.map((action) => (
               <span
@@ -122,7 +137,9 @@ export function ElementDetailPanel({ element, onEditAnnotation }: ElementDetailP
       {/* Attributes */}
       {element.attributes && Object.keys(element.attributes).length > 0 && (
         <div>
-          <p className="text-[10px] text-neutral-500 uppercase tracking-wide mb-1">Attributes</p>
+          <p className="text-[10px] text-neutral-500 uppercase tracking-wide mb-1">
+            Attributes
+          </p>
           <div className="space-y-1">
             {Object.entries(element.attributes).map(([key, value]) => (
               <div key={key} className="flex gap-2 text-xs">
@@ -137,7 +154,9 @@ export function ElementDetailPanel({ element, onEditAnnotation }: ElementDetailP
       {/* Annotation preview */}
       <div className="border-t border-neutral-700 pt-3">
         <div className="flex items-center justify-between mb-2">
-          <p className="text-[10px] text-neutral-500 uppercase tracking-wide">Annotation</p>
+          <p className="text-[10px] text-neutral-500 uppercase tracking-wide">
+            Annotation
+          </p>
           {onEditAnnotation && (
             <button
               onClick={() => onEditAnnotation(element.id)}
@@ -150,10 +169,14 @@ export function ElementDetailPanel({ element, onEditAnnotation }: ElementDetailP
         {element.annotation ? (
           <div className="space-y-2 p-2 bg-neutral-800/50 rounded">
             {element.annotation.description && (
-              <p className="text-xs text-neutral-200">{element.annotation.description}</p>
+              <p className="text-xs text-neutral-200">
+                {element.annotation.description}
+              </p>
             )}
             {element.annotation.purpose && (
-              <p className="text-xs text-neutral-400">Purpose: {element.annotation.purpose}</p>
+              <p className="text-xs text-neutral-400">
+                Purpose: {element.annotation.purpose}
+              </p>
             )}
             {element.annotation.tags && element.annotation.tags.length > 0 && (
               <div className="flex flex-wrap gap-1">

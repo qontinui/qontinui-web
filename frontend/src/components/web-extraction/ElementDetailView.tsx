@@ -180,6 +180,7 @@ export function ElementDetailView({
     return () => {
       mounted = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     extractionId,
     screenshotId,
@@ -241,6 +242,7 @@ export function ElementDetailView({
                 aspectRatio: `${viewportWidth} / ${viewportHeight}`,
               }}
             >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={fullImageUrl}
                 alt="Full screenshot"
@@ -273,6 +275,7 @@ export function ElementDetailView({
           </div>
         ) : croppedImageUrl ? (
           <div className="w-full h-full overflow-auto p-4 flex items-center justify-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={croppedImageUrl}
               alt="Element"

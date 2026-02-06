@@ -10,6 +10,7 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from qontinui_schemas.common import utc_now
 from redis import asyncio as aioredis
 
 logger = structlog.get_logger(__name__)
@@ -64,7 +65,7 @@ class RunnerEventPublisher:
             message={
                 "type": "runner_connected",
                 "connection": connection_data,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now().isoformat(),
             },
         )
 
@@ -85,7 +86,7 @@ class RunnerEventPublisher:
             message={
                 "type": "runner_disconnected",
                 "connection_id": connection_id,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now().isoformat(),
             },
         )
 
@@ -119,7 +120,7 @@ class RunnerEventPublisher:
                     "type": "runner_name_updated",
                     "connection_id": connection_id,
                     "runner_name": runner_name,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": utc_now().isoformat(),
                 },
             )
             logger.info(

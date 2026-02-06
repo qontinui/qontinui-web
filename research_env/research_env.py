@@ -58,7 +58,7 @@ class ResearchNotes:
         """Initialize notes file"""
         header = f"""# GUI Element Detection Research Notes
 
-**Started:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+**Started:** {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 ## Objective
 Achieve 100% precision and 100% recall in detecting GUI elements from screenshots.
@@ -125,9 +125,9 @@ Achieve 100% precision and 100% recall in detecting GUI elements from screenshot
     def add_success_notes(self, winning_method: str, result: EvaluationResult):
         """Add notes when perfect detection is achieved"""
         with open(self.notes_file, "a") as f:
-            f.write(f"\n{'='*80}\n")
+            f.write(f"\n{'=' * 80}\n")
             f.write("# 🎉 SUCCESS - Perfect Detection Achieved!\n")
-            f.write(f"{'='*80}\n\n")
+            f.write(f"{'=' * 80}\n\n")
             f.write(f"**Method:** {winning_method}\n")
             f.write(f"**Time:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write(f"**Processing Time:** {result.processing_time:.3f}s\n")
@@ -315,9 +315,9 @@ class ResearchEnvironment:
 
     def run_iteration(self, iteration: int) -> list[EvaluationResult]:
         """Run one iteration of testing"""
-        print(f"\n{'='*80}")
+        print(f"\n{'=' * 80}")
         print(f"ITERATION {iteration}")
-        print(f"{'='*80}\n")
+        print(f"{'=' * 80}\n")
 
         results = []
 
@@ -338,7 +338,7 @@ class ResearchEnvironment:
                 )
 
                 # Evaluate
-                method_name = f"{detector.name} [{i+1}]"
+                method_name = f"{detector.name} [{i + 1}]"
                 result = self.evaluator.evaluate(
                     method_name=method_name,
                     ground_truth=self.ground_truth_boxes,
@@ -351,7 +351,7 @@ class ResearchEnvironment:
                 # Print summary
                 status = "✓" if result.is_perfect() else "✗"
                 print(
-                    f"   {status} Config {i+1}: P={result.precision:.2%} R={result.recall:.2%} "
+                    f"   {status} Config {i + 1}: P={result.precision:.2%} R={result.recall:.2%} "
                     f"F1={result.f1:.2%} ({proc_time:.3f}s)"
                 )
 
@@ -371,9 +371,9 @@ class ResearchEnvironment:
 
     def run_multi_screenshot_iteration(self, iteration: int) -> list[EvaluationResult]:
         """Run one iteration of multi-screenshot testing"""
-        print(f"\n{'='*80}")
+        print(f"\n{'=' * 80}")
         print(f"MULTI-SCREENSHOT ITERATION {iteration}")
-        print(f"{'='*80}\n")
+        print(f"{'=' * 80}\n")
 
         results = []
 
@@ -396,11 +396,11 @@ class ResearchEnvironment:
                     )
                     proc_time = time.time() - start_time
                 except Exception as e:
-                    print(f"   ⚠ Error in {detector.name} config {i+1}: {e}")
+                    print(f"   ⚠ Error in {detector.name} config {i + 1}: {e}")
                     continue
 
                 # Evaluate per-screenshot results
-                method_name = f"{detector.name} [{i+1}]"
+                method_name = f"{detector.name} [{i + 1}]"
                 per_screenshot_results = self.multi_screenshot_evaluator.evaluate_multi(
                     method_name=method_name,
                     dataset=self.multi_screenshot_dataset,
@@ -419,7 +419,7 @@ class ResearchEnvironment:
                     # Print summary
                     status = "✓" if aggregated_result.is_perfect() else "✗"
                     print(
-                        f"   {status} Config {i+1}: P={aggregated_result.precision:.2%} R={aggregated_result.recall:.2%} "
+                        f"   {status} Config {i + 1}: P={aggregated_result.precision:.2%} R={aggregated_result.recall:.2%} "
                         f"F1={aggregated_result.f1:.2%} ({proc_time:.3f}s)"
                     )
 
@@ -599,9 +599,9 @@ class ResearchEnvironment:
                 print(f"\n▶ Continuing to iteration {iteration + 1}...")
 
         # Final summary
-        print(f"\n{'='*80}")
+        print(f"\n{'=' * 80}")
         print("RESEARCH COMPLETE")
-        print(f"{'='*80}\n")
+        print(f"{'=' * 80}\n")
 
         if self.best_result:
             print(f"Best result: {self.best_result.method_name}")

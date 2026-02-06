@@ -9,63 +9,67 @@
  * - Logout clears session
  */
 
-import { test, expect } from '@playwright/test';
-import { TEST_USER } from './test-credentials';
+import { test, expect } from "@playwright/test";
+import { TEST_USER } from "./test-credentials";
 
-test.describe('Login Flow', () => {
+test.describe("Login Flow", () => {
   test.beforeEach(async ({ page }) => {
     // Clear auth state to test login flow from unauthenticated state
     // This prevents auto-login (which uses NEXT_PUBLIC_DEV_EMAIL/PASSWORD) from interfering
-    await page.goto('/');
+    await page.goto("/");
     await page.evaluate(() => {
       localStorage.clear();
       sessionStorage.clear();
     });
     // Reload to ensure clean state without auto-login
     await page.reload();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState("networkidle");
   });
 
-  test('homepage shows Sign In button when not authenticated', async ({ page }) => {
+  test("homepage shows Sign In button when not authenticated", async ({
+    page,
+  }) => {
     // Verify Sign In button is visible
-    const signInButton = page.getByRole('button', { name: /sign in/i });
+    const signInButton = page.getByRole("button", { name: /sign in/i });
     await expect(signInButton).toBeVisible();
 
     // Take a screenshot
     await page.screenshot({
-      path: 'test-results/login-homepage.png',
+      path: "test-results/login-homepage.png",
       fullPage: true,
     });
   });
 
-  test('clicking Sign In opens the login dialog', async ({ page }) => {
+  test("clicking Sign In opens the login dialog", async ({ page }) => {
     // Click Sign In button
-    const signInButton = page.getByRole('button', { name: /sign in/i });
+    const signInButton = page.getByRole("button", { name: /sign in/i });
     await signInButton.click();
 
     // Wait for dialog to appear
-    const dialog = page.getByRole('dialog');
+    const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
 
     // Verify dialog has login form elements
     await expect(page.getByLabel(/username/i)).toBeVisible();
     await expect(page.getByLabel(/password/i)).toBeVisible();
-    await expect(page.getByRole('button', { name: /sign in/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /sign in/i })).toBeVisible();
 
     // Take a screenshot
     await page.screenshot({
-      path: 'test-results/login-dialog-open.png',
+      path: "test-results/login-dialog-open.png",
       fullPage: true,
     });
   });
 
-  test('successful login with valid credentials shows authenticated state', async ({ page }) => {
+  test("successful login with valid credentials shows authenticated state", async ({
+    page,
+  }) => {
     // Open login dialog
-    const signInButton = page.getByRole('button', { name: /sign in/i });
+    const signInButton = page.getByRole("button", { name: /sign in/i });
     await signInButton.click();
 
     // Wait for dialog
-    const dialog = page.getByRole('dialog');
+    const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
 
     // Fill in credentials
@@ -74,12 +78,12 @@ test.describe('Login Flow', () => {
 
     // Take screenshot before submit
     await page.screenshot({
-      path: 'test-results/login-filled-form.png',
+      path: "test-results/login-filled-form.png",
       fullPage: true,
     });
 
     // Submit form - click button inside dialog to avoid header button ambiguity
-    await dialog.getByRole('button', { name: /sign in/i }).click();
+    await dialog.getByRole("button", { name: /sign in/i }).click();
 
     // Wait for dialog to close (indicates successful login)
     await expect(dialog).not.toBeVisible({ timeout: 15000 });
@@ -87,35 +91,39 @@ test.describe('Login Flow', () => {
     // Wait for either redirect OR authenticated state on current page
     // The app may redirect to /admin or /dashboard, or stay on homepage showing logged-in state
     await Promise.race([
-      page.waitForURL(/\/(admin|dashboard)/, { timeout: 10000 }).catch(() => {}),
+      page
+        .waitForURL(/\/(admin|dashboard)/, { timeout: 10000 })
+        .catch(() => {}),
       expect(page.getByText(TEST_USER.email)).toBeVisible({ timeout: 10000 }),
     ]);
 
     // Verify authenticated state - user email should be visible in header
-    await expect(page.getByText(TEST_USER.email)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(TEST_USER.email)).toBeVisible({
+      timeout: 5000,
+    });
 
     // Take screenshot after login
     await page.screenshot({
-      path: 'test-results/login-success.png',
+      path: "test-results/login-success.png",
       fullPage: true,
     });
   });
 
-  test('login with invalid credentials shows error', async ({ page }) => {
+  test("login with invalid credentials shows error", async ({ page }) => {
     // Open login dialog
-    const signInButton = page.getByRole('button', { name: /sign in/i });
+    const signInButton = page.getByRole("button", { name: /sign in/i });
     await signInButton.click();
 
     // Wait for dialog
-    const dialog = page.getByRole('dialog');
+    const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
 
     // Fill in invalid credentials
-    await page.getByLabel(/username/i).fill('invalid_user');
-    await page.getByLabel(/password/i).fill('wrong_password');
+    await page.getByLabel(/username/i).fill("invalid_user");
+    await page.getByLabel(/password/i).fill("wrong_password");
 
     // Submit form
-    await page.getByRole('button', { name: /sign in/i }).click();
+    await page.getByRole("button", { name: /sign in/i }).click();
 
     // Wait for error message (toast notification)
     // The error could appear as a toast or inline error
@@ -123,7 +131,7 @@ test.describe('Login Flow', () => {
 
     // Take screenshot showing error state
     await page.screenshot({
-      path: 'test-results/login-error.png',
+      path: "test-results/login-error.png",
       fullPage: true,
     });
 
@@ -131,55 +139,57 @@ test.describe('Login Flow', () => {
     expect(page.url()).toMatch(/\/$/);
   });
 
-  test('login dialog can be closed', async ({ page }) => {
+  test("login dialog can be closed", async ({ page }) => {
     // Open login dialog
-    const signInButton = page.getByRole('button', { name: /sign in/i });
+    const signInButton = page.getByRole("button", { name: /sign in/i });
     await signInButton.click();
 
     // Wait for dialog
-    const dialog = page.getByRole('dialog');
+    const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
 
     // Close dialog by clicking outside or pressing Escape
-    await page.keyboard.press('Escape');
+    await page.keyboard.press("Escape");
 
     // Verify dialog is closed
     await expect(dialog).not.toBeVisible();
   });
 
-  test('login form validates required fields', async ({ page }) => {
+  test("login form validates required fields", async ({ page }) => {
     // Open login dialog
-    const signInButton = page.getByRole('button', { name: /sign in/i });
+    const signInButton = page.getByRole("button", { name: /sign in/i });
     await signInButton.click();
 
     // Wait for dialog
-    const dialog = page.getByRole('dialog');
+    const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
 
     // Try to submit empty form
-    await page.getByRole('button', { name: /sign in/i }).click();
+    await page.getByRole("button", { name: /sign in/i }).click();
 
     // Verify validation messages appear (Zod schema validation)
     await page.waitForTimeout(500);
 
     // Take screenshot showing validation
     await page.screenshot({
-      path: 'test-results/login-validation.png',
+      path: "test-results/login-validation.png",
       fullPage: true,
     });
   });
 
-  test('remember me checkbox is present and functional', async ({ page }) => {
+  test("remember me checkbox is present and functional", async ({ page }) => {
     // Open login dialog
-    const signInButton = page.getByRole('button', { name: /sign in/i });
+    const signInButton = page.getByRole("button", { name: /sign in/i });
     await signInButton.click();
 
     // Wait for dialog
-    const dialog = page.getByRole('dialog');
+    const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
 
     // Find remember me checkbox
-    const rememberMeCheckbox = page.getByRole('checkbox', { name: /remember me/i });
+    const rememberMeCheckbox = page.getByRole("checkbox", {
+      name: /remember me/i,
+    });
     await expect(rememberMeCheckbox).toBeVisible();
 
     // Click to check it
@@ -188,59 +198,66 @@ test.describe('Login Flow', () => {
 
     // Take screenshot
     await page.screenshot({
-      path: 'test-results/login-remember-me.png',
+      path: "test-results/login-remember-me.png",
       fullPage: true,
     });
   });
 
-  test('forgot password link is present', async ({ page }) => {
+  test("forgot password link is present", async ({ page }) => {
     // Open login dialog
-    const signInButton = page.getByRole('button', { name: /sign in/i });
+    const signInButton = page.getByRole("button", { name: /sign in/i });
     await signInButton.click();
 
     // Wait for dialog
-    const dialog = page.getByRole('dialog');
+    const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
 
     // Find forgot password link
-    const forgotPasswordLink = page.getByRole('link', { name: /forgot.*password/i });
+    const forgotPasswordLink = page.getByRole("link", {
+      name: /forgot.*password/i,
+    });
     await expect(forgotPasswordLink).toBeVisible();
 
     // Verify it links to the correct page
-    await expect(forgotPasswordLink).toHaveAttribute('href', '/forgot-password');
+    await expect(forgotPasswordLink).toHaveAttribute(
+      "href",
+      "/forgot-password"
+    );
   });
 });
 
-test.describe('Authenticated Session', () => {
+test.describe("Authenticated Session", () => {
   // Run authenticated tests serially to avoid parallel login issues
-  test.describe.configure({ mode: 'serial' });
+  test.describe.configure({ mode: "serial" });
 
   // Helper function to login
-  async function loginUser(page: import('@playwright/test').Page) {
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
+  async function loginUser(page: import("@playwright/test").Page) {
+    await page.goto("/");
+    await page.waitForLoadState("networkidle");
 
     // Open login dialog
-    const signInButton = page.getByRole('button', { name: /sign in/i });
+    const signInButton = page.getByRole("button", { name: /sign in/i });
     await signInButton.click();
 
     // Wait for dialog
-    const dialog = page.getByRole('dialog');
+    const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
 
     // Fill credentials and submit - click button inside dialog to avoid header button ambiguity
     await page.getByLabel(/username/i).fill(TEST_USER.username);
     await page.getByLabel(/password/i).fill(TEST_USER.password);
-    await dialog.getByRole('button', { name: /sign in/i }).click();
+    await dialog.getByRole("button", { name: /sign in/i }).click();
 
     // Wait for dialog to close (indicates successful login)
     await expect(dialog).not.toBeVisible({ timeout: 15000 });
 
     // Wait for authenticated state
-    await expect(page.getByText(TEST_USER.email)).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(TEST_USER.email)).toBeVisible({
+      timeout: 10000,
+    });
   }
 
-  test('header shows user email when logged in', async ({ page }) => {
+  test("header shows user email when logged in", async ({ page }) => {
     await loginUser(page);
 
     // Verify user email is displayed
@@ -248,45 +265,51 @@ test.describe('Authenticated Session', () => {
 
     // Take screenshot
     await page.screenshot({
-      path: 'test-results/login-authenticated-header.png',
+      path: "test-results/login-authenticated-header.png",
       fullPage: true,
     });
   });
 
-  test('superuser is redirected to admin dashboard after login', async ({ page }) => {
+  test("superuser is redirected to admin dashboard after login", async ({
+    page,
+  }) => {
     await loginUser(page);
 
     // For superusers, they may be redirected to admin dashboard
     // OR they may stay on homepage with admin button visible
     // Either way is a valid authenticated state
-    const isOnAdminPage = page.url().includes('/admin');
+    const isOnAdminPage = page.url().includes("/admin");
 
     if (isOnAdminPage) {
       // Verify admin dashboard content is visible
-      await expect(page.getByText(/admin dashboard/i)).toBeVisible({ timeout: 5000 });
+      await expect(page.getByText(/admin dashboard/i)).toBeVisible({
+        timeout: 5000,
+      });
     } else {
       // On homepage, verify Go to Dashboard button is visible
-      const dashboardButton = page.getByRole('button', { name: /go to dashboard/i });
+      const dashboardButton = page.getByRole("button", {
+        name: /go to dashboard/i,
+      });
       await expect(dashboardButton).toBeVisible();
     }
 
     // Take screenshot
     await page.screenshot({
-      path: 'test-results/login-superuser-redirect.png',
+      path: "test-results/login-superuser-redirect.png",
       fullPage: true,
     });
   });
 
-  test('admin button shows for superuser on homepage', async ({ page }) => {
+  test("admin button shows for superuser on homepage", async ({ page }) => {
     await loginUser(page);
 
     // Navigate to homepage to check for admin button
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await page.goto("/");
+    await page.waitForLoadState("networkidle");
 
     // Verify Go to Admin button is visible for superuser
     if (TEST_USER.isSuperuser) {
-      const adminButton = page.getByRole('button', { name: /go to admin/i });
+      const adminButton = page.getByRole("button", { name: /go to admin/i });
       await expect(adminButton).toBeVisible();
     }
   });

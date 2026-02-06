@@ -37,7 +37,6 @@ def check_dependencies():
 
     # Check for contrib
     try:
-
         print("✓ opencv-contrib-python (selective search)")
     except AttributeError:
         print("⚠ opencv-contrib-python not found - Selective search will not work")

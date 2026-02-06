@@ -153,6 +153,7 @@ export function InviteMemberDialog({
     if (open) {
       loadInvitations();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, organizationId]);
 
   // Load invitations from API

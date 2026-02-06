@@ -3,15 +3,19 @@
  *
  * Shows a JSON preview of the TestGeneratorOutput and provides
  * export (download) and save-to-project functionality.
+ *
+ * The toolbar (Export JSON, Copy) is always rendered so that spec
+ * assertions can discover them regardless of whether output exists.
  */
 
 import { useState, useMemo } from "react";
 import { Download, Save, Copy, Check } from "lucide-react";
-import type { TestGeneratorOutput } from "../types";
+import type { SpecConfig } from "@qontinui/ui-bridge/specs";
+import type { GeneratorSpecMetadata } from "../types";
 
 interface TestOutputPanelProps {
-  output: TestGeneratorOutput | null;
-  onSaveToProject?: (output: TestGeneratorOutput) => Promise<void>;
+  output: SpecConfig | null;
+  onSaveToProject?: (output: SpecConfig) => Promise<void>;
   isSaving?: boolean;
 }
 
@@ -33,7 +37,9 @@ export function TestOutputPanel({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `test-specs-${output.generatorType}-${Date.now()}.json`;
+    const genMeta = output.metadata as GeneratorSpecMetadata | undefined;
+    const genType = genMeta?.generatorType || "spec";
+    a.download = `${genType}.spec.uibridge.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -45,13 +51,10 @@ export function TestOutputPanel({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  if (!output) {
-    return (
-      <div className="flex items-center justify-center h-full text-neutral-500 text-sm">
-        Generate test specifications to see output here.
-      </div>
-    );
-  }
+  const groupCount = output?.groups.length ?? 0;
+  const assertionCount = output
+    ? output.groups.reduce((sum, g) => sum + g.assertions.length, 0)
+    : 0;
 
   return (
     <div className="flex flex-col h-full">
@@ -59,13 +62,14 @@ export function TestOutputPanel({
       <div className="flex items-center gap-2 px-4 py-3 border-b border-neutral-700 bg-neutral-800/50">
         <button
           onClick={handleExport}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+          disabled={!output}
+          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
         >
           <Download className="w-4 h-4" />
           Export JSON
         </button>
 
-        {onSaveToProject && (
+        {onSaveToProject && output && (
           <button
             onClick={() => onSaveToProject(output)}
             disabled={isSaving}
@@ -78,7 +82,8 @@ export function TestOutputPanel({
 
         <button
           onClick={handleCopy}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-neutral-700 text-neutral-300 rounded-md hover:bg-neutral-600 transition-colors ml-auto"
+          disabled={!output}
+          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-neutral-700 text-neutral-300 rounded-md hover:bg-neutral-600 disabled:opacity-50 transition-colors ml-auto"
         >
           {copied ? (
             <Check className="w-4 h-4 text-emerald-400" />
@@ -91,20 +96,20 @@ export function TestOutputPanel({
 
       {/* Stats */}
       <div className="px-4 py-2 text-xs text-neutral-400 border-b border-neutral-700/50 bg-neutral-900/30">
-        {output.states.length} states, {output.transitions.length} transitions,{" "}
-        {output.testSpecifications.length} specs,{" "}
-        {output.testSpecifications.reduce(
-          (sum, s) => sum + s.assertions.length,
-          0,
-        )}{" "}
-        assertions
+        {groupCount} groups, {assertionCount} assertions
       </div>
 
-      {/* JSON preview */}
+      {/* Content */}
       <div className="flex-1 overflow-auto">
-        <pre className="p-4 text-xs text-neutral-300 font-mono whitespace-pre-wrap break-words">
-          {jsonString}
-        </pre>
+        {output ? (
+          <pre className="p-4 text-xs text-neutral-300 font-mono whitespace-pre-wrap break-words">
+            {jsonString}
+          </pre>
+        ) : (
+          <div className="flex items-center justify-center h-full text-neutral-500 text-sm">
+            Generate test specifications to see output here.
+          </div>
+        )}
       </div>
     </div>
   );

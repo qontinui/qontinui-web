@@ -281,6 +281,7 @@ export function StateDetailView({
           ) : showFullImage && fullImageUrl ? (
             <div className="relative w-full h-full overflow-auto p-2">
               <div className="relative inline-block">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={fullImageUrl}
                   alt="Full screenshot"
@@ -300,6 +301,7 @@ export function StateDetailView({
             </div>
           ) : croppedImageUrl ? (
             <div className="w-full h-full overflow-auto p-4 flex items-center justify-center">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={croppedImageUrl}
                 alt={state.name}

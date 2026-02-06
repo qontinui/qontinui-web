@@ -98,6 +98,7 @@ export function ScreenshotGallery({
   };
 
   // Keyboard navigation
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const handleKeyDown = (e: KeyboardEvent) => {
     if (selectedIndex === null) return;
 

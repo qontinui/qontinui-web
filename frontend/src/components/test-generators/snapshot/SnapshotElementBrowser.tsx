@@ -6,7 +6,13 @@
  */
 
 import { useState, useMemo } from "react";
-import { ChevronDown, ChevronRight, Search, Tag, TestTube2 } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Search,
+  Tag,
+  TestTube2,
+} from "lucide-react";
 
 export interface BrowsableElement {
   id: string;
@@ -23,7 +29,16 @@ interface SnapshotElementBrowserProps {
   onSelect: (id: string) => void;
 }
 
-const TYPE_ORDER = ["button", "input", "link", "select", "textarea", "form", "modal", "other"];
+const TYPE_ORDER = [
+  "button",
+  "input",
+  "link",
+  "select",
+  "textarea",
+  "form",
+  "modal",
+  "other",
+];
 
 function getTypeGroup(type: string): string {
   if (TYPE_ORDER.includes(type)) return type;
@@ -37,14 +52,14 @@ export function SnapshotElementBrowser({
 }: SnapshotElementBrowserProps) {
   const [search, setSearch] = useState("");
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
-    new Set(TYPE_ORDER),
+    new Set(TYPE_ORDER)
   );
 
   const filtered = useMemo(() => {
     if (!search) return elements;
     const q = search.toLowerCase();
     return elements.filter(
-      (e) => e.label.toLowerCase().includes(q) || e.id.toLowerCase().includes(q),
+      (e) => e.label.toLowerCase().includes(q) || e.id.toLowerCase().includes(q)
     );
   }, [elements, search]);
 
@@ -57,7 +72,7 @@ export function SnapshotElementBrowser({
       groups.set(group, list);
     }
     return Array.from(groups.entries()).sort(
-      (a, b) => TYPE_ORDER.indexOf(a[0]) - TYPE_ORDER.indexOf(b[0]),
+      (a, b) => TYPE_ORDER.indexOf(a[0]) - TYPE_ORDER.indexOf(b[0])
     );
   }, [filtered]);
 
@@ -77,6 +92,7 @@ export function SnapshotElementBrowser({
         <div className="relative">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-neutral-500" />
           <input
+            id="search-elements"
             type="text"
             placeholder="Search elements..."
             value={search}
@@ -101,8 +117,12 @@ export function SnapshotElementBrowser({
                 ) : (
                   <ChevronRight className="w-3 h-3 text-neutral-400" />
                 )}
-                <span className="text-xs font-medium text-neutral-300 capitalize">{group}s</span>
-                <span className="text-xs text-neutral-500 ml-auto">{items.length}</span>
+                <span className="text-xs font-medium text-neutral-300 capitalize">
+                  {group}s
+                </span>
+                <span className="text-xs text-neutral-500 ml-auto">
+                  {items.length}
+                </span>
               </button>
               {isExpanded && (
                 <div className="pb-1">
@@ -116,13 +136,19 @@ export function SnapshotElementBrowser({
                           : "hover:bg-neutral-800/30 border-l-2 border-transparent"
                       }`}
                     >
-                      <span className="text-xs text-neutral-200 truncate flex-1">{el.label}</span>
+                      <span className="text-xs text-neutral-200 truncate flex-1">
+                        {el.label}
+                      </span>
                       <div className="flex items-center gap-1">
                         {el.isAnnotated && (
-                          <span title="Annotated"><Tag className="w-3 h-3 text-emerald-400" /></span>
+                          <span title="Annotated">
+                            <Tag className="w-3 h-3 text-emerald-400" />
+                          </span>
                         )}
                         {el.hasSpecs && (
-                          <span title="Has specs"><TestTube2 className="w-3 h-3 text-blue-400" /></span>
+                          <span title="Has specs">
+                            <TestTube2 className="w-3 h-3 text-blue-400" />
+                          </span>
                         )}
                       </div>
                     </button>
@@ -133,8 +159,10 @@ export function SnapshotElementBrowser({
           );
         })}
         {grouped.length === 0 && (
-          <div className="p-4 text-xs text-neutral-500 text-center">
-            {search ? "No elements match your search." : "No elements captured yet."}
+          <div className="p-4 text-xs text-neutral-500 text-center" data-ui-element>
+            {search
+              ? "No elements match your search."
+              : "No elements captured yet."}
           </div>
         )}
       </div>

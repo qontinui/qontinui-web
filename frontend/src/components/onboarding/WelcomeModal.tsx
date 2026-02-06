@@ -119,6 +119,7 @@ export function WelcomeModal() {
 
     window.addEventListener("keydown", handleEscape);
     return () => window.removeEventListener("keydown", handleEscape);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showWelcomeModal, dontShowAgain]);
 
   return (

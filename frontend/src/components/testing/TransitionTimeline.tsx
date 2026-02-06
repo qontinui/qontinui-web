@@ -199,6 +199,7 @@ export function TransitionTimeline({
                             Screenshot:
                           </div>
                           <div className="rounded border border-border-default overflow-hidden bg-black/30">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                               src={transition.screenshot_url!}
                               alt={`Transition ${transition.from_state} to ${transition.to_state}`}

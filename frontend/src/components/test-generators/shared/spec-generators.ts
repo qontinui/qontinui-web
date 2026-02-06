@@ -1,18 +1,19 @@
 /**
  * Spec Generators
  *
- * Pure functions for generating test specifications from snapshot and exploration data.
+ * Pure functions for generating spec groups from snapshot and exploration data.
  * Used by both Snapshot Test Generator (Tier 1) and Navigation Test Generator (Tier 2).
  */
 
 import type {
-  TestAssertion,
-  TestSpecification,
-  TestCategory,
-  TestSeverity,
-  NonVisualState,
-  NonVisualTransition,
-} from "../types";
+  SpecAssertion,
+  SpecGroup,
+  SpecCategory,
+  SpecSeverity,
+  SpecTarget,
+  AssertionType,
+} from "@qontinui/ui-bridge/specs";
+import type { NonVisualState, NonVisualTransition } from "../types";
 
 let idCounter = 0;
 function generateId(prefix: string): string {
@@ -62,13 +63,13 @@ export interface SnapshotData {
 
 function createAssertion(
   description: string,
-  category: TestCategory,
-  severity: TestSeverity,
-  target: TestAssertion["target"],
-  assertionType: string,
+  category: SpecCategory,
+  severity: SpecSeverity,
+  target: SpecTarget,
+  assertionType: AssertionType,
   expected?: unknown,
-  attributeName?: string,
-): TestAssertion {
+  attributeName?: string
+): SpecAssertion {
   return {
     id: generateId("assertion"),
     description,
@@ -84,17 +85,16 @@ function createAssertion(
   };
 }
 
-function createSpec(
+function createGroup(
   name: string,
   description: string,
-  category: TestCategory,
-  assertions: TestAssertion[],
-  stateId: string,
-  transitionId?: string,
-): TestSpecification {
-  const now = new Date().toISOString();
+  category: SpecCategory,
+  assertions: SpecAssertion[],
+  stateId?: string,
+  transitionId?: string
+): SpecGroup {
   return {
-    id: generateId("spec"),
+    id: generateId("group"),
     name,
     description,
     category,
@@ -102,33 +102,43 @@ function createSpec(
     stateId,
     transitionId,
     source: "auto",
-    createdAt: now,
-    updatedAt: now,
   };
+}
+
+function elementTarget(elementId: string, label?: string): SpecTarget {
+  return { type: "elementId", elementId, label };
+}
+
+function searchTarget(
+  idPattern: string,
+  role: string,
+  label?: string
+): SpecTarget {
+  return { type: "search", criteria: { idPattern, role }, label };
 }
 
 // --- Snapshot-based generation (Tier 1) --------------------------------------
 
 function generateElementPresenceAssertions(
-  elements: SnapshotElement[],
-): TestAssertion[] {
+  elements: SnapshotElement[]
+): SpecAssertion[] {
   return elements.map((el) => {
-    const severity: TestSeverity = el.isInteractive ? "critical" : "info";
+    const severity: SpecSeverity = el.isInteractive ? "critical" : "info";
     const label = el.label || el.id;
     return createAssertion(
       `"${label}" ${el.type} exists`,
       "element-presence",
       severity,
-      { type: "elementId", elementId: el.id, label },
-      "exists",
+      elementTarget(el.id, label),
+      "exists"
     );
   });
 }
 
 function generateAccessibilityAssertions(
-  elements: SnapshotElement[],
-): TestAssertion[] {
-  const assertions: TestAssertion[] = [];
+  elements: SnapshotElement[]
+): SpecAssertion[] {
+  const assertions: SpecAssertion[] = [];
   for (const el of elements) {
     if (!el.isInteractive) continue;
     const label = el.label || el.id;
@@ -139,11 +149,11 @@ function generateAccessibilityAssertions(
           `"${label}" has ARIA role "${el.role}"`,
           "accessibility",
           "warning",
-          { type: "elementId", elementId: el.id, label },
+          elementTarget(el.id, label),
           "attribute",
           el.role,
-          "role",
-        ),
+          "role"
+        )
       );
     }
 
@@ -153,19 +163,19 @@ function generateAccessibilityAssertions(
           `"${label}" has accessible name`,
           "accessibility",
           "warning",
-          { type: "elementId", elementId: el.id, label },
+          elementTarget(el.id, label),
           "attribute",
           el.ariaLabel,
-          "aria-label",
-        ),
+          "aria-label"
+        )
       );
     }
   }
   return assertions;
 }
 
-function generateFormAssertions(forms: SnapshotForm[]): TestAssertion[] {
-  const assertions: TestAssertion[] = [];
+function generateFormAssertions(forms: SnapshotForm[]): SpecAssertion[] {
+  const assertions: SpecAssertion[] = [];
   for (const form of forms) {
     const formLabel = form.name || form.id;
 
@@ -175,9 +185,9 @@ function generateFormAssertions(forms: SnapshotForm[]): TestAssertion[] {
           `"${formLabel}" form has submit button`,
           "form-validation",
           "critical",
-          { type: "formId", formId: form.id, label: formLabel },
-          "exists",
-        ),
+          searchTarget(form.id, "form", formLabel),
+          "exists"
+        )
       );
     }
 
@@ -189,11 +199,11 @@ function generateFormAssertions(forms: SnapshotForm[]): TestAssertion[] {
             `"${fieldLabel}" field is required`,
             "form-validation",
             "critical",
-            { type: "elementId", elementId: field.id, label: fieldLabel },
+            elementTarget(field.id, fieldLabel),
             "attribute",
             "true",
-            "required",
-          ),
+            "required"
+          )
         );
       }
     }
@@ -201,8 +211,8 @@ function generateFormAssertions(forms: SnapshotForm[]): TestAssertion[] {
   return assertions;
 }
 
-function generateModalAssertions(modals: SnapshotModal[]): TestAssertion[] {
-  const assertions: TestAssertion[] = [];
+function generateModalAssertions(modals: SnapshotModal[]): SpecAssertion[] {
+  const assertions: SpecAssertion[] = [];
   for (const modal of modals) {
     const label = modal.title || modal.id;
     if (modal.hasCloseButton) {
@@ -211,9 +221,9 @@ function generateModalAssertions(modals: SnapshotModal[]): TestAssertion[] {
           `"${label}" modal has close button`,
           "modal-dialog",
           "critical",
-          { type: "modalId", modalId: modal.id, label },
-          "exists",
-        ),
+          searchTarget(modal.id, "dialog", label),
+          "exists"
+        )
       );
     }
     if (modal.isBlocking) {
@@ -222,11 +232,11 @@ function generateModalAssertions(modals: SnapshotModal[]): TestAssertion[] {
           `"${label}" modal is blocking`,
           "modal-dialog",
           "warning",
-          { type: "modalId", modalId: modal.id, label },
+          searchTarget(modal.id, "dialog", label),
           "attribute",
           "true",
-          "aria-modal",
-        ),
+          "aria-modal"
+        )
       );
     }
   }
@@ -234,9 +244,9 @@ function generateModalAssertions(modals: SnapshotModal[]): TestAssertion[] {
 }
 
 function generateStateConsistencyAssertions(
-  elements: SnapshotElement[],
-): TestAssertion[] {
-  const assertions: TestAssertion[] = [];
+  elements: SnapshotElement[]
+): SpecAssertion[] {
+  const assertions: SpecAssertion[] = [];
   for (const el of elements) {
     const label = el.label || el.id;
 
@@ -246,9 +256,9 @@ function generateStateConsistencyAssertions(
           `"${label}" is visible`,
           "state-consistency",
           el.isInteractive ? "critical" : "info",
-          { type: "elementId", elementId: el.id, label },
-          "visible",
-        ),
+          elementTarget(el.id, label),
+          "visible"
+        )
       );
     }
 
@@ -258,46 +268,53 @@ function generateStateConsistencyAssertions(
           `"${label}" is enabled`,
           "state-consistency",
           "critical",
-          { type: "elementId", elementId: el.id, label },
-          "enabled",
-        ),
+          elementTarget(el.id, label),
+          "enabled"
+        )
       );
     }
   }
   return assertions;
 }
 
+/** Get the primary ID from a SpecTarget */
+function getTargetId(target: SpecTarget): string | undefined {
+  if (target.type === "elementId") return target.elementId;
+  if (target.type === "search") return target.criteria.idPattern;
+  return undefined;
+}
+
 export function generateSpecsFromSnapshot(
   data: SnapshotData,
-  stateId: string,
-): TestSpecification[] {
-  const specs: TestSpecification[] = [];
+  stateId: string
+): SpecGroup[] {
+  const groups: SpecGroup[] = [];
 
   // Element Presence
   const presenceAssertions = generateElementPresenceAssertions(data.elements);
   if (presenceAssertions.length > 0) {
-    specs.push(
-      createSpec(
+    groups.push(
+      createGroup(
         "Element Presence",
         `Verify ${presenceAssertions.length} elements exist on the page`,
         "element-presence",
         presenceAssertions,
-        stateId,
-      ),
+        stateId
+      )
     );
   }
 
   // Accessibility
   const a11yAssertions = generateAccessibilityAssertions(data.elements);
   if (a11yAssertions.length > 0) {
-    specs.push(
-      createSpec(
+    groups.push(
+      createGroup(
         "Accessibility",
         `Verify ARIA roles and accessible names for ${a11yAssertions.length} interactive elements`,
         "accessibility",
         a11yAssertions,
-        stateId,
-      ),
+        stateId
+      )
     );
   }
 
@@ -306,24 +323,22 @@ export function generateSpecsFromSnapshot(
   if (formAssertions.length > 0) {
     for (const form of data.forms) {
       const formLabel = form.name || form.id;
-      const formSpecAssertions = formAssertions.filter((a) =>
-        a.target.type === "formId"
-          ? a.target.formId === form.id
-          : form.fields.some(
-              (f) =>
-                f.id ===
-                (a.target as { elementId: string }).elementId,
-            ),
-      );
-      if (formSpecAssertions.length > 0) {
-        specs.push(
-          createSpec(
+      const formGroupAssertions = formAssertions.filter((a) => {
+        const targetId = getTargetId(a.target);
+        if (a.target.type === "search") {
+          return targetId === form.id;
+        }
+        return form.fields.some((f) => f.id === targetId);
+      });
+      if (formGroupAssertions.length > 0) {
+        groups.push(
+          createGroup(
             `Form: ${formLabel}`,
             `Validate "${formLabel}" form structure and requirements`,
             "form-validation",
-            formSpecAssertions,
-            stateId,
-          ),
+            formGroupAssertions,
+            stateId
+          )
         );
       }
     }
@@ -332,14 +347,14 @@ export function generateSpecsFromSnapshot(
   // Modal / Dialog
   const modalAssertions = generateModalAssertions(data.modals);
   if (modalAssertions.length > 0) {
-    specs.push(
-      createSpec(
+    groups.push(
+      createGroup(
         "Modals & Dialogs",
         `Verify ${data.modals.length} modal/dialog components`,
         "modal-dialog",
         modalAssertions,
-        stateId,
-      ),
+        stateId
+      )
     );
   }
 
@@ -348,18 +363,18 @@ export function generateSpecsFromSnapshot(
   const stateAssertions =
     generateStateConsistencyAssertions(interactiveElements);
   if (stateAssertions.length > 0) {
-    specs.push(
-      createSpec(
+    groups.push(
+      createGroup(
         "State Consistency",
         `Verify visibility and enabled state of ${interactiveElements.length} interactive elements`,
         "state-consistency",
         stateAssertions,
-        stateId,
-      ),
+        stateId
+      )
     );
   }
 
-  return specs;
+  return groups;
 }
 
 // --- Navigation-based generation (Tier 2) ------------------------------------
@@ -367,28 +382,27 @@ export function generateSpecsFromSnapshot(
 export function generateNavigationTestSpecs(
   states: NonVisualState[],
   transitions: NonVisualTransition[],
-  snapshotsByState: Map<string, SnapshotData>,
-): TestSpecification[] {
-  const specs: TestSpecification[] = [];
+  snapshotsByState: Map<string, SnapshotData>
+): SpecGroup[] {
+  const groups: SpecGroup[] = [];
 
-  // Per-state specs
+  // Per-state groups
   for (const state of states) {
     const snapshot = snapshotsByState.get(state.id);
     if (snapshot) {
-      const stateSpecs = generateSpecsFromSnapshot(snapshot, state.id);
-      specs.push(...stateSpecs);
+      const stateGroups = generateSpecsFromSnapshot(snapshot, state.id);
+      groups.push(...stateGroups);
     }
   }
 
-  // Per-transition specs
+  // Per-transition groups
   for (const transition of transitions) {
     const fromState = states.find((s) => s.id === transition.fromStateId);
     const toState = states.find((s) => s.id === transition.toStateId);
     if (!fromState || !toState) continue;
 
-    const triggerLabel =
-      transition.triggerLabel || transition.triggerElementId;
-    const assertions: TestAssertion[] = [];
+    const triggerLabel = transition.triggerLabel || transition.triggerElementId;
+    const assertions: SpecAssertion[] = [];
 
     // Trigger element exists in source state
     assertions.push(
@@ -396,13 +410,9 @@ export function generateNavigationTestSpecs(
         `"${triggerLabel}" exists in "${fromState.name}"`,
         "navigation",
         "critical",
-        {
-          type: "elementId",
-          elementId: transition.triggerElementId,
-          label: triggerLabel,
-        },
-        "exists",
-      ),
+        elementTarget(transition.triggerElementId, triggerLabel),
+        "exists"
+      )
     );
 
     // After action, target state elements appear
@@ -418,23 +428,23 @@ export function generateNavigationTestSpecs(
             `After ${transition.triggerAction}, "${label}" appears in "${toState.name}"`,
             "navigation",
             "critical",
-            { type: "elementId", elementId: el.id, label },
-            "exists",
-          ),
+            elementTarget(el.id, label),
+            "exists"
+          )
         );
       }
     }
 
     if (assertions.length > 0) {
-      specs.push(
-        createSpec(
+      groups.push(
+        createGroup(
           `${fromState.name} → ${toState.name}`,
           `Verify transition from "${fromState.name}" to "${toState.name}" via ${transition.triggerAction} on "${triggerLabel}"`,
           "navigation",
           assertions,
           fromState.id,
-          transition.id,
-        ),
+          transition.id
+        )
       );
     }
   }
@@ -451,7 +461,7 @@ export function generateNavigationTestSpecs(
     }
 
     const sharedElements = Array.from(elementStateCounts.entries()).filter(
-      ([, stateIds]) => stateIds.length > 1,
+      ([, stateIds]) => stateIds.length > 1
     );
 
     if (sharedElements.length > 0) {
@@ -462,22 +472,22 @@ export function generateNavigationTestSpecs(
             `"${elId}" consistent across ${stateIds.length} states`,
             "cross-page-consistency",
             "warning",
-            { type: "elementId", elementId: elId },
-            "exists",
-          ),
+            elementTarget(elId),
+            "exists"
+          )
         );
 
-      specs.push(
-        createSpec(
+      groups.push(
+        createGroup(
           "Cross-Page Consistency",
           `Verify ${sharedElements.length} elements shared across multiple states`,
           "cross-page-consistency",
           crossPageAssertions,
-          states[0]!.id,
-        ),
+          states[0]!.id
+        )
       );
     }
   }
 
-  return specs;
+  return groups;
 }

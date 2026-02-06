@@ -160,6 +160,7 @@ export function useUnifiedExtraction(
       onError?.(err);
       setCurrentJobId(null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentJob?.status, currentJob?.jobId, onComplete, onError]);
 
   // ============================================================================

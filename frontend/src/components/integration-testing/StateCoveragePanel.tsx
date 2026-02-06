@@ -88,6 +88,7 @@ export function StateCoveragePanel({
     if (autoRefresh && workflowId && snapshotRunIds.length > 0) {
       analyzeCoverage();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workflowId, snapshotRunIds, autoRefresh]);
 
   const exportReport = () => {

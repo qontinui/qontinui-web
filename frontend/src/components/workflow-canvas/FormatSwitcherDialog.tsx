@@ -136,6 +136,7 @@ export function FormatSwitcherDialog({
       // Generate preview workflow
       generatePreviewWorkflow();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, workflow, currentFormat]);
 
   // Update preview when target format changes
@@ -145,6 +146,7 @@ export function FormatSwitcherDialog({
       setConversionPreview(preview);
       generatePreviewWorkflow();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetFormat]);
 
   const generatePreviewWorkflow = async () => {

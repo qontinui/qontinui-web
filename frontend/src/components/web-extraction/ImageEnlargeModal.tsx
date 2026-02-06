@@ -351,6 +351,7 @@ export function ImageEnlargeModal({
               }}
             />
           ) : (
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={imageUrl || ""}
               alt={title}

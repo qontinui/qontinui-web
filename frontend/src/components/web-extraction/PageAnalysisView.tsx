@@ -90,6 +90,7 @@ export function PageAnalysisView({
   }, [annotations, selectedAnnotationId]);
 
   // Load screenshot
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const loadScreenshot = async (
     screenshotId: string
   ): Promise<string | null> => {
@@ -145,6 +146,7 @@ export function PageAnalysisView({
     return () => {
       screenshotCache.forEach((url) => URL.revokeObjectURL(url));
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Draw page with state bounding boxes
@@ -454,6 +456,7 @@ function PageThumbnail({
             <Loader2 className="h-4 w-4 animate-spin text-brand-primary/40" />
           </div>
         ) : imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={imageUrl}
             alt={annotation.source_url}

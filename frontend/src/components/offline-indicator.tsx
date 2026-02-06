@@ -1,29 +1,31 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { WifiOff, Wifi } from "lucide-react";
 
 export function OfflineIndicator() {
   const [isOnline, setIsOnline] = useState(true);
   const [showReconnected, setShowReconnected] = useState(false);
+  const wasOfflineRef = useRef(false);
 
   useEffect(() => {
     // Only run in browser
     if (typeof window === "undefined") return;
 
     const updateOnlineStatus = () => {
-      const wasOffline = !isOnline;
-      setIsOnline(navigator.onLine);
-
-      // Show reconnected message briefly
-      if (wasOffline && navigator.onLine) {
+      const currentlyOnline = navigator.onLine;
+      // Use ref to track previous state without causing re-renders
+      if (wasOfflineRef.current && currentlyOnline) {
         setShowReconnected(true);
         setTimeout(() => setShowReconnected(false), 3000);
       }
+      wasOfflineRef.current = !currentlyOnline;
+      setIsOnline(currentlyOnline);
     };
 
     // Check initial status
     setIsOnline(navigator.onLine);
+    wasOfflineRef.current = !navigator.onLine;
 
     // Listen for online/offline events
     window.addEventListener("online", updateOnlineStatus);
@@ -37,7 +39,7 @@ export function OfflineIndicator() {
       window.removeEventListener("offline", updateOnlineStatus);
       clearInterval(interval);
     };
-  }, [isOnline]);
+  }, []); // Empty dependency array - effect only runs once on mount
 
   if (isOnline && !showReconnected) {
     return null;

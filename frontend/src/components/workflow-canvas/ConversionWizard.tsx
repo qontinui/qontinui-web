@@ -73,6 +73,7 @@ export function ConversionWizard({
       const preview = converter.previewConversion(workflow, targetFormat);
       setConversionPreview(preview);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetFormat, workflow]);
 
   const canProceed = () => {

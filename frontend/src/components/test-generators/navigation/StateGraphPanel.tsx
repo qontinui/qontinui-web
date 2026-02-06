@@ -69,7 +69,12 @@ function buildEdges(transitions: NonVisualTransition[]): Edge[] {
     label: t.triggerLabel || t.triggerAction,
     labelStyle: { fill: "#94a3b8", fontSize: 10 },
     style: {
-      stroke: t.confidence > 0.7 ? "#10b981" : t.confidence > 0.4 ? "#f59e0b" : "#ef4444",
+      stroke:
+        t.confidence > 0.7
+          ? "#10b981"
+          : t.confidence > 0.4
+            ? "#f59e0b"
+            : "#ef4444",
       strokeWidth: 2,
     },
     animated: true,
@@ -77,7 +82,11 @@ function buildEdges(transitions: NonVisualTransition[]): Edge[] {
   }));
 }
 
-export function StateGraphPanel({ states, transitions, onUpdateState }: StateGraphPanelProps) {
+export function StateGraphPanel({
+  states,
+  transitions,
+  onUpdateState,
+}: StateGraphPanelProps) {
   const [selectedStateId, setSelectedStateId] = useState<string | null>(null);
 
   const initialNodes = useMemo(() => buildNodes(states), [states]);
@@ -88,7 +97,7 @@ export function StateGraphPanel({ states, transitions, onUpdateState }: StateGra
 
   const selectedState = useMemo(
     () => states.find((s) => s.id === selectedStateId) || null,
-    [states, selectedStateId],
+    [states, selectedStateId]
   );
 
   const onNodeClick: NodeMouseHandler = useCallback((_, node) => {

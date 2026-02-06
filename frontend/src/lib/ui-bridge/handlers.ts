@@ -19,21 +19,24 @@ import type {
   UIBridgeServerHandlers,
   RenderLogQuery,
   APIResponse,
-} from "ui-bridge-server";
+} from "@qontinui/ui-bridge/server";
 import type {
   ControlActionRequest,
   ControlActionResponse,
   ComponentActionRequest,
   ComponentActionResponse,
-  DiscoveryRequest,
-  DiscoveryResponse,
   FindRequest,
   FindResponse,
   WorkflowRunRequest,
   WorkflowRunResponse,
   ControlSnapshot,
-} from "ui-bridge/control";
-import type { RenderLogEntry } from "ui-bridge/render-log";
+} from "@qontinui/ui-bridge/control";
+import type { RenderLogEntry } from "@qontinui/ui-bridge/render-log";
+import type {
+  ElementAnnotation,
+  AnnotationConfig,
+  AnnotationCoverage,
+} from "@qontinui/ui-bridge/annotations";
 import type {
   SearchCriteria,
   SearchResponse,
@@ -45,8 +48,9 @@ import type {
   BatchAssertionResult,
   SemanticSnapshot,
   SemanticDiff,
-  SemanticSearchResult,
-} from "ui-bridge/ai";
+  SemanticSearchCriteria,
+  SemanticSearchResponse,
+} from "@qontinui/ui-bridge/ai";
 
 /**
  * Create a success response wrapper
@@ -570,11 +574,11 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
   },
 
   async discover(
-    request?: DiscoveryRequest
-  ): Promise<APIResponse<DiscoveryResponse>> {
+    request?: FindRequest
+  ): Promise<APIResponse<FindResponse>> {
     // Deprecated - use find
     try {
-      const result = await queueCommand<DiscoveryResponse>(
+      const result = await queueCommand<FindResponse>(
         "discover",
         request || {}
       );
@@ -797,32 +801,108 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
   // Semantic Search Endpoint
   // --------------------------------------------------------------------------
 
-  async aiSemanticSearch(criteria: {
-    query: string;
-    threshold?: number;
-    limit?: number;
-    type?: string;
-    role?: string;
-    combineWithText?: boolean;
-  }): Promise<
-    APIResponse<{
-      results: SemanticSearchResult[];
-      bestMatch: SemanticSearchResult | null;
-      scannedCount: number;
-      durationMs: number;
-      query: string;
-      timestamp: number;
-    }>
+  async aiSemanticSearch(
+    criteria: SemanticSearchCriteria
+  ): Promise<APIResponse<SemanticSearchResponse>> {
+    try {
+      const result = await queueCommand<SemanticSearchResponse>(
+        "aiSemanticSearch",
+        criteria
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // Annotation Endpoints
+  // --------------------------------------------------------------------------
+
+  async getAnnotations(): Promise<
+    APIResponse<Record<string, ElementAnnotation>>
   > {
     try {
-      const result = await queueCommand<{
-        results: SemanticSearchResult[];
-        bestMatch: SemanticSearchResult | null;
-        scannedCount: number;
-        durationMs: number;
-        query: string;
-        timestamp: number;
-      }>("aiSemanticSearch", criteria);
+      const result = await queueCommand<Record<string, ElementAnnotation>>(
+        "getAnnotations",
+        {}
+      );
+      return success(result);
+    } catch (_e) {
+      return success({});
+    }
+  },
+
+  async getAnnotation(
+    id: string
+  ): Promise<APIResponse<ElementAnnotation>> {
+    try {
+      const result = await queueCommand<ElementAnnotation>(
+        "getAnnotation",
+        { id }
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "NOT_FOUND");
+    }
+  },
+
+  async setAnnotation(
+    id: string,
+    annotation: ElementAnnotation
+  ): Promise<APIResponse<ElementAnnotation>> {
+    try {
+      const result = await queueCommand<ElementAnnotation>(
+        "setAnnotation",
+        { id, annotation }
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async deleteAnnotation(id: string): Promise<APIResponse<void>> {
+    try {
+      await queueCommand("deleteAnnotation", { id });
+      return success(undefined);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async importAnnotations(
+    config: AnnotationConfig
+  ): Promise<APIResponse<{ count: number }>> {
+    try {
+      const result = await queueCommand<{ count: number }>(
+        "importAnnotations",
+        config
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async exportAnnotations(): Promise<APIResponse<AnnotationConfig>> {
+    try {
+      const result = await queueCommand<AnnotationConfig>(
+        "exportAnnotations",
+        {}
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getAnnotationCoverage(): Promise<APIResponse<AnnotationCoverage>> {
+    try {
+      const result = await queueCommand<AnnotationCoverage>(
+        "getAnnotationCoverage",
+        {}
+      );
       return success(result);
     } catch (e) {
       return error((e as Error).message, "COMMAND_FAILED");

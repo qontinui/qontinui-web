@@ -168,6 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
     }
     return undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const checkAuth = async () => {

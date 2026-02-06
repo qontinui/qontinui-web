@@ -48,6 +48,8 @@ export function useConflictResolution(
 
   const pollingIntervalRef = useRef<number | null>(null);
   const lastCheckRef = useRef<Date>(new Date());
+  const isCheckingRef = useRef(false);
+  const isResolvingRef = useRef(false);
 
   /**
    * Check for conflicts
@@ -55,6 +57,7 @@ export function useConflictResolution(
   const checkForConflicts = useCallback(
     async (localChanges: unknown): Promise<ConflictCheckResult> => {
       setIsChecking(true);
+      isCheckingRef.current = true;
 
       try {
         const result = await conflictResolutionService.checkForConflicts(
@@ -84,8 +87,10 @@ export function useConflictResolution(
         throw error;
       } finally {
         setIsChecking(false);
+        isCheckingRef.current = false;
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [projectId, resourceType, resourceId, autoResolveEnabled]
   );
 
@@ -99,6 +104,7 @@ export function useConflictResolution(
       resolution?: unknown
     ): Promise<void> => {
       setIsResolving(true);
+      isResolvingRef.current = true;
 
       try {
         await conflictResolutionService.resolveConflict(
@@ -119,6 +125,7 @@ export function useConflictResolution(
         throw error;
       } finally {
         setIsResolving(false);
+        isResolvingRef.current = false;
       }
     },
     [conflicts.length]
@@ -130,6 +137,7 @@ export function useConflictResolution(
   const autoResolveConflicts =
     useCallback(async (): Promise<AutoResolutionResult> => {
       setIsResolving(true);
+      isResolvingRef.current = true;
 
       try {
         const result = await conflictResolutionService.autoResolve(conflicts);
@@ -144,6 +152,7 @@ export function useConflictResolution(
         throw error;
       } finally {
         setIsResolving(false);
+        isResolvingRef.current = false;
       }
     }, [conflicts]);
 
@@ -222,8 +231,8 @@ export function useConflictResolution(
     }
 
     pollingIntervalRef.current = window.setInterval(() => {
-      // Only check if not currently checking or resolving
-      if (!isChecking && !isResolving) {
+      // Only check if not currently checking or resolving (use refs to avoid dependency issues)
+      if (!isCheckingRef.current && !isResolvingRef.current) {
         // This would need current state to check against
         // For now, we just track that polling is active
         console.log("Polling for conflicts...");
@@ -236,7 +245,7 @@ export function useConflictResolution(
         pollingIntervalRef.current = null;
       }
     };
-  }, [autoCheck, pollingInterval, isChecking, isResolving]);
+  }, [autoCheck, pollingInterval]); // Removed isChecking/isResolving - use refs instead
 
   /**
    * Cleanup on unmount

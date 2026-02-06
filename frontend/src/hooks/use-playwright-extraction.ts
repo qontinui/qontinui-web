@@ -114,12 +114,14 @@ export function usePlaywrightExtraction() {
     ) {
       setIsPolling(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentJob?.status]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (pollingRef.current) {
+        // eslint-disable-next-line react-hooks/exhaustive-deps
         clearInterval(pollingRef.current);
       }
     };

@@ -3,23 +3,24 @@
  * Runs once after all tests
  */
 
-import { FullConfig } from '@playwright/test';
+import { FullConfig } from "@playwright/test";
 
 async function globalTeardown(_config: FullConfig) {
-  console.log('Starting global E2E test teardown...');
+  console.log("Starting global E2E test teardown...");
 
   // Note: Frontend server is managed by Playwright's webServer config
   // No need to stop it here
 
   // Stop backend server if we started it
-  const backendPid = (global as unknown as { __BACKEND_PID__?: number }).__BACKEND_PID__;
+  const backendPid = (global as unknown as { __BACKEND_PID__?: number })
+    .__BACKEND_PID__;
   if (backendPid) {
     console.log(`Stopping backend server (PID: ${backendPid})...`);
     try {
-      process.kill(backendPid, 'SIGTERM');
-      console.log('Backend server stopped');
+      process.kill(backendPid, "SIGTERM");
+      console.log("Backend server stopped");
     } catch (error) {
-      console.error('Failed to stop backend server:', error);
+      console.error("Failed to stop backend server:", error);
     }
   }
 
@@ -28,7 +29,7 @@ async function globalTeardown(_config: FullConfig) {
   // - Stop mock services
   // - Clean up test artifacts
 
-  console.log('Global E2E test teardown complete');
+  console.log("Global E2E test teardown complete");
 }
 
 export default globalTeardown;

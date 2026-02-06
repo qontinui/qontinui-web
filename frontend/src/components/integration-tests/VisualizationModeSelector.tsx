@@ -33,6 +33,7 @@ export const VisualizationModeSelector: React.FC<
       label: "Screenshots",
       description:
         "Capture screenshots at each step. Good for debugging failures.",
+      // eslint-disable-next-line jsx-a11y/alt-text
       icon: <Image className="w-4 h-4" />,
     },
     {

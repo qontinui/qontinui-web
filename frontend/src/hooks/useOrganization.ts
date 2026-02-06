@@ -107,6 +107,7 @@ export function useOrganization(): UseOrganizationReturn {
    */
   useEffect(() => {
     loadOrganizations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /**

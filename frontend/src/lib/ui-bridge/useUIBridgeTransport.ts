@@ -11,11 +11,12 @@
  * - Auto-reconnection with exponential backoff (1s initial, 1.5x multiplier, 30s max)
  * - Connection state tracking
  * - Seamless failover between transport methods
+ * - Visibility-aware: pauses HTTP polling when tab is hidden to prevent freezes
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useUIBridge } from "ui-bridge/react";
-import type { ControlSnapshot } from "ui-bridge/control";
+import { useUIBridge } from "@qontinui/ui-bridge/react";
+import type { ControlSnapshot } from "@qontinui/ui-bridge/control";
 
 // Transport configuration
 export type TransportMode = "websocket" | "http" | "auto";
@@ -179,6 +180,8 @@ export function useUIBridgeTransport(
   const httpPollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isIntentionallyClosed = useRef(false);
   const isPollingRef = useRef(false);
+  const isTabVisibleRef = useRef(true);
+  const wasPollingBeforeHiddenRef = useRef(false);
 
   /**
    * Log helper (only logs if verbose is enabled)
@@ -362,7 +365,7 @@ export function useUIBridgeTransport(
 
         // ========== AI Commands ==========
         case "aiSearch": {
-          const { createSearchEngine } = await import("ui-bridge/ai");
+          const { createSearchEngine } = await import("@qontinui/ui-bridge/ai");
           const searchEngine = createSearchEngine({});
           searchEngine.updateElements(elements);
           const searchResponse = searchEngine.search(
@@ -376,7 +379,7 @@ export function useUIBridgeTransport(
         }
 
         case "aiExecute": {
-          const { parseNLInstruction } = await import("ui-bridge/ai");
+          const { parseNLInstruction } = await import("@qontinui/ui-bridge/ai");
           const { instruction } = payload as { instruction: string };
           const parsed = parseNLInstruction(instruction);
 
@@ -384,7 +387,7 @@ export function useUIBridgeTransport(
             throw new Error(`Could not parse instruction: ${instruction}`);
           }
 
-          const { createSearchEngine } = await import("ui-bridge/ai");
+          const { createSearchEngine } = await import("@qontinui/ui-bridge/ai");
           const searchEngine = createSearchEngine({});
           searchEngine.updateElements(elements);
 
@@ -462,8 +465,8 @@ export function useUIBridgeTransport(
         }
 
         case "aiAssert": {
-          const { createAssertionExecutor } = await import("ui-bridge/ai");
-          type AssertionType = import("ui-bridge/ai").AssertionType;
+          const { createAssertionExecutor } = await import("@qontinui/ui-bridge/ai");
+          type AssertionType = import("@qontinui/ui-bridge/ai").AssertionType;
           const executor = createAssertionExecutor({});
           executor.updateElements(
             elements as unknown as Parameters<typeof executor.updateElements>[0]
@@ -482,8 +485,8 @@ export function useUIBridgeTransport(
         }
 
         case "aiAssertBatch": {
-          const { createAssertionExecutor } = await import("ui-bridge/ai");
-          type AssertionType = import("ui-bridge/ai").AssertionType;
+          const { createAssertionExecutor } = await import("@qontinui/ui-bridge/ai");
+          type AssertionType = import("@qontinui/ui-bridge/ai").AssertionType;
           const executor = createAssertionExecutor({});
           executor.updateElements(
             elements as unknown as Parameters<typeof executor.updateElements>[0]
@@ -508,7 +511,7 @@ export function useUIBridgeTransport(
         }
 
         case "getSemanticSnapshot": {
-          const { createSnapshotManager } = await import("ui-bridge/ai");
+          const { createSnapshotManager } = await import("@qontinui/ui-bridge/ai");
           const manager = createSnapshotManager({});
           const controlSnapshot = {
             timestamp: Date.now(),
@@ -531,7 +534,7 @@ export function useUIBridgeTransport(
         }
 
         case "getPageSummary": {
-          const { generatePageSummary } = await import("ui-bridge/ai");
+          const { generatePageSummary } = await import("@qontinui/ui-bridge/ai");
           const aiElements = elements.map((e) => ({
             id: e.id,
             type: e.type,
@@ -769,6 +772,7 @@ export function useUIBridgeTransport(
         startHTTPPolling();
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wsUrl, mode, verbose, handleWSMessage, log]);
 
   /**
@@ -840,6 +844,13 @@ export function useUIBridgeTransport(
   const startHTTPPolling = useCallback(() => {
     if (httpPollIntervalRef.current) {
       return; // Already polling
+    }
+
+    // Don't start polling if tab is hidden
+    if (!isTabVisibleRef.current) {
+      log("Skipping HTTP polling start - tab is hidden");
+      wasPollingBeforeHiddenRef.current = true; // Remember to start when visible
+      return;
     }
 
     log("Starting HTTP polling");
@@ -914,6 +925,51 @@ export function useUIBridgeTransport(
   }, [disconnect, mode, startHTTPPolling, connectWebSocket, log]);
 
   /**
+   * Handle tab visibility changes to pause/resume polling
+   */
+  const handleVisibilityChange = useCallback(() => {
+    const isVisible = document.visibilityState === "visible";
+    const wasVisible = isTabVisibleRef.current;
+    isTabVisibleRef.current = isVisible;
+
+    if (isVisible && !wasVisible) {
+      // Tab became visible - resume polling if it was active before
+      log("Tab became visible, resuming transport");
+      if (wasPollingBeforeHiddenRef.current && activeTransport === "http") {
+        startHTTPPolling();
+      }
+      // For WebSocket, check if we need to reconnect
+      if (activeTransport === "websocket" || activeTransport === "none") {
+        if (wsRef.current?.readyState !== WebSocket.OPEN && !isIntentionallyClosed.current) {
+          log("Reconnecting WebSocket after tab became visible");
+          connectWebSocket();
+        }
+      }
+    } else if (!isVisible && wasVisible) {
+      // Tab became hidden - pause polling to save resources
+      log("Tab hidden, pausing HTTP polling");
+      wasPollingBeforeHiddenRef.current = httpPollIntervalRef.current !== null;
+      stopHTTPPolling();
+      // Note: We keep WebSocket connected since it's low overhead when idle
+    }
+  }, [activeTransport, log, startHTTPPolling, stopHTTPPolling, connectWebSocket]);
+
+  /**
+   * Set up visibility change listener
+   */
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    // Initialize visibility state
+    isTabVisibleRef.current = document.visibilityState === "visible";
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [handleVisibilityChange]);
+
+  /**
    * Initialize transport on mount
    */
   useEffect(() => {
@@ -923,6 +979,12 @@ export function useUIBridgeTransport(
     }
 
     log("Initializing transport, mode:", mode);
+
+    // Only start transport if tab is visible
+    if (!isTabVisibleRef.current) {
+      log("Tab is hidden, deferring transport initialization");
+      return;
+    }
 
     if (mode === "http") {
       startHTTPPolling();
@@ -934,6 +996,7 @@ export function useUIBridgeTransport(
     return () => {
       disconnect();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, mode]);
 
   return {

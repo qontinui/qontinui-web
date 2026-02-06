@@ -5,7 +5,7 @@
  * Uses createNextRouteHandlers from ui-bridge-server to handle routing.
  */
 
-import { createNextRouteHandlers } from "ui-bridge-server/nextjs";
+import { createNextRouteHandlers } from "@qontinui/ui-bridge/server/nextjs";
 import { uiBridgeHandlers } from "@/lib/ui-bridge/handlers";
 import { NextRequest } from "next/server";
 

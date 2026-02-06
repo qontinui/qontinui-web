@@ -281,6 +281,7 @@ export function TestStepTimeline({
                               </Button>
                             </div>
                             <div className="rounded border border-border-default overflow-hidden bg-black/30 cursor-pointer hover:border-brand-primary/50 transition-colors">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
                                 src={step.screenshotUrl!}
                                 alt={`Step ${step.stepNumber} screenshot`}
@@ -357,6 +358,7 @@ export function TestStepTimeline({
           {selectedScreenshot && (
             <div className="space-y-4">
               <div className="rounded border border-border-default overflow-hidden bg-black">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={selectedScreenshot.url}
                   alt="Full size screenshot"

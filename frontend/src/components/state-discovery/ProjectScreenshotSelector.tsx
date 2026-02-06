@@ -221,12 +221,14 @@ const ProjectScreenshotSelector: React.FC<ProjectScreenshotSelectorProps> = ({
                           {/* Thumbnail */}
                           <div className="w-16 h-16 bg-surface-raised rounded flex items-center justify-center flex-shrink-0">
                             {screenshot.thumbnailUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
                               <img
                                 src={`http://localhost:8000${screenshot.thumbnailUrl}`}
                                 alt={screenshot.name}
                                 className="w-full h-full object-cover rounded"
                               />
                             ) : (
+                              // eslint-disable-next-line jsx-a11y/alt-text
                               <Image className="h-8 w-8 text-text-muted" />
                             )}
                           </div>

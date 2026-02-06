@@ -275,7 +275,7 @@ export class PersistenceManager {
       }
 
       return { used, available };
-    } catch (error) {
+    } catch (_error) {
       return { used: 0, available: 0 };
     }
   }
@@ -289,7 +289,7 @@ export class PersistenceManager {
       this.options.storage.setItem(testKey, "test");
       this.options.storage.removeItem(testKey);
       return true;
-    } catch (error) {
+    } catch (_error) {
       return false;
     }
   }

@@ -161,6 +161,7 @@ function StateImageThumbnail({
         URL.revokeObjectURL(blobUrlRef.current);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     extractionId,
     screenshotId,
@@ -191,6 +192,7 @@ function StateImageThumbnail({
             <span className="text-[10px] text-muted-foreground">{error}</span>
           </div>
         ) : (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={imageUrl}
             alt={state.name}

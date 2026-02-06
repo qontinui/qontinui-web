@@ -38,15 +38,19 @@ test.describe("UI Bridge Element Search", () => {
     }
 
     // Use Playwright's built-in text selector to verify button exists
-    const buttonByText = page.getByRole("button", { name: /Start Extraction/i });
+    const buttonByText = page.getByRole("button", {
+      name: /Start Extraction/i,
+    });
     const isVisible = await buttonByText.isVisible().catch(() => false);
 
     if (!isVisible) {
       // Button might be in loading state
-      await page.waitForSelector('button:has-text("Start Extraction")', {
-        state: "visible",
-        timeout: 10000,
-      }).catch(() => {});
+      await page
+        .waitForSelector('button:has-text("Start Extraction")', {
+          state: "visible",
+          timeout: 10000,
+        })
+        .catch(() => {});
     }
 
     // Verify the button exists in the DOM
@@ -68,7 +72,10 @@ test.describe("UI Bridge Element Search", () => {
     });
 
     // Log the response for debugging
-    console.log("UI Bridge discover response:", JSON.stringify(response, null, 2));
+    console.log(
+      "UI Bridge discover response:",
+      JSON.stringify(response, null, 2)
+    );
 
     // The discover endpoint currently returns empty since elements are client-side
     // This test documents that behavior and shows how it could work
@@ -150,7 +157,9 @@ test.describe("UI Bridge Element Search", () => {
     const byRole = page.getByRole("button", { name: /Start Extraction/i });
 
     // Strategy 3: Find by partial text match
-    const byPartialText = page.locator("button").filter({ hasText: /Extraction/i });
+    const byPartialText = page
+      .locator("button")
+      .filter({ hasText: /Extraction/i });
 
     // Check which strategies find the button
     const results = {

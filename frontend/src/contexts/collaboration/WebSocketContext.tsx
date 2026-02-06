@@ -70,6 +70,7 @@ export function WebSocketProvider({
     return () => {
       disconnect();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   // ============================================================================

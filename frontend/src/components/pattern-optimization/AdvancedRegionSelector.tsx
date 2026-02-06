@@ -74,6 +74,7 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
 
   // Effective values (controlled or local)
   const zoom = isControlled ? controlledZoom : localZoom;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const pan = isControlled
     ? { x: controlledPanX ?? 0, y: controlledPanY ?? 0 }
     : localPan;
@@ -97,6 +98,7 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
     return () => {
       console.log("[AdvancedRegionSelector] UNMOUNTED");
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Empty deps = only on mount/unmount
 
   // Debug logging for zoom tracking

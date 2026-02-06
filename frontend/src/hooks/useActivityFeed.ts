@@ -66,6 +66,7 @@ export function useActivityFeed(
    */
   useEffect(() => {
     loadActivities(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     projectId,
     filters.action_types,
@@ -97,6 +98,7 @@ export function useActivityFeed(
     );
 
     return unsubscribe;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters]);
 
   /**

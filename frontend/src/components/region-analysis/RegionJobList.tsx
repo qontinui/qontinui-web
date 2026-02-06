@@ -86,6 +86,7 @@ export function RegionJobList({
 
   useEffect(() => {
     loadJobs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, annotationSetId, statusFilter, page]);
 
   const loadJobs = async () => {

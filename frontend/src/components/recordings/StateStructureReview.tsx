@@ -62,6 +62,7 @@ export function StateStructureReview({
   // Load state structure
   useEffect(() => {
     loadStateStructure();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recordingId]);
 
   const loadStateStructure = async () => {

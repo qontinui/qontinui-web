@@ -18,10 +18,8 @@ import { STORAGE_STATE_PATH } from "./auth.constants";
 
 // Get credentials from environment or use defaults
 const getCredentials = () => {
-  const username =
-    process.env.PLAYWRIGHT_TEST_USERNAME || TEST_USER.username;
-  const password =
-    process.env.PLAYWRIGHT_TEST_PASSWORD || TEST_USER.password;
+  const username = process.env.PLAYWRIGHT_TEST_USERNAME || TEST_USER.username;
+  const password = process.env.PLAYWRIGHT_TEST_PASSWORD || TEST_USER.password;
   return { username, password };
 };
 
@@ -60,5 +58,7 @@ setup("authenticate", async ({ page }) => {
   // Save the authenticated state
   await page.context().storageState({ path: STORAGE_STATE_PATH });
 
-  console.log(`[Auth Setup] Authentication state saved to ${STORAGE_STATE_PATH}`);
+  console.log(
+    `[Auth Setup] Authentication state saved to ${STORAGE_STATE_PATH}`
+  );
 });

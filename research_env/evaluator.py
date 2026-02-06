@@ -81,7 +81,7 @@ class EvaluationResult:
         status = "✓ PERFECT" if self.is_perfect() else "✗ NEEDS IMPROVEMENT"
         return f"""
 {status} - {self.method_name}
-{'='*60}
+{"=" * 60}
 Precision: {self.precision:.2%} ({self.true_positives} TP, {self.false_positives} FP)
 Recall:    {self.recall:.2%} ({self.true_positives} TP, {self.false_negatives} FN)
 F1 Score:  {self.f1:.2%}

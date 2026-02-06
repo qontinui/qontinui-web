@@ -127,6 +127,7 @@ export function useConflictResolution(
         setIsChecking(false);
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [projectId, resourceType, resourceId, autoResolveEnabled]
   );
 

@@ -5,7 +5,15 @@
  * Snapshot button.  Also provides Compare to Previous for snapshot comparison.
  */
 
-import { Camera, RefreshCw, GitCompare, Wifi, WifiOff, Monitor, ChevronDown } from "lucide-react";
+import {
+  Camera,
+  RefreshCw,
+  GitCompare,
+  Wifi,
+  WifiOff,
+  Monitor,
+  ChevronDown,
+} from "lucide-react";
 import type { BrowserTab } from "../SnapshotTestGenerator";
 
 interface SnapshotCapturePanelProps {
@@ -54,51 +62,60 @@ export function SnapshotCapturePanel({
           ) : (
             <WifiOff className="w-4 h-4 text-red-400" />
           )}
-          <span className={`text-xs ${isConnected ? "text-emerald-400" : "text-red-400"}`}>
+          <span
+            className={`text-xs ${isConnected ? "text-emerald-400" : "text-red-400"}`}
+            data-ui-element
+          >
             {isConnected ? "Connected" : "Disconnected"}
           </span>
-          <span className="text-xs text-neutral-500 truncate max-w-[200px]">{runnerUrl}</span>
+          <span className="text-xs text-neutral-500 truncate max-w-[200px]" data-ui-element>
+            {runnerUrl}
+          </span>
         </div>
 
         <div className="flex-1" />
 
-        {/* Tab selector */}
-        {isConnected && (
-          <div className="flex items-center gap-2">
-            <span className="flex items-center gap-1 text-xs text-neutral-400">
-              <Monitor className="w-3.5 h-3.5" />
-              Tab:
-            </span>
-            <div className="relative">
-              <select
-                value={selectedTabId ?? ""}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  if (!isNaN(v)) onSelectTab(v);
-                }}
-                className="appearance-none pl-2 pr-6 py-1 text-xs bg-neutral-900 border border-neutral-600 rounded text-neutral-200 focus:outline-none focus:border-blue-500 max-w-[250px] truncate"
-              >
-                <option value="" disabled>
-                  Select a tab...
-                </option>
-                {browserTabs.map((tab) => (
-                  <option key={tab.id} value={tab.id}>
-                    {tab.title || tab.url}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-neutral-400 pointer-events-none" />
-            </div>
-            <button
-              onClick={onRefreshTabs}
-              disabled={isLoadingTabs}
-              className="p-1 text-neutral-400 hover:text-neutral-200 transition-colors"
-              title="Refresh tab list"
+        {/* Tab selector — always mounted for spec discoverability, hidden when not connected */}
+        <div
+          className="flex items-center gap-2"
+          style={{ display: isConnected ? undefined : "none" }}
+        >
+          <span className="flex items-center gap-1 text-xs text-neutral-400">
+            <Monitor className="w-3.5 h-3.5" />
+            Tab:
+          </span>
+          <div className="relative">
+            <select
+              value={selectedTabId ?? ""}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (!isNaN(v)) onSelectTab(v);
+              }}
+              className="appearance-none pl-2 pr-6 py-1 text-xs bg-neutral-900 border border-neutral-600 rounded text-neutral-200 focus:outline-none focus:border-blue-500 max-w-[250px] truncate"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingTabs ? "animate-spin" : ""}`} />
-            </button>
+              <option value="" disabled>
+                Select a tab...
+              </option>
+              {browserTabs.map((tab) => (
+                <option key={tab.id} value={tab.id}>
+                  {tab.title || tab.url}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-neutral-400 pointer-events-none" />
           </div>
-        )}
+          <button
+            id="refresh-tabs"
+            onClick={onRefreshTabs}
+            disabled={isLoadingTabs}
+            className="p-1 text-neutral-400 hover:text-neutral-200 transition-colors"
+            title="Refresh tab list"
+          >
+            <RefreshCw
+              className={`w-3.5 h-3.5 ${isLoadingTabs ? "animate-spin" : ""}`}
+            />
+          </button>
+        </div>
 
         {/* Capture button */}
         <button
@@ -114,29 +131,25 @@ export function SnapshotCapturePanel({
           {isCapturing ? "Capturing..." : "Capture Snapshot"}
         </button>
 
-        {/* Compare button */}
-        {hasPreviousSnapshot && (
-          <button
-            onClick={onCompare}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm bg-neutral-700 text-neutral-300 rounded-md hover:bg-neutral-600 transition-colors"
-          >
-            <GitCompare className="w-4 h-4" />
-            Compare to Previous
-          </button>
-        )}
+        {/* Compare button — always mounted for spec discoverability */}
+        <button
+          onClick={onCompare}
+          disabled={!hasPreviousSnapshot}
+          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-neutral-700 text-neutral-300 rounded-md hover:bg-neutral-600 disabled:opacity-50 transition-colors"
+          style={{ display: hasPreviousSnapshot ? undefined : "none" }}
+        >
+          <GitCompare className="w-4 h-4" />
+          Compare to Previous
+        </button>
       </div>
 
       {/* Selected tab info / error */}
       {(selectedTab || captureError) && (
         <div className="flex items-center gap-3 px-4 pb-2 text-xs">
           {selectedTab && !captureError && (
-            <span className="text-neutral-500 truncate">
-              {selectedTab.url}
-            </span>
+            <span className="text-neutral-500 truncate">{selectedTab.url}</span>
           )}
-          {captureError && (
-            <span className="text-red-400">{captureError}</span>
-          )}
+          {captureError && <span className="text-red-400">{captureError}</span>}
         </div>
       )}
     </div>

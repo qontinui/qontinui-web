@@ -85,6 +85,7 @@ export function RecordingListPage() {
 
   useEffect(() => {
     loadRecordings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, statusFilter, projectId]);
 
   // Filter recordings by search query

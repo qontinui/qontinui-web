@@ -248,6 +248,7 @@ export function RecordingPanel({
                     <SelectItem key={tab.id} value={tab.id.toString()}>
                       <div className="flex items-center gap-2 max-w-[350px]">
                         {tab.favIconUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={tab.favIconUrl}
                             alt=""

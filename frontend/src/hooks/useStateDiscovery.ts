@@ -170,6 +170,7 @@ export function useStateDiscovery() {
         throw err;
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [uploadId]
   );
 

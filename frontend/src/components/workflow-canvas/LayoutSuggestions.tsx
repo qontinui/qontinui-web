@@ -57,6 +57,7 @@ export function LayoutSuggestions({
   // Detect issues
   const issues = useMemo(
     () => detectIssues(workflow, layoutResult, layoutService),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [workflow, layoutResult]
   );
 

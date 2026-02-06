@@ -18,7 +18,8 @@ exclude =
     .elasticbeanstalk,
     .ebextensions,
     .platform,
-    node_modules
+    node_modules,
+    research_env
 per-file-ignores =
     __init__.py:F401
     app/main.py:E402

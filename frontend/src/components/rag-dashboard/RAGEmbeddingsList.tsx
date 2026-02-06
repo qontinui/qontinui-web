@@ -125,6 +125,7 @@ export function RAGEmbeddingsList({ projectId }: RAGEmbeddingsListProps) {
                         <div className="flex items-center gap-3">
                           <div className="w-12 h-12 bg-surface-raised rounded flex items-center justify-center overflow-hidden flex-shrink-0">
                             {embedding.image_url ? (
+                              // eslint-disable-next-line @next/next/no-img-element
                               <img
                                 src={embedding.image_url}
                                 alt={

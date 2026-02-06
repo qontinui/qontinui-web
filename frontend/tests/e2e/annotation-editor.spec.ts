@@ -25,7 +25,9 @@ async function navigateToExtractionPage(page: Page): Promise<void> {
   await page.waitForLoadState("networkidle");
 
   // Wait for the page title or a key element to ensure page is loaded
-  await page.waitForSelector('text=/discovery|extraction/i', { timeout: 15000 });
+  await page.waitForSelector("text=/discovery|extraction/i", {
+    timeout: 15000,
+  });
 }
 
 /**
@@ -55,7 +57,16 @@ async function loadTestScreenshot(page: Page): Promise<void> {
 
   // Set the screenshot in the annotation store
   await page.evaluate((imageUrl) => {
-    const store = (window as unknown as { __extractionAnnotationStore__?: { getState: () => { setScreenshot: (url: string, w: number, h: number) => void; setSession: (id: string) => void } } }).__extractionAnnotationStore__;
+    const store = (
+      window as unknown as {
+        __extractionAnnotationStore__?: {
+          getState: () => {
+            setScreenshot: (url: string, w: number, h: number) => void;
+            setSession: (id: string) => void;
+          };
+        };
+      }
+    ).__extractionAnnotationStore__;
     if (store) {
       const state = store.getState();
       state.setSession("test-extraction-123");
@@ -67,7 +78,9 @@ async function loadTestScreenshot(page: Page): Promise<void> {
 /**
  * Helper to get the annotation canvas element
  */
-async function getAnnotationCanvas(page: Page): Promise<ReturnType<Page["locator"]>> {
+async function getAnnotationCanvas(
+  page: Page
+): Promise<ReturnType<Page["locator"]>> {
   return page.locator("canvas").first();
 }
 
@@ -96,7 +109,9 @@ async function drawBoundingBox(
  */
 async function selectDrawTool(page: Page): Promise<void> {
   // Look for the draw tool button in the toolbar
-  const drawButton = page.locator('[data-tool="draw"], button:has-text("Draw")');
+  const drawButton = page.locator(
+    '[data-tool="draw"], button:has-text("Draw")'
+  );
   if (await drawButton.isVisible()) {
     await drawButton.click();
   } else {
@@ -109,7 +124,9 @@ async function selectDrawTool(page: Page): Promise<void> {
  * Helper to select the select tool
  */
 async function selectSelectTool(page: Page): Promise<void> {
-  const selectButton = page.locator('[data-tool="select"], button:has-text("Select")');
+  const selectButton = page.locator(
+    '[data-tool="select"], button:has-text("Select")'
+  );
   if (await selectButton.isVisible()) {
     await selectButton.click();
   } else {
@@ -129,8 +146,8 @@ test.describe("Annotation Editor", () => {
       if (await signInButton.isVisible({ timeout: 3000 }).catch(() => false)) {
         await signInButton.click();
         await page.waitForSelector('[role="dialog"]');
-        await page.fill('#login-username', TEST_USER.username);
-        await page.fill('#login-password', TEST_USER.password);
+        await page.fill("#login-username", TEST_USER.username);
+        await page.fill("#login-password", TEST_USER.password);
         await page.click('button[type="submit"]:has-text("Sign In")');
         await page.waitForURL(/\/(dashboard|admin)/, { timeout: 10000 });
       }
@@ -138,11 +155,15 @@ test.describe("Annotation Editor", () => {
   });
 
   test.describe("Canvas Interaction", () => {
-    test("should display annotation canvas when screenshot is loaded", async ({ page }) => {
+    test("should display annotation canvas when screenshot is loaded", async ({
+      page,
+    }) => {
       await navigateToExtractionPage(page);
 
       // The annotation editor area should exist
-      const editorArea = page.locator('[class*="annotation"], [data-testid="annotation-editor"]');
+      const editorArea = page.locator(
+        '[class*="annotation"], [data-testid="annotation-editor"]'
+      );
 
       // Either find the editor or the canvas (depending on implementation)
       const canvas = page.locator("canvas");
@@ -182,7 +203,9 @@ test.describe("Annotation Editor", () => {
       }
     });
 
-    test("should show element properties panel when element is selected", async ({ page }) => {
+    test("should show element properties panel when element is selected", async ({
+      page,
+    }) => {
       await navigateToExtractionPage(page);
 
       // Look for properties panel or form
@@ -235,7 +258,9 @@ test.describe("Annotation Editor", () => {
       );
 
       // Check if export button exists somewhere on the page
-      const hasExportButton = await exportButton.isVisible({ timeout: 5000 }).catch(() => false);
+      const hasExportButton = await exportButton
+        .isVisible({ timeout: 5000 })
+        .catch(() => false);
 
       // Take screenshot of the page
       await page.screenshot({
@@ -244,13 +269,15 @@ test.describe("Annotation Editor", () => {
       });
     });
 
-    test("should open export dialog when export is triggered", async ({ page }) => {
+    test("should open export dialog when export is triggered", async ({
+      page,
+    }) => {
       await navigateToExtractionPage(page);
 
       // Look for export button and click it
-      const exportButton = page.locator(
-        'button:has-text("Export"), [data-testid="export-button"]'
-      ).first();
+      const exportButton = page
+        .locator('button:has-text("Export"), [data-testid="export-button"]')
+        .first();
 
       if (await exportButton.isVisible({ timeout: 3000 }).catch(() => false)) {
         await exportButton.click();
@@ -293,9 +320,15 @@ test.describe("Annotation Editor", () => {
       await navigateToExtractionPage(page);
 
       // Look for zoom controls
-      const zoomIn = page.locator('button:has-text("Zoom In"), button:has([data-lucide="zoom-in"]), [aria-label="Zoom in"]');
-      const zoomOut = page.locator('button:has-text("Zoom Out"), button:has([data-lucide="zoom-out"]), [aria-label="Zoom out"]');
-      const zoomReset = page.locator('button:has-text("Reset"), button:has-text("100%"), button:has-text("Fit")');
+      const zoomIn = page.locator(
+        'button:has-text("Zoom In"), button:has([data-lucide="zoom-in"]), [aria-label="Zoom in"]'
+      );
+      const zoomOut = page.locator(
+        'button:has-text("Zoom Out"), button:has([data-lucide="zoom-out"]), [aria-label="Zoom out"]'
+      );
+      const zoomReset = page.locator(
+        'button:has-text("Reset"), button:has-text("100%"), button:has-text("Fit")'
+      );
 
       // Take screenshot to document zoom controls location
       await page.screenshot({
@@ -347,7 +380,9 @@ test.describe("Annotation Editor", () => {
       // Look for review status controls
       const approveButton = page.locator('button:has-text("Approve")');
       const rejectButton = page.locator('button:has-text("Reject")');
-      const statusBadge = page.locator('[class*="badge"]:has-text(/pending|approved|rejected/i)');
+      const statusBadge = page.locator(
+        '[class*="badge"]:has-text(/pending|approved|rejected/i)'
+      );
 
       await page.screenshot({
         path: "test-results/annotation-review-workflow.png",
@@ -374,7 +409,9 @@ test.describe("Annotation Editor", () => {
   });
 
   test.describe("Multi-Selection", () => {
-    test("page should load and support multi-selection interactions", async ({ page }) => {
+    test("page should load and support multi-selection interactions", async ({
+      page,
+    }) => {
       await navigateToExtractionPage(page);
 
       // Verify page loaded
@@ -394,7 +431,9 @@ test.describe("Annotation Editor", () => {
   });
 
   test.describe("Copy/Paste", () => {
-    test("page should support copy/paste keyboard shortcuts", async ({ page }) => {
+    test("page should support copy/paste keyboard shortcuts", async ({
+      page,
+    }) => {
       await navigateToExtractionPage(page);
 
       // Test copy/paste shortcuts exist
@@ -458,7 +497,9 @@ test.describe("Annotation Editor - Integration Tests", () => {
     // These may be conditionally rendered based on state
 
     // The page should have some form of editor/canvas area
-    const editorAreas = page.locator('[class*="editor"], canvas, [class*="annotation"]');
+    const editorAreas = page.locator(
+      '[class*="editor"], canvas, [class*="annotation"]'
+    );
 
     // Take screenshot to document what's visible
     await page.screenshot({

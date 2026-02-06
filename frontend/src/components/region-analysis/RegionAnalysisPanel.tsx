@@ -74,6 +74,7 @@ export function RegionAnalysisPanel({
   // Load available analyzers
   useEffect(() => {
     loadAnalyzers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   const loadAnalyzers = async () => {

@@ -31,8 +31,8 @@
  */
 
 import { useCallback, useRef, useState } from "react";
-import { useUIBridge } from "ui-bridge/react";
-import type { ControlSnapshot } from "ui-bridge/control";
+import { useUIBridge } from "@qontinui/ui-bridge/react";
+import type { ControlSnapshot } from "@qontinui/ui-bridge/control";
 
 // Reconnection configuration
 const INITIAL_RECONNECT_DELAY_MS = 1000;
@@ -265,7 +265,7 @@ export function useWebSocketCommandHandler() {
         // ========== AI Commands ==========
         case "aiSearch": {
           // Import AI search functionality dynamically
-          const { createSearchEngine } = await import("ui-bridge/ai");
+          const { createSearchEngine } = await import("@qontinui/ui-bridge/ai");
           const searchEngine = createSearchEngine({});
           searchEngine.updateElements(bridge.elements);
           const response = searchEngine.search(
@@ -280,7 +280,7 @@ export function useWebSocketCommandHandler() {
 
         case "aiExecute": {
           // Parse natural language and execute
-          const { parseNLInstruction } = await import("ui-bridge/ai");
+          const { parseNLInstruction } = await import("@qontinui/ui-bridge/ai");
           const { instruction } = payload as { instruction: string };
           const parsed = parseNLInstruction(instruction);
 
@@ -289,7 +289,7 @@ export function useWebSocketCommandHandler() {
           }
 
           // Find the target element
-          const { createSearchEngine } = await import("ui-bridge/ai");
+          const { createSearchEngine } = await import("@qontinui/ui-bridge/ai");
           const searchEngine = createSearchEngine({});
           searchEngine.updateElements(bridge.elements);
 
@@ -367,8 +367,8 @@ export function useWebSocketCommandHandler() {
         }
 
         case "aiAssert": {
-          const { createAssertionExecutor } = await import("ui-bridge/ai");
-          type AssertionType = import("ui-bridge/ai").AssertionType;
+          const { createAssertionExecutor } = await import("@qontinui/ui-bridge/ai");
+          type AssertionType = import("@qontinui/ui-bridge/ai").AssertionType;
           const executor = createAssertionExecutor({});
           executor.updateElements(
             bridge.elements as unknown as Parameters<
@@ -389,8 +389,8 @@ export function useWebSocketCommandHandler() {
         }
 
         case "aiAssertBatch": {
-          const { createAssertionExecutor } = await import("ui-bridge/ai");
-          type AssertionType = import("ui-bridge/ai").AssertionType;
+          const { createAssertionExecutor } = await import("@qontinui/ui-bridge/ai");
+          type AssertionType = import("@qontinui/ui-bridge/ai").AssertionType;
           const executor = createAssertionExecutor({});
           executor.updateElements(
             bridge.elements as unknown as Parameters<
@@ -417,7 +417,7 @@ export function useWebSocketCommandHandler() {
         }
 
         case "getSemanticSnapshot": {
-          const { createSnapshotManager } = await import("ui-bridge/ai");
+          const { createSnapshotManager } = await import("@qontinui/ui-bridge/ai");
           const manager = createSnapshotManager({});
           const controlSnapshot = {
             timestamp: Date.now(),
@@ -441,7 +441,7 @@ export function useWebSocketCommandHandler() {
         }
 
         case "getPageSummary": {
-          const { generatePageSummary } = await import("ui-bridge/ai");
+          const { generatePageSummary } = await import("@qontinui/ui-bridge/ai");
           // Convert RegisteredElement[] to minimal AIDiscoveredElement-like objects for the summary
           const aiElements = bridge.elements.map((e) => ({
             id: e.id,

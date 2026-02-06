@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 /**
  * Custom hook for syncing state with localStorage
@@ -12,9 +12,14 @@ export function useLocalStorage<T>(
     deserialize?: (value: string) => T;
   }
 ): [T, (value: T | ((val: T) => T)) => void] {
-  // Default serialization functions
-  const serialize = options?.serialize || JSON.stringify;
-  const deserialize = options?.deserialize || JSON.parse;
+  // Use refs to store serialize/deserialize functions to avoid dependency issues
+  // This allows callers to pass inline functions without causing infinite loops
+  const serializeRef = useRef(options?.serialize || JSON.stringify);
+  const deserializeRef = useRef(options?.deserialize || JSON.parse);
+
+  // Update refs if options change (but don't trigger re-renders)
+  serializeRef.current = options?.serialize || JSON.stringify;
+  deserializeRef.current = options?.deserialize || JSON.parse;
 
   // Always use initial value first to avoid hydration mismatch
   const [storedValue, setStoredValue] = useState<T>(initialValue);
@@ -27,20 +32,20 @@ export function useLocalStorage<T>(
     try {
       const item = window.localStorage.getItem(key);
       if (item) {
-        setStoredValue(deserialize(item));
+        setStoredValue(deserializeRef.current(item));
       }
     } catch (error) {
       console.error(`Error loading ${key} from localStorage:`, error);
     }
     setIsHydrated(true);
-  }, [key, deserialize]);
+  }, [key]); // Only re-run if key changes
 
   // Save to localStorage whenever value changes (but only after hydration)
   useEffect(() => {
     if (typeof window === "undefined" || !isHydrated) return;
 
     try {
-      window.localStorage.setItem(key, serialize(storedValue));
+      window.localStorage.setItem(key, serializeRef.current(storedValue));
     } catch (error) {
       console.error(`Error saving ${key} to localStorage:`, error);
       // Handle quota exceeded error
@@ -50,7 +55,7 @@ export function useLocalStorage<T>(
         );
       }
     }
-  }, [key, storedValue, serialize, isHydrated]);
+  }, [key, storedValue, isHydrated]); // Removed serialize from deps - use ref instead
 
   // Wrapped setter function
   const setValue = useCallback((value: T | ((val: T) => T)) => {

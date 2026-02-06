@@ -79,12 +79,14 @@ This module integrates the UI Bridge framework for remote automation of the qont
 ## Supported Commands
 
 ### Control Actions
+
 - `getControlSnapshot`: Get all registered elements
 - `getElementState`: Get state of a specific element
 - `executeElementAction`: Execute action (click, type, etc.)
 - `highlightElement`: Highlight element for debugging
 
 ### AI-Native Actions
+
 - `aiSearch`: Search elements by text, role, accessibility
 - `aiExecute`: Execute natural language instruction
 - `aiAssert`: Make assertion about element state
@@ -151,9 +153,7 @@ Remote command listening is enabled by default in development:
 
 ```tsx
 // In your layout or app wrapper
-<UIBridgeWrapper enableRemoteCommands={true}>
-  {children}
-</UIBridgeWrapper>
+<UIBridgeWrapper enableRemoteCommands={true}>{children}</UIBridgeWrapper>
 ```
 
 ### CORS Configuration
@@ -180,6 +180,7 @@ For lower latency, commands can be relayed via WebSocket instead of polling:
 4. Browser sends response via REST API
 
 This approach reuses the existing WebSocket infrastructure but requires:
+
 - Extending the dashboard WebSocket handler to process UI Bridge commands
 - Correlation logic to match responses to requests
 

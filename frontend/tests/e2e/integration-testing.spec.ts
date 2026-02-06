@@ -13,40 +13,39 @@
  * - Export video
  */
 
-import { test, expect } from './fixtures';
+import { test, expect } from "./fixtures";
 
-test.describe('Integration Testing - Complete Workflow', () => {
+test.describe("Integration Testing - Complete Workflow", () => {
   test.beforeEach(async ({ page }) => {
     // Navigate to integration testing page before each test
-    await page.goto('/integration-testing');
+    await page.goto("/integration-testing");
 
     // Wait for page to load
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState("networkidle");
   });
 
-  test('should display integration testing page with all sections', async ({
+  test("should display integration testing page with all sections", async ({
     page,
   }) => {
     // Verify page title
-    await expect(page.locator('h1')).toContainText('Integration Testing');
+    await expect(page.locator("h1")).toContainText("Integration Testing");
 
     // Verify main sections are present
-    await expect(
-      page.locator('text=Process Selection')
-    ).toBeVisible();
+    await expect(page.locator("text=Process Selection")).toBeVisible();
 
     // Verify snapshot selector is present (check for Smart Recommendations card)
     await expect(
-      page.getByRole('heading', { name: 'Smart Recommendations' })
-        .or(page.getByText('Smart Recommendations').first())
+      page
+        .getByRole("heading", { name: "Smart Recommendations" })
+        .or(page.getByText("Smart Recommendations").first())
     ).toBeVisible();
   });
 
-  test('should select process from dropdown', async ({ page }) => {
+  test("should select process from dropdown", async ({ page }) => {
     // Look for process selector combobox trigger
     const processSelector = page
       .locator('[role="combobox"]')
-      .filter({ hasText: 'Select a process' })
+      .filter({ hasText: "Select a process" })
       .or(page.locator('[role="combobox"]').nth(1)); // Second combobox is the process selector
 
     await expect(processSelector).toBeVisible({ timeout: 10000 });
@@ -59,24 +58,22 @@ test.describe('Integration Testing - Complete Workflow', () => {
       await page.waitForSelector('[role="option"]', { timeout: 2000 });
 
       // Select first process option
-      const firstOption = page
-        .locator('[role="option"]')
-        .first();
+      const firstOption = page.locator('[role="option"]').first();
       await firstOption.click();
 
       // Verify selection was made by checking that the placeholder text changed
-      await expect(
-        page.locator('text=Select a process')
-      ).not.toBeVisible();
+      await expect(page.locator("text=Select a process")).not.toBeVisible();
     } catch (_error) {
       // No processes available - this is expected in test environment without workflow data
-      console.log('No processes available to select - skipping process selection');
+      console.log(
+        "No processes available to select - skipping process selection"
+      );
       // Close the dropdown
-      await page.keyboard.press('Escape');
+      await page.keyboard.press("Escape");
     }
   });
 
-  test('should view and apply smart recommendations', async ({ page }) => {
+  test("should view and apply smart recommendations", async ({ page }) => {
     // Look for recommendations section
     const recommendationsSection = page.locator(
       'text=Smart Recommendations, text=Recommendations, [data-testid="recommendations"]'
@@ -94,14 +91,12 @@ test.describe('Integration Testing - Complete Workflow', () => {
         await firstRecommendation.click();
 
         // Verify recommendation was applied
-        await expect(
-          page.locator('text=Applied, text=Selected')
-        ).toBeVisible();
+        await expect(page.locator("text=Applied, text=Selected")).toBeVisible();
       }
     }
   });
 
-  test('should manually select snapshots', async ({ page }) => {
+  test("should manually select snapshots", async ({ page }) => {
     // Look for snapshot selector
     const snapshotSelector = page.locator(
       '[data-testid="snapshot-selector"], [data-testid="snapshot-list"]'
@@ -120,46 +115,46 @@ test.describe('Integration Testing - Complete Workflow', () => {
     }
   });
 
-  test('should execute process and display results', async ({ page }) => {
+  test("should execute process and display results", async ({ page }) => {
     // Mock API response for execution
-    await page.route('**/api/integration-testing/execute', async (route) => {
+    await page.route("**/api/integration-testing/execute", async (route) => {
       await route.fulfill({
         status: 200,
-        contentType: 'application/json',
+        contentType: "application/json",
         body: JSON.stringify({
-          process_id: 'test-process-123',
-          process_name: 'Test Process',
+          process_id: "test-process-123",
+          process_name: "Test Process",
           start_time: new Date().toISOString(),
           end_time: new Date().toISOString(),
           total_duration_ms: 1500,
-          initial_states: ['login'],
-          final_states: ['dashboard'],
+          initial_states: ["login"],
+          final_states: ["dashboard"],
           actions: [
             {
-              action_type: 'FIND',
-              screenshot_path: 'screenshot_1.png',
+              action_type: "FIND",
+              screenshot_path: "screenshot_1.png",
               success: true,
-              active_states: ['login'],
+              active_states: ["login"],
               timestamp: new Date().toISOString(),
               duration_ms: 500,
             },
             {
-              action_type: 'CLICK',
-              screenshot_path: 'screenshot_2.png',
+              action_type: "CLICK",
+              screenshot_path: "screenshot_2.png",
               success: true,
-              active_states: ['login'],
+              active_states: ["login"],
               timestamp: new Date().toISOString(),
               duration_ms: 300,
               action_location: [500, 300],
             },
             {
-              action_type: 'TYPE',
-              screenshot_path: 'screenshot_3.png',
+              action_type: "TYPE",
+              screenshot_path: "screenshot_3.png",
               success: true,
-              active_states: ['login'],
+              active_states: ["login"],
               timestamp: new Date().toISOString(),
               duration_ms: 700,
-              text: 'test@example.com',
+              text: "test@example.com",
             },
           ],
           success: true,
@@ -173,9 +168,9 @@ test.describe('Integration Testing - Complete Workflow', () => {
     // Find and click execute button (not the tab, but the actual action button)
     // The Execute button should be in the ExecutionControls card, not in the tabs
     const executeButton = page
-      .getByRole('button', { name: /execute/i })
-      .filter({ has: page.locator('svg') }) // ExecutionControls button has an icon
-      .or(page.locator('button').filter({ hasText: 'Execute' }).last()); // Or get the last one
+      .getByRole("button", { name: /execute/i })
+      .filter({ has: page.locator("svg") }) // ExecutionControls button has an icon
+      .or(page.locator("button").filter({ hasText: "Execute" }).last()); // Or get the last one
 
     try {
       await expect(executeButton).toBeVisible({ timeout: 3000 });
@@ -184,7 +179,7 @@ test.describe('Integration Testing - Complete Workflow', () => {
 
       // Wait for execution results
       await expect(
-        page.locator('text=Execution Results, text=Results, text=Success')
+        page.locator("text=Execution Results, text=Results, text=Success")
       ).toBeVisible({ timeout: 15000 });
 
       // Verify visualization elements
@@ -195,31 +190,31 @@ test.describe('Integration Testing - Complete Workflow', () => {
       ).toBeVisible();
     } catch (_error) {
       // Execute button not available - skip test (requires process selection)
-      console.log('Execute button not available - skipping execution test');
+      console.log("Execute button not available - skipping execution test");
     }
   });
 
-  test('should play execution timeline', async ({ page }) => {
+  test("should play execution timeline", async ({ page }) => {
     // First, ensure we have execution results loaded
-    await page.route('**/api/integration-testing/execute', async (route) => {
+    await page.route("**/api/integration-testing/execute", async (route) => {
       await route.fulfill({
         status: 200,
-        contentType: 'application/json',
+        contentType: "application/json",
         body: JSON.stringify({
-          process_id: 'test-process-123',
-          process_name: 'Test Process',
+          process_id: "test-process-123",
+          process_name: "Test Process",
           start_time: new Date().toISOString(),
           end_time: new Date().toISOString(),
           total_duration_ms: 1500,
-          initial_states: ['login'],
-          final_states: ['dashboard'],
+          initial_states: ["login"],
+          final_states: ["dashboard"],
           actions: Array(5)
             .fill(null)
             .map((_, i) => ({
-              action_type: 'FIND',
+              action_type: "FIND",
               screenshot_path: `screenshot_${i}.png`,
               success: true,
-              active_states: ['login'],
+              active_states: ["login"],
               timestamp: new Date().toISOString(),
               duration_ms: 300,
             })),
@@ -232,9 +227,7 @@ test.describe('Integration Testing - Complete Workflow', () => {
     });
 
     // Trigger execution (use last Execute button to avoid tab ambiguity)
-    const executeButton = page
-      .getByRole('button', { name: /execute/i })
-      .last();
+    const executeButton = page.getByRole("button", { name: /execute/i }).last();
 
     try {
       await expect(executeButton).toBeVisible({ timeout: 3000 });
@@ -258,58 +251,59 @@ test.describe('Integration Testing - Complete Workflow', () => {
       ).toBeVisible({ timeout: 3000 });
     } catch (_error) {
       // Execute button not available - skip test (requires process selection)
-      console.log('Execute/Play button not available - skipping timeline test');
+      console.log("Execute/Play button not available - skipping timeline test");
     }
   });
 
-  test('should display coverage panel', async ({ page }) => {
+  test("should display coverage panel", async ({ page }) => {
     // Navigate to Coverage tab first
-    await page.getByRole('tab', { name: 'Coverage' }).click();
+    await page.getByRole("tab", { name: "Coverage" }).click();
 
     // Look for coverage panel content - use more specific selector
-    const coveragePanel = page.locator('[data-testid="coverage-panel"]')
-      .or(page.getByText('Coverage').first());
+    const coveragePanel = page
+      .locator('[data-testid="coverage-panel"]')
+      .or(page.getByText("Coverage").first());
 
     try {
       await expect(coveragePanel).toBeVisible({ timeout: 5000 });
 
       // Verify coverage metrics are displayed
       await expect(
-        page.locator('[data-testid="coverage-percentage"]')
-          .or(page.getByText('%').first())
+        page
+          .locator('[data-testid="coverage-percentage"]')
+          .or(page.getByText("%").first())
       ).toBeVisible();
 
       // Verify state coverage information
       await expect(
-        page.getByText('States').first()
-          .or(page.getByText('Covered').first())
+        page.getByText("States").first().or(page.getByText("Covered").first())
       ).toBeVisible();
     } catch (_error) {
       // Coverage panel not available - skip test
-      console.log('Coverage panel not available - skipping coverage test');
+      console.log("Coverage panel not available - skipping coverage test");
     }
   });
 
-  test('should export execution to PDF', async ({ page }) => {
+  test("should export execution to PDF", async ({ page }) => {
     // Mock execution data first
-    await page.route('**/api/integration-testing/execute', async (route) => {
+    await page.route("**/api/integration-testing/execute", async (route) => {
       await route.fulfill({
         status: 200,
-        contentType: 'application/json',
+        contentType: "application/json",
         body: JSON.stringify({
-          process_id: 'test-process-123',
-          process_name: 'Test Process',
+          process_id: "test-process-123",
+          process_name: "Test Process",
           start_time: new Date().toISOString(),
           end_time: new Date().toISOString(),
           total_duration_ms: 1500,
-          initial_states: ['login'],
-          final_states: ['dashboard'],
+          initial_states: ["login"],
+          final_states: ["dashboard"],
           actions: [
             {
-              action_type: 'FIND',
-              screenshot_path: 'screenshot_1.png',
+              action_type: "FIND",
+              screenshot_path: "screenshot_1.png",
               success: true,
-              active_states: ['login'],
+              active_states: ["login"],
               timestamp: new Date().toISOString(),
               duration_ms: 500,
             },
@@ -323,9 +317,7 @@ test.describe('Integration Testing - Complete Workflow', () => {
     });
 
     // Trigger execution first (use last Execute button to avoid tab ambiguity)
-    const executeButton = page
-      .getByRole('button', { name: /execute/i })
-      .last();
+    const executeButton = page.getByRole("button", { name: /execute/i }).last();
 
     try {
       await expect(executeButton).toBeVisible({ timeout: 3000 });
@@ -341,7 +333,7 @@ test.describe('Integration Testing - Complete Workflow', () => {
       await expect(pdfExportButton).toBeVisible({ timeout: 5000 });
 
       // Setup download listener
-      const downloadPromise = page.waitForEvent('download');
+      const downloadPromise = page.waitForEvent("download");
 
       // Click export button
       await pdfExportButton.click();
@@ -350,34 +342,34 @@ test.describe('Integration Testing - Complete Workflow', () => {
       const download = await downloadPromise;
 
       // Verify download filename
-      expect(download.suggestedFilename()).toContain('.pdf');
+      expect(download.suggestedFilename()).toContain(".pdf");
     } catch (_error) {
       // Export button not available - skip test (requires execution)
-      console.log('PDF export not available - skipping PDF export test');
+      console.log("PDF export not available - skipping PDF export test");
     }
   });
 
-  test('should export execution to video', async ({ page }) => {
+  test("should export execution to video", async ({ page }) => {
     // Mock execution data
-    await page.route('**/api/integration-testing/execute', async (route) => {
+    await page.route("**/api/integration-testing/execute", async (route) => {
       await route.fulfill({
         status: 200,
-        contentType: 'application/json',
+        contentType: "application/json",
         body: JSON.stringify({
-          process_id: 'test-process-123',
-          process_name: 'Test Process',
+          process_id: "test-process-123",
+          process_name: "Test Process",
           start_time: new Date().toISOString(),
           end_time: new Date().toISOString(),
           total_duration_ms: 1500,
-          initial_states: ['login'],
-          final_states: ['dashboard'],
+          initial_states: ["login"],
+          final_states: ["dashboard"],
           actions: Array(3)
             .fill(null)
             .map((_, i) => ({
-              action_type: 'FIND',
+              action_type: "FIND",
               screenshot_path: `screenshot_${i}.png`,
               success: true,
-              active_states: ['login'],
+              active_states: ["login"],
               timestamp: new Date().toISOString(),
               duration_ms: 500,
             })),
@@ -391,16 +383,16 @@ test.describe('Integration Testing - Complete Workflow', () => {
 
     // Mock video export API
     await page.route(
-      '**/api/integration-testing/export/video',
+      "**/api/integration-testing/export/video",
       async (route) => {
         await route.fulfill({
           status: 200,
-          contentType: 'application/json',
+          contentType: "application/json",
           body: JSON.stringify({
-            video_id: 'test-video-123',
-            status: 'completed',
+            video_id: "test-video-123",
+            status: "completed",
             progress: 100,
-            video_url: '/api/videos/test-video-123.mp4',
+            video_url: "/api/videos/test-video-123.mp4",
             file_size: 1024000,
             duration_seconds: 15,
           }),
@@ -409,9 +401,7 @@ test.describe('Integration Testing - Complete Workflow', () => {
     );
 
     // Trigger execution first (use last Execute button to avoid tab ambiguity)
-    const executeButton = page
-      .getByRole('button', { name: /execute/i })
-      .last();
+    const executeButton = page.getByRole("button", { name: /execute/i }).last();
 
     try {
       await expect(executeButton).toBeVisible({ timeout: 3000 });
@@ -429,22 +419,22 @@ test.describe('Integration Testing - Complete Workflow', () => {
 
       // Wait for video export dialog or confirmation
       await expect(
-        page.locator('text=Video Export, text=Exporting')
+        page.locator("text=Video Export, text=Exporting")
       ).toBeVisible({ timeout: 5000 });
     } catch (_error) {
       // Export button not available - skip test (requires execution)
-      console.log('Video export not available - skipping video export test');
+      console.log("Video export not available - skipping video export test");
     }
   });
 });
 
-test.describe('Integration Testing - Manual Selection Mode', () => {
+test.describe("Integration Testing - Manual Selection Mode", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/integration-testing');
-    await page.waitForLoadState('networkidle');
+    await page.goto("/integration-testing");
+    await page.waitForLoadState("networkidle");
   });
 
-  test('should switch to manual selection mode', async ({ page }) => {
+  test("should switch to manual selection mode", async ({ page }) => {
     // Look for mode toggle or manual selection option
     const manualModeToggle = page.locator(
       'button:has-text("Manual"), [data-testid="manual-mode-toggle"]'
@@ -460,11 +450,13 @@ test.describe('Integration Testing - Manual Selection Mode', () => {
       ).toBeVisible();
     } catch (_error) {
       // Manual mode toggle not available - skip test
-      console.log('Manual mode toggle not available - skipping manual selection test');
+      console.log(
+        "Manual mode toggle not available - skipping manual selection test"
+      );
     }
   });
 
-  test('should select multiple snapshots manually', async ({ page }) => {
+  test("should select multiple snapshots manually", async ({ page }) => {
     const checkboxes = page.locator(
       '[data-testid="snapshot-checkbox"], input[type="checkbox"]'
     );
@@ -484,32 +476,32 @@ test.describe('Integration Testing - Manual Selection Mode', () => {
   });
 });
 
-test.describe('Integration Testing - Error States', () => {
+test.describe("Integration Testing - Error States", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/integration-testing');
-    await page.waitForLoadState('networkidle');
+    await page.goto("/integration-testing");
+    await page.waitForLoadState("networkidle");
   });
 
-  test('should handle execution failure gracefully', async ({ page }) => {
+  test("should handle execution failure gracefully", async ({ page }) => {
     // Mock failed execution
-    await page.route('**/api/integration-testing/execute', async (route) => {
+    await page.route("**/api/integration-testing/execute", async (route) => {
       await route.fulfill({
         status: 200,
-        contentType: 'application/json',
+        contentType: "application/json",
         body: JSON.stringify({
-          process_id: 'test-process-123',
-          process_name: 'Test Process',
+          process_id: "test-process-123",
+          process_name: "Test Process",
           start_time: new Date().toISOString(),
           end_time: new Date().toISOString(),
           total_duration_ms: 1500,
-          initial_states: ['login'],
-          final_states: ['login'],
+          initial_states: ["login"],
+          final_states: ["login"],
           actions: [
             {
-              action_type: 'FIND',
-              screenshot_path: 'screenshot_1.png',
+              action_type: "FIND",
+              screenshot_path: "screenshot_1.png",
               success: false,
-              active_states: ['login'],
+              active_states: ["login"],
               timestamp: new Date().toISOString(),
               duration_ms: 500,
             },
@@ -523,9 +515,7 @@ test.describe('Integration Testing - Error States', () => {
     });
 
     // Trigger execution
-    const executeButton = page
-      .getByRole('button', { name: /execute/i })
-      .last();
+    const executeButton = page.getByRole("button", { name: /execute/i }).last();
 
     try {
       await expect(executeButton).toBeVisible({ timeout: 3000 });
@@ -538,20 +528,20 @@ test.describe('Integration Testing - Error States', () => {
       ).toBeVisible({ timeout: 10000 });
     } catch (_error) {
       // Execute button not available - skip test (requires process selection)
-      console.log('Execute button not available - skipping error handling test');
+      console.log(
+        "Execute button not available - skipping error handling test"
+      );
     }
   });
 
-  test('should handle network error', async ({ page }) => {
+  test("should handle network error", async ({ page }) => {
     // Mock network error
-    await page.route('**/api/integration-testing/execute', async (route) => {
-      await route.abort('failed');
+    await page.route("**/api/integration-testing/execute", async (route) => {
+      await route.abort("failed");
     });
 
     // Trigger execution
-    const executeButton = page
-      .getByRole('button', { name: /execute/i })
-      .last();
+    const executeButton = page.getByRole("button", { name: /execute/i }).last();
 
     try {
       await expect(executeButton).toBeVisible({ timeout: 3000 });
@@ -564,15 +554,13 @@ test.describe('Integration Testing - Error States', () => {
       ).toBeVisible({ timeout: 10000 });
     } catch (_error) {
       // Execute button not available - skip test (requires process selection)
-      console.log('Execute button not available - skipping network error test');
+      console.log("Execute button not available - skipping network error test");
     }
   });
 
-  test('should handle missing snapshots error', async ({ page }) => {
+  test("should handle missing snapshots error", async ({ page }) => {
     // Try to execute without selecting snapshots
-    const executeButton = page
-      .getByRole('button', { name: /execute/i })
-      .last();
+    const executeButton = page.getByRole("button", { name: /execute/i }).last();
 
     try {
       await expect(executeButton).toBeVisible({ timeout: 3000 });
@@ -581,79 +569,77 @@ test.describe('Integration Testing - Error States', () => {
 
       // Should display validation error
       await expect(
-        page.locator(
-          'text=Please select, text=No snapshots, text=Required'
-        )
+        page.locator("text=Please select, text=No snapshots, text=Required")
       ).toBeVisible({ timeout: 5000 });
     } catch (_error) {
       // Execute button not available - skip test (requires process selection)
-      console.log('Execute button not available - skipping validation error test');
+      console.log(
+        "Execute button not available - skipping validation error test"
+      );
     }
   });
 });
 
-test.describe('Integration Testing - Visualization', () => {
+test.describe("Integration Testing - Visualization", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/integration-testing');
-    await page.waitForLoadState('networkidle');
+    await page.goto("/integration-testing");
+    await page.waitForLoadState("networkidle");
 
     // Setup mock execution with visualization data
-    await page.route('**/api/integration-testing/execute', async (route) => {
+    await page.route("**/api/integration-testing/execute", async (route) => {
       await route.fulfill({
         status: 200,
-        contentType: 'application/json',
+        contentType: "application/json",
         body: JSON.stringify({
-          process_id: 'test-process-123',
-          process_name: 'Test Process',
+          process_id: "test-process-123",
+          process_name: "Test Process",
           start_time: new Date().toISOString(),
           end_time: new Date().toISOString(),
           total_duration_ms: 2100,
-          initial_states: ['login'],
-          final_states: ['dashboard'],
+          initial_states: ["login"],
+          final_states: ["dashboard"],
           actions: [
             {
-              action_type: 'FIND',
-              screenshot_path: 'screenshot_1.png',
+              action_type: "FIND",
+              screenshot_path: "screenshot_1.png",
               success: true,
-              active_states: ['login'],
+              active_states: ["login"],
               timestamp: new Date().toISOString(),
               duration_ms: 500,
-              matches: [
-                { x: 100, y: 100, w: 150, h: 40, score: 0.95 },
-              ],
+              matches: [{ x: 100, y: 100, w: 150, h: 40, score: 0.95 }],
             },
             {
-              action_type: 'CLICK',
-              screenshot_path: 'screenshot_2.png',
+              action_type: "CLICK",
+              screenshot_path: "screenshot_2.png",
               success: true,
-              active_states: ['login'],
+              active_states: ["login"],
               timestamp: new Date().toISOString(),
               duration_ms: 300,
               action_location: [500, 300],
               action_region: { x: 100, y: 100, w: 150, h: 40 },
             },
             {
-              action_type: 'TYPE',
-              screenshot_path: 'screenshot_3.png',
+              action_type: "TYPE",
+              screenshot_path: "screenshot_3.png",
               success: true,
-              active_states: ['dashboard'],
+              active_states: ["dashboard"],
               timestamp: new Date().toISOString(),
               duration_ms: 700,
-              text: 'test input',
+              text: "test input",
             },
             {
-              action_type: 'SCROLL',
-              screenshot_path: 'screenshot_4.png',
+              action_type: "SCROLL",
+              screenshot_path: "screenshot_4.png",
               success: true,
-              active_states: ['dashboard'],
+              active_states: ["dashboard"],
               timestamp: new Date().toISOString(),
               duration_ms: 400,
             },
             {
-              action_type: 'SCREENSHOT',
-              screenshot_path: 'screenshot_5.png',
+              action_type: "SCREENSHOT",
+              screenshot_path: "screenshot_5.png",
               success: true,
-              active_states: ['dashboard'],
+              active_states: ["dashboard"],
               timestamp: new Date().toISOString(),
               duration_ms: 200,
             },
@@ -667,13 +653,11 @@ test.describe('Integration Testing - Visualization', () => {
     });
   });
 
-  test('should display action visualizations for all action types', async ({
+  test("should display action visualizations for all action types", async ({
     page,
   }) => {
     // Execute process
-    const executeButton = page
-      .getByRole('button', { name: /execute/i })
-      .last();
+    const executeButton = page.getByRole("button", { name: /execute/i }).last();
 
     try {
       await expect(executeButton).toBeVisible({ timeout: 3000 });
@@ -682,7 +666,7 @@ test.describe('Integration Testing - Visualization', () => {
       await page.waitForTimeout(1000);
 
       // Verify different action type visualizations
-      const actionTypes = ['FIND', 'CLICK', 'TYPE', 'SCROLL', 'SCREENSHOT'];
+      const actionTypes = ["FIND", "CLICK", "TYPE", "SCROLL", "SCREENSHOT"];
 
       for (const actionType of actionTypes) {
         const actionElement = page.locator(`text=${actionType}`);
@@ -692,15 +676,13 @@ test.describe('Integration Testing - Visualization', () => {
       }
     } catch (_error) {
       // Execute button not available - skip test (requires process selection)
-      console.log('Execute button not available - skipping visualization test');
+      console.log("Execute button not available - skipping visualization test");
     }
   });
 
-  test('should navigate through timeline steps', async ({ page }) => {
+  test("should navigate through timeline steps", async ({ page }) => {
     // Execute process
-    const executeButton = page
-      .getByRole('button', { name: /execute/i })
-      .last();
+    const executeButton = page.getByRole("button", { name: /execute/i }).last();
 
     try {
       await expect(executeButton).toBeVisible({ timeout: 3000 });
@@ -731,15 +713,15 @@ test.describe('Integration Testing - Visualization', () => {
       }
     } catch (_error) {
       // Execute button not available - skip test (requires process selection)
-      console.log('Execute button not available - skipping timeline navigation test');
+      console.log(
+        "Execute button not available - skipping timeline navigation test"
+      );
     }
   });
 
-  test('should display action details on selection', async ({ page }) => {
+  test("should display action details on selection", async ({ page }) => {
     // Execute process
-    const executeButton = page
-      .getByRole('button', { name: /execute/i })
-      .last();
+    const executeButton = page.getByRole("button", { name: /execute/i }).last();
 
     try {
       await expect(executeButton).toBeVisible({ timeout: 3000 });
@@ -757,14 +739,14 @@ test.describe('Integration Testing - Visualization', () => {
 
         // Verify action details panel appears
         await expect(
-          page.locator(
-            '[data-testid="action-details"], text=Action Details'
-          )
+          page.locator('[data-testid="action-details"], text=Action Details')
         ).toBeVisible();
       }
     } catch (_error) {
       // Execute button not available - skip test (requires process selection)
-      console.log('Execute button not available - skipping action details test');
+      console.log(
+        "Execute button not available - skipping action details test"
+      );
     }
   });
 });

@@ -297,6 +297,7 @@ export function AutoLayoutPanel({
   // Update preview when settings change
   useEffect(() => {
     updatePreview();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedStyle, customOptions]);
 
   const updatePreview = () => {

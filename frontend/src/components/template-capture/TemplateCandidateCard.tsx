@@ -98,6 +98,7 @@ export function TemplateCandidateCard({
       <div className="relative w-full aspect-video bg-muted">
         {imageUrl ? (
           <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={imageUrl}
               alt={`Template candidate ${candidate.id}`}

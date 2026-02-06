@@ -38,6 +38,7 @@ export function SimpleDocumentationView({ workflow }: { workflow: Workflow }) {
   useEffect(() => {
     const doc = docService.getDocumentation(workflow.id);
     setDocumentation(doc);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workflow.id]);
 
   const handleSave = (content: string) => {
@@ -134,6 +135,7 @@ export function TabbedDocumentationView({ workflow }: { workflow: Workflow }) {
 
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workflow.id]);
 
   const loadData = () => {
@@ -257,6 +259,7 @@ export function SplitDocumentationView({
 
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workflow.id]);
 
   const loadData = () => {
@@ -277,7 +280,7 @@ export function SplitDocumentationView({
       }
       setMode("view");
       toast.success("Documentation saved");
-    } catch (error) {
+    } catch (_error) {
       toast.error("Failed to save");
     }
   };
@@ -358,6 +361,7 @@ export function DocumentationDialog({
       setDocumentation(doc);
       setMode(doc ? "view" : "edit");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, workflow.id]);
 
   const handleSave = (content: string) => {
@@ -371,7 +375,7 @@ export function DocumentationDialog({
       }
       setMode("view");
       toast.success("Documentation saved");
-    } catch (error) {
+    } catch (_error) {
       toast.error("Failed to save");
     }
   };

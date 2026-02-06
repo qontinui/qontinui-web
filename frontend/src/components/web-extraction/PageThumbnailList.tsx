@@ -69,6 +69,7 @@ function PageThumbnail({
         URL.revokeObjectURL(imageUrl);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [extractionId, annotation.screenshot_id]);
 
   // Get hostname from URL
@@ -106,6 +107,7 @@ function PageThumbnail({
             <AlertCircle className="h-8 w-8 text-muted-foreground" />
           </div>
         ) : (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={imageUrl}
             alt={annotation.source_url}

@@ -91,6 +91,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
     if (defaultCollapsed && isOpen) {
       toggleOpen();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Handle resize start
