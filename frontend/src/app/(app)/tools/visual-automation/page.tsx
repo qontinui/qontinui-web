@@ -48,7 +48,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-export default function VisualAutomationPage() {
+export default function ExecuteVisualAutomationPage() {
   const { isOffline, isLoading: healthLoading } = useRunnerHealth();
   const {
     data: workflows,
@@ -130,7 +130,7 @@ export default function VisualAutomationPage() {
           <div className="flex items-center px-6 py-4">
             <Zap className="w-6 h-6 text-brand-primary mr-3" />
             <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
-              Visual Automation
+              Execute
             </h1>
           </div>
         </header>
@@ -149,7 +149,7 @@ export default function VisualAutomationPage() {
           <div className="flex items-center gap-3">
             <Zap className="w-6 h-6 text-brand-primary" />
             <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
-              Visual Automation
+              Execute
             </h1>
           </div>
           <div className="flex items-center gap-3">
