@@ -55,10 +55,17 @@ class DevDebugLogger {
     debug: typeof console.debug;
   };
   private originalFetch: typeof fetch | null = null;
+  private periodicFlushInterval: ReturnType<typeof setInterval> | null = null;
   // Deduplication for repeated errors
   private recentErrors: Map<string, { count: number; lastTime: number }> =
     new Map();
   private errorDedupeWindow: number = 10000; // 10 seconds
+  // Endpoints to skip response body cloning (high-frequency or internal)
+  private skipBodyClonePatterns: string[] = [
+    "/api/ui-bridge",
+    "/api/dev-debug",
+    "/api/v1/runner-devices",
+  ];
 
   constructor() {
     // Only enable in development
@@ -192,6 +199,7 @@ class DevDebugLogger {
     this.originalFetch = window.fetch.bind(window);
     const boundOriginalFetch = this.originalFetch;
     const addLogFn = this.addLog.bind(this);
+    const skipBodyClonePatterns = this.skipBodyClonePatterns;
 
     window.fetch = async function (
       input: RequestInfo | URL,
@@ -206,10 +214,15 @@ class DevDebugLogger {
             : input.url;
       const method = init?.method || "GET";
 
-      // Skip logging our own debug endpoint
+      // Skip logging our own debug endpoint entirely
       if (url.includes("/api/dev-debug")) {
         return boundOriginalFetch(input, init);
       }
+
+      // Check if this is a high-frequency endpoint where we skip body cloning
+      const shouldSkipBodyClone = skipBodyClonePatterns.some((pattern) =>
+        url.includes(pattern)
+      );
 
       const logData: NetworkLogData = {
         url,
@@ -235,45 +248,59 @@ class DevDebugLogger {
         logData.statusText = response.statusText;
         logData.duration = duration;
 
-        // Clone response to read body without consuming it
-        const clonedResponse = response.clone();
-
-        // Try to capture response body (async, non-blocking)
-        clonedResponse
-          .text()
-          .then((text) => {
-            try {
-              logData.responseBody = JSON.parse(text);
-            } catch {
-              logData.responseBody =
-                text.length > 500 ? text.substring(0, 500) + "..." : text;
-            }
-
-            const level: LogLevel = response.ok ? "info" : "error";
-            addLogFn({
-              level,
-              source: "network",
-              message: `${method} ${url} - ${response.status} (${duration}ms)`,
-              url,
-              method,
-              status: response.status,
-              duration,
-              data: logData as unknown as Record<string, unknown>,
-            });
-          })
-          .catch(() => {
-            // Ignore read errors
-            addLogFn({
-              level: response.ok ? "info" : "error",
-              source: "network",
-              message: `${method} ${url} - ${response.status} (${duration}ms)`,
-              url,
-              method,
-              status: response.status,
-              duration,
-              data: logData as unknown as Record<string, unknown>,
-            });
+        if (shouldSkipBodyClone) {
+          // Log without cloning response body to avoid doubling memory
+          addLogFn({
+            level: response.ok ? "info" : "error",
+            source: "network",
+            message: `${method} ${url} - ${response.status} (${duration}ms)`,
+            url,
+            method,
+            status: response.status,
+            duration,
+            data: logData as unknown as Record<string, unknown>,
           });
+        } else {
+          // Clone response to read body without consuming it
+          const clonedResponse = response.clone();
+
+          // Try to capture response body (async, non-blocking)
+          clonedResponse
+            .text()
+            .then((text) => {
+              try {
+                logData.responseBody = JSON.parse(text);
+              } catch {
+                logData.responseBody =
+                  text.length > 500 ? text.substring(0, 500) + "..." : text;
+              }
+
+              const level: LogLevel = response.ok ? "info" : "error";
+              addLogFn({
+                level,
+                source: "network",
+                message: `${method} ${url} - ${response.status} (${duration}ms)`,
+                url,
+                method,
+                status: response.status,
+                duration,
+                data: logData as unknown as Record<string, unknown>,
+              });
+            })
+            .catch(() => {
+              // Ignore read errors
+              addLogFn({
+                level: response.ok ? "info" : "error",
+                source: "network",
+                message: `${method} ${url} - ${response.status} (${duration}ms)`,
+                url,
+                method,
+                status: response.status,
+                duration,
+                data: logData as unknown as Record<string, unknown>,
+              });
+            });
+        }
 
         return response;
       } catch (error) {
@@ -341,7 +368,41 @@ class DevDebugLogger {
   }
 
   private startPeriodicFlush() {
-    setInterval(() => this.flush(), this.flushInterval * 2);
+    this.periodicFlushInterval = setInterval(
+      () => this.flush(),
+      this.flushInterval * 2
+    );
+  }
+
+  /**
+   * Clean up all intervals and restore original functions.
+   * Call this when the logger is no longer needed.
+   */
+  destroy() {
+    if (this.periodicFlushInterval) {
+      clearInterval(this.periodicFlushInterval);
+      this.periodicFlushInterval = null;
+    }
+    if (this.pendingFlush) {
+      clearTimeout(this.pendingFlush);
+      this.pendingFlush = null;
+    }
+    // Restore original console methods
+    if (this.enabled) {
+      console.log = this.originalConsole.log;
+      console.info = this.originalConsole.info;
+      console.warn = this.originalConsole.warn;
+      console.error = this.originalConsole.error;
+      console.debug = this.originalConsole.debug;
+    }
+    // Restore original fetch
+    if (this.originalFetch && typeof window !== "undefined") {
+      window.fetch = this.originalFetch;
+      this.originalFetch = null;
+    }
+    this.enabled = false;
+    this.logs = [];
+    this.recentErrors.clear();
   }
 
   private async flush() {

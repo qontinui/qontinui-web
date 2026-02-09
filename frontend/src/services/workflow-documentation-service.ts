@@ -1587,6 +1587,7 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(", ")}` : ""}
    * Load from localStorage
    */
   private loadFromStorage(): void {
+    if (typeof window === "undefined") return;
     try {
       // Load documentations
       const docsJson = localStorage.getItem(this.DOCS_STORAGE_KEY);

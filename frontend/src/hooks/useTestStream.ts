@@ -334,7 +334,7 @@ export function useTestStream(options: UseTestStreamOptions = {}) {
               return {
                 ...updated,
                 currentStep: newStep,
-                steps: [...prev.steps, newStep],
+                steps: [...prev.steps, newStep].slice(-500),
               };
             }
 
@@ -453,7 +453,7 @@ export function useTestStream(options: UseTestStreamOptions = {}) {
 
               return {
                 ...updated,
-                deficiencies: [...prev.deficiencies, deficiency],
+                deficiencies: [...prev.deficiencies, deficiency].slice(-100),
               };
             }
 

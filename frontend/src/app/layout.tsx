@@ -31,8 +31,13 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Qontinui - Model-Based GUI Automation",
-  description: "Visual automation builder for gamers",
+  title: "Qontinui - AI Development Companion",
+  description:
+    "Desktop companion app for AI development with verification loops, error monitoring, and workflow orchestration",
+  icons: {
+    icon: "/q-logo.png",
+    apple: "/q-logo.png",
+  },
 };
 
 export default function RootLayout({
@@ -54,7 +59,7 @@ export default function RootLayout({
                 <UIBridgeWrapper>
                   <RenderLogWrapper
                     enableOnMount={true}
-                    enableMutationObserver={true}
+                    enableMutationObserver={false}
                     mutationDebounceMs={500}
                   >
                     {/* <ActivityTracker /> */}

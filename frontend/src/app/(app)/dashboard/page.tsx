@@ -2,698 +2,528 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
-import { useAutomation } from "@/contexts/automation-context";
-import {
-  useProjects,
-  useCreateProject,
-  useDeleteProject,
-  useUpdateProject,
-} from "@/hooks/use-projects";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
-  Plus,
-  Trash2,
-  Upload,
-  Clock,
-  FolderOpen,
+  Server,
   Play,
-  Check,
+  History,
+  Activity,
+  Workflow,
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  Layers,
+  XCircle,
+  Loader2,
+  ArrowRight,
 } from "lucide-react";
-import { toast } from "sonner";
-import { getProjectLoader } from "@/lib/project";
-import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
-import { WelcomeModal } from "@/components/onboarding/WelcomeModal";
-import { QuickStartChecklist } from "@/components/onboarding/QuickStartChecklist";
-import { TutorialOverlay } from "@/components/onboarding/TutorialOverlay";
-import { FirstProjectWizard } from "@/components/onboarding/FirstProjectWizard";
-import { useOnboardingStore } from "@/stores/onboarding-store";
 import {
-  EarlyAccessBanner,
-  EarlyAccessWelcomeModal,
-} from "@/components/early-access";
-import { CreateProjectDialog } from "@/components/create-project-dialog";
-import { EditableProjectName } from "@/components/editable-project-name";
+  useRunnerHealth,
+  useRunningTaskRuns,
+  useTaskRuns,
+  useFindingsSummary,
+} from "@/lib/runner-api";
 
-interface Project {
-  id: string;
-  name: string;
-  description: string;
-  created_at: string;
-  updated_at: string;
-  status: "draft" | "testing" | "production";
+function StatusDot({
+  status,
+}: {
+  status: "connected" | "disconnected" | "loading";
+}) {
+  if (status === "loading") {
+    return <Loader2 className="size-4 animate-spin text-text-muted" />;
+  }
+  return (
+    <div
+      className={`size-3 rounded-full ${
+        status === "connected"
+          ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]"
+          : "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]"
+      }`}
+    />
+  );
 }
 
-export default function Dashboard() {
-  const { user, loading: authLoading } = useAuth();
-  const {
-    projectId: contextProjectId,
-    setProjectId,
-    setProjectName,
-  } = useAutomation();
+function RunnerConnectionCard() {
+  const { data: health, isLoading, isOffline } = useRunnerHealth();
+  const status = isLoading
+    ? "loading"
+    : isOffline
+      ? "disconnected"
+      : "connected";
+
+  return (
+    <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
+      <CardContent className="p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-surface-hover rounded-lg flex items-center justify-center">
+              <Server className="size-5 text-brand-primary" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-text-primary">
+                Desktop Runner
+              </h3>
+              <p className="text-xs text-text-muted">localhost:9876</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <StatusDot status={status} />
+            <Badge
+              variant="outline"
+              className={
+                status === "connected"
+                  ? "border-green-500/30 bg-green-500/10 text-green-400"
+                  : status === "loading"
+                    ? "border-border-subtle bg-surface-hover text-text-muted"
+                    : "border-red-500/30 bg-red-500/10 text-red-400"
+              }
+            >
+              {status === "connected"
+                ? "Connected"
+                : status === "loading"
+                  ? "Checking..."
+                  : "Offline"}
+            </Badge>
+          </div>
+        </div>
+        {status === "connected" && health && (
+          <div className="flex gap-4 text-sm text-text-muted">
+            {health.version && <span>v{health.version}</span>}
+            {health.uptime_seconds != null && (
+              <span>
+                Uptime: {Math.floor(health.uptime_seconds / 3600)}h{" "}
+                {Math.floor((health.uptime_seconds % 3600) / 60)}m
+              </span>
+            )}
+          </div>
+        )}
+        {status === "disconnected" && (
+          <p className="text-sm text-text-muted">
+            Start the Qontinui Runner desktop app to connect.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ActiveRunsCard() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const { data: activeRuns, isOffline } = useRunningTaskRuns();
+  const runs = activeRuns ?? [];
 
-  // Get currently selected project ID from URL or context
-  const selectedProjectId =
-    searchParams.get("project") ?? contextProjectId ?? null;
-  const { data: apiProjects = [], isLoading: projectsLoading } = useProjects();
-  const createProject = useCreateProject();
-  const deleteProject = useDeleteProject();
-  const updateProject = useUpdateProject();
-
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
-  const [showFirstProjectWizard, setShowFirstProjectWizard] = useState(false);
-  const [showEarlyAccessWelcome, setShowEarlyAccessWelcome] = useState(false);
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
-
-  // Onboarding state
-  const { showTutorialOverlay, hasCompletedWelcome, toggleWelcomeModal } =
-    useOnboardingStore();
-
-  const isNewUser = useMemo(() => {
-    if (!user?.created_at) return false;
-    const createdAt = new Date(user.created_at);
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-    return createdAt > fiveMinutesAgo;
-  }, [user?.created_at]);
-
-  useEffect(() => {
-    // Wait for auth to finish loading before redirecting
-    if (!authLoading && !user) {
-      router.push("/");
-      return undefined;
-    }
-
-    // Show welcome modal for new users who haven't completed onboarding
-    if (user && !authLoading && isNewUser && !hasCompletedWelcome) {
-      toggleWelcomeModal(true);
-    }
-
-    // Show early access welcome for new users (separate from onboarding)
-    if (user && !authLoading && isNewUser) {
-      // Small delay to let onboarding modal show first if needed
-      const timer = setTimeout(
-        () => {
-          setShowEarlyAccessWelcome(true);
-        },
-        hasCompletedWelcome ? 500 : 3000
-      ); // Longer delay if showing onboarding first
-      return () => clearTimeout(timer);
-    }
-
-    return undefined;
-  }, [
-    user,
-    authLoading,
-    router,
-    hasCompletedWelcome,
-    toggleWelcomeModal,
-    isNewUser,
-  ]);
-
-  // Clear old localStorage project data (one-time cleanup)
-  useEffect(() => {
-    const hasCleared = localStorage.getItem("qontinui-cleanup-done");
-    if (!hasCleared) {
-      // Clear old project data from localStorage
-      localStorage.removeItem("qontinui-project-name");
-      localStorage.removeItem("qontinui-lastSaved");
-      localStorage.setItem("qontinui-cleanup-done", "true");
-      console.log("Cleared old project localStorage data");
-    }
-  }, []);
-
-  // Transform API projects to match our interface
-  const projects = useMemo(
-    () =>
-      apiProjects.map(
-        (p: {
-          id: string;
-          name: string;
-          description?: string | null;
-          created_at: string;
-          updated_at: string;
-        }) => ({
-          id: p.id.toString(),
-          name: p.name,
-          description: p.description || "No description",
-          created_at: p.created_at,
-          updated_at: p.updated_at,
-          status: "draft" as const, // Default status since API doesn't have this field yet
-        })
-      ),
-    [apiProjects]
-  );
-
-  // Clean up invalid project parameter from URL
-  useEffect(() => {
-    const projectParam = searchParams.get("project");
-    if (!projectParam || projectsLoading) return;
-
-    // Check if the project ID in URL exists in the projects list
-    const projectExists = projects.some((p) => p.id === projectParam);
-    if (!projectExists && projects.length >= 0) {
-      // Project doesn&apos;t exist, clear the parameter
-      console.log(`Project ${projectParam} not found, clearing from URL`);
-      router.push("/dashboard");
-    }
-  }, [searchParams, projects, projectsLoading, router]);
-
-  // Generate activities from projects
-  const activities = useMemo(
-    () =>
-      projects.slice(0, 5).map((p, idx: number) => ({
-        id: `activity-${idx}`,
-        type: idx === 0 ? ("created" as const) : ("modified" as const),
-        projectName: p.name,
-        timestamp: new Date(p.updated_at),
-        projectId: p.id,
-      })),
-    [projects]
-  );
-
-  const loading = projectsLoading;
-
-  const handleNewProject = () => {
-    // Show wizard for new users with no projects
-    if (projects.length === 0 && isNewUser) {
-      setShowFirstProjectWizard(true);
-      return;
-    }
-
-    // Show the create project dialog
-    setShowCreateDialog(true);
-  };
-
-  const handleCreateProjectConfirm = async (
-    name: string,
-    description?: string
-  ) => {
-    try {
-      console.log("Creating new project...");
-
-      // Create a new project via API
-      const newProject = await createProject.mutateAsync({
-        name,
-        description: description || "A new automation workflow",
-        configuration: {},
-      });
-
-      console.log("Project created:", newProject);
-
-      // Close the dialog
-      setShowCreateDialog(false);
-
-      // Select the newly created project (stays on dashboard)
-      // IMPORTANT: Set both projectId AND projectName to ensure data isolation
-      setProjectId(newProject.id);
-      setProjectName(name);
-      router.push(`/dashboard?project=${newProject.id}`);
-      toast.success("Project created and selected");
-    } catch (error: unknown) {
-      console.error("Failed to create project:", error);
-      const errorMessage =
-        error instanceof Error ? error.message : "Failed to create new project";
-      toast.error(errorMessage);
-      throw error; // Re-throw so the dialog knows it failed
-    }
-  };
-
-  const handleUpdateProjectName = async (
-    projectId: string,
-    newName: string
-  ) => {
-    try {
-      await updateProject.mutateAsync({
-        id: projectId,
-        data: { name: newName },
-      });
-      toast.success("Project name updated");
-    } catch (error: unknown) {
-      console.error("Failed to update project name:", error);
-      const errMsg =
-        error instanceof Error
-          ? error.message
-          : "Failed to update project name";
-      toast.error(errMsg);
-      throw error;
-    }
-  };
-
-  const handleDeleteProject = (project: Project) => {
-    setProjectToDelete(project);
-    setDeleteDialogOpen(true);
-  };
-
-  const handleConfirmDelete = async () => {
-    if (!projectToDelete) return;
-
-    try {
-      await deleteProject.mutateAsync(projectToDelete.id);
-      toast.success("Project deleted successfully");
-      setDeleteDialogOpen(false);
-      setProjectToDelete(null);
-
-      // If the deleted project matches the current URL parameter, clear it
-      const currentProjectId = searchParams.get("project");
-      if (currentProjectId === projectToDelete.id) {
-        router.push("/dashboard");
-      }
-    } catch (error) {
-      console.error("Failed to delete project:", error);
-      toast.error("Failed to delete project");
-    }
-  };
-
-  const handleImportProject = () => {
-    // Create a file input element for importing projects
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".json,.qontinui";
-
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-
-      try {
-        const text = await file.text();
-        const projectData = JSON.parse(text);
-
-        // Validate basic structure
-        if (!projectData.name || !projectData.workflows) {
-          throw new Error("Invalid project file format");
-        }
-
-        // Create a new project with imported data
-        const newProject = await createProject.mutateAsync({
-          name: `${projectData.name} (Imported)`,
-          description: projectData.description || "Imported project",
-          configuration: {},
-        });
-
-        toast.success(`Imported project: ${projectData.name}`);
-
-        // Navigate to the new project
-        router.push(`/automation-builder?project=${newProject.id}`);
-      } catch (error: unknown) {
-        console.error("Import failed:", error);
-        const errorMessage =
-          error instanceof Error ? error.message : "Unknown error";
-        toast.error(`Failed to import project: ${errorMessage}`);
-      }
-    };
-
-    input.click();
-  };
-
-  const handleExport = () => {
-    // For now, show a helpful message
-    toast.info(
-      "To export, use the export icon in the sidebar or the Export button at the top of the canvas",
-      {
-        duration: 5000,
-      }
+  if (isOffline) {
+    return (
+      <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Activity className="size-5 text-text-muted" />
+            Active Runs
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <p className="text-sm text-text-muted py-4 text-center">
+            Runner not connected
+          </p>
+        </CardContent>
+      </Card>
     );
-  };
+  }
 
-  const handleShowExport = () => {
-    // Close welcome modal and show export info
-    setShowEarlyAccessWelcome(false);
-    handleExport();
-  };
+  return (
+    <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Activity className="size-5 text-green-400" />
+            Active Runs
+            {runs.length > 0 && (
+              <Badge
+                variant="outline"
+                className="border-green-500/30 bg-green-500/10 text-green-400"
+              >
+                {runs.length}
+              </Badge>
+            )}
+          </CardTitle>
+          {runs.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push("/runs/active")}
+            >
+              View Dashboard <ArrowRight className="size-4 ml-1" />
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {runs.length === 0 ? (
+          <p className="text-sm text-text-muted py-4 text-center">
+            No active runs
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {runs.slice(0, 3).map((run) => (
+              <div
+                key={run.id}
+                className="flex items-center gap-3 p-2 rounded-lg hover:bg-surface-hover/30 transition-colors cursor-pointer"
+                onClick={() => router.push(`/runs/${run.id}`)}
+              >
+                <Loader2 className="size-4 animate-spin text-blue-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-text-primary truncate">
+                    {run.task_name || run.workflow_name || `Run #${run.id}`}
+                  </p>
+                  <p className="text-xs text-text-muted">
+                    {run.phase || "Running"}
+                  </p>
+                </div>
+                <Badge
+                  variant="outline"
+                  className="border-blue-500/30 bg-blue-500/10 text-blue-400 shrink-0"
+                >
+                  {run.status}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
-  const getStatusColor = (status: Project["status"]) => {
+function RecentRunsCard() {
+  const router = useRouter();
+  const { data: taskRuns, isOffline } = useTaskRuns({ limit: 5 });
+  const runs = taskRuns ?? [];
+
+  const getStatusIcon = (status: string) => {
     switch (status) {
-      case "production":
-        return "bg-brand-success/20 text-brand-success border-brand-success/30";
-      case "testing":
-        return "bg-brand-primary/20 text-brand-primary border-brand-primary/30";
-      case "draft":
-        return "bg-surface-raised/20 text-text-muted border-border-subtle/30";
+      case "completed":
+        return <CheckCircle2 className="size-4 text-green-400" />;
+      case "failed":
+        return <XCircle className="size-4 text-red-400" />;
+      case "running":
+        return <Loader2 className="size-4 animate-spin text-blue-400" />;
+      default:
+        return <Clock className="size-4 text-text-muted" />;
     }
   };
 
   const getRelativeTime = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
-    const diffInHours = Math.floor(
-      (now.getTime() - date.getTime()) / (1000 * 60 * 60)
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
+  };
+
+  if (isOffline) {
+    return (
+      <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <History className="size-5 text-text-muted" />
+            Recent Runs
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <p className="text-sm text-text-muted py-4 text-center">
+            Runner not connected
+          </p>
+        </CardContent>
+      </Card>
     );
+  }
 
-    if (diffInHours < 1) return "Just now";
-    if (diffInHours < 24) return `${diffInHours} hours ago`;
-    const diffInDays = Math.floor(diffInHours / 24);
-    if (diffInDays === 1) return "1 day ago";
-    return `${diffInDays} days ago`;
-  };
+  return (
+    <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <History className="size-5 text-brand-primary" />
+            Recent Runs
+          </CardTitle>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => router.push("/runs")}
+          >
+            View All <ArrowRight className="size-4 ml-1" />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {runs.length === 0 ? (
+          <p className="text-sm text-text-muted py-4 text-center">
+            No runs yet
+          </p>
+        ) : (
+          <div className="space-y-1">
+            {runs.map((run) => (
+              <div
+                key={run.id}
+                className="flex items-center gap-3 p-2 rounded-lg hover:bg-surface-hover/30 transition-colors cursor-pointer"
+                onClick={() => router.push(`/runs/${run.id}`)}
+              >
+                {getStatusIcon(run.status)}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-text-primary truncate">
+                    {run.task_name || run.workflow_name || `Run #${run.id}`}
+                  </p>
+                </div>
+                <span className="text-xs text-text-muted shrink-0">
+                  {getRelativeTime(run.created_at)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
-  const handleOpenProject = async (projectId: string, projectName: string) => {
-    // Load project data from backend/IndexedDB
-    // This hydrates the Zustand store with workflows, states, transitions, images, etc.
-    const loader = getProjectLoader();
-    const success = await loader.load(projectId, {
-      currentProjectId: contextProjectId,
-    });
+function FindingsSummaryCard() {
+  const router = useRouter();
+  const { data: summary, isOffline } = useFindingsSummary();
 
-    if (!success) {
-      toast.error("Failed to load project");
-      return;
+  if (isOffline) {
+    return (
+      <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <AlertCircle className="size-5 text-text-muted" />
+            Findings
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <p className="text-sm text-text-muted py-4 text-center">
+            Runner not connected
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const total = summary?.total ?? 0;
+  const bySeverity = summary?.by_severity ?? {};
+
+  return (
+    <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <AlertCircle className="size-5 text-amber-400" />
+            Findings
+            {total > 0 && (
+              <Badge
+                variant="outline"
+                className="border-amber-500/30 bg-amber-500/10 text-amber-400"
+              >
+                {total}
+              </Badge>
+            )}
+          </CardTitle>
+          {total > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push("/runs/findings")}
+            >
+              View All <ArrowRight className="size-4 ml-1" />
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {total === 0 ? (
+          <p className="text-sm text-text-muted py-4 text-center">
+            No findings detected
+          </p>
+        ) : (
+          <div className="flex gap-3">
+            {bySeverity["critical"] && (
+              <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20">
+                <span className="text-lg font-bold text-red-400">
+                  {bySeverity["critical"]}
+                </span>
+                <span className="text-xs text-red-400">Critical</span>
+              </div>
+            )}
+            {bySeverity["high"] && (
+              <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-orange-500/10 border border-orange-500/20">
+                <span className="text-lg font-bold text-orange-400">
+                  {bySeverity["high"]}
+                </span>
+                <span className="text-xs text-orange-400">High</span>
+              </div>
+            )}
+            {bySeverity["medium"] && (
+              <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+                <span className="text-lg font-bold text-yellow-400">
+                  {bySeverity["medium"]}
+                </span>
+                <span className="text-xs text-yellow-400">Medium</span>
+              </div>
+            )}
+            {bySeverity["low"] && (
+              <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                <span className="text-lg font-bold text-blue-400">
+                  {bySeverity["low"]}
+                </span>
+                <span className="text-xs text-blue-400">Low</span>
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function QuickActionsCard() {
+  const router = useRouter();
+
+  const actions = [
+    {
+      label: "Execute Workflow",
+      description: "Run a workflow on the runner",
+      icon: <Play className="size-5" />,
+      route: "/execute",
+      color: "text-green-400",
+      bgColor: "bg-green-500/10 hover:bg-green-500/20 border-green-500/20",
+    },
+    {
+      label: "Build Workflow",
+      description: "Create or edit workflows",
+      icon: <Workflow className="size-5" />,
+      route: "/build/workflows",
+      color: "text-brand-secondary",
+      bgColor:
+        "bg-brand-secondary/10 hover:bg-brand-secondary/20 border-brand-secondary/20",
+    },
+    {
+      label: "View Runs",
+      description: "Browse run history",
+      icon: <History className="size-5" />,
+      route: "/runs",
+      color: "text-brand-primary",
+      bgColor:
+        "bg-brand-primary/10 hover:bg-brand-primary/20 border-brand-primary/20",
+    },
+    {
+      label: "Asset Library",
+      description: "Browse all assets",
+      icon: <Layers className="size-5" />,
+      route: "/build/library",
+      color: "text-purple-400",
+      bgColor: "bg-purple-500/10 hover:bg-purple-500/20 border-purple-500/20",
+    },
+  ];
+
+  return (
+    <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">Quick Actions</CardTitle>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <div className="grid grid-cols-2 gap-3">
+          {actions.map((action) => (
+            <button
+              key={action.route}
+              onClick={() => router.push(action.route)}
+              className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${action.bgColor}`}
+            >
+              <span className={action.color}>{action.icon}</span>
+              <div className="text-left">
+                <p className="text-sm font-medium text-text-primary">
+                  {action.label}
+                </p>
+                <p className="text-xs text-text-muted">{action.description}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function Dashboard() {
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push("/");
     }
+  }, [user, authLoading, router]);
 
-    // Select the project without navigating away from the dashboard
-    // The project will appear in the sidebar's project switcher
-    // IMPORTANT: Set both projectId AND projectName to ensure data isolation
-    // The projectName is used by IndexedDB to filter states/workflows by project
-    setProjectId(projectId);
-    setProjectName(projectName);
-    // Update URL to include project parameter (stays on dashboard)
-    router.push(`/dashboard?project=${projectId}`);
-    toast.success("Project selected");
-  };
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Good morning";
+    if (hour < 18) return "Good afternoon";
+    return "Good evening";
+  }, []);
 
-  const lastActivity = activities.length > 0 ? activities[0] : null;
-
-  // Show loading while auth is checking
   if (authLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
+          <Loader2 className="size-8 animate-spin text-brand-primary mx-auto mb-4" />
           <div className="text-lg text-muted-foreground">Loading...</div>
         </div>
       </div>
     );
   }
 
-  // Don't render anything if no user (will redirect)
   if (!user) {
     return null;
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-      {/* Early Access Banner */}
-      <EarlyAccessBanner onExport={handleExport} />
-
-      {/* Main Content */}
       <main className="p-6 max-w-7xl mx-auto">
         {/* Welcome Section */}
         <div className="mb-8">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-3xl font-bold mb-2">
-                {isNewUser ? "Welcome" : "Welcome back"},{" "}
-                {user.full_name || user.username}
-              </h2>
-              <p className="text-text-muted">
-                Manage your automation configurations and projects
-              </p>
-            </div>
-
-            <div className="flex gap-4">
-              <div className="flex items-center gap-2 px-4 py-3 bg-surface-raised/50 border border-border-subtle/50 rounded-lg backdrop-blur-sm">
-                <FolderOpen className="w-5 h-5 text-brand-primary" />
-                <span className="text-sm text-text-muted">Total Projects</span>
-                <span className="text-lg font-bold text-brand-primary">
-                  {projects.length}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2 px-4 py-3 bg-surface-raised/50 border border-border-subtle/50 rounded-lg backdrop-blur-sm">
-                <Clock className="w-5 h-5 text-brand-secondary" />
-                <span className="text-sm text-text-muted">Last Activity</span>
-                <span className="text-lg font-bold text-brand-secondary">
-                  {lastActivity
-                    ? getRelativeTime(lastActivity.timestamp.toISOString())
-                    : "No activity"}
-                </span>
-              </div>
-            </div>
-          </div>
+          <h2 className="text-3xl font-bold mb-2">
+            {greeting}, {user.full_name || user.username}
+          </h2>
+          <p className="text-text-muted">
+            Qontinui Runner Companion — manage workflows, monitor runs, and
+            analyze results
+          </p>
         </div>
 
-        {/* Quick Actions Section */}
-        {projects.length > 0 && (
-          <div className="mb-8">
-            <h3 className="text-xl font-semibold mb-4">Quick Actions</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card
-                className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm hover:border-brand-primary/50 hover:shadow-[0_0_20px_var(--glow-primary)] transition-all duration-300 cursor-pointer group"
-                onClick={handleNewProject}
-                data-ui-id="dashboard-quick-new-project"
-              >
-                <CardContent className="p-6 text-center">
-                  <div className="w-12 h-12 bg-brand-primary/20 rounded-lg flex items-center justify-center mx-auto mb-3 group-hover:bg-brand-primary/30 transition-colors">
-                    <Plus className="w-6 h-6 text-brand-primary" />
-                  </div>
-                  <h4 className="font-semibold mb-2">Create New Project</h4>
-                  <p className="text-sm text-text-muted">
-                    Start building a new automation configuration
-                  </p>
-                </CardContent>
-              </Card>
+        {/* Runner Connection */}
+        <div className="mb-6">
+          <RunnerConnectionCard />
+        </div>
 
-              <Card
-                className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm hover:border-brand-secondary/50 hover:shadow-[0_0_20px_var(--glow-secondary)] transition-all duration-300 cursor-pointer group"
-                onClick={handleImportProject}
-                data-ui-id="dashboard-quick-import"
-              >
-                <CardContent className="p-6 text-center">
-                  <div className="w-12 h-12 bg-brand-secondary/20 rounded-lg flex items-center justify-center mx-auto mb-3 group-hover:bg-brand-secondary/30 transition-colors">
-                    <Upload className="w-6 h-6 text-brand-secondary" />
-                  </div>
-                  <h4 className="font-semibold mb-2">Import Configuration</h4>
-                  <p className="text-sm text-text-muted">
-                    Upload existing automation files
-                  </p>
-                </CardContent>
-              </Card>
+        {/* Main Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <ActiveRunsCard />
+          <RecentRunsCard />
+        </div>
 
-              <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Clock className="w-5 h-5 text-brand-success" />
-                    Recent Activity
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-0">
-                  <div className="space-y-2">
-                    {activities.slice(0, 3).map((activity) => (
-                      <div
-                        key={activity.id}
-                        className="flex items-start gap-2 p-2 rounded-lg hover:bg-surface-hover/30 transition-colors"
-                      >
-                        <div className="w-1.5 h-1.5 bg-brand-primary rounded-full mt-1.5 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-text-secondary line-clamp-1">
-                            {activity.type === "created"
-                              ? "Created"
-                              : "Updated"}{" "}
-                            {activity.projectName}
-                          </p>
-                          <p className="text-xs text-text-muted">
-                            {getRelativeTime(activity.timestamp.toISOString())}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-        )}
-
-        {/* Projects Section */}
-        <div data-tour="projects">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-xl font-semibold">Your Projects</h3>
-            <Button
-              onClick={handleNewProject}
-              className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
-              data-tour="new-project"
-              data-awas-action="create_project"
-              data-ui-id="new-project-button"
-              data-awas-trigger="click"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              New Project
-            </Button>
-          </div>
-
-          {loading ? (
-            <div className="text-center py-8 text-text-muted">
-              Loading projects...
-            </div>
-          ) : projects.length === 0 ? (
-            <Card className="bg-surface-raised/30 border-border-subtle/50 border-dashed backdrop-blur-sm">
-              <CardContent className="p-12 text-center">
-                <div className="w-16 h-16 bg-brand-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <FolderOpen className="w-8 h-8 text-brand-primary" />
-                </div>
-                <h4 className="text-xl font-semibold mb-2 text-text-secondary">
-                  No projects yet
-                </h4>
-                <p className="text-text-muted mb-6">
-                  Create your first automation project to get started
-                </p>
-                <Button
-                  onClick={handleNewProject}
-                  className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
-                  data-awas-action="create_project"
-                  data-ui-id="create-first-project-button"
-                  data-awas-trigger="click"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create First Project
-                </Button>
-              </CardContent>
-            </Card>
-          ) : (
-            <div
-              className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
-              data-awas-action="list_projects"
-              data-ui-id="projects-grid"
-            >
-              {projects.map((project) => {
-                const isSelected = selectedProjectId === project.id;
-                return (
-                  <Card
-                    key={project.id}
-                    className={`bg-surface-raised/50 backdrop-blur-sm transition-all duration-300 group ${
-                      isSelected
-                        ? "border-brand-primary shadow-[0_0_20px_var(--glow-primary)] ring-1 ring-brand-primary/50"
-                        : "border-border-subtle/50 hover:border-brand-primary/30 hover:shadow-[0_0_20px_var(--glow-primary)]"
-                    }`}
-                    data-awas-action="get_project"
-                    data-ui-id={`project-card-${project.id}`}
-                    data-awas-param-project_id={project.id}
-                  >
-                    <CardContent className="p-6">
-                      <div className="mb-4">
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex items-center gap-2 min-w-0 flex-1">
-                            {isSelected && (
-                              <div className="w-5 h-5 rounded-full bg-brand-primary flex items-center justify-center flex-shrink-0">
-                                <Check className="w-3 h-3 text-black" />
-                              </div>
-                            )}
-                            <EditableProjectName
-                              name={project.name}
-                              onSave={(newName) =>
-                                handleUpdateProjectName(project.id, newName)
-                              }
-                              isSelected={isSelected}
-                            />
-                          </div>
-                          <Badge
-                            className={`${getStatusColor(project.status)} text-xs`}
-                          >
-                            {project.status}
-                          </Badge>
-                        </div>
-                        <p className="text-text-muted text-sm mb-3 line-clamp-2">
-                          {project.description}
-                        </p>
-                        <p className="text-xs text-text-muted">
-                          Modified {getRelativeTime(project.updated_at)}
-                        </p>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          onClick={() =>
-                            handleOpenProject(project.id, project.name)
-                          }
-                          className={`flex-1 ${
-                            isSelected
-                              ? "bg-brand-primary/30 text-brand-primary border border-brand-primary/50"
-                              : "bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary border border-brand-primary/30 hover:border-brand-primary/50"
-                          }`}
-                          data-awas-action="get_project"
-                          data-ui-id={`select-project-${project.id}`}
-                          data-awas-trigger="click"
-                          data-awas-param-project_id={project.id}
-                        >
-                          {isSelected ? (
-                            <>
-                              <Check className="w-4 h-4 mr-1" />
-                              Selected
-                            </>
-                          ) : (
-                            <>
-                              <Play className="w-4 h-4 mr-1" />
-                              Select
-                            </>
-                          )}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteProject(project);
-                          }}
-                          className="border-border-default hover:border-red-500 hover:text-red-400 bg-transparent"
-                          data-awas-action="delete_project"
-                          data-ui-id={`delete-project-${project.id}`}
-                          data-awas-trigger="click"
-                          data-awas-param-project_id={project.id}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <FindingsSummaryCard />
+          <QuickActionsCard />
         </div>
       </main>
-
-      {/* Create Project Dialog */}
-      <CreateProjectDialog
-        open={showCreateDialog}
-        onOpenChange={setShowCreateDialog}
-        onConfirm={handleCreateProjectConfirm}
-        isLoading={createProject.isPending}
-      />
-
-      {/* Delete Confirmation Dialog */}
-      <DeleteConfirmationDialog
-        open={deleteDialogOpen}
-        title="Delete Project"
-        itemName={projectToDelete?.name || ""}
-        description={`Are you sure you want to delete "${projectToDelete?.name}"? This will permanently delete the project and all its configuration. This action cannot be undone.`}
-        onClose={() => {
-          setDeleteDialogOpen(false);
-          setProjectToDelete(null);
-        }}
-        onConfirm={handleConfirmDelete}
-      />
-
-      {/* Onboarding Components */}
-      <WelcomeModal />
-      {showTutorialOverlay && <TutorialOverlay />}
-      <QuickStartChecklist />
-      <FirstProjectWizard
-        open={showFirstProjectWizard}
-        onOpenChange={setShowFirstProjectWizard}
-      />
-
-      {/* Early Access Welcome Modal */}
-      <EarlyAccessWelcomeModal
-        open={showEarlyAccessWelcome}
-        onClose={() => setShowEarlyAccessWelcome(false)}
-        onShowExport={handleShowExport}
-      />
     </div>
   );
 }

@@ -299,7 +299,7 @@ export class ExecutionWebSocket {
     if (!this.ws) return;
 
     this.ws.onopen = () => {
-      console.log("[ExecutionWebSocket] Connected");
+      console.debug("[ExecutionWebSocket] Connected");
       this.setState("connected");
       this.reconnectAttempts = 0;
 
@@ -326,7 +326,7 @@ export class ExecutionWebSocket {
     };
 
     this.ws.onclose = (event) => {
-      console.log("[ExecutionWebSocket] Closed:", event.code, event.reason);
+      console.debug("[ExecutionWebSocket] Closed:", event.code);
 
       this.stopHeartbeat();
 
@@ -501,8 +501,8 @@ export class ExecutionWebSocket {
       this.config.maxReconnectDelay
     );
 
-    console.log(
-      `[ExecutionWebSocket] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.config.maxReconnectAttempts || "∞"})`
+    console.debug(
+      `[ExecutionWebSocket] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`
     );
 
     if (this.handlers.onReconnecting) {
@@ -597,8 +597,8 @@ export class ExecutionWebSocket {
       timestamp: Date.now(),
     });
 
-    console.log(
-      `[ExecutionWebSocket] Message queued (${this.messageQueue.length}/${this.config.maxQueueSize})`
+    console.debug(
+      `[ExecutionWebSocket] Message queued (${this.messageQueue.length})`
     );
   }
 
@@ -610,7 +610,7 @@ export class ExecutionWebSocket {
       return;
     }
 
-    console.log(
+    console.debug(
       `[ExecutionWebSocket] Flushing ${this.messageQueue.length} queued messages`
     );
 
@@ -634,7 +634,7 @@ export class ExecutionWebSocket {
       return;
     }
 
-    console.log(`[ExecutionWebSocket] State: ${this.state} -> ${state}`);
+    console.debug(`[ExecutionWebSocket] State: ${this.state} -> ${state}`);
     this.state = state;
 
     if (this.handlers.onStateChange) {

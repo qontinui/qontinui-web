@@ -39,7 +39,10 @@ export function ElementDetailPanel({
 }: ElementDetailPanelProps) {
   if (!element) {
     return (
-      <div className="flex items-center justify-center h-full text-neutral-500 text-sm" data-ui-element>
+      <div
+        className="flex items-center justify-center h-full text-neutral-500 text-sm"
+        data-ui-element
+      >
         Select an element to view details
       </div>
     );

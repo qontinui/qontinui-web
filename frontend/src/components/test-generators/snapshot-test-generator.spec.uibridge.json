@@ -15,7 +15,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "heading", "textContent": "Snapshot Test Generator" },
+            "criteria": {
+              "role": "heading",
+              "textContent": "Snapshot Test Generator"
+            },
             "label": "Page title"
           },
           "assertionType": "exists",
@@ -273,7 +276,7 @@
     "author": "Joshua Spinak",
     "createdAt": "2026-02-04T00:00:00.000Z",
     "pageUrl": "/automation-builder/snapshot-tests",
-    "elementSource": "control",
+    "elementSource": "external",
     "tags": ["test-generator", "snapshot", "tier-1"]
   }
 }

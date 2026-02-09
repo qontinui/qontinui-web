@@ -25,7 +25,6 @@ import {
   type LoginFormData,
   type RegisterFormData,
 } from "@/lib/schemas";
-import { EarlyAccessSignupWarning } from "@/components/early-access/EarlyAccessSignupWarning";
 
 interface AuthDialogProps {
   open: boolean;
@@ -206,9 +205,6 @@ export function AuthDialog({
           </TabsContent>
 
           <TabsContent value="register">
-            {/* Early Access Warning */}
-            <EarlyAccessSignupWarning />
-
             <form
               onSubmit={registerForm.handleSubmit(handleRegister)}
               className="space-y-4"

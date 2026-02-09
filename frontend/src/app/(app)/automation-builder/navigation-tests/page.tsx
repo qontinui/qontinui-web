@@ -1,8 +1,6 @@
 "use client";
 
 import { Suspense } from "react";
-import { RequireProject } from "@/components/require-project";
-import { useProjectLoader } from "@/hooks/use-project-loader";
 import { NavigationTestGenerator } from "@/components/test-generators/NavigationTestGenerator";
 
 function LoadingFallback() {
@@ -13,20 +11,10 @@ function LoadingFallback() {
   );
 }
 
-function NavigationTestsContent() {
-  const { isLoading } = useProjectLoader();
-
-  if (isLoading) return <LoadingFallback />;
-
-  return <NavigationTestGenerator />;
-}
-
 export default function NavigationTestsPage() {
   return (
-    <RequireProject pageName="Navigation Test Generator">
-      <Suspense fallback={<LoadingFallback />}>
-        <NavigationTestsContent />
-      </Suspense>
-    </RequireProject>
+    <Suspense fallback={<LoadingFallback />}>
+      <NavigationTestGenerator />
+    </Suspense>
   );
 }

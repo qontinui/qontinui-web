@@ -483,10 +483,17 @@ export function SnapshotTestGenerator({
     <div className="flex flex-col h-full">
       {/* Title bar */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-neutral-700">
-        <h2 className="text-lg font-semibold text-neutral-100" data-ui-element role="heading">
+        <h2
+          className="text-lg font-semibold text-neutral-100"
+          data-ui-element
+          role="heading"
+        >
           Snapshot Test Generator
         </h2>
-        <span className="px-2 py-0.5 text-[10px] bg-emerald-500/20 text-emerald-400 rounded-full font-medium" data-ui-element>
+        <span
+          className="px-2 py-0.5 text-[10px] bg-emerald-500/20 text-emerald-400 rounded-full font-medium"
+          data-ui-element
+        >
           beta
         </span>
       </div>

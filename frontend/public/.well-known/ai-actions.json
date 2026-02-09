@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0",
   "appName": "Qontinui Web",
-  "description": "Visual automation platform for AI-driven testing and automation",
+  "description": "Runner companion app for AI development with verification loops and workflow orchestration",
   "baseUrl": "http://localhost:8000",
   "conformanceLevel": "L2",
   "actions": [

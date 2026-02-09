@@ -30,7 +30,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "buttons|inputs|links|selects|textareas|others" },
+            "criteria": {
+              "textContent": "buttons|inputs|links|selects|textareas|others"
+            },
             "label": "Element type group"
           },
           "assertionType": "exists",
@@ -310,7 +312,9 @@
           "severity": "info",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Generate test specifications to see output" },
+            "criteria": {
+              "textContent": "Generate test specifications to see output"
+            },
             "label": "Empty output message"
           },
           "assertionType": "exists",
@@ -367,7 +371,10 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Compare to Previous" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Compare to Previous"
+            },
             "label": "Compare to Previous button"
           },
           "assertionType": "exists",
@@ -410,7 +417,13 @@
     "author": "Joshua Spinak",
     "createdAt": "2026-02-04T00:00:00.000Z",
     "pageUrl": "/automation-builder/snapshot-tests",
-    "elementSource": "control",
-    "tags": ["test-generator", "snapshot", "tier-1", "post-capture", "generation-flow"]
+    "elementSource": "external",
+    "tags": [
+      "test-generator",
+      "snapshot",
+      "tier-1",
+      "post-capture",
+      "generation-flow"
+    ]
   }
 }

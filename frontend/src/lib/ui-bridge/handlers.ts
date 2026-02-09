@@ -81,7 +81,7 @@ function error(message: string, code?: string): APIResponse<never> {
 
 // Render log entries (server-side cache)
 let renderLogEntries: RenderLogEntry[] = [];
-const MAX_ENTRIES = 1000;
+const MAX_ENTRIES = 5; // Each entry is a full DOM snapshot (several MB each)
 
 // Latest control snapshot from browser (synchronized via WebSocket)
 let latestControlSnapshot: ControlSnapshot = {
@@ -105,9 +105,43 @@ const pendingCommands = new Map<
   }
 >();
 
-// Command timeout in milliseconds (10 seconds for WebSocket, 30 seconds for HTTP)
+const MAX_PENDING_COMMANDS = 200;
+
+// Command timeout in milliseconds (10 seconds for WebSocket, 30 seconds for SSE/HTTP)
 const WEBSOCKET_COMMAND_TIMEOUT_MS = 10000;
-const HTTP_COMMAND_TIMEOUT_MS = 30000;
+const SSE_COMMAND_TIMEOUT_MS = 15000;
+
+// ============================================================================
+// Command Subscriber System (for SSE push)
+// ============================================================================
+
+interface QueuedCommand {
+  commandId: string;
+  action: string;
+  payload: unknown;
+  timestamp: number;
+}
+
+type CommandListener = (command: QueuedCommand) => void;
+const commandListeners = new Set<CommandListener>();
+
+/**
+ * Subscribe to new commands. Returns an unsubscribe function.
+ * Used by the SSE stream endpoint to push commands to the browser.
+ */
+export function subscribeToCommands(listener: CommandListener): () => void {
+  commandListeners.add(listener);
+  return () => {
+    commandListeners.delete(listener);
+  };
+}
+
+/**
+ * Check if any SSE listeners are connected
+ */
+export function hasCommandListeners(): boolean {
+  return commandListeners.size > 0;
+}
 
 // ============================================================================
 // WebSocket Client Registry
@@ -293,11 +327,13 @@ export function queueCommand<T>(action: string, payload: unknown): Promise<T> {
       payload
     );
 
-    // Set timeout based on transport method
-    const timeoutMs = sentViaWebSocket
-      ? WEBSOCKET_COMMAND_TIMEOUT_MS
-      : HTTP_COMMAND_TIMEOUT_MS;
-    const transport = sentViaWebSocket ? "WebSocket" : "HTTP";
+    let transport = "none";
+    let timeoutMs = SSE_COMMAND_TIMEOUT_MS;
+
+    if (sentViaWebSocket) {
+      transport = "WebSocket";
+      timeoutMs = WEBSOCKET_COMMAND_TIMEOUT_MS;
+    }
 
     const timeout = setTimeout(() => {
       pendingCommands.delete(commandId);
@@ -308,6 +344,21 @@ export function queueCommand<T>(action: string, payload: unknown): Promise<T> {
       );
     }, timeoutMs);
 
+    // Evict oldest pending commands if at capacity
+    if (pendingCommands.size >= MAX_PENDING_COMMANDS) {
+      const oldestKey = pendingCommands.keys().next().value;
+      if (oldestKey) {
+        const oldest = pendingCommands.get(oldestKey);
+        if (oldest) {
+          clearTimeout(oldest.timeout);
+          oldest.reject(
+            new Error("Command evicted: too many pending commands")
+          );
+        }
+        pendingCommands.delete(oldestKey);
+      }
+    }
+
     // Store the pending command
     pendingCommands.set(commandId, {
       resolve: resolve as (value: unknown) => void,
@@ -315,24 +366,39 @@ export function queueCommand<T>(action: string, payload: unknown): Promise<T> {
       timeout,
     });
 
-    // If WebSocket delivery failed, add to HTTP polling queue
+    // If WebSocket delivery failed, push via SSE listeners
     if (!sentViaWebSocket) {
-      commandQueue.push({
+      const command: QueuedCommand = {
         commandId,
         action,
         payload,
         timestamp: Date.now(),
-      });
+      };
 
-      // Limit queue size
-      while (commandQueue.length > 100) {
-        const dropped = commandQueue.shift();
-        if (dropped) {
-          const pending = pendingCommands.get(dropped.commandId);
-          if (pending) {
-            clearTimeout(pending.timeout);
-            pending.reject(new Error("Command dropped from queue"));
-            pendingCommands.delete(dropped.commandId);
+      if (commandListeners.size > 0) {
+        transport = "SSE";
+        for (const listener of commandListeners) {
+          try {
+            listener(command);
+          } catch {
+            // Listener failed, will be cleaned up on next subscribe check
+          }
+        }
+      } else {
+        // No SSE listeners connected - add to legacy polling queue as last resort
+        transport = "HTTP-poll";
+        commandQueue.push(command);
+
+        // Limit queue size
+        while (commandQueue.length > 100) {
+          const dropped = commandQueue.shift();
+          if (dropped) {
+            const pending = pendingCommands.get(dropped.commandId);
+            if (pending) {
+              clearTimeout(pending.timeout);
+              pending.reject(new Error("Command dropped from queue"));
+              pendingCommands.delete(dropped.commandId);
+            }
           }
         }
       }
@@ -373,14 +439,7 @@ export function rejectCommand(
   return true;
 }
 
-// Command queue for browser to poll
-interface QueuedCommand {
-  commandId: string;
-  action: string;
-  payload: unknown;
-  timestamp: number;
-}
-
+// Legacy command queue for browser polling fallback (when no SSE/WebSocket client is connected)
 const commandQueue: QueuedCommand[] = [];
 
 /**
@@ -573,9 +632,7 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
     }
   },
 
-  async discover(
-    request?: FindRequest
-  ): Promise<APIResponse<FindResponse>> {
+  async discover(request?: FindRequest): Promise<APIResponse<FindResponse>> {
     // Deprecated - use find
     try {
       const result = await queueCommand<FindResponse>(
@@ -833,14 +890,11 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
     }
   },
 
-  async getAnnotation(
-    id: string
-  ): Promise<APIResponse<ElementAnnotation>> {
+  async getAnnotation(id: string): Promise<APIResponse<ElementAnnotation>> {
     try {
-      const result = await queueCommand<ElementAnnotation>(
-        "getAnnotation",
-        { id }
-      );
+      const result = await queueCommand<ElementAnnotation>("getAnnotation", {
+        id,
+      });
       return success(result);
     } catch (e) {
       return error((e as Error).message, "NOT_FOUND");
@@ -852,10 +906,10 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
     annotation: ElementAnnotation
   ): Promise<APIResponse<ElementAnnotation>> {
     try {
-      const result = await queueCommand<ElementAnnotation>(
-        "setAnnotation",
-        { id, annotation }
-      );
+      const result = await queueCommand<ElementAnnotation>("setAnnotation", {
+        id,
+        annotation,
+      });
       return success(result);
     } catch (e) {
       return error((e as Error).message, "COMMAND_FAILED");

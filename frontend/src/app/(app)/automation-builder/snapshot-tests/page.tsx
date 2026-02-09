@@ -1,8 +1,6 @@
 "use client";
 
 import { Suspense } from "react";
-import { RequireProject } from "@/components/require-project";
-import { useProjectLoader } from "@/hooks/use-project-loader";
 import { SnapshotTestGenerator } from "@/components/test-generators/SnapshotTestGenerator";
 
 function LoadingFallback() {
@@ -13,20 +11,10 @@ function LoadingFallback() {
   );
 }
 
-function SnapshotTestsContent() {
-  const { isLoading } = useProjectLoader();
-
-  if (isLoading) return <LoadingFallback />;
-
-  return <SnapshotTestGenerator />;
-}
-
 export default function SnapshotTestsPage() {
   return (
-    <RequireProject pageName="Snapshot Test Generator">
-      <Suspense fallback={<LoadingFallback />}>
-        <SnapshotTestsContent />
-      </Suspense>
-    </RequireProject>
+    <Suspense fallback={<LoadingFallback />}>
+      <SnapshotTestGenerator />
+    </Suspense>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -17,6 +17,7 @@ import { toast } from "sonner";
 export function RefreshTokenExpiryWarning() {
   const [showWarning, setShowWarning] = useState(false);
   const [daysRemaining, setDaysRemaining] = useState(0);
+  const dismissTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     // Check refresh token expiry every hour
@@ -54,7 +55,13 @@ export function RefreshTokenExpiryWarning() {
     // Check every hour
     const intervalId = setInterval(checkRefreshTokenExpiry, 60 * 60 * 1000);
 
-    return () => clearInterval(intervalId);
+    return () => {
+      clearInterval(intervalId);
+      if (dismissTimeoutRef.current) {
+        clearTimeout(dismissTimeoutRef.current);
+        dismissTimeoutRef.current = null;
+      }
+    };
   }, [showWarning]);
 
   const handleDismiss = () => {
@@ -62,7 +69,10 @@ export function RefreshTokenExpiryWarning() {
     setShowWarning(false);
 
     // Show reminder again in 24 hours if still expiring
-    setTimeout(
+    if (dismissTimeoutRef.current) {
+      clearTimeout(dismissTimeoutRef.current);
+    }
+    dismissTimeoutRef.current = setTimeout(
       () => {
         const refreshExpiry = authService.tokenManager.getRefreshTokenExpiry();
         if (refreshExpiry) {

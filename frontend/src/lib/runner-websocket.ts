@@ -260,6 +260,7 @@ export class RunnerWebSocket {
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000; // Start with 1 second
   private isIntentionallyClosed = false;
+  private reconnectTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   constructor(config: RunnerWebSocketConfig) {
     this.config = config;
@@ -287,20 +288,14 @@ export class RunnerWebSocket {
       this.ws = new WebSocket(url);
 
       this.ws.onopen = () => {
-        console.log("Runner WebSocket connected");
+        console.debug("Runner WebSocket connected");
         this.reconnectAttempts = 0;
         this.reconnectDelay = 1000;
         this.config.onConnect?.();
       };
 
       this.ws.onclose = (event) => {
-        console.log(
-          "Runner WebSocket disconnected",
-          event.code,
-          event.reason,
-          "isIntentionallyClosed:",
-          this.isIntentionallyClosed
-        );
+        console.debug("Runner WebSocket disconnected:", event.code);
         this.config.onDisconnect?.();
 
         // Attempt to reconnect if not intentionally closed
@@ -309,11 +304,11 @@ export class RunnerWebSocket {
           this.reconnectAttempts < this.maxReconnectAttempts
         ) {
           this.reconnectAttempts++;
-          console.log(
-            `Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`
+          console.debug(
+            `RunnerWebSocket reconnect ${this.reconnectAttempts}/${this.maxReconnectAttempts}`
           );
 
-          setTimeout(() => {
+          this.reconnectTimeoutId = setTimeout(() => {
             this.connect();
           }, this.reconnectDelay);
 
@@ -331,21 +326,11 @@ export class RunnerWebSocket {
       };
 
       this.ws.onmessage = (event) => {
-        console.log(
-          "[RunnerWebSocket] onmessage received, data length:",
-          event.data?.length
-        );
         try {
           const message: WSMessage = JSON.parse(event.data);
-          console.log("[RunnerWebSocket] Parsed message type:", message.type);
           this.handleMessage(message);
         } catch (error) {
-          console.error(
-            "Failed to parse WebSocket message:",
-            error,
-            "raw data:",
-            event.data
-          );
+          console.error("Failed to parse WebSocket message:", error);
         }
       };
     } catch (error) {
@@ -358,8 +343,13 @@ export class RunnerWebSocket {
    * Disconnect from the WebSocket server
    */
   disconnect(): void {
-    console.log("[RunnerWebSocket] disconnect() called", new Error().stack);
+    console.debug("[RunnerWebSocket] disconnect() called");
     this.isIntentionallyClosed = true;
+
+    if (this.reconnectTimeoutId) {
+      clearTimeout(this.reconnectTimeoutId);
+      this.reconnectTimeoutId = null;
+    }
 
     if (this.ws) {
       this.ws.close();
@@ -378,29 +368,12 @@ export class RunnerWebSocket {
    * Send a message to the server
    */
   send(message: Record<string, unknown>): void {
-    console.log(
-      "[RunnerWebSocket] send() called, isConnected:",
-      this.isConnected(),
-      "readyState:",
-      this.ws?.readyState
-    );
     if (!this.isConnected()) {
-      console.error(
-        "Cannot send message: WebSocket is not connected, readyState:",
-        this.ws?.readyState
-      );
       return;
     }
 
     try {
-      const jsonMessage = JSON.stringify(message);
-      console.log(
-        "[RunnerWebSocket] Sending message:",
-        message.type,
-        message.command
-      );
-      this.ws?.send(jsonMessage);
-      console.log("[RunnerWebSocket] Message sent successfully");
+      this.ws?.send(JSON.stringify(message));
     } catch (error) {
       console.error("Failed to send WebSocket message:", error);
     }
@@ -429,14 +402,9 @@ export class RunnerWebSocket {
 
       // Web extraction events
       case "extraction_started":
-        // Data may be wrapped in a 'data' field by the Python websocket handler
         {
           const startedData =
             (message as { data?: ExtractionStartedEvent }).data || message;
-          console.log(
-            "[RunnerWebSocket] Extraction started event data:",
-            startedData
-          );
           this.config.onExtractionStarted?.(
             startedData as ExtractionStartedEvent
           );
@@ -455,16 +423,11 @@ export class RunnerWebSocket {
         break;
 
       case "extraction_state_detected":
-      case "state_detected": // Raw event name from qontinui library
-        // Data may be wrapped in a 'data' field by the Python websocket handler
+      case "state_detected":
         {
           const stateData =
             (message as { data?: ExtractionStateDetectedEvent }).data ||
             message;
-          console.log(
-            "[RunnerWebSocket] State detected event data:",
-            stateData
-          );
           this.config.onExtractionStateDetected?.(
             stateData as ExtractionStateDetectedEvent
           );
@@ -472,16 +435,11 @@ export class RunnerWebSocket {
         break;
 
       case "extraction_element_detected":
-      case "element_detected": // Raw event name from qontinui library
-        // Data may be wrapped in a 'data' field by the Python websocket handler
+      case "element_detected":
         {
           const elementData =
             (message as { data?: ExtractionElementDetectedEvent }).data ||
             message;
-          console.log(
-            "[RunnerWebSocket] Element detected event data:",
-            elementData
-          );
           this.config.onExtractionElementDetected?.(
             elementData as ExtractionElementDetectedEvent
           );
@@ -489,16 +447,11 @@ export class RunnerWebSocket {
         break;
 
       case "extraction_transition_detected":
-      case "transition_detected": // Raw event name from qontinui library
-        // Data may be wrapped in a 'data' field by the Python websocket handler
+      case "transition_detected":
         {
           const transitionData =
             (message as { data?: ExtractionTransitionDetectedEvent }).data ||
             message;
-          console.log(
-            "[RunnerWebSocket] Transition detected event data:",
-            transitionData
-          );
           this.config.onExtractionTransitionDetected?.(
             transitionData as ExtractionTransitionDetectedEvent
           );
@@ -506,14 +459,9 @@ export class RunnerWebSocket {
         break;
 
       case "extraction_complete":
-        // Data may be wrapped in a 'data' field by the Python websocket handler
         {
           const completeData =
             (message as { data?: ExtractionCompleteEvent }).data || message;
-          console.log(
-            "[RunnerWebSocket] Extraction complete event data:",
-            completeData
-          );
           this.config.onExtractionComplete?.(
             completeData as ExtractionCompleteEvent
           );
@@ -521,40 +469,27 @@ export class RunnerWebSocket {
         break;
 
       case "extraction_error":
-        // Data may be wrapped in a 'data' field by the Python websocket handler
         {
           const errorData =
             (message as { data?: ExtractionErrorEvent }).data || message;
-          console.log(
-            "[RunnerWebSocket] Extraction error event data:",
-            errorData
-          );
           this.config.onExtractionError?.(errorData as ExtractionErrorEvent);
         }
         break;
 
       case "response":
-        // Server acknowledgment
-        console.log("Server response:", message);
         break;
 
       case "error":
         console.error("Server error:", message);
         break;
 
-      // Command WebSocket messages
       case "connected":
-        console.log("[RunnerWebSocket] Connected acknowledgment:", message);
         break;
 
       case "command_sent":
-        console.log("[RunnerWebSocket] Command sent acknowledgment:", message);
         break;
 
       case "command_response":
-        // Response from runner after processing a command
-        console.log("[RunnerWebSocket] Command response received:", message);
-
         // Handle various response formats from different runners
         const responseMsg = message as {
           data?: {
@@ -584,23 +519,11 @@ export class RunnerWebSocket {
             error: responseData.error as string | undefined,
           };
 
-          console.log(
-            "[RunnerWebSocket] Parsed command response - command:",
-            command,
-            "result:",
-            result
-          );
-
           this.config.onCommandResponse?.({
             command,
             result: result as CommandResponseEvent["result"],
             timestamp: responseMsg.timestamp || new Date().toISOString(),
           });
-        } else {
-          console.warn(
-            "[RunnerWebSocket] Command response has no data:",
-            message
-          );
         }
         break;
 
@@ -609,11 +532,7 @@ export class RunnerWebSocket {
         break;
 
       case "pong":
-        console.debug("[RunnerWebSocket] Pong received");
-        break;
-
       case "ping":
-        console.debug("[RunnerWebSocket] Ping received");
         break;
 
       case "ui_bridge_command":
@@ -622,11 +541,7 @@ export class RunnerWebSocket {
         break;
 
       default:
-        console.warn(
-          "[RunnerWebSocket] Unknown message type:",
-          message.type,
-          message
-        );
+        console.debug("[RunnerWebSocket] Unknown message type:", message.type);
     }
   }
 
@@ -639,19 +554,7 @@ export class RunnerWebSocket {
   ): Promise<void> {
     const { command_id, action, payload } = command;
 
-    console.log(
-      "[RunnerWebSocket] UI Bridge command received:",
-      action,
-      "command_id:",
-      command_id
-    );
-
-    // Check if handler is configured
     if (!this.config.uiBridgeCommandHandler) {
-      console.warn(
-        "[RunnerWebSocket] No UI Bridge command handler configured, ignoring command:",
-        action
-      );
       // Send error response
       this.send({
         type: "ui_bridge_response",
@@ -675,11 +578,6 @@ export class RunnerWebSocket {
         result,
         timestamp: new Date().toISOString(),
       });
-
-      console.log(
-        "[RunnerWebSocket] UI Bridge command completed successfully:",
-        action
-      );
     } catch (error) {
       // Send error response
       const errorMessage =

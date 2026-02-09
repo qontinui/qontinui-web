@@ -32,6 +32,7 @@ from app.api.v1.endpoints import (
     exports,
     extraction,
     feedback,
+    finding_categories,
     health,
     historical,
     images,
@@ -58,6 +59,7 @@ from app.api.v1.endpoints import (
     snapshots,
     state_discovery,
     state_discovery_results,
+    state_machine_configs,
     task_runs,
     template_capture,
 )
@@ -72,6 +74,7 @@ from app.api.v1.endpoints import (
     videos,
     visual_baselines,
     visual_comparison,
+    workflow_step_types,
 )
 
 api_router = APIRouter()
@@ -205,4 +208,18 @@ api_router.include_router(
 # Template capture (click-to-template system)
 api_router.include_router(
     template_capture.router, prefix="/template-capture", tags=["template-capture"]
+)
+# State machine builder configs (persisted to PostgreSQL)
+api_router.include_router(state_machine_configs.router, tags=["state-machine-configs"])
+# Finding category configurations (per-user, auto-seeded)
+api_router.include_router(
+    finding_categories.router,
+    prefix="/finding-categories",
+    tags=["finding-categories"],
+)
+# Workflow step types, GUI action types, and phases (per-user, auto-seeded)
+api_router.include_router(
+    workflow_step_types.router,
+    prefix="/workflow-config",
+    tags=["workflow-config"],
 )

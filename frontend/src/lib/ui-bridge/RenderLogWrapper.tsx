@@ -36,7 +36,7 @@ export interface RenderLogWrapperProps {
 export function RenderLogWrapper({
   children,
   enableOnMount = true,
-  enableMutationObserver = true,
+  enableMutationObserver = false, // Disabled by default - DOM snapshot capture is expensive (several MB per snapshot)
   mutationDebounceMs = 500,
 }: RenderLogWrapperProps) {
   const pathname = usePathname();
@@ -49,6 +49,7 @@ export function RenderLogWrapper({
   const mutationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const observerRef = useRef<MutationObserver | null>(null);
   const isCapturingRef = useRef(false);
+  const isMountedRef = useRef(true);
 
   // Full URL for change detection
   const fullPath =
@@ -57,9 +58,23 @@ export function RenderLogWrapper({
   /**
    * Capture a DOM snapshot via ui-bridge RenderLogManager
    */
+  // Track mount state for async cleanup safety
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const captureSnapshot = useCallback(
     async (trigger: string, metadata?: Record<string, unknown>) => {
-      if (!isDev || !bridge?.renderLog || isCapturingRef.current) return;
+      if (
+        !isDev ||
+        !bridge?.renderLog ||
+        isCapturingRef.current ||
+        !isMountedRef.current
+      )
+        return;
 
       isCapturingRef.current = true;
 

@@ -22,7 +22,6 @@ import {
   FileText,
   Target,
   CheckCircle2,
-  Gamepad2,
   Briefcase,
   TestTube,
   Compass,
@@ -44,7 +43,7 @@ interface WizardState {
   projectName: string;
   projectDescription: string;
   selectedTemplate: "blank" | "civ6" | "clicker";
-  useCase: "gaming" | "productivity" | "testing" | "exploring";
+  useCase: "testing" | "development" | "productivity" | "exploring";
 }
 
 interface TemplateOption {
@@ -90,7 +89,7 @@ export function FirstProjectWizard({
     projectName: "",
     projectDescription: "",
     selectedTemplate: "blank",
-    useCase: "gaming",
+    useCase: "development",
   });
 
   // Save progress to localStorage
@@ -492,17 +491,11 @@ export function FirstProjectWizard({
               >
                 {[
                   {
-                    value: "gaming",
-                    label: "Gaming",
+                    value: "development",
+                    label: "AI Development",
                     description:
-                      "Automate repetitive game tasks (recommended for beginners)",
-                    icon: Gamepad2,
-                  },
-                  {
-                    value: "productivity",
-                    label: "Productivity/Business",
-                    description: "Streamline business processes and workflows",
-                    icon: Briefcase,
+                      "Orchestrate AI coding sessions with verification loops",
+                    icon: Bot,
                   },
                   {
                     value: "testing",
@@ -511,9 +504,15 @@ export function FirstProjectWizard({
                     icon: TestTube,
                   },
                   {
+                    value: "productivity",
+                    label: "Productivity/Business",
+                    description: "Streamline business processes and workflows",
+                    icon: Briefcase,
+                  },
+                  {
                     value: "exploring",
                     label: "Just Exploring",
-                    description: "Learning and experimenting with automation",
+                    description: "Learning and experimenting with the platform",
                     icon: Compass,
                   },
                 ].map((option) => {

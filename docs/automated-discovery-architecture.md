@@ -12,7 +12,7 @@ This document provides architectural diagrams and visual representations of the 
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        External Recording Tools                      │
 │  - Screen capture software                                           │
-│  - Browser extensions                                                │
+│  - UI Bridge SDK integrations                                        │
 │  - Platform-specific recorders                                       │
 └─────────────────────────┬───────────────────────────────────────────┘
                           │ ZIP/JSON upload

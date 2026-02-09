@@ -19,6 +19,144 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 // Re-export types for backwards compatibility
 export type { User, Project, UserUpdate, ProjectCreate, ProjectUpdate };
 
+// Finding Category types
+export type FindingCategoryActionType =
+  | "auto_fix"
+  | "needs_user_input"
+  | "manual"
+  | "informational";
+
+export interface FindingCategoryConfig {
+  id: string;
+  user_id: string;
+  slug: string;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  is_built_in: boolean;
+  default_action_type: FindingCategoryActionType;
+  sort_order: number;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FindingCategoryConfigCreate {
+  slug: string;
+  name: string;
+  description?: string;
+  icon: string;
+  color: string;
+  default_action_type: FindingCategoryActionType;
+  sort_order: number;
+  enabled?: boolean;
+}
+
+export interface FindingCategoryConfigUpdate {
+  name?: string;
+  description?: string;
+  icon?: string;
+  color?: string;
+  default_action_type?: FindingCategoryActionType;
+  sort_order?: number;
+  enabled?: boolean;
+}
+
+// Workflow Step Type Config types
+export type WorkflowPhase = "setup" | "verification" | "agentic" | "completion";
+
+export interface StepTypeConfig {
+  id: string;
+  user_id: string;
+  step_type: string;
+  phase: WorkflowPhase;
+  label: string;
+  description: string;
+  icon: string;
+  color: string;
+  is_built_in: boolean;
+  sort_order: number;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StepTypeConfigCreate {
+  step_type: string;
+  phase: WorkflowPhase;
+  label: string;
+  description?: string;
+  icon: string;
+  color: string;
+  sort_order: number;
+  enabled?: boolean;
+}
+
+export interface StepTypeConfigUpdate {
+  label?: string;
+  description?: string;
+  icon?: string;
+  color?: string;
+  sort_order?: number;
+  enabled?: boolean;
+}
+
+// GUI Action Type Config types
+export interface GuiActionTypeConfig {
+  id: string;
+  user_id: string;
+  action_type: string;
+  label: string;
+  description: string;
+  icon: string;
+  is_built_in: boolean;
+  sort_order: number;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GuiActionTypeConfigCreate {
+  action_type: string;
+  label: string;
+  description?: string;
+  icon: string;
+  sort_order: number;
+  enabled?: boolean;
+}
+
+export interface GuiActionTypeConfigUpdate {
+  label?: string;
+  description?: string;
+  icon?: string;
+  sort_order?: number;
+  enabled?: boolean;
+}
+
+// Workflow Phase Config types
+export interface WorkflowPhaseConfig {
+  id: string;
+  user_id: string;
+  phase: WorkflowPhase;
+  label: string;
+  description: string;
+  color: string;
+  is_built_in: boolean;
+  sort_order: number;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkflowPhaseConfigUpdate {
+  label?: string;
+  description?: string;
+  color?: string;
+  sort_order?: number;
+  enabled?: boolean;
+}
+
 // Image types
 export interface ImageUploadResponse {
   image_id: string;
@@ -1048,6 +1186,250 @@ class ApiClient {
     }
 
     return response.json();
+  }
+
+  // ===== Finding Category Endpoints =====
+
+  async getFindingCategories(): Promise<FindingCategoryConfig[]> {
+    const response = await this.fetchWithAuth("/finding-categories/");
+    if (!response.ok) {
+      throw new Error("Failed to get finding categories");
+    }
+    const data = await response.json();
+    return data.items;
+  }
+
+  async createFindingCategory(
+    data: FindingCategoryConfigCreate
+  ): Promise<FindingCategoryConfig> {
+    const response = await this.fetchWithAuth("/finding-categories/", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || "Failed to create finding category");
+    }
+    return response.json();
+  }
+
+  async updateFindingCategory(
+    id: string,
+    data: FindingCategoryConfigUpdate
+  ): Promise<FindingCategoryConfig> {
+    const response = await this.fetchWithAuth(`/finding-categories/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || "Failed to update finding category");
+    }
+    return response.json();
+  }
+
+  async deleteFindingCategory(id: string): Promise<void> {
+    const response = await this.fetchWithAuth(`/finding-categories/${id}`, {
+      method: "DELETE",
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || "Failed to delete finding category");
+    }
+  }
+
+  async resetFindingCategories(): Promise<FindingCategoryConfig[]> {
+    const response = await this.fetchWithAuth("/finding-categories/reset", {
+      method: "POST",
+    });
+    if (!response.ok) {
+      throw new Error("Failed to reset finding categories");
+    }
+    const data = await response.json();
+    return data.items;
+  }
+
+  // ===== Workflow Step Type Config Endpoints =====
+
+  async getStepTypes(phase?: WorkflowPhase): Promise<StepTypeConfig[]> {
+    const params = phase ? `?phase=${phase}` : "";
+    const response = await this.fetchWithAuth(
+      `/workflow-config/step-types${params}`
+    );
+    if (!response.ok) {
+      throw new Error("Failed to get step types");
+    }
+    const data = await response.json();
+    return data.items;
+  }
+
+  async createStepType(data: StepTypeConfigCreate): Promise<StepTypeConfig> {
+    const response = await this.fetchWithAuth("/workflow-config/step-types", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || "Failed to create step type");
+    }
+    return response.json();
+  }
+
+  async updateStepType(
+    id: string,
+    data: StepTypeConfigUpdate
+  ): Promise<StepTypeConfig> {
+    const response = await this.fetchWithAuth(
+      `/workflow-config/step-types/${id}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }
+    );
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || "Failed to update step type");
+    }
+    return response.json();
+  }
+
+  async deleteStepType(id: string): Promise<void> {
+    const response = await this.fetchWithAuth(
+      `/workflow-config/step-types/${id}`,
+      {
+        method: "DELETE",
+      }
+    );
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || "Failed to delete step type");
+    }
+  }
+
+  async resetStepTypes(): Promise<StepTypeConfig[]> {
+    const response = await this.fetchWithAuth(
+      "/workflow-config/step-types/reset",
+      {
+        method: "POST",
+      }
+    );
+    if (!response.ok) {
+      throw new Error("Failed to reset step types");
+    }
+    const data = await response.json();
+    return data.items;
+  }
+
+  // ===== GUI Action Type Config Endpoints =====
+
+  async getGuiActionTypes(): Promise<GuiActionTypeConfig[]> {
+    const response = await this.fetchWithAuth(
+      "/workflow-config/gui-action-types"
+    );
+    if (!response.ok) {
+      throw new Error("Failed to get GUI action types");
+    }
+    const data = await response.json();
+    return data.items;
+  }
+
+  async createGuiActionType(
+    data: GuiActionTypeConfigCreate
+  ): Promise<GuiActionTypeConfig> {
+    const response = await this.fetchWithAuth(
+      "/workflow-config/gui-action-types",
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      }
+    );
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || "Failed to create GUI action type");
+    }
+    return response.json();
+  }
+
+  async updateGuiActionType(
+    id: string,
+    data: GuiActionTypeConfigUpdate
+  ): Promise<GuiActionTypeConfig> {
+    const response = await this.fetchWithAuth(
+      `/workflow-config/gui-action-types/${id}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }
+    );
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || "Failed to update GUI action type");
+    }
+    return response.json();
+  }
+
+  async deleteGuiActionType(id: string): Promise<void> {
+    const response = await this.fetchWithAuth(
+      `/workflow-config/gui-action-types/${id}`,
+      {
+        method: "DELETE",
+      }
+    );
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || "Failed to delete GUI action type");
+    }
+  }
+
+  async resetGuiActionTypes(): Promise<GuiActionTypeConfig[]> {
+    const response = await this.fetchWithAuth(
+      "/workflow-config/gui-action-types/reset",
+      {
+        method: "POST",
+      }
+    );
+    if (!response.ok) {
+      throw new Error("Failed to reset GUI action types");
+    }
+    const data = await response.json();
+    return data.items;
+  }
+
+  // ===== Workflow Phase Config Endpoints =====
+
+  async getWorkflowPhases(): Promise<WorkflowPhaseConfig[]> {
+    const response = await this.fetchWithAuth("/workflow-config/phases");
+    if (!response.ok) {
+      throw new Error("Failed to get workflow phases");
+    }
+    const data = await response.json();
+    return data.items;
+  }
+
+  async updateWorkflowPhase(
+    id: string,
+    data: WorkflowPhaseConfigUpdate
+  ): Promise<WorkflowPhaseConfig> {
+    const response = await this.fetchWithAuth(`/workflow-config/phases/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || "Failed to update workflow phase");
+    }
+    return response.json();
+  }
+
+  async resetWorkflowPhases(): Promise<WorkflowPhaseConfig[]> {
+    const response = await this.fetchWithAuth("/workflow-config/phases/reset", {
+      method: "POST",
+    });
+    if (!response.ok) {
+      throw new Error("Failed to reset workflow phases");
+    }
+    const data = await response.json();
+    return data.items;
   }
 
   /**

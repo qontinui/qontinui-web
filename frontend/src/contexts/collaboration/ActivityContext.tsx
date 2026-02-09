@@ -79,7 +79,7 @@ export function ActivityProvider({
   };
 
   const addActivity = (activity: Activity) => {
-    setActivityFeed((prev) => [activity, ...prev]);
+    setActivityFeed((prev) => [activity, ...prev].slice(0, limit));
   };
 
   // ============================================================================

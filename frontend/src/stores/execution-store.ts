@@ -481,7 +481,7 @@ export const useExecutionStore = create<ExecutionStore>()(
 
       addExecutionEvent: (event: ExecutionEvent) => {
         set((state) => ({
-          executionEvents: [...state.executionEvents, event],
+          executionEvents: [...state.executionEvents, event].slice(-1000),
         }));
 
         // Process event to update states

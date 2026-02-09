@@ -3,8 +3,9 @@
 /**
  * UI Bridge Command Handler Hook
  *
- * This hook polls the server for pending commands and executes them
- * using the UIBridgeRegistry in the browser context.
+ * Receives commands from the server via Server-Sent Events (SSE) and executes
+ * them using the UIBridgeRegistry in the browser context. Replaces the previous
+ * polling approach to eliminate unnecessary network requests and memory pressure.
  *
  * Usage:
  * Place this hook in a component that wraps your app (like the root layout)
@@ -15,11 +16,12 @@ import { useEffect, useRef, useCallback } from "react";
 import { useUIBridge } from "@qontinui/ui-bridge/react";
 import type { ControlSnapshot } from "@qontinui/ui-bridge/control";
 
-// Command polling interval in milliseconds
-const POLL_INTERVAL_MS = 500;
-
 // API endpoints
-const COMMANDS_ENDPOINT = "/api/ui-bridge/commands";
+const COMMANDS_RESPONSE_ENDPOINT = "/api/ui-bridge/commands";
+const COMMANDS_STREAM_ENDPOINT = "/api/ui-bridge/commands/stream";
+
+// SSE reconnection delay in milliseconds
+const SSE_RECONNECT_DELAY_MS = 3000;
 
 /**
  * Get recovery suggestions based on error code
@@ -154,19 +156,15 @@ interface QueuedCommand {
   timestamp: number;
 }
 
-interface CommandsResponse {
-  success: boolean;
-  commands: QueuedCommand[];
-  timestamp: number;
-}
-
 /**
  * Hook to handle UI Bridge commands from external clients
  */
 export function useUIBridgeCommandHandler(enabled: boolean = true) {
   const { elements, getElement } = useUIBridge();
-  const isPollingRef = useRef(false);
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
 
   /**
    * Execute a command and return the result
@@ -704,7 +702,8 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         }
 
         case "aiAssert": {
-          const { createAssertionExecutor } = await import("@qontinui/ui-bridge/ai");
+          const { createAssertionExecutor } =
+            await import("@qontinui/ui-bridge/ai");
           type AssertionType = import("@qontinui/ui-bridge/ai").AssertionType;
           // elements is available from hook scope
           const executor = createAssertionExecutor({});
@@ -726,7 +725,8 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         }
 
         case "aiAssertBatch": {
-          const { createAssertionExecutor } = await import("@qontinui/ui-bridge/ai");
+          const { createAssertionExecutor } =
+            await import("@qontinui/ui-bridge/ai");
           type AssertionType = import("@qontinui/ui-bridge/ai").AssertionType;
           // elements is available from hook scope
           const executor = createAssertionExecutor({});
@@ -754,7 +754,8 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         }
 
         case "getSemanticSnapshot": {
-          const { createSnapshotManager } = await import("@qontinui/ui-bridge/ai");
+          const { createSnapshotManager } =
+            await import("@qontinui/ui-bridge/ai");
           // elements is available from hook scope
           const manager = createSnapshotManager({});
           const controlSnapshot = {
@@ -780,7 +781,8 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         }
 
         case "getPageSummary": {
-          const { generatePageSummary } = await import("@qontinui/ui-bridge/ai");
+          const { generatePageSummary } =
+            await import("@qontinui/ui-bridge/ai");
           // elements is available from hook scope
           // Convert RegisteredElement[] to minimal AIDiscoveredElement-like objects for the summary
           const aiElements = elements.map((e) => ({
@@ -902,6 +904,29 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
   );
 
   /**
+   * Send a command response back to the server
+   */
+  const sendResponse = useCallback(
+    async (commandId: string, success: boolean, result: unknown) => {
+      try {
+        await fetch(COMMANDS_RESPONSE_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            commandId,
+            success,
+            result,
+            error: success ? undefined : (result as { error?: string })?.error,
+          }),
+        });
+      } catch (e) {
+        console.error("[UIBridge] Failed to send command response:", e);
+      }
+    },
+    []
+  );
+
+  /**
    * Process a single command
    */
   const processCommand = useCallback(
@@ -918,32 +943,12 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           failureDetails?: unknown;
         };
         if (resultObj && resultObj.success === false) {
-          // Send structured failure response
-          await fetch(COMMANDS_ENDPOINT, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              commandId: command.commandId,
-              success: false,
-              result, // Include full result with failureDetails
-              error: (result as { error?: string }).error,
-            }),
-          });
+          await sendResponse(command.commandId, false, result);
           return;
         }
 
-        // Send success response
-        await fetch(COMMANDS_ENDPOINT, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            commandId: command.commandId,
-            success: true,
-            result,
-          }),
-        });
+        await sendResponse(command.commandId, true, result);
       } catch (e: unknown) {
-        // Send error response with structured failure details
         const errorMessage = (e as Error).message;
         let errorCode = "UNKNOWN_ERROR";
 
@@ -958,93 +963,126 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           errorCode = "PARSE_ERROR";
         }
 
-        await fetch(COMMANDS_ENDPOINT, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            commandId: command.commandId,
-            success: false,
-            error: errorMessage,
-            result: {
-              success: false,
-              error: errorMessage,
-              failureDetails: {
-                errorCode,
-                message: errorMessage,
-                suggestedActions: getRecoverySuggestions(errorCode),
-                retryRecommended: [
-                  "ACTION_TIMEOUT",
-                  "ELEMENT_NOT_VISIBLE",
-                ].includes(errorCode),
-                timestamp: Date.now(),
-              },
-              durationMs: 0,
-              timestamp: Date.now(),
-            },
-          }),
+        await sendResponse(command.commandId, false, {
+          success: false,
+          error: errorMessage,
+          failureDetails: {
+            errorCode,
+            message: errorMessage,
+            suggestedActions: getRecoverySuggestions(errorCode),
+            retryRecommended: [
+              "ACTION_TIMEOUT",
+              "ELEMENT_NOT_VISIBLE",
+            ].includes(errorCode),
+            timestamp: Date.now(),
+          },
+          durationMs: 0,
+          timestamp: Date.now(),
         });
       }
     },
-    [executeCommand]
+    [executeCommand, sendResponse]
   );
 
   /**
-   * Poll for and process commands
-   */
-  const pollCommands = useCallback(async () => {
-    if (isPollingRef.current) return;
-    isPollingRef.current = true;
-
-    try {
-      const response = await fetch(COMMANDS_ENDPOINT);
-      if (!response.ok) {
-        console.error(
-          "[UIBridge] Failed to poll commands:",
-          response.statusText
-        );
-        return;
-      }
-
-      const data: CommandsResponse = await response.json();
-      if (data.commands && data.commands.length > 0) {
-        // Process all commands concurrently
-        await Promise.all(data.commands.map(processCommand));
-      }
-    } catch (e: unknown) {
-      console.error("[UIBridge] Error polling commands:", e);
-    } finally {
-      isPollingRef.current = false;
-    }
-  }, [processCommand]);
-
-  /**
-   * Start/stop polling based on enabled state
+   * Connect to the SSE command stream
    */
   useEffect(() => {
     if (!enabled) {
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-        pollIntervalRef.current = null;
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
       }
       return;
     }
 
-    // Start polling
-    pollIntervalRef.current = setInterval(pollCommands, POLL_INTERVAL_MS);
+    let isMounted = true;
 
-    // Initial poll
-    pollCommands();
+    const connect = () => {
+      if (!isMounted) return;
 
-    return () => {
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-        pollIntervalRef.current = null;
+      const es = new EventSource(COMMANDS_STREAM_ENDPOINT);
+      eventSourceRef.current = es;
+
+      es.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          // Skip the initial connection event
+          if (data.type === "connected") {
+            console.debug("[UIBridge] SSE stream connected");
+            return;
+          }
+
+          // Process the command
+          if (data.commandId && data.action) {
+            processCommand(data as QueuedCommand);
+          }
+        } catch (e) {
+          console.error("[UIBridge] Failed to parse SSE message:", e);
+        }
+      };
+
+      es.onerror = () => {
+        // EventSource automatically reconnects, but we add a delay
+        // to avoid hammering the server
+        es.close();
+        eventSourceRef.current = null;
+
+        if (isMounted && document.visibilityState === "visible") {
+          reconnectTimeoutRef.current = setTimeout(() => {
+            if (isMounted) {
+              console.debug("[UIBridge] Reconnecting SSE stream...");
+              connect();
+            }
+          }, SSE_RECONNECT_DELAY_MS);
+        }
+      };
+    };
+
+    // Only connect when tab is visible
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        if (!eventSourceRef.current) {
+          connect();
+        }
+      } else {
+        if (eventSourceRef.current) {
+          eventSourceRef.current.close();
+          eventSourceRef.current = null;
+        }
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+          reconnectTimeoutRef.current = null;
+        }
       }
     };
-  }, [enabled, pollCommands]);
+
+    if (document.visibilityState === "visible") {
+      connect();
+    }
+
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      isMounted = false;
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [enabled, processCommand]);
 
   return {
     isEnabled: enabled,
-    pollInterval: POLL_INTERVAL_MS,
   };
 }

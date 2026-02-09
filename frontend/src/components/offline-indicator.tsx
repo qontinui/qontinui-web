@@ -7,6 +7,9 @@ export function OfflineIndicator() {
   const [isOnline, setIsOnline] = useState(true);
   const [showReconnected, setShowReconnected] = useState(false);
   const wasOfflineRef = useRef(false);
+  const reconnectedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
 
   useEffect(() => {
     // Only run in browser
@@ -17,7 +20,13 @@ export function OfflineIndicator() {
       // Use ref to track previous state without causing re-renders
       if (wasOfflineRef.current && currentlyOnline) {
         setShowReconnected(true);
-        setTimeout(() => setShowReconnected(false), 3000);
+        if (reconnectedTimeoutRef.current) {
+          clearTimeout(reconnectedTimeoutRef.current);
+        }
+        reconnectedTimeoutRef.current = setTimeout(
+          () => setShowReconnected(false),
+          3000
+        );
       }
       wasOfflineRef.current = !currentlyOnline;
       setIsOnline(currentlyOnline);
@@ -27,17 +36,16 @@ export function OfflineIndicator() {
     setIsOnline(navigator.onLine);
     wasOfflineRef.current = !navigator.onLine;
 
-    // Listen for online/offline events
+    // Listen for online/offline events (no polling needed — browser fires these reliably)
     window.addEventListener("online", updateOnlineStatus);
     window.addEventListener("offline", updateOnlineStatus);
-
-    // Periodic check (every 5 seconds)
-    const interval = setInterval(updateOnlineStatus, 5000);
 
     return () => {
       window.removeEventListener("online", updateOnlineStatus);
       window.removeEventListener("offline", updateOnlineStatus);
-      clearInterval(interval);
+      if (reconnectedTimeoutRef.current) {
+        clearTimeout(reconnectedTimeoutRef.current);
+      }
     };
   }, []); // Empty dependency array - effect only runs once on mount
 

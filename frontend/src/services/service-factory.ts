@@ -26,6 +26,7 @@ import { IssuesService } from "./issues-service";
 import { DiscoveriesService } from "./discoveries-service";
 import { AITasksService } from "./ai-tasks-service";
 import { TemplateCaptureService } from "./template-capture-service";
+import { StateMachineConfigService } from "./state-machine-config-service";
 
 /**
  * ServiceFactory - Single Responsibility: Create and wire up services
@@ -62,6 +63,7 @@ export class ServiceFactory {
   public readonly discoveriesService: DiscoveriesService;
   public readonly aiTasksService: AITasksService;
   public readonly templateCaptureService: TemplateCaptureService;
+  public readonly stateMachineConfigService: StateMachineConfigService;
 
   private constructor() {
     // Initialize auth services in dependency order
@@ -124,6 +126,11 @@ export class ServiceFactory {
     // Initialize template capture service
     this.templateCaptureService = new TemplateCaptureService(this.httpClient);
 
+    // Initialize state machine config service
+    this.stateMachineConfigService = new StateMachineConfigService(
+      this.httpClient
+    );
+
     // Wire up session expiry handling for 401 responses
     this.httpClient.setSessionExpiredHandler(() => {
       this.authService.logout();
@@ -172,3 +179,4 @@ export const issuesService = factory.issuesService;
 export const discoveriesService = factory.discoveriesService;
 export const aiTasksService = factory.aiTasksService;
 export const templateCaptureService = factory.templateCaptureService;
+export const stateMachineConfigService = factory.stateMachineConfigService;

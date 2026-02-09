@@ -456,8 +456,11 @@ export class WebSocketCollaborationService {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
     } else {
-      // Queue message for later
+      // Queue message for later (cap at 100 to prevent unbounded growth during disconnects)
       this.messageQueue.push(message);
+      while (this.messageQueue.length > 100) {
+        this.messageQueue.shift();
+      }
     }
   }
 

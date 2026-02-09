@@ -10,9 +10,9 @@ import {
 } from "lucide-react";
 
 export const metadata = {
-  title: "Qontinui Web Documentation - Visual Automation Builder",
+  title: "Qontinui Web Documentation - Runner Companion",
   description:
-    "Complete guide to building GUI automation workflows with Qontinui Web's visual configuration builder.",
+    "Complete guide to building and managing AI development workflows with Qontinui Web.",
 };
 
 export default function WebDocsPage() {

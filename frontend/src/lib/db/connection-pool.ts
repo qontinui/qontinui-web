@@ -427,6 +427,7 @@ class ConnectionPoolImpl {
    * Close all connections
    */
   closeAll(): void {
+    this.stopHealthChecks();
     for (const [name, state] of this.connections) {
       if (state.db) {
         state.db.close();

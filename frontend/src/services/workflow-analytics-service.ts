@@ -196,6 +196,7 @@ const EXECUTIONS_STORAGE_KEY = "workflow-executions";
  * Get all execution records from storage
  */
 function getExecutions(): ExecutionRecord[] {
+  if (typeof window === "undefined") return [];
   try {
     const data = localStorage.getItem(EXECUTIONS_STORAGE_KEY);
     return data ? JSON.parse(data) : [];
@@ -220,6 +221,7 @@ function saveExecutions(executions: ExecutionRecord[]): void {
  * Get all workflow metrics from storage
  */
 function getMetricsMap(): Record<string, WorkflowMetrics> {
+  if (typeof window === "undefined") return {};
   try {
     const data = localStorage.getItem(METRICS_STORAGE_KEY);
     return data ? JSON.parse(data) : {};

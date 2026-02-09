@@ -32,23 +32,18 @@ const RECONNECT_MULTIPLIER = 1.5;
 const MAX_RECONNECT_DELAY_MS = 30000;
 const JITTER_FACTOR = 0.1; // +/- 10%
 
-// HTTP polling configuration (fallback)
-const HTTP_POLL_INTERVAL_MS = 500;
+// SSE reconnection delay (fallback transport)
+const SSE_RECONNECT_DELAY_MS = 3000;
 
 // API endpoints
 const COMMANDS_ENDPOINT = "/api/ui-bridge/commands";
+const COMMANDS_STREAM_ENDPOINT = "/api/ui-bridge/commands/stream";
 const WEBSOCKET_ENDPOINT = "/api/ui-bridge/ws";
 
 interface QueuedCommand {
   commandId: string;
   action: string;
   payload: unknown;
-  timestamp: number;
-}
-
-interface CommandsResponse {
-  success: boolean;
-  commands: QueuedCommand[];
   timestamp: number;
 }
 
@@ -111,7 +106,7 @@ export interface UIBridgeTransportResult {
   /**
    * Current transport mode being used
    */
-  activeTransport: "websocket" | "http" | "none";
+  activeTransport: "websocket" | "http" | "sse" | "none";
 
   /**
    * Whether the transport is ready to receive commands
@@ -169,7 +164,7 @@ export function useUIBridgeTransport(
   const [connectionState, setConnectionState] =
     useState<ConnectionState>("disconnected");
   const [activeTransport, setActiveTransport] = useState<
-    "websocket" | "http" | "none"
+    "websocket" | "http" | "sse" | "none"
   >("none");
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
 
@@ -177,11 +172,13 @@ export function useUIBridgeTransport(
   const wsRef = useRef<WebSocket | null>(null);
   const clientIdRef = useRef<string>(generateClientId());
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const httpPollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const sseReconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
   const isIntentionallyClosed = useRef(false);
-  const isPollingRef = useRef(false);
   const isTabVisibleRef = useRef(true);
-  const wasPollingBeforeHiddenRef = useRef(false);
+  const wasSSEActiveBeforeHiddenRef = useRef(false);
 
   /**
    * Log helper (only logs if verbose is enabled)
@@ -465,7 +462,8 @@ export function useUIBridgeTransport(
         }
 
         case "aiAssert": {
-          const { createAssertionExecutor } = await import("@qontinui/ui-bridge/ai");
+          const { createAssertionExecutor } =
+            await import("@qontinui/ui-bridge/ai");
           type AssertionType = import("@qontinui/ui-bridge/ai").AssertionType;
           const executor = createAssertionExecutor({});
           executor.updateElements(
@@ -485,7 +483,8 @@ export function useUIBridgeTransport(
         }
 
         case "aiAssertBatch": {
-          const { createAssertionExecutor } = await import("@qontinui/ui-bridge/ai");
+          const { createAssertionExecutor } =
+            await import("@qontinui/ui-bridge/ai");
           type AssertionType = import("@qontinui/ui-bridge/ai").AssertionType;
           const executor = createAssertionExecutor({});
           executor.updateElements(
@@ -511,7 +510,8 @@ export function useUIBridgeTransport(
         }
 
         case "getSemanticSnapshot": {
-          const { createSnapshotManager } = await import("@qontinui/ui-bridge/ai");
+          const { createSnapshotManager } =
+            await import("@qontinui/ui-bridge/ai");
           const manager = createSnapshotManager({});
           const controlSnapshot = {
             timestamp: Date.now(),
@@ -534,7 +534,8 @@ export function useUIBridgeTransport(
         }
 
         case "getPageSummary": {
-          const { generatePageSummary } = await import("@qontinui/ui-bridge/ai");
+          const { generatePageSummary } =
+            await import("@qontinui/ui-bridge/ai");
           const aiElements = elements.map((e) => ({
             id: e.id,
             type: e.type,
@@ -690,11 +691,8 @@ export function useUIBridgeTransport(
         setActiveTransport("websocket");
         setReconnectAttempts(0);
 
-        // Stop HTTP polling if running
-        if (httpPollIntervalRef.current) {
-          clearInterval(httpPollIntervalRef.current);
-          httpPollIntervalRef.current = null;
-        }
+        // Stop SSE if running (WebSocket takes priority)
+        stopSSE();
 
         // Send command_ready message
         const readyMessage: WSCommandReady = {
@@ -717,9 +715,9 @@ export function useUIBridgeTransport(
 
         // Attempt reconnection or fallback
         if (mode === "auto") {
-          // Start HTTP polling as fallback
-          log("Falling back to HTTP polling");
-          startHTTPPolling();
+          // Start SSE as fallback
+          log("Falling back to SSE stream");
+          startSSE();
         }
 
         // Schedule reconnection
@@ -769,16 +767,16 @@ export function useUIBridgeTransport(
       setConnectionState("disconnected");
 
       if (mode === "auto") {
-        startHTTPPolling();
+        startSSE();
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wsUrl, mode, verbose, handleWSMessage, log]);
 
   /**
-   * Process a single HTTP command
+   * Process a single SSE command
    */
-  const processHTTPCommand = useCallback(
+  const processSSECommand = useCallback(
     async (command: QueuedCommand) => {
       try {
         const result = await executeCommand(
@@ -795,14 +793,14 @@ export function useUIBridgeTransport(
             result,
           }),
         });
-      } catch (httpError: unknown) {
+      } catch (cmdError: unknown) {
         await fetch(COMMANDS_ENDPOINT, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             commandId: command.commandId,
             success: false,
-            error: (httpError as Error).message,
+            error: (cmdError as Error).message,
           }),
         });
       }
@@ -811,70 +809,76 @@ export function useUIBridgeTransport(
   );
 
   /**
-   * Poll for HTTP commands
+   * Start SSE connection (replaces HTTP polling)
    */
-  const pollHTTPCommands = useCallback(async () => {
-    if (isPollingRef.current) return;
-    isPollingRef.current = true;
-
-    try {
-      const response = await fetch(COMMANDS_ENDPOINT);
-      if (!response.ok) {
-        console.error(
-          "[UIBridgeTransport] Failed to poll commands:",
-          response.statusText
-        );
-        return;
-      }
-
-      const data: CommandsResponse = await response.json();
-      if (data.commands && data.commands.length > 0) {
-        await Promise.all(data.commands.map(processHTTPCommand));
-      }
-    } catch (pollError: unknown) {
-      console.error("[UIBridgeTransport] Error polling commands:", pollError);
-    } finally {
-      isPollingRef.current = false;
-    }
-  }, [processHTTPCommand]);
-
-  /**
-   * Start HTTP polling
-   */
-  const startHTTPPolling = useCallback(() => {
-    if (httpPollIntervalRef.current) {
-      return; // Already polling
+  const startSSE = useCallback(() => {
+    if (eventSourceRef.current) {
+      return; // Already connected
     }
 
-    // Don't start polling if tab is hidden
+    // Don't start if tab is hidden
     if (!isTabVisibleRef.current) {
-      log("Skipping HTTP polling start - tab is hidden");
-      wasPollingBeforeHiddenRef.current = true; // Remember to start when visible
+      log("Skipping SSE start - tab is hidden");
+      wasSSEActiveBeforeHiddenRef.current = true;
       return;
     }
 
-    log("Starting HTTP polling");
-    setActiveTransport("http");
+    log("Starting SSE stream");
+    setActiveTransport("sse");
     setConnectionState("connected");
 
-    // Initial poll
-    pollHTTPCommands();
+    const es = new EventSource(COMMANDS_STREAM_ENDPOINT);
+    eventSourceRef.current = es;
 
-    // Set up interval
-    httpPollIntervalRef.current = setInterval(
-      pollHTTPCommands,
-      HTTP_POLL_INTERVAL_MS
-    );
-  }, [pollHTTPCommands, log]);
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        // Skip the initial connection event
+        if (data.type === "connected") {
+          log("SSE stream connected");
+          return;
+        }
+
+        // Process commands
+        if (data.commandId && data.action) {
+          processSSECommand(data as QueuedCommand);
+        }
+      } catch (e) {
+        console.error("[UIBridgeTransport] Failed to parse SSE message:", e);
+      }
+    };
+
+    es.onerror = () => {
+      es.close();
+      eventSourceRef.current = null;
+
+      if (isIntentionallyClosed.current) return;
+
+      // Reconnect after delay if tab is visible
+      if (isTabVisibleRef.current) {
+        sseReconnectTimeoutRef.current = setTimeout(() => {
+          if (!isIntentionallyClosed.current && isTabVisibleRef.current) {
+            log("Reconnecting SSE stream...");
+            startSSE();
+          }
+        }, SSE_RECONNECT_DELAY_MS);
+      }
+    };
+  }, [processSSECommand, log]);
 
   /**
-   * Stop HTTP polling
+   * Stop SSE connection
    */
-  const stopHTTPPolling = useCallback(() => {
-    if (httpPollIntervalRef.current) {
-      clearInterval(httpPollIntervalRef.current);
-      httpPollIntervalRef.current = null;
-      log("Stopped HTTP polling");
+  const stopSSE = useCallback(() => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+      log("Stopped SSE stream");
+    }
+    if (sseReconnectTimeoutRef.current) {
+      clearTimeout(sseReconnectTimeoutRef.current);
+      sseReconnectTimeoutRef.current = null;
     }
   }, [log]);
 
@@ -897,13 +901,13 @@ export function useUIBridgeTransport(
       wsRef.current = null;
     }
 
-    // Stop HTTP polling
-    stopHTTPPolling();
+    // Stop SSE
+    stopSSE();
 
     setConnectionState("disconnected");
     setActiveTransport("none");
     setReconnectAttempts(0);
-  }, [stopHTTPPolling, log]);
+  }, [stopSSE, log]);
 
   /**
    * Reconnect transport
@@ -918,11 +922,11 @@ export function useUIBridgeTransport(
 
     // Connect based on mode
     if (mode === "http") {
-      startHTTPPolling();
+      startSSE();
     } else {
       connectWebSocket();
     }
-  }, [disconnect, mode, startHTTPPolling, connectWebSocket, log]);
+  }, [disconnect, mode, startSSE, connectWebSocket, log]);
 
   /**
    * Handle tab visibility changes to pause/resume polling
@@ -933,26 +937,32 @@ export function useUIBridgeTransport(
     isTabVisibleRef.current = isVisible;
 
     if (isVisible && !wasVisible) {
-      // Tab became visible - resume polling if it was active before
+      // Tab became visible - resume SSE if it was active before
       log("Tab became visible, resuming transport");
-      if (wasPollingBeforeHiddenRef.current && activeTransport === "http") {
-        startHTTPPolling();
+      if (
+        wasSSEActiveBeforeHiddenRef.current &&
+        (activeTransport === "sse" || activeTransport === "http")
+      ) {
+        startSSE();
       }
       // For WebSocket, check if we need to reconnect
       if (activeTransport === "websocket" || activeTransport === "none") {
-        if (wsRef.current?.readyState !== WebSocket.OPEN && !isIntentionallyClosed.current) {
+        if (
+          wsRef.current?.readyState !== WebSocket.OPEN &&
+          !isIntentionallyClosed.current
+        ) {
           log("Reconnecting WebSocket after tab became visible");
           connectWebSocket();
         }
       }
     } else if (!isVisible && wasVisible) {
-      // Tab became hidden - pause polling to save resources
-      log("Tab hidden, pausing HTTP polling");
-      wasPollingBeforeHiddenRef.current = httpPollIntervalRef.current !== null;
-      stopHTTPPolling();
+      // Tab became hidden - disconnect SSE to save resources
+      log("Tab hidden, stopping SSE stream");
+      wasSSEActiveBeforeHiddenRef.current = eventSourceRef.current !== null;
+      stopSSE();
       // Note: We keep WebSocket connected since it's low overhead when idle
     }
-  }, [activeTransport, log, startHTTPPolling, stopHTTPPolling, connectWebSocket]);
+  }, [activeTransport, log, startSSE, stopSSE, connectWebSocket]);
 
   /**
    * Set up visibility change listener
@@ -987,7 +997,7 @@ export function useUIBridgeTransport(
     }
 
     if (mode === "http") {
-      startHTTPPolling();
+      startSSE();
     } else {
       // 'websocket' or 'auto' - try WebSocket first
       connectWebSocket();

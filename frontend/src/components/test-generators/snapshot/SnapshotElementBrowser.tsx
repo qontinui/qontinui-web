@@ -159,7 +159,10 @@ export function SnapshotElementBrowser({
           );
         })}
         {grouped.length === 0 && (
-          <div className="p-4 text-xs text-neutral-500 text-center" data-ui-element>
+          <div
+            className="p-4 text-xs text-neutral-500 text-center"
+            data-ui-element
+          >
             {search
               ? "No elements match your search."
               : "No elements captured yet."}

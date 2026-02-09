@@ -24,9 +24,10 @@ interface ReleaseInfo {
 
 // Latest release info - update this when releasing
 const LATEST_RELEASE: ReleaseInfo = {
-  version: "0.1.0",
-  date: "November 9, 2025",
-  github_url: "https://github.com/qontinui/qontinui-runner/releases/tag/v0.1.0",
+  version: "1.0.0-beta.1",
+  date: "2026",
+  github_url:
+    "https://github.com/qontinui/qontinui-runner/releases/tag/v1.0.0-beta.1",
 };
 
 function detectPlatform(): Platform {
@@ -173,17 +174,18 @@ export default function DownloadPage() {
                 <Button
                   size="lg"
                   disabled={
-                    downloading === "Qontinui.Runner_0.1.0_x64_en-US.msi"
+                    downloading === "Qontinui.Runner_1.0.0-beta.1_x64_en-US.msi"
                   }
                   onClick={() =>
                     handleDownload(
                       "windows",
-                      "Qontinui.Runner_0.1.0_x64_en-US.msi"
+                      "Qontinui.Runner_1.0.0-beta.1_x64_en-US.msi"
                     )
                   }
                   className="bg-primary hover:bg-primary/90"
                 >
-                  {downloading === "Qontinui.Runner_0.1.0_x64_en-US.msi" ? (
+                  {downloading ===
+                  "Qontinui.Runner_1.0.0-beta.1_x64_en-US.msi" ? (
                     <>
                       <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                       Starting Download...
@@ -264,7 +266,7 @@ export default function DownloadPage() {
             downloads={[
               {
                 name: "Windows Installer (MSI)",
-                file: "Qontinui.Runner_0.1.0_x64_en-US.msi",
+                file: "Qontinui.Runner_1.0.0-beta.1_x64_en-US.msi",
                 size: "~6 MB",
                 type: "MSI Package",
                 signed: false, // Update to true when signed
@@ -273,14 +275,14 @@ export default function DownloadPage() {
                 onDownload: () =>
                   handleDownload(
                     "windows",
-                    "Qontinui.Runner_0.1.0_x64_en-US.msi"
+                    "Qontinui.Runner_1.0.0-beta.1_x64_en-US.msi"
                   ),
                 downloading:
-                  downloading === "Qontinui.Runner_0.1.0_x64_en-US.msi",
+                  downloading === "Qontinui.Runner_1.0.0-beta.1_x64_en-US.msi",
               },
               {
                 name: "Windows Installer (EXE)",
-                file: "Qontinui.Runner_0.1.0_x64-setup.exe",
+                file: "Qontinui.Runner_1.0.0-beta.1_x64-setup.exe",
                 size: "~4 MB",
                 type: "NSIS Installer",
                 signed: false,
@@ -288,10 +290,10 @@ export default function DownloadPage() {
                 onDownload: () =>
                   handleDownload(
                     "windows",
-                    "Qontinui.Runner_0.1.0_x64-setup.exe"
+                    "Qontinui.Runner_1.0.0-beta.1_x64-setup.exe"
                   ),
                 downloading:
-                  downloading === "Qontinui.Runner_0.1.0_x64-setup.exe",
+                  downloading === "Qontinui.Runner_1.0.0-beta.1_x64-setup.exe",
               },
             ]}
           />

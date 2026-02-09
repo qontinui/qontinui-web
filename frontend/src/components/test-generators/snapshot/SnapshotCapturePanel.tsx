@@ -68,7 +68,10 @@ export function SnapshotCapturePanel({
           >
             {isConnected ? "Connected" : "Disconnected"}
           </span>
-          <span className="text-xs text-neutral-500 truncate max-w-[200px]" data-ui-element>
+          <span
+            className="text-xs text-neutral-500 truncate max-w-[200px]"
+            data-ui-element
+          >
             {runnerUrl}
           </span>
         </div>

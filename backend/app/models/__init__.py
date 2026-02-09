@@ -69,6 +69,7 @@ from app.models.execution_tree_event import (
     TreeNodeType,
 )
 from app.models.extraction import ExtractionAnnotation, ExtractionSession
+from app.models.finding_category_config import FindingCategoryConfig
 from app.models.notification import (
     Notification,
     NotificationPreferences,
@@ -119,6 +120,7 @@ from app.models.snapshot import (
 )
 from app.models.software_test_run import SoftwareTestRun, TestRunStatus
 from app.models.state_discovery_result import DiscoverySourceType, StateDiscoveryResult
+from app.models.state_machine_config import StateMachineConfig
 from app.models.state_transition import StateTransition
 from app.models.storage_usage import StorageUsage
 from app.models.subscription import Subscription, SubscriptionStatus, SubscriptionTier
@@ -201,6 +203,11 @@ from app.models.visual_comparison_result import (
     VisualComparisonStatus,
 )
 from app.models.workflow_execution_history import WorkflowExecutionHistory
+from app.models.workflow_step_type import (
+    GuiActionTypeConfig,
+    StepTypeConfig,
+    WorkflowPhaseConfig,
+)
 from app.models.workflow_test_association import TriggerPoint, WorkflowTestAssociation
 from app.models.workflow_variable import (
     VariableHistory,
@@ -260,6 +267,8 @@ __all__ = [
     "AnalyticsEvent",
     # Detected Issues
     "DetectedIssue",
+    # Finding Category Configs
+    "FindingCategoryConfig",
     # Discoveries
     "Discovery",
     # State Discovery
@@ -430,4 +439,10 @@ __all__ = [
     # Template Capture (click-to-template)
     "TemplateCandidate",
     "ApplicationProfile",
+    # State Machine Builder Configs
+    "StateMachineConfig",
+    # Workflow Step Type Configs
+    "StepTypeConfig",
+    "GuiActionTypeConfig",
+    "WorkflowPhaseConfig",
 ]

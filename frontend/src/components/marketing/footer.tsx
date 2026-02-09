@@ -8,11 +8,9 @@ export function Footer() {
           {/* Brand */}
           <div>
             <h3 className="text-lg font-bold text-primary mb-4">Qontinui</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              Model-based GUI automation that adapts to unexpected changes.
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Free during early access until February 2026
+            <p className="text-sm text-muted-foreground">
+              Open-source AI development platform with orchestrated workflows,
+              verification loops, and visual feedback.
             </p>
           </div>
 
@@ -22,14 +20,6 @@ export function Footer() {
             <ul className="space-y-2">
               <li>
                 <Link
-                  href="/docs"
-                  className="text-sm text-muted-foreground hover:text-primary transition-colors"
-                >
-                  Documentation
-                </Link>
-              </li>
-              <li>
-                <Link
                   href="/runner/download"
                   className="text-sm text-muted-foreground hover:text-primary transition-colors"
                 >
@@ -37,13 +27,21 @@ export function Footer() {
                 </Link>
               </li>
               <li>
+                <Link
+                  href="/docs"
+                  className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                >
+                  Documentation
+                </Link>
+              </li>
+              <li>
                 <a
-                  href="https://github.com/qontinui/qontinui"
+                  href="https://github.com/qontinui/qontinui-runner"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-sm text-muted-foreground hover:text-primary transition-colors"
                 >
-                  pip install qontinui
+                  GitHub
                 </a>
               </li>
             </ul>
@@ -60,7 +58,7 @@ export function Footer() {
                   rel="noopener noreferrer"
                   className="text-sm text-muted-foreground hover:text-primary transition-colors"
                 >
-                  Springer Paper (Oct 2025)
+                  Springer Paper (2025)
                 </a>
               </li>
               <li>
@@ -129,7 +127,7 @@ export function Footer() {
         {/* Bottom Bar */}
         <div className="mt-8 pt-8 border-t border-border text-center">
           <p className="text-sm text-muted-foreground">
-            © {new Date().getFullYear()} Qontinui. All rights reserved.
+            &copy; {new Date().getFullYear()} Qontinui. All rights reserved.
           </p>
         </div>
       </div>

@@ -14,8 +14,14 @@
  */
 
 import React from "react";
-import { UIBridgeProvider, AutoRegisterProvider } from "@qontinui/ui-bridge/react";
-import type { UIBridgeFeatures, UIBridgeConfig } from "@qontinui/ui-bridge/core";
+import {
+  UIBridgeProvider,
+  AutoRegisterProvider,
+} from "@qontinui/ui-bridge/react";
+import type {
+  UIBridgeFeatures,
+  UIBridgeConfig,
+} from "@qontinui/ui-bridge/core";
 import { UIBridgeTransportListener } from "./UIBridgeTransportListener";
 import type { TransportMode } from "./useUIBridgeTransport";
 
@@ -34,7 +40,7 @@ const features: UIBridgeFeatures = {
  */
 const config: UIBridgeConfig = {
   verbose: process.env.NODE_ENV === "development",
-  maxLogEntries: 1000,
+  maxLogEntries: 10, // Reduced from 1000 - each entry is a full DOM snapshot (several MB)
 };
 
 interface UIBridgeWrapperProps {

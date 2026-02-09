@@ -1357,6 +1357,7 @@ export class WorkflowTestingService {
    * Load all data from localStorage
    */
   private loadFromStorage(): void {
+    if (typeof window === "undefined") return;
     try {
       const testCasesData = localStorage.getItem(STORAGE_KEYS.TEST_CASES);
       if (testCasesData) {

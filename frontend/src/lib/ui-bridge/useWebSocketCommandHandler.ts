@@ -367,7 +367,8 @@ export function useWebSocketCommandHandler() {
         }
 
         case "aiAssert": {
-          const { createAssertionExecutor } = await import("@qontinui/ui-bridge/ai");
+          const { createAssertionExecutor } =
+            await import("@qontinui/ui-bridge/ai");
           type AssertionType = import("@qontinui/ui-bridge/ai").AssertionType;
           const executor = createAssertionExecutor({});
           executor.updateElements(
@@ -389,7 +390,8 @@ export function useWebSocketCommandHandler() {
         }
 
         case "aiAssertBatch": {
-          const { createAssertionExecutor } = await import("@qontinui/ui-bridge/ai");
+          const { createAssertionExecutor } =
+            await import("@qontinui/ui-bridge/ai");
           type AssertionType = import("@qontinui/ui-bridge/ai").AssertionType;
           const executor = createAssertionExecutor({});
           executor.updateElements(
@@ -417,7 +419,8 @@ export function useWebSocketCommandHandler() {
         }
 
         case "getSemanticSnapshot": {
-          const { createSnapshotManager } = await import("@qontinui/ui-bridge/ai");
+          const { createSnapshotManager } =
+            await import("@qontinui/ui-bridge/ai");
           const manager = createSnapshotManager({});
           const controlSnapshot = {
             timestamp: Date.now(),
@@ -441,7 +444,8 @@ export function useWebSocketCommandHandler() {
         }
 
         case "getPageSummary": {
-          const { generatePageSummary } = await import("@qontinui/ui-bridge/ai");
+          const { generatePageSummary } =
+            await import("@qontinui/ui-bridge/ai");
           // Convert RegisteredElement[] to minimal AIDiscoveredElement-like objects for the summary
           const aiElements = bridge.elements.map((e) => ({
             id: e.id,

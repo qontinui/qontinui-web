@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, LogIn, Globe } from "lucide-react";
+import { ArrowRight, LogIn, Github, Download } from "lucide-react";
 import { AuthDialog } from "@/components/auth-dialog";
 import { useAuth } from "@/contexts/auth-context";
 
@@ -28,25 +28,27 @@ export function Header() {
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
-              onClick={() => router.push("/demo")}
-              className="hover:bg-primary/10"
-            >
-              <Globe className="mr-2 h-4 w-4" />
-              Demo
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => router.push("/runner/download")}
-              className="hover:bg-primary/10"
-            >
-              Download
-            </Button>
-            <Button
-              variant="ghost"
               onClick={() => router.push("/docs")}
               className="hover:bg-primary/10"
             >
               Docs
+            </Button>
+            <a
+              href="https://github.com/qontinui"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Button variant="ghost" className="hover:bg-primary/10">
+                <Github className="mr-2 h-4 w-4" />
+                GitHub
+              </Button>
+            </a>
+            <Button
+              onClick={() => router.push("/runner/download")}
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Download
             </Button>
             {user ? (
               <div className="flex items-center space-x-4">
@@ -58,7 +60,7 @@ export function Header() {
                   onClick={() => router.push("/dashboard")}
                   className="border-primary/50 hover:border-primary hover:bg-primary/10"
                 >
-                  Go to Dashboard
+                  Dashboard
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
                 {user.is_superuser && (
@@ -67,19 +69,19 @@ export function Header() {
                     onClick={() => router.push("/admin")}
                     className="border-secondary/50 hover:border-secondary hover:bg-secondary/10"
                   >
-                    Go to Admin
+                    Admin
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 )}
               </div>
             ) : (
               <Button
-                variant="outline"
+                variant="ghost"
                 onClick={() => {
                   setSignupMode(false);
                   setAuthDialogOpen(true);
                 }}
-                className="border-primary/50 hover:border-primary hover:bg-primary/10"
+                className="hover:bg-primary/10"
               >
                 <LogIn className="mr-2 h-4 w-4" />
                 Sign In

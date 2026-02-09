@@ -187,7 +187,9 @@ export const useExecutionDebugger = create<ExecutionDebuggerStore>(
           actionEvents: state.actionEvents.map((e) =>
             e.actionIndex === actionIndex ? completedEvent : e
           ),
-          executionHistory: [...state.executionHistory, completedEvent],
+          executionHistory: [...state.executionHistory, completedEvent].slice(
+            -1000
+          ),
         }));
 
         get().addLog(
@@ -222,7 +224,9 @@ export const useExecutionDebugger = create<ExecutionDebuggerStore>(
           actionEvents: state.actionEvents.map((e) =>
             e.actionIndex === actionIndex ? failedEvent : e
           ),
-          executionHistory: [...state.executionHistory, failedEvent],
+          executionHistory: [...state.executionHistory, failedEvent].slice(
+            -1000
+          ),
           state: "error",
         }));
 
@@ -268,7 +272,9 @@ export const useExecutionDebugger = create<ExecutionDebuggerStore>(
 
     recordConditionEvaluation: (evaluation: ConditionEvaluation) => {
       set((state) => ({
-        conditionEvaluations: [...state.conditionEvaluations, evaluation],
+        conditionEvaluations: [...state.conditionEvaluations, evaluation].slice(
+          -500
+        ),
       }));
 
       get().addLog(
@@ -384,7 +390,7 @@ export const useExecutionDebugger = create<ExecutionDebuggerStore>(
             value,
             actionIndex,
           },
-        ],
+        ].slice(-1000),
       }));
 
       get().addLog(
@@ -563,7 +569,7 @@ export const useExecutionDebugger = create<ExecutionDebuggerStore>(
       };
 
       set((state) => ({
-        logs: [...state.logs, log],
+        logs: [...state.logs, log].slice(-2000),
       }));
     },
 

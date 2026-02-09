@@ -97,7 +97,8 @@ export function AnnotationEditor({
           <BarChart3 className="w-4 h-4 text-emerald-400" />
           <span className="text-sm font-medium text-neutral-200">Coverage</span>
           <span className="text-sm text-neutral-400">
-            {coveragePercent}% annotated ({annotatedCount}/{totalCount} elements)
+            {coveragePercent}% annotated ({annotatedCount}/{totalCount}{" "}
+            elements)
           </span>
         </div>
         {/* Progress bar */}

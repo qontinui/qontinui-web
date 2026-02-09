@@ -9,7 +9,6 @@ import {
   Network,
   Sparkles,
   CheckCircle2,
-  BarChart3,
   Settings,
   FileText,
   ChevronRight,
@@ -37,10 +36,39 @@ import {
   Download,
   Upload,
   Database,
+  BarChart3,
   AlertCircle,
   BookOpen,
   PanelLeftClose,
   PanelLeftOpen,
+  History,
+  Activity,
+  Bug,
+  TrendingUp,
+  Brain,
+  Flag,
+  Terminal,
+  Layers,
+  ListChecks,
+  Wrench,
+  Eye,
+  Calendar,
+  FileCode,
+  Webhook,
+  Library,
+  ScanSearch,
+  Zap,
+  Code2,
+  Bot,
+  ShieldCheck,
+  FlaskConical,
+  Wifi,
+  FolderOpen,
+  HardDrive,
+  Archive,
+  Compass,
+  Clock,
+  HelpCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -100,6 +128,10 @@ interface NavItem {
 // Navigation Items
 // =============================================================================
 
+// =============================================================================
+// Runner-Focused Navigation (primary)
+// =============================================================================
+
 const navItems: NavItem[] = [
   {
     id: "dashboard",
@@ -111,383 +143,203 @@ const navItems: NavItem[] = [
   {
     id: "build",
     label: "Build",
-    icon: <Network className="size-5" />,
-    route: "/automation-builder/states",
+    icon: <Layers className="size-5" />,
+    route: "/build/workflows",
     color: "var(--brand-secondary)",
     children: [
       {
-        id: "state-machine",
-        label: "State Machine",
-        description: "Define states and transitions",
-        icon: <Network className="size-4" />,
-        route: "/automation-builder/states",
-        color: "var(--brand-secondary)",
-      },
-      {
-        id: "workflows",
+        id: "build-workflows",
         label: "Workflows",
-        description: "Create automation action sequences",
+        description: "Unified workflow editor",
         icon: <Workflow className="size-4" />,
-        route: "/automation-builder",
+        route: "/build/workflows",
         color: "var(--brand-secondary)",
       },
       {
-        id: "variables",
-        label: "Variables",
-        description: "Global configuration values",
-        icon: <Sliders className="size-4" />,
-        route: "/automation-builder/variables",
+        id: "build-library",
+        label: "Library",
+        description: "Cross-category asset browser",
+        icon: <Library className="size-4" />,
+        route: "/build/library",
         color: "var(--brand-secondary)",
       },
       {
-        id: "contexts",
-        label: "AI Contexts",
-        description: "Domain knowledge for AI tasks",
-        icon: <BookOpen className="size-4" />,
-        route: "/automation-builder/contexts",
+        id: "build-tests",
+        label: "Tests",
+        description: "Playwright test builder",
+        icon: <TestTube2 className="size-4" />,
+        route: "/build/tests",
         color: "var(--brand-secondary)",
       },
       {
-        id: "marketplace",
-        label: "Marketplace",
-        description: "Community automation packages",
-        icon: <Store className="size-4" />,
-        route: "/marketplace",
-        color: "var(--brand-secondary)",
-        hidden: true,
-      },
-    ],
-  },
-  {
-    id: "assets",
-    label: "Assets",
-    icon: <ImageIcon className="size-5" />,
-    route: "/automation-builder/images",
-    color: "#8B5CF6",
-    children: [
-      {
-        id: "images",
-        label: "Images",
-        description: "Pattern image library",
-        icon: <ImageIcon className="size-4" />,
-        route: "/automation-builder/images",
-        color: "#8B5CF6",
-      },
-      {
-        id: "screenshots",
-        label: "Screenshots",
-        description: "Uploaded screenshots for pattern creation",
-        icon: <Camera className="size-4" />,
-        route: "/automation-builder/screenshots",
-        color: "#8B5CF6",
-      },
-      {
-        id: "recordings",
-        label: "Recordings",
-        description: "Video recordings for state discovery",
-        icon: <Video className="size-4" />,
-        route: "/recordings",
-        color: "#8B5CF6",
-        hidden: true,
-      },
-      {
-        id: "visual-index",
-        label: "Visual Index",
-        description: "Indexed elements for visual search",
-        icon: <Database className="size-4" />,
-        route: "/projects/:projectId/rag",
-        color: "#8B5CF6",
-        hidden: true,
-      },
-    ],
-  },
-  {
-    id: "create",
-    label: "Create",
-    icon: <Sparkles className="size-5" />,
-    route: "/automation-builder/image-extraction",
-    color: "var(--brand-success)",
-    children: [
-      {
-        id: "extract-images",
-        label: "Extract Images",
-        description: "Cut pattern images from screenshots",
-        icon: <Scissors className="size-4" />,
-        route: "/automation-builder/image-extraction",
-        color: "var(--brand-success)",
-      },
-      {
-        id: "pattern-extraction",
-        label: "Pattern Extraction",
-        description: "Extract robust patterns from screenshots",
-        icon: <Sparkles className="size-4" />,
-        route: "/automation-builder/pattern-optimization",
-        color: "var(--brand-success)",
-      },
-      {
-        id: "annotations",
-        label: "Annotations",
-        description: "Create regions and locations for states",
-        icon: <Scan className="size-4" />,
-        route: "/automation-builder/annotations",
-        color: "var(--brand-success)",
-        adminOnly: true,
-      },
-      {
-        id: "template-capture",
-        label: "Template Capture",
-        description: "Click-to-template element detection",
-        icon: <Target className="size-4" />,
-        route: "/automation-builder/template-capture",
-        color: "var(--brand-success)",
-      },
-    ],
-  },
-  {
-    id: "discover",
-    label: "Discover",
-    icon: <Search className="size-5" />,
-    route: "/automation-builder/snapshot-tests",
-    color: "#4ECDC4",
-    hidden: true,
-    children: [
-      {
-        id: "snapshot-tests",
-        label: "Snapshot Tests",
-        description: "Generate tests from page snapshot",
-        icon: <Camera className="size-4" />,
-        route: "/automation-builder/snapshot-tests",
-        color: "#10b981",
-        badge: "beta",
-      },
-      {
-        id: "navigation-tests",
-        label: "Navigation Tests",
-        description: "Generate tests from exploration",
-        icon: <GitBranch className="size-4" />,
-        route: "/automation-builder/navigation-tests",
-        color: "#10b981",
-        badge: "beta",
-      },
-      {
-        id: "discover-states",
-        label: "Discover States",
-        description: "Automatically discover UI states",
-        icon: <Search className="size-4" />,
-        route: "/automation-builder/state-discovery",
-        color: "#4ECDC4",
-        badge: "beta",
-        adminOnly: true,
-      },
-      {
-        id: "extraction",
-        label: "Discover",
-        description: "Discover states from web, desktop, or render logs",
+        id: "build-api-requests",
+        label: "API Requests",
+        description: "API request step editor",
         icon: <Globe className="size-4" />,
-        route: "/automation-builder/extraction",
-        color: "#4ECDC4",
-        badge: "beta",
-        hidden: true,
-      },
-    ],
-  },
-  {
-    id: "config-testing",
-    label: "Config Testing",
-    icon: <CheckCircle2 className="size-5" />,
-    route: "/automation-builder/pattern-tests",
-    color: "#FF6B6B",
-    children: [
-      {
-        id: "pattern-tests",
-        label: "Pattern Tests",
-        description: "Test pattern recognition accuracy",
-        icon: <Target className="size-4" />,
-        route: "/automation-builder/pattern-tests",
-        color: "#FF6B6B",
+        route: "/build/api-requests",
+        color: "var(--brand-secondary)",
       },
       {
-        id: "integration-tests",
-        label: "Integration Tests",
-        description: "End-to-end workflow testing",
-        icon: <TestTube2 className="size-4" />,
-        route: "/integration-testing",
-        color: "#FF6B6B",
-        badge: "beta",
-        hidden: true,
+        id: "build-checks",
+        label: "Checks",
+        description: "Verification check editor",
+        icon: <CheckCircle2 className="size-4" />,
+        route: "/build/checks",
+        color: "var(--brand-secondary)",
       },
       {
-        id: "semantic-analysis",
-        label: "Semantic Analysis",
-        description: "Analyze UI element semantics",
-        icon: <Scan className="size-4" />,
-        route: "/automation-builder/semantic-analysis",
-        color: "#FF6B6B",
-        hidden: true,
+        id: "build-contexts",
+        label: "Contexts",
+        description: "AI context authoring",
+        icon: <BookOpen className="size-4" />,
+        route: "/build/contexts",
+        color: "var(--brand-secondary)",
       },
       {
-        id: "rag-testing",
-        label: "RAG Testing",
-        description: "Test RAG element matching with SAM3/CLIP",
-        icon: <Target className="size-4" />,
-        route: "/automation-builder/rag-testing",
-        color: "#FF6B6B",
-        badge: "beta",
-        hidden: true,
+        id: "build-scripts",
+        label: "Scripts",
+        description: "Python script editor",
+        icon: <FileCode className="size-4" />,
+        route: "/build/scripts",
+        color: "var(--brand-secondary)",
       },
       {
-        id: "workflow-runner",
-        label: "Workflow Runner",
-        description: "Execute and debug workflows",
-        icon: <Play className="size-4" />,
-        route: "/workflow-viz",
-        color: "#FF6B6B",
-        hidden: true,
+        id: "build-shell-commands",
+        label: "Shell Commands",
+        description: "Shell command editor",
+        icon: <Terminal className="size-4" />,
+        route: "/build/shell-commands",
+        color: "var(--brand-secondary)",
       },
       {
-        id: "captures",
-        label: "Captures",
-        description: "Execution recordings with input events",
-        icon: <Camera className="size-4" />,
-        route: "/captures",
-        color: "#FF6B6B",
-        hidden: true,
-      },
-    ],
-  },
-  {
-    id: "qa-testing",
-    label: "QA Testing",
-    icon: <TestTube2 className="size-5" />,
-    route: "/qa-dashboard",
-    color: "#F59E0B",
-    hidden: true,
-    children: [
-      {
-        id: "qa-dashboard",
-        label: "Dashboard",
-        description: "QA testing overview and metrics",
-        icon: <LayoutDashboard className="size-4" />,
-        route: "/qa-dashboard",
-        color: "#F59E0B",
+        id: "build-macros",
+        label: "Macros",
+        description: "Sequential action macros",
+        icon: <Zap className="size-4" />,
+        route: "/build/macros",
+        color: "var(--brand-secondary)",
       },
       {
-        id: "test-runs",
-        label: "Test Runs",
-        description: "View test execution history",
-        icon: <Play className="size-4" />,
-        route: "/testing",
-        color: "#F59E0B",
+        id: "build-scriptlets",
+        label: "Scriptlets",
+        description: "Reusable code snippets",
+        icon: <Code2 className="size-4" />,
+        route: "/build/scriptlets",
+        color: "var(--brand-secondary)",
       },
       {
-        id: "qa-runs",
-        label: "QA Runs",
-        description: "QA test run history",
-        icon: <TestTube2 className="size-4" />,
-        route: "/qa-dashboard/runs",
-        color: "#F59E0B",
-      },
-      {
-        id: "coverage",
-        label: "Coverage",
-        description: "Test coverage analysis",
-        icon: <BarChart3 className="size-4" />,
-        route: "/qa-dashboard/coverage",
-        color: "#F59E0B",
-      },
-      {
-        id: "deficiencies",
-        label: "Deficiencies",
-        description: "Track testing deficiencies",
-        icon: <Target className="size-4" />,
-        route: "/qa-dashboard/deficiencies",
-        color: "#F59E0B",
-      },
-      {
-        id: "compare",
-        label: "Compare",
-        description: "Compare test results",
+        id: "build-flow-designer",
+        label: "Flow Designer",
+        description: "AI-assisted workflow structure designer",
         icon: <GitBranch className="size-4" />,
-        route: "/qa-dashboard/compare",
-        color: "#F59E0B",
+        route: "/build/flow-designer",
+        color: "var(--brand-secondary)",
+        hidden: true,
       },
       {
-        id: "execution-history",
-        label: "Execution History",
-        description: "View detailed execution tree events",
-        icon: <Play className="size-4" />,
-        route: "/execution-history",
-        color: "#F59E0B",
+        id: "build-awas",
+        label: "AWAS",
+        description: "Web Action Standards explorer",
+        icon: <Webhook className="size-4" />,
+        route: "/build/awas",
+        color: "var(--brand-secondary)",
+        hidden: true,
       },
-    ],
-  },
-  {
-    id: "ai-tasks",
-    label: "AI Tasks",
-    icon: <Sparkles className="size-5" />,
-    route: "/ai-tasks",
-    color: "#9333EA",
-    hidden: true,
-    children: [
       {
-        id: "ai-tasks-list",
-        label: "All Tasks",
-        description: "View all AI analysis tasks",
+        id: "build-discover",
+        label: "Discover",
+        description: "AI-powered workflow generation",
         icon: <Sparkles className="size-4" />,
-        route: "/ai-tasks",
-        color: "#9333EA",
+        route: "/build/discover",
+        color: "var(--brand-secondary)",
+      },
+      {
+        id: "build-review",
+        label: "Review",
+        description: "UI Bridge full project review",
+        icon: <ScanSearch className="size-4" />,
+        route: "/build/review-workflow",
+        color: "var(--brand-secondary)",
+      },
+      {
+        id: "build-run-plan",
+        label: "Run Plan",
+        description: "Plan/schedule executions",
+        icon: <Calendar className="size-4" />,
+        route: "/build/run-plan",
+        color: "var(--brand-secondary)",
       },
     ],
   },
   {
-    id: "project-tools",
-    label: "Project Tools",
-    icon: <Box className="size-5" />,
-    route: "/automation-builder/overview",
-    color: "var(--brand-primary)",
-    hidden: true,
+    id: "execute",
+    label: "Execute",
+    icon: <Play className="size-5" />,
+    route: "/execute",
+    color: "#10B981",
+  },
+  {
+    id: "runs",
+    label: "Runs",
+    icon: <History className="size-5" />,
+    route: "/runs",
+    color: "#4A90D9",
     children: [
       {
-        id: "overview",
-        label: "Overview",
-        description: "Project summary and quick access",
-        icon: <LayoutDashboard className="size-4" />,
-        route: "/automation-builder/overview",
-        color: "var(--brand-primary)",
+        id: "runs-history",
+        label: "History",
+        description: "Run history browser",
+        icon: <History className="size-4" />,
+        route: "/runs",
+        color: "#4A90D9",
       },
       {
-        id: "dependencies",
-        label: "Dependencies",
-        description: "View state and workflow relationships",
-        icon: <GitBranch className="size-4" />,
-        route: "/automation-builder/dependencies",
-        color: "var(--brand-primary)",
+        id: "runs-active",
+        label: "Active",
+        description: "Live monitoring dashboard",
+        icon: <Activity className="size-4" />,
+        route: "/runs/active",
+        color: "#4A90D9",
       },
       {
-        id: "documentation",
-        label: "Documentation",
-        description: "Auto-generated project docs",
-        icon: <FileText className="size-4" />,
-        route: "/automation-builder/documentation",
-        color: "var(--brand-primary)",
-        hidden: true,
+        id: "runs-findings",
+        label: "Findings",
+        description: "Cross-run findings",
+        icon: <Bug className="size-4" />,
+        route: "/runs/findings",
+        color: "#4A90D9",
       },
       {
-        id: "automation-analytics",
-        label: "Automation Analytics",
-        description: "Performance metrics and insights",
-        icon: <BarChart3 className="size-4" />,
-        route: "/automation-builder/analytics",
-        color: "var(--brand-primary)",
-        hidden: true,
+        id: "runs-statistics",
+        label: "Statistics",
+        description: "Performance analytics",
+        icon: <TrendingUp className="size-4" />,
+        route: "/runs/statistics",
+        color: "#4A90D9",
       },
       {
-        id: "issues",
-        label: "Issues",
-        description: "Track and manage project issues",
-        icon: <AlertCircle className="size-4" />,
-        route: "/issues",
-        color: "var(--brand-primary)",
+        id: "runs-learning",
+        label: "Learning",
+        description: "ML insights dashboard",
+        icon: <Brain className="size-4" />,
+        route: "/runs/learning",
+        color: "#4A90D9",
+      },
+      {
+        id: "runs-checkpoints",
+        label: "Checkpoints",
+        description: "Execution checkpoint browser",
+        icon: <Flag className="size-4" />,
+        route: "/runs/checkpoints",
+        color: "#4A90D9",
+      },
+      {
+        id: "runs-discoveries",
+        label: "Discoveries",
+        description: "GUI state exploration results",
+        icon: <Compass className="size-4" />,
+        route: "/runs/discoveries",
+        color: "#4A90D9",
       },
     ],
   },
@@ -500,7 +352,7 @@ const navItems: NavItem[] = [
     children: [
       {
         id: "runner-list",
-        label: "Manage Runners",
+        label: "Manage",
         description: "View and configure your runners",
         icon: <Server className="size-4" />,
         route: "/runners",
@@ -508,7 +360,7 @@ const navItems: NavItem[] = [
       },
       {
         id: "connect-runner",
-        label: "Connect Runner",
+        label: "Connect",
         description: "Connect a new desktop runner",
         icon: <Link className="size-4" />,
         route: "/connect-runner",
@@ -522,14 +374,535 @@ const navItems: NavItem[] = [
         route: "/monitor",
         color: "#10B981",
       },
+    ],
+  },
+  {
+    id: "tools",
+    label: "Tools",
+    icon: <Wrench className="size-5" />,
+    route: "/tools/error-monitor",
+    color: "#F59E0B",
+    children: [
       {
-        id: "discoveries",
-        label: "Discoveries",
-        description: "Review pending discoveries from runners",
+        id: "tools-error-monitor",
+        label: "Error Monitor",
+        description: "Log error monitoring",
+        icon: <AlertCircle className="size-4" />,
+        route: "/tools/error-monitor",
+        color: "#F59E0B",
+      },
+      {
+        id: "tools-inspector",
+        label: "Inspector",
+        description: "UI & accessibility inspector",
+        icon: <ScanSearch className="size-4" />,
+        route: "/tools/inspector",
+        color: "#F59E0B",
+      },
+      {
+        id: "tools-capture",
+        label: "Capture",
+        description: "Screen capture and recording",
+        icon: <Video className="size-4" />,
+        route: "/tools/capture",
+        color: "#F59E0B",
+      },
+    ],
+  },
+  {
+    id: "configure",
+    label: "Configure",
+    icon: <Sliders className="size-5" />,
+    route: "/configure/log-sources",
+    color: "#8B5CF6",
+    children: [
+      {
+        id: "configure-log-sources",
+        label: "Log Sources",
+        description: "Log file monitoring config",
+        icon: <FileText className="size-4" />,
+        route: "/configure/log-sources",
+        color: "#8B5CF6",
+      },
+      {
+        id: "configure-finding-rules",
+        label: "Finding Rules",
+        description: "Finding categories & rules",
+        icon: <ListChecks className="size-4" />,
+        route: "/configure/finding-rules",
+        color: "#8B5CF6",
+      },
+      {
+        id: "configure-hooks",
+        label: "Hooks",
+        description: "Workflow lifecycle hooks",
+        icon: <Webhook className="size-4" />,
+        route: "/configure/hooks",
+        color: "#8B5CF6",
+      },
+    ],
+  },
+  // ===========================================================================
+  // Visual Automation (hidden in production, visible in dev mode)
+  // Preserves the pre-refactor sidebar structure for GUI automation pages.
+  // ===========================================================================
+  {
+    id: "visual-automation",
+    label: "Visual Automation",
+    icon: <Eye className="size-5" />,
+    route: "/automation-builder/states",
+    color: "#06B6D4",
+    hidden: true,
+    children: [
+      {
+        id: "visual-automation-execute",
+        label: "Execute",
+        description: "GUI automation control surface",
+        icon: <Play className="size-4" />,
+        route: "/tools/visual-automation",
+        color: "#10B981",
+        hidden: true,
+      },
+      {
+        id: "va-build",
+        label: "GUI Build",
+        icon: <Network className="size-4" />,
+        route: "/automation-builder/states",
+        color: "var(--brand-secondary)",
+        hidden: true,
+        children: [
+          {
+            id: "va-state-machine",
+            label: "State Machine",
+            description: "Define states and transitions",
+            icon: <Network className="size-4" />,
+            route: "/automation-builder/states",
+            color: "var(--brand-secondary)",
+            hidden: true,
+          },
+          {
+            id: "va-workflows",
+            label: "Workflows",
+            description: "Create automation action sequences",
+            icon: <Workflow className="size-4" />,
+            route: "/automation-builder",
+            color: "var(--brand-secondary)",
+            hidden: true,
+          },
+          {
+            id: "va-variables",
+            label: "Variables",
+            description: "Global configuration values",
+            icon: <Sliders className="size-4" />,
+            route: "/automation-builder/variables",
+            color: "var(--brand-secondary)",
+            hidden: true,
+          },
+          {
+            id: "va-contexts",
+            label: "AI Contexts",
+            description: "Domain knowledge for AI tasks",
+            icon: <BookOpen className="size-4" />,
+            route: "/automation-builder/contexts",
+            color: "var(--brand-secondary)",
+            hidden: true,
+          },
+          {
+            id: "va-marketplace",
+            label: "Marketplace",
+            description: "Community automation packages",
+            icon: <Store className="size-4" />,
+            route: "/marketplace",
+            color: "var(--brand-secondary)",
+            hidden: true,
+          },
+        ],
+      },
+      {
+        id: "va-assets",
+        label: "Assets",
+        icon: <ImageIcon className="size-4" />,
+        route: "/automation-builder/images",
+        color: "#8B5CF6",
+        hidden: true,
+        children: [
+          {
+            id: "va-images",
+            label: "Images",
+            description: "Pattern image library",
+            icon: <ImageIcon className="size-4" />,
+            route: "/automation-builder/images",
+            color: "#8B5CF6",
+            hidden: true,
+          },
+          {
+            id: "va-screenshots",
+            label: "Screenshots",
+            description: "Uploaded screenshots for pattern creation",
+            icon: <Camera className="size-4" />,
+            route: "/automation-builder/screenshots",
+            color: "#8B5CF6",
+            hidden: true,
+          },
+          {
+            id: "va-recordings",
+            label: "Recordings",
+            description: "Video recordings for state discovery",
+            icon: <Video className="size-4" />,
+            route: "/recordings",
+            color: "#8B5CF6",
+            hidden: true,
+          },
+          {
+            id: "va-visual-index",
+            label: "Visual Index",
+            description: "Indexed elements for visual search",
+            icon: <Database className="size-4" />,
+            route: "/projects/:projectId/rag",
+            color: "#8B5CF6",
+            hidden: true,
+          },
+        ],
+      },
+      {
+        id: "va-create",
+        label: "Create",
         icon: <Sparkles className="size-4" />,
-        route: "/discoveries",
+        route: "/automation-builder/image-extraction",
+        color: "var(--brand-success)",
+        hidden: true,
+        children: [
+          {
+            id: "va-extract-images",
+            label: "Extract Images",
+            description: "Cut pattern images from screenshots",
+            icon: <Scissors className="size-4" />,
+            route: "/automation-builder/image-extraction",
+            color: "var(--brand-success)",
+            hidden: true,
+          },
+          {
+            id: "va-pattern-extraction",
+            label: "Pattern Extraction",
+            description: "Extract robust patterns from screenshots",
+            icon: <Sparkles className="size-4" />,
+            route: "/automation-builder/pattern-optimization",
+            color: "var(--brand-success)",
+            hidden: true,
+          },
+          {
+            id: "va-annotations",
+            label: "Annotations",
+            description: "Create regions and locations for states",
+            icon: <Scan className="size-4" />,
+            route: "/automation-builder/annotations",
+            color: "var(--brand-success)",
+            hidden: true,
+          },
+          {
+            id: "va-template-capture",
+            label: "Template Capture",
+            description: "Click-to-template element detection",
+            icon: <Target className="size-4" />,
+            route: "/automation-builder/template-capture",
+            color: "var(--brand-success)",
+            hidden: true,
+          },
+        ],
+      },
+      {
+        id: "va-discover",
+        label: "Discover",
+        icon: <Search className="size-4" />,
+        route: "/automation-builder/snapshot-tests",
         color: "#4ECDC4",
         hidden: true,
+        children: [
+          {
+            id: "va-snapshot-tests",
+            label: "Snapshot Tests",
+            description: "Generate tests from page snapshot",
+            icon: <Camera className="size-4" />,
+            route: "/automation-builder/snapshot-tests",
+            color: "#10b981",
+            hidden: true,
+          },
+          {
+            id: "va-navigation-tests",
+            label: "Navigation Tests",
+            description: "Generate tests from exploration",
+            icon: <GitBranch className="size-4" />,
+            route: "/automation-builder/navigation-tests",
+            color: "#10b981",
+            hidden: true,
+          },
+          {
+            id: "va-discover-states",
+            label: "Discover States",
+            description: "Automatically discover UI states",
+            icon: <Search className="size-4" />,
+            route: "/automation-builder/state-discovery",
+            color: "#4ECDC4",
+            hidden: true,
+          },
+          {
+            id: "va-extraction",
+            label: "Discover",
+            description: "Discover states from web, desktop, or render logs",
+            icon: <Globe className="size-4" />,
+            route: "/automation-builder/extraction",
+            color: "#4ECDC4",
+            hidden: true,
+          },
+        ],
+      },
+      {
+        id: "va-config-testing",
+        label: "Config Testing",
+        icon: <CheckCircle2 className="size-4" />,
+        route: "/automation-builder/pattern-tests",
+        color: "#FF6B6B",
+        hidden: true,
+        children: [
+          {
+            id: "va-pattern-tests",
+            label: "Pattern Tests",
+            description: "Test pattern recognition accuracy",
+            icon: <Target className="size-4" />,
+            route: "/automation-builder/pattern-tests",
+            color: "#FF6B6B",
+            hidden: true,
+          },
+          {
+            id: "va-integration-tests",
+            label: "Integration Tests",
+            description: "End-to-end workflow testing",
+            icon: <TestTube2 className="size-4" />,
+            route: "/integration-testing",
+            color: "#FF6B6B",
+            hidden: true,
+          },
+          {
+            id: "va-semantic-analysis",
+            label: "Semantic Analysis",
+            description: "Analyze UI element semantics",
+            icon: <Scan className="size-4" />,
+            route: "/automation-builder/semantic-analysis",
+            color: "#FF6B6B",
+            hidden: true,
+          },
+          {
+            id: "va-rag-testing",
+            label: "RAG Testing",
+            description: "Test RAG element matching with SAM3/CLIP",
+            icon: <Target className="size-4" />,
+            route: "/automation-builder/rag-testing",
+            color: "#FF6B6B",
+            hidden: true,
+          },
+          {
+            id: "va-workflow-runner",
+            label: "Workflow Runner",
+            description: "Execute and debug workflows",
+            icon: <Play className="size-4" />,
+            route: "/workflow-viz",
+            color: "#FF6B6B",
+            hidden: true,
+          },
+          {
+            id: "va-captures",
+            label: "Captures",
+            description: "Execution recordings with input events",
+            icon: <Camera className="size-4" />,
+            route: "/captures",
+            color: "#FF6B6B",
+            hidden: true,
+          },
+        ],
+      },
+      {
+        id: "va-qa-testing",
+        label: "QA Testing",
+        icon: <TestTube2 className="size-4" />,
+        route: "/qa-dashboard",
+        color: "#F59E0B",
+        hidden: true,
+        children: [
+          {
+            id: "va-qa-dashboard",
+            label: "Dashboard",
+            description: "QA testing overview and metrics",
+            icon: <LayoutDashboard className="size-4" />,
+            route: "/qa-dashboard",
+            color: "#F59E0B",
+            hidden: true,
+          },
+          {
+            id: "va-test-runs",
+            label: "Test Runs",
+            description: "View test execution history",
+            icon: <Play className="size-4" />,
+            route: "/testing",
+            color: "#F59E0B",
+            hidden: true,
+          },
+          {
+            id: "va-qa-runs",
+            label: "QA Runs",
+            description: "QA test run history",
+            icon: <TestTube2 className="size-4" />,
+            route: "/qa-dashboard/runs",
+            color: "#F59E0B",
+            hidden: true,
+          },
+          {
+            id: "va-coverage",
+            label: "Coverage",
+            description: "Test coverage analysis",
+            icon: <BarChart3 className="size-4" />,
+            route: "/qa-dashboard/coverage",
+            color: "#F59E0B",
+            hidden: true,
+          },
+          {
+            id: "va-deficiencies",
+            label: "Deficiencies",
+            description: "Track testing deficiencies",
+            icon: <Target className="size-4" />,
+            route: "/qa-dashboard/deficiencies",
+            color: "#F59E0B",
+            hidden: true,
+          },
+          {
+            id: "va-compare",
+            label: "Compare",
+            description: "Compare test results",
+            icon: <GitBranch className="size-4" />,
+            route: "/qa-dashboard/compare",
+            color: "#F59E0B",
+            hidden: true,
+          },
+          {
+            id: "va-execution-history",
+            label: "Execution History",
+            description: "View detailed execution tree events",
+            icon: <Play className="size-4" />,
+            route: "/execution-history",
+            color: "#F59E0B",
+            hidden: true,
+          },
+        ],
+      },
+      {
+        id: "va-ai-tasks",
+        label: "AI Tasks",
+        icon: <Sparkles className="size-4" />,
+        route: "/ai-tasks",
+        color: "#9333EA",
+        hidden: true,
+        children: [
+          {
+            id: "va-ai-tasks-list",
+            label: "All Tasks",
+            description: "View all AI analysis tasks",
+            icon: <Sparkles className="size-4" />,
+            route: "/ai-tasks",
+            color: "#9333EA",
+            hidden: true,
+          },
+        ],
+      },
+      {
+        id: "va-project-tools",
+        label: "Project Tools",
+        icon: <Box className="size-4" />,
+        route: "/automation-builder/overview",
+        color: "var(--brand-primary)",
+        hidden: true,
+        children: [
+          {
+            id: "va-overview",
+            label: "Overview",
+            description: "Project summary and quick access",
+            icon: <LayoutDashboard className="size-4" />,
+            route: "/automation-builder/overview",
+            color: "var(--brand-primary)",
+            hidden: true,
+          },
+          {
+            id: "va-dependencies",
+            label: "Dependencies",
+            description: "View state and workflow relationships",
+            icon: <GitBranch className="size-4" />,
+            route: "/automation-builder/dependencies",
+            color: "var(--brand-primary)",
+            hidden: true,
+          },
+          {
+            id: "va-documentation",
+            label: "Documentation",
+            description: "Auto-generated project docs",
+            icon: <FileText className="size-4" />,
+            route: "/automation-builder/documentation",
+            color: "var(--brand-primary)",
+            hidden: true,
+          },
+          {
+            id: "va-automation-analytics",
+            label: "Automation Analytics",
+            description: "Performance metrics and insights",
+            icon: <BarChart3 className="size-4" />,
+            route: "/automation-builder/analytics",
+            color: "var(--brand-primary)",
+            hidden: true,
+          },
+          {
+            id: "va-issues",
+            label: "Issues",
+            description: "Track and manage project issues",
+            icon: <AlertCircle className="size-4" />,
+            route: "/issues",
+            color: "var(--brand-primary)",
+            hidden: true,
+          },
+        ],
+      },
+      {
+        id: "va-settings",
+        label: "Settings",
+        icon: <Settings className="size-4" />,
+        route: "/automation-builder/settings",
+        color: "#FFD700",
+        hidden: true,
+        children: [
+          {
+            id: "va-automation-settings",
+            label: "Automation",
+            description: "Configure automation preferences",
+            icon: <Sliders className="size-4" />,
+            route: "/automation-builder/settings",
+            color: "#FFD700",
+            hidden: true,
+          },
+          {
+            id: "va-profile",
+            label: "Profile",
+            description: "Manage your account settings",
+            icon: <Settings className="size-4" />,
+            route: "/profile",
+            color: "#FFD700",
+            hidden: true,
+          },
+          {
+            id: "va-pricing",
+            label: "Pricing",
+            description: "View plans and billing",
+            icon: <CreditCard className="size-4" />,
+            route: "/pricing",
+            color: "#FFD700",
+            hidden: true,
+          },
+        ],
       },
     ],
   },
@@ -537,34 +910,120 @@ const navItems: NavItem[] = [
     id: "settings",
     label: "Settings",
     icon: <Settings className="size-5" />,
-    route: "/automation-builder/settings",
+    route: "/settings",
     color: "#FFD700",
     children: [
       {
-        id: "automation-settings",
-        label: "Automation",
-        description: "Configure automation preferences",
-        icon: <Sliders className="size-4" />,
-        route: "/automation-builder/settings",
-        color: "#FFD700",
-      },
-      {
-        id: "application-settings",
-        label: "Profile",
-        description: "Manage your account settings",
+        id: "settings-account",
+        label: "Account",
+        description: "Connection and identity",
         icon: <Settings className="size-4" />,
-        route: "/profile",
+        route: "/settings/account",
         color: "#FFD700",
       },
       {
-        id: "pricing",
-        label: "Pricing",
-        description: "View plans and billing",
-        icon: <CreditCard className="size-4" />,
-        route: "/pricing",
+        id: "settings-ai",
+        label: "AI Providers",
+        description: "AI provider configuration",
+        icon: <Bot className="size-4" />,
+        route: "/settings/ai",
+        color: "#FFD700",
+      },
+      {
+        id: "settings-agentic",
+        label: "Advanced AI",
+        description: "Memory, retry, routing",
+        icon: <Brain className="size-4" />,
+        route: "/settings/agentic",
+        color: "#FFD700",
+      },
+      {
+        id: "settings-self-healing",
+        label: "Self-Healing",
+        description: "Automation recovery",
+        icon: <ShieldCheck className="size-4" />,
+        route: "/settings/self-healing",
+        color: "#FFD700",
+      },
+      {
+        id: "settings-playwright",
+        label: "Playwright",
+        description: "Test configuration",
+        icon: <FlaskConical className="size-4" />,
+        route: "/settings/playwright",
+        color: "#FFD700",
+      },
+      {
+        id: "settings-mcp",
+        label: "MCP Servers",
+        description: "External tool servers",
+        icon: <Wifi className="size-4" />,
+        route: "/settings/mcp",
+        color: "#FFD700",
+      },
+      {
+        id: "settings-log-sources",
+        label: "Log Sources",
+        description: "Global log configuration",
+        icon: <FolderOpen className="size-4" />,
+        route: "/settings/log-sources",
+        color: "#FFD700",
+      },
+      {
+        id: "settings-general",
+        label: "General",
+        description: "Application preferences",
+        icon: <Wrench className="size-4" />,
+        route: "/settings/general",
+        color: "#FFD700",
+      },
+      {
+        id: "settings-storage",
+        label: "Storage",
+        description: "Local file management",
+        icon: <HardDrive className="size-4" />,
+        route: "/settings/storage",
+        color: "#FFD700",
+      },
+      {
+        id: "settings-backup",
+        label: "Backup",
+        description: "Export and restore data",
+        icon: <Archive className="size-4" />,
+        route: "/settings/backup",
+        color: "#FFD700",
+      },
+      {
+        id: "settings-updates",
+        label: "Updates",
+        description: "Version and updates",
+        icon: <Download className="size-4" />,
+        route: "/settings/updates",
+        color: "#FFD700",
+      },
+      {
+        id: "settings-debug",
+        label: "Debug",
+        description: "Diagnostics and debug",
+        icon: <FlaskConical className="size-4" />,
+        route: "/settings/debug",
         color: "#FFD700",
       },
     ],
+  },
+  {
+    id: "schedule",
+    label: "Schedule",
+    icon: <Clock className="size-5" />,
+    route: "/schedule",
+    color: "#06B6D4",
+  },
+  {
+    id: "help",
+    label: "Help",
+    icon: <HelpCircle className="size-5" />,
+    route: "/help",
+    color: "#9CA3AF",
   },
   {
     id: "admin",
@@ -833,6 +1292,91 @@ function NavItemButton({
 }
 
 // =============================================================================
+// Nested Sub-Group Component (third level)
+// =============================================================================
+
+function NestedSubGroup({
+  item,
+  onNavigate,
+  isRouteActive,
+  mounted,
+}: {
+  item: NavItem;
+  onNavigate: (route: string) => void;
+  isRouteActive: (route: string, item: NavItem) => boolean;
+  mounted: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const isGroupActive = item.children?.some((child) =>
+    isRouteActive(child.route, child)
+  );
+
+  React.useEffect(() => {
+    if (isGroupActive) setIsOpen(true);
+  }, [isGroupActive]);
+
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+      <CollapsibleTrigger asChild>
+        <button
+          className={cn(
+            "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
+            isGroupActive
+              ? "text-text-primary"
+              : "text-text-muted hover:bg-surface-hover hover:text-text-primary"
+          )}
+        >
+          <span style={{ color: isGroupActive ? item.color : undefined }}>
+            {item.icon}
+          </span>
+          <span className="flex-1 font-medium">{item.label}</span>
+          <ChevronRight
+            className={cn(
+              "size-3 shrink-0 transition-transform duration-200",
+              isOpen && "rotate-90"
+            )}
+          />
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down">
+        <div className="ml-3 flex flex-col gap-0.5 border-l border-border-subtle pl-3 pt-0.5">
+          {item.children?.map((grandchild) => {
+            const isActive = isRouteActive(grandchild.route, grandchild);
+            return (
+              <button
+                key={grandchild.id}
+                onClick={() => onNavigate(grandchild.route)}
+                className={cn(
+                  "flex items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors",
+                  isActive
+                    ? "bg-surface-hover text-text-primary"
+                    : "text-text-muted hover:bg-surface-hover hover:text-text-primary"
+                )}
+              >
+                <span
+                  style={{ color: isActive ? grandchild.color : undefined }}
+                >
+                  {grandchild.icon}
+                </span>
+                <span className="flex-1">{grandchild.label}</span>
+                {mounted && grandchild.hidden && (
+                  <Badge
+                    variant="outline"
+                    className="h-3.5 px-1 text-[8px] font-medium border-gray-500/30 bg-gray-500/10 text-gray-400"
+                  >
+                    hidden
+                  </Badge>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+// =============================================================================
 // Collapsible Navigation Item Component
 // =============================================================================
 
@@ -854,14 +1398,37 @@ function CollapsibleNavItem({
   const [isOpen, setIsOpen] = useState(false);
   const isParentActive = isRouteActive(item.route, item);
 
-  // Auto-open if any child is active
+  // Helper: check if any descendant is active (supports grandchildren)
+  const isAnyDescendantActive = useCallback(
+    (children?: NavItem[]): boolean => {
+      if (!children) return false;
+      return children.some(
+        (child) =>
+          isRouteActive(child.route, child) ||
+          isAnyDescendantActive(child.children)
+      );
+    },
+    [isRouteActive]
+  );
+
+  // Auto-open if any child or grandchild is active
   React.useEffect(() => {
-    if (item.children?.some((child) => isRouteActive(child.route, child))) {
+    if (isAnyDescendantActive(item.children)) {
       setIsOpen(true);
     }
-  }, [item.children, isRouteActive]);
+  }, [item.children, isAnyDescendantActive]);
 
   if (isCollapsed) {
+    // Flatten children + grandchildren for collapsed dropdown
+    const flatItems: NavItem[] = [];
+    item.children?.forEach((child) => {
+      if (child.children && child.children.length > 0) {
+        flatItems.push(...child.children);
+      } else {
+        flatItems.push(child);
+      }
+    });
+
     return (
       <DropdownMenu>
         <Tooltip>
@@ -888,39 +1455,70 @@ function CollapsibleNavItem({
           <TooltipContent side="right">{item.label}</TooltipContent>
         </Tooltip>
         <DropdownMenuContent side="right" align="start" className="w-56">
-          {item.children?.map((child) => (
-            <DropdownMenuItem
-              key={child.id}
-              onClick={() => onNavigate(child.route)}
-              className={cn(
-                isRouteActive(child.route, child) && "bg-surface-hover"
-              )}
-            >
-              <span
-                className="mr-2"
-                style={{
-                  color: isRouteActive(child.route, child)
-                    ? child.color
-                    : undefined,
-                }}
+          {item.children?.map((child) =>
+            child.children && child.children.length > 0 ? (
+              <React.Fragment key={child.id}>
+                <DropdownMenuSeparator />
+                <div className="px-2 py-1 text-xs font-semibold text-text-muted">
+                  {child.label}
+                </div>
+                {child.children.map((grandchild) => (
+                  <DropdownMenuItem
+                    key={grandchild.id}
+                    onClick={() => onNavigate(grandchild.route)}
+                    className={cn(
+                      isRouteActive(grandchild.route, grandchild) &&
+                        "bg-surface-hover"
+                    )}
+                  >
+                    <span
+                      className="mr-2"
+                      style={{
+                        color: isRouteActive(grandchild.route, grandchild)
+                          ? grandchild.color
+                          : undefined,
+                      }}
+                    >
+                      {grandchild.icon}
+                    </span>
+                    {grandchild.label}
+                  </DropdownMenuItem>
+                ))}
+              </React.Fragment>
+            ) : (
+              <DropdownMenuItem
+                key={child.id}
+                onClick={() => onNavigate(child.route)}
+                className={cn(
+                  isRouteActive(child.route, child) && "bg-surface-hover"
+                )}
               >
-                {child.icon}
-              </span>
-              {child.label}
-              {child.badge && (
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    "ml-auto h-4 px-1 text-[10px]",
-                    child.badge === "beta" &&
-                      "border-amber-500/30 bg-amber-500/10 text-amber-400"
-                  )}
+                <span
+                  className="mr-2"
+                  style={{
+                    color: isRouteActive(child.route, child)
+                      ? child.color
+                      : undefined,
+                  }}
                 >
-                  {child.badge}
-                </Badge>
-              )}
-            </DropdownMenuItem>
-          ))}
+                  {child.icon}
+                </span>
+                {child.label}
+                {child.badge && (
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "ml-auto h-4 px-1 text-[10px]",
+                      child.badge === "beta" &&
+                        "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                    )}
+                  >
+                    {child.badge}
+                  </Badge>
+                )}
+              </DropdownMenuItem>
+            )
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     );
@@ -962,6 +1560,18 @@ function CollapsibleNavItem({
       <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down">
         <div className="ml-4 flex flex-col gap-0.5 border-l border-border-subtle pl-3 pt-1">
           {item.children?.map((child) => {
+            // If child has its own children, render as a nested collapsible
+            if (child.children && child.children.length > 0) {
+              return (
+                <NestedSubGroup
+                  key={child.id}
+                  item={child}
+                  onNavigate={onNavigate}
+                  isRouteActive={isRouteActive}
+                  mounted={mounted}
+                />
+              );
+            }
             const isChildActive = isRouteActive(child.route, child);
             return (
               <button
@@ -1392,6 +2002,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
     (items: NavItem[]): NavItem[] => {
       return items
         .filter((item) => {
+          // hidden items only show in development
           if (item.hidden && (!mounted || !isDevelopment)) return false;
           if (authLoading || !user) return !item.adminOnly;
           return !item.adminOnly || user.is_superuser === true;
@@ -1405,10 +2016,9 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
     [mounted, isDevelopment, authLoading, user]
   );
 
-  const visibleNavItems = useMemo(
-    () => filterNavItems(navItems),
-    [filterNavItems]
-  );
+  const visibleNavItems = useMemo(() => {
+    return filterNavItems(navItems);
+  }, [filterNavItems]);
 
   const toggleCollapse = useCallback(() => {
     const newState = !isCollapsed;
@@ -1435,7 +2045,12 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
       };
 
       if (item.children && item.children.length > 0) {
-        return item.children.some((child) => checkRouteMatch(child.route));
+        return item.children.some(
+          (child) =>
+            checkRouteMatch(child.route) ||
+            (child.children &&
+              child.children.some((gc) => checkRouteMatch(gc.route)))
+        );
       }
 
       return checkRouteMatch(route);

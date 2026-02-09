@@ -1,10 +1,18 @@
 import Link from "next/link";
-import { Download, Play, Settings, Monitor } from "lucide-react";
+import {
+  Download,
+  Bot,
+  ShieldCheck,
+  AlertCircle,
+  Puzzle,
+  Layers,
+  Sparkles,
+} from "lucide-react";
 
 export const metadata = {
-  title: "Qontinui Runner - Desktop Automation Executor",
+  title: "Qontinui Runner - AI Development Desktop App",
   description:
-    "Desktop application for running Qontinui GUI automation projects. Execute, monitor, and manage your automation workflows with an intuitive interface.",
+    "Open-source desktop application that orchestrates AI coding sessions with verification loops, error monitoring, UI Bridge visual feedback, and multi-provider support.",
 };
 
 export default function RunnerPage() {
@@ -17,7 +25,8 @@ export default function RunnerPage() {
             Qontinui Runner
           </h1>
           <p className="text-xl text-muted-foreground mb-8">
-            Desktop application for executing GUI automation workflows
+            An AI development desktop app that orchestrates coding sessions,
+            verifies results, and monitors your application in real-time.
           </p>
           <div className="flex gap-4 justify-center">
             <Link
@@ -41,28 +50,38 @@ export default function RunnerPage() {
       <section className="container mx-auto px-4 py-16">
         <div className="max-w-6xl mx-auto">
           <h2 className="text-3xl font-bold text-center mb-12">
-            Everything you need to run automation
+            Built for AI-Assisted Development
           </h2>
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
             <FeatureCard
-              icon={<Play className="w-8 h-8 text-primary" />}
-              title="Easy Execution"
-              description="Load automation configs and start execution with a single click"
+              icon={<Sparkles className="w-8 h-8 text-primary" />}
+              title="Orchestrated Workflows"
+              description="Multi-phase AI sessions with setup, agentic, verification, and completion stages"
             />
             <FeatureCard
-              icon={<Monitor className="w-8 h-8 text-brand-success" />}
-              title="Multi-Monitor Support"
-              description="Run automation across multiple monitors with precise targeting"
+              icon={<ShieldCheck className="w-8 h-8 text-secondary" />}
+              title="Self-Correcting AI"
+              description="Verification loops catch mistakes automatically. AI checks its own work before moving on."
             />
             <FeatureCard
-              icon={<Settings className="w-8 h-8 text-secondary" />}
-              title="Real-time Monitoring"
-              description="Watch automation progress with live logs and state transitions"
+              icon={<AlertCircle className="w-8 h-8 text-accent" />}
+              title="Error Monitoring"
+              description="Watches your application logs in real-time and triggers AI to fix errors automatically"
             />
             <FeatureCard
-              icon={<Download className="w-8 h-8 text-accent" />}
-              title="Cross-Platform"
-              description="Available for Windows, macOS, and Linux"
+              icon={<Puzzle className="w-8 h-8 text-primary" />}
+              title="UI Bridge Feedback"
+              description="AI inspects your running React application to verify changes visually, not just syntactically"
+            />
+            <FeatureCard
+              icon={<Layers className="w-8 h-8 text-secondary" />}
+              title="Multi-Provider"
+              description="Bring your own AI — Claude CLI/API, Gemini CLI/API, and more. No vendor lock-in."
+            />
+            <FeatureCard
+              icon={<Bot className="w-8 h-8 text-accent" />}
+              title="Persistent Knowledge"
+              description="AI builds knowledge across sessions. Findings, contexts, and patterns compound over time."
             />
           </div>
         </div>
@@ -78,23 +97,23 @@ export default function RunnerPage() {
             <div className="space-y-8">
               <Step
                 number={1}
-                title="Create automation in Qontinui Web"
-                description="Design your automation workflows using the visual editor at qontinui.com"
+                title="Configure your AI provider"
+                description="Connect your preferred AI (Claude, Gemini, or others) using your own API key or CLI. Set up log sources for error monitoring."
               />
               <Step
                 number={2}
-                title="Export configuration"
-                description="Export your automation as a JSON configuration file"
+                title="Build agentic workflows"
+                description="Define what to build, how to verify, and what success looks like using the visual workflow builder."
               />
               <Step
                 number={3}
-                title="Load in Runner"
-                description="Open the configuration file in Qontinui Runner desktop app"
+                title="Run with verification"
+                description="AI executes in orchestrated phases — setup, agentic coding, verification, and completion — with automatic self-correction loops."
               />
               <Step
                 number={4}
-                title="Execute and monitor"
-                description="Run your automation and watch it execute in real-time"
+                title="Monitor and iterate"
+                description="Watch real-time progress, review AI findings, and let error monitoring trigger fixes automatically."
               />
             </div>
           </div>
@@ -145,10 +164,10 @@ export default function RunnerPage() {
       <section className="bg-primary py-16">
         <div className="container mx-auto px-4 text-center">
           <h2 className="text-3xl font-bold text-primary-foreground mb-6">
-            Ready to automate?
+            Ready to get started?
           </h2>
           <p className="text-xl text-primary-foreground/80 mb-8">
-            Download Qontinui Runner and start executing your automation
+            Download Qontinui Runner and start building AI-assisted development
             workflows
           </p>
           <Link

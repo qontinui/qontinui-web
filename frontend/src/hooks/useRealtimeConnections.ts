@@ -43,10 +43,11 @@ export function useRealtimeConnections() {
       clearInterval(pollingIntervalRef.current);
     }
 
-    console.log("[useRealtimeConnections] Starting polling fallback");
     pollingIntervalRef.current = setInterval(() => {
-      fetchConnections();
-    }, 5000); // Poll every 5 seconds
+      if (!document.hidden) {
+        fetchConnections();
+      }
+    }, 5000);
   }, [fetchConnections]);
 
   // Stop polling
@@ -54,7 +55,6 @@ export function useRealtimeConnections() {
     if (pollingIntervalRef.current) {
       clearInterval(pollingIntervalRef.current);
       pollingIntervalRef.current = null;
-      console.log("[useRealtimeConnections] Stopped polling");
     }
   }, []);
 
@@ -92,25 +92,20 @@ export function useRealtimeConnections() {
     const apiHost = apiUrl.replace(/^https?:\/\//, "");
     const wsUrl = `${wsProtocol}://${apiHost}/api/v1/ws/runner/status?token=${encodeURIComponent(token)}`;
 
-    console.log("[useRealtimeConnections] Connecting to WebSocket:", wsUrl);
+    console.debug("[useRealtimeConnections] Connecting to WebSocket");
 
     try {
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {
-        console.log("[useRealtimeConnections] WebSocket connected");
         setIsConnected(true);
         reconnectAttemptsRef.current = 0;
         stopPolling(); // Stop polling when WebSocket connects
       };
 
       ws.onclose = (event) => {
-        console.log(
-          "[useRealtimeConnections] WebSocket disconnected:",
-          event.code,
-          event.reason
-        );
+        console.debug("[useRealtimeConnections] WebSocket closed:", event.code);
         setIsConnected(false);
         wsRef.current = null;
 
@@ -120,9 +115,7 @@ export function useRealtimeConnections() {
             1000 * Math.pow(2, reconnectAttemptsRef.current),
             30000
           );
-          console.log(
-            `[useRealtimeConnections] Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current + 1})`
-          );
+          console.debug(`[useRealtimeConnections] Reconnecting in ${delay}ms`);
 
           reconnectTimeoutRef.current = setTimeout(() => {
             reconnectAttemptsRef.current++;
@@ -130,8 +123,8 @@ export function useRealtimeConnections() {
           }, delay);
         } else {
           // Max reconnect attempts reached, fallback to polling
-          console.warn(
-            "[useRealtimeConnections] Max reconnect attempts reached, using polling"
+          console.debug(
+            "[useRealtimeConnections] Max reconnects reached, polling"
           );
           startPolling();
         }
@@ -145,7 +138,6 @@ export function useRealtimeConnections() {
       ws.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
-          console.log("[useRealtimeConnections] Received message:", message);
 
           if (message.type === "initial_state") {
             // Set initial connections

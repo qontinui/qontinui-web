@@ -7,10 +7,9 @@ import { Footer } from "@/components/marketing/footer";
 import "./marketing.css";
 
 export const metadata: Metadata = {
-  title: "Qontinui - GUI Automation That Thinks Like You Do",
+  title: "Qontinui - Open Source AI Development Platform",
   description:
-    "Model-based GUI automation that adapts to unexpected changes instead of breaking. Based on peer-reviewed research published in Springer. Free during early access until February 2026.",
-  generator: "v0.app",
+    "An open-source desktop app that orchestrates AI coding sessions with verification loops, error monitoring, and visual feedback through UI Bridge. Multi-provider support for Claude and Gemini — no vendor lock-in.",
 };
 
 export default function MarketingLayout({
