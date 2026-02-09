@@ -50,7 +50,21 @@ import type {
   SemanticDiff,
   SemanticSearchCriteria,
   SemanticSearchResponse,
+  Intent,
+  IntentSearchResponse,
+  IntentExecutionResult,
+  RecoveryAttemptRequest,
+  RecoveryAttemptResult,
 } from "@qontinui/ui-bridge/ai";
+import type {
+  UIState,
+  UIStateGroup,
+  UITransition,
+  PathResult,
+  TransitionResult,
+  NavigationResult,
+  StateSnapshot,
+} from "@qontinui/ui-bridge/core";
 
 /**
  * Create a success response wrapper
@@ -956,6 +970,247 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
       const result = await queueCommand<AnnotationCoverage>(
         "getAnnotationCoverage",
         {}
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // State Management Endpoints
+  // --------------------------------------------------------------------------
+
+  async getStates(): Promise<APIResponse<UIState[]>> {
+    try {
+      const result = await queueCommand<UIState[]>("getStates", {});
+      return success(result);
+    } catch (_e) {
+      return success([]);
+    }
+  },
+
+  async getState(id: string): Promise<APIResponse<UIState>> {
+    try {
+      const result = await queueCommand<UIState>("getState", { id });
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "NOT_FOUND");
+    }
+  },
+
+  async getActiveStates(): Promise<APIResponse<UIState[]>> {
+    try {
+      const result = await queueCommand<UIState[]>("getActiveStates", {});
+      return success(result);
+    } catch (_e) {
+      return success([]);
+    }
+  },
+
+  async activateState(id: string): Promise<APIResponse<void>> {
+    try {
+      await queueCommand("activateState", { id });
+      return success(undefined);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async deactivateState(id: string): Promise<APIResponse<void>> {
+    try {
+      await queueCommand("deactivateState", { id });
+      return success(undefined);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getStateGroups(): Promise<APIResponse<UIStateGroup[]>> {
+    try {
+      const result = await queueCommand<UIStateGroup[]>("getStateGroups", {});
+      return success(result);
+    } catch (_e) {
+      return success([]);
+    }
+  },
+
+  async activateStateGroup(id: string): Promise<APIResponse<void>> {
+    try {
+      await queueCommand("activateStateGroup", { id });
+      return success(undefined);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async deactivateStateGroup(id: string): Promise<APIResponse<void>> {
+    try {
+      await queueCommand("deactivateStateGroup", { id });
+      return success(undefined);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getTransitions(): Promise<APIResponse<UITransition[]>> {
+    try {
+      const result = await queueCommand<UITransition[]>("getTransitions", {});
+      return success(result);
+    } catch (_e) {
+      return success([]);
+    }
+  },
+
+  async canExecuteTransition(
+    id: string
+  ): Promise<APIResponse<{ canExecute: boolean; reason?: string }>> {
+    try {
+      const result = await queueCommand<{
+        canExecute: boolean;
+        reason?: string;
+      }>("canExecuteTransition", { id });
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async executeTransition(
+    id: string
+  ): Promise<APIResponse<TransitionResult>> {
+    try {
+      const result = await queueCommand<TransitionResult>(
+        "executeTransition",
+        { id }
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async findPath(request: {
+    targetStates: string[];
+  }): Promise<APIResponse<PathResult>> {
+    try {
+      const result = await queueCommand<PathResult>("findPath", request);
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async navigateTo(request: {
+    targetStates: string[];
+  }): Promise<APIResponse<NavigationResult>> {
+    try {
+      const result = await queueCommand<NavigationResult>(
+        "navigateTo",
+        request
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getStateSnapshot(): Promise<APIResponse<StateSnapshot>> {
+    try {
+      const result = await queueCommand<StateSnapshot>(
+        "getStateSnapshot",
+        {}
+      );
+      return success(result);
+    } catch (_e) {
+      // Fallback: return minimal snapshot
+      return success({
+        timestamp: Date.now(),
+        activeStates: [],
+        states: [],
+        groups: [],
+        transitions: [],
+      });
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // Intent Endpoints
+  // --------------------------------------------------------------------------
+
+  async executeIntent(request: {
+    intentId: string;
+    params?: Record<string, unknown>;
+  }): Promise<APIResponse<IntentExecutionResult>> {
+    try {
+      const result = await queueCommand<IntentExecutionResult>(
+        "executeIntent",
+        request
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async findIntent(request: {
+    query: string;
+  }): Promise<APIResponse<IntentSearchResponse>> {
+    try {
+      const result = await queueCommand<IntentSearchResponse>(
+        "findIntent",
+        request
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async listIntents(): Promise<APIResponse<Intent[]>> {
+    try {
+      const result = await queueCommand<Intent[]>("listIntents", {});
+      return success(result);
+    } catch (_e) {
+      return success([]);
+    }
+  },
+
+  async registerIntent(intent: Intent): Promise<APIResponse<Intent>> {
+    try {
+      const result = await queueCommand<Intent>("registerIntent", intent);
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async executeIntentFromQuery(request: {
+    query: string;
+    params?: Record<string, unknown>;
+  }): Promise<APIResponse<IntentExecutionResult>> {
+    try {
+      const result = await queueCommand<IntentExecutionResult>(
+        "executeIntentFromQuery",
+        request
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // Recovery Endpoints
+  // --------------------------------------------------------------------------
+
+  async attemptRecovery(
+    request: RecoveryAttemptRequest
+  ): Promise<APIResponse<RecoveryAttemptResult>> {
+    try {
+      const result = await queueCommand<RecoveryAttemptResult>(
+        "attemptRecovery",
+        request
       );
       return success(result);
     } catch (e) {
