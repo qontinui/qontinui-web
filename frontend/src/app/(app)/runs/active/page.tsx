@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useTaskRunEvents } from "@/lib/runner-api";
 import type {
   TaskRun,
   CurrentExecutionStepsResponse,
@@ -15,6 +14,7 @@ import type {
 import {
   RunnerEventProvider,
   useEventTriggeredFetch,
+  useRunnerEvent,
 } from "@/contexts/RunnerEventContext";
 import {
   SharedRunnerDataProvider,
@@ -33,6 +33,12 @@ import { VerificationWidget } from "@/components/active-dashboard/widgets/Verifi
 import { ExecutionStatusWidget } from "@/components/active-dashboard/widgets/ExecutionStatusWidget";
 import { McpCallsWidget } from "@/components/active-dashboard/widgets/McpCallsWidget";
 import { ScreenshotsWidget } from "@/components/active-dashboard/widgets/ScreenshotsWidget";
+import { toast } from "sonner";
+import { runnerApi } from "@/lib/runner-api";
+import {
+  AUTO_RUN_AFTER_GENERATE_KEY,
+  type AutoRunAfterGenerate,
+} from "@/components/workflow-builder/AiGeneratePanel";
 import { cn } from "@/lib/utils";
 import {
   Activity,
@@ -308,15 +314,23 @@ function detectWidgets(
     widgets.push("screenshots");
   }
 
-  // Detect verification widget
+  // Detect verification widget (aligned with runner's mapCheckType)
   const verificationTypes = [
     "playwright",
     "test",
     "check",
     "check_group",
     "verification",
+    "error_check",
+    "log_check",
+    "shell",
+    "gui_automation",
+    "repo_test",
   ];
-  if (verificationTypes.some((t) => stepTypes.has(t))) {
+  if (
+    verificationTypes.some((t) => stepTypes.has(t)) ||
+    [...stepTypes].some((t) => t.includes("check") || t.includes("verification"))
+  ) {
     widgets.push("verification");
   }
 
@@ -576,41 +590,44 @@ function TimelineSummary({ stepsData }: { runId: string; stepsData: CurrentExecu
 }
 
 function AiConversationSummary({ runId }: { runId: string }) {
-  const { data: events } = useTaskRunEvents(runId);
-  const aiEvents = (events || []).filter(
-    (e) =>
-      e.event_type === "ai_output" ||
-      e.event_type === "ai_session" ||
-      e.event_type === "prompt"
+  // Use the output endpoint (populated via chunks during execution)
+  // instead of task_run_events (only populated after session completes)
+  const { data: outputData } = useEventTriggeredFetch<{ output?: string; output_log?: string; sessions_count?: number }>(
+    "ai-output",
+    `/task-runs/${runId}/output`,
   );
-  const messageCount = aiEvents.length;
-  const lastEvent = aiEvents[aiEvents.length - 1];
+
+  const output = outputData?.output_log ?? outputData?.output ?? "";
+  const sessionCount = outputData?.sessions_count ?? 0;
+
+  // Count meaningful content: user messages
+  const userMessages = (output.match(/\[USER_MESSAGE\]/g) || []).length;
+  const hasContent = output.trim().length > 0;
+
+  // Get last meaningful line for preview
+  const lastLine = (() => {
+    if (!output) return "";
+    const lines = output.split("\n").filter((l) => l.trim() && !l.startsWith("["));
+    return lines.length > 0 ? (lines[lines.length - 1] ?? "").trim().slice(0, 120) : "";
+  })();
 
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
         <Badge variant="outline" className="text-[10px] gap-1">
           <MessageSquare className="size-2.5" />
-          {messageCount} messages
+          {sessionCount > 0 ? `${sessionCount} session${sessionCount !== 1 ? "s" : ""}` : hasContent ? "Active" : "0 messages"}
         </Badge>
+        {userMessages > 0 && (
+          <Badge variant="outline" className="text-[10px] gap-1 text-text-muted">
+            {userMessages} user msg{userMessages !== 1 ? "s" : ""}
+          </Badge>
+        )}
       </div>
-      {lastEvent && (
-        <p className="text-xs text-text-muted line-clamp-2">
-          {typeof lastEvent.data === "object" && lastEvent.data
-            ? String(
-                (lastEvent.data as Record<string, unknown>).message ||
-                  (lastEvent.data as Record<string, unknown>).content ||
-                  (lastEvent.data as Record<string, unknown>).text ||
-                  (lastEvent.data as Record<string, unknown>).output ||
-                  (lastEvent.data as Record<string, unknown>).line ||
-                  JSON.stringify(lastEvent.data).slice(0, 120)
-              ).slice(0, 120)
-            : typeof lastEvent.data === "string"
-              ? String(lastEvent.data).slice(0, 120)
-              : ""}
-        </p>
+      {lastLine && (
+        <p className="text-xs text-text-muted line-clamp-2">{lastLine}</p>
       )}
-      {messageCount === 0 && (
+      {!hasContent && (
         <p className="text-xs text-text-muted">No AI messages yet...</p>
       )}
     </div>
@@ -1426,6 +1443,87 @@ function ActiveRunsPageInner() {
     }
   }, [activeRuns]);
 
+  // Auto-run: when a "Generate & Run" generation task finishes, auto-start the workflow.
+  // We must see the task appear in active runs at least once before treating its
+  // absence as "finished" — otherwise the first fetch (before the task appears) would
+  // trigger a false completion.
+  const autoRunHandledRef = useRef(false);
+  const autoRunSeenRef = useRef(false);
+  useEffect(() => {
+    if (!activeRuns || autoRunHandledRef.current) return;
+
+    let raw: string | null;
+    try {
+      raw = localStorage.getItem(AUTO_RUN_AFTER_GENERATE_KEY);
+    } catch {
+      return;
+    }
+    if (!raw) return;
+
+    let signal: AutoRunAfterGenerate;
+    try {
+      signal = JSON.parse(raw) as AutoRunAfterGenerate;
+    } catch {
+      localStorage.removeItem(AUTO_RUN_AFTER_GENERATE_KEY);
+      return;
+    }
+
+    // Clear stale entries (>30 minutes)
+    if (Date.now() - signal.timestamp > 30 * 60 * 1000) {
+      localStorage.removeItem(AUTO_RUN_AFTER_GENERATE_KEY);
+      return;
+    }
+
+    const stillRunning = activeRuns.some((r) => r.id === signal.taskRunId);
+
+    if (stillRunning) {
+      // Task is visible in active runs — mark that we've seen it
+      autoRunSeenRef.current = true;
+      return;
+    }
+
+    // Task is not in active runs. Only treat as "finished" if we've seen it before;
+    // otherwise the first fetch simply hasn't picked it up yet.
+    if (!autoRunSeenRef.current) return;
+
+    // Generation task was seen and is now gone — it finished
+    autoRunHandledRef.current = true;
+    localStorage.removeItem(AUTO_RUN_AFTER_GENERATE_KEY);
+
+    (async () => {
+      try {
+        const taskRun = await runnerApi.getTaskRun(signal.taskRunId);
+        if (taskRun.status === "completed") {
+          const resultData = await runnerApi.getTaskRunResultData(
+            signal.taskRunId
+          );
+          const workflowId = resultData.generated_workflow_id as
+            | string
+            | undefined;
+          if (!workflowId) {
+            toast.error(
+              "Workflow generated but no workflow ID found in result data"
+            );
+            return;
+          }
+          await runnerApi.runWorkflow(workflowId);
+          toast.success("Workflow generated and started!");
+          refetchRuns();
+        } else {
+          toast.error(
+            `Workflow generation ${taskRun.status === "failed" ? "failed" : "was stopped"}`
+          );
+        }
+      } catch (err) {
+        toast.error(
+          err instanceof Error
+            ? err.message
+            : "Failed to auto-run generated workflow"
+        );
+      }
+    })();
+  }, [activeRuns, refetchRuns]);
+
   const isOffline = runsOffline;
   if (isOffline) return <RunnerOfflineState />;
 
@@ -1507,6 +1605,58 @@ function ActiveDashboardContent({
     "dashboard"
   );
   const userSelected = useRef(false);
+  const completionRefetchedRef = useRef(false);
+
+  // Listen for task-run-update events to detect when the run completes.
+  // This provides a redundant trigger for the parent's runs list refetch,
+  // covering the case where the parent's useEventTriggeredFetch misses the event.
+  useRunnerEvent(
+    "task-run-update",
+    useCallback(
+      (payload: unknown) => {
+        if (completionRefetchedRef.current) return;
+        const msg = payload as Record<string, unknown> | null;
+        if (!msg) return;
+        const data = (msg.data ?? msg) as Record<string, unknown>;
+        const status = data.status as string | undefined;
+        if (
+          status === "completed" ||
+          status === "failed" ||
+          status === "stopped"
+        ) {
+          completionRefetchedRef.current = true;
+          onRefresh();
+        }
+      },
+      [onRefresh]
+    )
+  );
+
+  // Fallback: detect completion from steps data.
+  // When all execution steps are in terminal state, trigger a delayed
+  // refetch of the runs list. This catches the case where the WebSocket
+  // "task-run-update" event was missed but "step-progress" events arrived.
+  useEffect((): void | (() => void) => {
+    if (!stepsData || completionRefetchedRef.current) return;
+    const executions = stepsData.executions || [];
+    if (executions.length === 0) return;
+
+    const hasRunningOrPending = executions.some(
+      (e) => e.status === "running" || e.status === "pending"
+    );
+
+    // Only trigger if the completion phase has been reached
+    const hasCompletionStep = executions.some(
+      (e) => e.phase?.toLowerCase() === "completion"
+    );
+
+    if (!hasRunningOrPending && hasCompletionStep) {
+      completionRefetchedRef.current = true;
+      // Short delay to let the runner finalize the task status in the DB
+      const timer = setTimeout(() => onRefresh(), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [stepsData, onRefresh]);
 
   // Detect which widgets to show
   const detectedWidgets = detectWidgets(stepsData);

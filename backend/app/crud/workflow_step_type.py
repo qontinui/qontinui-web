@@ -3,10 +3,15 @@ CRUD operations for workflow step type configurations.
 
 Manages step types, GUI action types, and workflow phases.
 All three auto-seed with built-in defaults on first access.
+
+Step type metadata can be fetched from the runner API for consistency,
+falling back to the hardcoded DEFAULT_STEP_TYPES when the runner is unavailable.
 """
 
+import logging
 from uuid import UUID
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +27,8 @@ from app.schemas.workflow_step_type import (
     StepTypeConfigUpdate,
     WorkflowPhaseConfigUpdate,
 )
+
+logger = logging.getLogger(__name__)
 
 # ─── Default step types (from qontinui-runner STEP_TYPES) ───────────────────
 # Each entry: (step_type, phase, label, description, icon, color, sort_order)
@@ -771,14 +778,69 @@ DEFAULT_WORKFLOW_PHASES: list[dict] = [
 ]
 
 
+# ─── Runner-sourced step types ───────────────────────────────────────────────
+
+RUNNER_STEP_TYPES_URL = "http://localhost:9876/step-types/metadata"
+
+
+async def fetch_step_types_from_runner(
+    timeout: float = 3.0,
+) -> list[dict] | None:
+    """Fetch step type metadata from the runner API.
+
+    Returns a list of dicts in DEFAULT_STEP_TYPES format, or None if
+    the runner is unavailable.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.get(RUNNER_STEP_TYPES_URL)
+            resp.raise_for_status()
+            data = resp.json()
+
+        if not data.get("success") or not data.get("data"):
+            return None
+
+        # Convert runner metadata format to DEFAULT_STEP_TYPES format
+        # Runner returns one entry per step type; we need one entry per type×phase
+        entries: list[dict] = []
+        sort_order = 1
+        for meta in data["data"]:
+            for phase in meta.get("allowed_phases", []):
+                entries.append(
+                    {
+                        "step_type": meta["step_type"],
+                        "phase": phase,
+                        "label": meta["display_name"],
+                        "description": meta["description"],
+                        "icon": meta.get("icon", "Circle"),
+                        "color": meta.get("color", "gray"),
+                        "sort_order": sort_order,
+                    }
+                )
+                sort_order += 1
+
+        if entries:
+            logger.info("Fetched %d step type entries from runner API", len(entries))
+            return entries
+
+    except Exception as e:
+        logger.debug("Runner step types unavailable (using defaults): %s", e)
+
+    return None
+
+
 # ─── Step Type CRUD ──────────────────────────────────────────────────────────
 
 
 async def seed_default_step_types(
     db: AsyncSession, user_id: UUID
 ) -> list[StepTypeConfig]:
+    # Try to fetch from runner first for consistency
+    runner_types = await fetch_step_types_from_runner()
+    source_types = runner_types if runner_types else DEFAULT_STEP_TYPES
+
     rows: list[StepTypeConfig] = []
-    for entry in DEFAULT_STEP_TYPES:
+    for entry in source_types:
         row = StepTypeConfig(user_id=user_id, is_built_in=True, **entry)
         db.add(row)
         rows.append(row)
