@@ -406,7 +406,7 @@ export default function AiOutputPage() {
 
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 
-  const runs = activeRuns || [];
+  const runs = useMemo(() => activeRuns || [], [activeRuns]);
 
   // Auto-select first run if none selected
   useEffect(() => {

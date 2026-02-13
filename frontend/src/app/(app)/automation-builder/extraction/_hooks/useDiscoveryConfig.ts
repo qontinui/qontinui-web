@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import type { ExtractionState } from "./useExtractionState";
 import type { DiscoveredState, SavedState } from "../_types";
@@ -16,11 +16,15 @@ export function useDiscoveryConfig({
   state,
   configMethod,
 }: UseDiscoveryConfigArgs) {
+  // Keep a ref to state so callbacks can access setters without re-creating
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
   // Load saved configs
   const loadConfigs = useCallback(async () => {
     if (!projectId) return;
 
-    state.setIsLoadingConfigs(true);
+    stateRef.current.setIsLoadingConfigs(true);
     try {
       const response = await fetch(
         `/api/v1/projects/${projectId}/ui-bridge-configs`,
@@ -29,14 +33,13 @@ export function useDiscoveryConfig({
 
       if (response.ok) {
         const data = await response.json();
-        state.setSavedConfigs(data.items || []);
+        stateRef.current.setSavedConfigs(data.items || []);
       }
     } catch (error) {
       logger.error("Failed to load configs:", error);
     } finally {
-      state.setIsLoadingConfigs(false);
+      stateRef.current.setIsLoadingConfigs(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- setters are stable
   }, [projectId]);
 
   // Load configs when in UI Bridge mode
@@ -51,7 +54,7 @@ export function useDiscoveryConfig({
     async (configId: string) => {
       if (!projectId) return;
 
-      state.setIsLoadingConfigs(true);
+      stateRef.current.setIsLoadingConfigs(true);
       try {
         const response = await fetch(
           `/api/v1/projects/${projectId}/ui-bridge-configs/${configId}`,
@@ -85,39 +88,39 @@ export function useDiscoveryConfig({
           }
         });
 
-        state.setStateUuidMap(uuidMap);
-        state.setDiscoveryResult({
+        stateRef.current.setStateUuidMap(uuidMap);
+        stateRef.current.setDiscoveryResult({
           states,
           elements: [],
           element_to_renders: {},
           render_count: cfg.render_count,
           unique_element_count: cfg.element_count,
         });
-        state.setStateDescriptions(descriptions);
-        state.setSelectedStateId(states[0]?.id || null);
-        state.setCurrentSavedConfigId(configId);
-        state.setConfigName(cfg.name);
+        stateRef.current.setStateDescriptions(descriptions);
+        stateRef.current.setSelectedStateId(states[0]?.id || null);
+        stateRef.current.setCurrentSavedConfigId(configId);
+        stateRef.current.setConfigName(cfg.name);
 
         toast.success(`Loaded config "${cfg.name}"`);
       } catch (error) {
         logger.error("Failed to load config:", error);
         toast.error("Failed to load config");
       } finally {
-        state.setIsLoadingConfigs(false);
+        stateRef.current.setIsLoadingConfigs(false);
       }
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- setters are stable
     },
     [projectId]
   );
 
   // Run state discovery
   const runDiscovery = useCallback(async () => {
-    if (!state.rendersToAnalyze || state.rendersToAnalyze.length === 0) {
+    const { rendersToAnalyze, discoveryStrategy } = stateRef.current;
+    if (!rendersToAnalyze || rendersToAnalyze.length === 0) {
       toast.error("No render logs to analyze");
       return;
     }
 
-    state.setIsDiscovering(true);
+    stateRef.current.setIsDiscovering(true);
     try {
       const response = await fetch(
         "/api/v1/state-discovery/ui-bridge/discover-states",
@@ -126,9 +129,9 @@ export function useDiscoveryConfig({
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({
-            renders: state.rendersToAnalyze,
+            renders: rendersToAnalyze,
             include_html_ids: false,
-            strategy: state.discoveryStrategy,
+            strategy: discoveryStrategy,
           }),
         }
       );
@@ -139,11 +142,11 @@ export function useDiscoveryConfig({
       }
 
       const result = await response.json();
-      state.setDiscoveryResult(result);
-      state.setSelectedStateId(result.states[0]?.id || null);
-      state.setStateDescriptions({});
-      state.setCurrentSavedConfigId(null);
-      state.setStateUuidMap({});
+      stateRef.current.setDiscoveryResult(result);
+      stateRef.current.setSelectedStateId(result.states[0]?.id || null);
+      stateRef.current.setStateDescriptions({});
+      stateRef.current.setCurrentSavedConfigId(null);
+      stateRef.current.setStateUuidMap({});
 
       const strategyLabel =
         result.strategy_used === "fingerprint"
@@ -160,10 +163,9 @@ export function useDiscoveryConfig({
         error instanceof Error ? error.message : "State discovery failed"
       );
     } finally {
-      state.setIsDiscovering(false);
+      stateRef.current.setIsDiscovering(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- setters are stable, reads use current closure values
-  }, [state.rendersToAnalyze, state.discoveryStrategy]);
+  }, []);
 
   // Save discovered states
   const saveDiscoveredStates = useCallback(async () => {
@@ -172,12 +174,13 @@ export function useDiscoveryConfig({
       return;
     }
 
-    if (!state.rendersToAnalyze || state.rendersToAnalyze.length === 0) {
+    const currentState = stateRef.current;
+    if (!currentState.rendersToAnalyze || currentState.rendersToAnalyze.length === 0) {
       toast.error("No render logs to save");
       return;
     }
 
-    state.setIsSaving(true);
+    currentState.setIsSaving(true);
     try {
       const response = await fetch(
         `/api/v1/projects/${projectId}/ui-bridge-discover`,
@@ -186,10 +189,10 @@ export function useDiscoveryConfig({
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({
-            config_name: state.configName,
-            renders: state.rendersToAnalyze,
+            config_name: currentState.configName,
+            renders: currentState.rendersToAnalyze,
             include_html_ids: false,
-            strategy: state.discoveryStrategy,
+            strategy: currentState.discoveryStrategy,
           }),
         }
       );
@@ -217,15 +220,15 @@ export function useDiscoveryConfig({
         }
       );
 
-      state.setStateUuidMap(uuidMap);
-      state.setDiscoveryResult({
+      currentState.setStateUuidMap(uuidMap);
+      currentState.setDiscoveryResult({
         states,
-        elements: state.discoveryResult?.elements || [],
-        element_to_renders: state.discoveryResult?.element_to_renders || {},
+        elements: currentState.discoveryResult?.elements || [],
+        element_to_renders: currentState.discoveryResult?.element_to_renders || {},
         render_count: result.render_count,
         unique_element_count: result.unique_element_count,
       });
-      state.setCurrentSavedConfigId(result.config.id);
+      currentState.setCurrentSavedConfigId(result.config.id);
       loadConfigs();
 
       toast.success(
@@ -237,27 +240,27 @@ export function useDiscoveryConfig({
         error instanceof Error ? error.message : "Failed to save states"
       );
     } finally {
-      state.setIsSaving(false);
+      stateRef.current.setIsSaving(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- setters are stable
-  }, [projectId, state.rendersToAnalyze, state.configName, state.discoveryStrategy, state.discoveryResult, loadConfigs]);
+  }, [projectId, loadConfigs]);
 
   // Update state description
   const updateStateDescription = useCallback(
     async (stateId: string, description: string) => {
-      state.setStateDescriptions((prev) => ({
+      stateRef.current.setStateDescriptions((prev) => ({
         ...prev,
         [stateId]: description,
       }));
 
+      const { currentSavedConfigId, stateUuidMap } = stateRef.current;
       if (
-        state.currentSavedConfigId &&
+        currentSavedConfigId &&
         projectId &&
-        state.stateUuidMap[stateId]
+        stateUuidMap[stateId]
       ) {
         try {
           await fetch(
-            `/api/v1/projects/${projectId}/ui-bridge-configs/${state.currentSavedConfigId}/states/${state.stateUuidMap[stateId]}`,
+            `/api/v1/projects/${projectId}/ui-bridge-configs/${currentSavedConfigId}/states/${stateUuidMap[stateId]}`,
             {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
@@ -270,8 +273,7 @@ export function useDiscoveryConfig({
         }
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- setters are stable
-    [state.currentSavedConfigId, state.stateUuidMap, projectId]
+    [projectId]
   );
 
   return {

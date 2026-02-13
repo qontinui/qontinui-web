@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { extractionService } from "@/services/service-factory";
 import { useExtractions, useCreateExtraction } from "@/hooks/use-extractions";
@@ -42,6 +42,10 @@ export function useWebExtraction({
   const createExtraction = useCreateExtraction();
   const annotationStore = useExtractionAnnotationStore();
 
+  // Keep a ref to state so callbacks can access setters without re-creating
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
   const {
     data: extractionHistory = [],
     isLoading: isLoadingHistory,
@@ -65,7 +69,7 @@ export function useWebExtraction({
       return;
     }
 
-    state.setIsCleaningUp(true);
+    stateRef.current.setIsCleaningUp(true);
     try {
       let cleaned = 0;
       for (const extraction of staleExtractions) {
@@ -90,17 +94,16 @@ export function useWebExtraction({
       logger.error("Cleanup failed:", error);
       toast.error("Failed to clean up stale extractions");
     } finally {
-      state.setIsCleaningUp(false);
+      stateRef.current.setIsCleaningUp(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- setter is stable
-  }, [staleExtractions, refetchHistory, state.setIsCleaningUp]);
+  }, [staleExtractions, refetchHistory]);
 
   // Load extraction detail and annotations
   const loadExtractionDetail = useCallback(
     async (extractionId: string, silent = false) => {
       try {
         if (!silent) {
-          state.setIsLoadingDetail(true);
+          stateRef.current.setIsLoadingDetail(true);
         }
         logger.info("[Extraction] Fetching detail for:", extractionId);
         const detail =
@@ -111,7 +114,7 @@ export function useWebExtraction({
           hasStateMachine: !!detail.state_machine,
           statesCount: detail.state_machine?.states?.length ?? 0,
         });
-        state.setExtractionDetail(detail);
+        stateRef.current.setExtractionDetail(detail);
 
         logger.info("[Extraction] Fetching annotations...");
         const annots = await extractionService.getAnnotations(extractionId);
@@ -125,7 +128,7 @@ export function useWebExtraction({
               }
             : null,
         });
-        state.setAnnotations(annots);
+        stateRef.current.setAnnotations(annots);
       } catch (error) {
         logger.error("[Extraction] Failed to load extraction detail:", error);
         if (!silent) {
@@ -133,12 +136,11 @@ export function useWebExtraction({
         }
       } finally {
         if (!silent) {
-          state.setIsLoadingDetail(false);
+          stateRef.current.setIsLoadingDetail(false);
         }
       }
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- setters are stable references
     },
-    [state.setIsLoadingDetail, state.setExtractionDetail, state.setAnnotations]
+    []
   );
 
   // Auto-load latest completed extraction on page load
@@ -421,7 +423,7 @@ export function useWebExtraction({
 
   // Poll for web extraction status from backend
   const pollWebExtractionStatus = useCallback(async () => {
-    const extractionId = state.webExtractionProgress.extractionId;
+    const extractionId = stateRef.current.webExtractionProgress.extractionId;
     if (!extractionId) return;
 
     try {
@@ -440,7 +442,7 @@ export function useWebExtraction({
           pages_extracted?: number;
           errors?: number;
         };
-        state.setWebExtractionProgress((prev) => ({
+        stateRef.current.setWebExtractionProgress((prev) => ({
           ...prev,
           statesFound: stats.states_found ?? prev.statesFound,
           transitionsFound: stats.transitions_found ?? prev.transitionsFound,
@@ -450,12 +452,12 @@ export function useWebExtraction({
       }
 
       if (detail.status === "completed") {
-        state.setIsExtracting(false);
-        if (state.pollingRef.current) {
-          clearInterval(state.pollingRef.current);
-          state.pollingRef.current = null;
+        stateRef.current.setIsExtracting(false);
+        if (stateRef.current.pollingRef.current) {
+          clearInterval(stateRef.current.pollingRef.current);
+          stateRef.current.pollingRef.current = null;
         }
-        state.setWebExtractionProgress((prev) => {
+        stateRef.current.setWebExtractionProgress((prev) => {
           const finalElapsedSeconds = prev.startTime
             ? Math.floor((Date.now() - prev.startTime) / 1000)
             : undefined;
@@ -474,12 +476,12 @@ export function useWebExtraction({
         });
         toast.success("Web extraction completed successfully!");
       } else if (detail.status === "failed") {
-        state.setIsExtracting(false);
-        if (state.pollingRef.current) {
-          clearInterval(state.pollingRef.current);
-          state.pollingRef.current = null;
+        stateRef.current.setIsExtracting(false);
+        if (stateRef.current.pollingRef.current) {
+          clearInterval(stateRef.current.pollingRef.current);
+          stateRef.current.pollingRef.current = null;
         }
-        state.setWebExtractionProgress((prev) => {
+        stateRef.current.setWebExtractionProgress((prev) => {
           const finalElapsedSeconds = prev.startTime
             ? Math.floor((Date.now() - prev.startTime) / 1000)
             : undefined;
@@ -498,8 +500,7 @@ export function useWebExtraction({
     } catch (error) {
       logger.error("Error polling web extraction status:", error);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- setters are stable
-  }, [state.webExtractionProgress.extractionId]);
+  }, []);
 
   // Load extraction detail when web extraction completes
   useEffect(() => {
@@ -544,14 +545,14 @@ export function useWebExtraction({
       return;
     }
 
-    state.setExtractionDetail(null);
-    state.setAnnotations([]);
-    state.setSelectedHistoryExtractionId(null);
+    stateRef.current.setExtractionDetail(null);
+    stateRef.current.setAnnotations([]);
+    stateRef.current.setSelectedHistoryExtractionId(null);
 
     const startTime = Date.now();
     logger.info("[Extraction] Started - set startTime:", startTime);
 
-    state.setWebExtractionProgress({
+    stateRef.current.setWebExtractionProgress({
       status: "running",
       extractionId: null,
       statesFound: 0,
@@ -576,7 +577,7 @@ export function useWebExtraction({
       },
     });
 
-    state.setWebExtractionProgress((prev) => ({
+    stateRef.current.setWebExtractionProgress((prev) => ({
       ...prev,
       extractionId: sessionResult.id,
     }));
@@ -610,9 +611,8 @@ export function useWebExtraction({
     }
 
     toast.info("Starting web extraction...");
-    state.setIsExtracting(true);
-    state.setMainTab("results");
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- setters are stable
+    stateRef.current.setIsExtracting(true);
+    stateRef.current.setMainTab("results");
   }, [projectId, webConfig, createExtraction, getAccessToken]);
 
   return {

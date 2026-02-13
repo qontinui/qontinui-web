@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useUIBridgeExploration } from "@/hooks/ui-bridge";
 import { useUIBridgeRecording } from "@/hooks/useUIBridgeRecording";
@@ -21,6 +21,10 @@ export function useUIBridgeSection({
   const recording = useUIBridgeRecording();
   const { connections, isLoading: connectionsLoading } =
     useRealtimeConnections();
+
+  // Keep a ref to state so callbacks can access setters without re-creating
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   // Auto-select first runner when connections load
   useEffect(() => {
@@ -91,7 +95,7 @@ export function useUIBridgeSection({
 
   // Load render log sessions
   const loadRenderLogSessions = useCallback(async () => {
-    state.setIsLoadingSessions(true);
+    stateRef.current.setIsLoadingSessions(true);
     try {
       const response = await fetch("/api/v1/render-logs/sessions?limit=20", {
         credentials: "include",
@@ -99,24 +103,23 @@ export function useUIBridgeSection({
 
       if (response.ok) {
         const sessions: RenderLogSession[] = await response.json();
-        state.setRenderLogSessions(sessions);
+        stateRef.current.setRenderLogSessions(sessions);
       } else if (response.status === 404) {
-        state.setRenderLogSessions([]);
+        stateRef.current.setRenderLogSessions([]);
       }
     } catch (error) {
       logger.error("Failed to load render log sessions:", error);
-      state.setRenderLogSessions([]);
+      stateRef.current.setRenderLogSessions([]);
     } finally {
-      state.setIsLoadingSessions(false);
+      stateRef.current.setIsLoadingSessions(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- setters are stable
   }, []);
 
   // Load renders from session
   const loadSessionRenders = useCallback(
     async (sessionId: string) => {
-      state.setIsLoadingSessionRenders(true);
-      state.setSelectedSessionId(sessionId);
+      stateRef.current.setIsLoadingSessionRenders(true);
+      stateRef.current.setSelectedSessionId(sessionId);
       try {
         const listResponse = await fetch(
           `/api/v1/render-logs?session_id=${sessionId}&page_size=200`,
@@ -147,12 +150,12 @@ export function useUIBridgeSection({
           snapshot: r.snapshot,
         }));
 
-        state.setSessionRenders(formattedRenders);
-        state.setUploadedRenders(null);
-        state.setDiscoveryResult(null);
-        state.setStateDescriptions({});
-        state.setCurrentSavedConfigId(null);
-        state.setStateUuidMap({});
+        stateRef.current.setSessionRenders(formattedRenders);
+        stateRef.current.setUploadedRenders(null);
+        stateRef.current.setDiscoveryResult(null);
+        stateRef.current.setStateDescriptions({});
+        stateRef.current.setCurrentSavedConfigId(null);
+        stateRef.current.setStateUuidMap({});
 
         toast.success(
           `Loaded ${formattedRenders.length} renders from session`
@@ -161,9 +164,8 @@ export function useUIBridgeSection({
         logger.error("Failed to load session renders:", error);
         toast.error("Failed to load render logs from session");
       } finally {
-        state.setIsLoadingSessionRenders(false);
+        stateRef.current.setIsLoadingSessionRenders(false);
       }
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- setters are stable
     },
     []
   );
@@ -180,20 +182,19 @@ export function useUIBridgeSection({
           const content = e.target?.result as string;
           const parsed = JSON.parse(content);
           const renders = Array.isArray(parsed) ? parsed : [parsed];
-          state.setUploadedRenders(renders);
-          state.setSessionRenders(null);
-          state.setSelectedSessionId(null);
-          state.setDiscoveryResult(null);
-          state.setStateDescriptions({});
-          state.setCurrentSavedConfigId(null);
-          state.setStateUuidMap({});
+          stateRef.current.setUploadedRenders(renders);
+          stateRef.current.setSessionRenders(null);
+          stateRef.current.setSelectedSessionId(null);
+          stateRef.current.setDiscoveryResult(null);
+          stateRef.current.setStateDescriptions({});
+          stateRef.current.setCurrentSavedConfigId(null);
+          stateRef.current.setStateUuidMap({});
           toast.success(`Loaded ${renders.length} render logs from file`);
         } catch {
           toast.error("Invalid JSON file");
         }
       };
       reader.readAsText(file);
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- setters are stable
     },
     []
   );

@@ -639,7 +639,7 @@ export class TransitionOrganizationService {
       if (importDataObj.groups && options.includeGroups) {
         result.groups = importDataObj.groups;
         for (const group of importDataObj.groups) {
-          this.groupManager.updateGroup(group.id, group) ||
+          if (!this.groupManager.updateGroup(group.id, group)) {
             this.groupManager.createTransitionGroup(
               group.name,
               group.transitionIds,
@@ -650,6 +650,7 @@ export class TransitionOrganizationService {
                 enabled: group.enabled,
               }
             );
+          }
         }
       }
 

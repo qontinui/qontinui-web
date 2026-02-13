@@ -7,7 +7,7 @@ import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Image, Target, MapPin, Inbox, Loader2 } from "lucide-react";
+import { Image as ImageIcon, Target, MapPin, Inbox, Loader2 } from "lucide-react";
 
 function formatTime(timestamp: string): string {
   const date = new Date(timestamp);
@@ -86,7 +86,7 @@ export default function ImageRecognitionPage() {
       <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
-            <Image className="size-6 text-violet-400" />
+            <ImageIcon className="size-6 text-violet-400" />
             <h1 className="text-2xl font-bold text-text-primary">
               Image Recognition
             </h1>
@@ -191,7 +191,7 @@ export default function ImageRecognitionPage() {
           ) : recognitionEvents.length === 0 ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center text-text-muted">
-                <Image className="size-16 mx-auto mb-4 opacity-30" />
+                <ImageIcon className="size-16 mx-auto mb-4 opacity-30" />
                 <h3
                   data-content-role="heading"
                   data-content-label="empty state title"
