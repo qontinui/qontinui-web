@@ -81,61 +81,47 @@
   --color-glow-primary: var(--glow-primary);
   --color-glow-secondary: var(--glow-secondary);
   --color-glow-success: var(--glow-success);
-
-  /* Legacy qontinui- prefixed colors (for gradual migration) */
-  --color-qontinui-canvas: rgb(var(--qontinui-canvas));
-  --color-qontinui-panel: rgb(var(--qontinui-panel));
-  --color-qontinui-cyan: rgb(var(--qontinui-cyan));
-  --color-qontinui-green: rgb(var(--qontinui-green));
-  --color-qontinui-purple: rgb(var(--qontinui-purple));
-  --color-qontinui-border-dark: rgb(var(--qontinui-border-dark));
-  --color-qontinui-border-medium: rgb(var(--qontinui-border-medium));
-  --color-qontinui-dot-pattern: rgb(var(--qontinui-dot-pattern));
 }
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.141 0.005 285.823);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.141 0.005 285.823);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.141 0.005 285.823);
-  --primary: oklch(0.21 0.006 285.885);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.967 0.001 286.375);
-  --secondary-foreground: oklch(0.21 0.006 285.885);
-  --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
-  --accent: oklch(0.967 0.001 286.375);
-  --accent-foreground: oklch(0.21 0.006 285.885);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.705 0.015 286.067);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.141 0.005 285.823);
-  --sidebar-primary: oklch(0.21 0.006 285.885);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.967 0.001 286.375);
-  --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
-  --sidebar-border: oklch(0.92 0.004 286.32);
-  --sidebar-ring: oklch(0.705 0.015 286.067);
+  --radius: 0.5rem;
 
-  /* Legacy Qontinui tokens (for gradual migration) */
-  --qontinui-canvas: 10 10 11; /* #0A0A0B */
-  --qontinui-panel: 39 39 42; /* #27272A */
-  --qontinui-cyan: 0 217 255; /* #00D9FF */
-  --qontinui-green: 0 255 136; /* #00FF88 */
-  --qontinui-purple: 189 0 255; /* #BD00FF */
-  --qontinui-border-dark: 31 31 35; /* #1F1F23 gray-800 */
-  --qontinui-border-medium: 63 63 70; /* #3F3F46 gray-700 */
-  --qontinui-dot-pattern: 51 51 51; /* #333333 */
+  /* Dark-only values aligned with runner aesthetic */
+  --background: #111115;
+  --foreground: #ffffff;
+  --card: #1e1e22;
+  --card-foreground: #ffffff;
+  --popover: #1e1e22;
+  --popover-foreground: #ffffff;
+  --primary: #4a90d9;
+  --primary-foreground: #ffffff;
+  --secondary: #2c2c32;
+  --secondary-foreground: #ffffff;
+  --muted: #2c2c32;
+  --muted-foreground: #8a8a8a;
+  --accent: #252529;
+  --accent-foreground: #ffffff;
+  --destructive: #e5534b;
+  --border: #2a2a30;
+  --input: #1e1e22;
+  --ring: #4a90d9;
+
+  /* Chart colors (dark palette) */
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+
+  /* Sidebar */
+  --sidebar: #1e1e22;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #4a90d9;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #252529;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #2a2a30;
+  --sidebar-ring: #4a90d9;
 
   /* Qontinui Brand Colors - sourced from @qontinui/design-tokens */
   --brand-primary: var(--qontinui-brand-primary);
@@ -165,78 +151,6 @@
   --info-muted: var(--qontinui-info-muted);
 
   /* Glow Effects - sourced from @qontinui/design-tokens */
-  --glow-primary: var(--qontinui-glow-primary);
-  --glow-secondary: var(--qontinui-glow-secondary);
-  --glow-success: var(--qontinui-glow-success);
-}
-
-.dark {
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.21 0.006 285.885);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.21 0.006 285.885);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.92 0.004 286.32);
-  --primary-foreground: oklch(0.21 0.006 285.885);
-  --secondary: oklch(0.274 0.006 286.033);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.552 0.016 285.938);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.21 0.006 285.885);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.274 0.006 286.033);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.552 0.016 285.938);
-
-  /* Legacy Qontinui tokens - same in dark mode */
-  --qontinui-canvas: 10 10 11; /* #0A0A0B */
-  --qontinui-panel: 39 39 42; /* #27272A */
-  --qontinui-cyan: 0 217 255; /* #00D9FF */
-  --qontinui-green: 0 255 136; /* #00FF88 */
-  --qontinui-purple: 189 0 255; /* #BD00FF */
-  --qontinui-border-dark: 31 31 35; /* #1F1F23 gray-800 */
-  --qontinui-border-medium: 63 63 70; /* #3F3F46 gray-700 */
-  --qontinui-dot-pattern: 51 51 51; /* #333333 */
-
-  /* Qontinui Brand Colors - sourced from @qontinui/design-tokens (same in dark mode) */
-  --brand-primary: var(--qontinui-brand-primary);
-  --brand-secondary: var(--qontinui-brand-secondary);
-  --brand-success: var(--qontinui-brand-success);
-
-  --surface-canvas: var(--qontinui-surface-canvas);
-  --surface-raised: var(--qontinui-surface-raised);
-  --surface-hover: var(--qontinui-surface-hover);
-  --surface-active: var(--qontinui-surface-active);
-
-  --border-subtle: var(--qontinui-border-subtle);
-  --border-default: var(--qontinui-border-default);
-  --border-strong: var(--qontinui-border-strong);
-  --border-interactive: var(--qontinui-border-interactive);
-
-  --success: var(--qontinui-success);
-  --success-muted: var(--qontinui-success-muted);
-  --warning: var(--qontinui-warning);
-  --warning-muted: var(--qontinui-warning-muted);
-  --error: var(--qontinui-error);
-  --error-muted: var(--qontinui-error-muted);
-  --info: var(--qontinui-info);
-  --info-muted: var(--qontinui-info-muted);
-
   --glow-primary: var(--qontinui-glow-primary);
   --glow-secondary: var(--qontinui-glow-secondary);
   --glow-success: var(--qontinui-glow-success);
@@ -316,7 +230,7 @@
   .gradient-border {
     position: relative;
     background: var(--surface-raised);
-    border-radius: 0.625rem;
+    border-radius: var(--radius);
   }
 
   .gradient-border::before {
@@ -360,6 +274,23 @@
     51%,
     100% {
       opacity: 0;
+    }
+  }
+
+  /* Phase glow animation for active workflow stages */
+  .animate-phase-glow {
+    animation: phase-glow 2s ease-in-out infinite;
+  }
+
+  @keyframes phase-glow {
+    0%,
+    100% {
+      filter: brightness(1);
+      box-shadow: 0 0 6px currentColor;
+    }
+    50% {
+      filter: brightness(1.4);
+      box-shadow: 0 0 14px currentColor;
     }
   }
 

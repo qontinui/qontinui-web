@@ -45,6 +45,8 @@ export function MetricCard({
                   ? "bg-brand-success/20 text-brand-success"
                   : "bg-red-500/20 text-red-400"
               }`}
+              data-content-role="badge"
+              data-content-label="trend"
             >
               <span>{trend === "up" ? "↑" : "↓"}</span>
               <span>{trendValue}</span>
@@ -53,7 +55,13 @@ export function MetricCard({
         </div>
         <div className="space-y-1">
           <p className="text-sm text-text-muted">{title}</p>
-          <p className="text-2xl font-bold text-white">{value}</p>
+          <p
+            className="text-2xl font-bold text-white"
+            data-content-role="metric"
+            data-content-label={title.toLowerCase().replace(/\s+/g, "-")}
+          >
+            {value}
+          </p>
         </div>
       </CardContent>
     </Card>

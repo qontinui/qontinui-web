@@ -261,7 +261,11 @@ export default function DatasetsPage() {
                         {dataset.description || "No description"}
                       </CardDescription>
                     </div>
-                    <Badge className={getSourceBadgeColor(dataset.source)}>
+                    <Badge
+                      className={getSourceBadgeColor(dataset.source)}
+                      data-content-role="badge"
+                      data-content-label="dataset-source"
+                    >
                       {dataset.source.replace("_", " ")}
                     </Badge>
                   </div>
@@ -273,10 +277,17 @@ export default function DatasetsPage() {
                       <div className="flex items-center justify-center gap-1 text-muted-foreground mb-1">
                         <ImageIcon className="h-4 w-4" />
                       </div>
-                      <div className="text-2xl font-bold">
+                      <div
+                        className="text-2xl font-bold"
+                        data-content-role="metric"
+                        data-content-label="total-images"
+                      >
                         {dataset.total_images}
                       </div>
-                      <div className="text-xs text-muted-foreground">
+                      <div
+                        className="text-xs text-muted-foreground"
+                        data-content-role="label"
+                      >
                         Images
                       </div>
                     </div>
@@ -284,10 +295,17 @@ export default function DatasetsPage() {
                       <div className="flex items-center justify-center gap-1 text-muted-foreground mb-1">
                         <Tag className="h-4 w-4" />
                       </div>
-                      <div className="text-2xl font-bold">
+                      <div
+                        className="text-2xl font-bold"
+                        data-content-role="metric"
+                        data-content-label="total-annotations"
+                      >
                         {dataset.total_annotations}
                       </div>
-                      <div className="text-xs text-muted-foreground">
+                      <div
+                        className="text-xs text-muted-foreground"
+                        data-content-role="label"
+                      >
                         Annotations
                       </div>
                     </div>
@@ -295,10 +313,17 @@ export default function DatasetsPage() {
                       <div className="flex items-center justify-center gap-1 text-muted-foreground mb-1">
                         <CheckCircle2 className="h-4 w-4" />
                       </div>
-                      <div className="text-2xl font-bold">
+                      <div
+                        className="text-2xl font-bold"
+                        data-content-role="metric"
+                        data-content-label="reviewed-count"
+                      >
                         {dataset.reviewed_count}
                       </div>
-                      <div className="text-xs text-muted-foreground">
+                      <div
+                        className="text-xs text-muted-foreground"
+                        data-content-role="label"
+                      >
                         Reviewed
                       </div>
                     </div>
@@ -307,10 +332,19 @@ export default function DatasetsPage() {
                   {/* Review Progress */}
                   <div className="space-y-2 mb-4">
                     <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">
+                      <span
+                        className="text-muted-foreground"
+                        data-content-role="label"
+                      >
                         Review Progress
                       </span>
-                      <span className="font-medium">{progress}%</span>
+                      <span
+                        className="font-medium"
+                        data-content-role="metric"
+                        data-content-label="review-progress"
+                      >
+                        {progress}%
+                      </span>
                     </div>
                     <Progress value={progress} className="h-2" />
                   </div>

@@ -177,12 +177,20 @@ export default function MobileAdminDashboard() {
                   <div className="flex items-start gap-3 p-3 rounded-lg bg-background">
                     <XCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium text-sm">
+                      <div
+                        data-content-role="status"
+                        data-content-label="system health status"
+                        className="font-medium text-sm"
+                      >
                         System Status:{" "}
                         {healthOverview.overall_status.toUpperCase()}
                       </div>
                       {healthOverview.critical_alerts > 0 && (
-                        <div className="text-xs text-muted-foreground mt-1">
+                        <div
+                          data-content-role="metric"
+                          data-content-label="critical alerts count"
+                          className="text-xs text-muted-foreground mt-1"
+                        >
                           {healthOverview.critical_alerts} critical alert
                           {healthOverview.critical_alerts !== 1 ? "s" : ""}
                         </div>
@@ -205,8 +213,18 @@ export default function MobileAdminDashboard() {
                     }`}
                   />
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm">{warning.message}</div>
-                    <div className="text-xs text-muted-foreground mt-1 capitalize">
+                    <div
+                      data-content-role="body-text"
+                      data-content-label="warning message"
+                      className="font-medium text-sm"
+                    >
+                      {warning.message}
+                    </div>
+                    <div
+                      data-content-role="label"
+                      data-content-label="warning severity and time"
+                      className="text-xs text-muted-foreground mt-1 capitalize"
+                    >
                       {warning.severity} •{" "}
                       {new Date(warning.timestamp).toLocaleTimeString()}
                     </div>
@@ -231,8 +249,18 @@ export default function MobileAdminDashboard() {
               <div className="flex items-center gap-3">
                 <CheckCircle className="h-6 w-6 text-green-600 dark:text-green-400" />
                 <div>
-                  <div className="font-medium">All Systems Healthy</div>
-                  <div className="text-sm text-muted-foreground">
+                  <div
+                    data-content-role="status"
+                    data-content-label="all systems healthy"
+                    className="font-medium"
+                  >
+                    All Systems Healthy
+                  </div>
+                  <div
+                    data-content-role="description"
+                    data-content-label="health status detail"
+                    className="text-sm text-muted-foreground"
+                  >
                     No issues detected
                   </div>
                 </div>
@@ -254,10 +282,18 @@ export default function MobileAdminDashboard() {
                     <UserPlus className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold">
+                    <div
+                      data-content-role="metric"
+                      data-content-label="new users today"
+                      className="text-2xl font-bold"
+                    >
                       {analytics?.new_users_today ?? "–"}
                     </div>
-                    <div className="text-sm text-muted-foreground">
+                    <div
+                      data-content-role="label"
+                      data-content-label="new users today label"
+                      className="text-sm text-muted-foreground"
+                    >
                       New Users Today
                     </div>
                   </div>
@@ -275,10 +311,18 @@ export default function MobileAdminDashboard() {
                     <Users className="h-5 w-5 text-purple-600 dark:text-purple-400" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold">
+                    <div
+                      data-content-role="metric"
+                      data-content-label="new users this week"
+                      className="text-2xl font-bold"
+                    >
                       {analytics?.new_users_week ?? "–"}
                     </div>
-                    <div className="text-sm text-muted-foreground">
+                    <div
+                      data-content-role="label"
+                      data-content-label="new users this week label"
+                      className="text-sm text-muted-foreground"
+                    >
                       New Users This Week
                     </div>
                   </div>
@@ -296,10 +340,18 @@ export default function MobileAdminDashboard() {
                     <Activity className="h-5 w-5 text-green-600 dark:text-green-400" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold">
+                    <div
+                      data-content-role="metric"
+                      data-content-label="daily active users"
+                      className="text-2xl font-bold"
+                    >
                       {analytics?.dau ?? "–"}
                     </div>
-                    <div className="text-sm text-muted-foreground">
+                    <div
+                      data-content-role="label"
+                      data-content-label="active users label"
+                      className="text-sm text-muted-foreground"
+                    >
                       Active Users (24h)
                     </div>
                   </div>
@@ -317,10 +369,18 @@ export default function MobileAdminDashboard() {
                     <Activity className="h-5 w-5 text-orange-600 dark:text-orange-400" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold">
+                    <div
+                      data-content-role="metric"
+                      data-content-label="sessions today"
+                      className="text-2xl font-bold"
+                    >
                       {analytics?.total_sessions_today ?? "–"}
                     </div>
-                    <div className="text-sm text-muted-foreground">
+                    <div
+                      data-content-role="label"
+                      data-content-label="sessions today label"
+                      className="text-sm text-muted-foreground"
+                    >
                       Sessions Today
                     </div>
                   </div>
@@ -338,8 +398,18 @@ export default function MobileAdminDashboard() {
                     <TrendingUp className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold">–</div>
-                    <div className="text-sm text-muted-foreground">
+                    <div
+                      data-content-role="metric"
+                      data-content-label="account upgrades"
+                      className="text-2xl font-bold"
+                    >
+                      –
+                    </div>
+                    <div
+                      data-content-role="label"
+                      data-content-label="account upgrades label"
+                      className="text-sm text-muted-foreground"
+                    >
                       Account Upgrades (Coming Soon)
                     </div>
                   </div>
@@ -350,7 +420,11 @@ export default function MobileAdminDashboard() {
         </div>
 
         {/* Last Updated */}
-        <div className="text-xs text-center text-muted-foreground pt-2">
+        <div
+          data-content-role="description"
+          data-content-label="auto-refresh note"
+          className="text-xs text-center text-muted-foreground pt-2"
+        >
           Auto-refresh every 60 seconds
         </div>
       </div>

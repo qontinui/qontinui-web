@@ -46,8 +46,8 @@ export function SyncQueueViewer() {
     // Load initial data
     loadItems();
 
-    // Refresh periodically
-    const interval = setInterval(loadItems, 2000);
+    // Refresh periodically (10s — items also refresh on queue subscription)
+    const interval = setInterval(loadItems, 10000);
 
     return () => {
       unsubscribe();

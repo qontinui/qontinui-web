@@ -27,7 +27,7 @@ import {
   createDefaultWorkflow,
   isWorkflowEmpty,
 } from "@/types/unified-workflow";
-import { runnerApi } from "@/lib/runner-api";
+import * as workflowApi from "@/lib/api/unified-workflows";
 
 // =============================================================================
 // Constants
@@ -685,9 +685,9 @@ export function WorkflowBuilderProvider({
 
         let saved: UnifiedWorkflow;
         if (isNew) {
-          saved = await runnerApi.saveUnifiedWorkflow(workflow);
+          saved = await workflowApi.createWorkflow(workflow);
         } else {
-          saved = await runnerApi.updateUnifiedWorkflow(workflow.id, workflow);
+          saved = await workflowApi.updateWorkflow(workflow.id, workflow);
         }
 
         dispatch({ type: "SET_WORKFLOW", payload: saved });
@@ -707,7 +707,7 @@ export function WorkflowBuilderProvider({
     dispatch({ type: "SET_ERROR", payload: null });
 
     try {
-      const data = await runnerApi.getUnifiedWorkflow(id);
+      const data = await workflowApi.getWorkflow(id);
       dispatch({ type: "SET_WORKFLOW", payload: data });
       dispatch({ type: "SET_LOADING", payload: false });
       return true;
@@ -726,7 +726,7 @@ export function WorkflowBuilderProvider({
       dispatch({ type: "SET_ERROR", payload: null });
 
       try {
-        const data = await runnerApi.exportWorkflow(id);
+        const data = await workflowApi.exportWorkflow(id);
         dispatch({ type: "SET_LOADING", payload: false });
         return data as WorkflowExport;
       } catch (error) {
@@ -749,9 +749,13 @@ export function WorkflowBuilderProvider({
       dispatch({ type: "SET_ERROR", payload: null });
 
       try {
-        const data = await runnerApi.importWorkflow(workflow, conflictStrategy);
+        const data = await workflowApi.importWorkflow(workflow);
         dispatch({ type: "SET_LOADING", payload: false });
-        return data as WorkflowImportResult;
+        return {
+          workflow: data,
+          overwritten: conflictStrategy === "overwrite",
+          original_id: conflictStrategy === "keep" ? workflow.id : null,
+        } as WorkflowImportResult;
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Failed to import workflow";

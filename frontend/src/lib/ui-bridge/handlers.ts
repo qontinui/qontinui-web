@@ -55,6 +55,11 @@ import type {
   IntentExecutionResult,
   RecoveryAttemptRequest,
   RecoveryAttemptResult,
+  PageDataMap,
+  PageRegionMap,
+  StructuredDataExtraction,
+  CrossAppComparisonReport,
+  ComponentInfo,
 } from "@qontinui/ui-bridge/ai";
 import type {
   UIState,
@@ -109,25 +114,14 @@ let latestControlSnapshot: ControlSnapshot = {
 // Latest semantic snapshot from browser
 let latestSemanticSnapshot: SemanticSnapshot | null = null;
 
-// Pending command responses (command_id -> resolver)
-const pendingCommands = new Map<
-  string,
-  {
-    resolve: (value: unknown) => void;
-    reject: (error: Error) => void;
-    timeout: NodeJS.Timeout;
-  }
->();
-
-const MAX_PENDING_COMMANDS = 200;
-
-// Command timeout in milliseconds (10 seconds for WebSocket, 30 seconds for SSE/HTTP)
-const WEBSOCKET_COMMAND_TIMEOUT_MS = 10000;
-const SSE_COMMAND_TIMEOUT_MS = 15000;
-
 // ============================================================================
-// Command Subscriber System (for SSE push)
+// Shared State via globalThis
 // ============================================================================
+// Next.js dev mode compiles each API route into a separate module graph.
+// Module-level variables are duplicated across routes, breaking the command
+// relay (SSE stream subscribes to one Set, snapshot handler checks a different
+// Set). Using globalThis for commandListeners and pendingCommands ensures all
+// routes share the same instances.
 
 interface QueuedCommand {
   commandId: string;
@@ -137,7 +131,31 @@ interface QueuedCommand {
 }
 
 type CommandListener = (command: QueuedCommand) => void;
-const commandListeners = new Set<CommandListener>();
+
+interface PendingCommand {
+  resolve: (value: unknown) => void;
+  reject: (error: Error) => void;
+  timeout: NodeJS.Timeout;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const g = globalThis as any;
+if (!g.__uiBridgePendingCommands) {
+  g.__uiBridgePendingCommands = new Map<string, PendingCommand>();
+}
+if (!g.__uiBridgeCommandListeners) {
+  g.__uiBridgeCommandListeners = new Set<CommandListener>();
+}
+
+const pendingCommands: Map<string, PendingCommand> =
+  g.__uiBridgePendingCommands;
+const commandListeners: Set<CommandListener> = g.__uiBridgeCommandListeners;
+
+const MAX_PENDING_COMMANDS = 200;
+
+// Command timeout in milliseconds (10 seconds for WebSocket, 30 seconds for SSE/HTTP)
+const WEBSOCKET_COMMAND_TIMEOUT_MS = 10000;
+const SSE_COMMAND_TIMEOUT_MS = 15000;
 
 /**
  * Subscribe to new commands. Returns an unsubscribe function.
@@ -145,8 +163,10 @@ const commandListeners = new Set<CommandListener>();
  */
 export function subscribeToCommands(listener: CommandListener): () => void {
   commandListeners.add(listener);
+  console.log(`[ui-bridge] SSE listener connected (total: ${commandListeners.size})`);
   return () => {
     commandListeners.delete(listener);
+    console.log(`[ui-bridge] SSE listener disconnected (total: ${commandListeners.size})`);
   };
 }
 
@@ -332,6 +352,7 @@ function generateCommandId(): string {
  */
 export function queueCommand<T>(action: string, payload: unknown): Promise<T> {
   const commandId = generateCommandId();
+  console.log(`[ui-bridge] queueCommand: ${action} (ws=${wsClients.size}, sse=${commandListeners.size})`);
 
   return new Promise((resolve, reject) => {
     // Try WebSocket delivery first
@@ -347,6 +368,17 @@ export function queueCommand<T>(action: string, payload: unknown): Promise<T> {
     if (sentViaWebSocket) {
       transport = "WebSocket";
       timeoutMs = WEBSOCKET_COMMAND_TIMEOUT_MS;
+    }
+
+    // Fail fast if no transport is available at all
+    if (!sentViaWebSocket && commandListeners.size === 0) {
+      reject(
+        new Error(
+          `No browser connected — no WebSocket clients and no SSE listeners. ` +
+          `Ensure the web app is open in a browser tab.`
+        )
+      );
+      return;
     }
 
     const timeout = setTimeout(() => {
@@ -395,7 +427,7 @@ export function queueCommand<T>(action: string, payload: unknown): Promise<T> {
           try {
             listener(command);
           } catch {
-            // Listener failed, will be cleaned up on next subscribe check
+            // Listener failed, will be cleaned up by self-cleaning mechanism
           }
         }
       } else {
@@ -426,6 +458,7 @@ export function queueCommand<T>(action: string, payload: unknown): Promise<T> {
 export function resolveCommand(commandId: string, result: unknown): boolean {
   const pending = pendingCommands.get(commandId);
   if (!pending) {
+    console.log(`[ui-bridge] resolveCommand: ${commandId} not found (already timed out or resolved)`);
     return false;
   }
 
@@ -451,6 +484,20 @@ export function rejectCommand(
   pendingCommands.delete(commandId);
   pending.reject(new Error(errorMessage));
   return true;
+}
+
+/**
+ * Diagnostic: Get internal transport state for debugging
+ */
+export function getTransportDiagnostics() {
+  return {
+    pendingCommandCount: pendingCommands.size,
+    pendingCommandIds: Array.from(pendingCommands.keys()),
+    commandListenerCount: commandListeners.size,
+    wsClientCount: wsClients.size,
+    wsClientIds: Array.from(wsClients.keys()),
+    commandQueueLength: commandQueue.length,
+  };
 }
 
 // Legacy command queue for browser polling fallback (when no SSE/WebSocket client is connected)
@@ -668,8 +715,13 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
       );
       updateControlSnapshot(result);
       return success(result);
-    } catch (_e) {
-      // Fall back to cached snapshot
+    } catch (e) {
+      const msg = (e as Error).message;
+      // If no browser is connected, return error instead of empty cached data
+      if (msg.includes("No browser connected")) {
+        return error(msg, "NO_BROWSER");
+      }
+      // For timeouts, fall back to cached snapshot
       return success(latestControlSnapshot);
     }
   },
@@ -887,6 +939,72 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
   },
 
   // --------------------------------------------------------------------------
+  // Page Navigation Endpoints
+  // --------------------------------------------------------------------------
+
+  async pageRefresh(): Promise<
+    APIResponse<{ success: boolean; url?: string; timestamp: number }>
+  > {
+    try {
+      const result = await queueCommand<{
+        success: boolean;
+        url?: string;
+        timestamp: number;
+      }>("pageRefresh", {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async pageNavigate(request: {
+    url: string;
+  }): Promise<
+    APIResponse<{ success: boolean; url?: string; timestamp: number }>
+  > {
+    try {
+      const result = await queueCommand<{
+        success: boolean;
+        url?: string;
+        timestamp: number;
+      }>("pageNavigate", request);
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async pageGoBack(): Promise<
+    APIResponse<{ success: boolean; url?: string; timestamp: number }>
+  > {
+    try {
+      const result = await queueCommand<{
+        success: boolean;
+        url?: string;
+        timestamp: number;
+      }>("pageGoBack", {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async pageGoForward(): Promise<
+    APIResponse<{ success: boolean; url?: string; timestamp: number }>
+  > {
+    try {
+      const result = await queueCommand<{
+        success: boolean;
+        url?: string;
+        timestamp: number;
+      }>("pageGoForward", {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  // --------------------------------------------------------------------------
   // Annotation Endpoints
   // --------------------------------------------------------------------------
 
@@ -1076,14 +1194,11 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
     }
   },
 
-  async executeTransition(
-    id: string
-  ): Promise<APIResponse<TransitionResult>> {
+  async executeTransition(id: string): Promise<APIResponse<TransitionResult>> {
     try {
-      const result = await queueCommand<TransitionResult>(
-        "executeTransition",
-        { id }
-      );
+      const result = await queueCommand<TransitionResult>("executeTransition", {
+        id,
+      });
       return success(result);
     } catch (e) {
       return error((e as Error).message, "COMMAND_FAILED");
@@ -1117,10 +1232,7 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
 
   async getStateSnapshot(): Promise<APIResponse<StateSnapshot>> {
     try {
-      const result = await queueCommand<StateSnapshot>(
-        "getStateSnapshot",
-        {}
-      );
+      const result = await queueCommand<StateSnapshot>("getStateSnapshot", {});
       return success(result);
     } catch (_e) {
       // Fallback: return minimal snapshot
@@ -1210,6 +1322,62 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
     try {
       const result = await queueCommand<RecoveryAttemptResult>(
         "attemptRecovery",
+        request
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // Cross-App Analysis Endpoints
+  // --------------------------------------------------------------------------
+
+  async analyzePageData(): Promise<APIResponse<PageDataMap>> {
+    try {
+      const result = await queueCommand<PageDataMap>("analyzePageData", {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async analyzePageRegions(): Promise<APIResponse<PageRegionMap>> {
+    try {
+      const result = await queueCommand<PageRegionMap>(
+        "analyzePageRegions",
+        {}
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async analyzeStructuredData(): Promise<
+    APIResponse<StructuredDataExtraction>
+  > {
+    try {
+      const result = await queueCommand<StructuredDataExtraction>(
+        "analyzeStructuredData",
+        {}
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async crossAppCompare(request: {
+    sourceSnapshot: SemanticSnapshot;
+    targetSnapshot: SemanticSnapshot;
+    sourceComponents?: ComponentInfo[];
+    targetComponents?: ComponentInfo[];
+  }): Promise<APIResponse<CrossAppComparisonReport>> {
+    try {
+      const result = await queueCommand<CrossAppComparisonReport>(
+        "crossAppCompare",
         request
       );
       return success(result);

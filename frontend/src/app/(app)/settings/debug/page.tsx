@@ -276,8 +276,18 @@ function CopyableField({
   return (
     <div className="flex items-center justify-between gap-4">
       <div className="min-w-0">
-        <span className="text-xs text-text-muted block">{label}</span>
-        <span className="text-sm text-text-primary font-mono truncate block">
+        <span
+          data-content-role="label"
+          data-content-label="field label"
+          className="text-xs text-text-muted block"
+        >
+          {label}
+        </span>
+        <span
+          data-content-role="body-text"
+          data-content-label="field value"
+          className="text-sm text-text-primary font-mono truncate block"
+        >
           {value}
         </span>
       </div>

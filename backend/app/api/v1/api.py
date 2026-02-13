@@ -55,6 +55,7 @@ from app.api.v1.endpoints import (
     runner_status_ws,
     runners,
     security_endpoints,
+    semantic_search,
     settings,
     snapshots,
     state_discovery,
@@ -68,6 +69,7 @@ from app.api.v1.endpoints import (
     training,
     training_datasets,
     ui_bridge_states,
+    unified_workflows,
     users,
     variables,
     versions,
@@ -222,4 +224,12 @@ api_router.include_router(
     workflow_step_types.router,
     prefix="/workflow-config",
     tags=["workflow-config"],
+)
+# Unified workflows (workflow definitions - source of truth)
+api_router.include_router(
+    unified_workflows.router, prefix="/unified-workflows", tags=["unified-workflows"]
+)
+# Cross-entity semantic search
+api_router.include_router(
+    semantic_search.router, prefix="/search", tags=["semantic-search"]
 )

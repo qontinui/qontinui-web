@@ -1,14 +1,52 @@
 "use client";
 
-import { useTaskRunVerification } from "@/lib/runner-api";
-import type { VerificationResult } from "@/lib/runner-api";
+import type {
+  VerificationData,
+  VerificationResult,
+  VerificationSummary,
+} from "@/lib/runner-api";
+import { useEventTriggeredFetch } from "@/contexts/RunnerEventContext";
+import { useSharedStepsData } from "@/contexts/SharedRunnerDataContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { ShieldCheck, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
+import {
+  ShieldCheck,
+  CheckCircle2,
+  XCircle,
+  RefreshCw,
+  Loader2,
+} from "lucide-react";
 
 export function VerificationWidget({ runId }: { runId: string }) {
-  const { data, isLoading } = useTaskRunVerification(runId);
+  const { data, isLoading } = useEventTriggeredFetch<VerificationData>(
+    "step-progress",
+    `/task-runs/${runId}/verification-results`,
+    {
+      transform: (raw: unknown) => {
+        const obj = raw as Record<string, unknown>;
+        if (obj && typeof obj === "object" && "results" in obj && Array.isArray(obj.results)) {
+          return {
+            results: obj.results as VerificationResult[],
+            summary: (obj.summary as VerificationSummary) ?? null,
+          };
+        }
+        if (Array.isArray(raw)) return { results: raw as VerificationResult[], summary: null };
+        return { results: [], summary: null };
+      },
+    }
+  );
+  const { data: stepsData } = useSharedStepsData();
+
+  // Extract check steps from execution steps as supplementary data
+  // Match all verification-related step types (aligned with runner's mapCheckType)
+  const checkSteps = (stepsData?.executions || []).filter((e) => {
+    const t = e.step_type.toLowerCase();
+    return [
+      "check", "check_group", "playwright", "verification", "test",
+      "error_check", "log_check", "shell", "gui_automation", "repo_test",
+    ].includes(t) || t.includes("check") || t.includes("verification");
+  });
 
   if (isLoading) {
     return (
@@ -26,7 +64,7 @@ export function VerificationWidget({ runId }: { runId: string }) {
     );
   }
 
-  const results = (data as VerificationResult[] | undefined) || [];
+  const results = data?.results || [];
   const passed = results.filter((r) => r.passed).length;
   const failed = results.length - passed;
 
@@ -59,7 +97,39 @@ export function VerificationWidget({ runId }: { runId: string }) {
                 <span className="text-text-secondary">{r.criterion}</span>
               </div>
             ))}
-            {results.length === 0 && (
+            {results.length === 0 && checkSteps.length > 0 && (
+              <>
+                <p className="text-[10px] text-text-muted mb-2 uppercase tracking-wider">
+                  Check Steps from Execution
+                </p>
+                {checkSteps.map((step) => (
+                  <div key={step.id} className="flex items-start gap-2 text-xs">
+                    {step.status === "success" ? (
+                      <CheckCircle2 className="size-3.5 text-green-500 mt-0.5 shrink-0" />
+                    ) : step.status === "failed" ? (
+                      <XCircle className="size-3.5 text-red-500 mt-0.5 shrink-0" />
+                    ) : step.status === "running" ? (
+                      <Loader2 className="size-3.5 text-blue-400 animate-spin mt-0.5 shrink-0" />
+                    ) : (
+                      <div className="size-3.5 rounded-full border border-border-subtle/50 mt-0.5 shrink-0" />
+                    )}
+                    <div className="min-w-0">
+                      <span className="text-text-secondary">
+                        {step.step_name}
+                      </span>
+                      {step.duration_ms != null && (
+                        <span className="text-text-muted ml-2">
+                          {step.duration_ms < 1000
+                            ? `${step.duration_ms}ms`
+                            : `${(step.duration_ms / 1000).toFixed(1)}s`}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+            {results.length === 0 && checkSteps.length === 0 && (
               <p className="text-xs text-text-muted">
                 No verification results yet...
               </p>

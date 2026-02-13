@@ -30,6 +30,7 @@ import {
   Play,
   List,
   CheckCircle,
+  Save,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type {
@@ -39,6 +40,7 @@ import type {
   GuiActionStep,
   TestStep,
   CheckStep,
+  SaveWorkflowArtifactStep,
 } from "@/types/unified-workflow";
 
 const STEP_ICONS: Record<string, React.ElementType> = {
@@ -62,6 +64,7 @@ const STEP_ICONS: Record<string, React.ElementType> = {
   awas_check_support: CheckCircle,
   awas_list_actions: List,
   awas_extract_elements: Search,
+  save_workflow_artifact: Save,
 };
 
 const TEST_ICONS: Record<string, React.ElementType> = {
@@ -79,6 +82,7 @@ const CHECK_ICONS: Record<string, React.ElementType> = {
   analyze: Search,
   security: Shield,
   custom_command: Terminal,
+  ai_review: Bot,
 };
 
 function getStepIcon(step: UnifiedStep): React.ElementType {
@@ -137,6 +141,10 @@ function getStepSubtitle(step: UnifiedStep): string {
       return `${step.required_steps.length} required step(s)`;
     case "spec":
       return step.description ?? "";
+    case "save_workflow_artifact":
+      return (
+        (step as SaveWorkflowArtifactStep).artifact_input_path || "(no path)"
+      );
     default:
       return "";
   }

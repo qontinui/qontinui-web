@@ -210,11 +210,18 @@ export default function StatisticsPage() {
                     <CardContent className="pt-6">
                       <div className="flex items-center gap-2 mb-2">
                         <Hash className="size-4 text-text-muted" />
-                        <span className="text-xs text-text-muted">
+                        <span
+                          className="text-xs text-text-muted"
+                          data-content-role="label"
+                        >
                           Total Runs
                         </span>
                       </div>
-                      <div className="text-3xl font-bold text-text-primary">
+                      <div
+                        className="text-3xl font-bold text-text-primary"
+                        data-content-role="metric"
+                        data-content-label="total-runs"
+                      >
                         {stats.totalRuns}
                       </div>
                     </CardContent>
@@ -224,11 +231,18 @@ export default function StatisticsPage() {
                     <CardContent className="pt-6">
                       <div className="flex items-center gap-2 mb-2">
                         <Timer className="size-4 text-text-muted" />
-                        <span className="text-xs text-text-muted">
+                        <span
+                          className="text-xs text-text-muted"
+                          data-content-role="label"
+                        >
                           Avg Duration
                         </span>
                       </div>
-                      <div className="text-3xl font-bold text-text-primary">
+                      <div
+                        className="text-3xl font-bold text-text-primary"
+                        data-content-role="metric"
+                        data-content-label="avg-duration"
+                      >
                         {formatDuration(stats.avgDuration)}
                       </div>
                     </CardContent>
@@ -238,7 +252,10 @@ export default function StatisticsPage() {
                     <CardContent className="pt-6">
                       <div className="flex items-center gap-2 mb-2">
                         <TrendingUp className="size-4 text-text-muted" />
-                        <span className="text-xs text-text-muted">
+                        <span
+                          className="text-xs text-text-muted"
+                          data-content-role="label"
+                        >
                           Success Rate
                         </span>
                       </div>
@@ -250,6 +267,8 @@ export default function StatisticsPage() {
                               ? "text-yellow-500"
                               : "text-red-500"
                         }`}
+                        data-content-role="metric"
+                        data-content-label="success-rate"
                       >
                         {stats.successRate.toFixed(0)}%
                       </div>
@@ -260,11 +279,18 @@ export default function StatisticsPage() {
                     <CardContent className="pt-6">
                       <div className="flex items-center gap-2 mb-2">
                         <Clock className="size-4 text-text-muted" />
-                        <span className="text-xs text-text-muted">
+                        <span
+                          className="text-xs text-text-muted"
+                          data-content-role="label"
+                        >
                           Total Time
                         </span>
                       </div>
-                      <div className="text-3xl font-bold text-text-primary">
+                      <div
+                        className="text-3xl font-bold text-text-primary"
+                        data-content-role="metric"
+                        data-content-label="total-time"
+                      >
                         {formatDuration(stats.totalDuration)}
                       </div>
                     </CardContent>
@@ -284,10 +310,17 @@ export default function StatisticsPage() {
                       <div className="flex items-center gap-3 p-3 rounded-lg bg-surface-canvas/50">
                         <CheckCircle2 className="size-5 text-green-500" />
                         <div>
-                          <div className="text-xl font-bold text-green-500">
+                          <div
+                            className="text-xl font-bold text-green-500"
+                            data-content-role="metric"
+                            data-content-label="completed-runs"
+                          >
                             {stats.completedRuns}
                           </div>
-                          <div className="text-xs text-text-muted">
+                          <div
+                            className="text-xs text-text-muted"
+                            data-content-role="label"
+                          >
                             Completed
                           </div>
                         </div>
@@ -295,28 +328,55 @@ export default function StatisticsPage() {
                       <div className="flex items-center gap-3 p-3 rounded-lg bg-surface-canvas/50">
                         <XCircle className="size-5 text-red-500" />
                         <div>
-                          <div className="text-xl font-bold text-red-500">
+                          <div
+                            className="text-xl font-bold text-red-500"
+                            data-content-role="metric"
+                            data-content-label="failed-runs"
+                          >
                             {stats.failedRuns}
                           </div>
-                          <div className="text-xs text-text-muted">Failed</div>
+                          <div
+                            className="text-xs text-text-muted"
+                            data-content-role="label"
+                          >
+                            Failed
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-3 p-3 rounded-lg bg-surface-canvas/50">
                         <PlayCircle className="size-5 text-blue-500" />
                         <div>
-                          <div className="text-xl font-bold text-blue-500">
+                          <div
+                            className="text-xl font-bold text-blue-500"
+                            data-content-role="metric"
+                            data-content-label="running-runs"
+                          >
                             {stats.runningRuns}
                           </div>
-                          <div className="text-xs text-text-muted">Running</div>
+                          <div
+                            className="text-xs text-text-muted"
+                            data-content-role="label"
+                          >
+                            Running
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-3 p-3 rounded-lg bg-surface-canvas/50">
                         <Clock className="size-5 text-text-muted" />
                         <div>
-                          <div className="text-xl font-bold text-text-secondary">
+                          <div
+                            className="text-xl font-bold text-text-secondary"
+                            data-content-role="metric"
+                            data-content-label="stopped-runs"
+                          >
                             {stats.stoppedRuns}
                           </div>
-                          <div className="text-xs text-text-muted">Stopped</div>
+                          <div
+                            className="text-xs text-text-muted"
+                            data-content-role="label"
+                          >
+                            Stopped
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -508,60 +568,102 @@ export default function StatisticsPage() {
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                   <Card className="bg-surface-raised/50 border-border-subtle/50">
                     <CardContent className="pt-6 text-center">
-                      <div className="text-3xl font-bold text-text-primary">
+                      <div
+                        className="text-3xl font-bold text-text-primary"
+                        data-content-role="metric"
+                        data-content-label="perf-total-executions"
+                      >
                         {stats.totalRuns}
                       </div>
-                      <div className="text-xs text-text-muted mt-1">
+                      <div
+                        className="text-xs text-text-muted mt-1"
+                        data-content-role="label"
+                      >
                         Total Executions
                       </div>
                     </CardContent>
                   </Card>
                   <Card className="bg-surface-raised/50 border-border-subtle/50">
                     <CardContent className="pt-6 text-center">
-                      <div className="text-3xl font-bold text-green-500">
+                      <div
+                        className="text-3xl font-bold text-green-500"
+                        data-content-role="metric"
+                        data-content-label="perf-success-rate"
+                      >
                         {stats.successRate.toFixed(0)}%
                       </div>
-                      <div className="text-xs text-text-muted mt-1">
+                      <div
+                        className="text-xs text-text-muted mt-1"
+                        data-content-role="label"
+                      >
                         Success Rate
                       </div>
                     </CardContent>
                   </Card>
                   <Card className="bg-surface-raised/50 border-border-subtle/50">
                     <CardContent className="pt-6 text-center">
-                      <div className="text-3xl font-bold text-text-primary">
+                      <div
+                        className="text-3xl font-bold text-text-primary"
+                        data-content-role="metric"
+                        data-content-label="perf-avg-duration"
+                      >
                         {formatDuration(stats.avgDuration)}
                       </div>
-                      <div className="text-xs text-text-muted mt-1">
+                      <div
+                        className="text-xs text-text-muted mt-1"
+                        data-content-role="label"
+                      >
                         Avg Duration
                       </div>
                     </CardContent>
                   </Card>
                   <Card className="bg-surface-raised/50 border-border-subtle/50">
                     <CardContent className="pt-6 text-center">
-                      <div className="text-3xl font-bold text-text-primary">
+                      <div
+                        className="text-3xl font-bold text-text-primary"
+                        data-content-role="metric"
+                        data-content-label="perf-total-time"
+                      >
                         {formatDuration(stats.totalDuration)}
                       </div>
-                      <div className="text-xs text-text-muted mt-1">
+                      <div
+                        className="text-xs text-text-muted mt-1"
+                        data-content-role="label"
+                      >
                         Total Time
                       </div>
                     </CardContent>
                   </Card>
                   <Card className="bg-surface-raised/50 border-border-subtle/50">
                     <CardContent className="pt-6 text-center">
-                      <div className="text-3xl font-bold text-blue-500">
+                      <div
+                        className="text-3xl font-bold text-blue-500"
+                        data-content-role="metric"
+                        data-content-label="perf-currently-running"
+                      >
                         {stats.runningRuns}
                       </div>
-                      <div className="text-xs text-text-muted mt-1">
+                      <div
+                        className="text-xs text-text-muted mt-1"
+                        data-content-role="label"
+                      >
                         Currently Running
                       </div>
                     </CardContent>
                   </Card>
                   <Card className="bg-surface-raised/50 border-border-subtle/50">
                     <CardContent className="pt-6 text-center">
-                      <div className="text-3xl font-bold text-red-500">
+                      <div
+                        className="text-3xl font-bold text-red-500"
+                        data-content-role="metric"
+                        data-content-label="perf-failed-runs"
+                      >
                         {stats.failedRuns}
                       </div>
-                      <div className="text-xs text-text-muted mt-1">
+                      <div
+                        className="text-xs text-text-muted mt-1"
+                        data-content-role="label"
+                      >
                         Failed Runs
                       </div>
                     </CardContent>

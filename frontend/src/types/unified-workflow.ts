@@ -197,7 +197,8 @@ export type CheckType =
   | "typecheck"
   | "analyze"
   | "security"
-  | "custom_command";
+  | "custom_command"
+  | "ai_review";
 
 export interface CheckStep extends BaseStep {
   type: "check";
@@ -211,6 +212,12 @@ export interface CheckStep extends BaseStep {
   auto_fix?: boolean;
   fail_on_warning?: boolean;
   timeout_seconds?: number;
+  /** Prompt for AI review check type */
+  ai_review_prompt?: string;
+  /** Path to read input for AI review */
+  ai_review_input_path?: string;
+  /** Whether to validate the input as a workflow JSON */
+  ai_review_validate_as_workflow?: boolean;
 }
 
 export interface CheckGroupStep extends BaseStep {
@@ -229,6 +236,12 @@ export interface PromptStep extends BaseStep {
   provider?: string;
   model?: string;
   is_summary_step?: boolean;
+  /** Prompt mode: "session" runs a full AI session, "response" returns a single response. Defaults to "session". */
+  prompt_mode?: "session" | "response";
+  /** Path to write the AI response output */
+  output_path?: string;
+  /** Path to read and append to the prompt */
+  input_path?: string;
 }
 
 export interface ShellCommandStep extends BaseStep {
@@ -319,6 +332,16 @@ export interface GateStep extends BaseStep {
   description?: string;
 }
 
+// --- Save Workflow Artifact Steps ---
+
+/** Save a generated workflow JSON to the library */
+export interface SaveWorkflowArtifactStep extends BaseStep {
+  type: "save_workflow_artifact";
+  phase: "completion";
+  /** Path to the workflow JSON file to save */
+  artifact_input_path: string;
+}
+
 // =============================================================================
 // Unified Step Type
 // =============================================================================
@@ -339,6 +362,7 @@ export type UnifiedStep =
   | ShellCommandStep
   | SpecStep
   | GateStep
+  | SaveWorkflowArtifactStep
   | AwasDiscoverStep
   | AwasExecuteStep
   | AwasCheckSupportStep
@@ -408,7 +432,8 @@ export type CompletionStep =
   | TestStep
   | CheckStep
   | CheckGroupStep
-  | ScreenshotStep;
+  | ScreenshotStep
+  | SaveWorkflowArtifactStep;
 
 // =============================================================================
 // Workflow
@@ -512,6 +537,62 @@ export interface StepTypeInfo {
   icon: string;
   color: string;
   phase: WorkflowPhase | "setup" | "verification";
+}
+
+/**
+ * Fetch step types from the backend API, which in turn syncs from the runner.
+ * Returns null on failure so callers can fall back to STEP_TYPES.
+ */
+export async function fetchStepTypes(): Promise<Record<
+  WorkflowPhase,
+  StepTypeInfo[]
+> | null> {
+  try {
+    const API_BASE_URL =
+      process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    const response = await fetch(
+      `${API_BASE_URL}/api/v1/workflow-config/step-types`,
+      { credentials: "include" }
+    );
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    const items: Array<{
+      step_type: string;
+      phase: WorkflowPhase;
+      label: string;
+      description: string;
+      icon: string;
+      color: string;
+      enabled: boolean;
+    }> = data.items ?? [];
+
+    const result: Record<WorkflowPhase, StepTypeInfo[]> = {
+      setup: [],
+      verification: [],
+      agentic: [],
+      completion: [],
+    };
+
+    for (const item of items) {
+      if (!item.enabled) continue;
+      result[item.phase]?.push({
+        type: item.step_type,
+        label: item.label,
+        description: item.description,
+        icon: item.icon,
+        color: item.color,
+        phase: item.phase,
+      });
+    }
+
+    // Validate we got reasonable data (at least some setup + verification types)
+    if (result.setup.length < 3 || result.verification.length < 3) return null;
+
+    return result;
+  } catch {
+    return null;
+  }
 }
 
 export const STEP_TYPES: Record<WorkflowPhase, StepTypeInfo[]> = {
@@ -677,6 +758,14 @@ export const STEP_TYPES: Record<WorkflowPhase, StepTypeInfo[]> = {
       phase: "setup",
     },
     {
+      type: "check_ai_review",
+      label: "AI Review",
+      description: "AI-powered review of file contents",
+      icon: "Bot",
+      color: "violet",
+      phase: "setup",
+    },
+    {
       type: "screenshot",
       label: "Screenshot",
       description: "Capture current screen state",
@@ -804,6 +893,14 @@ export const STEP_TYPES: Record<WorkflowPhase, StepTypeInfo[]> = {
       description: "Run custom check command",
       icon: "Terminal",
       color: "cyan",
+      phase: "verification",
+    },
+    {
+      type: "check_ai_review",
+      label: "AI Review",
+      description: "AI-powered review of file contents",
+      icon: "Bot",
+      color: "violet",
       phase: "verification",
     },
     {
@@ -1099,11 +1196,27 @@ export const STEP_TYPES: Record<WorkflowPhase, StepTypeInfo[]> = {
       phase: "completion",
     },
     {
+      type: "check_ai_review",
+      label: "AI Review",
+      description: "AI-powered review of file contents",
+      icon: "Bot",
+      color: "violet",
+      phase: "completion",
+    },
+    {
       type: "screenshot",
       label: "Screenshot",
       description: "Capture final screen state",
       icon: "Camera",
       color: "pink",
+      phase: "completion",
+    },
+    {
+      type: "save_workflow_artifact",
+      label: "Save Workflow Artifact",
+      description: "Save a generated workflow JSON to the library",
+      icon: "Save",
+      color: "emerald",
       phase: "completion",
     },
   ],
@@ -1372,6 +1485,14 @@ export function createDefaultStep(
         name: "Gate",
         required_steps: [],
       };
+    case "save_workflow_artifact":
+      return {
+        id,
+        type: "save_workflow_artifact",
+        phase: "completion",
+        name: "Save Workflow Artifact",
+        artifact_input_path: "",
+      } as SaveWorkflowArtifactStep;
     default:
       throw new Error(`Unknown step type: ${type}`);
   }
@@ -1455,6 +1576,8 @@ export function canStepExistInPhase(
     case "spec":
     case "gate":
       return phase === "verification";
+    case "save_workflow_artifact":
+      return phase === "completion";
     default:
       return false;
   }

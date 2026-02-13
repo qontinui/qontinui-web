@@ -100,7 +100,11 @@ export default function UpdatesSettingsPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex items-center gap-3">
-            <span className="text-2xl font-semibold text-text-primary font-mono">
+            <span
+              data-content-role="metric"
+              data-content-label="runner version"
+              className="text-2xl font-semibold text-text-primary font-mono"
+            >
               {health?.version ?? "Unknown"}
             </span>
           </div>
@@ -135,7 +139,11 @@ export default function UpdatesSettingsPage() {
           </div>
 
           {health?.uptime_seconds != null && (
-            <div className="text-xs text-text-muted">
+            <div
+              data-content-role="metric"
+              data-content-label="runner uptime"
+              className="text-xs text-text-muted"
+            >
               Runner uptime: {formatUptime(health.uptime_seconds)}
             </div>
           )}

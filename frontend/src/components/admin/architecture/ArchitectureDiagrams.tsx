@@ -139,7 +139,10 @@ export const ArchitectureDiagrams: React.FC<ArchitectureDiagramsProps> = ({
                 <div className="w-full border-2 border-dashed border-muted-foreground/30 rounded-lg p-6 bg-muted/20">
                   <div className="flex items-center gap-2 mb-4">
                     <Cloud className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm font-medium text-muted-foreground">
+                    <span
+                      className="text-sm font-medium text-muted-foreground"
+                      data-content-role="heading"
+                    >
                       CLOUD (Lightweight)
                     </span>
                   </div>
@@ -165,7 +168,10 @@ export const ArchitectureDiagrams: React.FC<ArchitectureDiagramsProps> = ({
                 <div className="w-full border-2 border-primary/30 rounded-lg p-6 bg-primary/5">
                   <div className="flex items-center gap-2 mb-4">
                     <Monitor className="w-4 h-4 text-primary" />
-                    <span className="text-sm font-medium text-primary">
+                    <span
+                      className="text-sm font-medium text-primary"
+                      data-content-role="heading"
+                    >
                       LOCAL (User&apos;s Machine)
                     </span>
                   </div>
@@ -404,21 +410,34 @@ export const ArchitectureDiagrams: React.FC<ArchitectureDiagramsProps> = ({
                     <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
                       <div className="flex items-center gap-2">
                         <Globe className="w-4 h-4" />
-                        <span className="font-mono text-sm">Frontend</span>
+                        <span
+                          className="font-mono text-sm"
+                          data-content-role="label"
+                        >
+                          Frontend
+                        </span>
                       </div>
                       <Badge variant="outline">localhost:3001</Badge>
                     </div>
                     <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
                       <div className="flex items-center gap-2">
                         <Server className="w-4 h-4" />
-                        <span className="font-mono text-sm">Main Backend</span>
+                        <span
+                          className="font-mono text-sm"
+                          data-content-role="label"
+                        >
+                          Main Backend
+                        </span>
                       </div>
                       <Badge variant="outline">localhost:8000</Badge>
                     </div>
                     <div className="flex items-center justify-between p-3 bg-primary/10 rounded border border-primary/30">
                       <div className="flex items-center gap-2">
                         <Terminal className="w-4 h-4 text-primary" />
-                        <span className="font-mono text-sm font-semibold">
+                        <span
+                          className="font-mono text-sm font-semibold"
+                          data-content-role="label"
+                        >
                           Runner
                         </span>
                       </div>
@@ -427,7 +446,12 @@ export const ArchitectureDiagrams: React.FC<ArchitectureDiagramsProps> = ({
                     <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
                       <div className="flex items-center gap-2">
                         <Monitor className="w-4 h-4" />
-                        <span className="font-mono text-sm">Runner Vite</span>
+                        <span
+                          className="font-mono text-sm"
+                          data-content-role="label"
+                        >
+                          Runner Vite
+                        </span>
                       </div>
                       <Badge variant="outline">localhost:1420</Badge>
                     </div>
@@ -443,28 +467,48 @@ export const ArchitectureDiagrams: React.FC<ArchitectureDiagramsProps> = ({
                     <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
                       <div className="flex items-center gap-2">
                         <Database className="w-4 h-4" />
-                        <span className="font-mono text-sm">PostgreSQL</span>
+                        <span
+                          className="font-mono text-sm"
+                          data-content-role="label"
+                        >
+                          PostgreSQL
+                        </span>
                       </div>
                       <Badge variant="outline">localhost:5432</Badge>
                     </div>
                     <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
                       <div className="flex items-center gap-2">
                         <Database className="w-4 h-4" />
-                        <span className="font-mono text-sm">Redis</span>
+                        <span
+                          className="font-mono text-sm"
+                          data-content-role="label"
+                        >
+                          Redis
+                        </span>
                       </div>
                       <Badge variant="outline">localhost:6379</Badge>
                     </div>
                     <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
                       <div className="flex items-center gap-2">
                         <HardDrive className="w-4 h-4" />
-                        <span className="font-mono text-sm">MinIO API</span>
+                        <span
+                          className="font-mono text-sm"
+                          data-content-role="label"
+                        >
+                          MinIO API
+                        </span>
                       </div>
                       <Badge variant="outline">localhost:9000</Badge>
                     </div>
                     <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
                       <div className="flex items-center gap-2">
                         <HardDrive className="w-4 h-4" />
-                        <span className="font-mono text-sm">MinIO Console</span>
+                        <span
+                          className="font-mono text-sm"
+                          data-content-role="label"
+                        >
+                          MinIO Console
+                        </span>
                       </div>
                       <Badge variant="outline">localhost:9001</Badge>
                     </div>

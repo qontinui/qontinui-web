@@ -116,7 +116,13 @@ export default function OverviewTab() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.total_users}</div>
+            <div
+              className="text-2xl font-bold"
+              data-content-role="metric"
+              data-content-label="total-users"
+            >
+              {stats.total_users}
+            </div>
             <p className="text-xs text-muted-foreground">
               +{stats.new_users_week} this week
             </p>
@@ -131,7 +137,13 @@ export default function OverviewTab() {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.new_users_month}</div>
+            <div
+              className="text-2xl font-bold"
+              data-content-role="metric"
+              data-content-label="new-users-month"
+            >
+              {stats.new_users_month}
+            </div>
             <p className="text-xs text-muted-foreground">Last 30 days</p>
           </CardContent>
         </Card>
@@ -142,7 +154,13 @@ export default function OverviewTab() {
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.active_users}</div>
+            <div
+              className="text-2xl font-bold"
+              data-content-role="metric"
+              data-content-label="active-users"
+            >
+              {stats.active_users}
+            </div>
             <p className="text-xs text-muted-foreground">
               {activationRate}% activation rate
             </p>
@@ -157,7 +175,13 @@ export default function OverviewTab() {
             <FolderOpen className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.total_projects}</div>
+            <div
+              className="text-2xl font-bold"
+              data-content-role="metric"
+              data-content-label="total-projects"
+            >
+              {stats.total_projects}
+            </div>
             <p className="text-xs text-muted-foreground">
               +{stats.projects_week} this week
             </p>
@@ -172,7 +196,11 @@ export default function OverviewTab() {
             <Zap className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
+            <div
+              className="text-2xl font-bold"
+              data-content-role="metric"
+              data-content-label="avg-projects-per-user"
+            >
               {stats.total_users > 0
                 ? (stats.total_projects / stats.total_users).toFixed(1)
                 : 0}
@@ -189,7 +217,13 @@ export default function OverviewTab() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">$0</div>
+            <div
+              className="text-2xl font-bold"
+              data-content-role="metric"
+              data-content-label="mrr"
+            >
+              $0
+            </div>
             <p className="text-xs text-muted-foreground">
               Monthly recurring revenue
             </p>
@@ -212,17 +246,35 @@ export default function OverviewTab() {
               >
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="font-medium">{user.username}</span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                    <span
+                      className="font-medium"
+                      data-content-role="label"
+                      data-content-label="username"
+                    >
+                      {user.username}
+                    </span>
+                    <span
+                      className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary"
+                      data-content-role="badge"
+                      data-content-label="subscription-tier"
+                    >
                       {user.subscription_tier}
                     </span>
                     {!user.email_verified && (
-                      <span className="text-xs text-yellow-500">
+                      <span
+                        className="text-xs text-yellow-500"
+                        data-content-role="status"
+                      >
                         (unverified)
                       </span>
                     )}
                     {!user.is_active && (
-                      <span className="text-xs text-red-500">(inactive)</span>
+                      <span
+                        className="text-xs text-red-500"
+                        data-content-role="status"
+                      >
+                        (inactive)
+                      </span>
                     )}
                   </div>
                   <div className="text-sm text-muted-foreground">
@@ -230,7 +282,11 @@ export default function OverviewTab() {
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-sm font-medium">
+                  <div
+                    className="text-sm font-medium"
+                    data-content-role="metric"
+                    data-content-label="project-count"
+                  >
                     {user.project_count} projects
                   </div>
                   <div className="text-xs text-muted-foreground">

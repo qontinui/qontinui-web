@@ -6,7 +6,7 @@
  */
 
 import { create } from "zustand";
-import { devtools, subscribeWithSelector } from "zustand/middleware";
+import { subscribeWithSelector } from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
 import type { AutomationStore } from "./types";
 import {
@@ -241,7 +241,6 @@ function schedulePersist<T>(
  */
 export const useAutomationStore = create<AutomationStore>()(
   subscribeWithSelector(
-    devtools(
       immer((set, get, api) => ({
         // Project slice
         ...createProjectSlice(set, get, api),
@@ -405,9 +404,7 @@ export const useAutomationStore = create<AutomationStore>()(
             });
           }
         },
-      })),
-      { name: "automation-store" }
-    )
+      }))
   )
 );
 

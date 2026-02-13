@@ -30,7 +30,13 @@ export default function TestRunDetailPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <div className="text-lg text-muted-foreground">Loading...</div>
+          <div
+            data-content-role="status"
+            data-content-label="loading state"
+            className="text-lg text-muted-foreground"
+          >
+            Loading...
+          </div>
         </div>
       </div>
     );

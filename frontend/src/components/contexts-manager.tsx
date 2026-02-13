@@ -498,8 +498,10 @@ function formDataToContext(
 }
 
 export function ContextsManager() {
-  const { contexts, addContext, updateContext, deleteContext } =
-    useAutomationStore();
+  const contexts = useAutomationStore((s) => s.contexts);
+  const addContext = useAutomationStore((s) => s.addContext);
+  const updateContext = useAutomationStore((s) => s.updateContext);
+  const deleteContext = useAutomationStore((s) => s.deleteContext);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");

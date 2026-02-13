@@ -86,16 +86,52 @@ export default function AccountSettingsPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-[120px_1fr] gap-y-2 text-sm">
-              <span className="text-text-muted">Email</span>
-              <span className="text-text-primary">{user.email}</span>
+              <span
+                data-content-role="label"
+                data-content-label="email label"
+                className="text-text-muted"
+              >
+                Email
+              </span>
+              <span
+                data-content-role="body-text"
+                data-content-label="user email"
+                className="text-text-primary"
+              >
+                {user.email}
+              </span>
 
-              <span className="text-text-muted">Username</span>
-              <span className="text-text-primary">{user.username}</span>
+              <span
+                data-content-role="label"
+                data-content-label="username label"
+                className="text-text-muted"
+              >
+                Username
+              </span>
+              <span
+                data-content-role="body-text"
+                data-content-label="username value"
+                className="text-text-primary"
+              >
+                {user.username}
+              </span>
 
               {user.full_name && (
                 <>
-                  <span className="text-text-muted">Name</span>
-                  <span className="text-text-primary">{user.full_name}</span>
+                  <span
+                    data-content-role="label"
+                    data-content-label="name label"
+                    className="text-text-muted"
+                  >
+                    Name
+                  </span>
+                  <span
+                    data-content-role="body-text"
+                    data-content-label="user full name"
+                    className="text-text-primary"
+                  >
+                    {user.full_name}
+                  </span>
                 </>
               )}
             </div>
@@ -129,31 +165,69 @@ export default function AccountSettingsPage() {
                 isConnected ? "bg-green-500" : "bg-red-500"
               }`}
             />
-            <span className="text-sm text-text-primary">
+            <span
+              data-content-role="status"
+              data-content-label="connection status"
+              className="text-sm text-text-primary"
+            >
               {isConnected ? "Connected" : "Disconnected"}
             </span>
             {health?.version && (
-              <span className="text-xs text-text-muted">v{health.version}</span>
+              <span
+                data-content-role="label"
+                data-content-label="runner version"
+                className="text-xs text-text-muted"
+              >
+                v{health.version}
+              </span>
             )}
           </div>
 
           {deviceInfo && (
             <div className="grid grid-cols-[120px_1fr] gap-y-2 text-sm pt-2 border-t border-border-subtle/30">
-              <span className="text-text-muted flex items-center gap-1.5">
+              <span
+                data-content-role="label"
+                data-content-label="device name label"
+                className="text-text-muted flex items-center gap-1.5"
+              >
                 <Tag className="size-3.5" />
                 Device Name
               </span>
-              <span className="text-text-primary font-mono text-xs">
+              <span
+                data-content-role="body-text"
+                data-content-label="device name value"
+                className="text-text-primary font-mono text-xs"
+              >
                 {deviceInfo.device_name}
               </span>
 
-              <span className="text-text-muted">Platform</span>
-              <span className="text-text-primary font-mono text-xs">
+              <span
+                data-content-role="label"
+                data-content-label="platform label"
+                className="text-text-muted"
+              >
+                Platform
+              </span>
+              <span
+                data-content-role="body-text"
+                data-content-label="platform value"
+                className="text-text-primary font-mono text-xs"
+              >
                 {deviceInfo.platform}
               </span>
 
-              <span className="text-text-muted">Device ID</span>
-              <span className="text-text-primary font-mono text-xs truncate">
+              <span
+                data-content-role="label"
+                data-content-label="device id label"
+                className="text-text-muted"
+              >
+                Device ID
+              </span>
+              <span
+                data-content-role="body-text"
+                data-content-label="device id value"
+                className="text-text-primary font-mono text-xs truncate"
+              >
                 {deviceInfo.device_id}
               </span>
             </div>
@@ -175,7 +249,11 @@ export default function AccountSettingsPage() {
           </div>
 
           {health?.uptime_seconds != null && (
-            <div className="text-xs text-text-muted pt-2 border-t border-border-subtle/30">
+            <div
+              data-content-role="metric"
+              data-content-label="runner uptime"
+              className="text-xs text-text-muted pt-2 border-t border-border-subtle/30"
+            >
               Uptime: {formatUptime(health.uptime_seconds)}
             </div>
           )}

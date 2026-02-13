@@ -11,7 +11,6 @@ import { RefreshTokenExpiryWarning } from "@/components/refresh-token-expiry-war
 import { OfflineIndicator } from "@/components/offline-indicator";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { ContextualTutorialEnhanced } from "@/components/tutorial";
-import { DevDebugInit } from "@/components/dev-debug-init";
 import { DBErrorHandler } from "@/components/db-error-handler";
 import "./globals.css";
 import "@/styles/tutorial.css";
@@ -50,7 +49,6 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <DevDebugInit />
         <DBErrorHandler />
         <ErrorBoundary>
           <QueryProvider>
@@ -81,9 +79,9 @@ export default function RootLayout({
           position="bottom-right"
           toastOptions={{
             style: {
-              background: "#18181B",
-              border: "1px solid #27272A",
-              color: "#E4E4E7",
+              background: "var(--surface-raised)",
+              border: "1px solid var(--border-subtle)",
+              color: "var(--foreground)",
             },
           }}
         />

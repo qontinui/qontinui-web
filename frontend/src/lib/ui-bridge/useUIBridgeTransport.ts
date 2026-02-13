@@ -16,7 +16,6 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useUIBridge } from "@qontinui/ui-bridge/react";
-import type { ControlSnapshot } from "@qontinui/ui-bridge/control";
 
 // Transport configuration
 export type TransportMode = "websocket" | "http" | "auto";
@@ -158,7 +157,7 @@ export function useUIBridgeTransport(
   options: UIBridgeTransportOptions = {}
 ): UIBridgeTransportResult {
   const { mode = "auto", wsUrl, verbose = false } = options;
-  const { elements, getElement } = useUIBridge();
+  const { elements, getElement, createSnapshot } = useUIBridge();
 
   // State
   const [connectionState, setConnectionState] =
@@ -178,7 +177,7 @@ export function useUIBridgeTransport(
   );
   const isIntentionallyClosed = useRef(false);
   const isTabVisibleRef = useRef(true);
-  const wasSSEActiveBeforeHiddenRef = useRef(false);
+
 
   /**
    * Log helper (only logs if verbose is enabled)
@@ -204,23 +203,9 @@ export function useUIBridgeTransport(
       switch (action) {
         // ========== Control Snapshot ==========
         case "getControlSnapshot": {
-          const snapshot: ControlSnapshot = {
-            timestamp: Date.now(),
-            elements: elements.map((e) => {
-              const state = e.getState();
-              return {
-                id: e.id,
-                type: e.type,
-                label: e.label,
-                actions: e.actions,
-                state: state,
-              };
-            }),
-            components: [],
-            workflows: [],
-            activeRuns: [],
-          };
-          return snapshot;
+          // Use createSnapshot() which calls registry.getAllElements() fresh,
+          // rather than the stale `elements` from useMemo.
+          return createSnapshot();
         }
 
         // ========== Element Actions ==========
@@ -276,8 +261,23 @@ export function useUIBridgeTransport(
                 domElement instanceof HTMLInputElement ||
                 domElement instanceof HTMLTextAreaElement
               ) {
-                domElement.value = request.value || "";
-                domElement.dispatchEvent(new Event("input", { bubbles: true }));
+                // Use native setter to trigger React's internal change detection
+                const proto =
+                  domElement instanceof HTMLTextAreaElement
+                    ? HTMLTextAreaElement.prototype
+                    : HTMLInputElement.prototype;
+                const nativeSetter = Object.getOwnPropertyDescriptor(
+                  proto,
+                  "value"
+                )?.set;
+                if (nativeSetter) {
+                  nativeSetter.call(domElement, request.value || "");
+                } else {
+                  domElement.value = request.value || "";
+                }
+                domElement.dispatchEvent(
+                  new Event("input", { bubbles: true })
+                );
                 domElement.dispatchEvent(
                   new Event("change", { bubbles: true })
                 );
@@ -339,22 +339,11 @@ export function useUIBridgeTransport(
         // ========== Find / Discovery ==========
         case "find":
         case "discover": {
+          // Use createSnapshot() for fresh DOM scan (same as getControlSnapshot)
+          const snapshot = createSnapshot();
           return {
-            elements: elements.map((e) => {
-              const state = e.getState();
-              return {
-                id: e.id,
-                type: e.type,
-                label: e.label,
-                tagName: e.element.tagName.toLowerCase(),
-                role: e.element.getAttribute("role") ?? undefined,
-                accessibleName: e.element.getAttribute("aria-label") ?? e.label,
-                actions: e.actions,
-                state: state,
-                registered: true,
-              };
-            }),
-            total: elements.length,
+            elements: snapshot.elements,
+            total: snapshot.elements.length,
             durationMs: 0,
             timestamp: Date.now(),
           };
@@ -553,6 +542,41 @@ export function useUIBridgeTransport(
           );
         }
 
+        // ========== Page Navigation ==========
+        case "pageRefresh": {
+          window.location.reload();
+          return {
+            success: true,
+            url: window.location.href,
+            timestamp: Date.now(),
+          };
+        }
+
+        case "pageNavigate": {
+          const { url } = payload as { url: string };
+          if (!url) throw new Error("URL is required");
+          window.location.href = url;
+          return { success: true, url, timestamp: Date.now() };
+        }
+
+        case "pageGoBack": {
+          window.history.back();
+          return {
+            success: true,
+            url: window.location.href,
+            timestamp: Date.now(),
+          };
+        }
+
+        case "pageGoForward": {
+          window.history.forward();
+          return {
+            success: true,
+            url: window.location.href,
+            timestamp: Date.now(),
+          };
+        }
+
         // ========== Debug ==========
         case "getActionHistory": {
           return [];
@@ -581,7 +605,7 @@ export function useUIBridgeTransport(
           throw new Error(`Unknown command action: ${action}`);
       }
     },
-    [elements, getElement]
+    [elements, getElement, createSnapshot]
   );
 
   /**
@@ -816,13 +840,6 @@ export function useUIBridgeTransport(
       return; // Already connected
     }
 
-    // Don't start if tab is hidden
-    if (!isTabVisibleRef.current) {
-      log("Skipping SSE start - tab is hidden");
-      wasSSEActiveBeforeHiddenRef.current = true;
-      return;
-    }
-
     log("Starting SSE stream");
     setActiveTransport("sse");
     setConnectionState("connected");
@@ -855,15 +872,13 @@ export function useUIBridgeTransport(
 
       if (isIntentionallyClosed.current) return;
 
-      // Reconnect after delay if tab is visible
-      if (isTabVisibleRef.current) {
-        sseReconnectTimeoutRef.current = setTimeout(() => {
-          if (!isIntentionallyClosed.current && isTabVisibleRef.current) {
-            log("Reconnecting SSE stream...");
-            startSSE();
-          }
-        }, SSE_RECONNECT_DELAY_MS);
-      }
+      // Reconnect after delay (always, regardless of tab visibility)
+      sseReconnectTimeoutRef.current = setTimeout(() => {
+        if (!isIntentionallyClosed.current) {
+          log("Reconnecting SSE stream...");
+          startSSE();
+        }
+      }, SSE_RECONNECT_DELAY_MS);
     };
   }, [processSSECommand, log]);
 
@@ -937,15 +952,8 @@ export function useUIBridgeTransport(
     isTabVisibleRef.current = isVisible;
 
     if (isVisible && !wasVisible) {
-      // Tab became visible - resume SSE if it was active before
-      log("Tab became visible, resuming transport");
-      if (
-        wasSSEActiveBeforeHiddenRef.current &&
-        (activeTransport === "sse" || activeTransport === "http")
-      ) {
-        startSSE();
-      }
-      // For WebSocket, check if we need to reconnect
+      // Tab became visible — reconnect WebSocket if needed (SSE stays connected)
+      log("Tab became visible");
       if (activeTransport === "websocket" || activeTransport === "none") {
         if (
           wsRef.current?.readyState !== WebSocket.OPEN &&
@@ -955,14 +963,9 @@ export function useUIBridgeTransport(
           connectWebSocket();
         }
       }
-    } else if (!isVisible && wasVisible) {
-      // Tab became hidden - disconnect SSE to save resources
-      log("Tab hidden, stopping SSE stream");
-      wasSSEActiveBeforeHiddenRef.current = eventSourceRef.current !== null;
-      stopSSE();
-      // Note: We keep WebSocket connected since it's low overhead when idle
     }
-  }, [activeTransport, log, startSSE, stopSSE, connectWebSocket]);
+    // Tab hidden: keep all transports connected (SSE and WebSocket are low overhead)
+  }, [activeTransport, log, connectWebSocket]);
 
   /**
    * Set up visibility change listener
@@ -989,12 +992,6 @@ export function useUIBridgeTransport(
     }
 
     log("Initializing transport, mode:", mode);
-
-    // Only start transport if tab is visible
-    if (!isTabVisibleRef.current) {
-      log("Tab is hidden, deferring transport initialization");
-      return;
-    }
 
     if (mode === "http") {
       startSSE();

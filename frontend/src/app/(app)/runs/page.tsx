@@ -367,11 +367,19 @@ export default function RunHistoryPage() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className="font-medium text-text-primary">
+                          <div
+                            className="font-medium text-text-primary"
+                            data-content-role="label"
+                            data-content-label="task-name"
+                          >
                             {run.task_name}
                           </div>
                           {run.workflow_name && (
-                            <div className="text-xs text-text-muted mt-0.5">
+                            <div
+                              className="text-xs text-text-muted mt-0.5"
+                              data-content-role="body-text"
+                              data-content-label="workflow-name"
+                            >
                               {run.workflow_name}
                             </div>
                           )}
@@ -385,10 +393,18 @@ export default function RunHistoryPage() {
                             <span className="text-text-muted">-</span>
                           )}
                         </TableCell>
-                        <TableCell className="text-sm text-text-muted">
+                        <TableCell
+                          className="text-sm text-text-muted"
+                          data-content-role="body-text"
+                          data-content-label="started-at"
+                        >
                           {formatDateTime(run.created_at)}
                         </TableCell>
-                        <TableCell className="text-sm">
+                        <TableCell
+                          className="text-sm"
+                          data-content-role="metric"
+                          data-content-label="duration"
+                        >
                           {formatDuration(run.duration_seconds)}
                         </TableCell>
                         <TableCell className="text-xs text-red-400 max-w-[200px] truncate">

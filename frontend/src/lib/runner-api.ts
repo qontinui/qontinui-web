@@ -20,6 +20,54 @@ export interface RunnerHealth {
   uptime_seconds?: number;
 }
 
+/** Result of a single iteration in the verification-agentic loop. */
+export interface IterationResult {
+  /** Iteration number (1-based) */
+  iteration: number;
+  /** Whether all verification checks passed in this iteration */
+  verification_passed: boolean;
+  /** Whether a critical failure occurred */
+  critical_failure: boolean;
+  /** Number of verification checks that passed */
+  passed_checks: number;
+  /** Number of verification checks that failed */
+  failed_checks: number;
+  /** Whether the agentic phase ran in this iteration */
+  agentic_phase_ran: boolean;
+  /** Whether the agentic phase succeeded (null if not run) */
+  agentic_phase_success?: boolean | null;
+}
+
+/** Complete result of the verification-agentic loop execution. */
+export interface LoopResult {
+  /** Total number of iterations executed */
+  iterations_run: number;
+  /** Whether verification ultimately passed */
+  verification_passed: boolean;
+  /** Whether the loop reached max iterations without passing */
+  max_iterations_reached: boolean;
+  /** Whether a critical failure stopped the loop */
+  critical_failure: boolean;
+  /** Whether the loop was manually stopped */
+  was_stopped: boolean;
+  /** Per-iteration results */
+  iteration_results: IterationResult[];
+  /** Human-readable summary of the loop execution */
+  summary: string;
+}
+
+/** Information about why a run failed. */
+export interface FailureInfo {
+  /** Primary reason for failure */
+  reason: string;
+  /** Name of the step that failed */
+  failed_step?: string;
+  /** Detailed error message or stack trace */
+  error_details?: string;
+  /** Error type category */
+  error_type?: string;
+}
+
 export interface TaskRun {
   id: string;
   task_name: string;
@@ -42,6 +90,16 @@ export interface TaskRun {
   phase?: string;
   /** Duration in seconds (computed from created_at/completed_at) */
   duration_seconds?: number;
+  /** Whether the goal was achieved */
+  goal_achieved?: boolean;
+  /** When the AI summary was generated */
+  summary_generated_at?: string;
+  /** Remaining work description (when goal not achieved) */
+  remaining_work?: string;
+  /** Loop execution result with per-iteration breakdown */
+  loop_result?: LoopResult | null;
+  /** Structured failure information */
+  failure_info?: FailureInfo | null;
 }
 
 export interface TaskRunOutput {
@@ -87,6 +145,113 @@ export interface PlaywrightResult {
   error_message?: string;
   screenshot_path?: string;
   console_output?: string;
+  page_snapshot?: string;
+  assertions_passed?: number;
+  assertions_failed?: number;
+  failure_screenshot_path?: string;
+}
+
+// =============================================================================
+// Verification Phase Results (Unified Workflow Step-Executor Based)
+// =============================================================================
+
+/** Details of an individual issue found by a check */
+export interface CheckIssueDetail {
+  /** File path where the issue was found */
+  file: string;
+  /** Line number (1-based) */
+  line?: number | null;
+  /** Column number (1-based) */
+  column?: number | null;
+  /** Rule code (e.g., "E501", "no-unused-vars") */
+  code?: string | null;
+  /** Issue message */
+  message: string;
+  /** Severity level: "error", "warning", "info" */
+  severity: "error" | "warning" | "info";
+  /** Whether this issue is fixable */
+  fixable: boolean;
+}
+
+/** Individual check result within a check group */
+export interface IndividualCheckResult {
+  /** Check name */
+  name: string;
+  /** Status: "passed", "failed", "skipped" */
+  status: "passed" | "failed" | "skipped";
+  /** Duration in milliseconds */
+  duration_ms: number;
+  /** Number of issues found */
+  issues_found: number;
+  /** Number of issues fixed (if auto-fix is enabled) */
+  issues_fixed: number;
+  /** Number of files checked */
+  files_checked: number;
+  /** Error message if failed */
+  error_message?: string | null;
+  /** Raw output from the check tool */
+  output?: string | null;
+  /** Individual issues found */
+  issues: CheckIssueDetail[];
+}
+
+/** Step execution config from the verification phase. */
+export interface StepExecutionConfig {
+  action_type?: string | null;
+  test_type?: string | null;
+  check_type?: string | null;
+  command?: string | null;
+  working_directory?: string | null;
+  [key: string]: unknown;
+}
+
+/** Verification-specific details for test and check steps. */
+export interface VerificationStepDetails {
+  step_id: string;
+  phase: string;
+  stdout?: string | null;
+  stderr?: string | null;
+  assertions_passed?: number | null;
+  assertions_total?: number | null;
+  console_output?: string | null;
+  page_snapshot?: string | null;
+  exit_code?: number | null;
+  check_results?: IndividualCheckResult[] | null;
+}
+
+/** Individual step execution result from the verification phase. */
+export interface VerificationStepResult {
+  step_index: number;
+  step_name: string;
+  step_type: string;
+  success: boolean;
+  error?: string | null;
+  duration_ms: number;
+  screenshot_path?: string | null;
+  config: StepExecutionConfig;
+  verification_details?: VerificationStepDetails | null;
+}
+
+/** Result of running verification steps for a single iteration. */
+export interface VerificationPhaseResult {
+  iteration: number;
+  all_passed: boolean;
+  total_steps: number;
+  passed_steps: number;
+  failed_steps: number;
+  skipped_steps: number;
+  total_duration_ms: number;
+  step_results: VerificationStepResult[];
+  critical_failure: boolean;
+}
+
+/** Result of querying verification phase results from the runner. */
+export interface VerificationPhaseResultsData {
+  task_run_id: string;
+  results: VerificationPhaseResult[];
+  count: number;
+  passed_iterations: number;
+  failed_iterations: number;
 }
 
 export interface TaskRunEvent {
@@ -139,12 +304,21 @@ export interface FindingsSummary {
 }
 
 export interface Checkpoint {
-  id: number;
-  task_run_id: string;
-  name: string;
+  id: string;
+  execution_id: string;
+  workflow_type: string;
   phase: string;
-  timestamp: string;
-  data: Record<string, unknown>;
+  iteration: number | null;
+  step_index: number;
+  step_type: string;
+  step_name: string | null;
+  status: string;
+  result_json: string | null;
+  step_config_json: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_ms: number | null;
+  error: string | null;
 }
 
 export interface McpCall {
@@ -183,6 +357,34 @@ export interface ExecutionSpan {
   end_time?: string;
   duration_ms?: number;
   status: string;
+}
+
+/** Step execution data from /current-execution/steps endpoint */
+export interface CurrentExecutionStep {
+  id: string;
+  step_type: string;
+  step_name: string;
+  step_index?: number;
+  phase?: string;
+  iteration?: number;
+  status: string;
+  start_time?: number;
+  end_time?: number;
+  duration_ms?: number;
+  error?: string;
+  output?: string;
+  stdout?: string;
+}
+
+export interface CurrentExecutionStepsResponse {
+  success: boolean;
+  task_run_id: string | null;
+  workflow_name?: string;
+  workflow_type?: string;
+  workflow_start_time?: string;
+  current_stage?: string;
+  executions: CurrentExecutionStep[];
+  count: number;
 }
 
 export type { UnifiedWorkflow } from "@/types/unified-workflow";
@@ -265,6 +467,56 @@ export interface ContextItem {
   autoInclude?: ContextAutoInclude;
   createdAt?: string;
   modifiedAt?: string;
+}
+
+export interface GenerateWorkflowRequest {
+  description: string;
+  category?: string;
+  tags?: string[];
+  context_ids?: string[];
+  inline_context?: string;
+  max_iterations?: number;
+  provider?: string;
+  model?: string;
+  skip_ai_summary?: boolean;
+  auto_include_contexts?: boolean;
+  /** Maximum verification→fix iterations (default: 3, 0 = skip verification) */
+  max_fix_iterations?: number;
+}
+
+/** One pass of the verification→fix loop during workflow generation. */
+export interface VerificationIteration {
+  /** 1-based iteration number */
+  iteration: number;
+  /** Issues found by the verification agent */
+  issues: string[];
+  /** Whether the fixer agent was invoked */
+  fix_applied: boolean;
+  /** Error message if the fixer agent failed */
+  fix_error?: string;
+}
+
+export interface GenerateWorkflowResponse {
+  workflow: UnifiedWorkflow | null;
+  validation_errors: string[];
+  success: boolean;
+  error: string | null;
+  model_used: string | null;
+  /** Details of each verification→fix iteration (empty when skipped) */
+  verification_iterations?: VerificationIteration[];
+}
+
+/** Response from async workflow generation */
+export interface GenerateWorkflowAsyncResponse {
+  task_run_id: string;
+  meta_workflow_id: string;
+}
+
+export interface CreateContextFromFileRequest {
+  file_path: string;
+  name?: string;
+  category?: string;
+  tags?: string[];
 }
 
 export interface McpServerConfig {
@@ -745,7 +997,7 @@ export interface AiConnectionTestResult {
 // Fetch Wrapper
 // =============================================================================
 
-class RunnerApiError extends Error {
+export class RunnerApiError extends Error {
   constructor(
     public status: number,
     message: string
@@ -755,10 +1007,14 @@ class RunnerApiError extends Error {
   }
 }
 
-async function runnerFetch<T>(path: string, options?: RequestInit): Promise<T> {
+export async function runnerFetch<T>(
+  path: string,
+  options?: RequestInit & { timeoutMs?: number }
+): Promise<T> {
   const url = `${RUNNER_API_BASE}${path}`;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 5000);
+  const timeoutMs = options?.timeoutMs ?? 5000;
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
   try {
     response = await fetch(url, {
@@ -820,13 +1076,14 @@ function useRunnerQuery<T>(
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const enabled = options?.enabled !== false;
   const pollInterval = options?.pollInterval;
-  const transform = options?.transform;
+  const transformRef = useRef(options?.transform);
+  transformRef.current = options?.transform;
 
   const fetchData = useCallback(async () => {
     if (!path || !enabled) return;
     try {
       const raw = await runnerFetch<unknown>(path);
-      const result = transform ? transform(raw) : (raw as T);
+      const result = transformRef.current ? transformRef.current(raw) : (raw as T);
       setData(result);
       setError(null);
       setIsOffline(false);
@@ -967,7 +1224,21 @@ export function useTaskRun(id: string | number | null) {
 export function useTaskRunOutput(id: string | number | null) {
   return useRunnerQuery<TaskRunOutput>(
     id != null ? `/task-runs/${id}/output` : null,
-    { enabled: id != null }
+    {
+      enabled: id != null,
+      transform: (raw) => {
+        const obj = raw as Record<string, unknown>;
+        // API returns { id, output } but our type expects output_log
+        if (obj && typeof obj === "object") {
+          return {
+            id: obj.id as number,
+            output_log:
+              (obj.output_log as string) ?? (obj.output as string) ?? "",
+          } as TaskRunOutput;
+        }
+        return raw as TaskRunOutput;
+      },
+    }
   );
 }
 
@@ -1006,8 +1277,23 @@ export function useTaskRunKnowledge(id: string | number | null) {
   );
 }
 
+/** Summary returned alongside verification results from the API */
+export interface VerificationSummary {
+  total: number;
+  passed: number;
+  failed: number;
+  critical_failed: number;
+  all_passed: boolean;
+}
+
+/** Combined verification data including results and summary */
+export interface VerificationData {
+  results: VerificationResult[];
+  summary: VerificationSummary | null;
+}
+
 export function useTaskRunVerification(id: string | number | null) {
-  return useRunnerQuery<VerificationResult[]>(
+  return useRunnerQuery<VerificationData>(
     id != null ? `/task-runs/${id}/verification-results` : null,
     {
       enabled: id != null,
@@ -1018,10 +1304,15 @@ export function useTaskRunVerification(id: string | number | null) {
           typeof obj === "object" &&
           "results" in obj &&
           Array.isArray(obj.results)
-        )
-          return obj.results as VerificationResult[];
-        if (Array.isArray(raw)) return raw as VerificationResult[];
-        return [];
+        ) {
+          return {
+            results: obj.results as VerificationResult[],
+            summary: (obj.summary as VerificationSummary) ?? null,
+          };
+        }
+        if (Array.isArray(raw))
+          return { results: raw as VerificationResult[], summary: null };
+        return { results: [], summary: null };
       },
     }
   );
@@ -1030,7 +1321,54 @@ export function useTaskRunVerification(id: string | number | null) {
 export function useTaskRunPlaywright(id: string | number | null) {
   return useRunnerQuery<PlaywrightResult[]>(
     id != null ? `/task-runs/${id}/playwright-results` : null,
-    { enabled: id != null }
+    {
+      enabled: id != null,
+      transform: (raw) => {
+        const obj = raw as Record<string, unknown>;
+        if (
+          obj &&
+          typeof obj === "object" &&
+          "results" in obj &&
+          Array.isArray(obj.results)
+        )
+          return obj.results as PlaywrightResult[];
+        if (Array.isArray(raw)) return raw as PlaywrightResult[];
+        return [];
+      },
+    }
+  );
+}
+
+export function useTaskRunVerificationPhaseResults(id: string | number | null) {
+  return useRunnerQuery<VerificationPhaseResultsData>(
+    id != null ? `/task-runs/${id}/verification-phase-results` : null,
+    {
+      enabled: id != null,
+      transform: (raw) => {
+        const obj = raw as Record<string, unknown>;
+        if (
+          obj &&
+          typeof obj === "object" &&
+          "results" in obj &&
+          Array.isArray(obj.results)
+        ) {
+          return {
+            task_run_id: (obj.task_run_id as string) ?? "",
+            results: obj.results as VerificationPhaseResult[],
+            count: (obj.count as number) ?? obj.results.length,
+            passed_iterations: (obj.passed_iterations as number) ?? 0,
+            failed_iterations: (obj.failed_iterations as number) ?? 0,
+          };
+        }
+        return {
+          task_run_id: "",
+          results: [],
+          count: 0,
+          passed_iterations: 0,
+          failed_iterations: 0,
+        };
+      },
+    }
   );
 }
 
@@ -1058,14 +1396,44 @@ export function useTaskRunEvents(id: string | number | null) {
 export function useTaskRunScreenshots(id: string | number | null) {
   return useRunnerQuery<Screenshot[]>(
     id != null ? `/task-runs/${id}/screenshots` : null,
-    { enabled: id != null, pollInterval: 3000 }
+    {
+      enabled: id != null,
+      pollInterval: 3000,
+      transform: (raw) => {
+        const obj = raw as Record<string, unknown>;
+        if (
+          obj &&
+          typeof obj === "object" &&
+          "screenshots" in obj &&
+          Array.isArray(obj.screenshots)
+        )
+          return obj.screenshots as Screenshot[];
+        if (Array.isArray(raw)) return raw as Screenshot[];
+        return [];
+      },
+    }
   );
 }
 
 export function useTaskRunScreenshotsDetailed(id: string | number | null) {
   return useRunnerQuery<TaskRunScreenshot[]>(
     id != null ? `/task-runs/${id}/screenshots` : null,
-    { enabled: id != null, pollInterval: 3000 }
+    {
+      enabled: id != null,
+      pollInterval: 3000,
+      transform: (raw) => {
+        const obj = raw as Record<string, unknown>;
+        if (
+          obj &&
+          typeof obj === "object" &&
+          "screenshots" in obj &&
+          Array.isArray(obj.screenshots)
+        )
+          return obj.screenshots as TaskRunScreenshot[];
+        if (Array.isArray(raw)) return raw as TaskRunScreenshot[];
+        return [];
+      },
+    }
   );
 }
 
@@ -1082,8 +1450,22 @@ export function useFindingsSummary() {
 
 export function useTaskRunCheckpoints(id: string | number | null) {
   return useRunnerQuery<Checkpoint[]>(
-    id != null ? `/task-runs/${id}/checkpoints` : null,
-    { enabled: id != null }
+    id != null ? `/task-runs/${id}/checkpoints?limit=100` : null,
+    {
+      enabled: id != null,
+      transform: (raw) => {
+        const obj = raw as Record<string, unknown>;
+        if (
+          obj &&
+          typeof obj === "object" &&
+          "checkpoints" in obj &&
+          Array.isArray(obj.checkpoints)
+        )
+          return obj.checkpoints as Checkpoint[];
+        if (Array.isArray(raw)) return raw as Checkpoint[];
+        return [];
+      },
+    }
   );
 }
 
@@ -1118,18 +1500,6 @@ export function useTestHistory() {
 
 export function useExecutionSpans() {
   return useRunnerQuery<ExecutionSpan[]>("/execution-spans");
-}
-
-// Builder data hooks
-export function useUnifiedWorkflows() {
-  return useRunnerQuery<UnifiedWorkflow[]>("/unified-workflows");
-}
-
-export function useUnifiedWorkflow(id: string | null) {
-  return useRunnerQuery<UnifiedWorkflow>(
-    id ? `/unified-workflows/${id}` : null,
-    { enabled: !!id }
-  );
 }
 
 export function useLibraryItems() {
@@ -1403,9 +1773,14 @@ export function useExtensionCommand() {
   >("/extension/command");
 }
 
-// Executor status
-export function useExecutorStatus() {
-  return useRunnerQuery<Record<string, unknown>>("/executor/status", {
+// GUI lock status - indicates whether a visual automation run holds the GUI
+export interface GuiLockInfo {
+  holder_id: string | null;
+  acquired_at: number | null;
+}
+
+export function useGuiLock() {
+  return useRunnerQuery<GuiLockInfo>("/gui-lock", {
     pollInterval: DEFAULT_POLL_INTERVAL,
   });
 }
@@ -1500,20 +1875,6 @@ export const runnerApi = {
         body: JSON.stringify({ monitor }),
       }
     ),
-  saveUnifiedWorkflow: (workflow: Partial<UnifiedWorkflow>) =>
-    runnerFetch<UnifiedWorkflow>("/unified-workflows", {
-      method: "POST",
-      body: JSON.stringify(workflow),
-    }),
-  updateUnifiedWorkflow: (id: string, workflow: Partial<UnifiedWorkflow>) =>
-    runnerFetch<UnifiedWorkflow>(`/unified-workflows/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(workflow),
-    }),
-  getUnifiedWorkflow: (id: string) =>
-    runnerFetch<UnifiedWorkflow>(`/unified-workflows/${id}`),
-  deleteUnifiedWorkflow: (id: string) =>
-    runnerFetch<void>(`/unified-workflows/${id}`, { method: "DELETE" }),
   saveLogSource: (source: Partial<LogSource>) =>
     runnerFetch<LogSource>("/log-sources", {
       method: "POST",
@@ -1741,21 +2102,55 @@ export const runnerApi = {
       method: "POST",
     }),
 
-  // Workflow import/export
-  exportWorkflow: (id: string) =>
-    runnerFetch<unknown>(`/unified-workflows/${id}/export`),
-  importWorkflow: (workflow: unknown, conflictStrategy?: string) =>
-    runnerFetch<unknown>("/unified-workflows/import", {
+  // Generate workflow from natural language (AI generation - long timeout)
+  // Multi-agent pipeline: builder + up to 3 verification/fixer loops, each calling AI with 90s timeout
+  generateWorkflow: (request: GenerateWorkflowRequest) =>
+    runnerFetch<GenerateWorkflowResponse>("/unified-workflows/generate", {
       method: "POST",
-      body: JSON.stringify({
-        workflow,
-        conflict_strategy: conflictStrategy ?? "generate",
-      }),
+      body: JSON.stringify(request),
+      timeoutMs: 600000,
     }),
+
+  // Async workflow generation (meta-workflow based - returns immediately with task run ID)
+  generateWorkflowAsync: (request: GenerateWorkflowRequest) =>
+    runnerFetch<GenerateWorkflowAsyncResponse>(
+      "/unified-workflows/generate-async",
+      {
+        method: "POST",
+        body: JSON.stringify(request),
+        timeoutMs: 30000, // Quick response - just starts the task
+      }
+    ),
+
+  // Get result data from a completed task run
+  getTaskRunResultData: (id: string) =>
+    runnerFetch<Record<string, unknown>>(`/task-runs/${id}/result-data`, {
+      method: "GET",
+    }),
+
+  // Get workflow state for a task run (used to track meta-workflow progress)
+  getTaskRunWorkflowState: (id: string) =>
+    runnerFetch<Record<string, unknown>>(`/task-runs/${id}/workflow-state`, {
+      method: "GET",
+    }),
+
+  // Create context from file path
+  createContextFromFile: (
+    scope: string,
+    request: CreateContextFromFileRequest
+  ) =>
+    runnerFetch<ContextItem>(`/contexts/${scope}/from-file`, {
+      method: "POST",
+      body: JSON.stringify(request),
+    }),
+
 
   // Run workflow
   runUnifiedWorkflow: (id: string) =>
-    runnerFetch<void>(`/unified-workflows/${id}/run`, { method: "POST" }),
+    runnerFetch<void>(`/unified-workflows/${id}/run`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
 
   // Continue a task run with additional sessions
   continueTaskRun: (
@@ -2358,6 +2753,12 @@ export const runnerApi = {
       method: "PUT",
       body: JSON.stringify({ enabled }),
     }),
+
+  // Pause/Resume task run
+  pauseTaskRun: (id: string | number) =>
+    runnerFetch<void>(`/task-runs/${id}/pause`, { method: "POST" }),
+  resumeTaskRun: (id: string | number) =>
+    runnerFetch<void>(`/task-runs/${id}/resume`, { method: "POST" }),
 
   // Execute Action
   executeAction: (params: {

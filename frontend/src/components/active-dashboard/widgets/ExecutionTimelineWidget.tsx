@@ -172,10 +172,10 @@ const PHASE_CONFIG: Record<
   },
   completion: {
     label: "Completion",
-    color: "amber",
-    textColor: "text-amber-400",
-    bgColor: "bg-amber-500/10",
-    borderColor: "border-amber-500/30",
+    color: "teal",
+    textColor: "text-teal-400",
+    bgColor: "bg-teal-500/10",
+    borderColor: "border-teal-500/30",
   },
 };
 

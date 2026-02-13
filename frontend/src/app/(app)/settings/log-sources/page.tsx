@@ -143,7 +143,11 @@ export default function LogSourcesSettingsPage() {
             >
               {AI_MODE_LABELS[aiMode]}
             </Badge>
-            <span className="text-xs text-text-muted">
+            <span
+              data-content-role="description"
+              data-content-label="ai mode description"
+              className="text-xs text-text-muted"
+            >
               {AI_MODE_DESCRIPTIONS[aiMode]}
             </span>
           </div>
@@ -162,22 +166,52 @@ export default function LogSourcesSettingsPage() {
         <CardContent>
           <div className="grid grid-cols-3 gap-4">
             <div className="flex flex-col items-center gap-1 p-3 rounded-lg bg-surface-canvas/30 border border-border-subtle/20">
-              <span className="text-2xl font-semibold text-text-primary">
+              <span
+                data-content-role="metric"
+                data-content-label="total sources count"
+                className="text-2xl font-semibold text-text-primary"
+              >
                 {sourceCount}
               </span>
-              <span className="text-xs text-text-muted">Total Sources</span>
+              <span
+                data-content-role="label"
+                data-content-label="total sources label"
+                className="text-xs text-text-muted"
+              >
+                Total Sources
+              </span>
             </div>
             <div className="flex flex-col items-center gap-1 p-3 rounded-lg bg-surface-canvas/30 border border-border-subtle/20">
-              <span className="text-2xl font-semibold text-green-400">
+              <span
+                data-content-role="metric"
+                data-content-label="enabled sources count"
+                className="text-2xl font-semibold text-green-400"
+              >
                 {enabledCount}
               </span>
-              <span className="text-xs text-text-muted">Enabled</span>
+              <span
+                data-content-role="label"
+                data-content-label="enabled label"
+                className="text-xs text-text-muted"
+              >
+                Enabled
+              </span>
             </div>
             <div className="flex flex-col items-center gap-1 p-3 rounded-lg bg-surface-canvas/30 border border-border-subtle/20">
-              <span className="text-2xl font-semibold text-text-primary">
+              <span
+                data-content-role="metric"
+                data-content-label="profiles count"
+                className="text-2xl font-semibold text-text-primary"
+              >
                 {profileCount}
               </span>
-              <span className="text-xs text-text-muted">Profiles</span>
+              <span
+                data-content-role="label"
+                data-content-label="profiles label"
+                className="text-xs text-text-muted"
+              >
+                Profiles
+              </span>
             </div>
           </div>
         </CardContent>

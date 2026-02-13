@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { useTaskRunOutput, useSessionState, runnerApi } from "@/lib/runner-api";
+import { runnerApi } from "@/lib/runner-api";
+import type { TaskRunOutput, SessionState } from "@/lib/runner-api";
+import { useEventTriggeredFetch } from "@/contexts/RunnerEventContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -281,9 +283,29 @@ function MessageInput({
 // ---------------------------------------------------------------------------
 
 export function AiConversationWidget({ runId }: { runId: string }) {
-  const { data: outputData, isLoading: outputLoading } =
-    useTaskRunOutput(runId);
-  const { data: sessionStateData } = useSessionState(runId);
+  const {
+    data: outputData,
+    isLoading: outputLoading,
+  } = useEventTriggeredFetch<TaskRunOutput>(
+    "ai-output",
+    `/task-runs/${runId}/output`,
+    {
+      transform: (raw: unknown) => {
+        const obj = raw as Record<string, unknown>;
+        if (obj && typeof obj === "object") {
+          return {
+            id: obj.id as number,
+            output_log: (obj.output_log as string) ?? (obj.output as string) ?? "",
+          } as TaskRunOutput;
+        }
+        return raw as TaskRunOutput;
+      },
+    }
+  );
+  const { data: sessionStateData } = useEventTriggeredFetch<SessionState>(
+    "orchestrator-state-change",
+    `/task-runs/${runId}/session-state`
+  );
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);

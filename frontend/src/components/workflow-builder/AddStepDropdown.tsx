@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { UnifiedStep, WorkflowPhase } from "@/types/unified-workflow";
+import type { UnifiedStep, WorkflowPhase, StepTypeInfo } from "@/types/unified-workflow";
 import {
   STEP_TYPES,
   PHASE_INFO,
@@ -48,6 +48,7 @@ const CATEGORIES: CategoryDef[] = [
       "check_analyze",
       "check_security",
       "check_custom",
+      "check_ai_review",
     ],
   },
   {
@@ -77,6 +78,7 @@ const ROOT_ITEMS = [
   "workflow_ref",
   "spec",
   "gate",
+  "save_workflow_artifact",
 ];
 
 function resolveStepType(displayType: string): {
@@ -102,6 +104,7 @@ function resolveStepType(displayType: string): {
       check_analyze: "analyze",
       check_security: "security",
       check_custom: "custom_command",
+      check_ai_review: "ai_review",
     };
     return { type: "check", subType: checkTypeMap[displayType] };
   }
@@ -113,6 +116,8 @@ interface AddStepDropdownProps {
   isOpen: boolean;
   onClose: () => void;
   onAddStep: (step: UnifiedStep, phase: WorkflowPhase) => void;
+  /** Dynamic step types fetched from backend. Falls back to static STEP_TYPES. */
+  dynamicStepTypes?: Record<WorkflowPhase, StepTypeInfo[]>;
 }
 
 export function AddStepDropdown({
@@ -120,9 +125,10 @@ export function AddStepDropdown({
   isOpen,
   onClose,
   onAddStep,
+  dynamicStepTypes,
 }: AddStepDropdownProps) {
   const [activeCategory, setActiveCategory] = useState<CategoryId>("root");
-  const stepTypes = STEP_TYPES[phase];
+  const stepTypes = (dynamicStepTypes ?? STEP_TYPES)[phase];
   const phaseInfo = PHASE_INFO[phase];
 
   const handleSelectStep = (displayType: string) => {

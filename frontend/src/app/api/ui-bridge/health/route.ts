@@ -6,6 +6,8 @@
  */
 
 import { NextResponse } from "next/server";
+import { uiBridgeConfig } from "@/config/ui-bridge-config";
+import { getTransportDiagnostics } from "@/lib/ui-bridge/handlers";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,7 +16,9 @@ export async function GET() {
   return NextResponse.json({
     status: "ok",
     sdk: "@qontinui/ui-bridge",
-    version: "0.1.0",
+    version: uiBridgeConfig.version,
     timestamp: Date.now(),
+    uiBridge: uiBridgeConfig,
+    transport: getTransportDiagnostics(),
   });
 }

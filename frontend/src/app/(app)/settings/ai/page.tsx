@@ -302,7 +302,11 @@ export default function AiSettingsPage() {
                   <div className="text-sm font-medium">
                     {opt.label}
                     {opt.value === "claude_cli" && (
-                      <span className="ml-1.5 text-xs text-primary font-normal">
+                      <span
+                        data-content-role="badge"
+                        data-content-label="recommended provider"
+                        className="ml-1.5 text-xs text-primary font-normal"
+                      >
                         Recommended
                       </span>
                     )}
@@ -413,7 +417,11 @@ export default function AiSettingsPage() {
               </Label>
               {claudeApiKeyConfigured ? (
                 <div className="flex items-center justify-between rounded-lg border border-green-500/20 bg-green-500/5 p-3">
-                  <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                  <div
+                    data-content-role="status"
+                    data-content-label="claude api key status"
+                    className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400"
+                  >
                     <CheckCircle className="size-4" />
                     API key configured securely
                   </div>
@@ -602,7 +610,11 @@ export default function AiSettingsPage() {
               </Label>
               {geminiApiKeyConfigured ? (
                 <div className="flex items-center justify-between rounded-lg border border-green-500/20 bg-green-500/5 p-3">
-                  <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                  <div
+                    data-content-role="status"
+                    data-content-label="gemini api key status"
+                    className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400"
+                  >
                     <CheckCircle className="size-4" />
                     API key configured securely
                   </div>

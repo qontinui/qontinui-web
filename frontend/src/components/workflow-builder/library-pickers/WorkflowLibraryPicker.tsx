@@ -2,7 +2,7 @@
 
 import React from "react";
 import { LibraryPickerBase } from "./LibraryPickerBase";
-import { useUnifiedWorkflows } from "@/lib/runner-api";
+import { useUnifiedWorkflows } from "@/lib/api/unified-workflows";
 
 interface WorkflowLibraryPickerProps {
   isOpen: boolean;

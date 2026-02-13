@@ -334,7 +334,11 @@ export default function SelfHealingSettingsPage() {
               <div className="space-y-2 rounded-lg border p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <Server className="size-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">
+                  <span
+                    data-content-role="heading"
+                    data-content-label="ollama config section"
+                    className="text-sm font-medium"
+                  >
                     Ollama Configuration
                   </span>
                 </div>
@@ -354,7 +358,11 @@ export default function SelfHealingSettingsPage() {
               <div className="space-y-4 rounded-lg border p-4">
                 <div className="flex items-center gap-2 mb-1">
                   <Cloud className="size-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">
+                  <span
+                    data-content-role="heading"
+                    data-content-label="remote api config section"
+                    className="text-sm font-medium"
+                  >
                     Remote API Configuration
                   </span>
                 </div>
@@ -385,7 +393,11 @@ export default function SelfHealingSettingsPage() {
                   </Label>
                   {apiKeyConfigured ? (
                     <div className="flex items-center justify-between rounded-lg border border-green-500/20 bg-green-500/5 p-3">
-                      <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                      <div
+                        data-content-role="status"
+                        data-content-label="self-healing api key status"
+                        className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400"
+                      >
                         <CheckCircle className="size-4" />
                         API key configured securely
                       </div>

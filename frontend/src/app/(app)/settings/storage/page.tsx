@@ -30,8 +30,18 @@ function StorageProgressBar({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between text-sm">
-        <span className="text-text-primary font-medium">{label}</span>
-        <span className="text-text-muted">
+        <span
+          data-content-role="label"
+          data-content-label="storage category"
+          className="text-text-primary font-medium"
+        >
+          {label}
+        </span>
+        <span
+          data-content-role="metric"
+          data-content-label="storage usage"
+          className="text-text-muted"
+        >
           {usageMb.toFixed(1)} MB / {maxMb.toFixed(0)} MB
           <span className="ml-2 text-xs">({fileCount} files)</span>
         </span>
@@ -195,13 +205,25 @@ export default function StorageSettingsPage() {
           {storageInfo && (
             <>
               <div className="space-y-1">
-                <span className="text-xs text-text-muted">Screenshot path</span>
+                <span
+                  data-content-role="label"
+                  data-content-label="screenshot path label"
+                  className="text-xs text-text-muted"
+                >
+                  Screenshot path
+                </span>
                 <p className="text-sm font-mono text-text-primary bg-surface-raised/50 px-3 py-2 rounded-md border border-border-subtle/30 break-all">
                   {storageInfo.screenshot_path}
                 </p>
               </div>
               <div className="space-y-1">
-                <span className="text-xs text-text-muted">Video path</span>
+                <span
+                  data-content-role="label"
+                  data-content-label="video path label"
+                  className="text-xs text-text-muted"
+                >
+                  Video path
+                </span>
                 <p className="text-sm font-mono text-text-primary bg-surface-raised/50 px-3 py-2 rounded-md border border-border-subtle/30 break-all">
                   {storageInfo.video_path}
                 </p>

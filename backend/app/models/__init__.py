@@ -180,6 +180,7 @@ from app.models.ui_bridge_state import (
     UIBridgeStateConfig,
     UIBridgeStateDomainKnowledge,
 )
+from app.models.unified_workflow import UnifiedWorkflow
 from app.models.usage_metric import UsageMetric
 from app.models.user import User
 from app.models.verification_test import (
@@ -445,4 +446,6 @@ __all__ = [
     "StepTypeConfig",
     "GuiActionTypeConfig",
     "WorkflowPhaseConfig",
+    # Unified Workflows (workflow definitions - source of truth)
+    "UnifiedWorkflow",
 ]

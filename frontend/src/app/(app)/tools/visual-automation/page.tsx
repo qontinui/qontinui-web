@@ -4,10 +4,10 @@ import { useState, useMemo } from "react";
 import Link from "next/link";
 import {
   useRunnerHealth,
-  useUnifiedWorkflows,
-  useExecutorStatus,
+  useGuiLock,
   runnerApi,
 } from "@/lib/runner-api";
+import { useUnifiedWorkflows } from "@/lib/api/unified-workflows";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
 import {
   Card,
@@ -55,7 +55,8 @@ export default function ExecuteVisualAutomationPage() {
     isLoading: workflowsLoading,
     error: workflowsError,
   } = useUnifiedWorkflows();
-  const { data: executorStatus } = useExecutorStatus();
+  const { data: guiLock } = useGuiLock();
+  const isGuiLocked = guiLock?.holder_id != null;
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(
@@ -92,11 +93,6 @@ export default function ExecuteVisualAutomationPage() {
     if (!selectedWorkflowId || !workflows) return null;
     return workflows.find((w) => w.id === selectedWorkflowId) ?? null;
   }, [selectedWorkflowId, workflows]);
-
-  const executorState = executorStatus
-    ? (executorStatus as { status?: string })
-    : null;
-  const isExecutorBusy = executorState?.status === "running";
 
   const handleRun = async () => {
     if (!selectedWorkflowId) return;
@@ -153,10 +149,10 @@ export default function ExecuteVisualAutomationPage() {
             </h1>
           </div>
           <div className="flex items-center gap-3">
-            {isExecutorBusy && (
+            {isGuiLocked && (
               <Badge variant="warning" className="gap-1.5">
                 <Activity className="w-3 h-3 animate-pulse" />
-                Executor Busy
+                GUI In Use
               </Badge>
             )}
             <Badge variant="success" className="gap-1.5">
@@ -258,8 +254,8 @@ export default function ExecuteVisualAutomationPage() {
             </CardContent>
           </Card>
 
-          {/* Executor Status Card */}
-          {executorStatus && (
+          {/* GUI Lock Status Card */}
+          {guiLock && (
             <Card className="bg-surface-raised/50 border-border-subtle/50">
               <CardContent className="py-4">
                 <div className="flex items-center justify-between">
@@ -267,17 +263,17 @@ export default function ExecuteVisualAutomationPage() {
                     <Activity className="w-5 h-5 text-text-muted" />
                     <div>
                       <p className="text-sm font-medium text-text-primary">
-                        Executor Status
+                        GUI Status
                       </p>
                       <p className="text-xs text-text-muted">
-                        {isExecutorBusy
-                          ? "A workflow is currently running"
+                        {isGuiLocked
+                          ? "A visual automation workflow is using the GUI"
                           : "Ready to execute workflows"}
                       </p>
                     </div>
                   </div>
-                  <Badge variant={isExecutorBusy ? "warning" : "info"}>
-                    {executorState?.status ?? "idle"}
+                  <Badge variant={isGuiLocked ? "warning" : "info"}>
+                    {isGuiLocked ? "locked" : "available"}
                   </Badge>
                 </div>
               </CardContent>
@@ -434,7 +430,7 @@ export default function ExecuteVisualAutomationPage() {
                   </div>
                   <Button
                     onClick={handleRun}
-                    disabled={isRunning || isExecutorBusy}
+                    disabled={isRunning || isGuiLocked}
                     className="bg-brand-primary hover:bg-brand-primary/90 text-black font-semibold px-6"
                   >
                     {isRunning ? (

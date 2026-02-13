@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useTaskRunKnowledge, runnerApi } from "@/lib/runner-api";
-import type { Finding } from "@/lib/runner-api";
+import { runnerApi } from "@/lib/runner-api";
+import type { Finding, TaskRunKnowledge } from "@/lib/runner-api";
+import { useEventTriggeredFetch } from "@/contexts/RunnerEventContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -193,7 +194,29 @@ function FindingCard({
 }
 
 export function FindingsWidget({ runId }: { runId: string }) {
-  const { data, isLoading, refetch } = useTaskRunKnowledge(runId);
+  const { data, isLoading, refetch } = useEventTriggeredFetch<TaskRunKnowledge>(
+    ["finding_detected", "finding_resolved"],
+    `/task-runs/${runId}/knowledge`,
+    {
+      transform: (raw: unknown) => {
+        const obj = raw as Record<string, unknown>;
+        if (obj && typeof obj === "object" && "knowledge" in obj && Array.isArray(obj.knowledge)) {
+          const items = obj.knowledge as Array<Record<string, unknown>>;
+          return {
+            findings: items.filter((k) => k.category === "finding") as unknown as Finding[],
+            observations: items
+              .filter((k) => k.category === "observation")
+              .map((k) => String(k.content || k.title || "")),
+            hypotheses: items
+              .filter((k) => k.category === "hypothesis")
+              .map((k) => String(k.content || k.title || "")),
+          };
+        }
+        if (obj && "findings" in obj) return obj as unknown as TaskRunKnowledge;
+        return { findings: [], observations: [], hypotheses: [] };
+      },
+    }
+  );
 
   if (isLoading) {
     return (

@@ -257,7 +257,11 @@ export default function LearningPage() {
             <CardContent className="py-16">
               <div className="text-center text-text-muted">
                 <Inbox className="size-16 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-text-secondary mb-2">
+                <h3
+                  data-content-role="heading"
+                  data-content-label="empty state title"
+                  className="text-lg font-medium text-text-secondary mb-2"
+                >
                   No Data for Analysis
                 </h3>
                 <p className="text-sm">
@@ -281,10 +285,18 @@ export default function LearningPage() {
                 <CardContent>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="text-center">
-                      <div className="text-3xl font-bold text-text-primary">
+                      <div
+                        data-content-role="metric"
+                        data-content-label="average iterations"
+                        className="text-3xl font-bold text-text-primary"
+                      >
                         {iterationTrend.avgIterations.toFixed(1)}
                       </div>
-                      <div className="text-xs text-text-muted mt-1">
+                      <div
+                        data-content-role="label"
+                        data-content-label="average iterations label"
+                        className="text-xs text-text-muted mt-1"
+                      >
                         Avg Iterations / Run
                       </div>
                     </div>
@@ -298,6 +310,8 @@ export default function LearningPage() {
                           <Minus className="size-5 text-text-muted" />
                         )}
                         <span
+                          data-content-role="status"
+                          data-content-label="iteration trend"
                           className={`text-lg font-semibold ${
                             iterationTrend.trend === "decreasing"
                               ? "text-green-500"
@@ -359,7 +373,11 @@ export default function LearningPage() {
                           ) : (
                             <BarChart3 className="size-4 text-text-muted" />
                           )}
-                          <span className="font-medium text-sm text-text-primary">
+                          <span
+                            data-content-role="label"
+                            data-content-label="insight title"
+                            className="font-medium text-sm text-text-primary"
+                          >
                             {insight.label}
                           </span>
                         </div>
@@ -392,7 +410,11 @@ export default function LearningPage() {
                       return (
                         <div key={category}>
                           <div className="flex items-center justify-between mb-1">
-                            <span className="text-sm text-text-primary">
+                            <span
+                              data-content-role="label"
+                              data-content-label="finding category"
+                              className="text-sm text-text-primary"
+                            >
                               {category}
                             </span>
                             <Badge variant="secondary" className="text-xs">
@@ -453,7 +475,11 @@ export default function LearningPage() {
                           <Badge variant="outline" className="text-xs">
                             {phase}
                           </Badge>
-                          <span className="text-sm font-medium text-text-primary">
+                          <span
+                            data-content-role="metric"
+                            data-content-label="phase count"
+                            className="text-sm font-medium text-text-primary"
+                          >
                             {count}
                           </span>
                         </div>

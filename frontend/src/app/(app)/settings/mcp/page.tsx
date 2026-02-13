@@ -452,6 +452,8 @@ function ServerCard({
               )}
               {/* Connection status dot */}
               <span
+                data-content-role="status"
+                data-content-label="server connection status"
                 className={`size-2 rounded-full ${
                   isConnected
                     ? "bg-green-400"
@@ -560,7 +562,11 @@ function ServerCard({
                     {tool.name}
                   </code>
                   {tool.description && (
-                    <span className="text-xs text-text-muted truncate">
+                    <span
+                      data-content-role="description"
+                      data-content-label="tool description"
+                      className="text-xs text-text-muted truncate"
+                    >
                       {tool.description}
                     </span>
                   )}

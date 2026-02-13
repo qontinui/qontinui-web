@@ -215,22 +215,44 @@ export default function RegionAnalysisPage() {
               {selectedSet && (
                 <div className="text-sm text-muted-foreground space-y-1">
                   <div>
-                    <span className="font-medium">Size:</span>{" "}
-                    {selectedSet.image_width} × {selectedSet.image_height}px
+                    <span className="font-medium" data-content-role="label">
+                      Size:
+                    </span>{" "}
+                    <span
+                      data-content-role="metric"
+                      data-content-label="image-dimensions"
+                    >
+                      {selectedSet.image_width} × {selectedSet.image_height}px
+                    </span>
                   </div>
                   <div>
-                    <span className="font-medium">Annotations:</span>{" "}
-                    {selectedSet.annotations_count} element
-                    {selectedSet.annotations_count !== 1 ? "s" : ""}
+                    <span className="font-medium" data-content-role="label">
+                      Annotations:
+                    </span>{" "}
+                    <span
+                      data-content-role="metric"
+                      data-content-label="annotations-count"
+                    >
+                      {selectedSet.annotations_count} element
+                      {selectedSet.annotations_count !== 1 ? "s" : ""}
+                    </span>
                   </div>
                   <div>
-                    <span className="font-medium">Created:</span>{" "}
-                    {new Date(selectedSet.created_at).toLocaleString()}
+                    <span className="font-medium" data-content-role="label">
+                      Created:
+                    </span>{" "}
+                    <span data-content-role="body-text">
+                      {new Date(selectedSet.created_at).toLocaleString()}
+                    </span>
                   </div>
                   {selectedSet.notes && (
                     <div>
-                      <span className="font-medium">Notes:</span>{" "}
-                      {selectedSet.notes}
+                      <span className="font-medium" data-content-role="label">
+                        Notes:
+                      </span>{" "}
+                      <span data-content-role="description">
+                        {selectedSet.notes}
+                      </span>
                     </div>
                   )}
                 </div>

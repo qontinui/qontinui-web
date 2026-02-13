@@ -36,7 +36,7 @@ export function useRealtimeCollaboration(
         event.detail.resourceType === resourceType &&
         event.detail.resourceId === resourceId
       ) {
-        setRemoteChanges((prev) => [...prev, event.detail.change]);
+        setRemoteChanges((prev) => [...prev, event.detail.change].slice(-100));
       }
     };
 

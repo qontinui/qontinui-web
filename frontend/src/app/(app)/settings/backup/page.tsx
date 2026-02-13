@@ -104,22 +104,40 @@ function ImportResultDisplay({
               key={key}
               className="flex items-center justify-between py-1.5 px-2 rounded bg-surface-canvas/20 text-xs"
             >
-              <span className="text-text-primary">
+              <span
+                data-content-role="label"
+                data-content-label="import category"
+                className="text-text-primary"
+              >
                 {CATEGORY_LABELS[key] ?? key}
               </span>
               <div className="flex items-center gap-3 text-text-muted">
                 {detail.imported > 0 && (
-                  <span className="text-green-400">
+                  <span
+                    data-content-role="metric"
+                    data-content-label="imported count"
+                    className="text-green-400"
+                  >
                     +{detail.imported} imported
                   </span>
                 )}
                 {detail.skipped > 0 && (
-                  <span className="text-amber-400">
+                  <span
+                    data-content-role="metric"
+                    data-content-label="skipped count"
+                    className="text-amber-400"
+                  >
                     {detail.skipped} skipped
                   </span>
                 )}
                 {detail.errors > 0 && (
-                  <span className="text-red-400">{detail.errors} errors</span>
+                  <span
+                    data-content-role="metric"
+                    data-content-label="error count"
+                    className="text-red-400"
+                  >
+                    {detail.errors} errors
+                  </span>
                 )}
                 {detail.imported === 0 &&
                   detail.skipped === 0 &&
@@ -334,10 +352,18 @@ export default function BackupSettingsPage() {
                     key={key}
                     className="flex flex-col items-center gap-1 p-2.5 rounded-lg bg-surface-canvas/30 border border-border-subtle/20"
                   >
-                    <span className="text-lg font-semibold text-text-primary">
+                    <span
+                      data-content-role="metric"
+                      data-content-label="category count"
+                      className="text-lg font-semibold text-text-primary"
+                    >
                       {count}
                     </span>
-                    <span className="text-[11px] text-text-muted text-center leading-tight">
+                    <span
+                      data-content-role="label"
+                      data-content-label="category name"
+                      className="text-[11px] text-text-muted text-center leading-tight"
+                    >
                       {CATEGORY_LABELS[key]}
                     </span>
                   </div>
@@ -446,7 +472,11 @@ export default function BackupSettingsPage() {
             <div className="space-y-4 p-4 rounded-lg bg-surface-canvas/20 border border-border-subtle/20">
               <div className="flex items-center gap-2">
                 <FileArchive className="size-4 text-text-muted" />
-                <span className="text-sm font-medium text-text-primary">
+                <span
+                  data-content-role="heading"
+                  data-content-label="import preview"
+                  className="text-sm font-medium text-text-primary"
+                >
                   Import Preview
                 </span>
               </div>
@@ -459,13 +489,26 @@ export default function BackupSettingsPage() {
               ) && (
                 <div className="flex flex-wrap gap-3 text-xs text-text-muted">
                   {!!importPreview.version && (
-                    <span>Version: {String(importPreview.version)}</span>
+                    <span
+                      data-content-role="label"
+                      data-content-label="backup version"
+                    >
+                      Version: {String(importPreview.version)}
+                    </span>
                   )}
                   {!!importPreview.app_version && (
-                    <span>App: {String(importPreview.app_version)}</span>
+                    <span
+                      data-content-role="label"
+                      data-content-label="backup app version"
+                    >
+                      App: {String(importPreview.app_version)}
+                    </span>
                   )}
                   {!!importPreview.created_at && (
-                    <span>
+                    <span
+                      data-content-role="label"
+                      data-content-label="backup created date"
+                    >
                       Created:{" "}
                       {new Date(
                         String(importPreview.created_at)

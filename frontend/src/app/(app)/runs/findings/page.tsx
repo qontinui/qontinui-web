@@ -273,10 +273,19 @@ export default function FindingsPage() {
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               <Card className="bg-surface-raised/50 border-border-subtle/50">
                 <CardContent className="pt-6 text-center">
-                  <div className="text-3xl font-bold text-text-primary">
+                  <div
+                    className="text-3xl font-bold text-text-primary"
+                    data-content-role="metric"
+                    data-content-label="total-findings"
+                  >
                     {data.total}
                   </div>
-                  <div className="text-xs text-text-muted mt-1">Total</div>
+                  <div
+                    className="text-xs text-text-muted mt-1"
+                    data-content-role="label"
+                  >
+                    Total
+                  </div>
                 </CardContent>
               </Card>
               {["critical", "high", "medium", "low"].map((severity) => {
@@ -295,10 +304,15 @@ export default function FindingsPage() {
                     <CardContent className="pt-6 text-center">
                       <div
                         className={`text-3xl font-bold ${colorMap[severity]}`}
+                        data-content-role="metric"
+                        data-content-label={`${severity}-findings-count`}
                       >
                         {count}
                       </div>
-                      <div className="text-xs text-text-muted mt-1 capitalize">
+                      <div
+                        className="text-xs text-text-muted mt-1 capitalize"
+                        data-content-role="label"
+                      >
                         {severity}
                       </div>
                     </CardContent>
@@ -420,7 +434,11 @@ export default function FindingsPage() {
                               ) : (
                                 <ChevronRight className="size-3.5 text-text-muted" />
                               )}
-                              <span className="font-medium text-text-primary text-sm">
+                              <span
+                                className="font-medium text-text-primary text-sm"
+                                data-content-role="label"
+                                data-content-label="finding-title"
+                              >
                                 {finding.title}
                               </span>
                               {getSeverityBadge(finding.severity)}

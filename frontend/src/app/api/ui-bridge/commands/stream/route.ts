@@ -24,14 +24,21 @@ export async function GET(request: NextRequest) {
         )
       );
 
-      // Subscribe to new commands
+      // Subscribe to new commands — auto-unsubscribe if stream is dead
+      let unsubscribed = false;
       const unsubscribe = subscribeToCommands((command) => {
         try {
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify(command)}\n\n`)
           );
         } catch {
-          // Stream closed, cleanup will happen via abort handler
+          // Stream closed — self-clean since abort handler may not fire
+          if (!unsubscribed) {
+            unsubscribed = true;
+            unsubscribe();
+            clearInterval(heartbeat);
+            console.log("[ui-bridge] SSE listener self-cleaned (stream closed)");
+          }
         }
       });
 
@@ -40,14 +47,23 @@ export async function GET(request: NextRequest) {
         try {
           controller.enqueue(encoder.encode(`: heartbeat\n\n`));
         } catch {
+          // Stream closed — self-clean
           clearInterval(heartbeat);
+          if (!unsubscribed) {
+            unsubscribed = true;
+            unsubscribe();
+            console.log("[ui-bridge] SSE listener self-cleaned (heartbeat failed)");
+          }
         }
       }, HEARTBEAT_INTERVAL_MS);
 
       // Clean up when the client disconnects
       request.signal.addEventListener("abort", () => {
-        unsubscribe();
-        clearInterval(heartbeat);
+        if (!unsubscribed) {
+          unsubscribed = true;
+          unsubscribe();
+          clearInterval(heartbeat);
+        }
         try {
           controller.close();
         } catch {

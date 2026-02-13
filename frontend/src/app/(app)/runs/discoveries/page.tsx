@@ -135,7 +135,11 @@ export default function DiscoveriesPage() {
             <CardContent className="py-16">
               <div className="text-center text-text-muted">
                 <Compass className="size-16 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-text-secondary mb-2">
+                <h3
+                  data-content-role="heading"
+                  data-content-label="empty state title"
+                  className="text-lg font-medium text-text-secondary mb-2"
+                >
                   No Explorations Yet
                 </h3>
                 <p className="text-sm">
@@ -151,38 +155,70 @@ export default function DiscoveriesPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <Card className="bg-surface-raised/30 border-border-subtle/50">
                 <CardContent className="pt-6">
-                  <div className="text-xs text-text-muted mb-2">Total Runs</div>
-                  <div className="text-3xl font-bold text-text-primary">
+                  <div
+                    data-content-role="label"
+                    data-content-label="total runs label"
+                    className="text-xs text-text-muted mb-2"
+                  >
+                    Total Runs
+                  </div>
+                  <div
+                    data-content-role="metric"
+                    data-content-label="total runs"
+                    className="text-3xl font-bold text-text-primary"
+                  >
                     {summary.totalRuns}
                   </div>
                 </CardContent>
               </Card>
               <Card className="bg-surface-raised/30 border-border-subtle/50">
                 <CardContent className="pt-6">
-                  <div className="text-xs text-text-muted mb-2">
+                  <div
+                    data-content-role="label"
+                    data-content-label="total states label"
+                    className="text-xs text-text-muted mb-2"
+                  >
                     Total States Discovered
                   </div>
-                  <div className="text-3xl font-bold text-text-primary">
+                  <div
+                    data-content-role="metric"
+                    data-content-label="total states"
+                    className="text-3xl font-bold text-text-primary"
+                  >
                     {summary.totalStates}
                   </div>
                 </CardContent>
               </Card>
               <Card className="bg-surface-raised/30 border-border-subtle/50">
                 <CardContent className="pt-6">
-                  <div className="text-xs text-text-muted mb-2">
+                  <div
+                    data-content-role="label"
+                    data-content-label="total transitions label"
+                    className="text-xs text-text-muted mb-2"
+                  >
                     Total Transitions
                   </div>
-                  <div className="text-3xl font-bold text-text-primary">
+                  <div
+                    data-content-role="metric"
+                    data-content-label="total transitions"
+                    className="text-3xl font-bold text-text-primary"
+                  >
                     {summary.totalTransitions}
                   </div>
                 </CardContent>
               </Card>
               <Card className="bg-surface-raised/30 border-border-subtle/50">
                 <CardContent className="pt-6">
-                  <div className="text-xs text-text-muted mb-2">
+                  <div
+                    data-content-role="label"
+                    data-content-label="average coverage label"
+                    className="text-xs text-text-muted mb-2"
+                  >
                     Average Coverage
                   </div>
                   <div
+                    data-content-role="metric"
+                    data-content-label="average coverage"
                     className={`text-3xl font-bold ${getCoverageColor(summary.avgCoverage)}`}
                   >
                     {summary.avgCoverage.toFixed(1)}%
@@ -228,6 +264,8 @@ export default function DiscoveriesPage() {
                           <TableCell className="text-right">
                             {report.coverage_pct != null ? (
                               <span
+                                data-content-role="metric"
+                                data-content-label="coverage percentage"
                                 className={`font-medium ${getCoverageColor(report.coverage_pct)}`}
                               >
                                 {report.coverage_pct.toFixed(1)}%

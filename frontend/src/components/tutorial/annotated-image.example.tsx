@@ -300,7 +300,7 @@ export function ResponsiveExampleWithCustomStyling() {
         alt="Tutorial step with responsive styling"
         annotations={annotations}
         containerClassName="w-full"
-        imageClassName="w-full h-auto border-2 border-qontinui-cyan/30"
+        imageClassName="w-full h-auto border-2 border-brand-primary/30"
       />
     </div>
   );

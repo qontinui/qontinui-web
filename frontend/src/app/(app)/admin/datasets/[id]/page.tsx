@@ -483,44 +483,100 @@ export default function DatasetViewerPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
               <div className="text-center p-3 bg-accent/30 rounded-lg">
                 <ImageIcon className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
-                <div className="text-2xl font-bold">
+                <div
+                  data-content-role="metric"
+                  data-content-label="total images"
+                  className="text-2xl font-bold"
+                >
                   {statistics.total_images}
                 </div>
-                <div className="text-xs text-muted-foreground">Images</div>
+                <div
+                  data-content-role="label"
+                  data-content-label="images label"
+                  className="text-xs text-muted-foreground"
+                >
+                  Images
+                </div>
               </div>
               <div className="text-center p-3 bg-accent/30 rounded-lg">
                 <Tag className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
-                <div className="text-2xl font-bold">
+                <div
+                  data-content-role="metric"
+                  data-content-label="total annotations"
+                  className="text-2xl font-bold"
+                >
                   {statistics.total_annotations}
                 </div>
-                <div className="text-xs text-muted-foreground">Annotations</div>
+                <div
+                  data-content-role="label"
+                  data-content-label="annotations label"
+                  className="text-xs text-muted-foreground"
+                >
+                  Annotations
+                </div>
               </div>
               <div className="text-center p-3 bg-accent/30 rounded-lg">
                 <CheckCircle2 className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
-                <div className="text-2xl font-bold">
+                <div
+                  data-content-role="metric"
+                  data-content-label="reviewed images"
+                  className="text-2xl font-bold"
+                >
                   {statistics.reviewed_images}
                 </div>
-                <div className="text-xs text-muted-foreground">Reviewed</div>
+                <div
+                  data-content-role="label"
+                  data-content-label="reviewed label"
+                  className="text-xs text-muted-foreground"
+                >
+                  Reviewed
+                </div>
               </div>
               <div className="text-center p-3 bg-green-500/10 rounded-lg">
-                <div className="text-2xl font-bold text-green-600">
+                <div
+                  data-content-role="metric"
+                  data-content-label="user clicks count"
+                  className="text-2xl font-bold text-green-600"
+                >
                   {statistics.by_source.user_click || 0}
                 </div>
-                <div className="text-xs text-muted-foreground">User Clicks</div>
+                <div
+                  data-content-role="label"
+                  data-content-label="user clicks label"
+                  className="text-xs text-muted-foreground"
+                >
+                  User Clicks
+                </div>
               </div>
               <div className="text-center p-3 bg-blue-500/10 rounded-lg">
-                <div className="text-2xl font-bold text-blue-600">
+                <div
+                  data-content-role="metric"
+                  data-content-label="smart analysis count"
+                  className="text-2xl font-bold text-blue-600"
+                >
                   {statistics.by_source.smart_click_analysis || 0}
                 </div>
-                <div className="text-xs text-muted-foreground">
+                <div
+                  data-content-role="label"
+                  data-content-label="smart analysis label"
+                  className="text-xs text-muted-foreground"
+                >
                   Smart Analysis
                 </div>
               </div>
               <div className="text-center p-3 bg-orange-500/10 rounded-lg">
-                <div className="text-2xl font-bold text-orange-600">
+                <div
+                  data-content-role="metric"
+                  data-content-label="template match count"
+                  className="text-2xl font-bold text-orange-600"
+                >
                   {statistics.by_source.template_matching || 0}
                 </div>
-                <div className="text-xs text-muted-foreground">
+                <div
+                  data-content-role="label"
+                  data-content-label="template match label"
+                  className="text-xs text-muted-foreground"
+                >
                   Template Match
                 </div>
               </div>
@@ -700,7 +756,11 @@ export default function DatasetViewerPage() {
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
-              <span className="text-sm text-muted-foreground">
+              <span
+                data-content-role="body-text"
+                data-content-label="page indicator"
+                className="text-sm text-muted-foreground"
+              >
                 Page {filters.page || 1} of {totalPages}
               </span>
               <Button
@@ -776,7 +836,11 @@ export default function DatasetViewerPage() {
                           : "Select All"}
                       </Button>
                       {selectedAnnotationIds.size > 0 && (
-                        <span className="text-xs text-muted-foreground">
+                        <span
+                          data-content-role="metric"
+                          data-content-label="selected annotations count"
+                          className="text-xs text-muted-foreground"
+                        >
                           {selectedAnnotationIds.size} selected
                         </span>
                       )}
@@ -850,7 +914,11 @@ export default function DatasetViewerPage() {
                                     backgroundColor: SOURCE_COLORS[ann.source],
                                   }}
                                 />
-                                <span className="font-medium text-sm">
+                                <span
+                                  data-content-role="label"
+                                  data-content-label="annotation category"
+                                  className="font-medium text-sm"
+                                >
                                   {ann.category_name}
                                 </span>
                                 <Badge
@@ -866,7 +934,11 @@ export default function DatasetViewerPage() {
                                   {ann.review_status}
                                 </Badge>
                               </div>
-                              <div className="text-xs text-muted-foreground mt-1">
+                              <div
+                                data-content-role="metric"
+                                data-content-label="annotation details"
+                                className="text-xs text-muted-foreground mt-1"
+                              >
                                 Conf: {(ann.confidence * 100).toFixed(0)}% •{" "}
                                 {ann.width}x{ann.height}px •{" "}
                                 {ann.element_type || "unknown"}

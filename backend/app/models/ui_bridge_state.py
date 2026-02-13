@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -117,6 +118,7 @@ class UIBridgeExplorationSession(Base):
     )
 
     def __repr__(self) -> str:
+        """Return string representation."""
         return f"<UIBridgeExplorationSession(id={self.id}, status='{self.status}', render_count={self.render_count})>"
 
 
@@ -184,6 +186,7 @@ class UIBridgeStateConfig(Base):
     )
 
     def __repr__(self) -> str:
+        """Return string representation."""
         return f"<UIBridgeStateConfig(id={self.id}, project_id={self.project_id}, name='{self.name}')>"
 
 
@@ -263,6 +266,7 @@ class UIBridgeState(Base):
     )
 
     def __repr__(self) -> str:
+        """Return string representation."""
         return f"<UIBridgeState(id={self.id}, state_id='{self.state_id}', name='{self.name}')>"
 
 
@@ -299,6 +303,13 @@ class DomainKnowledge(Base):
         JSON, default=list, nullable=False, server_default="[]"
     )
 
+    # Embedding vector for semantic search (384-dim MiniLM-L6-v2)
+    content_embedding = mapped_column(
+        Vector(384),
+        nullable=True,
+        comment="384-dim MiniLM embedding of the knowledge content",
+    )
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow, nullable=False
@@ -321,13 +332,12 @@ class DomainKnowledge(Base):
     )
 
     def __repr__(self) -> str:
+        """Return string representation."""
         return f"<DomainKnowledge(id={self.id}, title='{self.title}')>"
 
 
 class UIBridgeStateDomainKnowledge(Base):
-    """
-    Association table linking states to domain knowledge.
-    """
+    """Association table linking states to domain knowledge."""
 
     __tablename__ = "ui_bridge_state_domain_knowledge"
 
@@ -361,4 +371,5 @@ class UIBridgeStateDomainKnowledge(Base):
     )
 
     def __repr__(self) -> str:
+        """Return string representation."""
         return f"<UIBridgeStateDomainKnowledge(state_id={self.state_id}, knowledge_id={self.knowledge_id})>"

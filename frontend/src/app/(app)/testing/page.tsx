@@ -159,7 +159,7 @@ export default function TestingDashboard() {
           {selectedView === "trends" && !projectId && (
             <Card className="bg-surface-raised/50 border-border-subtle/50">
               <CardContent className="p-12 text-center">
-                <div className="text-text-muted">
+                <div className="text-text-muted" data-content-role="status">
                   Please select a project from the dashboard to view coverage
                   trends
                 </div>
@@ -174,7 +174,7 @@ export default function TestingDashboard() {
           {selectedView === "reliability" && !projectId && (
             <Card className="bg-surface-raised/50 border-border-subtle/50">
               <CardContent className="p-12 text-center">
-                <div className="text-text-muted">
+                <div className="text-text-muted" data-content-role="status">
                   Please select a project from the dashboard to view reliability
                   statistics
                 </div>

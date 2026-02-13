@@ -1,14 +1,26 @@
 "use client";
 
-import { useTaskRunMcpCalls } from "@/lib/runner-api";
 import type { McpCall } from "@/lib/runner-api";
+import { useEventTriggeredFetch } from "@/contexts/RunnerEventContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Terminal, RefreshCw } from "lucide-react";
 
 export function McpCallsWidget({ runId }: { runId: string }) {
-  const { data, isLoading } = useTaskRunMcpCalls(runId);
+  const { data, isLoading } = useEventTriggeredFetch<McpCall[]>(
+    "step-progress",
+    `/task-runs/${runId}/mcp-calls`,
+    {
+      transform: (raw: unknown) => {
+        const obj = raw as Record<string, unknown>;
+        if (obj && typeof obj === "object" && "calls" in obj && Array.isArray(obj.calls))
+          return obj.calls as McpCall[];
+        if (Array.isArray(raw)) return raw as McpCall[];
+        return [];
+      },
+    }
+  );
 
   if (isLoading) {
     return (

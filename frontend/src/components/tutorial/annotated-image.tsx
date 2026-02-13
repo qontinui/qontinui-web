@@ -71,22 +71,22 @@ const COLOR_MAP: Record<
   { bg: string; text: string; border: string; ring: string }
 > = {
   cyan: {
-    bg: "bg-qontinui-cyan/20",
-    text: "text-qontinui-cyan",
-    border: "border-qontinui-cyan",
-    ring: "ring-qontinui-cyan",
+    bg: "bg-brand-primary/20",
+    text: "text-brand-primary",
+    border: "border-brand-primary",
+    ring: "ring-brand-primary",
   },
   green: {
-    bg: "bg-qontinui-green/20",
-    text: "text-qontinui-green",
-    border: "border-qontinui-green",
-    ring: "ring-qontinui-green",
+    bg: "bg-brand-success/20",
+    text: "text-brand-success",
+    border: "border-brand-success",
+    ring: "ring-brand-success",
   },
   purple: {
-    bg: "bg-qontinui-purple/20",
-    text: "text-qontinui-purple",
-    border: "border-qontinui-purple",
-    ring: "ring-qontinui-purple",
+    bg: "bg-brand-secondary/20",
+    text: "text-brand-secondary",
+    border: "border-brand-secondary",
+    ring: "ring-brand-secondary",
   },
   red: {
     bg: "bg-red-500/20",
@@ -118,6 +118,18 @@ const SIZE_MAP: Record<
   sm: { pulse: 16, arrow: 24, label: "text-xs" },
   md: { pulse: 24, arrow: 32, label: "text-sm" },
   lg: { pulse: 32, arrow: 40, label: "text-base" },
+};
+
+/**
+ * Hex color mapping for inline styles (where CSS classes can't be used)
+ */
+const COLOR_HEX_MAP: Record<AnnotationColor, string> = {
+  cyan: "#4A90D9",
+  green: "#4DB89D",
+  purple: "#8B6BB5",
+  red: "#ef4444",
+  yellow: "#eab308",
+  blue: "#3b82f6",
 };
 
 /**
@@ -193,7 +205,7 @@ function HighlightAnnotation({
         top: `${annotation.y}px`,
         width: `${annotation.width || 100}px`,
         height: `${annotation.height || 100}px`,
-        backgroundColor: `rgba(var(--qontinui-${color}), ${opacity})`,
+        backgroundColor: `color-mix(in srgb, ${COLOR_HEX_MAP[color]} ${Math.round(opacity * 100)}%, transparent)`,
       }}
       role="img"
       aria-label={`Highlighted area at ${annotation.x}, ${annotation.y}`}
@@ -248,15 +260,12 @@ function ArrowAnnotation({
           y1="4"
           x2="16"
           y2="20"
-          stroke={`rgb(var(--qontinui-${color}))`}
+          stroke={COLOR_HEX_MAP[color]}
           strokeWidth="2"
           strokeLinecap="round"
         />
         {/* Arrow head */}
-        <polygon
-          points="16,4 12,12 20,12"
-          fill={`rgb(var(--qontinui-${color}))`}
-        />
+        <polygon points="16,4 12,12 20,12" fill={COLOR_HEX_MAP[color]} />
       </svg>
     </div>
   );
@@ -295,7 +304,7 @@ function PulseAnnotation({
         style={{
           width: `${size}px`,
           height: `${size}px`,
-          backgroundColor: `rgb(var(--qontinui-${color}))`,
+          backgroundColor: COLOR_HEX_MAP[color],
           opacity: 0.3,
           animationDelay: `${delay}ms`,
           animationDuration: `${duration}ms`,

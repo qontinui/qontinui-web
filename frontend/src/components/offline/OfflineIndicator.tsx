@@ -55,10 +55,10 @@ export function OfflineIndicator() {
     // Load initial stats
     syncQueue.getStats().then(setStats);
 
-    // Monitor sync status
+    // Monitor sync status (check every 5s — only visible when offline/pending)
     const syncInterval = setInterval(() => {
       setIsSyncing(syncProcessor.isProcessing());
-    }, 500);
+    }, 5000);
 
     return () => {
       window.removeEventListener("online", handleOnline);

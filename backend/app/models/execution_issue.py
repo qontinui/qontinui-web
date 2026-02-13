@@ -10,6 +10,7 @@ from datetime import datetime
 from enum import Enum as PyEnum
 from uuid import UUID, uuid4
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import DateTime, Enum, ForeignKey, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
@@ -208,6 +209,25 @@ class ExecutionIssue(Base):
     resolution_notes: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
+    )
+
+    # Embedding vectors for semantic search (384-dim MiniLM-L6-v2)
+    title_embedding = mapped_column(
+        Vector(384),
+        nullable=True,
+        comment="384-dim MiniLM embedding of the issue title",
+    )
+
+    description_embedding = mapped_column(
+        Vector(384),
+        nullable=True,
+        comment="384-dim MiniLM embedding of the issue description",
+    )
+
+    resolution_embedding = mapped_column(
+        Vector(384),
+        nullable=True,
+        comment="384-dim MiniLM embedding of the resolution notes",
     )
 
     # Audit timestamps

@@ -3,6 +3,13 @@
 import React from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { PromptStep, WorkflowPhase } from "@/types/unified-workflow";
 
 interface PromptConfigProps {
@@ -24,6 +31,59 @@ export function PromptConfig({ step, onUpdate }: PromptConfigProps) {
           value={step.content}
           onChange={(e) => onUpdate({ content: e.target.value })}
         />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-zinc-400 mb-1">
+          Prompt Mode
+        </label>
+        <Select
+          value={step.prompt_mode ?? "session"}
+          onValueChange={(v) => onUpdate({ prompt_mode: v })}
+        >
+          <SelectTrigger className="bg-zinc-800 border-zinc-700 text-zinc-200 text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="session">Session (full AI session)</SelectItem>
+            <SelectItem value="response">Response (single response)</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-zinc-500 mt-1">
+          Session runs a full interactive AI session. Response returns a single
+          AI response without tool use.
+        </p>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-zinc-400 mb-1">
+          Input Path
+        </label>
+        <Input
+          className="font-mono bg-zinc-800 border-zinc-700 text-zinc-200 text-sm"
+          placeholder="{{artifact_dir}}/input.txt"
+          value={step.input_path ?? ""}
+          onChange={(e) =>
+            onUpdate({ input_path: e.target.value || undefined })
+          }
+        />
+        <p className="text-xs text-zinc-500 mt-1">
+          File contents will be appended to the prompt before execution.
+        </p>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-zinc-400 mb-1">
+          Output Path
+        </label>
+        <Input
+          className="font-mono bg-zinc-800 border-zinc-700 text-zinc-200 text-sm"
+          placeholder="{{artifact_dir}}/output.json"
+          value={step.output_path ?? ""}
+          onChange={(e) =>
+            onUpdate({ output_path: e.target.value || undefined })
+          }
+        />
+        <p className="text-xs text-zinc-500 mt-1">
+          AI response will be written to this file path.
+        </p>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>

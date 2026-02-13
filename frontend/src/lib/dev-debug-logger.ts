@@ -45,7 +45,7 @@ class DevDebugLogger {
   private enabled: boolean;
   private logs: DevLogEntry[] = [];
   private maxLogs: number = 500;
-  private flushInterval: number = 5000; // 5 seconds
+  private flushInterval: number = 30000; // 30 seconds
   private pendingFlush: NodeJS.Timeout | null = null;
   private originalConsole: {
     log: typeof console.log;
@@ -65,6 +65,16 @@ class DevDebugLogger {
     "/api/ui-bridge",
     "/api/dev-debug",
     "/api/v1/runner-devices",
+    "localhost:9876",
+    "127.0.0.1:9876",
+  ];
+  // Endpoints to skip logging entirely (framework internals)
+  private skipLogPatterns: string[] = [
+    "/_next/",
+    "__nextjs",
+    "webpack",
+    "/favicon",
+    "hot-update",
   ];
 
   constructor() {
@@ -156,12 +166,10 @@ class DevDebugLogger {
   }
 
   private interceptConsole() {
+    // Only intercept warn/error — log/info/debug are too noisy and add overhead
     const levels: Array<{ method: keyof typeof console; level: LogLevel }> = [
-      { method: "log", level: "info" },
-      { method: "info", level: "info" },
       { method: "warn", level: "warn" },
       { method: "error", level: "error" },
-      { method: "debug", level: "debug" },
     ];
 
     for (const { method, level } of levels) {
@@ -183,7 +191,7 @@ class DevDebugLogger {
           message: args
             .map((arg) =>
               typeof arg === "object"
-                ? JSON.stringify(arg, null, 2)
+                ? JSON.stringify(arg)
                 : String(arg)
             )
             .join(" "),
@@ -200,24 +208,29 @@ class DevDebugLogger {
     const boundOriginalFetch = this.originalFetch;
     const addLogFn = this.addLog.bind(this);
     const skipBodyClonePatterns = this.skipBodyClonePatterns;
+    const skipLogPatterns = this.skipLogPatterns;
 
     window.fetch = async function (
       input: RequestInfo | URL,
       init?: RequestInit
     ): Promise<Response> {
-      const startTime = Date.now();
       const url =
         typeof input === "string"
           ? input
           : input instanceof URL
             ? input.href
             : input.url;
-      const method = init?.method || "GET";
 
-      // Skip logging our own debug endpoint entirely
-      if (url.includes("/api/dev-debug")) {
+      // Skip framework-internal and debug requests entirely (no interception overhead)
+      if (
+        url.includes("/api/dev-debug") ||
+        skipLogPatterns.some((p) => url.includes(p))
+      ) {
         return boundOriginalFetch(input, init);
       }
+
+      const startTime = Date.now();
+      const method = init?.method || "GET";
 
       // Check if this is a high-frequency endpoint where we skip body cloning
       const shouldSkipBodyClone = skipBodyClonePatterns.some((pattern) =>

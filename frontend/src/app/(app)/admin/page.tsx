@@ -181,7 +181,9 @@ export default function AdminDashboard() {
               data-ui-id="admin-page-overview-tab"
             >
               <LayoutDashboard className="h-4 w-4" />
-              <span className="hidden sm:inline">Overview</span>
+              <span className="hidden sm:inline" data-content-role="label">
+                Overview
+              </span>
             </TabsTrigger>
             <TabsTrigger
               value="users"
@@ -189,7 +191,9 @@ export default function AdminDashboard() {
               data-ui-id="admin-page-users-tab"
             >
               <Users className="h-4 w-4" />
-              <span className="hidden sm:inline">Users</span>
+              <span className="hidden sm:inline" data-content-role="label">
+                Users
+              </span>
             </TabsTrigger>
             <TabsTrigger
               value="projects"
@@ -197,7 +201,9 @@ export default function AdminDashboard() {
               data-ui-id="admin-page-projects-tab"
             >
               <FolderOpen className="h-4 w-4" />
-              <span className="hidden sm:inline">Projects</span>
+              <span className="hidden sm:inline" data-content-role="label">
+                Projects
+              </span>
             </TabsTrigger>
             <TabsTrigger
               value="analytics"
@@ -205,7 +211,9 @@ export default function AdminDashboard() {
               data-ui-id="admin-page-analytics-tab"
             >
               <TrendingUp className="h-4 w-4" />
-              <span className="hidden sm:inline">Analytics</span>
+              <span className="hidden sm:inline" data-content-role="label">
+                Analytics
+              </span>
             </TabsTrigger>
             <TabsTrigger
               value="notifications"
@@ -213,7 +221,9 @@ export default function AdminDashboard() {
               data-ui-id="admin-page-notifications-tab"
             >
               <Bell className="h-4 w-4" />
-              <span className="hidden sm:inline">Notifications</span>
+              <span className="hidden sm:inline" data-content-role="label">
+                Notifications
+              </span>
             </TabsTrigger>
             <TabsTrigger
               value="health"
@@ -221,7 +231,9 @@ export default function AdminDashboard() {
               data-ui-id="admin-page-health-tab"
             >
               <Activity className="h-4 w-4" />
-              <span className="hidden sm:inline">Health</span>
+              <span className="hidden sm:inline" data-content-role="label">
+                Health
+              </span>
             </TabsTrigger>
             <TabsTrigger
               value="system"
@@ -229,7 +241,9 @@ export default function AdminDashboard() {
               data-ui-id="admin-page-system-tab"
             >
               <Server className="h-4 w-4" />
-              <span className="hidden sm:inline">System</span>
+              <span className="hidden sm:inline" data-content-role="label">
+                System
+              </span>
             </TabsTrigger>
             <TabsTrigger
               value="downloads"
@@ -237,7 +251,9 @@ export default function AdminDashboard() {
               data-ui-id="admin-page-downloads-tab"
             >
               <Download className="h-4 w-4" />
-              <span className="hidden sm:inline">Downloads</span>
+              <span className="hidden sm:inline" data-content-role="label">
+                Downloads
+              </span>
             </TabsTrigger>
           </TabsList>
 

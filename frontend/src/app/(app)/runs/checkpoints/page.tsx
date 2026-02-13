@@ -125,7 +125,11 @@ export default function CheckpointsPage() {
             <CardContent className="py-16">
               <div className="text-center text-text-muted">
                 <Inbox className="size-16 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-text-secondary mb-2">
+                <h3
+                  data-content-role="heading"
+                  data-content-label="empty state title"
+                  className="text-lg font-medium text-text-secondary mb-2"
+                >
                   No Runs Available
                 </h3>
                 <p className="text-sm">
@@ -189,7 +193,11 @@ export default function CheckpointsPage() {
                   <CardContent className="py-20">
                     <div className="text-center text-text-muted">
                       <Bookmark className="size-12 mx-auto mb-4" />
-                      <h3 className="text-lg font-medium text-text-secondary mb-2">
+                      <h3
+                        data-content-role="heading"
+                        data-content-label="empty state title"
+                        className="text-lg font-medium text-text-secondary mb-2"
+                      >
                         Select a Run
                       </h3>
                       <p className="text-sm">
@@ -220,7 +228,11 @@ export default function CheckpointsPage() {
                   <CardContent className="py-20">
                     <div className="text-center text-text-muted">
                       <Flag className="size-12 mx-auto mb-4" />
-                      <h3 className="text-lg font-medium text-text-secondary mb-2">
+                      <h3
+                        data-content-role="heading"
+                        data-content-label="empty state title"
+                        className="text-lg font-medium text-text-secondary mb-2"
+                      >
                         No Checkpoints
                       </h3>
                       <p className="text-sm">
@@ -261,11 +273,19 @@ export default function CheckpointsPage() {
                               <Card className="bg-surface-canvas/50 border-border-subtle/30">
                                 <CardContent className="py-3 px-4">
                                   <div className="flex items-center justify-between mb-1">
-                                    <span className="font-medium text-sm text-text-primary">
-                                      {checkpoint.name}
+                                    <span
+                                      data-content-role="label"
+                                      data-content-label="checkpoint name"
+                                      className="font-medium text-sm text-text-primary"
+                                    >
+                                      {checkpoint.step_name || checkpoint.step_type}
                                     </span>
-                                    <span className="text-xs text-text-muted">
-                                      {formatShortTime(checkpoint.timestamp)}
+                                    <span
+                                      data-content-role="metric"
+                                      data-content-label="checkpoint time"
+                                      className="text-xs text-text-muted"
+                                    >
+                                      {checkpoint.started_at ? formatShortTime(checkpoint.started_at) : "-"}
                                     </span>
                                   </div>
                                   <div className="flex items-center gap-2">
@@ -275,11 +295,29 @@ export default function CheckpointsPage() {
                                     >
                                       {checkpoint.phase}
                                     </Badge>
+                                    <Badge
+                                      variant={checkpoint.status === "success" ? "success" : checkpoint.status === "failed" ? "destructive" : "secondary"}
+                                      className="text-xs"
+                                    >
+                                      {checkpoint.status}
+                                    </Badge>
+                                    {checkpoint.iteration != null && (
+                                      <span className="text-xs text-text-muted">
+                                        iter {checkpoint.iteration}
+                                      </span>
+                                    )}
+                                    {checkpoint.duration_ms != null && (
+                                      <span className="text-xs text-text-muted">
+                                        {checkpoint.duration_ms < 1000
+                                          ? `${checkpoint.duration_ms}ms`
+                                          : `${Math.round(checkpoint.duration_ms / 1000)}s`}
+                                      </span>
+                                    )}
                                   </div>
-                                  {Object.keys(checkpoint.data).length > 0 && (
-                                    <pre className="mt-2 text-xs font-mono text-text-muted bg-surface-raised/30 rounded p-2 overflow-x-auto max-h-32 overflow-y-auto">
-                                      {JSON.stringify(checkpoint.data, null, 2)}
-                                    </pre>
+                                  {checkpoint.error && (
+                                    <p className="mt-1 text-xs text-red-400 truncate">
+                                      {checkpoint.error}
+                                    </p>
                                   )}
                                 </CardContent>
                               </Card>

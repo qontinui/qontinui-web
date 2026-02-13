@@ -22,6 +22,7 @@ export function useActivityTracker() {
   const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
   const warningTimerRef = useRef<NodeJS.Timeout | null>(null);
   const activityEventCountRef = useRef<number>(0);
+  const lastCallTimeRef = useRef<number>(0);
 
   useEffect(() => {
     // Clear all timers when session expires
@@ -34,9 +35,11 @@ export function useActivityTracker() {
     // Listen for session-expired event
     window.addEventListener("session-expired", handleSessionExpired);
 
-    // Update last activity time on user interaction
+    // Update last activity time on user interaction (throttled to 1s)
     const updateActivity = () => {
       const now = Date.now();
+      if (now - lastCallTimeRef.current < 1000) return;
+      lastCallTimeRef.current = now;
 
       activityEventCountRef.current++;
       lastActivityRef.current = now;

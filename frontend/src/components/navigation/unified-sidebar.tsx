@@ -294,6 +294,14 @@ const navItems: NavItem[] = [
         color: "#4A90D9",
       },
       {
+        id: "runs-summary",
+        label: "Summary",
+        description: "Run summaries and recaps",
+        icon: <FileText className="size-4" />,
+        route: "/runs/summary",
+        color: "#4A90D9",
+      },
+      {
         id: "runs-active",
         label: "Active",
         description: "Live monitoring dashboard",
@@ -340,6 +348,56 @@ const navItems: NavItem[] = [
         icon: <Compass className="size-4" />,
         route: "/runs/discoveries",
         color: "#4A90D9",
+      },
+      {
+        id: "runs-state-exploration",
+        label: "State Exploration",
+        description: "State exploration history",
+        icon: <Activity className="size-4" />,
+        route: "/runs/state-exploration",
+        color: "#4A90D9",
+      },
+      {
+        id: "runs-test-results",
+        label: "Test Results",
+        description: "Playwright test results",
+        icon: <TestTube2 className="size-4" />,
+        route: "/runs/test-results",
+        color: "#4A90D9",
+      },
+      {
+        id: "runs-ai-output",
+        label: "AI Output",
+        description: "AI conversation output",
+        icon: <Bot className="size-4" />,
+        route: "/runs/ai-output",
+        color: "#4A90D9",
+      },
+      {
+        id: "runs-ai-data",
+        label: "AI Data View",
+        description: "Structured AI data viewer",
+        icon: <Database className="size-4" />,
+        route: "/runs/ai-data",
+        color: "#4A90D9",
+      },
+      {
+        id: "runs-actions",
+        label: "Actions",
+        description: "Action execution log",
+        icon: <Zap className="size-4" />,
+        route: "/runs/actions",
+        color: "#4A90D9",
+        hidden: true,
+      },
+      {
+        id: "runs-image-recognition",
+        label: "Image Recognition",
+        description: "Visual recognition results",
+        icon: <ImageIcon className="size-4" />,
+        route: "/runs/image-recognition",
+        color: "#4A90D9",
+        hidden: true,
       },
     ],
   },
@@ -397,14 +455,6 @@ const navItems: NavItem[] = [
         description: "UI & accessibility inspector",
         icon: <ScanSearch className="size-4" />,
         route: "/tools/inspector",
-        color: "#F59E0B",
-      },
-      {
-        id: "tools-capture",
-        label: "Capture",
-        description: "Screen capture and recording",
-        icon: <Video className="size-4" />,
-        route: "/tools/capture",
         color: "#F59E0B",
       },
     ],
@@ -651,6 +701,15 @@ const navItems: NavItem[] = [
             description: "Discover states from web, desktop, or render logs",
             icon: <Globe className="size-4" />,
             route: "/automation-builder/extraction",
+            color: "#4ECDC4",
+            hidden: true,
+          },
+          {
+            id: "va-capture",
+            label: "Capture",
+            description: "Screen capture and recording",
+            icon: <Video className="size-4" />,
+            route: "/tools/capture",
             color: "#4ECDC4",
             hidden: true,
           },
@@ -2004,6 +2063,9 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
         .filter((item) => {
           // hidden items only show in development
           if (item.hidden && (!mounted || !isDevelopment)) return false;
+          // admin items only show after mount to prevent hydration mismatch
+          // (user auth state may differ between server and client)
+          if (item.adminOnly && !mounted) return false;
           if (authLoading || !user) return !item.adminOnly;
           return !item.adminOnly || user.is_superuser === true;
         })

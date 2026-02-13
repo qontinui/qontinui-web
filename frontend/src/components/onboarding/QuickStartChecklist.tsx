@@ -210,7 +210,7 @@ export const QuickStartChecklist: React.FC = () => {
         <Card
           className={cn(
             "fixed bottom-6 right-6 w-[380px] z-40 transition-all duration-300",
-            "bg-qontinui-panel/95 backdrop-blur-sm border-qontinui-border-medium",
+            "bg-surface-raised/95 backdrop-blur-sm border-border-default",
             "shadow-2xl",
             isComplete && "glow-green animate-pulse-slow",
             !isComplete && "glow-cyan"
@@ -222,12 +222,12 @@ export const QuickStartChecklist: React.FC = () => {
                 <CardTitle className="text-lg font-bold flex items-center gap-2">
                   {isComplete ? (
                     <>
-                      <Sparkles className="size-5 text-qontinui-green" />
-                      <span className="text-qontinui-green">All Done!</span>
+                      <Sparkles className="size-5 text-brand-success" />
+                      <span className="text-brand-success">All Done!</span>
                     </>
                   ) : (
                     <>
-                      <span className="bg-gradient-to-r from-qontinui-cyan via-qontinui-purple to-qontinui-green bg-clip-text text-transparent">
+                      <span className="bg-gradient-to-r from-brand-primary via-brand-secondary to-brand-success bg-clip-text text-transparent">
                         Quick Start
                       </span>
                     </>
@@ -237,7 +237,7 @@ export const QuickStartChecklist: React.FC = () => {
                   <span className="font-medium text-foreground">
                     {completedTasks}/{totalTasks} Complete
                   </span>
-                  <span className="text-qontinui-cyan">•</span>
+                  <span className="text-brand-primary">•</span>
                   <span>{progressPercentage}%</span>
                 </div>
               </div>
@@ -246,7 +246,7 @@ export const QuickStartChecklist: React.FC = () => {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-8 hover:bg-qontinui-border-medium"
+                  className="size-8 hover:bg-border-default"
                   onClick={handleToggleMinimize}
                 >
                   {isMinimized ? (
@@ -258,7 +258,7 @@ export const QuickStartChecklist: React.FC = () => {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-8 hover:bg-qontinui-border-medium hover:text-destructive"
+                  className="size-8 hover:bg-border-default hover:text-destructive"
                   onClick={handleDismiss}
                 >
                   <X className="size-4" />
@@ -272,8 +272,8 @@ export const QuickStartChecklist: React.FC = () => {
                 value={progressPercentage}
                 max={100}
                 className={cn(
-                  "h-2 bg-qontinui-border-dark",
-                  isComplete && "bg-qontinui-green/20"
+                  "h-2 bg-border-subtle",
+                  isComplete && "bg-brand-success/20"
                 )}
               />
             </div>
@@ -282,10 +282,10 @@ export const QuickStartChecklist: React.FC = () => {
           {!isMinimized && (
             <CardContent className="space-y-3">
               {isComplete ? (
-                <div className="rounded-lg bg-qontinui-green/10 border border-qontinui-green/30 p-4 text-center">
+                <div className="rounded-lg bg-brand-success/10 border border-brand-success/30 p-4 text-center">
                   <div className="flex items-center justify-center gap-2 mb-2">
-                    <Check className="size-5 text-qontinui-green" />
-                    <span className="font-semibold text-qontinui-green">
+                    <Check className="size-5 text-brand-success" />
+                    <span className="font-semibold text-brand-success">
                       Congratulations!
                     </span>
                   </div>
@@ -330,8 +330,8 @@ const ChecklistItem: React.FC<ChecklistItemProps> = ({ task, isCompleted }) => {
     <div
       className={cn(
         "group flex items-start gap-3 rounded-lg p-3 transition-all duration-200",
-        "hover:bg-qontinui-border-medium/50",
-        isCompleted && "bg-qontinui-cyan/5"
+        "hover:bg-surface-hover/50",
+        isCompleted && "bg-brand-primary/5"
       )}
     >
       {/* Checkbox */}
@@ -342,8 +342,8 @@ const ChecklistItem: React.FC<ChecklistItemProps> = ({ task, isCompleted }) => {
           className={cn(
             "size-5 border-2 transition-all",
             isCompleted
-              ? "border-qontinui-cyan bg-qontinui-cyan/20 data-[state=checked]:bg-qontinui-cyan data-[state=checked]:text-qontinui-canvas"
-              : "border-qontinui-border-medium"
+              ? "border-brand-primary bg-brand-primary/20 data-[state=checked]:bg-brand-primary data-[state=checked]:text-surface-canvas"
+              : "border-border-default"
           )}
         />
       </div>
@@ -368,7 +368,7 @@ const ChecklistItem: React.FC<ChecklistItemProps> = ({ task, isCompleted }) => {
           <button
             className={cn(
               "shrink-0 opacity-0 group-hover:opacity-100 transition-opacity",
-              "text-muted-foreground hover:text-qontinui-cyan"
+              "text-muted-foreground hover:text-brand-primary"
             )}
           >
             <HelpCircle className="size-4" />
@@ -376,7 +376,7 @@ const ChecklistItem: React.FC<ChecklistItemProps> = ({ task, isCompleted }) => {
         </TooltipTrigger>
         <TooltipContent
           side="left"
-          className="max-w-[250px] bg-qontinui-panel border-qontinui-border-medium"
+          className="max-w-[250px] bg-surface-raised border-border-default"
         >
           <p className="text-sm">{task.helpText}</p>
         </TooltipContent>

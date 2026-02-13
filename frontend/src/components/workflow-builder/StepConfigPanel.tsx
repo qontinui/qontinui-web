@@ -24,6 +24,7 @@ import { ScreenshotConfig } from "./step-configs/ScreenshotConfig";
 import { GateConfig } from "./step-configs/GateConfig";
 import { SpecConfig } from "./step-configs/SpecConfig";
 import { AwasConfigs } from "./step-configs/AwasConfigs";
+import { SaveWorkflowArtifactConfig } from "./step-configs/SaveWorkflowArtifactConfig";
 
 export function StepConfigPanel() {
   const { getSelectedStep, updateStep, selectStep, state } =
@@ -102,6 +103,13 @@ export function StepConfigPanel() {
       case "awas_list_actions":
       case "awas_extract_elements":
         return <AwasConfigs step={selectedStep} onUpdate={handleUpdate} />;
+      case "save_workflow_artifact":
+        return (
+          <SaveWorkflowArtifactConfig
+            step={selectedStep}
+            onUpdate={handleUpdate}
+          />
+        );
       default:
         return (
           <div className="text-zinc-500 text-sm p-4">
