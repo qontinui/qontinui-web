@@ -42,6 +42,7 @@ from app.services.task_run.schemas import (
 )
 from app.services.task_run.session_service import TaskRunSessionService
 from app.services.task_run.task_run_service import TaskRunService
+from app.services.task_run.verification_service import TaskRunVerificationService
 
 __all__ = [
     # Services
@@ -49,6 +50,7 @@ __all__ = [
     "TaskRunSessionService",
     "TaskRunFindingService",
     "TaskRunAutomationService",
+    "TaskRunVerificationService",
     # Request schemas
     "TaskRunCreate",
     "TaskRunUpdate",

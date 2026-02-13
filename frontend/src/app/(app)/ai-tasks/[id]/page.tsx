@@ -25,9 +25,11 @@ import {
   FileText,
   ChevronDown,
   ChevronUp,
+  ClipboardCheck,
 } from "lucide-react";
 import { format } from "date-fns";
 import { useAITask, useUpdateFindingStatus } from "@/hooks/useAITasks";
+import VerificationResultsTab from "./VerificationResultsTab";
 import type {
   AITaskSession,
   AITaskFinding,
@@ -360,6 +362,13 @@ export default function AITaskDetailPage() {
                     <Bug className="w-4 h-4 mr-2" />
                     Findings ({task.findings?.length || 0})
                   </TabsTrigger>
+                  <TabsTrigger
+                    value="verification"
+                    className="data-[state=active]:bg-brand-secondary/20 data-[state=active]:text-brand-secondary"
+                  >
+                    <ClipboardCheck className="w-4 h-4 mr-2" />
+                    Verification
+                  </TabsTrigger>
                   {task.output_summary && (
                     <TabsTrigger
                       value="output"
@@ -612,6 +621,11 @@ export default function AITaskDetailPage() {
                       )}
                     </CardContent>
                   </Card>
+                </TabsContent>
+
+                {/* Verification Tab */}
+                <TabsContent value="verification" className="mt-4">
+                  <VerificationResultsTab taskId={taskId} />
                 </TabsContent>
 
                 {/* Output Tab */}

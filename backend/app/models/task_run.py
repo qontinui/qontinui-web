@@ -329,6 +329,14 @@ class TaskRun(Base):
         lazy="select",
     )
 
+    verification_results = relationship(
+        "TaskRunVerificationResult",
+        back_populates="task_run",
+        cascade="all, delete-orphan",
+        lazy="select",
+        order_by="TaskRunVerificationResult.iteration",
+    )
+
     def __repr__(self) -> str:
         """Return string representation of TaskRun."""
         return f"<TaskRun(id={self.id}, name='{self.task_name}', type='{self.task_type}', status='{self.status}')>"

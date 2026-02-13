@@ -145,6 +145,7 @@ from app.models.task_run import (  # New unified names; Backward compatibility a
     TaskRunStatus,
     TaskType,
 )
+from app.models.task_run_verification_result import TaskRunVerificationResult
 from app.models.template_candidate import TemplateCandidate
 from app.models.test_deficiency import (
     DeficiencySeverity,
@@ -381,6 +382,7 @@ __all__ = [
     "FindingSeverity",
     "FindingStatus",
     "FindingActionType",
+    "TaskRunVerificationResult",
     # Backward compatibility aliases (deprecated)
     "AITask",
     "AITaskStatus",

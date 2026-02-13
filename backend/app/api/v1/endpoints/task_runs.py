@@ -20,10 +20,16 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
+from qontinui_schemas.execution.verification_result import (
+    VerificationResultResponse,
+    VerificationResultsBatchRequest,
+    VerificationResultsListResponse,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_active_user, get_async_db
 from app.models.user import User
+from app.services.task_run import TaskRunVerificationService
 from app.services.task_run_service import (
     StepProgressResponse,
     TaskRunAutomationCreate,
@@ -56,6 +62,11 @@ router = APIRouter()
 def get_task_run_service() -> TaskRunService:
     """Get TaskRunService instance."""
     return TaskRunService()
+
+
+def get_verification_service() -> TaskRunVerificationService:
+    """Get TaskRunVerificationService instance."""
+    return TaskRunVerificationService()
 
 
 # =============================================================================
@@ -492,3 +503,67 @@ async def get_step_progress(
             detail=f"Step progress not found for task run {task_run_id}, checkpoint {checkpoint_id}",
         )
     return result
+
+
+# =============================================================================
+# Verification Results Endpoints
+# =============================================================================
+
+
+@router.post(
+    "/{task_run_id}/verification-results",
+    response_model=list[VerificationResultResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Batch upsert verification results",
+    description="Batch upsert verification phase results. Called by runner after each verification phase.",
+)
+async def upsert_verification_results(
+    task_run_id: UUID,
+    batch: VerificationResultsBatchRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
+    service: TaskRunVerificationService = Depends(get_verification_service),
+) -> list[VerificationResultResponse]:
+    """Batch upsert verification results for a task run."""
+    # Verify task exists and user has access
+    task_run_service = get_task_run_service()
+    existing = await task_run_service.get_task_run(db, task_run_id)
+    if not existing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task run {task_run_id} not found",
+        )
+    if existing.created_by_user_id != current_user.id and not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this task run",
+        )
+    return await service.batch_upsert_verification_results(db, task_run_id, batch)
+
+
+@router.get(
+    "/{task_run_id}/verification-results",
+    response_model=VerificationResultsListResponse,
+    summary="List verification results",
+    description="Get all verification phase results for a task run.",
+)
+async def list_verification_results(
+    task_run_id: UUID,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
+    service: TaskRunVerificationService = Depends(get_verification_service),
+) -> VerificationResultsListResponse:
+    """List verification results for a task run."""
+    task_run_service = get_task_run_service()
+    existing = await task_run_service.get_task_run(db, task_run_id)
+    if not existing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task run {task_run_id} not found",
+        )
+    if existing.created_by_user_id != current_user.id and not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this task run",
+        )
+    return await service.list_verification_results(db, task_run_id)

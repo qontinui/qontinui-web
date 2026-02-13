@@ -266,3 +266,113 @@ export interface AITaskFindingsListResponse {
   findings: AITaskFinding[];
   summary: AITaskFindingSummary;
 }
+
+// =============================================================================
+// Verification Result Types
+// =============================================================================
+
+export interface CheckIssueDetail {
+  file: string;
+  line: number | null;
+  column: number | null;
+  code: string | null;
+  message: string;
+  severity: string;
+  fixable: boolean;
+}
+
+export interface IndividualCheckResult {
+  name: string;
+  status: string;
+  duration_ms: number;
+  issues_found: number;
+  issues_fixed: number;
+  files_checked: number;
+  error_message: string | null;
+  output: string | null;
+  issues: CheckIssueDetail[];
+}
+
+export interface VerificationStepDetails {
+  step_id: string;
+  phase: string;
+  stdout: string | null;
+  stderr: string | null;
+  assertions_passed: number | null;
+  assertions_total: number | null;
+  console_output: string | null;
+  page_snapshot: string | null;
+  exit_code: number | null;
+  check_results: IndividualCheckResult[] | null;
+}
+
+export interface StepExecutionConfig {
+  action_type?: string | null;
+  target_image_id?: string | null;
+  target_image_name?: string | null;
+  check_type?: string | null;
+  timeout_seconds?: number | null;
+  [key: string]: unknown;
+}
+
+export interface VerificationStepResult {
+  step_index: number;
+  step_type: string;
+  step_name: string;
+  step_id: string | null;
+  success: boolean;
+  error: string | null;
+  screenshot_path: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  duration_ms: number;
+  config: StepExecutionConfig;
+  verification_details: VerificationStepDetails | null;
+  output_data: Record<string, unknown> | null;
+}
+
+export interface GateEvaluationResult {
+  gate_name: string;
+  required_step_ids: string[];
+  passed_step_ids: string[];
+  failed_step_ids: string[];
+  missing_step_ids: string[];
+  passed: boolean;
+}
+
+export interface VerificationPhaseResult {
+  iteration: number;
+  all_passed: boolean;
+  total_steps: number;
+  passed_steps: number;
+  failed_steps: number;
+  skipped_steps: number;
+  total_duration_ms: number;
+  step_results: VerificationStepResult[];
+  critical_failure: boolean;
+  gate_results: GateEvaluationResult[];
+  gate_based_evaluation: boolean;
+}
+
+export interface VerificationResultResponse {
+  id: string;
+  task_run_id: string;
+  iteration: number;
+  all_passed: boolean;
+  total_steps: number;
+  passed_steps: number;
+  failed_steps: number;
+  skipped_steps: number;
+  total_duration_ms: number;
+  critical_failure: boolean;
+  result_json: VerificationPhaseResult;
+  created_at: string;
+}
+
+export interface VerificationResultsListResponse {
+  task_run_id: string;
+  results: VerificationResultResponse[];
+  count: number;
+  passed_iterations: number;
+  failed_iterations: number;
+}

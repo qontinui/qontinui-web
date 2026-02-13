@@ -27,6 +27,8 @@ export const aiTasksKeys = {
     [...aiTasksKeys.all, "findings", taskId] as const,
   findingsList: (taskId: string, filters?: AITaskFindingFilters) =>
     [...aiTasksKeys.findings(taskId), "list", { filters }] as const,
+  verificationResults: (taskId: string) =>
+    [...aiTasksKeys.all, "verification-results", taskId] as const,
 };
 
 /**
@@ -240,5 +242,27 @@ export function useSyncFindings() {
         queryKey: aiTasksKeys.detail(variables.taskId),
       });
     },
+  });
+}
+
+/**
+ * Hook to fetch verification results for an AI task
+ */
+export function useVerificationResults(taskId: string, enabled = true) {
+  return useQuery({
+    queryKey: aiTasksKeys.verificationResults(taskId),
+    queryFn: async () => {
+      try {
+        return await aiTasksService.listVerificationResults(taskId);
+      } catch (error) {
+        console.error(
+          "[useVerificationResults] Error fetching verification results:",
+          error
+        );
+        throw error;
+      }
+    },
+    enabled: enabled && !!taskId,
+    staleTime: 10000,
   });
 }

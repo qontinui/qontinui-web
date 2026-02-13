@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Sparkles,
   Loader2,
@@ -10,6 +10,7 @@ import {
   FolderOpen,
   Plus,
   Play,
+  BookOpen,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,13 +19,18 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { runnerApi, useContextsDetailed } from "@/lib/runner-api";
+import { runnerApi, useContextsDetailed, usePromptsDetailed } from "@/lib/runner-api";
 import type { ContextItem } from "@/lib/runner-api";
 
 // =============================================================================
@@ -46,6 +52,34 @@ export interface AiGeneratePanelProps {
   onCreateManually: () => void;
   isCreatingManually: boolean;
   onNavigateToActiveRuns: (taskRunId: string) => void;
+}
+
+// =============================================================================
+// Auto-save generation prompts to prompt library
+// =============================================================================
+
+async function autoSaveGenerationPrompt(promptText: string): Promise<void> {
+  try {
+    const existing = await runnerApi.getPrompts();
+    const trimmed = promptText.trim();
+    const isDuplicate = existing.some(
+      (p) => p.category === "Generation" && p.content.trim() === trimmed
+    );
+    if (isDuplicate) return;
+
+    const name =
+      trimmed.length > 60 ? trimmed.substring(0, 57) + "..." : trimmed;
+
+    await runnerApi.createPrompt({
+      name,
+      content: trimmed,
+      category: "Generation",
+      description: "",
+      tags: ["auto-saved"],
+    });
+  } catch {
+    // Best-effort, don't block user flow
+  }
 }
 
 // =============================================================================
@@ -87,6 +121,14 @@ export function AiGeneratePanel({
 
   // Context section
   const [showContext, setShowContext] = useState(false);
+
+  // Saved prompts (generation category)
+  const [showPromptPicker, setShowPromptPicker] = useState(false);
+  const { data: savedPrompts } = usePromptsDetailed();
+  const generationPrompts = useMemo(
+    () => (savedPrompts || []).filter((p) => p.category === "Generation"),
+    [savedPrompts]
+  );
 
   // Saved contexts
   const { data: savedContexts, refetch: refetchContexts } =
@@ -162,6 +204,7 @@ export function AiGeneratePanel({
       const response = await runnerApi.generateWorkflowAsync(
         buildGenerateRequest()
       );
+      autoSaveGenerationPrompt(description); // fire-and-forget
       onNavigateToActiveRuns(response.task_run_id);
     } catch (err) {
       toast.error(
@@ -177,10 +220,12 @@ export function AiGeneratePanel({
   const handleGenerateAndRun = async () => {
     if (!description.trim()) return;
     setIsSubmitting(true);
+    const toastId = toast.loading("Starting workflow generation...");
     try {
       const response = await runnerApi.generateWorkflowAsync(
         buildGenerateRequest()
       );
+      autoSaveGenerationPrompt(description); // fire-and-forget
       localStorage.setItem(
         AUTO_RUN_AFTER_GENERATE_KEY,
         JSON.stringify({
@@ -188,12 +233,14 @@ export function AiGeneratePanel({
           timestamp: Date.now(),
         } satisfies AutoRunAfterGenerate)
       );
+      toast.dismiss(toastId);
       onNavigateToActiveRuns(response.task_run_id);
     } catch (err) {
       toast.error(
         err instanceof Error
           ? err.message
-          : "Failed to start workflow generation"
+          : "Failed to start workflow generation",
+        { id: toastId }
       );
     } finally {
       setIsSubmitting(false);
@@ -242,9 +289,50 @@ export function AiGeneratePanel({
         <div className="max-w-3xl mx-auto px-6 py-6 space-y-6">
           {/* Description */}
           <div className="space-y-2">
-            <Label className="text-sm text-zinc-300">
-              What should the workflow do?
-            </Label>
+            <div className="flex items-center justify-between">
+              <Label className="text-sm text-zinc-300">
+                What should the workflow do?
+              </Label>
+              {generationPrompts.length > 0 && (
+                <Popover
+                  open={showPromptPicker}
+                  onOpenChange={setShowPromptPicker}
+                >
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-xs"
+                    >
+                      <BookOpen className="w-3 h-3 mr-1" />
+                      Saved ({generationPrompts.length})
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80 p-0" align="end">
+                    <div className="max-h-[300px] overflow-y-auto">
+                      {generationPrompts.map((prompt) => (
+                        <button
+                          key={prompt.id}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-muted/50 border-b border-border last:border-0"
+                          onClick={() => {
+                            setDescription(prompt.content);
+                            setShowPromptPicker(false);
+                          }}
+                        >
+                          <div className="font-medium text-xs truncate">
+                            {prompt.name}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                            {prompt.content.substring(0, 120)}
+                            {prompt.content.length > 120 && "..."}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              )}
+            </div>
             <Textarea
               className="min-h-[120px] bg-zinc-800 border-zinc-700 text-zinc-200 text-sm"
               placeholder={`e.g., Run TypeScript type checking on the web frontend and fix any errors\ne.g., Check the runner API health, then verify UI Bridge elements are registered\ne.g., Run pytest with coverage and fix failing tests`}

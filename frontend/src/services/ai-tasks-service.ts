@@ -18,6 +18,7 @@ import type {
   AITaskFindingUpdate,
   AITaskListResponse,
   AITaskUpdate,
+  VerificationResultsListResponse,
 } from "@/types/ai-tasks";
 
 /**
@@ -184,6 +185,20 @@ export class AITasksService {
     return await this.httpClient.post<AITaskFinding>(
       `/api/v1/ai-tasks/${taskId}/findings/${findingId}/response`,
       { response }
+    );
+  }
+
+  /**
+   * List verification results for a task
+   *
+   * @param taskId - ID of the task
+   * @returns VerificationResultsListResponse with results and summary counts
+   */
+  async listVerificationResults(
+    taskId: string
+  ): Promise<VerificationResultsListResponse> {
+    return await this.httpClient.get<VerificationResultsListResponse>(
+      `/api/v1/task-runs/${taskId}/verification-results`
     );
   }
 }
