@@ -15,7 +15,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.collaboration import ProjectComment
-from app.repositories.collaboration import collaboration_repository
+from app.repositories.collaboration.comment_repository import comment_repository
 from app.schemas.collaboration import CommentCreate, CommentResponse, CommentUpdate
 
 logger = structlog.get_logger(__name__)
@@ -43,7 +43,7 @@ class CommentService:
         Returns:
             Tuple of (ProjectComment model, CommentResponse with author info)
         """
-        comment = await collaboration_repository.create_comment(
+        comment = await comment_repository.create_comment(
             db,
             project_id=project_id,
             author_id=author_id,
@@ -94,7 +94,7 @@ class CommentService:
         Returns:
             List of comment responses with author info and reply counts
         """
-        comments = await collaboration_repository.get_project_comments(
+        comments = await comment_repository.get_project_comments(
             db,
             project_id=project_id,
             workflow_id=workflow_id,
@@ -115,7 +115,7 @@ class CommentService:
                 response.author_avatar_url = comment.author.avatar_url
 
             # Get reply count
-            response.reply_count = await collaboration_repository.get_reply_count(
+            response.reply_count = await comment_repository.get_reply_count(
                 db, cast(UUID, comment.id)
             )
 
@@ -140,7 +140,7 @@ class CommentService:
         Returns:
             ProjectComment if found, None otherwise
         """
-        return await collaboration_repository.get_comment_in_project(
+        return await comment_repository.get_comment_in_project(
             db, comment_id, project_id
         )
 
@@ -161,7 +161,7 @@ class CommentService:
         Returns:
             ProjectComment with author loaded if found, None otherwise
         """
-        return await collaboration_repository.get_comment_with_author(
+        return await comment_repository.get_comment_with_author(
             db, comment_id, project_id
         )
 
@@ -224,7 +224,7 @@ class CommentService:
             comment: Comment to delete
         """
         comment_id = comment.id
-        await collaboration_repository.delete_comment(db, comment)
+        await comment_repository.delete_comment(db, comment)
         await db.commit()
 
         logger.info("comment_deleted", comment_id=comment_id)
@@ -284,7 +284,7 @@ class CommentService:
         Returns:
             Parent comment if found, None otherwise
         """
-        return await collaboration_repository.get_comment(db, parent_comment_id)
+        return await comment_repository.get_comment(db, parent_comment_id)
 
 
 # Global instance

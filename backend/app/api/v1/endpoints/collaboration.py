@@ -20,7 +20,8 @@ from app.api.deps import get_async_db, get_current_active_user_async
 from app.models.collaboration import ActionType, ResourceType
 from app.models.project import Project
 from app.models.user import User
-from app.repositories.collaboration import collaboration_repository
+from app.repositories.collaboration.access_repository import access_repository
+from app.repositories.collaboration.lock_repository import lock_repository
 from app.schemas.collaboration import (
     ActivityLogResponse,
     CollaboratorResponse,
@@ -149,7 +150,7 @@ async def share_project(
 
     # Send notifications if sharing with user
     if share_request.user_id:
-        shared_user = await collaboration_repository.get_user(db, share_request.user_id)
+        shared_user = await access_repository.get_user(db, share_request.user_id)
         if shared_user:
             await sharing_service.send_project_share_email(
                 to_email=cast(str, shared_user.email),
@@ -285,7 +286,7 @@ async def acquire_lock(
         )
 
         if existing_lock:
-            lock_holder = await collaboration_repository.get_user(
+            lock_holder = await access_repository.get_user(
                 db,
                 existing_lock.user_id,  # type: ignore
             )
@@ -368,7 +369,7 @@ async def extend_lock(
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """Extend lock duration."""
-    lock = await collaboration_repository.get_lock_by_user(db, lock_id, current_user.id)
+    lock = await lock_repository.get_lock_by_user(db, lock_id, current_user.id)
 
     if not lock or lock.project_id != project_id:
         raise HTTPException(

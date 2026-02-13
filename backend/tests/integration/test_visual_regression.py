@@ -22,8 +22,10 @@ from app.models.visual_comparison_result import (
     VisualComparisonResult,
     VisualComparisonStatus,
 )
-from app.services.baseline_management_service import BaselineManagementService
-from app.services.visual_comparison_service import VisualComparisonService
+from app.services.visual_testing import (
+    BaselineManagementService,
+    VisualComparisonService,
+)
 
 
 def create_test_image(

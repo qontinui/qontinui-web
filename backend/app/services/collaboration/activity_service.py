@@ -11,7 +11,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.collaboration import ActionType, ActivityLog, ResourceType
-from app.repositories.collaboration import collaboration_repository
+from app.repositories.collaboration.activity_repository import activity_repository
 from app.schemas.collaboration import ActivityLogResponse
 
 logger = structlog.get_logger(__name__)
@@ -50,7 +50,7 @@ class ActivityService:
             Created ActivityLog
         """
         try:
-            activity = await collaboration_repository.create_activity(
+            activity = await activity_repository.create_activity(
                 db,
                 project_id=project_id,
                 user_id=user_id,
@@ -104,7 +104,7 @@ class ActivityService:
         Returns:
             List of activity log responses with user info
         """
-        activities = await collaboration_repository.get_project_activities(
+        activities = await activity_repository.get_project_activities(
             db,
             project_id=project_id,
             action_type=action_type,

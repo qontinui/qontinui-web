@@ -13,7 +13,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.collaboration import ProjectLock
-from app.repositories.collaboration import collaboration_repository
+from app.repositories.collaboration.lock_repository import lock_repository
 from app.services.distributed_lock_service import distributed_lock_service
 
 logger = structlog.get_logger(__name__)
@@ -101,13 +101,13 @@ class LockingService:
         """Acquire lock using PostgreSQL backend."""
         try:
             # Use SELECT FOR UPDATE to prevent race conditions
-            existing_lock = await collaboration_repository.get_resource_lock_for_update(
+            existing_lock = await lock_repository.get_resource_lock_for_update(
                 db, project_id, resource_type, resource_id
             )
 
             if existing_lock:
                 if existing_lock.is_expired():
-                    await collaboration_repository.delete_lock(db, existing_lock)
+                    await lock_repository.delete_lock(db, existing_lock)
                     logger.info("expired_lock_released", lock_id=existing_lock.id)
                     existing_lock = None
                 elif existing_lock.user_id == user_id:
@@ -136,7 +136,7 @@ class LockingService:
                 duration_minutes = min(duration_minutes, 30)
                 expires_at = datetime.utcnow() + timedelta(minutes=duration_minutes)
 
-                lock = await collaboration_repository.create_lock(
+                lock = await lock_repository.create_lock(
                     db,
                     project_id=project_id,
                     user_id=user_id,
@@ -211,7 +211,7 @@ class LockingService:
     ) -> bool:
         """Release lock using PostgreSQL backend."""
         try:
-            lock = await collaboration_repository.get_lock_by_user(db, lock_id, user_id)
+            lock = await lock_repository.get_lock_by_user(db, lock_id, user_id)
 
             if not lock:
                 logger.warning(
@@ -219,7 +219,7 @@ class LockingService:
                 )
                 return False
 
-            await collaboration_repository.delete_lock(db, lock)
+            await lock_repository.delete_lock(db, lock)
             await db.commit()
 
             logger.info("lock_released", lock_id=lock_id, user_id=user_id)
@@ -279,7 +279,7 @@ class LockingService:
     ) -> bool:
         """Refresh lock using PostgreSQL backend."""
         try:
-            lock = await collaboration_repository.get_lock_by_user(db, lock_id, user_id)
+            lock = await lock_repository.get_lock_by_user(db, lock_id, user_id)
 
             if not lock:
                 return False
@@ -313,13 +313,13 @@ class LockingService:
         Returns:
             ProjectLock if locked, None otherwise
         """
-        lock = await collaboration_repository.get_resource_lock(
+        lock = await lock_repository.get_resource_lock(
             db, project_id, resource_type, resource_id
         )
 
         # Clean up if expired
         if lock and lock.is_expired():
-            await collaboration_repository.delete_lock(db, lock)
+            await lock_repository.delete_lock(db, lock)
             await db.commit()
             return None
 
@@ -344,7 +344,7 @@ class LockingService:
         Returns:
             List of active (non-expired) locks
         """
-        locks = await collaboration_repository.get_project_locks(
+        locks = await lock_repository.get_project_locks(
             db, project_id, resource_type, resource_id
         )
         return [lock for lock in locks if not lock.is_expired()]
@@ -360,11 +360,11 @@ class LockingService:
             Number of locks released
         """
         try:
-            expired_locks = await collaboration_repository.get_expired_locks(db)
+            expired_locks = await lock_repository.get_expired_locks(db)
 
             count = 0
             for lock in expired_locks:
-                await collaboration_repository.delete_lock(db, lock)
+                await lock_repository.delete_lock(db, lock)
                 count += 1
 
             await db.commit()

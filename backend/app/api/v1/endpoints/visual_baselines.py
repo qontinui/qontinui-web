@@ -38,7 +38,7 @@ from app.schemas.visual_regression import (
     BaselineRollback,
     BaselineUpdate,
 )
-from app.services.baseline_management_service import baseline_management_service
+from app.services.visual_testing import baseline_management_service
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

@@ -18,7 +18,7 @@ from app.models.organization import (
     OrganizationInvitation,
     PermissionLevel,
 )
-from app.repositories.collaboration import collaboration_repository
+from app.repositories.collaboration.access_repository import access_repository
 from app.schemas.collaboration import CollaboratorResponse
 from app.services.email.email_template_service import EmailTemplateService
 from app.services.email.email_transport_service import EmailTransportService
@@ -138,7 +138,7 @@ class SharingService:
         Returns:
             List of collaborator responses with user/org info
         """
-        accesses = await collaboration_repository.get_project_collaborators(
+        accesses = await access_repository.get_project_collaborators(
             db, project_id, offset, limit
         )
 
@@ -186,11 +186,9 @@ class SharingService:
         """
         # Check for existing access
         if user_id:
-            existing = await collaboration_repository.get_user_access(
-                db, project_id, user_id
-            )
+            existing = await access_repository.get_user_access(db, project_id, user_id)
         else:
-            existing = await collaboration_repository.get_organization_access(
+            existing = await access_repository.get_organization_access(
                 db,
                 project_id,
                 organization_id,  # type: ignore
@@ -199,7 +197,7 @@ class SharingService:
         if existing:
             return None
 
-        access = await collaboration_repository.create_access_control(
+        access = await access_repository.create_access_control(
             db,
             project_id=project_id,
             permission_level=permission_level,
@@ -236,7 +234,7 @@ class SharingService:
         Returns:
             Updated collaborator response or None if not found
         """
-        access = await collaboration_repository.get_access_control_in_project(
+        access = await access_repository.get_access_control_in_project(
             db, access_id, project_id
         )
 
@@ -275,14 +273,14 @@ class SharingService:
         Returns:
             True if revoked, False if not found
         """
-        access = await collaboration_repository.get_access_control_in_project(
+        access = await access_repository.get_access_control_in_project(
             db, access_id, project_id
         )
 
         if not access:
             return False
 
-        await collaboration_repository.delete_access_control(db, access)
+        await access_repository.delete_access_control(db, access)
         await db.commit()
 
         logger.info(

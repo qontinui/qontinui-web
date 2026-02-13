@@ -1,0 +1,1 @@
+export { useHooksPage } from "./useHooksPage";

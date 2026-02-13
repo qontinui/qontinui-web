@@ -31,7 +31,7 @@ from app.schemas.visual_regression import (
     ProjectVisualStatsResponse,
     ReviewCreate,
 )
-from app.services.visual_comparison_service import visual_comparison_service
+from app.services.visual_testing import visual_comparison_service
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

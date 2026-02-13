@@ -19,7 +19,7 @@ from app.models.test_screenshot import TestScreenshot, TestScreenshotType
 from app.models.transition_execution import TransitionExecution
 from app.schemas.testing import ScreenshotMetadata, VisualComparisonSummary
 from app.services.object_storage import object_storage
-from app.services.visual_comparison_service import VisualComparisonService
+from app.services.visual_testing import VisualComparisonService
 
 logger = structlog.get_logger(__name__)
 

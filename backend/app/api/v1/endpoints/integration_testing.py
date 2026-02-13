@@ -30,7 +30,7 @@ from app.models.project import Project
 from app.models.snapshot import SnapshotRun
 from app.models.user import User
 from app.services.object_storage import object_storage
-from app.services.pdf_report import PDFReportOptions, generate_pdf_report
+from app.services.reports import PDFReportOptions, generate_pdf_report
 
 # Redis key prefix for PDF report jobs
 PDF_JOB_KEY_PREFIX = "pdf_report:job:"
