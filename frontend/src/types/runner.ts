@@ -30,3 +30,10 @@ export interface ConnectionHistoryResponse {
   limit: number;
   offset: number;
 }
+
+export interface ExecuteWorkflowResponse {
+  execution_id: string;
+  status: string;
+  message: string;
+  connection_id: number;
+}

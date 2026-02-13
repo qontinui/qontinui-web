@@ -9,6 +9,7 @@ from uuid import UUID
 
 import structlog
 from qontinui_schemas.execution.verification_result import (
+    VerificationPhaseResult,
     VerificationResultCreate,
     VerificationResultResponse,
     VerificationResultsBatchRequest,
@@ -39,7 +40,7 @@ def model_to_verification_result_response(
         skipped_steps=model.skipped_steps,
         total_duration_ms=model.total_duration_ms,
         critical_failure=model.critical_failure,
-        result_json=model.result_json,
+        result_json=VerificationPhaseResult.model_validate(model.result_json),
         created_at=model.created_at,
     )
 

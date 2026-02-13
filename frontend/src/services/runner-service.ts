@@ -3,6 +3,7 @@ import type {
   RunnerConnection,
   ConnectionHistoryParams,
   ConnectionHistoryResponse,
+  ExecuteWorkflowResponse,
 } from "@/types/runner";
 
 /**
@@ -49,6 +50,29 @@ export class RunnerService {
 
     if (!response.ok) {
       throw new Error("Failed to fetch connection history");
+    }
+
+    return response.json();
+  }
+
+  async executeWorkflowOnRunner(
+    connectionId: number,
+    workflow: Record<string, unknown>,
+    variables?: Record<string, unknown>
+  ): Promise<ExecuteWorkflowResponse> {
+    const response = await this.httpClient.fetch(
+      `${this.baseUrl}/runners/connections/${connectionId}/execute`,
+      {
+        method: "POST",
+        body: JSON.stringify({ workflow, variables }),
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response
+        .json()
+        .catch(() => ({ detail: "Failed to execute workflow on runner" }));
+      throw new Error(error.detail || "Failed to execute workflow on runner");
     }
 
     return response.json();
