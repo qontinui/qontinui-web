@@ -5,13 +5,13 @@ Provides Pydantic models for representing security scan results,
 issues, and their severities.
 """
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class SecurityStatus(str, Enum):
+class SecurityStatus(StrEnum):
     """Security scan status."""
 
     PASSED = "passed"  # No issues, safe to publish
@@ -19,7 +19,7 @@ class SecurityStatus(str, Enum):
     FAILED = "failed"  # Has blocking issues, cannot publish
 
 
-class IssueSeverity(str, Enum):
+class IssueSeverity(StrEnum):
     """Security issue severity."""
 
     CRITICAL = "critical"  # Blocks publication
@@ -29,7 +29,7 @@ class IssueSeverity(str, Enum):
     INFO = "info"  # Informational
 
 
-class IssueType(str, Enum):
+class IssueType(StrEnum):
     """Type of security issue."""
 
     BLOCKED_IMPORT = "blocked_import"

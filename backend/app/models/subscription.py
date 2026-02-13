@@ -1,5 +1,5 @@
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
@@ -8,7 +8,7 @@ from sqlalchemy.orm import relationship
 from app.db.base import Base
 
 
-class SubscriptionStatus(str, Enum):
+class SubscriptionStatus(StrEnum):
     """Stripe subscription status"""
 
     ACTIVE = "active"
@@ -20,7 +20,7 @@ class SubscriptionStatus(str, Enum):
     UNPAID = "unpaid"
 
 
-class SubscriptionTier(str, Enum):
+class SubscriptionTier(StrEnum):
     """Subscription tiers"""
 
     FREE = "free"

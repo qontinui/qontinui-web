@@ -5,7 +5,7 @@ Provides endpoints to trigger state discovery and retrieve discovered states
 from automation sessions.
 """
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
@@ -251,7 +251,7 @@ async def get_discovered_states(
 # =============================================================================
 
 
-class UIBridgeDiscoveryStrategy(str, Enum):
+class UIBridgeDiscoveryStrategy(StrEnum):
     """Discovery strategy options."""
 
     AUTO = "auto"

@@ -7,7 +7,7 @@ allowing for curation, review, and export to various ML training formats.
 
 import uuid
 from datetime import datetime
-from enum import Enum as PyEnum
+from enum import StrEnum
 
 from sqlalchemy import (
     JSON,
@@ -28,7 +28,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
-class DatasetSource(str, PyEnum):
+class DatasetSource(StrEnum):
     """Source of the dataset"""
 
     RUNNER_EXPORT = "runner_export"
@@ -36,7 +36,7 @@ class DatasetSource(str, PyEnum):
     MERGED = "merged"
 
 
-class AnnotationSource(str, PyEnum):
+class AnnotationSource(StrEnum):
     """Source of annotation detection"""
 
     USER_CLICK = "user_click"
@@ -45,7 +45,7 @@ class AnnotationSource(str, PyEnum):
     MANUAL = "manual"
 
 
-class ElementType(str, PyEnum):
+class ElementType(StrEnum):
     """Type of GUI element"""
 
     BUTTON = "button"
@@ -61,7 +61,7 @@ class ElementType(str, PyEnum):
     UNKNOWN = "unknown"
 
 
-class ReviewStatus(str, PyEnum):
+class ReviewStatus(StrEnum):
     """Review status for annotations"""
 
     PENDING = "pending"
@@ -70,7 +70,7 @@ class ReviewStatus(str, PyEnum):
     FLAGGED = "flagged"
 
 
-class ExportFormat(str, PyEnum):
+class ExportFormat(StrEnum):
     """Export format for datasets"""
 
     COCO = "coco"
@@ -80,7 +80,7 @@ class ExportFormat(str, PyEnum):
     JSONL = "jsonl"
 
 
-class ExportJobStatus(str, PyEnum):
+class ExportJobStatus(StrEnum):
     """Status of export job"""
 
     PENDING = "pending"

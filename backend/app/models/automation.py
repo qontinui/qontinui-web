@@ -4,8 +4,8 @@ Automation models for qontinui-web backend.
 Provides models for automation input events.
 """
 
-import enum
 from datetime import datetime
+from enum import StrEnum
 
 from sqlalchemy import (
     TIMESTAMP,
@@ -25,7 +25,7 @@ from sqlalchemy.orm import relationship
 from app.db.base import Base
 
 
-class InputEventType(str, enum.Enum):
+class InputEventType(StrEnum):
     """
     Valid input event types for automation.
 

@@ -7,7 +7,7 @@ Provides schemas for managing the three-tier variable system:
 - Variable history tracking
 """
 
-from enum import Enum
+from enum import StrEnum
 from typing import Annotated, Any
 
 from pydantic import Field, field_validator
@@ -24,7 +24,7 @@ UuidAsString = Annotated[
 ]
 
 
-class VariableScope(str, Enum):
+class VariableScope(StrEnum):
     """Variable scope enumeration.
 
     Values are uppercase to match the API contract. The DB model uses lowercase,

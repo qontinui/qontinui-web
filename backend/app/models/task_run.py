@@ -11,7 +11,7 @@ Migrated from ai_task.py - renamed for unified architecture.
 """
 
 from datetime import datetime
-from enum import Enum as PyEnum
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, text
@@ -22,7 +22,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
-class TaskType(str, PyEnum):
+class TaskType(StrEnum):
     """Task type enumeration for unified task runs."""
 
     TASK = "task"  # General AI task
@@ -30,7 +30,7 @@ class TaskType(str, PyEnum):
     SCHEDULED = "scheduled"  # Scheduled/triggered task
 
 
-class TaskRunStatus(str, PyEnum):
+class TaskRunStatus(StrEnum):
     """Task run status enumeration."""
 
     RUNNING = "running"
@@ -39,7 +39,7 @@ class TaskRunStatus(str, PyEnum):
     STOPPED = "stopped"
 
 
-class FindingCategory(str, PyEnum):
+class FindingCategory(StrEnum):
     """Task run finding category enumeration."""
 
     CODE_BUG = "code_bug"
@@ -55,7 +55,7 @@ class FindingCategory(str, PyEnum):
     EXPECTED_BEHAVIOR = "expected_behavior"
 
 
-class FindingSeverity(str, PyEnum):
+class FindingSeverity(StrEnum):
     """Task run finding severity enumeration."""
 
     CRITICAL = "critical"
@@ -65,7 +65,7 @@ class FindingSeverity(str, PyEnum):
     INFO = "info"
 
 
-class FindingStatus(str, PyEnum):
+class FindingStatus(StrEnum):
     """Task run finding status enumeration."""
 
     DETECTED = "detected"
@@ -76,7 +76,7 @@ class FindingStatus(str, PyEnum):
     DEFERRED = "deferred"
 
 
-class FindingActionType(str, PyEnum):
+class FindingActionType(StrEnum):
     """Task run finding action type enumeration."""
 
     AUTO_FIX = "auto_fix"

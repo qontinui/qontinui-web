@@ -5,9 +5,9 @@ These models store recording data (frames, interactions, context) that will be
 processed to automatically generate state structures.
 """
 
-import enum
 import uuid
 from datetime import datetime
+from enum import StrEnum
 
 from sqlalchemy import (
     JSON,
@@ -28,7 +28,7 @@ from sqlalchemy.orm import relationship
 from app.db.base import Base
 
 
-class RecordingStatus(str, enum.Enum):
+class RecordingStatus(StrEnum):
     """Status of recording processing"""
 
     UPLOADED = "uploaded"
@@ -39,7 +39,7 @@ class RecordingStatus(str, enum.Enum):
     CANCELLED = "cancelled"
 
 
-class ProcessingPhase(str, enum.Enum):
+class ProcessingPhase(StrEnum):
     """Processing phases for state discovery"""
 
     FRAME_ANALYSIS = "frame_analysis"

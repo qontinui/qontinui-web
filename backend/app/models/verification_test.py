@@ -6,7 +6,7 @@ Python code tests, and repo/CLI test runners.
 """
 
 from datetime import datetime
-from enum import Enum as PyEnum
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from qontinui_schemas.common import utc_now
@@ -18,7 +18,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
-class VerificationTestType(str, PyEnum):
+class VerificationTestType(StrEnum):
     """Test type enumeration."""
 
     PLAYWRIGHT = "playwright"
@@ -28,7 +28,7 @@ class VerificationTestType(str, PyEnum):
     CUSTOM = "custom"
 
 
-class VerificationTestCategory(str, PyEnum):
+class VerificationTestCategory(StrEnum):
     """Test category enumeration."""
 
     SMOKE = "smoke"

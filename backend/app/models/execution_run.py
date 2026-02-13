@@ -7,7 +7,7 @@ live automation, recording sessions, and debug runs.
 """
 
 from datetime import datetime
-from enum import Enum as PyEnum
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from qontinui_schemas.common import utc_now
@@ -19,7 +19,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
-class ExecutionRunType(str, PyEnum):
+class ExecutionRunType(StrEnum):
     """Execution run type enumeration."""
 
     QA_TEST = "qa_test"
@@ -29,7 +29,7 @@ class ExecutionRunType(str, PyEnum):
     DEBUG = "debug"
 
 
-class ExecutionRunStatus(str, PyEnum):
+class ExecutionRunStatus(StrEnum):
     """Execution run status enumeration."""
 
     PENDING = "pending"

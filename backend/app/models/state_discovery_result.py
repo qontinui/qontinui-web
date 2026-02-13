@@ -11,7 +11,7 @@ This is the unified state machine format for model-based GUI automation:
 """
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from app.models.project import Project
 
 
-class DiscoverySourceType(str, Enum):
+class DiscoverySourceType(StrEnum):
     """Source type for state discovery."""
 
     PLAYWRIGHT = "playwright"  # Web extraction via Playwright

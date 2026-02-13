@@ -4,7 +4,7 @@ This module re-exports shared schemas from qontinui-schemas and adds
 backend-specific schemas (with UUID conversion, ORM integration, etc.).
 """
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
@@ -163,7 +163,7 @@ class ExtractionAnnotationResponse(BaseModel):
         return v
 
 
-class ImportMode(str, Enum):
+class ImportMode(StrEnum):
     """Mode for importing extraction results."""
 
     LEGACY = "legacy"  # Old behavior: import states as-is from annotations

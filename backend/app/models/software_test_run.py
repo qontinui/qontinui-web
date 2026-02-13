@@ -7,7 +7,7 @@ statistics for quick dashboard queries and reporting.
 
 from datetime import datetime
 from decimal import Decimal
-from enum import Enum as PyEnum
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, text
@@ -18,7 +18,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
-class TestRunStatus(str, PyEnum):
+class TestRunStatus(StrEnum):
     """Test run status enumeration."""
 
     RUNNING = "running"

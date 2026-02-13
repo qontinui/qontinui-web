@@ -1,7 +1,7 @@
 """Training job model for ML training pipeline integration."""
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from uuid import uuid4
 
 from sqlalchemy import JSON, Column, DateTime, ForeignKey, Integer, String, Text
@@ -11,7 +11,7 @@ from sqlalchemy.orm import relationship
 from app.db.base import Base
 
 
-class TrainingJobStatus(str, Enum):
+class TrainingJobStatus(StrEnum):
     """Status of a training job."""
 
     PENDING = "pending"
@@ -22,7 +22,7 @@ class TrainingJobStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-class TrainingJobModelType(str, Enum):
+class TrainingJobModelType(StrEnum):
     """Type of model to train."""
 
     DETECTION = "detection"  # Object detection (e.g., YOLO, Faster R-CNN)

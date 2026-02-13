@@ -6,7 +6,7 @@ on checkpoints, on specific actions, etc.).
 """
 
 from datetime import datetime
-from enum import Enum as PyEnum
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from qontinui_schemas.common import utc_now
@@ -17,7 +17,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
-class TriggerPoint(str, PyEnum):
+class TriggerPoint(StrEnum):
     """When tests should be triggered during workflow execution."""
 
     BEFORE_WORKFLOW = "before_workflow"

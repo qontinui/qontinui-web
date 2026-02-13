@@ -6,7 +6,7 @@ that tracks all types of actions: vision, mouse, keyboard, state transitions, et
 """
 
 from datetime import datetime
-from enum import Enum as PyEnum
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text, text
@@ -17,7 +17,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
-class ActionExecutionType(str, PyEnum):
+class ActionExecutionType(StrEnum):
     """Action execution type enumeration."""
 
     # Vision actions
@@ -39,7 +39,7 @@ class ActionExecutionType(str, PyEnum):
     CUSTOM = "custom"
 
 
-class ActionExecutionStatus(str, PyEnum):
+class ActionExecutionStatus(StrEnum):
     """Action execution status enumeration."""
 
     SUCCESS = "success"

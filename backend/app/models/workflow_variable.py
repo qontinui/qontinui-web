@@ -8,7 +8,7 @@ Architecture:
 """
 
 from datetime import datetime
-from enum import Enum as PyEnum
+from enum import StrEnum
 
 from sqlalchemy import (
     JSON,
@@ -26,7 +26,7 @@ from sqlalchemy.orm import relationship
 from app.db.base import Base
 
 
-class VariableScope(str, PyEnum):
+class VariableScope(StrEnum):
     """Variable scope enumeration."""
 
     GLOBAL = "global"  # Project-level variables

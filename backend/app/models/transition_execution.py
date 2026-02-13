@@ -6,7 +6,7 @@ input/output data, screenshots, and path traversal information.
 """
 
 from datetime import datetime
-from enum import Enum as PyEnum
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, text
@@ -17,7 +17,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
-class TransitionExecutionStatus(str, PyEnum):
+class TransitionExecutionStatus(StrEnum):
     """Transition execution status enumeration."""
 
     SUCCESS = "success"

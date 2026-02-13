@@ -7,7 +7,7 @@ state mismatch, timeouts, assertions, etc.
 """
 
 from datetime import datetime
-from enum import Enum as PyEnum
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
@@ -19,7 +19,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
-class ExecutionIssueType(str, PyEnum):
+class ExecutionIssueType(StrEnum):
     """Execution issue type enumeration."""
 
     VISUAL_REGRESSION = "visual_regression"
@@ -34,7 +34,7 @@ class ExecutionIssueType(str, PyEnum):
     OTHER = "other"
 
 
-class ExecutionIssueSeverity(str, PyEnum):
+class ExecutionIssueSeverity(StrEnum):
     """Execution issue severity enumeration."""
 
     CRITICAL = "critical"
@@ -44,7 +44,7 @@ class ExecutionIssueSeverity(str, PyEnum):
     INFO = "info"
 
 
-class ExecutionIssueStatus(str, PyEnum):
+class ExecutionIssueStatus(StrEnum):
     """Execution issue status enumeration."""
 
     OPEN = "open"
@@ -55,7 +55,7 @@ class ExecutionIssueStatus(str, PyEnum):
     CANNOT_REPRODUCE = "cannot_reproduce"
 
 
-class ExecutionIssueSource(str, PyEnum):
+class ExecutionIssueSource(StrEnum):
     """Execution issue detection source enumeration."""
 
     AUTOMATION = "automation"

@@ -9,7 +9,7 @@ Includes:
 """
 
 from datetime import datetime, timedelta
-from enum import Enum as PyEnum
+from enum import StrEnum
 from uuid import UUID as PyUUID
 
 from sqlalchemy import (
@@ -30,7 +30,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
-class ResourceType(str, PyEnum):
+class ResourceType(StrEnum):
     """Types of resources that can be locked or commented on."""
 
     WORKFLOW = "workflow"
@@ -41,7 +41,7 @@ class ResourceType(str, PyEnum):
     PROJECT = "project"
 
 
-class ActionType(str, PyEnum):
+class ActionType(StrEnum):
     """Types of actions that can be logged."""
 
     CREATED = "created"

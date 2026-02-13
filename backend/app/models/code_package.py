@@ -6,7 +6,7 @@ discover, and install reusable Python code packages for automation workflows.
 """
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from sqlalchemy import (
     JSON,
@@ -28,7 +28,7 @@ from sqlalchemy.orm import relationship
 from app.db.base import Base
 
 
-class SecurityScanStatus(str, Enum):
+class SecurityScanStatus(StrEnum):
     """Security scan status for package versions"""
 
     PENDING = "pending"
@@ -38,7 +38,7 @@ class SecurityScanStatus(str, Enum):
     SKIPPED = "skipped"
 
 
-class InstallationStatus(str, Enum):
+class InstallationStatus(StrEnum):
     """Installation status for packages"""
 
     ACTIVE = "active"

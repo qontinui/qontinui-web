@@ -6,7 +6,7 @@ the similarity score, and any diff regions detected.
 """
 
 from datetime import datetime
-from enum import Enum as PyEnum
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime, Enum, Float, ForeignKey, String, Text, text
@@ -17,7 +17,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
-class VisualComparisonStatus(str, PyEnum):
+class VisualComparisonStatus(StrEnum):
     """Status of a visual comparison."""
 
     PASSED = "passed"  # Screenshot matches baseline within threshold
@@ -27,7 +27,7 @@ class VisualComparisonStatus(str, PyEnum):
     NO_BASELINE = "no_baseline"  # No baseline exists for this state
 
 
-class ReviewDecision(str, PyEnum):
+class ReviewDecision(StrEnum):
     """Decision made during review of a comparison result."""
 
     APPROVED = "approved"  # Difference is acceptable, no action needed

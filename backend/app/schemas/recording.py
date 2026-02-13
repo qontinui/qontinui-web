@@ -3,7 +3,7 @@ Pydantic schemas for recording API (automated state discovery)
 """
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 # Enums
 
 
-class RecordingStatusEnum(str, Enum):
+class RecordingStatusEnum(StrEnum):
     """Recording processing status"""
 
     UPLOADED = "uploaded"
@@ -22,7 +22,7 @@ class RecordingStatusEnum(str, Enum):
     CANCELLED = "cancelled"
 
 
-class ProcessingPhaseEnum(str, Enum):
+class ProcessingPhaseEnum(StrEnum):
     """Processing phases"""
 
     FRAME_ANALYSIS = "frame_analysis"
@@ -34,7 +34,7 @@ class ProcessingPhaseEnum(str, Enum):
     COMPLETED = "completed"
 
 
-class InteractionTypeEnum(str, Enum):
+class InteractionTypeEnum(StrEnum):
     """Interaction types"""
 
     CLICK = "click"
@@ -44,7 +44,7 @@ class InteractionTypeEnum(str, Enum):
     HOVER = "hover"
 
 
-class ContextEventTypeEnum(str, Enum):
+class ContextEventTypeEnum(StrEnum):
     """Context event types"""
 
     WINDOW_CHANGE = "window_change"

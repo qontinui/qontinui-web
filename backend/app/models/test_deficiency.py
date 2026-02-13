@@ -7,7 +7,7 @@ and lifecycle tracking for issue management.
 
 from datetime import datetime
 from decimal import Decimal
-from enum import Enum as PyEnum
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -28,7 +28,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
-class DeficiencySeverity(str, PyEnum):
+class DeficiencySeverity(StrEnum):
     """Deficiency severity levels."""
 
     CRITICAL = "critical"
@@ -38,7 +38,7 @@ class DeficiencySeverity(str, PyEnum):
     INFO = "info"
 
 
-class DeficiencyType(str, PyEnum):
+class DeficiencyType(StrEnum):
     """Deficiency type classification."""
 
     CRASH = "crash"
@@ -51,7 +51,7 @@ class DeficiencyType(str, PyEnum):
     SECURITY = "security"
 
 
-class DeficiencyStatus(str, PyEnum):
+class DeficiencyStatus(StrEnum):
     """Deficiency lifecycle status."""
 
     NEW = "new"

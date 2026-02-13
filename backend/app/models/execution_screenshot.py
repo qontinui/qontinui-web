@@ -5,7 +5,7 @@ Replaces TestScreenshot + AutomationScreenshot models with a single unified mode
 """
 
 from datetime import datetime
-from enum import Enum as PyEnum
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, text
@@ -16,7 +16,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
-class ExecutionScreenshotType(str, PyEnum):
+class ExecutionScreenshotType(StrEnum):
     """Execution screenshot type enumeration."""
 
     BEFORE_ACTION = "before_action"

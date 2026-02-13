@@ -6,7 +6,7 @@ storing detailed results including output, assertions, and coverage data.
 """
 
 from datetime import datetime
-from enum import Enum as PyEnum
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from qontinui_schemas.common import utc_now
@@ -18,7 +18,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
-class TestResultStatus(str, PyEnum):
+class TestResultStatus(StrEnum):
     """Test result status enumeration."""
 
     PENDING = "pending"

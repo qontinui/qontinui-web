@@ -1,14 +1,14 @@
 """Pydantic schemas for training job API."""
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-class TrainingJobStatus(str, Enum):
+class TrainingJobStatus(StrEnum):
     """Status of a training job."""
 
     PENDING = "pending"
@@ -19,7 +19,7 @@ class TrainingJobStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-class TrainingJobModelType(str, Enum):
+class TrainingJobModelType(StrEnum):
     """Type of model to train."""
 
     DETECTION = "detection"

@@ -5,7 +5,7 @@ debugging. Only used when RENDER_LOG_ENABLED=True (development mode).
 """
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from uuid import UUID
 
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
@@ -16,7 +16,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
-class RenderLogTrigger(str, Enum):
+class RenderLogTrigger(StrEnum):
     """Trigger type for render log capture."""
 
     MUTATION = "mutation"  # DOM mutation observed
@@ -25,7 +25,7 @@ class RenderLogTrigger(str, Enum):
     INTERVAL = "interval"  # Periodic capture
 
 
-class RenderLogMutationType(str, Enum):
+class RenderLogMutationType(StrEnum):
     """Type of DOM mutation that triggered the capture."""
 
     CHILD_LIST = "childList"  # Child nodes added/removed
@@ -33,7 +33,7 @@ class RenderLogMutationType(str, Enum):
     CHARACTER_DATA = "characterData"  # Text content changed
 
 
-class RenderImageType(str, Enum):
+class RenderImageType(StrEnum):
     """Type of captured image."""
 
     SCREENSHOT = "screenshot"  # Full page screenshot

@@ -1,6 +1,6 @@
 import secrets
 from datetime import datetime, timedelta
-from enum import Enum
+from enum import StrEnum
 
 from sqlalchemy import (
     JSON,
@@ -21,7 +21,7 @@ from sqlalchemy.orm import relationship
 from app.db.base import Base
 
 
-class TeamRole(str, Enum):
+class TeamRole(StrEnum):
     """Team member roles with hierarchical permissions"""
 
     OWNER = "owner"
@@ -30,7 +30,7 @@ class TeamRole(str, Enum):
     VIEWER = "viewer"
 
 
-class PermissionLevel(str, Enum):
+class PermissionLevel(StrEnum):
     """Project access permission levels"""
 
     VIEW = "view"

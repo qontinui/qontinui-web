@@ -7,7 +7,7 @@ of workflows, actions, and transitions.
 """
 
 from datetime import datetime
-from enum import Enum as PyEnum
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -28,7 +28,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
-class TreeNodeType(str, PyEnum):
+class TreeNodeType(StrEnum):
     """Types of nodes in the execution tree."""
 
     WORKFLOW = "workflow"
@@ -36,7 +36,7 @@ class TreeNodeType(str, PyEnum):
     TRANSITION = "transition"
 
 
-class TreeEventType(str, PyEnum):
+class TreeEventType(StrEnum):
     """Types of tree events."""
 
     WORKFLOW_STARTED = "workflow_started"
@@ -50,7 +50,7 @@ class TreeEventType(str, PyEnum):
     TRANSITION_FAILED = "transition_failed"
 
 
-class TreeNodeStatus(str, PyEnum):
+class TreeNodeStatus(StrEnum):
     """Status of a tree node."""
 
     PENDING = "pending"

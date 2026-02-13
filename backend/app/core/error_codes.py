@@ -16,10 +16,10 @@ Usage:
     )
 """
 
-from enum import Enum
+from enum import StrEnum
 
 
-class ErrorCode(str, Enum):
+class ErrorCode(StrEnum):
     """
     Standard error codes for API responses.
 
