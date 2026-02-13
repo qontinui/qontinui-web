@@ -181,6 +181,7 @@ from app.models.ui_bridge_state import (
     UIBridgeStateConfig,
     UIBridgeStateDomainKnowledge,
 )
+from app.models.ui_bridge_transition import UIBridgeTransition
 from app.models.unified_workflow import UnifiedWorkflow
 from app.models.usage_metric import UsageMetric
 from app.models.user import User
@@ -432,6 +433,7 @@ __all__ = [
     "UIBridgeExplorationSession",
     "DomainKnowledge",
     "UIBridgeStateDomainKnowledge",
+    "UIBridgeTransition",
     # Training Jobs (ML Training Pipeline)
     "TrainingJob",
     "TrainingJobModelType",

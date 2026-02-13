@@ -27,6 +27,7 @@ from app.models.ui_bridge_state import (
     UIBridgeStateConfig,
     UIBridgeStateDomainKnowledge,
 )
+from app.models.ui_bridge_transition import UIBridgeTransition
 from app.models.user import User
 from app.schemas.ui_bridge_state import (
     DomainKnowledgeCreate,
@@ -39,6 +40,10 @@ from app.schemas.ui_bridge_state import (
     ExplorationSessionResponse,
     ExplorationSessionUpdate,
     ExplorationSessionWithRenders,
+    ExportResponse,
+    PathfindingRequest,
+    PathfindingResponse,
+    PathfindingStep,
     UIBridgeDiscoverAndSaveRequest,
     UIBridgeDiscoverAndSaveResponse,
     UIBridgeStateConfigCreate,
@@ -46,10 +51,15 @@ from app.schemas.ui_bridge_state import (
     UIBridgeStateConfigResponse,
     UIBridgeStateConfigUpdate,
     UIBridgeStateConfigWithStates,
+    UIBridgeStateConfigWithStatesAndTransitions,
     UIBridgeStateDomainKnowledgeLink,
     UIBridgeStateListResponse,
     UIBridgeStateResponse,
     UIBridgeStateUpdate,
+    UIBridgeTransitionCreate,
+    UIBridgeTransitionListResponse,
+    UIBridgeTransitionResponse,
+    UIBridgeTransitionUpdate,
 )
 
 # Note: qontinui imports are done lazily in endpoints that need them
@@ -1158,4 +1168,508 @@ async def delete_exploration_session(
         session_id=str(session_id),
         project_id=str(project_id),
         user_id=str(current_user.id),
+    )
+
+
+# =============================================================================
+# Transition Endpoints
+# =============================================================================
+
+
+def transition_to_response(
+    transition: UIBridgeTransition,
+) -> UIBridgeTransitionResponse:
+    """Convert transition model to response."""
+    return UIBridgeTransitionResponse(
+        id=transition.id,
+        config_id=transition.config_id,
+        transition_id=transition.transition_id,
+        name=transition.name,
+        from_states=transition.from_states or [],
+        activate_states=transition.activate_states or [],
+        exit_states=transition.exit_states or [],
+        actions=transition.actions or [],
+        path_cost=transition.path_cost,
+        stays_visible=transition.stays_visible,
+        extra_metadata=transition.extra_metadata or {},
+        created_at=transition.created_at,
+        updated_at=transition.updated_at,
+    )
+
+
+@router.get(
+    "/projects/{project_id}/ui-bridge-configs/{config_id}/transitions",
+    response_model=UIBridgeTransitionListResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def list_transitions(
+    project_id: UUID,
+    config_id: UUID,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> Any:
+    """List all transitions in a configuration."""
+    await get_project_or_404(project_id, current_user.id, db)
+    await get_config_or_404(config_id, project_id, db)
+
+    result = await db.execute(
+        select(UIBridgeTransition)
+        .where(UIBridgeTransition.config_id == config_id)
+        .order_by(UIBridgeTransition.name)
+    )
+    transitions = result.scalars().all()
+
+    return UIBridgeTransitionListResponse(
+        items=[transition_to_response(t) for t in transitions],
+        total=len(transitions),
+    )
+
+
+@router.post(
+    "/projects/{project_id}/ui-bridge-configs/{config_id}/transitions",
+    response_model=UIBridgeTransitionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_transition(
+    project_id: UUID,
+    config_id: UUID,
+    request: UIBridgeTransitionCreate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> Any:
+    """Create a new transition."""
+    await get_project_or_404(project_id, current_user.id, db)
+    await get_config_or_404(config_id, project_id, db)
+
+    # Generate transition_id from name
+    import re
+
+    transition_id = re.sub(r"[^a-z0-9]+", "_", request.name.lower()).strip("_")
+
+    transition = UIBridgeTransition(
+        config_id=config_id,
+        transition_id=transition_id,
+        name=request.name,
+        from_states=request.from_states,
+        activate_states=request.activate_states,
+        exit_states=request.exit_states,
+        actions=[a.model_dump(exclude_none=True) for a in request.actions],
+        path_cost=request.path_cost,
+        stays_visible=request.stays_visible,
+        extra_metadata=request.extra_metadata,
+    )
+
+    db.add(transition)
+    await db.commit()
+    await db.refresh(transition)
+
+    logger.info(
+        "Created UI Bridge transition",
+        transition_id=str(transition.id),
+        config_id=str(config_id),
+        project_id=str(project_id),
+    )
+
+    return transition_to_response(transition)
+
+
+@router.patch(
+    "/projects/{project_id}/ui-bridge-configs/{config_id}/transitions/{transition_id}",
+    response_model=UIBridgeTransitionResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def update_transition(
+    project_id: UUID,
+    config_id: UUID,
+    transition_id: UUID,
+    request: UIBridgeTransitionUpdate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> Any:
+    """Update a transition."""
+    await get_project_or_404(project_id, current_user.id, db)
+    await get_config_or_404(config_id, project_id, db)
+
+    result = await db.execute(
+        select(UIBridgeTransition).where(
+            UIBridgeTransition.id == transition_id,
+            UIBridgeTransition.config_id == config_id,
+        )
+    )
+    transition = result.scalar_one_or_none()
+
+    if not transition:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Transition not found",
+        )
+
+    if request.name is not None:
+        transition.name = request.name
+    if request.from_states is not None:
+        transition.from_states = request.from_states
+    if request.activate_states is not None:
+        transition.activate_states = request.activate_states
+    if request.exit_states is not None:
+        transition.exit_states = request.exit_states
+    if request.actions is not None:
+        transition.actions = [a.model_dump(exclude_none=True) for a in request.actions]
+    if request.path_cost is not None:
+        transition.path_cost = request.path_cost
+    if request.stays_visible is not None:
+        transition.stays_visible = request.stays_visible
+    if request.extra_metadata is not None:
+        transition.extra_metadata = request.extra_metadata
+
+    await db.commit()
+    await db.refresh(transition)
+
+    return transition_to_response(transition)
+
+
+@router.delete(
+    "/projects/{project_id}/ui-bridge-configs/{config_id}/transitions/{transition_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_transition(
+    project_id: UUID,
+    config_id: UUID,
+    transition_id: UUID,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> None:
+    """Delete a transition."""
+    await get_project_or_404(project_id, current_user.id, db)
+    await get_config_or_404(config_id, project_id, db)
+
+    result = await db.execute(
+        select(UIBridgeTransition).where(
+            UIBridgeTransition.id == transition_id,
+            UIBridgeTransition.config_id == config_id,
+        )
+    )
+    transition = result.scalar_one_or_none()
+
+    if not transition:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Transition not found",
+        )
+
+    await db.delete(transition)
+    await db.commit()
+
+    logger.info(
+        "Deleted UI Bridge transition",
+        transition_id=str(transition_id),
+        config_id=str(config_id),
+        project_id=str(project_id),
+    )
+
+
+# =============================================================================
+# Export Endpoint
+# =============================================================================
+
+
+@router.get(
+    "/projects/{project_id}/ui-bridge-configs/{config_id}/export",
+    response_model=ExportResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def export_config(
+    project_id: UUID,
+    config_id: UUID,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> Any:
+    """Export config as JSON matching UIBridgeRuntime.from_dict() format."""
+    await get_project_or_404(project_id, current_user.id, db)
+
+    # Load config with states and transitions
+    result = await db.execute(
+        select(UIBridgeStateConfig)
+        .options(
+            selectinload(UIBridgeStateConfig.states),
+            selectinload(UIBridgeStateConfig.transitions),
+        )
+        .where(
+            UIBridgeStateConfig.id == config_id,
+            UIBridgeStateConfig.project_id == project_id,
+        )
+    )
+    config = result.scalar_one_or_none()
+
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="State configuration not found",
+        )
+
+    # Build states dict matching UIBridgeState dataclass fields
+    states_dict = {}
+    for state in config.states:
+        states_dict[state.state_id] = {
+            "id": state.state_id,
+            "name": state.name,
+            "element_ids": state.element_ids or [],
+            "blocking": (
+                state.extra_metadata.get("blocking", False)
+                if state.extra_metadata
+                else False
+            ),
+            "blocks": (
+                state.extra_metadata.get("blocks", []) if state.extra_metadata else []
+            ),
+            "group": (
+                state.extra_metadata.get("group") if state.extra_metadata else None
+            ),
+            "path_cost": (
+                state.extra_metadata.get("path_cost", 1.0)
+                if state.extra_metadata
+                else 1.0
+            ),
+            "metadata": state.extra_metadata or {},
+        }
+
+    # Build transitions dict matching UIBridgeTransition dataclass fields
+    transitions_dict = {}
+    for trans in config.transitions:
+        transitions_dict[trans.transition_id] = {
+            "id": trans.transition_id,
+            "name": trans.name,
+            "from_states": trans.from_states or [],
+            "activate_states": trans.activate_states or [],
+            "exit_states": trans.exit_states or [],
+            "actions": trans.actions or [],
+            "path_cost": trans.path_cost,
+            "stays_visible": trans.stays_visible,
+            "metadata": trans.extra_metadata or {},
+        }
+
+    return ExportResponse(
+        states=states_dict,
+        transitions=transitions_dict,
+        config={
+            "name": config.name,
+            "description": config.description,
+            "render_count": config.render_count,
+            "element_count": config.element_count,
+        },
+    )
+
+
+# =============================================================================
+# Pathfinding Preview Endpoint
+# =============================================================================
+
+
+@router.post(
+    "/projects/{project_id}/ui-bridge-configs/{config_id}/pathfind",
+    response_model=PathfindingResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def pathfind(
+    project_id: UUID,
+    config_id: UUID,
+    request: PathfindingRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> Any:
+    """Find path between states using multistate pathfinding.
+
+    This builds a UIBridgeRuntime in-memory with a stub client
+    and runs pathfinding without executing any actual actions.
+    """
+    await get_project_or_404(project_id, current_user.id, db)
+
+    # Load config with states and transitions
+    result = await db.execute(
+        select(UIBridgeStateConfig)
+        .options(
+            selectinload(UIBridgeStateConfig.states),
+            selectinload(UIBridgeStateConfig.transitions),
+        )
+        .where(
+            UIBridgeStateConfig.id == config_id,
+            UIBridgeStateConfig.project_id == project_id,
+        )
+    )
+    config = result.scalar_one_or_none()
+
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="State configuration not found",
+        )
+
+    try:
+        # Lazy import to avoid loading torch at startup
+        from qontinui.state_machine.ui_bridge_runtime import (
+            UIBridgeRuntime,
+            UIBridgeRuntimeConfig,
+        )
+        from qontinui.state_machine.ui_bridge_runtime import (
+            UIBridgeState as UIBridgeStateData,
+        )
+        from qontinui.state_machine.ui_bridge_runtime import (
+            UIBridgeTransition as UIBridgeTransitionData,
+        )
+
+        # Create a stub client that does nothing
+        class StubClient:
+            def find(self, **kwargs: Any) -> Any:
+                return type("R", (), {"elements": []})()
+
+            def get_active_states(self) -> list[str]:
+                return request.from_states
+
+            def execute_transition(self, transition_id: str) -> Any:
+                return type("R", (), {"success": True})()
+
+            def navigate_to(self, targets: list[str]) -> Any:
+                raise NotImplementedError
+
+            def click(self, element_id: str, **kwargs: Any) -> Any:
+                return type("R", (), {"success": True})()
+
+            def type(self, element_id: str, text: str, **kwargs: Any) -> Any:
+                return type("R", (), {"success": True})()
+
+        stub = StubClient()
+        runtime_config = UIBridgeRuntimeConfig(
+            enable_reliability_tracking=False,
+        )
+        runtime = UIBridgeRuntime(stub, runtime_config)
+
+        # Register states
+        for state in config.states:
+            runtime.register_state(
+                UIBridgeStateData(
+                    id=state.state_id,
+                    name=state.name,
+                    element_ids=state.element_ids or [],
+                )
+            )
+
+        # Register transitions
+        for trans in config.transitions:
+            runtime.register_transition(
+                UIBridgeTransitionData(
+                    id=trans.transition_id,
+                    name=trans.name,
+                    from_states=trans.from_states or [],
+                    activate_states=trans.activate_states or [],
+                    exit_states=trans.exit_states or [],
+                    actions=trans.actions or [],
+                    path_cost=trans.path_cost,
+                    stays_visible=trans.stays_visible,
+                )
+            )
+
+        # Run pathfinding
+        path = runtime.find_path(
+            target_states=request.target_states,
+            from_states=set(request.from_states),
+        )
+
+        if not path:
+            return PathfindingResponse(
+                found=False,
+                error="No path found between specified states",
+            )
+
+        # Build response
+        steps = []
+        total_cost = 0.0
+        for trans in path.transitions_sequence:
+            ui_trans = runtime._ui_transitions.get(trans.id)
+            if ui_trans:
+                steps.append(
+                    PathfindingStep(
+                        transition_id=ui_trans.id,
+                        transition_name=ui_trans.name,
+                        from_states=ui_trans.from_states,
+                        activate_states=ui_trans.activate_states,
+                        exit_states=ui_trans.exit_states,
+                        path_cost=ui_trans.path_cost,
+                    )
+                )
+                total_cost += ui_trans.path_cost
+
+        return PathfindingResponse(
+            found=True,
+            steps=steps,
+            total_cost=total_cost,
+        )
+
+    except ImportError:
+        return PathfindingResponse(
+            found=False,
+            error="qontinui core library not available for pathfinding",
+        )
+    except Exception as e:
+        logger.error(
+            "Pathfinding failed",
+            config_id=str(config_id),
+            error=str(e),
+        )
+        return PathfindingResponse(
+            found=False,
+            error=f"Pathfinding error: {str(e)}",
+        )
+
+
+# =============================================================================
+# Config with States AND Transitions
+# =============================================================================
+
+
+@router.get(
+    "/projects/{project_id}/ui-bridge-configs/{config_id}/full",
+    response_model=UIBridgeStateConfigWithStatesAndTransitions,
+    status_code=status.HTTP_200_OK,
+)
+async def get_state_config_full(
+    project_id: UUID,
+    config_id: UUID,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> Any:
+    """Get a state configuration with all states and transitions."""
+    await get_project_or_404(project_id, current_user.id, db)
+
+    result = await db.execute(
+        select(UIBridgeStateConfig)
+        .options(
+            selectinload(UIBridgeStateConfig.states)
+            .selectinload(UIBridgeState.domain_knowledge_refs)
+            .selectinload(UIBridgeStateDomainKnowledge.knowledge),
+            selectinload(UIBridgeStateConfig.transitions),
+        )
+        .where(
+            UIBridgeStateConfig.id == config_id,
+            UIBridgeStateConfig.project_id == project_id,
+        )
+    )
+    config = result.scalar_one_or_none()
+
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="State configuration not found",
+        )
+
+    return UIBridgeStateConfigWithStatesAndTransitions(
+        id=config.id,
+        project_id=config.project_id,
+        name=config.name,
+        description=config.description,
+        render_count=config.render_count,
+        element_count=config.element_count,
+        include_html_ids=config.include_html_ids,
+        created_at=config.created_at,
+        updated_at=config.updated_at,
+        states=[state_to_response(s) for s in config.states],
+        transitions=[transition_to_response(t) for t in config.transitions],
     )

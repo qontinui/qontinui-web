@@ -1,7 +1,7 @@
 """Schemas for UI Bridge state discovery and persistence."""
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -168,11 +168,141 @@ class UIBridgeStateConfigListResponse(BaseModel):
 
 
 # =============================================================================
+# UI Bridge Transition Schemas
+# =============================================================================
+
+
+class UIBridgeTransitionActionCreate(BaseModel):
+    """Schema for a transition action."""
+
+    type: str = Field(
+        ..., description="Action type: click, type, select, wait, navigate"
+    )
+    target: str | None = Field(None, description="Target element ID")
+    text: str | None = Field(None, description="Text to type (for type actions)")
+    value: str | None = Field(None, description="Value to select (for select actions)")
+    url: str | None = Field(
+        None, description="URL to navigate to (for navigate actions)"
+    )
+    delay_ms: int | None = Field(
+        None, description="Delay in milliseconds (for wait actions)"
+    )
+
+
+class UIBridgeTransitionCreate(BaseModel):
+    """Schema for creating a UI Bridge transition."""
+
+    name: str = Field(..., min_length=1, max_length=255)
+    from_states: list[str] = Field(default_factory=list)
+    activate_states: list[str] = Field(default_factory=list)
+    exit_states: list[str] = Field(default_factory=list)
+    actions: list[UIBridgeTransitionActionCreate] = Field(default_factory=list)
+    path_cost: float = Field(default=1.0, ge=0.0)
+    stays_visible: bool = False
+    extra_metadata: dict = Field(default_factory=dict)
+
+
+class UIBridgeTransitionUpdate(BaseModel):
+    """Schema for updating a UI Bridge transition."""
+
+    name: str | None = Field(None, min_length=1, max_length=255)
+    from_states: list[str] | None = None
+    activate_states: list[str] | None = None
+    exit_states: list[str] | None = None
+    actions: list[UIBridgeTransitionActionCreate] | None = None
+    path_cost: float | None = Field(None, ge=0.0)
+    stays_visible: bool | None = None
+    extra_metadata: dict | None = None
+
+
+class UIBridgeTransitionResponse(BaseModel):
+    """Schema for UI Bridge transition response."""
+
+    id: UUID
+    config_id: UUID
+    transition_id: str
+    name: str
+    from_states: list[str]
+    activate_states: list[str]
+    exit_states: list[str]
+    actions: list[dict]
+    path_cost: float
+    stays_visible: bool
+    extra_metadata: dict
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        """Pydantic model config."""
+
+        from_attributes = True
+
+
+class UIBridgeTransitionListResponse(BaseModel):
+    """Schema for listing UI Bridge transitions."""
+
+    items: list[UIBridgeTransitionResponse]
+    total: int
+
+
+class UIBridgeStateConfigWithStatesAndTransitions(UIBridgeStateConfigResponse):
+    """Schema for UI Bridge state config with states and transitions."""
+
+    states: list[UIBridgeStateResponse] = Field(default_factory=list)
+    transitions: list[UIBridgeTransitionResponse] = Field(default_factory=list)
+
+
+# =============================================================================
+# Pathfinding Schemas
+# =============================================================================
+
+
+class PathfindingRequest(BaseModel):
+    """Request for pathfinding between states."""
+
+    from_states: list[str] = Field(..., description="Currently active state IDs")
+    target_states: list[str] = Field(..., description="Target state IDs to reach")
+
+
+class PathfindingStep(BaseModel):
+    """A step in a pathfinding result."""
+
+    transition_id: str
+    transition_name: str
+    from_states: list[str]
+    activate_states: list[str]
+    exit_states: list[str]
+    path_cost: float
+
+
+class PathfindingResponse(BaseModel):
+    """Response from pathfinding endpoint."""
+
+    found: bool
+    steps: list[PathfindingStep] = Field(default_factory=list)
+    total_cost: float = 0.0
+    error: str | None = None
+
+
+# =============================================================================
+# Export Schemas
+# =============================================================================
+
+
+class ExportResponse(BaseModel):
+    """Response from export endpoint — matches UIBridgeRuntime.from_dict() format."""
+
+    states: dict[str, dict]
+    transitions: dict[str, dict]
+    config: dict
+
+
+# =============================================================================
 # Discovery and Save Request
 # =============================================================================
 
 
-class DiscoveryStrategy(str, Enum):
+class DiscoveryStrategy(StrEnum):
     """Available discovery strategy types."""
 
     LEGACY = "legacy"  # ID-based co-occurrence (original)
@@ -223,7 +353,7 @@ class UIBridgeDiscoverAndSaveResponse(BaseModel):
 # =============================================================================
 
 
-class ExplorationSessionStatus(str, Enum):
+class ExplorationSessionStatus(StrEnum):
     """Status of an exploration session."""
 
     RUNNING = "running"

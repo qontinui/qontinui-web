@@ -28,6 +28,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.project import Project
+    from app.models.ui_bridge_transition import UIBridgeTransition
 
 
 class UIBridgeExplorationSession(Base):
@@ -183,6 +184,12 @@ class UIBridgeStateConfig(Base):
         back_populates="config",
         cascade="all, delete-orphan",
         order_by="UIBridgeState.name",
+    )
+    transitions: Mapped[list["UIBridgeTransition"]] = relationship(
+        "UIBridgeTransition",
+        back_populates="config",
+        cascade="all, delete-orphan",
+        order_by="UIBridgeTransition.name",
     )
 
     def __repr__(self) -> str:

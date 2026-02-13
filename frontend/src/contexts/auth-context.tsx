@@ -233,11 +233,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // If already authenticated, no need to auto-login
+    // If already authenticated, redirect away from landing page
     if (user) {
       console.log(
         "[AuthContext] Dev mode: Already authenticated, skipping auto-login"
       );
+      if (window.location.pathname === "/") {
+        const dest = user.is_superuser ? "/admin" : "/dashboard";
+        window.location.href = dest;
+      }
       return;
     }
 
@@ -270,6 +274,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then((loggedInUser) => {
         console.log("[AuthContext] Dev mode auto-login successful");
         setUser(loggedInUser);
+        // Redirect to dashboard after dev auto-login
+        if (window.location.pathname === "/") {
+          const dest = loggedInUser.is_superuser ? "/admin" : "/dashboard";
+          window.location.href = dest;
+        }
       })
       .catch((err: unknown) => {
         // Properly extract error message for logging

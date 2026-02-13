@@ -20,7 +20,26 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _table_exists(table_name: str) -> bool:
+    """Check if a table exists in the current database."""
+    conn = op.get_bind()
+    result = conn.execute(
+        sa.text(
+            "SELECT EXISTS ("
+            "  SELECT 1 FROM information_schema.tables "
+            "  WHERE table_schema = 'public' AND table_name = :tbl"
+            ")"
+        ),
+        {"tbl": table_name},
+    )
+    return result.scalar()
+
+
 def upgrade() -> None:
+    # Guard: skip if table already exists (e.g., previously stamped without running)
+    if _table_exists("unified_workflows"):
+        return
+
     op.create_table(
         "unified_workflows",
         sa.Column(
@@ -170,6 +189,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    if not _table_exists("unified_workflows"):
+        return
+
     op.drop_index(
         op.f("ix_unified_workflows_project_id"), table_name="unified_workflows"
     )

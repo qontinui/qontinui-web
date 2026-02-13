@@ -1,35 +1,17 @@
 "use client";
 
 /**
- * UI Bridge States Page - Redirect
+ * UI Bridge State Machine Page
  *
- * This page has been merged into the unified Discover page.
- * Redirects to /automation-builder/extraction with the ui-bridge method.
+ * Tabbed interface for:
+ * 1. Discovery - Link to the unified Discover page for state discovery
+ * 2. Graph Editor - ReactFlow graph showing states as nodes, transitions as edges
+ * 3. Pathfinding - Find optimal paths between states
+ * 4. Export - Download runtime-compatible JSON
  */
 
-import { useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { UIBridgeStateMachinePage } from "./_components/UIBridgeStateMachinePage";
 
-export default function UIBridgeStatesRedirect() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-
-  useEffect(() => {
-    // Preserve any existing query params (like project)
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("method", "ui-bridge");
-    router.replace(`/automation-builder/extraction?${params.toString()}`);
-  }, [router, searchParams]);
-
-  return (
-    <div className="flex items-center justify-center min-h-[400px]">
-      <div className="flex flex-col items-center gap-4">
-        <Loader2 className="h-8 w-8 animate-spin text-brand-primary" />
-        <p className="text-sm text-text-muted">
-          Redirecting to the unified Discover page...
-        </p>
-      </div>
-    </div>
-  );
+export default function UIBridgeStatesPage() {
+  return <UIBridgeStateMachinePage />;
 }

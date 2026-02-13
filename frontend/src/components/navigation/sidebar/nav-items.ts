@@ -179,6 +179,14 @@ export const navItems: NavItem[] = [
         hidden: true,
       },
       {
+        id: "build-state-machine",
+        label: "State Machine",
+        description: "UI Bridge state machine builder",
+        icon: React.createElement(Network, { className: "size-4" }),
+        route: "/automation-builder/ui-bridge-states",
+        color: "var(--brand-secondary)",
+      },
+      {
         id: "build-discover",
         label: "Discover",
         description: "AI-powered workflow generation",

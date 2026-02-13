@@ -24,10 +24,18 @@ from app.models.snapshot import (  # noqa
 )
 from app.models.storage_usage import StorageUsage  # noqa
 from app.models.subscription import Subscription  # noqa
-from app.models.usage_metric import UsageMetric  # noqa
 
 # Import all models here for Alembic to detect them
 # Note: Import snapshot models before project to avoid circular imports
+from app.models.ui_bridge_state import (  # noqa
+    DomainKnowledge,
+    UIBridgeExplorationSession,
+    UIBridgeState,
+    UIBridgeStateConfig,
+    UIBridgeStateDomainKnowledge,
+)
+from app.models.ui_bridge_transition import UIBridgeTransition  # noqa
+from app.models.usage_metric import UsageMetric  # noqa
 from app.models.user import User  # noqa
 from app.models.video_capture import (  # noqa
     ActionFrame,
