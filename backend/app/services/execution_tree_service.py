@@ -12,7 +12,9 @@ import structlog
 
 # Import schemas from qontinui-schemas
 from qontinui_schemas.events import DisplayNode as SchemaDisplayNode
-from qontinui_schemas.events import ExecutionTreeResponse
+from qontinui_schemas.events import (
+    ExecutionTreeResponse,
+)
 from qontinui_schemas.events import NodeMetadata as SchemaNodeMetadata
 from qontinui_schemas.events import NodeStatus as SchemaNodeStatus
 from qontinui_schemas.events import NodeType as SchemaNodeType

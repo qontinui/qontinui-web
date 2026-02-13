@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from reportlab.lib import colors
-from reportlab.platypus import PageBreak, SimpleDocTemplate, Spacer
 from reportlab.lib.units import inch
+from reportlab.platypus import PageBreak, SimpleDocTemplate, Spacer
 
 from app.services.reports.pdf_analysis import build_coverage_analysis
 from app.services.reports.pdf_appendices import build_appendices
