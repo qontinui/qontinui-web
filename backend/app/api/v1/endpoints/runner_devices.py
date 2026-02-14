@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.core.config import settings
 from app.core.error_codes import ErrorCode
+from app.crud import runner as runner_crud
 from app.middleware.error_handler import forbidden_error, not_found_error
 from app.middleware.rate_limit import user_limiter
 from app.models.runner_device import RunnerDevice
@@ -17,6 +18,7 @@ from app.schemas.runner_device import RunnerDevice as RunnerDeviceSchema
 from app.schemas.runner_device import (
     RunnerDeviceConnectionInfo,
     RunnerDeviceHeartbeat,
+    RunnerDeviceHeartbeatResponse,
     RunnerDeviceRegister,
 )
 
@@ -295,12 +297,18 @@ async def delete_device(
 
 @router.post(
     "/{device_id}/heartbeat",
+    response_model=RunnerDeviceHeartbeatResponse,
     status_code=status.HTTP_200_OK,
     responses={
         200: {
             "description": "Heartbeat received successfully",
             "content": {
-                "application/json": {"example": {"message": "Heartbeat received"}}
+                "application/json": {
+                    "example": {
+                        "message": "Heartbeat received",
+                        "has_active_connection": True,
+                    }
+                }
             },
         },
         401: {
@@ -369,7 +377,11 @@ async def device_heartbeat(
 
     await db.commit()
 
-    return {"message": "Heartbeat received"}
+    # Check if user has any active WebSocket connections
+    active_connections = await runner_crud.get_active_connections(db, current_user.id)
+    has_active = len(active_connections) > 0
+
+    return {"message": "Heartbeat received", "has_active_connection": has_active}
 
 
 @router.get(

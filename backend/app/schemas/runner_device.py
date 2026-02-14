@@ -58,6 +58,13 @@ class RunnerDevice(RunnerDeviceInDBBase):
     pass
 
 
+class RunnerDeviceHeartbeatResponse(BaseSchema):
+    """Response schema for device heartbeat"""
+
+    message: str
+    has_active_connection: bool
+
+
 class RunnerDeviceConnectionInfo(BaseSchema):
     """Connection information for a runner device"""
 
