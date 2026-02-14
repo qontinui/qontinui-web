@@ -398,6 +398,8 @@ async def handle_activity(
         return
 
     assert isinstance(resource_id, str)
+    assert isinstance(action_type_str, str)
+    assert isinstance(resource_type_str, str)
 
     try:
         action_type = ActionType(action_type_str)

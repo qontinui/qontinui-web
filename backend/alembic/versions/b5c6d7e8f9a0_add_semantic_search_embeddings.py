@@ -23,9 +23,9 @@ Create Date: 2026-02-10
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from pgvector.sqlalchemy import Vector
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "b5c6d7e8f9a0"
@@ -144,7 +144,9 @@ def downgrade() -> None:
     op.execute("DROP INDEX IF EXISTS ix_execution_issues_title_embedding")
 
     # Drop columns only if their tables exist
-    if _table_exists("domain_knowledge") and _column_exists("domain_knowledge", "content_embedding"):
+    if _table_exists("domain_knowledge") and _column_exists(
+        "domain_knowledge", "content_embedding"
+    ):
         op.drop_column("domain_knowledge", "content_embedding")
 
     if _table_exists("execution_issues"):

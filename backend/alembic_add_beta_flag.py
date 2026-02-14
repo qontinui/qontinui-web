@@ -10,9 +10,9 @@ from pathlib import Path
 # Add the backend directory to the path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect, text  # noqa: E402
 
-from app.db.session import engine
+from app.db.session import engine  # noqa: E402
 
 
 def add_beta_flag():
@@ -33,10 +33,12 @@ def add_beta_flag():
         # Add the column
         with engine.connect() as conn:
             conn.execute(
-                text("""
+                text(
+                    """
                 ALTER TABLE users
                 ADD COLUMN is_beta BOOLEAN DEFAULT 0
-            """)
+            """
+                )
             )
             conn.commit()
             print("✅ Added is_beta column to users table")

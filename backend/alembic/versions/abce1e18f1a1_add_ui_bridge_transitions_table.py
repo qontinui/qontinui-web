@@ -5,6 +5,7 @@ Revises: b97e3bd6e0c7
 Create Date: 2026-02-13 22:37:39.670164
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -36,20 +37,14 @@ def upgrade() -> None:
         sa.Column("transition_id", sa.String(100), nullable=False),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("from_states", sa.JSON(), server_default="[]", nullable=False),
-        sa.Column(
-            "activate_states", sa.JSON(), server_default="[]", nullable=False
-        ),
+        sa.Column("activate_states", sa.JSON(), server_default="[]", nullable=False),
         sa.Column("exit_states", sa.JSON(), server_default="[]", nullable=False),
         sa.Column("actions", sa.JSON(), server_default="[]", nullable=False),
-        sa.Column(
-            "path_cost", sa.Float(), nullable=False, server_default="1.0"
-        ),
+        sa.Column("path_cost", sa.Float(), nullable=False, server_default="1.0"),
         sa.Column(
             "stays_visible", sa.Boolean(), nullable=False, server_default="false"
         ),
-        sa.Column(
-            "extra_metadata", sa.JSON(), server_default="{}", nullable=False
-        ),
+        sa.Column("extra_metadata", sa.JSON(), server_default="{}", nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
