@@ -55,16 +55,48 @@ export function OfflineIndicator() {
     // Load initial stats
     syncQueue.getStats().then(setStats);
 
-    // Monitor sync status (check every 5s — only visible when offline/pending)
-    const syncInterval = setInterval(() => {
-      setIsSyncing(syncProcessor.isProcessing());
-    }, 5000);
+    // Check sync status once on mount, then rely on event-driven updates
+    setIsSyncing(syncProcessor.isProcessing());
+
+    // Only poll sync status when the indicator is visible (offline or has pending items)
+    // This avoids unnecessary state updates and re-renders during normal idle
+    let syncInterval: ReturnType<typeof setInterval> | null = null;
+    const startSyncPolling = () => {
+      if (!syncInterval) {
+        syncInterval = setInterval(() => {
+          setIsSyncing(syncProcessor.isProcessing());
+        }, 5000);
+      }
+    };
+    const stopSyncPolling = () => {
+      if (syncInterval) {
+        clearInterval(syncInterval);
+        syncInterval = null;
+      }
+    };
+
+    // Re-evaluate polling when online status or queue changes
+    const checkPolling = () => {
+      const needsPolling = !navigator.onLine || syncProcessor.isProcessing();
+      if (needsPolling) {
+        startSyncPolling();
+      } else {
+        stopSyncPolling();
+      }
+    };
+    checkPolling();
+
+    // Listen for online/offline to adjust polling
+    window.addEventListener("online", checkPolling);
+    window.addEventListener("offline", checkPolling);
 
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("online", checkPolling);
+      window.removeEventListener("offline", checkPolling);
       unsubscribe();
-      clearInterval(syncInterval);
+      stopSyncPolling();
     };
   }, [isMounted]);
 

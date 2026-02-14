@@ -345,14 +345,26 @@ function generateCommandId(): string {
   return `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 }
 
+// Commands that cause the page to unload (navigation, refresh) will never
+// receive a browser response because the old page dies before it can POST
+// back. These are resolved immediately after delivery ("fire-and-forget").
+const FIRE_AND_FORGET_COMMANDS = new Set([
+  "pageNavigate",
+  "pageRefresh",
+]);
+
 /**
  * Queue a command to be executed in the browser.
  * Prefers WebSocket delivery when a client is connected, falls back to HTTP polling.
  * Returns a promise that resolves when the browser sends back the response.
+ *
+ * For navigation/refresh commands, resolves immediately after delivery since
+ * the page unloads before a response can be sent.
  */
 export function queueCommand<T>(action: string, payload: unknown): Promise<T> {
   const commandId = generateCommandId();
-  console.log(`[ui-bridge] queueCommand: ${action} (ws=${wsClients.size}, sse=${commandListeners.size})`);
+  const fireAndForget = FIRE_AND_FORGET_COMMANDS.has(action);
+  console.log(`[ui-bridge] queueCommand: ${action} (ws=${wsClients.size}, sse=${commandListeners.size}${fireAndForget ? ", fire-and-forget" : ""})`);
 
   return new Promise((resolve, reject) => {
     // Try WebSocket delivery first
@@ -378,6 +390,30 @@ export function queueCommand<T>(action: string, payload: unknown): Promise<T> {
           `Ensure the web app is open in a browser tab.`
         )
       );
+      return;
+    }
+
+    // For fire-and-forget commands, resolve immediately after delivery.
+    // The browser will execute the command but the page unloads before
+    // it can send a response, so waiting would always hit the timeout.
+    if (fireAndForget) {
+      // Still need to deliver via SSE if not sent via WebSocket
+      if (!sentViaWebSocket && commandListeners.size > 0) {
+        const command: QueuedCommand = {
+          commandId,
+          action,
+          payload,
+          timestamp: Date.now(),
+        };
+        for (const listener of commandListeners) {
+          try {
+            listener(command);
+          } catch {
+            // Listener failed, will be cleaned up by self-cleaning mechanism
+          }
+        }
+      }
+      resolve({ success: true, fireAndForget: true, action, timestamp: Date.now() } as T);
       return;
     }
 

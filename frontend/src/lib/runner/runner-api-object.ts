@@ -752,6 +752,15 @@ export const runnerApi = {
       body: JSON.stringify(settings),
     }),
 
+  // App Mode
+  getAppMode: () =>
+    runnerFetch<{ mode: string }>("/settings/app-mode"),
+  setAppMode: (mode: string) =>
+    runnerFetch<void>("/settings/app-mode", {
+      method: "PUT",
+      body: JSON.stringify({ mode }),
+    }),
+
   // AI Settings
   getAiSettings: () => runnerFetch<AiSettings>("/settings/ai"),
   saveAiSettings: (settings: AiSettings) =>

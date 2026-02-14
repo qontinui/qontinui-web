@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, lazy, Suspense } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useTaskRun, runnerApi } from "@/lib/runner-api";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
 import { Badge } from "@/components/ui/badge";
@@ -71,8 +71,13 @@ function getStatusBadge(status: string) {
   }
 }
 
+const VALID_TABS = ["summary", "findings", "tests", "ai-conversation", "data-logs"];
+
 export function RunDetailContent({ runId }: { runId: string }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const initialTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : "summary";
 
   const { data: run, isLoading, error, isOffline, refetch } = useTaskRun(runId);
   const [generatedWorkflowId, setGeneratedWorkflowId] = useState<string | null>(
@@ -100,7 +105,7 @@ export function RunDetailContent({ runId }: { runId: string }) {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas flex items-center justify-center">
+      <div className="h-full overflow-y-auto bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas flex items-center justify-center">
         <div className="text-center text-text-muted">
           <RefreshCw className="size-6 animate-spin mx-auto mb-3" />
           <span data-content-role="status" data-content-label="loading state">
@@ -113,7 +118,7 @@ export function RunDetailContent({ runId }: { runId: string }) {
 
   if (error || !run) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas">
+      <div className="h-full overflow-y-auto bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas">
         <div className="p-6 max-w-7xl mx-auto">
           <Button
             variant="ghost"
@@ -136,7 +141,7 @@ export function RunDetailContent({ runId }: { runId: string }) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
+    <div className="h-full overflow-y-auto bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
@@ -183,7 +188,7 @@ export function RunDetailContent({ runId }: { runId: string }) {
       </header>
 
       <main className="p-6 max-w-7xl mx-auto">
-        <Tabs defaultValue="summary">
+        <Tabs defaultValue={initialTab}>
           <TabsList className="mb-6">
             <TabsTrigger value="summary" className="gap-1.5">
               <FileText className="size-3.5" />

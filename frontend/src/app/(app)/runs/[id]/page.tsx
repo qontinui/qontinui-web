@@ -12,7 +12,7 @@ const RunDetailContent = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas flex items-center justify-center">
+      <div className="h-full overflow-y-auto bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas flex items-center justify-center">
         <div className="text-center text-text-muted">
           <Loader2 className="size-6 animate-spin mx-auto mb-3" />
           Loading run details...
@@ -28,7 +28,7 @@ export default function RunDetailPage() {
 
   if (!runId) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-text-muted">
+      <div className="h-full flex items-center justify-center text-text-muted">
         No run ID provided
       </div>
     );

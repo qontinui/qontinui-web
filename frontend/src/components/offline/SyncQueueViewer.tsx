@@ -36,24 +36,30 @@ export function SyncQueueViewer() {
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
-    // Subscribe to queue changes
+    // Subscribe to queue changes (event-driven — no polling needed for stats)
     const unsubscribe = syncQueue.subscribe((newStats) => {
       setStats(newStats);
-      // Reload items when stats change
-      loadItems();
+      // Reload items when stats change and panel is open
+      if (isOpen) {
+        loadItems();
+      }
     });
 
-    // Load initial data
-    loadItems();
-
-    // Refresh periodically (10s — items also refresh on queue subscription)
-    const interval = setInterval(loadItems, 10000);
+    // Load initial stats (lightweight)
+    syncQueue.getStats().then(setStats);
 
     return () => {
       unsubscribe();
-      clearInterval(interval);
     };
   }, []);
+
+  // Only poll for item details when the panel is open
+  useEffect(() => {
+    if (!isOpen) return;
+    loadItems();
+    const interval = setInterval(loadItems, 10000);
+    return () => clearInterval(interval);
+  }, [isOpen]);
 
   const loadItems = async () => {
     const allItems = await syncQueue.getAll();

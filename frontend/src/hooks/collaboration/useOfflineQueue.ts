@@ -35,13 +35,16 @@ export function useOfflineQueue(): UseOfflineQueueReturn {
     setQueueState(syncService.getQueueState());
   }, []);
 
-  // Refresh queue state periodically
+  // Refresh queue state on visibility change (instead of 1s polling)
   useEffect(() => {
-    const interval = setInterval(() => {
-      setQueueState(syncService.getQueueState());
-    }, 1000);
-
-    return () => clearInterval(interval);
+    const handleVisibility = () => {
+      if (!document.hidden) {
+        setQueueState(syncService.getQueueState());
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () =>
+      document.removeEventListener("visibilitychange", handleVisibility);
   }, []);
 
   return {

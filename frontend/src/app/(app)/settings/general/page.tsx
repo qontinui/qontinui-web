@@ -24,11 +24,10 @@ import {
   Settings,
   FileText,
   Wrench,
-  Code,
+  Layers,
   Info,
 } from "lucide-react";
-
-type DefaultProfile = "automation" | "developer";
+import { useMenuModeStore } from "@/stores/menu-mode";
 
 export default function GeneralSettingsPage() {
   const { isOffline, isLoading: healthLoading } = useRunnerHealth();
@@ -38,8 +37,8 @@ export default function GeneralSettingsPage() {
   // Form state
   const [autoLoadLastConfig, setAutoLoadLastConfig] = useState(false);
   const [includeSummaryStep, setIncludeSummaryStep] = useState(true);
-  const [defaultProfile, setDefaultProfile] =
-    useState<DefaultProfile>("automation");
+  const menuMode = useMenuModeStore((s) => s.menuMode);
+  const setMenuMode = useMenuModeStore((s) => s.setMenuMode);
 
   useEffect(() => {
     if (isOffline) {
@@ -199,43 +198,48 @@ export default function GeneralSettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Default Profile Section */}
+      {/* Menu Mode Section */}
       <Card className="bg-surface-raised/30 border-border-subtle/50">
         <CardHeader>
-          <CardTitle className="text-sm">Default Profile</CardTitle>
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Layers className="size-4" />
+            Menu Mode
+          </CardTitle>
           <CardDescription>
-            Choose your primary usage mode to optimize the interface
+            Control how much of the navigation is visible
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <button
-              onClick={() => setDefaultProfile("automation")}
+              onClick={() => setMenuMode("simple")}
               className={`flex flex-col items-center gap-2 p-4 rounded-lg border transition-colors ${
-                defaultProfile === "automation"
+                menuMode === "simple"
                   ? "bg-brand-primary/10 border-brand-primary/30 text-brand-primary"
                   : "bg-surface-canvas/30 border-border-subtle/30 text-text-muted hover:text-text-primary hover:border-border-subtle/60"
               }`}
             >
               <Wrench className="size-6" />
-              <span className="text-sm font-medium">Automation</span>
+              <span className="text-sm font-medium">Simple</span>
               <span className="text-[11px] text-center opacity-70">
-                GUI automation and visual testing workflows
+                Essential navigation only — Dashboard, Workflows, Runs, Runners,
+                Settings
               </span>
             </button>
 
             <button
-              onClick={() => setDefaultProfile("developer")}
+              onClick={() => setMenuMode("advanced")}
               className={`flex flex-col items-center gap-2 p-4 rounded-lg border transition-colors ${
-                defaultProfile === "developer"
+                menuMode === "advanced"
                   ? "bg-brand-primary/10 border-brand-primary/30 text-brand-primary"
                   : "bg-surface-canvas/30 border-border-subtle/30 text-text-muted hover:text-text-primary hover:border-border-subtle/60"
               }`}
             >
-              <Code className="size-6" />
-              <span className="text-sm font-medium">Developer</span>
+              <Layers className="size-6" />
+              <span className="text-sm font-medium">Advanced</span>
               <span className="text-[11px] text-center opacity-70">
-                Code analysis, debugging, and development tasks
+                Full navigation with all tools, components, and configuration
+                pages
               </span>
             </button>
           </div>

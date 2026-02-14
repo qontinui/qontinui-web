@@ -1,7 +1,8 @@
 "use client";
 
 import type React from "react";
-import { lazy, Suspense } from "react";
+import { Suspense } from "react";
+import nextDynamic from "next/dynamic";
 import { AuthProvider } from "@/contexts/auth-context";
 import { AutomationProvider } from "@/contexts/automation-context/AutomationProviderV2";
 import { OrganizationProvider } from "@/contexts/organization-context";
@@ -11,32 +12,43 @@ import { AppInitializer } from "@/components/offline/AppInitializer";
 import { BetaBanner } from "@/components/beta-banner";
 import { cn } from "@/lib/utils";
 
-// Lazy-load heavy non-critical components to reduce initial bundle
-const UnifiedSidebar = lazy(() =>
-  import("@/components/navigation").then((m) => ({ default: m.UnifiedSidebar }))
+// Dynamic imports with ssr:false to avoid hydration mismatches
+// (these components use browser APIs like localStorage, navigator, etc.)
+const UnifiedSidebar = nextDynamic(
+  () =>
+    import("@/components/navigation").then((m) => ({
+      default: m.UnifiedSidebar,
+    })),
+  { ssr: false }
 );
-const OfflineIndicator = lazy(() =>
-  import("@/components/offline/OfflineIndicator").then((m) => ({
-    default: m.OfflineIndicator,
-  }))
+const OfflineIndicator = nextDynamic(
+  () =>
+    import("@/components/offline/OfflineIndicator").then((m) => ({
+      default: m.OfflineIndicator,
+    })),
+  { ssr: false }
 );
-const SyncQueueViewer = lazy(() =>
-  import("@/components/offline/SyncQueueViewer").then((m) => ({
-    default: m.SyncQueueViewer,
-  }))
+const SyncQueueViewer = nextDynamic(
+  () =>
+    import("@/components/offline/SyncQueueViewer").then((m) => ({
+      default: m.SyncQueueViewer,
+    })),
+  { ssr: false }
 );
-const OnboardingTour = lazy(() =>
-  import("@/components/onboarding-tour").then((m) => ({
-    default: m.OnboardingTour,
-  }))
+const OnboardingTour = nextDynamic(
+  () =>
+    import("@/components/onboarding-tour").then((m) => ({
+      default: m.OnboardingTour,
+    })),
+  { ssr: false }
 );
-const SessionTimeoutWarning = lazy(() =>
-  import("@/components/session-timeout-warning").then((m) => ({
-    default: m.SessionTimeoutWarning,
-  }))
+const SessionTimeoutWarning = nextDynamic(
+  () =>
+    import("@/components/session-timeout-warning").then((m) => ({
+      default: m.SessionTimeoutWarning,
+    })),
+  { ssr: false }
 );
-
-export const dynamic = "force-dynamic";
 
 function SidebarSkeleton({ isCollapsed }: { isCollapsed: boolean }) {
   return (
@@ -66,18 +78,10 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
         <BetaBanner />
         <main className="flex-1 min-h-0 overflow-hidden">{children}</main>
       </div>
-      <Suspense fallback={null}>
-        <OfflineIndicator />
-      </Suspense>
-      <Suspense fallback={null}>
-        <SyncQueueViewer />
-      </Suspense>
-      <Suspense fallback={null}>
-        <OnboardingTour />
-      </Suspense>
-      <Suspense fallback={null}>
-        <SessionTimeoutWarning />
-      </Suspense>
+      <OfflineIndicator />
+      <SyncQueueViewer />
+      <OnboardingTour />
+      <SessionTimeoutWarning />
     </div>
   );
 }

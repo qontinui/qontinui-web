@@ -11,4 +11,5 @@ export interface NavItem {
   badge?: "beta" | "experimental";
   adminOnly?: boolean;
   hidden?: boolean;
+  advancedOnly?: boolean;
 }

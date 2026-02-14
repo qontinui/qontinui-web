@@ -18,7 +18,7 @@
 
 "use client";
 
-import type { ReactNode } from "react";
+import { type ReactNode, useMemo } from "react";
 import { useAutomationBridge } from "@/lib/persistence/zustand-bridge";
 import { AutomationContext } from "./context";
 
@@ -42,8 +42,32 @@ export function AutomationProviderV2({ children }: AutomationProviderProps) {
   // backed by the Zustand store
   const automationBridge = useAutomationBridge();
 
+  // Memoize the context value based on data properties only.
+  // The bridge creates a new object every render (due to useAutomationStore()
+  // subscribing to the entire store), but the context value should only change
+  // when actual data properties change. This prevents cascading re-renders
+  // of all useAutomation() consumers on every store update.
+  const contextValue = useMemo(
+    () => automationBridge,
+    [
+      automationBridge.projectName,
+      automationBridge.projectId,
+      automationBridge.workflows,
+      automationBridge.states,
+      automationBridge.transitions,
+      automationBridge.images,
+      automationBridge.screenshots,
+      automationBridge.categories,
+      automationBridge.settings,
+      automationBridge.schedules,
+      automationBridge.executionRecords,
+      automationBridge.lastSaved,
+      automationBridge.isLoadingFromBackend,
+    ]
+  );
+
   return (
-    <AutomationContext.Provider value={automationBridge}>
+    <AutomationContext.Provider value={contextValue}>
       {children}
     </AutomationContext.Provider>
   );

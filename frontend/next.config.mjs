@@ -32,8 +32,26 @@ const nextConfig = {
   experimental: {
     swcPlugins,
   },
-  webpack: (config) => {
+  webpack: (config, { dev }) => {
     config.resolve.alias['@qontinui/schemas'] = path.resolve(__dirname, '../../qontinui-schemas/generated/typescript');
+
+    // In dev mode, ignore noisy directories to prevent spurious HMR recompilations
+    if (dev) {
+      config.watchOptions = {
+        ...config.watchOptions,
+        ignored: [
+          '**/node_modules',
+          '**/.git',
+          '**/test-results',
+          '**/playwright-report',
+          path.resolve(__dirname, '../../.dev-logs'),
+        ],
+        // Increase poll interval to reduce file system load on Windows
+        poll: false,
+        aggregateTimeout: 500,
+      };
+    }
+
     return config;
   },
   // Prevent Next.js from stripping trailing slashes on API routes

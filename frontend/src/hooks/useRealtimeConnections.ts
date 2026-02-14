@@ -47,7 +47,7 @@ export function useRealtimeConnections() {
       if (!document.hidden) {
         fetchConnections();
       }
-    }, 5000);
+    }, 30000);
   }, [fetchConnections]);
 
   // Stop polling
