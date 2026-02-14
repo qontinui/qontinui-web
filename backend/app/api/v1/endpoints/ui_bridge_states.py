@@ -874,15 +874,39 @@ async def discover_and_save_states(
             states.append(state)
 
         await db.commit()
+
+        # Build response directly to avoid lazy-load greenlet errors.
+        # Newly created states have no domain_knowledge_refs yet, so
+        # we can construct the response without touching relationships.
+        config_id = config.id
         await db.refresh(config)
+
+        state_responses = []
         for state in states:
             await db.refresh(state)
+            state_responses.append(
+                UIBridgeStateResponse(
+                    id=state.id,
+                    config_id=state.config_id,
+                    state_id=state.state_id,
+                    name=state.name,
+                    description=state.description,
+                    element_ids=state.element_ids or [],
+                    render_ids=state.render_ids or [],
+                    confidence=state.confidence,
+                    acceptance_criteria=state.acceptance_criteria or [],
+                    extra_metadata=state.extra_metadata or {},
+                    created_at=state.created_at,
+                    updated_at=state.updated_at,
+                    domain_knowledge=[],
+                )
+            )
 
         logger.info(
             "Completed UI Bridge state discovery",
             project_id=str(project_id),
-            config_id=str(config.id),
-            states_discovered=len(states),
+            config_id=str(config_id),
+            states_discovered=len(state_responses),
             render_count=discovery_result.render_count,
             element_count=discovery_result.unique_element_count,
             strategy_used=discovery_result.strategy_used.value,
@@ -890,7 +914,7 @@ async def discover_and_save_states(
 
         return UIBridgeDiscoverAndSaveResponse(
             config=UIBridgeStateConfigResponse.model_validate(config),
-            states=[state_to_response(s) for s in states],
+            states=state_responses,
             render_count=discovery_result.render_count,
             unique_element_count=discovery_result.unique_element_count,
         )

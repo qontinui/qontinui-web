@@ -57,7 +57,7 @@ export interface UIBridgeExplorationConfig {
  * Default exploration configuration
  */
 export const DEFAULT_EXPLORATION_CONFIG: UIBridgeExplorationConfig = {
-  targetType: "extension",
+  targetType: "web",
   targetUrl: "",
   selectedBrowserTabId: null,
   maxDepth: 2,
@@ -108,9 +108,7 @@ export interface ExplorationRenderLog {
   timestamp: number;
   trigger: string;
   elementId?: string;
-  snapshot: {
-    root: unknown;
-  };
+  snapshot: Record<string, unknown>;
 }
 
 /**

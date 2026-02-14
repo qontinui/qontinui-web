@@ -146,7 +146,7 @@ export function useWebSocketCommandHandler() {
         case "executeElementAction": {
           const { id, request } = payload as {
             id: string;
-            request: { action: string; value?: string };
+            request: { action: string; value?: string; params?: Record<string, unknown>; text?: string; clear?: boolean };
           };
           const element = bridge.getElement(id);
           if (!element) {
@@ -172,12 +172,74 @@ export function useWebSocketCommandHandler() {
             case "blur":
               domElement.blur();
               break;
+            case "type":
+              if (
+                domElement instanceof HTMLInputElement ||
+                domElement instanceof HTMLTextAreaElement
+              ) {
+                const typeProto =
+                  domElement instanceof HTMLTextAreaElement
+                    ? HTMLTextAreaElement.prototype
+                    : HTMLInputElement.prototype;
+                const typeSetter = Object.getOwnPropertyDescriptor(
+                  typeProto,
+                  "value"
+                )?.set;
+                const text = request.params?.text || request.text || "";
+                if (request.params?.clear || request.clear) {
+                  if (typeSetter) typeSetter.call(domElement, "");
+                  else domElement.value = "";
+                  domElement.dispatchEvent(new Event("input", { bubbles: true }));
+                }
+                domElement.focus();
+                const current = domElement.value;
+                if (typeSetter) typeSetter.call(domElement, current + text);
+                else domElement.value = current + text;
+                domElement.dispatchEvent(new Event("input", { bubbles: true }));
+                domElement.dispatchEvent(
+                  new Event("change", { bubbles: true })
+                );
+              }
+              break;
+            case "clear":
+              if (
+                domElement instanceof HTMLInputElement ||
+                domElement instanceof HTMLTextAreaElement
+              ) {
+                const clearProto =
+                  domElement instanceof HTMLTextAreaElement
+                    ? HTMLTextAreaElement.prototype
+                    : HTMLInputElement.prototype;
+                const clearSetter = Object.getOwnPropertyDescriptor(
+                  clearProto,
+                  "value"
+                )?.set;
+                if (clearSetter) clearSetter.call(domElement, "");
+                else domElement.value = "";
+                domElement.dispatchEvent(new Event("input", { bubbles: true }));
+                domElement.dispatchEvent(
+                  new Event("change", { bubbles: true })
+                );
+              }
+              break;
             case "setValue":
               if (
                 domElement instanceof HTMLInputElement ||
                 domElement instanceof HTMLTextAreaElement
               ) {
-                domElement.value = request.value || "";
+                const setProto =
+                  domElement instanceof HTMLTextAreaElement
+                    ? HTMLTextAreaElement.prototype
+                    : HTMLInputElement.prototype;
+                const nativeSetter = Object.getOwnPropertyDescriptor(
+                  setProto,
+                  "value"
+                )?.set;
+                if (nativeSetter) {
+                  nativeSetter.call(domElement, request.value || "");
+                } else {
+                  domElement.value = request.value || "";
+                }
                 domElement.dispatchEvent(new Event("input", { bubbles: true }));
                 domElement.dispatchEvent(
                   new Event("change", { bubbles: true })

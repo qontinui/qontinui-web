@@ -103,21 +103,33 @@ export function useSDKApps(runnerUrl: string | null) {
 
   /**
    * Scan for SDK-enabled apps on common dev ports.
+   * Tries the combined scan first, falls back to web-only scan if empty.
    */
   const scanForApps = useCallback(async () => {
     if (!runnerUrl) return;
     setIsScanning(true);
     try {
+      // Try combined scan first
       const res = await fetch(`${runnerUrl}/ui-bridge/apps/scan`, {
         method: "POST",
       });
       if (!res.ok) throw new Error("Scan failed");
       const data = await res.json();
       const result = data.data ?? data;
-      const allApps: SDKApp[] = [
+      let allApps: SDKApp[] = [
         ...(result.web ?? []),
         ...(result.desktop ?? []),
       ];
+
+      // Fallback: if combined scan returned empty, try web-only scan
+      if (allApps.length === 0) {
+        const webRes = await fetch(`${runnerUrl}/ui-bridge/apps/scan/web`);
+        if (webRes.ok) {
+          const webData = await webRes.json();
+          allApps = webData.data ?? webData;
+        }
+      }
+
       setApps(allApps);
       if (allApps.length === 0) {
         toast.info("No SDK-enabled apps found");

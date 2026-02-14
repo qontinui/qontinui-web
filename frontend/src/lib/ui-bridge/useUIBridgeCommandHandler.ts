@@ -219,7 +219,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           const startTime = performance.now();
           const { id, request } = payload as {
             id: string;
-            request: { action: string; value?: string };
+            request: { action: string; value?: string; params?: Record<string, unknown>; text?: string; clear?: boolean };
           };
 
           // Create structured failure helper
@@ -310,12 +310,66 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
               case "blur":
                 domElement.blur();
                 break;
+              case "type":
+                if (
+                  domElement instanceof HTMLInputElement ||
+                  domElement instanceof HTMLTextAreaElement
+                ) {
+                  const proto = domElement instanceof HTMLTextAreaElement
+                    ? HTMLTextAreaElement.prototype
+                    : HTMLInputElement.prototype;
+                  const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+                  const text = request.params?.text || request.text || "";
+                  if (request.params?.clear || request.clear) {
+                    if (nativeSetter) nativeSetter.call(domElement, '');
+                    else domElement.value = '';
+                    domElement.dispatchEvent(new Event('input', { bubbles: true }));
+                  }
+                  domElement.focus();
+                  const current = domElement.value;
+                  if (nativeSetter) nativeSetter.call(domElement, current + text);
+                  else domElement.value = current + text;
+                  domElement.dispatchEvent(new Event('input', { bubbles: true }));
+                  domElement.dispatchEvent(new Event('change', { bubbles: true }));
+                } else {
+                  return createFailure(
+                    "UNSUPPORTED_ACTION",
+                    `Cannot type into ${domElement.tagName} element`
+                  );
+                }
+                break;
+              case "clear":
+                if (
+                  domElement instanceof HTMLInputElement ||
+                  domElement instanceof HTMLTextAreaElement
+                ) {
+                  const clearProto = domElement instanceof HTMLTextAreaElement
+                    ? HTMLTextAreaElement.prototype
+                    : HTMLInputElement.prototype;
+                  const clearSetter = Object.getOwnPropertyDescriptor(clearProto, 'value')?.set;
+                  if (clearSetter) clearSetter.call(domElement, '');
+                  else domElement.value = '';
+                  domElement.dispatchEvent(new Event('input', { bubbles: true }));
+                  domElement.dispatchEvent(new Event('change', { bubbles: true }));
+                } else {
+                  return createFailure(
+                    "UNSUPPORTED_ACTION",
+                    `Cannot clear ${domElement.tagName} element`
+                  );
+                }
+                break;
               case "setValue":
                 if (
                   domElement instanceof HTMLInputElement ||
                   domElement instanceof HTMLTextAreaElement
                 ) {
-                  domElement.value = request.value || "";
+                  const setProto = domElement instanceof HTMLTextAreaElement
+                    ? HTMLTextAreaElement.prototype
+                    : HTMLInputElement.prototype;
+                  const setSetter = Object.getOwnPropertyDescriptor(setProto, 'value')?.set;
+                  const val = request.value || (request.params?.value as string) || "";
+                  if (setSetter) setSetter.call(domElement, val);
+                  else domElement.value = val;
                   domElement.dispatchEvent(
                     new Event("input", { bubbles: true })
                   );

@@ -28,6 +28,7 @@ import {
   Plug,
   Circle,
   Square,
+  MonitorSmartphone,
 } from "lucide-react";
 import { ExplorationConfigPanel } from "@/components/ui-bridge/ExplorationConfigPanel";
 import { useUIBridgeExploration } from "@/hooks/useUIBridgeExploration";
@@ -35,6 +36,9 @@ import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
 import { useStateMachineDiscovery } from "../_hooks/useStateMachineDiscovery";
 import { useSDKApps } from "../_hooks/useSDKApps";
 import type { SDKApp } from "../_hooks/useSDKApps";
+
+const LOCAL_RUNNER_URL = "http://localhost:9876";
+const DIRECT_CONNECTION_ID = -1;
 
 interface DiscoveryPanelProps {
   projectId: string | null;
@@ -44,11 +48,48 @@ interface DiscoveryPanelProps {
 export function DiscoveryPanel({ projectId, onConfigCreated }: DiscoveryPanelProps) {
   const [collectTab, setCollectTab] = useState<"explore" | "record">("explore");
   const [selectedConnectionId, setSelectedConnectionId] = useState<number | null>(null);
+  const [localRunnerAvailable, setLocalRunnerAvailable] = useState(false);
+  const [checkingLocalRunner, setCheckingLocalRunner] = useState(true);
 
   // Hooks
   const exploration = useUIBridgeExploration();
   const { connections, isLoading: connectionsLoading } = useRealtimeConnections();
   const discovery = useStateMachineDiscovery(projectId);
+
+  // Check if local runner is available directly (fallback when backend WS registration fails)
+  useEffect(() => {
+    let cancelled = false;
+    const checkLocal = async () => {
+      setCheckingLocalRunner(true);
+      try {
+        const res = await fetch(`${LOCAL_RUNNER_URL}/status`, {
+          signal: AbortSignal.timeout(2000),
+        });
+        if (!cancelled && res.ok) {
+          setLocalRunnerAvailable(true);
+        }
+      } catch {
+        if (!cancelled) setLocalRunnerAvailable(false);
+      } finally {
+        if (!cancelled) setCheckingLocalRunner(false);
+      }
+    };
+    checkLocal();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Auto-select local runner when no backend connections but local runner is available
+  useEffect(() => {
+    if (
+      !connectionsLoading &&
+      !checkingLocalRunner &&
+      connections.length === 0 &&
+      localRunnerAvailable &&
+      selectedConnectionId === null
+    ) {
+      setSelectedConnectionId(DIRECT_CONNECTION_ID);
+    }
+  }, [connectionsLoading, checkingLocalRunner, connections.length, localRunnerAvailable, selectedConnectionId]);
 
   // Derive runner URL from selected connection
   const selectedConnection = useMemo(
@@ -57,37 +98,107 @@ export function DiscoveryPanel({ projectId, onConfigCreated }: DiscoveryPanelPro
   );
 
   const runnerUrl = useMemo(() => {
+    if (selectedConnectionId === DIRECT_CONNECTION_ID) return LOCAL_RUNNER_URL;
     if (!selectedConnection) return null;
     const ip = selectedConnection.ip_address || "localhost";
     return `http://${ip}:9876`;
-  }, [selectedConnection]);
+  }, [selectedConnectionId, selectedConnection]);
 
   // SDK app discovery and connection
   const sdk = useSDKApps(runnerUrl);
   const { refreshConnections: sdkRefreshConnections } = sdk;
 
-  // Auto-refresh SDK connections when runner URL changes
+  // Auto-refresh SDK connections and trigger scan when runner URL changes
   useEffect(() => {
     if (runnerUrl) {
       sdkRefreshConnections();
+      // Auto-scan for apps when runner becomes available
+      if (sdk.apps.length === 0 && !sdk.isScanning) {
+        sdk.scanForApps();
+      }
     }
+    // Only trigger on runnerUrl change, not on sdk state changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runnerUrl, sdkRefreshConnections]);
+
+  // Auto-configure exploration when an SDK app is connected
+  const { updateConfig: explorationUpdateConfig } = exploration;
+  useEffect(() => {
+    if (sdk.activeApp) {
+      explorationUpdateConfig({
+        targetType: "web",
+        targetUrl: sdk.activeApp.url,
+      });
+    }
+  }, [sdk.activeApp, explorationUpdateConfig]);
+
+  // Auto-load completed exploration results from runner (survives page navigation)
+  useEffect(() => {
+    if (!runnerUrl || discovery.renders) return;
+    let cancelled = false;
+    const loadPendingResults = async () => {
+      try {
+        const statusRes = await fetch(`${runnerUrl}/ui-bridge/explore/status`, {
+          signal: AbortSignal.timeout(2000),
+        });
+        if (!statusRes.ok || cancelled) return;
+        const statusData = await statusRes.json();
+        const status = statusData.data || statusData;
+        if (status.status !== "completed" || !status.has_results) return;
+
+        const resultsRes = await fetch(`${runnerUrl}/ui-bridge/explore/results`, {
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!resultsRes.ok || cancelled) return;
+        const resultsData = await resultsRes.json();
+        const results = resultsData.data?.data || resultsData.data || resultsData;
+        const renderLogs = results?.render_logs || [];
+        if (renderLogs.length === 0 || cancelled) return;
+
+        const mapped = renderLogs.map(
+          (log: { id?: string; type?: string; url?: string; timestamp?: string; snapshot?: Record<string, unknown> }, idx: number) => ({
+            id: log.id || `render_${idx}`,
+            type: "dom_snapshot" as const,
+            page_url: log.url || "",
+            snapshot: log.snapshot || { root: {} },
+            timestamp: log.timestamp ? new Date(log.timestamp).getTime() : Date.now(),
+            trigger: idx === 0 ? "initial_load" : "action",
+          })
+        );
+        if (!cancelled) {
+          discovery.setRenders(mapped, "explore");
+        }
+      } catch {
+        // Silently ignore — runner may not be available
+      }
+    };
+    loadPendingResults();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runnerUrl, discovery.renders, discovery.setRenders]);
 
   // Exploration handlers
   const handleStartExploration = useCallback(async () => {
     if (!runnerUrl) return;
     const results = await exploration.startUIBridgeExploration(runnerUrl);
-    if (results) {
-      const renderLogs = exploration.getRenderLogsForDiscovery();
-      if (renderLogs.length > 0) {
-        discovery.setRenders(renderLogs, "explore");
-      }
+    if (results && results.renderLogs.length > 0) {
+      // Use returned results directly — React state hasn't committed yet
+      const renderLogs = results.renderLogs.map((log) => ({
+        id: log.id,
+        type: "dom_snapshot" as const,
+        page_url: log.url,
+        snapshot: log.snapshot,
+        timestamp: log.timestamp,
+        trigger: log.trigger,
+      }));
+      discovery.setRenders(renderLogs, "explore");
     }
   }, [runnerUrl, exploration, discovery]);
 
   const handleStopExploration = useCallback(async () => {
     if (!runnerUrl) return;
     await exploration.stopExploration(runnerUrl);
+    // After stop, state may have committed — try both approaches
     const renderLogs = exploration.getRenderLogsForDiscovery();
     if (renderLogs.length > 0) {
       discovery.setRenders(renderLogs, "explore");
@@ -124,61 +235,75 @@ export function DiscoveryPanel({ projectId, onConfigCreated }: DiscoveryPanelPro
   const hasActiveSDKApp = sdk.activeApp !== null;
 
   return (
-    <div className="flex-1 overflow-y-auto p-6">
-      <div className="max-w-4xl mx-auto space-y-6">
+    <div className="p-4">
+      <div className="max-w-4xl mx-auto space-y-4">
         {/* Phase 1: Collect Renders */}
         {!hasRenders && (
           <>
-            {/* Runner + SDK App Connection */}
+            {/* Runner + SDK App Connection — compact when connected */}
             <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Plug className="size-4" />
-                  Connect to SDK App
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Runner selection */}
-                <div className="space-y-1.5">
-                  <Label>Runner Connection</Label>
-                  <Select
-                    value={selectedConnectionId?.toString() ?? ""}
-                    onValueChange={(v) => setSelectedConnectionId(v ? Number(v) : null)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={connectionsLoading ? "Loading..." : "Select a runner..."} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {connections.map((c) => (
-                        <SelectItem key={c.id} value={c.id.toString()}>
-                          {c.runner_name} ({c.ip_address ?? "localhost"})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+              <CardContent className="py-3 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Plug className="size-4 text-text-muted" />
+                  <span className="text-sm font-medium">Connect to SDK App</span>
                 </div>
 
-                {/* SDK app discovery */}
-                {runnerUrl && (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <Label>SDK-Enabled Apps</Label>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={sdk.scanForApps}
-                        disabled={sdk.isScanning}
-                      >
-                        {sdk.isScanning ? (
-                          <Loader2 className="size-3.5 mr-1.5 animate-spin" />
-                        ) : (
-                          <Scan className="size-3.5 mr-1.5" />
+                {/* Compact row: Runner + SDK status */}
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <Select
+                      value={selectedConnectionId?.toString() ?? ""}
+                      onValueChange={(v) => setSelectedConnectionId(v ? Number(v) : null)}
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue placeholder={connectionsLoading && checkingLocalRunner ? "Loading..." : "Select a runner..."} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {localRunnerAvailable && (
+                          <SelectItem value={DIRECT_CONNECTION_ID.toString()}>
+                            <span className="flex items-center gap-1.5">
+                              <MonitorSmartphone className="size-3.5 text-green-500" />
+                              Local Runner (localhost:9876)
+                            </span>
+                          </SelectItem>
                         )}
-                        Scan
-                      </Button>
-                    </div>
+                        {connections.map((c) => (
+                          <SelectItem key={c.id} value={c.id.toString()}>
+                            {c.runner_name} ({c.ip_address ?? "localhost"})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-                    {/* Active connection */}
+                  {runnerUrl && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 shrink-0"
+                      onClick={sdk.scanForApps}
+                      disabled={sdk.isScanning}
+                    >
+                      {sdk.isScanning ? (
+                        <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                      ) : (
+                        <Scan className="size-3.5 mr-1.5" />
+                      )}
+                      Scan
+                    </Button>
+                  )}
+                </div>
+
+                {!connectionsLoading && !checkingLocalRunner && connections.length === 0 && !localRunnerAvailable && (
+                  <p className="text-xs text-text-muted">
+                    No runners detected. Start the qontinui-runner app to connect.
+                  </p>
+                )}
+
+                {/* SDK app discovery results */}
+                {runnerUrl && (
+                  <>
+                    {/* Active connection banner */}
                     {sdk.activeApp && (
                       <div className="flex items-center gap-2 p-2 bg-green-500/10 border border-green-500/20 rounded-md">
                         <CheckCircle2 className="size-4 text-green-500 shrink-0" />
@@ -191,8 +316,8 @@ export function DiscoveryPanel({ projectId, onConfigCreated }: DiscoveryPanelPro
                       </div>
                     )}
 
-                    {/* Discovered apps list */}
-                    {sdk.apps.length > 0 && (
+                    {/* Discovered apps list — hidden when already connected */}
+                    {!sdk.activeApp && sdk.apps.length > 0 && (
                       <div className="space-y-2">
                         {sdk.apps.map((app: SDKApp) => {
                           const isConnected = sdk.connections.some((c) => c.url === app.url);
@@ -239,134 +364,121 @@ export function DiscoveryPanel({ projectId, onConfigCreated }: DiscoveryPanelPro
                       </div>
                     )}
 
-                    {sdk.apps.length === 0 && !sdk.isScanning && (
-                      <p className="text-sm text-text-muted">
+                    {!sdk.activeApp && sdk.apps.length === 0 && !sdk.isScanning && (
+                      <p className="text-xs text-text-muted">
                         Click Scan to find apps with the UI Bridge SDK installed.
                       </p>
                     )}
-                  </div>
+                  </>
                 )}
               </CardContent>
             </Card>
 
             {/* Collection tabs — only shown when SDK app is connected */}
             {hasActiveSDKApp && (
-              <>
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-xs">Step 2</Badge>
-                  <span className="text-sm font-medium text-text-secondary">
-                    Collect render logs from the connected app
-                  </span>
-                </div>
+              <Tabs value={collectTab} onValueChange={(v) => setCollectTab(v as "explore" | "record")}>
+                <TabsList>
+                  <TabsTrigger value="explore" className="gap-1.5">
+                    <Compass className="size-3.5" />
+                    Explore
+                  </TabsTrigger>
+                  <TabsTrigger value="record" className="gap-1.5">
+                    <Camera className="size-3.5" />
+                    Record
+                  </TabsTrigger>
+                </TabsList>
 
-                <Tabs value={collectTab} onValueChange={(v) => setCollectTab(v as "explore" | "record")}>
-                  <TabsList>
-                    <TabsTrigger value="explore" className="gap-1.5">
-                      <Compass className="size-3.5" />
-                      Explore
-                    </TabsTrigger>
-                    <TabsTrigger value="record" className="gap-1.5">
-                      <Camera className="size-3.5" />
-                      Record
-                    </TabsTrigger>
-                  </TabsList>
+                {/* Explore tab — uses ExplorationConfigPanel with Playwright */}
+                <TabsContent value="explore" className="mt-3">
+                  <ExplorationConfigPanel
+                    config={exploration.config}
+                    onConfigChange={exploration.updateConfig}
+                    progress={exploration.progress}
+                    isRunning={exploration.isRunning}
+                    onStart={handleStartExploration}
+                    onStop={handleStopExploration}
+                    connections={connections}
+                    connectionsLoading={connectionsLoading}
+                    selectedConnectionId={selectedConnectionId}
+                    onConnectionChange={setSelectedConnectionId}
+                    hideRunnerSection
+                  />
+                </TabsContent>
 
-                  {/* Explore tab — uses ExplorationConfigPanel with Playwright */}
-                  <TabsContent value="explore" className="mt-4">
-                    <ExplorationConfigPanel
-                      config={exploration.config}
-                      onConfigChange={exploration.updateConfig}
-                      progress={exploration.progress}
-                      isRunning={exploration.isRunning}
-                      onStart={handleStartExploration}
-                      onStop={handleStopExploration}
-                      connections={connections}
-                      connectionsLoading={connectionsLoading}
-                      selectedConnectionId={selectedConnectionId}
-                      onConnectionChange={setSelectedConnectionId}
-                    />
-                  </TabsContent>
+                {/* Record tab — SDK snapshot-based recording */}
+                <TabsContent value="record" className="mt-3">
+                  <Card>
+                    <CardContent className="py-3 space-y-3">
+                      <p className="text-sm text-text-muted">
+                        Capture snapshots from the connected SDK app. Navigate the app
+                        manually while recording to capture different UI states.
+                      </p>
 
-                  {/* Record tab — SDK snapshot-based recording */}
-                  <TabsContent value="record" className="mt-4">
-                    <Card>
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-base">
-                          SDK Snapshot Recording
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <p className="text-sm text-text-muted">
-                          Capture snapshots from the connected SDK app. Navigate the app
-                          manually while recording to capture different UI states.
-                        </p>
-
-                        {/* Recording controls */}
-                        <div className="flex items-center gap-3">
-                          {!sdk.isRecording ? (
-                            <Button onClick={() => sdk.startRecording()} variant="default">
-                              <Circle className="size-3.5 mr-1.5 text-red-400" />
-                              Start Recording
-                            </Button>
-                          ) : (
-                            <Button onClick={handleStopRecording} variant="destructive">
-                              <Square className="size-3.5 mr-1.5" />
-                              Stop Recording
-                            </Button>
-                          )}
-
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={sdk.captureNow}
-                            disabled={!sdk.isRecording && sdk.snapshots.length === 0}
-                          >
-                            <Camera className="size-3.5 mr-1.5" />
-                            Capture Now
+                      {/* Recording controls */}
+                      <div className="flex items-center gap-3">
+                        {!sdk.isRecording ? (
+                          <Button onClick={() => sdk.startRecording()} variant="default" size="sm">
+                            <Circle className="size-3.5 mr-1.5 text-red-400" />
+                            Start Recording
                           </Button>
+                        ) : (
+                          <Button onClick={handleStopRecording} variant="destructive" size="sm">
+                            <Square className="size-3.5 mr-1.5" />
+                            Stop Recording
+                          </Button>
+                        )}
 
-                          {sdk.snapshots.length > 0 && !sdk.isRecording && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={sdk.resetRecording}
-                            >
-                              <RotateCcw className="size-3.5 mr-1.5" />
-                              Reset
-                            </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={sdk.captureNow}
+                          disabled={!sdk.isRecording && sdk.snapshots.length === 0}
+                        >
+                          <Camera className="size-3.5 mr-1.5" />
+                          Capture Now
+                        </Button>
+
+                        {sdk.snapshots.length > 0 && !sdk.isRecording && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={sdk.resetRecording}
+                          >
+                            <RotateCcw className="size-3.5 mr-1.5" />
+                            Reset
+                          </Button>
+                        )}
+                      </div>
+
+                      {/* Recording status */}
+                      {(sdk.isRecording || sdk.snapshots.length > 0) && (
+                        <div className="flex items-center gap-4">
+                          <Badge variant={sdk.isRecording ? "destructive" : "secondary"}>
+                            {sdk.isRecording && (
+                              <span className="size-2 rounded-full bg-red-400 mr-1.5 animate-pulse" />
+                            )}
+                            {sdk.snapshots.length} snapshots
+                          </Badge>
+                          {sdk.snapshots.length > 0 && (
+                            <span className="text-xs text-text-muted">
+                              {sdk.snapshots.at(-1)!.elements.length} elements
+                              in last snapshot
+                            </span>
                           )}
                         </div>
+                      )}
 
-                        {/* Recording status */}
-                        {(sdk.isRecording || sdk.snapshots.length > 0) && (
-                          <div className="flex items-center gap-4">
-                            <Badge variant={sdk.isRecording ? "destructive" : "secondary"}>
-                              {sdk.isRecording && (
-                                <span className="size-2 rounded-full bg-red-400 mr-1.5 animate-pulse" />
-                              )}
-                              {sdk.snapshots.length} snapshots
-                            </Badge>
-                            {sdk.snapshots.length > 0 && (
-                              <span className="text-xs text-text-muted">
-                                {sdk.snapshots.at(-1)!.elements.length} elements
-                                in last snapshot
-                              </span>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Use snapshots button — shown when not recording and snapshots exist */}
-                        {!sdk.isRecording && sdk.snapshots.length > 0 && (
-                          <Button onClick={handleUseRecordedSnapshots} className="w-full">
-                            <Sparkles className="size-4 mr-2" />
-                            Use {sdk.snapshots.length} Snapshots for Discovery
-                          </Button>
-                        )}
-                      </CardContent>
-                    </Card>
-                  </TabsContent>
-                </Tabs>
-              </>
+                      {/* Use snapshots button — shown when not recording and snapshots exist */}
+                      {!sdk.isRecording && sdk.snapshots.length > 0 && (
+                        <Button onClick={handleUseRecordedSnapshots} className="w-full">
+                          <Sparkles className="size-4 mr-2" />
+                          Use {sdk.snapshots.length} Snapshots for Discovery
+                        </Button>
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              </Tabs>
             )}
           </>
         )}

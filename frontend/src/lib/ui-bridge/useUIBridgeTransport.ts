@@ -39,6 +39,37 @@ const COMMANDS_ENDPOINT = "/api/ui-bridge/commands";
 const COMMANDS_STREAM_ENDPOINT = "/api/ui-bridge/commands/stream";
 const WEBSOCKET_ENDPOINT = "/api/ui-bridge/ws";
 
+/**
+ * Set value on a React controlled input, properly triggering onChange.
+ * React tracks input values internally via _valueTracker. We must:
+ * 1. Use the native HTMLInputElement.prototype.value setter (bypasses React's override)
+ * 2. Invalidate React's internal value tracker so it detects the change
+ * 3. Dispatch an 'input' event with bubbles so React's delegated handler fires
+ */
+function setReactInputValue(
+  element: HTMLInputElement | HTMLTextAreaElement,
+  value: string
+) {
+  const proto =
+    element instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype;
+  const nativeSetter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+  if (nativeSetter) {
+    nativeSetter.call(element, value);
+  } else {
+    element.value = value;
+  }
+  // Invalidate React's internal value tracker so it sees the change
+  const tracker = (element as unknown as Record<string, unknown>)
+    ._valueTracker as { setValue?: (v: string) => void } | undefined;
+  if (tracker) {
+    tracker.setValue?.(value === "" ? " " : "");
+  }
+  element.dispatchEvent(new Event("input", { bubbles: true }));
+  element.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
 interface QueuedCommand {
   commandId: string;
   action: string;
@@ -230,7 +261,7 @@ export function useUIBridgeTransport(
         case "executeElementAction": {
           const { id, request } = payload as {
             id: string;
-            request: { action: string; value?: string };
+            request: { action: string; value?: string; params?: Record<string, unknown>; text?: string; clear?: boolean };
           };
           const element = getElement(id);
           if (!element) {
@@ -256,30 +287,35 @@ export function useUIBridgeTransport(
             case "blur":
               domElement.blur();
               break;
+            case "type":
+              if (
+                domElement instanceof HTMLInputElement ||
+                domElement instanceof HTMLTextAreaElement
+              ) {
+                const text = request.params?.text || request.text || "";
+                if (request.params?.clear || request.clear) {
+                  setReactInputValue(domElement, "");
+                }
+                domElement.focus();
+                setReactInputValue(domElement, domElement.value + text);
+              }
+              break;
+            case "clear":
+              if (
+                domElement instanceof HTMLInputElement ||
+                domElement instanceof HTMLTextAreaElement
+              ) {
+                setReactInputValue(domElement, "");
+              }
+              break;
             case "setValue":
               if (
                 domElement instanceof HTMLInputElement ||
                 domElement instanceof HTMLTextAreaElement
               ) {
-                // Use native setter to trigger React's internal change detection
-                const proto =
-                  domElement instanceof HTMLTextAreaElement
-                    ? HTMLTextAreaElement.prototype
-                    : HTMLInputElement.prototype;
-                const nativeSetter = Object.getOwnPropertyDescriptor(
-                  proto,
-                  "value"
-                )?.set;
-                if (nativeSetter) {
-                  nativeSetter.call(domElement, request.value || "");
-                } else {
-                  domElement.value = request.value || "";
-                }
-                domElement.dispatchEvent(
-                  new Event("input", { bubbles: true })
-                );
-                domElement.dispatchEvent(
-                  new Event("change", { bubbles: true })
+                setReactInputValue(
+                  domElement,
+                  request.value || (request.params?.value as string) || ""
                 );
               }
               break;

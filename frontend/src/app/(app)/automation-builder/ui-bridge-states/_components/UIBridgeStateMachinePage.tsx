@@ -38,7 +38,7 @@ export function UIBridgeStateMachinePage() {
   const pathfinding = usePathfinding(sm.selectedConfigId);
   const exporter = useExportStateMachine(sm.selectedConfigId);
 
-  const [activeTab, setActiveTab] = useState("graph");
+  const [activeTab, setActiveTab] = useState("discovery");
   const [showNewTransition, setShowNewTransition] = useState(false);
   const [hasMounted, setHasMounted] = useState(false);
 
@@ -150,6 +150,10 @@ export function UIBridgeStateMachinePage() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
         <div className="border-b border-border-primary bg-surface-primary px-6">
           <TabsList className="bg-transparent">
+            <TabsTrigger value="discovery" className="gap-1.5">
+              <Search className="size-3.5" />
+              Discovery
+            </TabsTrigger>
             <TabsTrigger value="graph" className="gap-1.5">
               <GitBranch className="size-3.5" />
               Graph Editor
@@ -162,12 +166,16 @@ export function UIBridgeStateMachinePage() {
               <Download className="size-3.5" />
               Export
             </TabsTrigger>
-            <TabsTrigger value="discovery" className="gap-1.5">
-              <Search className="size-3.5" />
-              Discovery
-            </TabsTrigger>
           </TabsList>
         </div>
+
+        {/* Discovery Tab */}
+        <TabsContent value="discovery" className="flex-1 overflow-y-auto">
+          <DiscoveryPanel
+            projectId={sm.projectId}
+            onConfigCreated={handleConfigCreated}
+          />
+        </TabsContent>
 
         {/* Graph Editor Tab */}
         <TabsContent value="graph" className="flex-1 flex min-h-0">
@@ -278,14 +286,6 @@ export function UIBridgeStateMachinePage() {
               transitionCount={sm.fullConfig?.transitions.length ?? 0}
             />
           )}
-        </TabsContent>
-
-        {/* Discovery Tab */}
-        <TabsContent value="discovery" className="flex-1 flex min-h-0">
-          <DiscoveryPanel
-            projectId={sm.projectId}
-            onConfigCreated={handleConfigCreated}
-          />
         </TabsContent>
       </Tabs>
     </div>

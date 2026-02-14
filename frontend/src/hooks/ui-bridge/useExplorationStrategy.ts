@@ -827,9 +827,11 @@ export function useExplorationStrategy(
                 (
                   log: {
                     id: string;
+                    type?: string;
                     url: string;
                     timestamp: string;
                     elements_count?: number;
+                    snapshot?: Record<string, unknown>;
                   },
                   idx: number
                 ) => ({
@@ -837,7 +839,7 @@ export function useExplorationStrategy(
                   url: log.url || config.targetUrl,
                   timestamp: new Date(log.timestamp).getTime(),
                   trigger: idx === 0 ? "initial_load" : "action",
-                  snapshot: { root: {} }, // Simplified for now
+                  snapshot: log.snapshot || { root: {} },
                 })
               );
 

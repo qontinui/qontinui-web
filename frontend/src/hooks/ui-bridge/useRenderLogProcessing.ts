@@ -17,7 +17,7 @@ export interface UseRenderLogProcessingReturn {
     id: string;
     type: string;
     page_url: string;
-    snapshot: { root: unknown };
+    snapshot: Record<string, unknown>;
     timestamp: number;
     trigger: string;
   }>;
