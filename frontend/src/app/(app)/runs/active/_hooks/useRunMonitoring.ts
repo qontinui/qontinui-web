@@ -76,6 +76,7 @@ export function useRunMonitoring(
   // Auto-run: when a "Generate & Run" generation task finishes
   const autoRunHandledRef = useRef(false);
   const autoRunSeenRef = useRef(false);
+  const mountTimeRef = useRef(Date.now());
   useEffect(() => {
     if (!activeRuns || autoRunHandledRef.current) return;
 
@@ -107,7 +108,13 @@ export function useRunMonitoring(
       return;
     }
 
-    if (!autoRunSeenRef.current) return;
+    // If we never saw it running, it may have completed before this page loaded.
+    // Wait a short grace period after mount to let activeRuns populate, then
+    // check the task status directly via API.
+    if (!autoRunSeenRef.current) {
+      const elapsed = Date.now() - mountTimeRef.current;
+      if (elapsed < 3000) return; // Give activeRuns time to populate
+    }
 
     autoRunHandledRef.current = true;
     localStorage.removeItem(AUTO_RUN_AFTER_GENERATE_KEY);
@@ -131,6 +138,15 @@ export function useRunMonitoring(
           await runnerApi.runWorkflow(workflowId);
           toast.success("Workflow generated and started!");
           onRefresh();
+        } else if (taskRun.status === "running") {
+          // Still running but not in activeRuns yet — reset and wait
+          autoRunHandledRef.current = false;
+          autoRunSeenRef.current = true;
+          try {
+            localStorage.setItem(AUTO_RUN_AFTER_GENERATE_KEY, raw!);
+          } catch {
+            // ignore
+          }
         } else {
           toast.error(
             `Workflow generation ${taskRun.status === "failed" ? "failed" : "was stopped"}`

@@ -431,7 +431,7 @@ export const navItems: NavItem[] = [
     label: "Run Plan",
     description: "Plan/schedule executions",
     icon: React.createElement(Calendar, { className: "size-5" }),
-    route: "/build/run-plan",
+    route: "/tools/run-plan",
     color: "var(--brand-secondary)",
     advancedOnly: true,
   },
