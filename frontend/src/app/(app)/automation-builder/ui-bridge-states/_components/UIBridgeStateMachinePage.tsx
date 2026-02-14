@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,13 +12,13 @@ import {
 } from "@/components/ui/select";
 import {
   Network,
-  Search,
   GitBranch,
   Route,
   Download,
   Plus,
   RefreshCw,
   Loader2,
+  Search,
 } from "lucide-react";
 import { useUIBridgeStateMachine } from "../_hooks/useUIBridgeStateMachine";
 import { useUIBridgeTransitions } from "../_hooks/useUIBridgeTransitions";
@@ -29,6 +29,7 @@ import { UIBridgeStatePanel } from "./UIBridgeStatePanel";
 import { UIBridgeTransitionEditor } from "./UIBridgeTransitionEditor";
 import { PathfindingPanel } from "./PathfindingPanel";
 import { ExportPanel } from "./ExportPanel";
+import { DiscoveryPanel } from "./DiscoveryPanel";
 import type { UIBridgeTransitionCreate } from "../_types";
 
 export function UIBridgeStateMachinePage() {
@@ -39,6 +40,11 @@ export function UIBridgeStateMachinePage() {
 
   const [activeTab, setActiveTab] = useState("graph");
   const [showNewTransition, setShowNewTransition] = useState(false);
+  const [hasMounted, setHasMounted] = useState(false);
+
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
 
   // Determine what side panel to show
   const showStatePanel = sm.selectedState && !showNewTransition;
@@ -77,11 +83,21 @@ export function UIBridgeStateMachinePage() {
     [transitions, sm]
   );
 
-  // No project selected
-  if (!sm.projectId) {
+  // When a new config is created via discovery, select it and switch to graph
+  const handleConfigCreated = useCallback(
+    async (configId: string) => {
+      await sm.loadConfigs();
+      sm.setSelectedConfigId(configId);
+      setActiveTab("graph");
+    },
+    [sm]
+  );
+
+  // Show consistent empty state for SSR and when no project is selected
+  if (!hasMounted || !sm.projectId) {
     return (
       <div className="flex items-center justify-center min-h-[400px] text-text-muted">
-        Select a project to manage state machines.
+        {hasMounted ? "Select a project to manage state machines." : ""}
       </div>
     );
   }
@@ -134,10 +150,6 @@ export function UIBridgeStateMachinePage() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
         <div className="border-b border-border-primary bg-surface-primary px-6">
           <TabsList className="bg-transparent">
-            <TabsTrigger value="discovery" className="gap-1.5">
-              <Search className="size-3.5" />
-              Discovery
-            </TabsTrigger>
             <TabsTrigger value="graph" className="gap-1.5">
               <GitBranch className="size-3.5" />
               Graph Editor
@@ -150,37 +162,12 @@ export function UIBridgeStateMachinePage() {
               <Download className="size-3.5" />
               Export
             </TabsTrigger>
+            <TabsTrigger value="discovery" className="gap-1.5">
+              <Search className="size-3.5" />
+              Discovery
+            </TabsTrigger>
           </TabsList>
         </div>
-
-        {/* Discovery Tab - redirect to extraction page */}
-        <TabsContent value="discovery" className="flex-1 p-6">
-          <div className="text-center py-12 space-y-4">
-            <Search className="size-12 text-text-muted mx-auto" />
-            <h2 className="text-lg font-medium text-text-primary">
-              Discover States
-            </h2>
-            <p className="text-sm text-text-muted max-w-md mx-auto">
-              Use the Discover page to run UI Bridge exploration and discover
-              application states from render logs.
-            </p>
-            <Button
-              variant="outline"
-              onClick={() => {
-                window.location.href = `/automation-builder/extraction?method=ui-bridge&project=${sm.projectId}`;
-              }}
-            >
-              <Search className="size-4 mr-1.5" />
-              Go to Discover
-            </Button>
-            {sm.configs.length > 0 && (
-              <p className="text-xs text-text-muted">
-                You have {sm.configs.length} saved configuration{sm.configs.length !== 1 ? "s" : ""}.
-                Select one above to view in the Graph Editor.
-              </p>
-            )}
-          </div>
-        </TabsContent>
 
         {/* Graph Editor Tab */}
         <TabsContent value="graph" className="flex-1 flex min-h-0">
@@ -283,12 +270,22 @@ export function UIBridgeStateMachinePage() {
           ) : (
             <ExportPanel
               isExporting={exporter.isExporting}
+              isPushing={exporter.isPushing}
               onDownload={exporter.downloadExport}
+              onPushToRunner={exporter.pushToRunner}
               configName={sm.fullConfig?.name ?? null}
               stateCount={sm.fullConfig?.states.length ?? 0}
               transitionCount={sm.fullConfig?.transitions.length ?? 0}
             />
           )}
+        </TabsContent>
+
+        {/* Discovery Tab */}
+        <TabsContent value="discovery" className="flex-1 flex min-h-0">
+          <DiscoveryPanel
+            projectId={sm.projectId}
+            onConfigCreated={handleConfigCreated}
+          />
         </TabsContent>
       </Tabs>
     </div>

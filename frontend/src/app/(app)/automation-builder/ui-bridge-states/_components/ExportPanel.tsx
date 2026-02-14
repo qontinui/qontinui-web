@@ -1,11 +1,13 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Download, Loader2, FileJson } from "lucide-react";
+import { Download, Loader2, FileJson, Upload } from "lucide-react";
 
 interface ExportPanelProps {
   isExporting: boolean;
+  isPushing: boolean;
   onDownload: () => void;
+  onPushToRunner: () => void;
   configName: string | null;
   stateCount: number;
   transitionCount: number;
@@ -13,7 +15,9 @@ interface ExportPanelProps {
 
 export function ExportPanel({
   isExporting,
+  isPushing,
   onDownload,
+  onPushToRunner,
   configName,
   stateCount,
   transitionCount,
@@ -41,17 +45,32 @@ export function ExportPanel({
           </div>
         )}
 
-        <Button
-          onClick={onDownload}
-          disabled={isExporting || !configName}
-        >
-          {isExporting ? (
-            <Loader2 className="size-4 mr-1.5 animate-spin" />
-          ) : (
-            <Download className="size-4 mr-1.5" />
-          )}
-          Download JSON
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={onDownload}
+            disabled={isExporting || !configName}
+          >
+            {isExporting ? (
+              <Loader2 className="size-4 mr-1.5 animate-spin" />
+            ) : (
+              <Download className="size-4 mr-1.5" />
+            )}
+            Download JSON
+          </Button>
+
+          <Button
+            variant="outline"
+            onClick={onPushToRunner}
+            disabled={isPushing || isExporting || !configName}
+          >
+            {isPushing ? (
+              <Loader2 className="size-4 mr-1.5 animate-spin" />
+            ) : (
+              <Upload className="size-4 mr-1.5" />
+            )}
+            Push to Runner
+          </Button>
+        </div>
       </div>
     </div>
   );

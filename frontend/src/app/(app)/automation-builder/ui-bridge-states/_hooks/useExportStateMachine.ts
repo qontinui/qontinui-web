@@ -5,9 +5,12 @@ import { toast } from "sonner";
 import { useAutomationStore } from "@/stores/automation";
 import type { ExportConfig } from "../_types";
 
+const RUNNER_URL = "http://localhost:9876";
+
 export function useExportStateMachine(configId: string | null) {
   const projectId = useAutomationStore((s) => s.projectId);
   const [isExporting, setIsExporting] = useState(false);
+  const [isPushing, setIsPushing] = useState(false);
 
   const exportConfig = useCallback(async (): Promise<ExportConfig | null> => {
     if (!projectId || !configId) return null;
@@ -50,5 +53,43 @@ export function useExportStateMachine(configId: string | null) {
     toast.success("Export downloaded");
   }, [exportConfig, configId]);
 
-  return { isExporting, exportConfig, downloadExport };
+  const pushToRunner = useCallback(async () => {
+    const data = await exportConfig();
+    if (!data) return;
+
+    setIsPushing(true);
+    try {
+      const res = await fetch(`${RUNNER_URL}/state-machine/load`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ config: data }),
+      });
+
+      if (res.ok) {
+        const result = await res.json();
+        const stats = result.data?.statistics;
+        if (stats) {
+          toast.success(
+            `State machine loaded: ${stats.states?.registered ?? 0} states, ${stats.transitions?.registered ?? 0} transitions`
+          );
+        } else {
+          toast.success("State machine pushed to runner");
+        }
+      } else {
+        const err = await res.json().catch(() => null);
+        toast.error(
+          err?.error ?? `Failed to push to runner (${res.status})`
+        );
+      }
+    } catch (err) {
+      console.error("Push to runner failed:", err);
+      toast.error(
+        "Cannot connect to runner. Is qontinui-runner running on port 9876?"
+      );
+    } finally {
+      setIsPushing(false);
+    }
+  }, [exportConfig]);
+
+  return { isExporting, isPushing, exportConfig, downloadExport, pushToRunner };
 }
