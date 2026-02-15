@@ -48,6 +48,7 @@ interface UIBridgeStateGraphProps {
   onDrop?: (event: React.DragEvent) => void;
   isDragging?: boolean;
   dropTargetStateId?: string | null;
+  onDeleteTransition?: (id: string) => void;
 }
 
 function UIBridgeStateGraphInner({
@@ -62,8 +63,9 @@ function UIBridgeStateGraphInner({
   onStartElementDrag,
   onDragOver,
   onDrop,
-  isDragging: _isDragging,
-  dropTargetStateId: _dropTargetStateId,
+  isDragging,
+  dropTargetStateId,
+  onDeleteTransition,
 }: UIBridgeStateGraphProps) {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const reactFlowInstance = useReactFlow();
@@ -118,10 +120,11 @@ function UIBridgeStateGraphInner({
           isInitial: state.state_id === effectiveInitialStateId,
           outgoingCount: transitionCounts.outgoing.get(state.state_id) ?? 0,
           incomingCount: transitionCounts.incoming.get(state.state_id) ?? 0,
+          isDropTarget: isDragging && dropTargetStateId === state.state_id,
           onStartElementDrag,
         } satisfies StateNodeData,
       })),
-    [states, selectedStateId, effectiveInitialStateId, onStartElementDrag, transitionCounts]
+    [states, selectedStateId, effectiveInitialStateId, onStartElementDrag, transitionCounts, isDragging, dropTargetStateId]
   );
 
   // Build edges from transitions
@@ -144,6 +147,7 @@ function UIBridgeStateGraphInner({
               actionTypes: trans.actions.map((a) => a.type),
               isHighlighted: highlightedTransitionIds.has(trans.transition_id),
               staysVisible: trans.stays_visible,
+              firstActionTarget: trans.actions[0]?.target ?? trans.actions[0]?.url ?? undefined,
             } satisfies TransitionEdgeData,
           });
         }
@@ -266,6 +270,21 @@ function UIBridgeStateGraphInner({
           );
         }
       }
+      // Delete/Backspace to delete selected transition
+      if ((e.key === "Delete" || e.key === "Backspace") && !e.ctrlKey && !e.metaKey) {
+        const selectedEdge = edges.find((edge) => edge.selected);
+        if (selectedEdge && onDeleteTransition) {
+          const edgeData = selectedEdge.data as unknown as TransitionEdgeData;
+          if (edgeData?.transitionId) {
+            // Find the full transition to get its DB id
+            const trans = transitions.find((t) => t.transition_id === edgeData.transitionId);
+            if (trans) {
+              e.preventDefault();
+              onDeleteTransition(trans.id);
+            }
+          }
+        }
+      }
       // Tab to cycle through states
       if (e.key === "Tab" && !e.ctrlKey && !e.metaKey && states.length > 0) {
         e.preventDefault();
@@ -293,7 +312,7 @@ function UIBridgeStateGraphInner({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onSelectState, onSelectTransition, reactFlowInstance, handleRelayout, states, nodes, effectiveInitialStateId]);
+  }, [onSelectState, onSelectTransition, reactFlowInstance, handleRelayout, states, nodes, edges, transitions, effectiveInitialStateId, onDeleteTransition]);
 
   // Graph stats for the info panel
   const graphStats = useMemo(() => ({
@@ -438,6 +457,10 @@ function UIBridgeStateGraphInner({
                   <div className="flex items-center justify-between gap-4">
                     <span>Move element</span>
                     <span className="text-[10px]">Alt+Drag</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span>Delete transition</span>
+                    <kbd className="px-1.5 py-0.5 bg-surface-secondary rounded text-[10px] font-mono">Del</kbd>
                   </div>
                 </div>
               </div>

@@ -151,6 +151,7 @@ export interface StateNodeData {
   isInitial: boolean;
   outgoingCount?: number;
   incomingCount?: number;
+  isDropTarget?: boolean;
   onStartElementDrag?: (stateId: string, elementId: string) => void;
 }
 
@@ -162,4 +163,6 @@ export interface TransitionEdgeData {
   actionTypes: TransitionAction["type"][];
   isHighlighted: boolean;
   staysVisible: boolean;
+  /** First action target element ID for display on edge label */
+  firstActionTarget?: string;
 }

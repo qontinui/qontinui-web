@@ -24,8 +24,8 @@ import {
 import type {
   UIBridgeFeatures,
   UIBridgeConfig,
+  BridgeEvent,
 } from "@qontinui/ui-bridge/core";
-import type { AnyCapturedEvent } from "@qontinui/ui-bridge/debug";
 import { UIBridgeTransportListener } from "./UIBridgeTransportListener";
 import type { TransportMode } from "./useUIBridgeTransport";
 
@@ -91,7 +91,7 @@ export function UIBridgeWrapper({
   transport = "auto",
   wsUrl,
 }: UIBridgeWrapperProps) {
-  const bufferRef = useRef<AnyCapturedEvent[]>([]);
+  const bufferRef = useRef<BridgeEvent[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const flush = useCallback(() => {
@@ -115,8 +115,8 @@ export function UIBridgeWrapper({
     }
   }, []);
 
-  const onBrowserEvent = useCallback(
-    (event: AnyCapturedEvent) => {
+  const onEvent = useCallback(
+    (event: BridgeEvent) => {
       bufferRef.current.push(event);
       if (!timerRef.current) {
         timerRef.current = setTimeout(flush, FLUSH_INTERVAL_MS);
@@ -161,7 +161,7 @@ export function UIBridgeWrapper({
     <UIBridgeProvider
       features={features}
       config={config}
-      onBrowserEvent={isDev ? onBrowserEvent : undefined}
+      onEvent={isDev ? onEvent : undefined}
     >
       {/* AutoRegisterProvider enables automatic element registration for UI Bridge */}
       {/* All interactive elements (buttons, inputs, links, etc.) are auto-discovered */}

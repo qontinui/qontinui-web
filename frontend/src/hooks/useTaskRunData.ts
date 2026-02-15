@@ -161,8 +161,9 @@ export function useTaskRunDetail(
 
   return {
     data,
-    isLoading: backend.isLoading,
-    error: backend.error as Error | null,
+    isLoading: backend.isLoading && !liveRun,
+    // Only report backend errors if we don't have runner data to fall back on
+    error: data ? null : (backend.error as Error | null),
     isRunnerOffline: runner.isOffline,
     refetch: () => {
       backend.refetch();

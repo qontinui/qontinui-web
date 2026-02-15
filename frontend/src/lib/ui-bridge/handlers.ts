@@ -32,6 +32,7 @@ import type {
   ControlSnapshot,
 } from "@qontinui/ui-bridge/control";
 import type { RenderLogEntry } from "@qontinui/ui-bridge/render-log";
+import type { CapturedError } from "@qontinui/ui-bridge";
 import type {
   ElementAnnotation,
   AnnotationConfig,
@@ -70,7 +71,6 @@ import type {
   NavigationResult,
   StateSnapshot,
 } from "@qontinui/ui-bridge/core";
-import type { CapturedError } from "@qontinui/ui-bridge/debug";
 
 /**
  * Create a success response wrapper
@@ -843,9 +843,11 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
     }
   },
 
-  async getConsoleErrors(
-    params?: { since?: number; limit?: number }
-  ): Promise<APIResponse<{ errors: CapturedError[]; count: number }>> {
+
+  async getConsoleErrors(params?: {
+    since?: number;
+    limit?: number;
+  }): Promise<APIResponse<{ errors: CapturedError[]; count: number }>> {
     try {
       const result = await queueCommand<{ errors: CapturedError[]; count: number }>(
         "getConsoleErrors",

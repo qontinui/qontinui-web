@@ -38,6 +38,7 @@ import { StateViewPanel } from "./StateViewPanel";
 import { TransitionsPanel } from "./TransitionsPanel";
 import type { UIBridgeTransitionCreate } from "../_types";
 import { useAutomationStore } from "@/stores/automation";
+import { useStateMachineDiscovery } from "../_hooks/useStateMachineDiscovery";
 
 export function UIBridgeStateMachinePage() {
   const sm = useUIBridgeStateMachine();
@@ -45,6 +46,7 @@ export function UIBridgeStateMachinePage() {
   const pathfinding = usePathfinding(sm.selectedConfigId);
   const exporter = useExportStateMachine(sm.selectedConfigId);
   const projectId = useAutomationStore((s) => s.projectId);
+  const discovery = useStateMachineDiscovery(sm.projectId);
 
   const [activeTab, setActiveTab] = useState("discovery");
   const [showNewTransition, setShowNewTransition] = useState(false);
@@ -158,7 +160,10 @@ export function UIBridgeStateMachinePage() {
           {/* Config selector */}
           <Select
             value={sm.selectedConfigId ?? ""}
-            onValueChange={(v) => sm.setSelectedConfigId(v || null)}
+            onValueChange={(v) => {
+              sm.setSelectedConfigId(v || null);
+              if (v) discovery.reset();
+            }}
           >
             <SelectTrigger className="w-[220px]">
               <SelectValue placeholder="Select configuration..." />
@@ -221,7 +226,7 @@ export function UIBridgeStateMachinePage() {
         {/* Discovery Tab */}
         <TabsContent value="discovery" className="flex-1 overflow-y-auto">
           <DiscoveryPanel
-            projectId={sm.projectId}
+            discovery={discovery}
             onConfigCreated={handleConfigCreated}
           />
         </TabsContent>
@@ -276,6 +281,7 @@ export function UIBridgeStateMachinePage() {
                   onDrop={elementDrag.handleDrop}
                   isDragging={elementDrag.isDragging}
                   dropTargetStateId={elementDrag.dropTargetStateId}
+                  onDeleteTransition={handleDeleteTransition}
                 />
               </div>
 

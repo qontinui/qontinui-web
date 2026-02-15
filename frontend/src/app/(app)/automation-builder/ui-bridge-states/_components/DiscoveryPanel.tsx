@@ -41,11 +41,11 @@ const LOCAL_RUNNER_URL = "http://localhost:9876";
 const DIRECT_CONNECTION_ID = -1;
 
 interface DiscoveryPanelProps {
-  projectId: string | null;
+  discovery: ReturnType<typeof useStateMachineDiscovery>;
   onConfigCreated: (configId: string) => void;
 }
 
-export function DiscoveryPanel({ projectId, onConfigCreated }: DiscoveryPanelProps) {
+export function DiscoveryPanel({ discovery, onConfigCreated }: DiscoveryPanelProps) {
   const [collectTab, setCollectTab] = useState<"explore" | "record">("explore");
   const [selectedConnectionId, setSelectedConnectionId] = useState<number | null>(null);
   const [localRunnerAvailable, setLocalRunnerAvailable] = useState(false);
@@ -54,7 +54,6 @@ export function DiscoveryPanel({ projectId, onConfigCreated }: DiscoveryPanelPro
   // Hooks
   const exploration = useUIBridgeExploration();
   const { connections, isLoading: connectionsLoading } = useRealtimeConnections();
-  const discovery = useStateMachineDiscovery(projectId);
 
   // Check if local runner is available directly (fallback when backend WS registration fails)
   useEffect(() => {

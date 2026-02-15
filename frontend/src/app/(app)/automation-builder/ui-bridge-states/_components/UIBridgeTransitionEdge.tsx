@@ -114,6 +114,12 @@ function UIBridgeTransitionEdgeInner(props: EdgeProps) {
                 </span>
               )}
               <span className="font-medium max-w-[120px] truncate">{edgeData.name}</span>
+              {/* Source element target indicator */}
+              {edgeData.firstActionTarget && !isActive && (
+                <span className="opacity-50 text-[8px] max-w-[60px] truncate">
+                  {edgeData.firstActionTarget}
+                </span>
+              )}
               {edgeData.pathCost !== 1.0 && (
                 <span className="opacity-60 text-[9px]">
                   cost:{edgeData.pathCost}

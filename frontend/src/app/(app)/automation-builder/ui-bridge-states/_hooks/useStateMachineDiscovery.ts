@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import type { UIBridgeDiscoveryResult } from "../../extraction/_types";
 
@@ -22,13 +22,75 @@ interface DiscoverAndSaveResponse {
   unique_element_count: number;
 }
 
+// --- localStorage persistence ---
+
+const STORAGE_KEY_PREFIX = "qontinui-sm-discovery-";
+
+interface PersistedDiscoveryState {
+  renders: unknown[] | null;
+  renderSource: "explore" | "record" | null;
+  discoveryResult: UIBridgeDiscoveryResult | null;
+  configName: string;
+}
+
+function getStorageKey(projectId: string | null): string | null {
+  return projectId ? `${STORAGE_KEY_PREFIX}${projectId}` : null;
+}
+
+function loadPersistedState(projectId: string | null): PersistedDiscoveryState | null {
+  if (typeof window === "undefined") return null;
+  const key = getStorageKey(projectId);
+  if (!key) return null;
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored) return JSON.parse(stored) as PersistedDiscoveryState;
+  } catch {
+    // ignore parse errors
+  }
+  return null;
+}
+
+function savePersistedState(projectId: string | null, state: PersistedDiscoveryState): void {
+  if (typeof window === "undefined") return;
+  const key = getStorageKey(projectId);
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify(state));
+  } catch {
+    // ignore quota errors
+  }
+}
+
+function clearPersistedState(projectId: string | null): void {
+  if (typeof window === "undefined") return;
+  const key = getStorageKey(projectId);
+  if (!key) return;
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+}
+
 export function useStateMachineDiscovery(projectId: string | null) {
-  const [renders, setRendersState] = useState<unknown[] | null>(null);
-  const [renderSource, setRenderSource] = useState<"explore" | "record" | null>(null);
-  const [discoveryResult, setDiscoveryResult] = useState<UIBridgeDiscoveryResult | null>(null);
+  // Load persisted state once on mount
+  const [initial] = useState(() => loadPersistedState(projectId));
+
+  const [renders, setRendersState] = useState<unknown[] | null>(initial?.renders ?? null);
+  const [renderSource, setRenderSource] = useState<"explore" | "record" | null>(initial?.renderSource ?? null);
+  const [discoveryResult, setDiscoveryResult] = useState<UIBridgeDiscoveryResult | null>(initial?.discoveryResult ?? null);
   const [isDiscovering, setIsDiscovering] = useState(false);
-  const [configName, setConfigName] = useState("");
+  const [configName, setConfigName] = useState(initial?.configName ?? "");
   const [isSaving, setIsSaving] = useState(false);
+
+  // Persist to localStorage when relevant state changes
+  useEffect(() => {
+    if (!renders && !discoveryResult && !configName) {
+      clearPersistedState(projectId);
+      return;
+    }
+    savePersistedState(projectId, { renders, renderSource, discoveryResult, configName });
+  }, [projectId, renders, renderSource, discoveryResult, configName]);
 
   const setRenders = useCallback((newRenders: unknown[], source: "explore" | "record") => {
     setRendersState(newRenders);
@@ -108,6 +170,13 @@ export function useStateMachineDiscovery(projectId: string | null) {
 
       const data: DiscoverAndSaveResponse = await res.json();
       toast.success(`Saved config "${data.config.name}" with ${data.states.length} states`);
+
+      // Clear discovery state — data is now persisted in DB
+      setRendersState(null);
+      setRenderSource(null);
+      setDiscoveryResult(null);
+      setConfigName("");
+
       return data.config.id;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to save";
@@ -123,7 +192,8 @@ export function useStateMachineDiscovery(projectId: string | null) {
     setRenderSource(null);
     setDiscoveryResult(null);
     setConfigName("");
-  }, []);
+    clearPersistedState(projectId);
+  }, [projectId]);
 
   return {
     renders,

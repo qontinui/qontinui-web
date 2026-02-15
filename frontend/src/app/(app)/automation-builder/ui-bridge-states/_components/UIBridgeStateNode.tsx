@@ -14,16 +14,17 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
   Link2,
+  GripVertical,
 } from "lucide-react";
 import type { StateNodeData } from "../_types";
 
 // Size tiers for dynamic node sizing based on element count
 // Adapted from GUI Build StateNode with 4 tiers
 const SIZE_TIERS = {
-  small: { cardWidth: 200, gridCols: 3, gridMaxWidth: 170, maxElements: 6 },
-  medium: { cardWidth: 260, gridCols: 4, gridMaxWidth: 224, maxElements: 12 },
-  large: { cardWidth: 320, gridCols: 5, gridMaxWidth: 280, maxElements: 20 },
-  xlarge: { cardWidth: 380, gridCols: 6, gridMaxWidth: 340, maxElements: 30 },
+  small: { cardWidth: 200, gridCols: 3, gridMaxWidth: 170, maxElements: 6, tileSize: 52 },
+  medium: { cardWidth: 260, gridCols: 4, gridMaxWidth: 224, maxElements: 12, tileSize: 52 },
+  large: { cardWidth: 320, gridCols: 5, gridMaxWidth: 280, maxElements: 20, tileSize: 52 },
+  xlarge: { cardWidth: 380, gridCols: 6, gridMaxWidth: 340, maxElements: 30, tileSize: 52 },
 };
 
 function getCardSize(elementCount: number) {
@@ -33,24 +34,33 @@ function getCardSize(elementCount: number) {
   return SIZE_TIERS.xlarge;
 }
 
+/** Element type styling configuration */
+const ELEMENT_STYLES: Record<string, {
+  icon: typeof Hash;
+  color: string;
+  bg: string;
+  border: string;
+  hoverBg: string;
+  tileBg: string;
+  tileBorder: string;
+  prefix: string;
+}> = {
+  testid: { icon: Hash, color: "text-blue-400", bg: "bg-blue-500/15", border: "border-blue-500/25", hoverBg: "hover:bg-blue-500/30", tileBg: "bg-blue-500/10", tileBorder: "border-blue-500/20", prefix: "testid" },
+  role: { icon: MousePointer, color: "text-green-400", bg: "bg-green-500/15", border: "border-green-500/25", hoverBg: "hover:bg-green-500/30", tileBg: "bg-green-500/10", tileBorder: "border-green-500/20", prefix: "role" },
+  text: { icon: TypeIcon, color: "text-amber-400", bg: "bg-amber-500/15", border: "border-amber-500/25", hoverBg: "hover:bg-amber-500/30", tileBg: "bg-amber-500/10", tileBorder: "border-amber-500/20", prefix: "text" },
+  ui: { icon: Box, color: "text-purple-400", bg: "bg-purple-500/15", border: "border-purple-500/25", hoverBg: "hover:bg-purple-500/30", tileBg: "bg-purple-500/10", tileBorder: "border-purple-500/20", prefix: "ui" },
+  url: { icon: Globe, color: "text-cyan-400", bg: "bg-cyan-500/15", border: "border-cyan-500/25", hoverBg: "hover:bg-cyan-500/30", tileBg: "bg-cyan-500/10", tileBorder: "border-cyan-500/20", prefix: "url" },
+  nav: { icon: Globe, color: "text-cyan-400", bg: "bg-cyan-500/15", border: "border-cyan-500/25", hoverBg: "hover:bg-cyan-500/30", tileBg: "bg-cyan-500/10", tileBorder: "border-cyan-500/20", prefix: "url" },
+  other: { icon: Layers, color: "text-gray-400", bg: "bg-gray-500/15", border: "border-gray-500/25", hoverBg: "hover:bg-gray-500/30", tileBg: "bg-gray-500/10", tileBorder: "border-gray-500/20", prefix: "other" },
+};
+
 /** Get icon and color for an element ID based on its prefix/type */
 export function getElementStyle(elementId: string) {
-  if (elementId.startsWith("testid:")) {
-    return { icon: Hash, color: "text-blue-400", bg: "bg-blue-500/15", border: "border-blue-500/25", hoverBg: "hover:bg-blue-500/25", label: elementId.slice(7), prefix: "testid" };
-  }
-  if (elementId.startsWith("role:")) {
-    return { icon: MousePointer, color: "text-green-400", bg: "bg-green-500/15", border: "border-green-500/25", hoverBg: "hover:bg-green-500/25", label: elementId.slice(5), prefix: "role" };
-  }
-  if (elementId.startsWith("text:")) {
-    return { icon: TypeIcon, color: "text-amber-400", bg: "bg-amber-500/15", border: "border-amber-500/25", hoverBg: "hover:bg-amber-500/25", label: elementId.slice(5), prefix: "text" };
-  }
-  if (elementId.startsWith("ui:")) {
-    return { icon: Box, color: "text-purple-400", bg: "bg-purple-500/15", border: "border-purple-500/25", hoverBg: "hover:bg-purple-500/25", label: elementId.slice(3), prefix: "ui" };
-  }
-  if (elementId.startsWith("url:") || elementId.startsWith("nav:")) {
-    return { icon: Globe, color: "text-cyan-400", bg: "bg-cyan-500/15", border: "border-cyan-500/25", hoverBg: "hover:bg-cyan-500/25", label: elementId.slice(4), prefix: "url" };
-  }
-  return { icon: Layers, color: "text-gray-400", bg: "bg-gray-500/15", border: "border-gray-500/25", hoverBg: "hover:bg-gray-500/25", label: elementId, prefix: "other" };
+  const colonIdx = elementId.indexOf(":");
+  const prefix = colonIdx > 0 ? elementId.slice(0, colonIdx) : "other";
+  const label = colonIdx > 0 ? elementId.slice(colonIdx + 1) : elementId;
+  const style = ELEMENT_STYLES[prefix] ?? ELEMENT_STYLES.other!;
+  return { ...style, label, prefix: style.prefix };
 }
 
 /** Summarize element types for the stats row */
@@ -60,20 +70,12 @@ function summarizeElementTypes(elementIds: string[]): { prefix: string; count: n
     const style = getElementStyle(eid);
     counts.set(style.prefix, (counts.get(style.prefix) ?? 0) + 1);
   }
-  const prefixColors: Record<string, string> = {
-    testid: "text-blue-400",
-    role: "text-green-400",
-    text: "text-amber-400",
-    ui: "text-purple-400",
-    url: "text-cyan-400",
-    other: "text-gray-400",
-  };
   return Array.from(counts.entries())
     .sort((a, b) => b[1] - a[1])
     .map(([prefix, count]) => ({
       prefix,
       count,
-      color: prefixColors[prefix] ?? "text-gray-400",
+      color: (ELEMENT_STYLES[prefix] ?? ELEMENT_STYLES.other!).color,
     }));
 }
 
@@ -89,6 +91,7 @@ function UIBridgeStateNodeInner({ data }: NodeProps) {
     isBlocking,
     isSelected,
     isInitial,
+    isDropTarget,
     onStartElementDrag,
     outgoingCount,
     incomingCount,
@@ -116,14 +119,21 @@ function UIBridgeStateNodeInner({ data }: NodeProps) {
         className={`
           rounded-lg border-2 px-3 py-2.5 shadow-md
           transition-all duration-150 relative
-          ${isSelected
-            ? "border-brand-primary bg-surface-secondary ring-2 ring-brand-primary/30 shadow-brand-primary/20 shadow-lg"
-            : isBlocking
-              ? "border-amber-400 bg-amber-50 dark:bg-amber-950/20 shadow-amber-500/10"
-              : "border-border-primary bg-surface-primary hover:border-brand-primary/50 hover:shadow-lg"
+          ${isDropTarget
+            ? "border-brand-success bg-brand-success/10 ring-2 ring-brand-success/40 shadow-brand-success/20 shadow-lg"
+            : isSelected
+              ? "border-brand-primary bg-surface-secondary ring-2 ring-brand-primary/30 shadow-brand-primary/20 shadow-lg"
+              : isBlocking
+                ? "border-amber-400 bg-amber-50 dark:bg-amber-950/20 shadow-amber-500/10"
+                : "border-border-primary bg-surface-primary hover:border-brand-primary/50 hover:shadow-lg"
           }
         `}
       >
+        {/* Drop target overlay */}
+        {isDropTarget && (
+          <div className="absolute inset-0 rounded-lg bg-brand-success/5 pointer-events-none z-0" />
+        )}
+
         {/* Initial state badge */}
         {isInitial && (
           <div className="absolute -top-3 -left-3 z-10">
@@ -163,7 +173,7 @@ function UIBridgeStateNodeInner({ data }: NodeProps) {
         )}
 
         {/* Header */}
-        <div className="flex items-center gap-2 mb-1">
+        <div className="flex items-center gap-2 mb-1 relative z-[1]">
           {isBlocking ? (
             <Lock className="size-3.5 text-amber-500 shrink-0" />
           ) : (
@@ -176,15 +186,15 @@ function UIBridgeStateNodeInner({ data }: NodeProps) {
 
         {/* Description (if short) */}
         {description && (
-          <p className="text-[10px] text-text-muted mb-1.5 line-clamp-2">
+          <p className="text-[10px] text-text-muted mb-1.5 line-clamp-2 relative z-[1]">
             {description}
           </p>
         )}
 
-        {/* Element thumbnail grid */}
+        {/* Element thumbnail grid - tile-based layout adapted from GUI Build StateNode */}
         {elementIds.length > 0 && (
           <div
-            className="grid gap-0.5 mb-2 mx-auto"
+            className="grid gap-1 mb-2 mx-auto relative z-[1]"
             style={{
               gridTemplateColumns: `repeat(${cardSize.gridCols}, 1fr)`,
               maxWidth: cardSize.gridMaxWidth,
@@ -197,13 +207,14 @@ function UIBridgeStateNodeInner({ data }: NodeProps) {
                 <div
                   key={elementId}
                   className={`
-                    relative group rounded px-1 py-0.5 text-[8px] truncate
-                    ${style.bg} ${style.color} border ${style.border}
-                    ${style.hoverBg} hover:shadow-sm hover:z-10
+                    relative group rounded-md overflow-hidden
+                    ${style.tileBg} border ${style.tileBorder}
+                    ${style.hoverBg} hover:shadow-md hover:z-10 hover:scale-105
                     ${onStartElementDrag ? "cursor-grab active:cursor-grabbing" : "cursor-default"}
                     transition-all duration-100
                   `}
-                  title={`${elementId}\n${onStartElementDrag ? "Drag to create transition • Alt+drag to move" : ""}`}
+                  style={{ aspectRatio: "1 / 1" }}
+                  title={`${elementId}\n${onStartElementDrag ? "Drag to create transition \u2022 Alt+drag to move" : ""}`}
                   draggable={!!onStartElementDrag}
                   onDragStart={(e) => {
                     if (!onStartElementDrag) return;
@@ -221,31 +232,42 @@ function UIBridgeStateNodeInner({ data }: NodeProps) {
                     onStartElementDrag(stateId, elementId);
                   }}
                 >
-                  <div className="flex items-center gap-0.5">
-                    <Icon className="size-2.5 shrink-0" />
-                    <span className="truncate">{style.label}</span>
+                  {/* Tile content - icon centered with label below */}
+                  <div className="flex flex-col items-center justify-center h-full px-0.5 py-1">
+                    <Icon className={`size-3.5 ${style.color} shrink-0`} />
+                    <span className={`text-[7px] ${style.color} truncate w-full text-center mt-0.5 leading-tight`}>
+                      {style.label}
+                    </span>
                   </div>
-                  {/* Drag handle indicator */}
+
+                  {/* Drag handle indicator - appears on hover */}
                   {onStartElementDrag && (
                     <div
-                      className="nodrag absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-brand-secondary/60 hover:bg-brand-secondary opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-sm"
+                      className="nodrag absolute top-0 right-0 p-0.5 opacity-0 group-hover:opacity-80 transition-opacity z-10"
                       title="Drag to create transition. Alt+drag to move element."
-                    />
+                    >
+                      <GripVertical className="size-2.5 text-text-muted" />
+                    </div>
                   )}
                 </div>
               );
             })}
             {/* Overflow indicator */}
             {elementIds.length > cardSize.maxElements && (
-              <div className="rounded px-1 py-0.5 text-[8px] bg-surface-secondary text-text-muted flex items-center justify-center border border-border-primary">
-                +{elementIds.length - cardSize.maxElements}
+              <div
+                className="rounded-md bg-surface-secondary text-text-muted flex items-center justify-center border border-border-primary"
+                style={{ aspectRatio: "1 / 1" }}
+              >
+                <span className="text-[9px] font-medium">
+                  +{elementIds.length - cardSize.maxElements}
+                </span>
               </div>
             )}
           </div>
         )}
 
         {/* Stats row - enhanced with element type summary */}
-        <div className="flex items-center justify-between text-xs text-text-muted">
+        <div className="flex items-center justify-between text-xs text-text-muted relative z-[1]">
           <div className="flex items-center gap-1.5">
             <span className="badge badge-sm badge-default">
               {elementCount} el

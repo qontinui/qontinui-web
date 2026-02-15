@@ -14,6 +14,7 @@ Used by:
 Migrated from ai_tasks.py - renamed for unified architecture.
 """
 
+import re
 from datetime import date
 from uuid import UUID
 
@@ -52,6 +53,34 @@ from app.services.task_run_service import (
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
+
+# Pattern to extract UUID from runner composite IDs
+# e.g., "unified-workflow-30cbf927-3299-4835-bf03-7c8001a24b77-1771145001324"
+_UUID_RE = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
+
+
+def _parse_task_run_id(raw_id: str) -> UUID:
+    """Parse task_run_id from either a UUID string or a runner composite ID.
+
+    The runner generates composite IDs like:
+        unified-workflow-{uuid}-{timestamp}
+    This extracts the embedded UUID so the backend can look it up.
+    """
+    try:
+        return UUID(raw_id)
+    except ValueError:
+        pass
+
+    match = _UUID_RE.search(raw_id)
+    if match:
+        return UUID(match.group())
+
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail=f"Cannot extract a valid UUID from task run ID: {raw_id}",
+    )
 
 
 # =============================================================================
@@ -144,13 +173,14 @@ async def get_findings_summary(
     description="Get detailed task run information including sessions, findings, and automations.",
 )
 async def get_task_run_detail(
-    task_run_id: UUID,
+    task_run_id: str,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
     service: TaskRunService = Depends(get_task_run_service),
 ) -> TaskRunDetail:
     """Get task run detail with sessions, findings, and automations."""
-    task_run = await service.get_task_run_detail(db, task_run_id)
+    parsed_id = _parse_task_run_id(task_run_id)
+    task_run = await service.get_task_run_detail(db, parsed_id)
     if not task_run:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -172,15 +202,16 @@ async def get_task_run_detail(
     description="Update a task run's status, output, or other fields.",
 )
 async def update_task_run(
-    task_run_id: UUID,
+    task_run_id: str,
     update_data: TaskRunUpdate,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
     service: TaskRunService = Depends(get_task_run_service),
 ) -> TaskRunResponse:
     """Update a task run."""
+    parsed_id = _parse_task_run_id(task_run_id)
     # First check if task exists and user has access
-    existing = await service.get_task_run(db, task_run_id)
+    existing = await service.get_task_run(db, parsed_id)
     if not existing:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -192,7 +223,7 @@ async def update_task_run(
             detail="You don't have access to this task run",
         )
 
-    result = await service.update_task_run(db, task_run_id, update_data)
+    result = await service.update_task_run(db, parsed_id, update_data)
     if not result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -208,14 +239,15 @@ async def update_task_run(
     description="Delete a task run and all associated data.",
 )
 async def delete_task_run(
-    task_run_id: UUID,
+    task_run_id: str,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
     service: TaskRunService = Depends(get_task_run_service),
 ) -> None:
     """Delete a task run."""
+    parsed_id = _parse_task_run_id(task_run_id)
     # First check if task exists and user has access
-    existing = await service.get_task_run(db, task_run_id)
+    existing = await service.get_task_run(db, parsed_id)
     if not existing:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -227,7 +259,7 @@ async def delete_task_run(
             detail="You don't have access to this task run",
         )
 
-    deleted = await service.delete_task_run(db, task_run_id)
+    deleted = await service.delete_task_run(db, parsed_id)
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -248,14 +280,15 @@ async def delete_task_run(
     description="Record the start of a Claude session within a task run.",
 )
 async def create_session(
-    task_run_id: UUID,
+    task_run_id: str,
     session_data: TaskRunSessionCreate,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
     service: TaskRunService = Depends(get_task_run_service),
 ) -> TaskRunSessionResponse:
     """Record a session start."""
-    result = await service.create_session(db, task_run_id, session_data)
+    parsed_id = _parse_task_run_id(task_run_id)
+    result = await service.create_session(db, parsed_id, session_data)
     if not result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -271,7 +304,7 @@ async def create_session(
     description="Record the end of a Claude session with duration and output summary.",
 )
 async def update_session(
-    task_run_id: UUID,
+    task_run_id: str,
     session_number: int,
     update_data: TaskRunSessionUpdate,
     db: AsyncSession = Depends(get_async_db),
@@ -279,7 +312,8 @@ async def update_session(
     service: TaskRunService = Depends(get_task_run_service),
 ) -> TaskRunSessionResponse:
     """Record a session end."""
-    result = await service.update_session(db, task_run_id, session_number, update_data)
+    parsed_id = _parse_task_run_id(task_run_id)
+    result = await service.update_session(db, parsed_id, session_number, update_data)
     if not result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -295,13 +329,14 @@ async def update_session(
     description="Get all sessions for a task run.",
 )
 async def get_sessions(
-    task_run_id: UUID,
+    task_run_id: str,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
     service: TaskRunService = Depends(get_task_run_service),
 ) -> list[TaskRunSessionResponse]:
     """Get all sessions for a task run."""
-    return await service.get_sessions(db, task_run_id)
+    parsed_id = _parse_task_run_id(task_run_id)
+    return await service.get_sessions(db, parsed_id)
 
 
 # =============================================================================
@@ -317,14 +352,15 @@ async def get_sessions(
     description="Sync a batch of findings. Creates new or updates existing based on signature_hash.",
 )
 async def sync_findings(
-    task_run_id: UUID,
+    task_run_id: str,
     batch: TaskRunFindingsBatch,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
     service: TaskRunService = Depends(get_task_run_service),
 ) -> list[TaskRunFindingResponse]:
     """Sync findings for a task run."""
-    return await service.sync_findings(db, task_run_id, batch)
+    parsed_id = _parse_task_run_id(task_run_id)
+    return await service.sync_findings(db, parsed_id, batch)
 
 
 @router.get(
@@ -334,7 +370,7 @@ async def sync_findings(
     description="Get all findings for a task run with optional filtering.",
 )
 async def get_findings(
-    task_run_id: UUID,
+    task_run_id: str,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
     service: TaskRunService = Depends(get_task_run_service),
@@ -343,9 +379,10 @@ async def get_findings(
     status: str | None = Query(None, description="Filter by status"),
 ) -> TaskRunFindingsListResponse:
     """Get findings for a task run."""
+    parsed_id = _parse_task_run_id(task_run_id)
     return await service.get_findings(
         db,
-        task_run_id,
+        parsed_id,
         category=category,
         severity=severity,
         status=status,
@@ -359,7 +396,7 @@ async def get_findings(
     description="Update a finding's status, resolution, or other fields.",
 )
 async def update_finding(
-    task_run_id: UUID,
+    task_run_id: str,
     finding_id: UUID,
     update_data: TaskRunFindingUpdate,
     db: AsyncSession = Depends(get_async_db),
@@ -367,7 +404,8 @@ async def update_finding(
     service: TaskRunService = Depends(get_task_run_service),
 ) -> TaskRunFindingResponse:
     """Update a finding."""
-    result = await service.update_finding(db, task_run_id, finding_id, update_data)
+    parsed_id = _parse_task_run_id(task_run_id)
+    result = await service.update_finding(db, parsed_id, finding_id, update_data)
     if not result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -389,7 +427,7 @@ class FindingResponseSubmit(BaseModel):
     description="Submit a user response to a finding that needs input.",
 )
 async def submit_finding_response(
-    task_run_id: UUID,
+    task_run_id: str,
     finding_id: UUID,
     body: FindingResponseSubmit,
     db: AsyncSession = Depends(get_async_db),
@@ -397,8 +435,9 @@ async def submit_finding_response(
     service: TaskRunService = Depends(get_task_run_service),
 ) -> TaskRunFindingResponse:
     """Submit a user response to a finding."""
+    parsed_id = _parse_task_run_id(task_run_id)
     result = await service.submit_finding_response(
-        db, task_run_id, finding_id, body.response
+        db, parsed_id, finding_id, body.response
     )
     if not result:
         raise HTTPException(
@@ -421,14 +460,15 @@ async def submit_finding_response(
     description="Record the start of a GUI automation execution within a task run.",
 )
 async def create_automation(
-    task_run_id: UUID,
+    task_run_id: str,
     automation_data: TaskRunAutomationCreate,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
     service: TaskRunService = Depends(get_task_run_service),
 ) -> TaskRunAutomationResponse:
     """Create an automation record."""
-    result = await service.create_automation(db, task_run_id, automation_data)
+    parsed_id = _parse_task_run_id(task_run_id)
+    result = await service.create_automation(db, parsed_id, automation_data)
     if not result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -444,7 +484,7 @@ async def create_automation(
     description="Update an automation record with completion status and metrics.",
 )
 async def update_automation(
-    task_run_id: UUID,
+    task_run_id: str,
     automation_id: UUID,
     update_data: TaskRunAutomationUpdate,
     db: AsyncSession = Depends(get_async_db),
@@ -452,9 +492,8 @@ async def update_automation(
     service: TaskRunService = Depends(get_task_run_service),
 ) -> TaskRunAutomationResponse:
     """Update an automation record."""
-    result = await service.update_automation(
-        db, task_run_id, automation_id, update_data
-    )
+    parsed_id = _parse_task_run_id(task_run_id)
+    result = await service.update_automation(db, parsed_id, automation_id, update_data)
     if not result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -470,13 +509,14 @@ async def update_automation(
     description="Get all automation records for a task run.",
 )
 async def get_automations(
-    task_run_id: UUID,
+    task_run_id: str,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
     service: TaskRunService = Depends(get_task_run_service),
 ) -> list[TaskRunAutomationResponse]:
     """Get all automation records for a task run."""
-    return await service.get_automations(db, task_run_id)
+    parsed_id = _parse_task_run_id(task_run_id)
+    return await service.get_automations(db, parsed_id)
 
 
 # =============================================================================
@@ -491,7 +531,7 @@ async def get_automations(
     description="Get real-time progress information for a specific execution step.",
 )
 async def get_step_progress(
-    task_run_id: UUID,
+    task_run_id: str,
     checkpoint_id: str,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
@@ -510,7 +550,8 @@ async def get_step_progress(
 
     Used by the frontend to display progress indicators during step execution.
     """
-    result = await service.get_step_progress(db, task_run_id, checkpoint_id)
+    parsed_id = _parse_task_run_id(task_run_id)
+    result = await service.get_step_progress(db, parsed_id, checkpoint_id)
     if not result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -532,16 +573,17 @@ async def get_step_progress(
     description="Batch upsert verification phase results. Called by runner after each verification phase.",
 )
 async def upsert_verification_results(
-    task_run_id: UUID,
+    task_run_id: str,
     batch: VerificationResultsBatchRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
     service: TaskRunVerificationService = Depends(get_verification_service),
 ) -> list[VerificationResultResponse]:
     """Batch upsert verification results for a task run."""
+    parsed_id = _parse_task_run_id(task_run_id)
     # Verify task exists and user has access
     task_run_service = get_task_run_service()
-    existing = await task_run_service.get_task_run(db, task_run_id)
+    existing = await task_run_service.get_task_run(db, parsed_id)
     if not existing:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -552,7 +594,7 @@ async def upsert_verification_results(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You don't have access to this task run",
         )
-    return await service.batch_upsert_verification_results(db, task_run_id, batch)
+    return await service.batch_upsert_verification_results(db, parsed_id, batch)
 
 
 @router.get(
@@ -562,14 +604,15 @@ async def upsert_verification_results(
     description="Get all verification phase results for a task run.",
 )
 async def list_verification_results(
-    task_run_id: UUID,
+    task_run_id: str,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
     service: TaskRunVerificationService = Depends(get_verification_service),
 ) -> VerificationResultsListResponse:
     """List verification results for a task run."""
+    parsed_id = _parse_task_run_id(task_run_id)
     task_run_service = get_task_run_service()
-    existing = await task_run_service.get_task_run(db, task_run_id)
+    existing = await task_run_service.get_task_run(db, parsed_id)
     if not existing:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -580,4 +623,4 @@ async def list_verification_results(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You don't have access to this task run",
         )
-    return await service.list_verification_results(db, task_run_id)
+    return await service.list_verification_results(db, parsed_id)
