@@ -16,6 +16,7 @@ import {
   Loader2,
   Timer,
   Layers,
+  CheckCircle2,
 } from "lucide-react";
 import { runnerApi } from "@/lib/runner-api";
 import { useSharedOrchestratorState } from "@/contexts/SharedRunnerDataContext";
@@ -117,9 +118,12 @@ function WorkflowStageIndicator({
   isRunning: boolean;
 }) {
   const normalizedPhase = currentPhase?.toLowerCase() || "";
-  const currentIndex = STAGES.findIndex((s) => normalizedPhase.includes(s.key));
-  // When run is finished, show all stages as completed
-  const allCompleted = !isRunning;
+  let currentIndex = STAGES.findIndex((s) => normalizedPhase.includes(s.key));
+  // When running but no phase data yet, default to setup
+  if (isRunning && currentIndex === -1) currentIndex = 0;
+  // Only show all-completed when we have a definitive "not running" status
+  // AND the phase was at completion (or no phase = never started monitoring)
+  const allCompleted = !isRunning && currentIndex >= 0;
 
   return (
     <div className="flex items-center gap-0.5">
@@ -134,7 +138,7 @@ function WorkflowStageIndicator({
             {/* Stage badge */}
             <div
               className={cn(
-                "px-2 py-0.5 rounded-md text-[10px] font-medium border transition-all",
+                "px-2 py-0.5 rounded-md text-[10px] font-medium border transition-all flex items-center gap-1",
                 colors.text,
                 colors.bg,
                 colors.border,
@@ -142,6 +146,7 @@ function WorkflowStageIndicator({
                 isActive && "animate-phase-glow"
               )}
             >
+              {isCompleted && <CheckCircle2 className="size-2.5" />}
               {stage.label}
             </div>
 
@@ -325,15 +330,18 @@ export function ControlBar({ run, onRefresh }: ControlBarProps) {
         <h3 className="font-semibold text-text-primary truncate max-w-[200px] text-sm">
           {run.task_name}
         </h3>
-        <WorkflowStageIndicator currentPhase={run.phase} isRunning={run.status === "running"} />
+        <WorkflowStageIndicator
+          currentPhase={orchState?.workflow_stage || orchState?.phase || run.phase}
+          isRunning={run.status === "running"}
+        />
       </div>
 
       {/* Center section: iteration + plan phase + auto-continue */}
       <div className="flex items-center gap-3 shrink-0">
-        {run.iteration_count != null && (
+        {(orchState?.iteration != null || run.iteration_count != null) && (
           <IterationBadge
-            current={run.iteration_count}
-            max={run.max_sessions}
+            current={orchState?.iteration ?? run.iteration_count ?? 0}
+            max={orchState?.max_iterations ?? run.max_sessions}
           />
         )}
         <PlanPhaseDisplay

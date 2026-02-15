@@ -387,7 +387,7 @@ export function DiscoveryPanel({ discovery, onConfigCreated }: DiscoveryPanelPro
                   </TabsTrigger>
                 </TabsList>
 
-                {/* Explore tab — uses ExplorationConfigPanel with Playwright */}
+                {/* Explore tab — automated UI Bridge exploration */}
                 <TabsContent value="explore" className="mt-3">
                   <ExplorationConfigPanel
                     config={exploration.config}

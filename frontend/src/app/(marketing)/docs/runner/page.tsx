@@ -95,6 +95,11 @@ export default function RunnerDocsPage() {
               href="/docs/runner/multi-monitor"
             />
             <DocLink
+              title="Findings & Knowledge"
+              description="Understand how the runner tracks issues and accumulates cross-iteration context"
+              href="/docs/runner/findings-and-knowledge"
+            />
+            <DocLink
               title="Troubleshooting"
               description="Common issues and solutions"
               href="/docs/runner/troubleshooting"

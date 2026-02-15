@@ -29,6 +29,10 @@ export interface OrchestratorState {
   gui_locked?: boolean;
   plan_phase?: string;
   plan_total_phases?: number;
+  workflow_stage?: string;
+  phase?: string;
+  iteration?: number;
+  max_iterations?: number;
 }
 
 /**
@@ -136,6 +140,10 @@ function useOrchestratorStatePush(runId: string | null): {
         setState((prev) => ({
           ...prev,
           ...stateData,
+          // Preserve top-level workflow fields from the event (not in state_data)
+          ...(eventData.workflow_stage ? { workflow_stage: eventData.workflow_stage } : {}),
+          ...(eventData.phase ? { phase: eventData.phase } : {}),
+          ...(eventData.iteration != null ? { iteration: eventData.iteration } : {}),
         }));
       },
       [runId, fetchState]
