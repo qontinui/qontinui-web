@@ -637,7 +637,7 @@ async def update_macro(
             status_code=status.HTTP_404_NOT_FOUND, detail="Macro not found"
         )
     payload = data.model_dump(exclude_unset=True)
-    if "steps" in payload and payload["steps"] is not None:
+    if "steps" in payload and payload["steps"] is not None and data.steps is not None:
         payload["steps"] = [
             s.model_dump() if hasattr(s, "model_dump") else s for s in data.steps
         ]

@@ -23,14 +23,16 @@ print("=" * 60)
 with engine.begin() as conn:
     print("\n1. Creating ID mapping table...")
     conn.execute(
-        text("""
+        text(
+            """
         CREATE TABLE IF NOT EXISTS _id_mapping (
             table_name VARCHAR NOT NULL,
             old_id INTEGER NOT NULL,
             new_id UUID NOT NULL,
             PRIMARY KEY (table_name, old_id)
         )
-    """)
+    """
+        )
     )
 
     print("\n2. Dropping existing INTEGER-based session tables...")
@@ -71,11 +73,13 @@ with engine.begin() as conn:
 
     # Map owner_id to new UUID
     conn.execute(
-        text("""
+        text(
+            """
         UPDATE projects SET new_owner_id = users.new_id
         FROM users
         WHERE projects.owner_id = users.id
-    """)
+    """
+        )
     )
 
     # Save mapping
@@ -89,7 +93,8 @@ with engine.begin() as conn:
 
     # Check what other tables reference users
     result = conn.execute(
-        text("""
+        text(
+            """
         SELECT DISTINCT tc.table_name, kcu.column_name
         FROM information_schema.table_constraints AS tc
         JOIN information_schema.key_column_usage AS kcu
@@ -99,7 +104,8 @@ with engine.begin() as conn:
         WHERE tc.constraint_type = 'FOREIGN KEY'
           AND ccu.table_name = 'users'
           AND tc.table_name NOT IN ('projects')
-    """)
+    """
+        )
     )
 
     for table_name, column_name in result:
@@ -110,25 +116,29 @@ with engine.begin() as conn:
             )
         )
         conn.execute(
-            text(f"""
+            text(
+                f"""
             UPDATE {table_name} SET new_{column_name} = users.new_id
             FROM users
             WHERE {table_name}.{column_name} = users.id
-        """)
+        """
+            )
         )
 
     print("\n6. Dropping old constraints and columns...")
 
     # Drop foreign key constraints first
     result = conn.execute(
-        text("""
+        text(
+            """
         SELECT DISTINCT tc.constraint_name, tc.table_name
         FROM information_schema.table_constraints AS tc
         JOIN information_schema.constraint_column_usage AS ccu
           ON ccu.constraint_name = tc.constraint_name
         WHERE tc.constraint_type = 'FOREIGN KEY'
           AND ccu.table_name IN ('users', 'projects')
-    """)
+    """
+        )
     )
 
     for constraint_name, table_name in result:
@@ -158,22 +168,26 @@ with engine.begin() as conn:
 
     print("\n9. Recreating foreign keys...")
     conn.execute(
-        text("""
+        text(
+            """
         ALTER TABLE projects
         ADD CONSTRAINT projects_owner_id_fkey
         FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
-    """)
+    """
+        )
     )
 
     # Handle other tables
     result = conn.execute(
-        text("""
+        text(
+            """
         SELECT DISTINCT tc.table_name, kcu.column_name
         FROM information_schema.table_constraints AS tc
         JOIN information_schema.key_column_usage AS kcu
           ON tc.constraint_name = kcu.constraint_name
         WHERE kcu.column_name LIKE 'new_%'
-    """)
+    """
+        )
     )
 
     for table_name, column_name in result:
@@ -188,18 +202,21 @@ with engine.begin() as conn:
             )
         )
         conn.execute(
-            text(f"""
+            text(
+                f"""
             ALTER TABLE {table_name}
             ADD CONSTRAINT {table_name}_{old_column}_fkey
             FOREIGN KEY ({old_column}) REFERENCES users(id) ON DELETE CASCADE
-        """)
+        """
+            )
         )
 
     print("\n10. Creating missing tables with UUID foreign keys...")
 
     # session_activities
     conn.execute(
-        text("""
+        text(
+            """
         CREATE TABLE session_activities (
             id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
             user_id UUID NOT NULL,
@@ -211,7 +228,8 @@ with engine.begin() as conn:
             updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         )
-    """)
+    """
+        )
     )
     conn.execute(
         text("CREATE INDEX ix_session_activities_id ON session_activities(id)")
@@ -228,7 +246,8 @@ with engine.begin() as conn:
 
     # device_sessions
     conn.execute(
-        text("""
+        text(
+            """
         CREATE TABLE device_sessions (
             id UUID PRIMARY KEY,
             user_id UUID NOT NULL,
@@ -250,7 +269,8 @@ with engine.begin() as conn:
             city VARCHAR,
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         )
-    """)
+    """
+        )
     )
     conn.execute(text("CREATE INDEX ix_device_sessions_id ON device_sessions(id)"))
     conn.execute(
@@ -265,7 +285,8 @@ with engine.begin() as conn:
 
     # analytics_events
     conn.execute(
-        text("""
+        text(
+            """
         CREATE TABLE analytics_events (
             id UUID PRIMARY KEY,
             event_name VARCHAR(255) NOT NULL,
@@ -275,7 +296,8 @@ with engine.begin() as conn:
             created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         )
-    """)
+    """
+        )
     )
     conn.execute(
         text(
@@ -327,12 +349,14 @@ with engine.connect() as conn:
 
     # Check new tables exist
     result = conn.execute(
-        text("""
+        text(
+            """
         SELECT table_name FROM information_schema.tables
         WHERE table_schema = 'public'
         AND table_name IN ('session_activities', 'device_sessions', 'analytics_events')
         ORDER BY table_name
-    """)
+    """
+        )
     )
     tables = [row[0] for row in result]
     print(f"✓ New tables created: {', '.join(tables)}")

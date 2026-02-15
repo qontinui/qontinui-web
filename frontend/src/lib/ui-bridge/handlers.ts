@@ -857,6 +857,18 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
     }
   },
 
+  async clearConsoleErrors(): Promise<APIResponse<{ cleared: boolean }>> {
+    try {
+      const result = await queueCommand<{ cleared: boolean }>(
+        "clearConsoleErrors",
+        {}
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
   // --------------------------------------------------------------------------
   // AI-Native Endpoints
   // --------------------------------------------------------------------------

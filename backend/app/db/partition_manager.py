@@ -201,12 +201,14 @@ async def create_monthly_partition(
     partition_name = format_partition_name(table_name, start_date, "monthly")
 
     # Check if partition already exists
-    check_query = text("""
+    check_query = text(
+        """
         SELECT EXISTS (
             SELECT 1 FROM pg_tables
             WHERE tablename = :partition_name
         )
-    """)
+    """
+    )
     result = await db.execute(check_query, {"partition_name": partition_name})
     exists = result.scalar()
 
@@ -225,11 +227,13 @@ async def create_monthly_partition(
         }
 
     # Create the partition
-    create_query = text(f"""
+    create_query = text(
+        f"""
         CREATE TABLE {partition_name}
         PARTITION OF {table_name}
         FOR VALUES FROM ('{start_date.isoformat()}') TO ('{end_date.isoformat()}')
-    """)
+    """
+    )
 
     try:
         await db.execute(create_query)
@@ -299,12 +303,14 @@ async def create_weekly_partition(
     partition_name = format_partition_name(table_name, start_date, "weekly")
 
     # Check if partition already exists
-    check_query = text("""
+    check_query = text(
+        """
         SELECT EXISTS (
             SELECT 1 FROM pg_tables
             WHERE tablename = :partition_name
         )
-    """)
+    """
+    )
     result = await db.execute(check_query, {"partition_name": partition_name})
     exists = result.scalar()
 
@@ -323,11 +329,13 @@ async def create_weekly_partition(
         }
 
     # Create the partition
-    create_query = text(f"""
+    create_query = text(
+        f"""
         CREATE TABLE {partition_name}
         PARTITION OF {table_name}
         FOR VALUES FROM ('{start_date.isoformat()}') TO ('{end_date.isoformat()}')
-    """)
+    """
+    )
 
     try:
         await db.execute(create_query)
@@ -387,7 +395,8 @@ async def list_partitions(
             }
         ]
     """
-    query = text("""
+    query = text(
+        """
         SELECT
             c.relname AS partition_name,
             pg_get_expr(c.relpartbound, c.oid) AS partition_expression,
@@ -399,7 +408,8 @@ async def list_partitions(
         WHERE parent.relname = :table_name
         AND c.relkind = 'r'
         ORDER BY c.relname
-    """)
+    """
+    )
 
     result = await db.execute(query, {"table_name": table_name})
     partitions = []
