@@ -637,6 +637,22 @@ export function useUIBridgeTransport(
           };
         }
 
+        case "getConsoleErrors": {
+          const w = window as unknown as Record<string, unknown>;
+          const bridge = w.__UI_BRIDGE__ as Record<string, unknown> | undefined;
+          const capture = bridge?.browserCapture as
+            | { getConsoleSince(ts: number): unknown[]; getConsoleRecent(n?: number): unknown[] }
+            | undefined;
+          if (!capture) {
+            return { errors: [], count: 0 };
+          }
+          const { since, limit } = payload as { since?: number; limit?: number };
+          const errors = since
+            ? capture.getConsoleSince(since)
+            : capture.getConsoleRecent(limit ?? 50);
+          return { errors, count: errors.length };
+        }
+
         default:
           throw new Error(`Unknown command action: ${action}`);
       }

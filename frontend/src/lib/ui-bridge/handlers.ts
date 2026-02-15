@@ -70,6 +70,7 @@ import type {
   NavigationResult,
   StateSnapshot,
 } from "@qontinui/ui-bridge/core";
+import type { CapturedError } from "@qontinui/ui-bridge/debug";
 
 /**
  * Create a success response wrapper
@@ -836,6 +837,20 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
   async getElementTree(): Promise<APIResponse<unknown>> {
     try {
       const result = await queueCommand("getElementTree", {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getConsoleErrors(
+    params?: { since?: number; limit?: number }
+  ): Promise<APIResponse<{ errors: CapturedError[]; count: number }>> {
+    try {
+      const result = await queueCommand<{ errors: CapturedError[]; count: number }>(
+        "getConsoleErrors",
+        params ?? {}
+      );
       return success(result);
     } catch (e) {
       return error((e as Error).message, "COMMAND_FAILED");

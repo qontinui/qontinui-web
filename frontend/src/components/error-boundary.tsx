@@ -58,6 +58,13 @@ export class ErrorBoundary extends Component<Props, State> {
         .catch(() => {
           // Ignore import errors
         });
+
+      // Report to UI Bridge browser event capture
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const bridge = (window as any).__UI_BRIDGE__;
+      bridge?.browserCapture?.reportReactError?.(error, {
+        componentStack: errorInfo.componentStack || undefined,
+      });
     }
 
     // Log to error reporting service (e.g., Sentry)
