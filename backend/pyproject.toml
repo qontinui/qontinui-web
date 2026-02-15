@@ -148,6 +148,7 @@ ignore = [
     "B017",  # pytest.raises(Exception) - acceptable for validation tests
     "B904",  # raise from - good practice but not critical, many existing exceptions
     "B019",  # lru_cache on methods - used intentionally for secrets/config caching
+    "UP047",  # PEP 695 type params - Black 24 and 25 format these incompatibly
 ]
 
 [tool.ruff.lint.per-file-ignores]
