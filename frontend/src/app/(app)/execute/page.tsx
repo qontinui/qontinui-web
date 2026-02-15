@@ -144,6 +144,7 @@ export default function ExecutePage() {
   const [showLibrary, setShowLibrary] = useState(false);
   const [librarySearch, setLibrarySearch] = useState("");
   const [stopOnFailure, setStopOnFailure] = useState(false);
+  const [runningWorkflowId, setRunningWorkflowId] = useState<string | null>(null);
 
   const filteredQueue = useMemo(() => {
     if (!queueItems) return [];
@@ -158,13 +159,19 @@ export default function ExecutePage() {
 
   const handleAddToQueue = async () => {
     if (!selectedWorkflowId) return;
+    setRunningWorkflowId(selectedWorkflowId);
     try {
       await runnerApi.runWorkflow(selectedWorkflowId);
       setShowAddDialog(false);
       setSelectedWorkflowId("");
+      toast.success("Workflow started");
       await refetch();
-    } catch {
-      // Error handled silently
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to start workflow"
+      );
+    } finally {
+      setRunningWorkflowId(null);
     }
   };
 
@@ -275,20 +282,37 @@ export default function ExecutePage() {
                           variant="outline"
                           size="sm"
                           className="w-full text-xs h-7"
+                          disabled={runningWorkflowId === workflow.id}
                           onClick={async () => {
+                            setRunningWorkflowId(workflow.id);
                             try {
                               await runnerApi.runWorkflow(workflow.id);
                               refetch();
                               toast.success(
-                                `Added "${workflow.name}" to queue`
+                                `Started "${workflow.name}"`
                               );
-                            } catch {
-                              toast.error("Failed to add to queue");
+                            } catch (err) {
+                              toast.error(
+                                err instanceof Error
+                                  ? err.message
+                                  : "Failed to start workflow"
+                              );
+                            } finally {
+                              setRunningWorkflowId(null);
                             }
                           }}
                         >
-                          <Plus className="size-3 mr-1" />
-                          Add to Queue
+                          {runningWorkflowId === workflow.id ? (
+                            <>
+                              <Loader2 className="size-3 mr-1 animate-spin" />
+                              Running...
+                            </>
+                          ) : (
+                            <>
+                              <Plus className="size-3 mr-1" />
+                              Add to Queue
+                            </>
+                          )}
                         </Button>
                       </div>
                     ))}
@@ -360,11 +384,20 @@ export default function ExecutePage() {
                       <Button
                         variant="brand-primary"
                         size="sm"
-                        disabled={!selectedWorkflowId}
+                        disabled={!selectedWorkflowId || !!runningWorkflowId}
                         onClick={handleAddToQueue}
                       >
-                        <Play className="size-4" />
-                        Add & Run
+                        {runningWorkflowId ? (
+                          <>
+                            <Loader2 className="size-4 animate-spin" />
+                            Running...
+                          </>
+                        ) : (
+                          <>
+                            <Play className="size-4" />
+                            Add & Run
+                          </>
+                        )}
                       </Button>
                     </div>
                   </div>

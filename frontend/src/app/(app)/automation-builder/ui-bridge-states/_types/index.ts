@@ -148,6 +148,10 @@ export interface StateNodeData {
   description: string | null;
   isBlocking: boolean;
   isSelected: boolean;
+  isInitial: boolean;
+  outgoingCount?: number;
+  incomingCount?: number;
+  onStartElementDrag?: (stateId: string, elementId: string) => void;
 }
 
 export interface TransitionEdgeData {
@@ -155,5 +159,7 @@ export interface TransitionEdgeData {
   name: string;
   pathCost: number;
   actionCount: number;
+  actionTypes: TransitionAction["type"][];
   isHighlighted: boolean;
+  staysVisible: boolean;
 }

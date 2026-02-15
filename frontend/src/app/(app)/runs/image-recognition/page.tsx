@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { useRunningTaskRuns, useTaskRunEvents } from "@/lib/runner-api";
 import type { TaskRunEvent } from "@/lib/runner-api";
-import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
+import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -77,10 +77,6 @@ export default function ImageRecognitionPage() {
     return events.filter(isImageRecognitionEvent);
   }, [events]);
 
-  if (isOffline) {
-    return <RunnerOfflineState />;
-  }
-
   return (
     <div className="h-full overflow-y-auto bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
@@ -99,6 +95,8 @@ export default function ImageRecognitionPage() {
           )}
         </div>
       </header>
+
+      {isOffline && <RunnerPartialState message="Runner offline — live data unavailable" />}
 
       <main className="flex h-[calc(100vh-65px)]">
         {/* Left panel: Run list */}

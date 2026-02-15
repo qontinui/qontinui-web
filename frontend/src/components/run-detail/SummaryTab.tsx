@@ -47,6 +47,7 @@ import type {
   Finding,
   FailureInfo,
 } from "@/lib/runner-api";
+import type { TaskRunView } from "@/lib/task-run-mappers";
 import { toast } from "sonner";
 const TimelineTab = lazy(() =>
   import("@/components/run-detail/TimelineTab").then((m) => ({
@@ -704,8 +705,11 @@ function FailureSection({ failure }: { failure: FailureInfo }) {
 // SummaryTab Props
 // =============================================================================
 
+/** Accept either full runner TaskRun or the dual-source TaskRunView. */
+type SummaryTabRun = TaskRun | TaskRunView;
+
 interface SummaryTabProps {
-  run: TaskRun;
+  run: SummaryTabRun;
   onRefresh?: () => void;
 }
 
@@ -721,11 +725,13 @@ export function SummaryTab({ run, onRefresh }: SummaryTabProps) {
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [summaryExpanded, setSummaryExpanded] = useState(false);
 
-  const aiSummary = run.summary || run.ai_summary || "";
+  // Safely access runner-specific fields that don't exist on TaskRunView
+  const runnerRun = run as Partial<TaskRun>;
+  const aiSummary = run.summary || runnerRun.ai_summary || ("output_summary" in run ? (run as TaskRunView).output_summary : null) || "";
   const goalAchieved = run.goal_achieved;
   const remainingWork = run.remaining_work || null;
-  const loopResult = run.loop_result || null;
-  const failureInfo = run.failure_info || null;
+  const loopResult = runnerRun.loop_result || null;
+  const failureInfo = runnerRun.failure_info || null;
 
   const isFinished =
     run.status === "completed" ||
@@ -874,9 +880,9 @@ export function SummaryTab({ run, onRefresh }: SummaryTabProps) {
                 <h2 className="font-semibold text-lg text-text-primary">
                   AI Summary
                 </h2>
-                {run.summary_generated_at && (
+                {runnerRun.summary_generated_at && (
                   <p className="text-xs text-text-muted">
-                    Generated {formatDateTime(run.summary_generated_at)}
+                    Generated {formatDateTime(runnerRun.summary_generated_at)}
                   </p>
                 )}
               </div>
@@ -1047,8 +1053,8 @@ export function SummaryTab({ run, onRefresh }: SummaryTabProps) {
           <div className="flex items-center gap-2">
             <FileText className="size-4" />
             <span>
-              {run.output_log
-                ? `${Math.round(run.output_log.length / 1024)}KB output`
+              {runnerRun.output_log
+                ? `${Math.round(runnerRun.output_log.length / 1024)}KB output`
                 : "No output"}
             </span>
           </div>
@@ -1119,7 +1125,8 @@ export function SummaryTab({ run, onRefresh }: SummaryTabProps) {
               <h3 className="font-medium text-red-500">Run Failed</h3>
               <p className="text-sm text-red-400 mt-1">
                 {run.summary ||
-                  run.ai_summary ||
+                  runnerRun.ai_summary ||
+                  ("error_message" in run ? (run as TaskRunView).error_message : null) ||
                   "Run failed. Check the output log for details."}
               </p>
             </div>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRunnerHealth, runnerApi } from "@/lib/runner-api";
-import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
+import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -108,8 +108,6 @@ export default function CapturePage() {
     );
   }
 
-  if (isOffline) return <RunnerOfflineState />;
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
@@ -130,6 +128,8 @@ export default function CapturePage() {
       </header>
 
       <main className="p-6 max-w-3xl mx-auto space-y-6">
+        {isOffline && <RunnerPartialState message="Runner offline — this tool requires the runner for execution" />}
+
         <p className="text-text-muted">
           Record user interactions for automation replay and state discovery.
         </p>

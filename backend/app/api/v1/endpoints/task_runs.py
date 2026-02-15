@@ -124,6 +124,20 @@ async def list_task_runs(
 
 
 @router.get(
+    "/findings-summary",
+    summary="Get findings summary across all runs",
+    description="Get aggregated findings summary across all task runs for the current user.",
+)
+async def get_findings_summary(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
+    service: TaskRunService = Depends(get_task_run_service),
+) -> dict:
+    """Get aggregated findings summary across all task runs."""
+    return await service.get_findings_summary(db, current_user.id)
+
+
+@router.get(
     "/{task_run_id}",
     response_model=TaskRunDetail,
     summary="Get task run detail",

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useTaskRuns, useTaskRunCheckpoints } from "@/lib/runner-api";
 import type { TaskRun, Checkpoint } from "@/lib/runner-api";
-import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
+import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -79,10 +79,6 @@ export default function CheckpointsPage() {
     error: checkpointsError,
   } = useTaskRunCheckpoints(selectedRunId);
 
-  if (isOffline) {
-    return <RunnerOfflineState />;
-  }
-
   return (
     <div className="h-full overflow-y-auto bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
@@ -104,6 +100,8 @@ export default function CheckpointsPage() {
           </Button>
         </div>
       </header>
+
+      {isOffline && <RunnerPartialState message="Runner offline — live data unavailable" />}
 
       <main className="p-6 max-w-7xl mx-auto">
         <p className="text-text-muted mb-6">

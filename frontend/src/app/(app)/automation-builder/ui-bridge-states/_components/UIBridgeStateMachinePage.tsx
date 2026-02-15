@@ -19,24 +19,32 @@ import {
   RefreshCw,
   Loader2,
   Search,
+  Layers,
+  ArrowRightLeft,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useUIBridgeStateMachine } from "../_hooks/useUIBridgeStateMachine";
 import { useUIBridgeTransitions } from "../_hooks/useUIBridgeTransitions";
 import { usePathfinding } from "../_hooks/usePathfinding";
 import { useExportStateMachine } from "../_hooks/useExportStateMachine";
+import { useElementDrag } from "../_hooks/useElementDrag";
 import { UIBridgeStateGraph } from "./UIBridgeStateGraph";
 import { UIBridgeStatePanel } from "./UIBridgeStatePanel";
 import { UIBridgeTransitionEditor } from "./UIBridgeTransitionEditor";
 import { PathfindingPanel } from "./PathfindingPanel";
 import { ExportPanel } from "./ExportPanel";
 import { DiscoveryPanel } from "./DiscoveryPanel";
+import { StateViewPanel } from "./StateViewPanel";
+import { TransitionsPanel } from "./TransitionsPanel";
 import type { UIBridgeTransitionCreate } from "../_types";
+import { useAutomationStore } from "@/stores/automation";
 
 export function UIBridgeStateMachinePage() {
   const sm = useUIBridgeStateMachine();
   const transitions = useUIBridgeTransitions(sm.selectedConfigId);
   const pathfinding = usePathfinding(sm.selectedConfigId);
   const exporter = useExportStateMachine(sm.selectedConfigId);
+  const projectId = useAutomationStore((s) => s.projectId);
 
   const [activeTab, setActiveTab] = useState("discovery");
   const [showNewTransition, setShowNewTransition] = useState(false);
@@ -82,6 +90,39 @@ export function UIBridgeStateMachinePage() {
     },
     [transitions, sm]
   );
+
+  // Handle element update for drag-and-drop reassignment
+  const handleUpdateState = useCallback(
+    async (stateId: string, elementIds: string[]) => {
+      if (!projectId || !sm.selectedConfigId) return;
+      try {
+        const res = await fetch(
+          `/api/v1/projects/${projectId}/ui-bridge-configs/${sm.selectedConfigId}/states/${stateId}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ element_ids: elementIds }),
+          }
+        );
+        if (!res.ok) {
+          toast.error("Failed to update state elements");
+        }
+      } catch {
+        toast.error("Failed to update state elements");
+      }
+      sm.refresh();
+    },
+    [projectId, sm]
+  );
+
+  // Drag-and-drop hook for element-based transition creation
+  const elementDrag = useElementDrag({
+    states: sm.fullConfig?.states ?? [],
+    transitions: sm.fullConfig?.transitions ?? [],
+    onCreateTransition: handleCreateTransition,
+    onUpdateState: handleUpdateState,
+  });
 
   // When a new config is created via discovery, select it and switch to graph
   const handleConfigCreated = useCallback(
@@ -158,6 +199,14 @@ export function UIBridgeStateMachinePage() {
               <GitBranch className="size-3.5" />
               Graph Editor
             </TabsTrigger>
+            <TabsTrigger value="states" className="gap-1.5">
+              <Layers className="size-3.5" />
+              State View
+            </TabsTrigger>
+            <TabsTrigger value="transitions" className="gap-1.5">
+              <ArrowRightLeft className="size-3.5" />
+              Transitions
+            </TabsTrigger>
             <TabsTrigger value="pathfinding" className="gap-1.5">
               <Route className="size-3.5" />
               Pathfinding
@@ -222,6 +271,11 @@ export function UIBridgeStateMachinePage() {
                     setShowNewTransition(false);
                   }}
                   highlightedPath={pathfinding.result?.steps}
+                  onStartElementDrag={elementDrag.handleStartElementDrag}
+                  onDragOver={elementDrag.handleDragOver}
+                  onDrop={elementDrag.handleDrop}
+                  isDragging={elementDrag.isDragging}
+                  dropTargetStateId={elementDrag.dropTargetStateId}
                 />
               </div>
 
@@ -249,6 +303,43 @@ export function UIBridgeStateMachinePage() {
                 />
               )}
             </>
+          )}
+        </TabsContent>
+
+        {/* State View Tab */}
+        <TabsContent value="states" className="flex-1 flex min-h-0">
+          {!sm.selectedConfigId ? (
+            <div className="flex-1 flex items-center justify-center text-text-muted">
+              Select a configuration to view states.
+            </div>
+          ) : (
+            <StateViewPanel
+              states={sm.fullConfig?.states ?? []}
+              transitions={sm.fullConfig?.transitions ?? []}
+              selectedStateId={sm.selectedStateId}
+              onSelectState={(id) => {
+                sm.setSelectedStateId(id);
+                sm.setSelectedTransitionId(null);
+              }}
+            />
+          )}
+        </TabsContent>
+
+        {/* Transitions Tab */}
+        <TabsContent value="transitions" className="flex-1 flex min-h-0">
+          {!sm.selectedConfigId ? (
+            <div className="flex-1 flex items-center justify-center text-text-muted">
+              Select a configuration to view transitions.
+            </div>
+          ) : (
+            <TransitionsPanel
+              states={sm.fullConfig?.states ?? []}
+              transitions={sm.fullConfig?.transitions ?? []}
+              onSelectTransition={(id) => {
+                sm.setSelectedTransitionId(id);
+                sm.setSelectedStateId(null);
+              }}
+            />
           )}
         </TabsContent>
 

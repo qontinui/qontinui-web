@@ -28,14 +28,17 @@ import {
   ClipboardCheck,
 } from "lucide-react";
 import { format } from "date-fns";
-import { useAITask, useUpdateFindingStatus } from "@/hooks/useAITasks";
+import {
+  useBackendTaskRun,
+  useUpdateBackendFindingStatus,
+} from "@/hooks/useTaskRunsBackend";
 import VerificationResultsTab from "./VerificationResultsTab";
 import type {
-  AITaskSession,
-  AITaskFinding,
-  AITaskFindingStatus,
-  AITaskStatus,
-} from "@/types/ai-tasks";
+  TaskRunSession,
+  TaskRunFinding,
+  TaskRunFindingStatus,
+  TaskRunStatus,
+} from "@/types/task-runs";
 
 export default function AITaskDetailPage() {
   const { user, loading: authLoading } = useAuth();
@@ -45,8 +48,8 @@ export default function AITaskDetailPage() {
   const taskId = params.id as string;
   const projectId = searchParams.get("project");
 
-  const { data: task, isLoading, error, refetch } = useAITask(taskId);
-  const updateFinding = useUpdateFindingStatus();
+  const { data: task, isLoading, error, refetch } = useBackendTaskRun(taskId);
+  const updateFinding = useUpdateBackendFindingStatus();
 
   const [activeTab, setActiveTab] = useState("sessions");
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(
@@ -94,14 +97,14 @@ export default function AITaskDetailPage() {
       await updateFinding.mutateAsync({
         taskId,
         findingId,
-        data: { status: newStatus as AITaskFindingStatus },
+        data: { status: newStatus as TaskRunFindingStatus },
       });
     } catch (error) {
       console.error("Failed to update finding status:", error);
     }
   };
 
-  const getStatusIcon = (status: AITaskStatus) => {
+  const getStatusIcon = (status: TaskRunStatus) => {
     switch (status) {
       case "complete":
         return <CheckCircle2 className="w-5 h-5 text-green-500" />;
@@ -116,7 +119,7 @@ export default function AITaskDetailPage() {
     }
   };
 
-  const getStatusBadge = (status: AITaskStatus) => {
+  const getStatusBadge = (status: TaskRunStatus) => {
     switch (status) {
       case "complete":
         return (
@@ -168,7 +171,7 @@ export default function AITaskDetailPage() {
     }
   };
 
-  const getFindingStatusBadge = (status: AITaskFindingStatus) => {
+  const getFindingStatusBadge = (status: TaskRunFindingStatus) => {
     switch (status) {
       case "resolved":
         return (
@@ -396,7 +399,7 @@ export default function AITaskDetailPage() {
                       ) : (
                         <div className="space-y-4">
                           {task.sessions.map(
-                            (session: AITaskSession, index: number) => (
+                            (session: TaskRunSession, index: number) => (
                               <div
                                 key={session.id}
                                 className="border border-border-subtle/50 rounded-lg overflow-hidden"
@@ -489,7 +492,7 @@ export default function AITaskDetailPage() {
                             (severity) => {
                               const severityFindings =
                                 task.findings?.filter(
-                                  (f: AITaskFinding) => f.severity === severity
+                                  (f: TaskRunFinding) => f.severity === severity
                                 ) || [];
                               if (severityFindings.length === 0) return null;
 
@@ -503,7 +506,7 @@ export default function AITaskDetailPage() {
                                   </div>
                                   <div className="space-y-2">
                                     {severityFindings.map(
-                                      (finding: AITaskFinding) => (
+                                      (finding: TaskRunFinding) => (
                                         <div
                                           key={finding.id}
                                           className="border border-border-subtle/50 rounded-lg overflow-hidden"

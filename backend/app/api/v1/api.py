@@ -27,6 +27,7 @@ from app.api.v1.endpoints import (
     custom_functions,
     discoveries,
     element_annotations,
+    error_monitor,
     execution,
     export,
     exports,
@@ -38,6 +39,7 @@ from app.api.v1.endpoints import (
     images,
     integration_testing,
     issues,
+    library,
     notifications,
     organizations,
     project_files,
@@ -232,4 +234,10 @@ api_router.include_router(
 # Cross-entity semantic search
 api_router.include_router(
     semantic_search.router, prefix="/search", tags=["semantic-search"]
+)
+# Library items (checks, check groups, shell commands, API requests, contexts, macros, scriptlets)
+api_router.include_router(library.router, prefix="/library", tags=["library"])
+# Error monitor entries
+api_router.include_router(
+    error_monitor.router, prefix="/error-monitor", tags=["error-monitor"]
 )

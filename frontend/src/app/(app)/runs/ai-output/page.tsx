@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useRunningTaskRuns, useTaskRunOutput } from "@/lib/runner-api";
 import type { TaskRun } from "@/lib/runner-api";
-import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
+import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Bot, MessageSquare } from "lucide-react";
@@ -415,10 +415,6 @@ export default function AiOutputPage() {
     }
   }, [runs, selectedRunId]);
 
-  if (isOffline) {
-    return <RunnerOfflineState />;
-  }
-
   return (
     <div className="h-full overflow-y-auto bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white flex flex-col">
       {/* Page header */}
@@ -433,6 +429,8 @@ export default function AiOutputPage() {
           )}
         </div>
       </header>
+
+      {isOffline && <RunnerPartialState message="Runner offline — live data unavailable" />}
 
       {/* Main content: two-panel layout */}
       {runsLoading ? (

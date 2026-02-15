@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { useExplorationHistory } from "@/lib/runner-api";
 import type { ExplorationReport } from "@/lib/runner-api";
-import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
+import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -90,10 +90,6 @@ export default function StateExplorationPage() {
     };
   }, [reports]);
 
-  if (isOffline) {
-    return <RunnerOfflineState />;
-  }
-
   return (
     <div className="h-full overflow-y-auto bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
@@ -115,6 +111,8 @@ export default function StateExplorationPage() {
           </Button>
         </div>
       </header>
+
+      {isOffline && <RunnerPartialState message="Runner offline — live data unavailable" />}
 
       <main className="p-6 max-w-7xl mx-auto space-y-6">
         <p className="text-text-muted">

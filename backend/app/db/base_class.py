@@ -11,7 +11,17 @@ from app.models.capture import (  # noqa
     ScreenshotStateMatch,
 )
 from app.models.device_session import DeviceSession  # noqa
+from app.models.error_monitor import ErrorMonitorEntry  # noqa
 from app.models.extraction import ExtractionAnnotation, ExtractionSession  # noqa
+from app.models.library import (  # noqa
+    Check,
+    CheckGroup,
+    Context,
+    Macro,
+    SavedApiRequest,
+    Scriptlet,
+    ShellCommand,
+)
 from app.models.project import Project  # noqa
 from app.models.session_activity import SessionActivity  # noqa
 from app.models.snapshot import (  # noqa

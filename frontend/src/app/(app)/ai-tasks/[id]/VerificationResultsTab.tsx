@@ -20,13 +20,13 @@ import {
   AlertCircle,
   Wrench,
 } from "lucide-react";
-import { useVerificationResults } from "@/hooks/useAITasks";
+import { useBackendVerificationResults } from "@/hooks/useTaskRunsBackend";
 import type {
   VerificationResultResponse,
   VerificationStepResult,
   IndividualCheckResult,
   CheckIssueDetail,
-} from "@/types/ai-tasks";
+} from "@/types/task-runs";
 
 interface VerificationResultsTabProps {
   taskId: string;
@@ -441,7 +441,7 @@ function IterationCard({ result }: { result: VerificationResultResponse }) {
 export default function VerificationResultsTab({
   taskId,
 }: VerificationResultsTabProps) {
-  const { data, isLoading, error } = useVerificationResults(taskId);
+  const { data, isLoading, error } = useBackendVerificationResults(taskId);
 
   if (isLoading) {
     return (

@@ -335,6 +335,93 @@ class TaskRunService:
         return True
 
     # =========================================================================
+    # Aggregated Queries
+    # =========================================================================
+
+    async def get_findings_summary(
+        self,
+        db: AsyncSession,
+        user_id: UUID,
+    ) -> dict:
+        """Get aggregated findings summary across all task runs for a user.
+
+        Args:
+            db: Database session
+            user_id: ID of the user
+
+        Returns:
+            Dictionary with total count, breakdowns by severity/category/status,
+            and recent findings.
+        """
+        from sqlalchemy import func, select
+
+        from app.models.task_run import TaskRunFinding
+
+        # Get all task run IDs for this user
+        task_run_ids_query = select(TaskRun.id).where(
+            TaskRun.created_by_user_id == user_id
+        )
+
+        # Count by severity
+        severity_query = (
+            select(TaskRunFinding.severity, func.count())
+            .where(TaskRunFinding.task_run_id.in_(task_run_ids_query))
+            .group_by(TaskRunFinding.severity)
+        )
+        severity_result = await db.execute(severity_query)
+        by_severity = {
+            str(row[0].value if hasattr(row[0], "value") else row[0]): row[1]
+            for row in severity_result
+        }
+
+        # Count by category
+        category_query = (
+            select(TaskRunFinding.category, func.count())
+            .where(TaskRunFinding.task_run_id.in_(task_run_ids_query))
+            .group_by(TaskRunFinding.category)
+        )
+        category_result = await db.execute(category_query)
+        by_category = {
+            str(row[0].value if hasattr(row[0], "value") else row[0]): row[1]
+            for row in category_result
+        }
+
+        # Count by status
+        status_query = (
+            select(TaskRunFinding.status, func.count())
+            .where(TaskRunFinding.task_run_id.in_(task_run_ids_query))
+            .group_by(TaskRunFinding.status)
+        )
+        status_result = await db.execute(status_query)
+        by_status = {
+            str(row[0].value if hasattr(row[0], "value") else row[0]): row[1]
+            for row in status_result
+        }
+
+        # Total count
+        total = sum(by_severity.values())
+
+        # Recent findings (last 20)
+        recent_query = (
+            select(TaskRunFinding)
+            .where(TaskRunFinding.task_run_id.in_(task_run_ids_query))
+            .order_by(TaskRunFinding.detected_at.desc())
+            .limit(20)
+        )
+        recent_result = await db.execute(recent_query)
+        recent_findings = [
+            model_to_finding_response(f) for f in recent_result.scalars()
+        ]
+
+        return {
+            "total": total,
+            "by_severity": by_severity,
+            "by_category": by_category,
+            "by_status": by_status,
+            "recent": [f.model_dump() for f in recent_findings],
+        }
+
+    # =========================================================================
     # Session Operations (delegates to TaskRunSessionService)
     # =========================================================================
 

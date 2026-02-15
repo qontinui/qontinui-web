@@ -20,7 +20,7 @@ import {
 export interface BuilderItem {
   id: string;
   name: string;
-  description?: string;
+  description?: string | null;
   updated_at?: string;
   created_at?: string;
 }

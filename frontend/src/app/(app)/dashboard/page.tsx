@@ -22,12 +22,9 @@ import {
   Loader2,
   ArrowRight,
 } from "lucide-react";
-import {
-  useRunnerHealth,
-  useRunningTaskRuns,
-  useTaskRuns,
-  useFindingsSummary,
-} from "@/lib/runner-api";
+import { useRunnerHealth, useRunningTaskRuns } from "@/lib/runner-api";
+import { useTaskRunList, useFindingsSummary } from "@/hooks/useTaskRunData";
+import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 
 function StatusDot({
   status,
@@ -201,8 +198,7 @@ function ActiveRunsCard() {
 
 function RecentRunsCard() {
   const router = useRouter();
-  const { data: taskRuns, isOffline } = useTaskRuns({ limit: 5 });
-  const runs = taskRuns ?? [];
+  const { data: runs, isRunnerOffline } = useTaskRunList({ limit: 5 });
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -230,24 +226,6 @@ function RecentRunsCard() {
     return `${diffDays}d ago`;
   };
 
-  if (isOffline) {
-    return (
-      <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2">
-            <History className="size-5 text-text-muted" />
-            Recent Runs
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <p className="text-sm text-text-muted py-4 text-center">
-            Runner not connected
-          </p>
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
     <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
       <CardHeader className="pb-2">
@@ -265,6 +243,11 @@ function RecentRunsCard() {
           </Button>
         </div>
       </CardHeader>
+      {isRunnerOffline && (
+        <div className="px-2 mb-2">
+          <RunnerPartialState message="Runner offline — showing recent historical runs" />
+        </div>
+      )}
       <CardContent className="pt-0">
         {runs.length === 0 ? (
           <p className="text-sm text-text-muted py-4 text-center">
@@ -298,25 +281,7 @@ function RecentRunsCard() {
 
 function FindingsSummaryCard() {
   const router = useRouter();
-  const { data: summary, isOffline } = useFindingsSummary();
-
-  if (isOffline) {
-    return (
-      <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2">
-            <AlertCircle className="size-5 text-text-muted" />
-            Findings
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <p className="text-sm text-text-muted py-4 text-center">
-            Runner not connected
-          </p>
-        </CardContent>
-      </Card>
-    );
-  }
+  const { data: summary, isRunnerOffline } = useFindingsSummary();
 
   const total = summary?.total ?? 0;
   const bySeverity = summary?.by_severity ?? {};
@@ -348,6 +313,11 @@ function FindingsSummaryCard() {
           )}
         </div>
       </CardHeader>
+      {isRunnerOffline && (
+        <div className="px-2 mb-2">
+          <RunnerPartialState message="Runner offline — showing historical findings" />
+        </div>
+      )}
       <CardContent className="pt-0">
         {total === 0 ? (
           <p className="text-sm text-text-muted py-4 text-center">

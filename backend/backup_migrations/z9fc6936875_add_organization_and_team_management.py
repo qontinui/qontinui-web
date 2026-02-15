@@ -204,13 +204,11 @@ def upgrade() -> None:
 
         # Insert organization
         result = connection.execute(
-            sa.text(
-                """
+            sa.text("""
                 INSERT INTO organizations (name, slug, description, owner_id, is_active, created_at, updated_at)
                 VALUES (:name, :slug, :description, :owner_id, true, :created_at, :updated_at)
                 RETURNING id
-            """
-            ),
+            """),
             {
                 "name": org_name,
                 "slug": org_slug,
@@ -224,12 +222,10 @@ def upgrade() -> None:
 
         # Add the user as an owner member of their personal organization
         connection.execute(
-            sa.text(
-                """
+            sa.text("""
                 INSERT INTO team_members (organization_id, user_id, role, joined_at)
                 VALUES (:org_id, :user_id, 'owner', :joined_at)
-            """
-            ),
+            """),
             {
                 "org_id": org_id,
                 "user_id": user_id,
@@ -249,14 +245,12 @@ def upgrade() -> None:
 
         # Get the user's personal organization
         org = connection.execute(
-            sa.text(
-                """
+            sa.text("""
                 SELECT id FROM organizations
                 WHERE owner_id = :owner_id
                 AND slug LIKE '%-personal%'
                 LIMIT 1
-            """
-            ),
+            """),
             {"owner_id": owner_id},
         ).fetchone()
 
@@ -265,13 +259,11 @@ def upgrade() -> None:
 
             # Create organization-level access control for the project
             connection.execute(
-                sa.text(
-                    """
+                sa.text("""
                     INSERT INTO project_access_control
                     (project_id, organization_id, permission_level, created_by, created_at)
                     VALUES (:project_id, :org_id, 'admin', :owner_id, :created_at)
-                """
-                ),
+                """),
                 {
                     "project_id": project_id,
                     "org_id": org_id,

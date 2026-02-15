@@ -2,9 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useTaskRuns } from "@/lib/runner-api";
-import type { TaskRun } from "@/lib/runner-api";
-import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
+import { useTaskRunList } from "@/hooks/useTaskRunData";
+import type { TaskRunView } from "@/lib/task-run-mappers";
+import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -50,11 +50,11 @@ interface Stats {
   avgDuration: number;
   successRate: number;
   totalDuration: number;
-  longestRun: TaskRun | null;
-  shortestRun: TaskRun | null;
+  longestRun: TaskRunView | null;
+  shortestRun: TaskRunView | null;
 }
 
-function computeStats(runs: TaskRun[]): Stats {
+function computeStats(runs: TaskRunView[]): Stats {
   const completedRuns = runs.filter((r) => r.status === "completed");
   const failedRuns = runs.filter((r) => r.status === "failed");
   const runningRuns = runs.filter((r) => r.status === "running");
@@ -74,8 +74,8 @@ function computeStats(runs: TaskRun[]): Stats {
   const successRate =
     finishedCount > 0 ? (completedRuns.length / finishedCount) * 100 : 0;
 
-  let longestRun: TaskRun | null = null;
-  let shortestRun: TaskRun | null = null;
+  let longestRun: TaskRunView | null = null;
+  let shortestRun: TaskRunView | null = null;
   for (const r of finishedRuns) {
     if (
       !longestRun ||
@@ -111,9 +111,9 @@ export default function StatisticsPage() {
     data: runs,
     isLoading,
     error,
-    isOffline,
+    isRunnerOffline,
     refetch,
-  } = useTaskRuns({ limit: 50 });
+  } = useTaskRunList({ limit: 50 });
 
   const [viewMode, setViewMode] = useState<"overview" | "performance">(
     "overview"
@@ -124,10 +124,6 @@ export default function StatisticsPage() {
     if (!runs || runs.length === 0) return null;
     return computeStats(runs);
   }, [runs]);
-
-  if (isOffline) {
-    return <RunnerOfflineState />;
-  }
 
   return (
     <div className="h-full overflow-y-auto bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
@@ -153,6 +149,8 @@ export default function StatisticsPage() {
         <p className="text-text-muted">
           Performance analytics computed from recent task runs.
         </p>
+
+        {isRunnerOffline && <RunnerPartialState />}
 
         <div className="flex items-center gap-2">
           <Button
@@ -184,7 +182,7 @@ export default function StatisticsPage() {
           </div>
         ) : error ? (
           <div className="text-center py-16 text-red-400">
-            Error loading data: {error}
+            Error loading data: {error?.message ?? "Unknown error"}
           </div>
         ) : !stats ? (
           <Card className="bg-surface-raised/50 border-border-subtle/50">
@@ -484,7 +482,7 @@ export default function StatisticsPage() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {(runs || []).slice(0, 15).map((run: TaskRun) => {
+                          {(runs || []).slice(0, 15).map((run: TaskRunView) => {
                             const diff =
                               run.duration_seconds != null
                                 ? run.duration_seconds - stats.avgDuration

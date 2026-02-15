@@ -8,7 +8,7 @@ import {
   useTaskRunMcpCalls,
 } from "@/lib/runner-api";
 import type { Finding, VerificationResult, McpCall } from "@/lib/runner-api";
-import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
+import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -494,10 +494,6 @@ export default function AiDataPage() {
   const effectiveRunId =
     selectedRunId ?? (runs && runs.length > 0 ? String(runs[0]!.id) : null);
 
-  if (isOffline) {
-    return <RunnerOfflineState />;
-  }
-
   return (
     <div className="h-full overflow-y-auto bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       {/* Header */}
@@ -511,6 +507,8 @@ export default function AiDataPage() {
           </div>
         </div>
       </header>
+
+      {isOffline && <RunnerPartialState message="Runner offline — live data unavailable" />}
 
       {/* Body - two panel layout */}
       <div className="flex h-[calc(100vh-65px)]">

@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo } from "react";
-import { useTaskRuns, useFindingsSummary } from "@/lib/runner-api";
-import type { TaskRun } from "@/lib/runner-api";
-import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
+import { useTaskRunList, useFindingsSummary } from "@/hooks/useTaskRunData";
+import type { TaskRunView } from "@/lib/task-run-mappers";
+import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,7 +35,7 @@ interface PatternInsight {
   type: "positive" | "negative" | "neutral";
 }
 
-function computeIterationTrend(runs: TaskRun[]): IterationTrend {
+function computeIterationTrend(runs: TaskRunView[]): IterationTrend {
   const withIterations = runs.filter(
     (r) => r.iteration_count != null && r.iteration_count > 0
   );
@@ -68,7 +68,7 @@ function computeIterationTrend(runs: TaskRun[]): IterationTrend {
 }
 
 function derivePatternInsights(
-  runs: TaskRun[],
+  runs: TaskRunView[],
   findingsTotal: number
 ): PatternInsight[] {
   const insights: PatternInsight[] = [];
@@ -182,13 +182,13 @@ export default function LearningPage() {
     data: runs,
     isLoading: runsLoading,
     error: runsError,
-    isOffline: runsOffline,
+    isRunnerOffline: runsOffline,
     refetch: refetchRuns,
-  } = useTaskRuns({ limit: 50 });
+  } = useTaskRunList({ limit: 50 });
   const {
     data: findingsData,
     isLoading: findingsLoading,
-    isOffline: findingsOffline,
+    isRunnerOffline: findingsOffline,
   } = useFindingsSummary();
 
   const isOffline = runsOffline || findingsOffline;
@@ -210,10 +210,6 @@ export default function LearningPage() {
       .sort(([, a], [, b]) => (b as number) - (a as number))
       .slice(0, 8);
   }, [findingsData]);
-
-  if (isOffline) {
-    return <RunnerOfflineState />;
-  }
 
   return (
     <div className="h-full overflow-y-auto bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
@@ -243,6 +239,8 @@ export default function LearningPage() {
           and finding distributions.
         </p>
 
+        {isOffline && <RunnerPartialState />}
+
         {isLoading ? (
           <div className="text-center py-16 text-text-muted">
             <RefreshCw className="size-6 animate-spin mx-auto mb-3" />
@@ -250,7 +248,7 @@ export default function LearningPage() {
           </div>
         ) : runsError ? (
           <div className="text-center py-16 text-red-400">
-            Error: {runsError}
+            Error: {runsError?.message ?? "Unknown error"}
           </div>
         ) : !runs || runs.length === 0 ? (
           <Card className="bg-surface-raised/50 border-border-subtle/50">

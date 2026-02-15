@@ -8,7 +8,7 @@ import {
   runnerApi,
 } from "@/lib/runner-api";
 import { useUnifiedWorkflows } from "@/lib/api/unified-workflows";
-import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
+import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import {
   Card,
   CardContent,
@@ -119,24 +119,6 @@ export default function ExecuteVisualAutomationPage() {
     );
   }
 
-  if (isOffline) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-        <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-          <div className="flex items-center px-6 py-4">
-            <Zap className="w-6 h-6 text-brand-primary mr-3" />
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
-              Execute
-            </h1>
-          </div>
-        </header>
-        <main className="p-6 max-w-4xl mx-auto">
-          <RunnerOfflineState message="Start the Qontinui Runner desktop app to execute workflows." />
-        </main>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       {/* Header */}
@@ -182,6 +164,8 @@ export default function ExecuteVisualAutomationPage() {
         style={{ maxWidth: showToolkit ? "1200px" : "896px" }}
       >
         <div className="flex-1 space-y-6">
+          {isOffline && <RunnerPartialState message="Runner offline — this tool requires the runner for execution" />}
+
           {/* Config Status */}
           <Card className="bg-surface-raised/50 border-border-subtle/50">
             <CardContent className="py-3">

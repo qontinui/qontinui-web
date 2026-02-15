@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, lazy, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useTaskRunDetail } from "@/hooks/useTaskRunData";
 import { useTaskRun, runnerApi } from "@/lib/runner-api";
-import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
+import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -79,7 +80,18 @@ export function RunDetailContent({ runId }: { runId: string }) {
   const tabParam = searchParams.get("tab");
   const initialTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : "summary";
 
-  const { data: run, isLoading, error, isOffline, refetch } = useTaskRun(runId);
+  const {
+    data: run,
+    isLoading,
+    error,
+    isRunnerOffline,
+    refetch,
+  } = useTaskRunDetail(runId);
+
+  // Keep runner-specific hook for SummaryTab which needs full TaskRun data
+  // (loop_result, failure_info, output_log, summary_generated_at, etc.)
+  const { data: runnerRun } = useTaskRun(runId);
+
   const [generatedWorkflowId, setGeneratedWorkflowId] = useState<string | null>(
     null
   );
@@ -98,10 +110,6 @@ export function RunDetailContent({ runId }: { runId: string }) {
         .catch(() => {});
     }
   }, [run?.status, run?.id]);
-
-  if (isOffline) {
-    return <RunnerOfflineState />;
-  }
 
   if (isLoading) {
     return (
@@ -132,7 +140,7 @@ export function RunDetailContent({ runId }: { runId: string }) {
             <Info className="size-12 mx-auto mb-4" />
             <p className="font-medium">Run not found</p>
             <p className="text-sm text-text-muted mt-1">
-              {error || "The run you are looking for does not exist."}
+              {error?.message ?? "The run you are looking for does not exist."}
             </p>
           </div>
         </div>
@@ -188,6 +196,11 @@ export function RunDetailContent({ runId }: { runId: string }) {
       </header>
 
       <main className="p-6 max-w-7xl mx-auto">
+        {isRunnerOffline && (
+          <div className="mb-4">
+            <RunnerPartialState message="Runner offline — showing historical data. Live features (AI conversation, screenshots, logs) are unavailable." />
+          </div>
+        )}
         <Tabs defaultValue={initialTab}>
           <TabsList className="mb-6">
             <TabsTrigger value="summary" className="gap-1.5">
@@ -214,7 +227,7 @@ export function RunDetailContent({ runId }: { runId: string }) {
 
           <TabsContent value="summary">
             <Suspense fallback={<TabFallback />}>
-              <SummaryTab run={run} onRefresh={() => refetch()} />
+              <SummaryTab run={runnerRun ?? run} onRefresh={() => refetch()} />
             </Suspense>
           </TabsContent>
           <TabsContent value="findings">
@@ -226,7 +239,7 @@ export function RunDetailContent({ runId }: { runId: string }) {
             <Suspense fallback={<TabFallback />}>
               <TestResultsTab
                 runId={run.id}
-                loopResult={run.loop_result ?? null}
+                loopResult={runnerRun?.loop_result ?? null}
               />
             </Suspense>
           </TabsContent>

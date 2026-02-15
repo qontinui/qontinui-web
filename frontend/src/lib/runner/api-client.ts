@@ -42,6 +42,21 @@ export async function runnerFetch<T>(
         ...options?.headers,
       },
     });
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new RunnerApiError(
+        0,
+        `Runner request timed out after ${Math.round(timeoutMs / 1000)}s (${path})`
+      );
+    }
+    if (error instanceof TypeError) {
+      throw new RunnerApiError(
+        0,
+        "Runner not reachable — is qontinui-runner running on port 9876?"
+      );
+    }
+    throw error;
   } finally {
     clearTimeout(timeoutId);
   }

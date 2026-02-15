@@ -376,7 +376,7 @@ export const runnerApi = {
 
   // Run workflow
   runUnifiedWorkflow: (id: string) =>
-    runnerFetch<void>(`/unified-workflows/${id}/run`, {
+    runnerFetch<{ task_run_id: string }>(`/unified-workflows/${id}/run`, {
       method: "POST",
       body: JSON.stringify({}),
     }),

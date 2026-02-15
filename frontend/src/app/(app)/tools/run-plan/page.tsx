@@ -8,7 +8,7 @@ import {
   type PlanPhaseInput,
   type ExecutePlanRequest,
 } from "@/lib/runner-api";
-import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
+import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import {
   Card,
   CardContent,
@@ -284,24 +284,6 @@ export default function RunPlanPage() {
     );
   }
 
-  if (isOffline) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-        <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-          <div className="flex items-center px-6 py-4">
-            <CalendarClock className="w-6 h-6 text-indigo-400 mr-3" />
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent">
-              Run Plan
-            </h1>
-          </div>
-        </header>
-        <main className="p-6 max-w-4xl mx-auto">
-          <RunnerOfflineState message="Start the Qontinui Runner desktop app to create and execute run plans." />
-        </main>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       {/* Header */}
@@ -321,6 +303,8 @@ export default function RunPlanPage() {
 
       {/* Main Content */}
       <main className="p-6 max-w-3xl mx-auto space-y-6">
+        {isOffline && <RunnerPartialState message="Runner offline — this tool requires the runner for execution" />}
+
         {/* Mode Toggle */}
         <div className="flex items-center gap-2">
           <Button

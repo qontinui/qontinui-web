@@ -2,8 +2,9 @@
 
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { useTaskRuns, runnerApi } from "@/lib/runner-api";
-import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
+import { useTaskRunList } from "@/hooks/useTaskRunData";
+import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
+import { runnerApi } from "@/lib/runner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -100,9 +101,9 @@ export default function RunHistoryPage() {
     data: runs,
     isLoading,
     error,
-    isOffline,
+    isRunnerOffline,
     refetch,
-  } = useTaskRuns({ limit: 100 });
+  } = useTaskRunList({ limit: 100 });
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -127,6 +128,10 @@ export default function RunHistoryPage() {
   }, [runs, searchQuery, statusFilter, typeFilter]);
 
   const handleBulkDelete = async () => {
+    if (isRunnerOffline) {
+      toast.error("Cannot delete runs while runner is offline");
+      return;
+    }
     setIsDeleting(true);
     try {
       await Promise.all(
@@ -141,10 +146,6 @@ export default function RunHistoryPage() {
       setIsDeleting(false);
     }
   };
-
-  if (isOffline) {
-    return <RunnerOfflineState />;
-  }
 
   return (
     <div className="h-full overflow-y-auto bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
@@ -172,6 +173,10 @@ export default function RunHistoryPage() {
         <p className="text-text-muted">
           Browse and filter all task runs from the Qontinui Runner.
         </p>
+
+        {isRunnerOffline && (
+          <RunnerPartialState />
+        )}
 
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-4">
@@ -295,7 +300,7 @@ export default function RunHistoryPage() {
               </div>
             ) : error ? (
               <div className="text-center py-12 text-red-400">
-                Error loading runs: {error}
+                Error loading runs: {error?.message ?? String(error)}
               </div>
             ) : filteredRuns.length === 0 ? (
               <div className="text-center py-12 text-text-muted">
@@ -411,7 +416,7 @@ export default function RunHistoryPage() {
                           {run.status === "failed"
                             ? (
                                 run.summary ||
-                                run.ai_summary ||
+                                run.output_summary ||
                                 "Failed"
                               ).substring(0, 80)
                             : "-"}

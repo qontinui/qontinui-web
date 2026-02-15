@@ -2,9 +2,9 @@
 
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { useTaskRuns } from "@/lib/runner-api";
-import type { TaskRun } from "@/lib/runner-api";
-import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
+import { useTaskRunList } from "@/hooks/useTaskRunData";
+import type { TaskRunView } from "@/lib/task-run-mappers";
+import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -87,22 +87,18 @@ export default function SummaryPage() {
     data: runs,
     isLoading,
     error,
-    isOffline,
+    isRunnerOffline,
     refetch,
-  } = useTaskRuns({ limit: 50 });
+  } = useTaskRunList({ limit: 50 });
 
   const stats = useMemo(() => {
     if (!runs || runs.length === 0) return null;
     const completed = runs.filter((r) => r.status === "completed").length;
     const failed = runs.filter((r) => r.status === "failed").length;
     const running = runs.filter((r) => r.status === "running").length;
-    const withSummary = runs.filter((r) => r.summary || r.ai_summary).length;
+    const withSummary = runs.filter((r) => r.summary).length;
     return { total: runs.length, completed, failed, running, withSummary };
   }, [runs]);
-
-  if (isOffline) {
-    return <RunnerOfflineState />;
-  }
 
   return (
     <div className="h-full overflow-y-auto bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
@@ -131,6 +127,8 @@ export default function SummaryPage() {
           AI-generated summaries and recaps for completed task runs.
         </p>
 
+        {isRunnerOffline && <RunnerPartialState />}
+
         {isLoading ? (
           <div className="text-center py-16 text-text-muted">
             <Loader2 className="size-6 animate-spin mx-auto mb-3" />
@@ -138,7 +136,7 @@ export default function SummaryPage() {
           </div>
         ) : error ? (
           <div className="text-center py-16 text-red-400">
-            Error loading data: {error}
+            Error loading data: {error?.message ?? "Unknown error"}
           </div>
         ) : !stats ? (
           <Card className="bg-surface-raised/50 border-border-subtle/50">
@@ -245,7 +243,7 @@ export default function SummaryPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {(runs || []).map((run: TaskRun) => (
+                      {(runs || []).map((run: TaskRunView) => (
                         <TableRow
                           key={run.id}
                           className="border-border-subtle/50 hover:bg-surface-raised/30 cursor-pointer"
@@ -270,7 +268,6 @@ export default function SummaryPage() {
                           <TableCell className="max-w-[300px]">
                             <p className="text-xs text-text-secondary truncate">
                               {run.summary ||
-                                run.ai_summary ||
                                 (run.status === "running"
                                   ? "In progress..."
                                   : "No summary available")}

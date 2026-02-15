@@ -1,8 +1,8 @@
 /**
- * TypeScript types for AI Tasks
+ * TypeScript types for Task Runs
  *
- * These types correspond to the backend Pydantic models in
- * app/services/ai_task_service.py and app/models/ai_task.py
+ * These types correspond to the backend Pydantic models for task runs,
+ * findings, and verification results.
  */
 
 // =============================================================================
@@ -10,14 +10,14 @@
 // =============================================================================
 
 /**
- * AI Task status enumeration
+ * Task run status enumeration
  */
-export type AITaskStatus = "running" | "complete" | "failed" | "stopped";
+export type TaskRunStatus = "running" | "complete" | "failed" | "stopped";
 
 /**
- * AI Task finding category enumeration
+ * Task run finding category enumeration
  */
-export type AITaskFindingCategory =
+export type TaskRunFindingCategory =
   | "code_bug"
   | "security"
   | "performance"
@@ -31,9 +31,9 @@ export type AITaskFindingCategory =
   | "expected_behavior";
 
 /**
- * AI Task finding severity enumeration
+ * Task run finding severity enumeration
  */
-export type AITaskFindingSeverity =
+export type TaskRunFindingSeverity =
   | "critical"
   | "high"
   | "medium"
@@ -41,9 +41,9 @@ export type AITaskFindingSeverity =
   | "info";
 
 /**
- * AI Task finding status enumeration
+ * Task run finding status enumeration
  */
-export type AITaskFindingStatus =
+export type TaskRunFindingStatus =
   | "detected"
   | "in_progress"
   | "needs_input"
@@ -52,9 +52,9 @@ export type AITaskFindingStatus =
   | "deferred";
 
 /**
- * AI Task finding action type enumeration
+ * Task run finding action type enumeration
  */
-export type AITaskFindingActionType =
+export type TaskRunFindingActionType =
   | "auto_fix"
   | "needs_user_input"
   | "informational";
@@ -64,16 +64,16 @@ export type AITaskFindingActionType =
 // =============================================================================
 
 /**
- * AI Task response from the API
+ * Task run response from the API
  */
-export interface AITask {
+export interface TaskRunBackend {
   id: string;
   project_id: string | null;
   created_by_user_id: string | null;
   runner_id: string | null;
   task_name: string;
   prompt: string;
-  status: AITaskStatus;
+  status: TaskRunStatus;
   sessions_count: number;
   max_sessions: number | null;
   auto_continue: boolean;
@@ -87,9 +87,9 @@ export interface AITask {
 }
 
 /**
- * AI Task session response from the API
+ * Task run session response from the API
  */
-export interface AITaskSession {
+export interface TaskRunSession {
   id: string;
   task_id: string;
   session_number: number;
@@ -100,15 +100,15 @@ export interface AITaskSession {
 }
 
 /**
- * AI Task finding response from the API
+ * Task run finding response from the API
  */
-export interface AITaskFinding {
+export interface TaskRunFinding {
   id: string;
   task_id: string;
-  category: AITaskFindingCategory;
-  severity: AITaskFindingSeverity;
-  status: AITaskFindingStatus;
-  action_type: AITaskFindingActionType;
+  category: TaskRunFindingCategory;
+  severity: TaskRunFindingSeverity;
+  status: TaskRunFindingStatus;
+  action_type: TaskRunFindingActionType;
   signature_hash: string | null;
   title: string;
   description: string;
@@ -129,12 +129,17 @@ export interface AITaskFinding {
 }
 
 /**
- * Detailed AI Task response with sessions and findings
+ * Task run finding response (alias for use in summaries)
  */
-export interface AITaskDetail extends AITask {
-  sessions: AITaskSession[];
-  findings: AITaskFinding[];
-  finding_summary: AITaskFindingSummary;
+export type TaskRunFindingResponse = TaskRunFinding;
+
+/**
+ * Detailed task run response with sessions and findings
+ */
+export interface TaskRunBackendDetail extends TaskRunBackend {
+  sessions: TaskRunSession[];
+  findings: TaskRunFinding[];
+  finding_summary: TaskRunFindingSummary;
 }
 
 // =============================================================================
@@ -142,9 +147,9 @@ export interface AITaskDetail extends AITask {
 // =============================================================================
 
 /**
- * Request to create a new AI task
+ * Request to create a new task run
  */
-export interface AITaskCreate {
+export interface TaskRunCreate {
   id?: string; // Allow runner to specify ID for direct mapping
   project_id?: string;
   runner_id?: string;
@@ -155,10 +160,10 @@ export interface AITaskCreate {
 }
 
 /**
- * Request to update an AI task
+ * Request to update a task run
  */
-export interface AITaskUpdate {
-  status?: AITaskStatus;
+export interface TaskRunUpdate {
+  status?: TaskRunStatus;
   sessions_count?: number;
   output_summary?: string;
   full_output?: string;
@@ -171,8 +176,8 @@ export interface AITaskUpdate {
 /**
  * Request to update a finding
  */
-export interface AITaskFindingUpdate {
-  status?: AITaskFindingStatus;
+export interface TaskRunFindingUpdate {
+  status?: TaskRunFindingStatus;
   resolution?: string;
   resolved_in_session?: number;
   resolved_at?: string;
@@ -182,12 +187,12 @@ export interface AITaskFindingUpdate {
 /**
  * Request to sync findings
  */
-export interface AITaskFindingCreate {
+export interface TaskRunFindingCreate {
   id?: string;
-  category: AITaskFindingCategory;
-  severity: AITaskFindingSeverity;
-  status?: AITaskFindingStatus;
-  action_type?: AITaskFindingActionType;
+  category: TaskRunFindingCategory;
+  severity: TaskRunFindingSeverity;
+  status?: TaskRunFindingStatus;
+  action_type?: TaskRunFindingActionType;
   signature_hash?: string;
   title: string;
   description: string;
@@ -207,11 +212,11 @@ export interface AITaskFindingCreate {
 // =============================================================================
 
 /**
- * Filters for listing AI tasks
+ * Filters for listing task runs
  */
-export interface AITaskFilters {
+export interface TaskRunFilters {
   project_id?: string;
-  status?: AITaskStatus;
+  status?: TaskRunStatus;
   start_date?: string;
   end_date?: string;
   offset?: number;
@@ -221,10 +226,10 @@ export interface AITaskFilters {
 /**
  * Filters for listing findings
  */
-export interface AITaskFindingFilters {
-  category?: AITaskFindingCategory;
-  severity?: AITaskFindingSeverity;
-  status?: AITaskFindingStatus;
+export interface TaskRunFindingFilters {
+  category?: TaskRunFindingCategory;
+  severity?: TaskRunFindingSeverity;
+  status?: TaskRunFindingStatus;
 }
 
 // =============================================================================
@@ -242,29 +247,40 @@ export interface Pagination {
 }
 
 /**
- * Response for listing AI tasks
+ * Response for listing task runs
  */
-export interface AITaskListResponse {
-  tasks: AITask[];
+export interface TaskRunListResponse {
+  tasks: TaskRunBackend[];
   pagination: Pagination;
 }
 
 /**
  * Finding summary by category/severity/status
  */
-export interface AITaskFindingSummary {
-  by_category: Record<AITaskFindingCategory, number>;
-  by_severity: Record<AITaskFindingSeverity, number>;
-  by_status: Record<AITaskFindingStatus, number>;
+export interface TaskRunFindingSummary {
+  by_category: Record<TaskRunFindingCategory, number>;
+  by_severity: Record<TaskRunFindingSeverity, number>;
+  by_status: Record<TaskRunFindingStatus, number>;
   total: number;
 }
 
 /**
  * Response for listing findings
  */
-export interface AITaskFindingsListResponse {
-  findings: AITaskFinding[];
-  summary: AITaskFindingSummary;
+export interface TaskRunFindingsListResponse {
+  findings: TaskRunFinding[];
+  summary: TaskRunFindingSummary;
+}
+
+/**
+ * Findings summary across all task runs
+ */
+export interface FindingsSummary {
+  total: number;
+  by_severity: Record<string, number>;
+  by_category: Record<string, number>;
+  by_status: Record<string, number>;
+  recent: TaskRunFindingResponse[];
 }
 
 // =============================================================================

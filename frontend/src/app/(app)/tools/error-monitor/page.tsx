@@ -7,7 +7,7 @@ import {
   runnerApi,
   type ErrorMonitorEntry,
 } from "@/lib/runner-api";
-import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
+import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import {
   Card,
   CardContent,
@@ -526,24 +526,6 @@ export default function ErrorMonitorPage() {
     );
   }
 
-  if (isOffline) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-        <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-          <div className="flex items-center px-6 py-4">
-            <ShieldAlert className="w-6 h-6 text-red-400 mr-3" />
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-red-400 to-orange-400 bg-clip-text text-transparent">
-              Error Monitor
-            </h1>
-          </div>
-        </header>
-        <main className="p-6 max-w-5xl mx-auto">
-          <RunnerOfflineState message="Start the Qontinui Runner desktop app to view error monitoring." />
-        </main>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       {/* Header */}
@@ -604,6 +586,8 @@ export default function ErrorMonitorPage() {
 
       {/* Main Content */}
       <main className="p-6 max-w-5xl mx-auto space-y-6">
+        {isOffline && <RunnerPartialState message="Runner offline — this tool requires the runner for execution" />}
+
         {/* Fix error */}
         {fixError && (
           <div className="flex items-center justify-between text-red-400 bg-red-950/20 border border-red-500/30 rounded-lg p-3">

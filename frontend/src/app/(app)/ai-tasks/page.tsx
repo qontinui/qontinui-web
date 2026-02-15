@@ -37,8 +37,12 @@ import {
   StopCircle,
 } from "lucide-react";
 import { format } from "date-fns";
-import { useAITasks } from "@/hooks/useAITasks";
-import type { AITask, AITaskFilters, AITaskStatus } from "@/types/ai-tasks";
+import { useBackendTaskRuns } from "@/hooks/useTaskRunsBackend";
+import type {
+  TaskRunBackend,
+  TaskRunFilters,
+  TaskRunStatus,
+} from "@/types/task-runs";
 
 export default function AITasksPage() {
   const { user, loading: authLoading } = useAuth();
@@ -46,7 +50,7 @@ export default function AITasksPage() {
   const searchParams = useSearchParams();
   const projectId = searchParams.get("project");
 
-  const [filters, setFilters] = useState<AITaskFilters>({
+  const [filters, setFilters] = useState<TaskRunFilters>({
     project_id: projectId || undefined,
     offset: 0,
     limit: 10,
@@ -54,7 +58,7 @@ export default function AITasksPage() {
 
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
-  const { data, isLoading, error, refetch } = useAITasks(filters);
+  const { data, isLoading, error, refetch } = useBackendTaskRuns(filters);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -82,12 +86,12 @@ export default function AITasksPage() {
     setStatusFilter(value);
     setFilters((prev) => ({
       ...prev,
-      status: value === "all" ? undefined : (value as AITaskStatus),
+      status: value === "all" ? undefined : (value as TaskRunStatus),
       offset: 0,
     }));
   };
 
-  const getStatusIcon = (status: AITaskStatus) => {
+  const getStatusIcon = (status: TaskRunStatus) => {
     switch (status) {
       case "complete":
         return <CheckCircle2 className="w-4 h-4 text-green-500" />;
@@ -102,7 +106,7 @@ export default function AITasksPage() {
     }
   };
 
-  const getStatusBadge = (status: AITaskStatus) => {
+  const getStatusBadge = (status: TaskRunStatus) => {
     switch (status) {
       case "complete":
         return (
@@ -274,7 +278,7 @@ export default function AITasksPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {tasks.map((task: AITask) => (
+                        {tasks.map((task: TaskRunBackend) => (
                           <TableRow
                             key={task.id}
                             className="border-border-subtle/50 hover:bg-surface-raised/30 cursor-pointer"

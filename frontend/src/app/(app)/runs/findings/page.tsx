@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { useFindingsSummary, runnerApi } from "@/lib/runner-api";
-import type { Finding } from "@/lib/runner-api";
-import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
+import { useFindingsSummary } from "@/hooks/useTaskRunData";
+import type { FindingView } from "@/lib/task-run-mappers";
+import { runnerApi } from "@/lib/runner";
+import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -70,13 +71,13 @@ function getSeverityBadge(severity: string) {
 }
 
 export default function FindingsPage() {
-  const { data, isLoading, error, isOffline, refetch } = useFindingsSummary();
+  const { data, isLoading, error, isRunnerOffline, refetch } = useFindingsSummary();
   const [severityFilter, setSeverityFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [autoFixEnabled, setAutoFixEnabled] = useState(false);
   const [isFixing, setIsFixing] = useState(false);
-  const [expandedFinding, setExpandedFinding] = useState<number | null>(null);
+  const [expandedFinding, setExpandedFinding] = useState<string | null>(null);
 
   const categories = useMemo(() => {
     if (!data?.by_category) return [];
@@ -85,7 +86,7 @@ export default function FindingsPage() {
 
   const filteredFindings = useMemo(() => {
     if (!data?.recent) return [];
-    return data.recent.filter((finding: Finding) => {
+    return data.recent.filter((finding: FindingView) => {
       const matchesSeverity =
         severityFilter === "all" ||
         finding.severity.toLowerCase() === severityFilter;
@@ -98,6 +99,10 @@ export default function FindingsPage() {
   }, [data, severityFilter, categoryFilter, statusFilter]);
 
   const handleFixAll = async () => {
+    if (isRunnerOffline) {
+      toast.error("Cannot fix findings while runner is offline");
+      return;
+    }
     if (!data?.recent || data.recent.length === 0) return;
     setIsFixing(true);
     try {
@@ -134,6 +139,10 @@ export default function FindingsPage() {
   };
 
   const handleClearAll = async () => {
+    if (isRunnerOffline) {
+      toast.error("Cannot clear findings while runner is offline");
+      return;
+    }
     if (!data?.recent || data.recent.length === 0) return;
     try {
       const taskRunId = data.recent[0]?.task_run_id;
@@ -152,12 +161,16 @@ export default function FindingsPage() {
   };
 
   const handleResolveFinding = async (
-    findingId: number,
+    findingId: string,
     e: React.MouseEvent
   ) => {
     e.stopPropagation();
+    if (isRunnerOffline) {
+      toast.error("Cannot resolve findings while runner is offline");
+      return;
+    }
     try {
-      await runnerApi.resolveFinding(String(findingId), "Resolved by user");
+      await runnerApi.resolveFinding(findingId, "Resolved by user");
       toast.success("Finding resolved");
       await refetch();
     } catch (err) {
@@ -166,10 +179,6 @@ export default function FindingsPage() {
       );
     }
   };
-
-  if (isOffline) {
-    return <RunnerOfflineState />;
-  }
 
   return (
     <div className="h-full overflow-y-auto bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
@@ -243,6 +252,10 @@ export default function FindingsPage() {
           category.
         </p>
 
+        {isRunnerOffline && (
+          <RunnerPartialState message="Runner offline — showing historical findings. Fix/resolve actions require the runner." />
+        )}
+
         {isLoading ? (
           <div className="text-center py-16 text-text-muted">
             <RefreshCw className="size-6 animate-spin mx-auto mb-3" />
@@ -250,7 +263,7 @@ export default function FindingsPage() {
           </div>
         ) : error ? (
           <div className="text-center py-16 text-red-400">
-            Error loading findings: {error}
+            Error loading findings: {error?.message ?? "Unknown error"}
           </div>
         ) : !data || data.total === 0 ? (
           <Card className="bg-surface-raised/50 border-border-subtle/50">
@@ -412,7 +425,7 @@ export default function FindingsPage() {
                   No findings match the current filters.
                 </div>
               ) : (
-                filteredFindings.map((finding: Finding) => {
+                filteredFindings.map((finding: FindingView) => {
                   const isExpanded = expandedFinding === finding.id;
                   return (
                     <Card
