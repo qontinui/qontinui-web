@@ -11,7 +11,7 @@ from app.db.base import Base
 T = TypeVar("T", bound=Base)
 
 
-async def list_items(
+async def list_items[T: Base](
     db: AsyncSession,
     model: type[T],
     user_id: UUID,
@@ -45,7 +45,7 @@ async def list_items(
     return list(result.scalars().all()), total
 
 
-async def get_item(
+async def get_item[T: Base](
     db: AsyncSession,
     model: type[T],
     item_id: UUID,
@@ -61,7 +61,7 @@ async def get_item(
     return result.scalar_one_or_none()
 
 
-async def create_item(
+async def create_item[T: Base](
     db: AsyncSession,
     model: type[T],
     user_id: UUID,
@@ -75,7 +75,7 @@ async def create_item(
     return item
 
 
-async def update_item(
+async def update_item[T: Base](
     db: AsyncSession,
     item: T,
     data: dict[str, Any],
@@ -89,7 +89,7 @@ async def update_item(
     return item
 
 
-async def delete_item(
+async def delete_item[T: Base](
     db: AsyncSession,
     item: T,
 ) -> None:

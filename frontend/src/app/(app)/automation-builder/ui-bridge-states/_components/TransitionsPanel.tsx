@@ -32,7 +32,7 @@ interface TransitionsPanelProps {
   onSelectTransition: (id: string | null) => void;
 }
 
-const ACTION_ICONS: Record<TransitionAction["type"], typeof MousePointer> = {
+const ACTION_ICONS: Partial<Record<TransitionAction["type"], typeof MousePointer>> = {
   click: MousePointer,
   type: TypeIcon,
   select: ListFilter,
@@ -40,7 +40,7 @@ const ACTION_ICONS: Record<TransitionAction["type"], typeof MousePointer> = {
   navigate: Globe,
 };
 
-const ACTION_COLORS: Record<TransitionAction["type"], { text: string; bg: string; border: string }> = {
+const ACTION_COLORS: Partial<Record<TransitionAction["type"], { text: string; bg: string; border: string }>> = {
   click: { text: "text-blue-400", bg: "bg-blue-500/15", border: "border-blue-500/30" },
   type: { text: "text-amber-400", bg: "bg-amber-500/15", border: "border-amber-500/30" },
   select: { text: "text-purple-400", bg: "bg-purple-500/15", border: "border-purple-500/30" },
@@ -48,7 +48,7 @@ const ACTION_COLORS: Record<TransitionAction["type"], { text: string; bg: string
   navigate: { text: "text-cyan-400", bg: "bg-cyan-500/15", border: "border-cyan-500/30" },
 };
 
-const ACTION_LABELS: Record<TransitionAction["type"], string> = {
+const ACTION_LABELS: Partial<Record<TransitionAction["type"], string>> = {
   click: "Click",
   type: "Type",
   select: "Select",
@@ -56,7 +56,7 @@ const ACTION_LABELS: Record<TransitionAction["type"], string> = {
   navigate: "Navigate",
 };
 
-const ACTION_ACTIVE_LABELS: Record<TransitionAction["type"], string> = {
+const ACTION_ACTIVE_LABELS: Partial<Record<TransitionAction["type"], string>> = {
   click: "Clicking...",
   type: "Typing...",
   select: "Selecting...",
@@ -322,7 +322,7 @@ export function TransitionsPanel({
                       const Icon = ACTION_ICONS[type];
                       const color = ACTION_COLORS[type];
                       return Icon ? (
-                        <Icon key={type} className={`size-3 ${color.text}`} />
+                        <Icon key={type} className={`size-3 ${color?.text ?? "text-gray-400"}`} />
                       ) : null;
                     })}
                   </span>
@@ -491,7 +491,7 @@ export function TransitionsPanel({
                     const Icon = ACTION_ICONS[action.type] ?? ChevronRight;
                     const isPastAction = animation.currentActionIndex >= 0 && idx < animation.currentActionIndex;
                     const isCurrentAction = idx === animation.currentActionIndex;
-                    const color = ACTION_COLORS[action.type];
+                    const color = ACTION_COLORS[action.type] ?? { text: "text-gray-400", bg: "bg-gray-500/15", border: "border-gray-500/30" };
                     return (
                       <button
                         key={idx}
@@ -512,7 +512,7 @@ export function TransitionsPanel({
                               : "bg-surface-primary border-border-primary text-text-muted hover:border-brand-primary/30"
                           }
                         `}
-                        title={`${ACTION_LABELS[action.type]}: ${action.target || action.url || action.text || ""}`}
+                        title={`${ACTION_LABELS[action.type] ?? action.type}: ${action.target || action.url || action.text || ""}`}
                       >
                         <Icon className="size-2.5" />
                         <span>{idx + 1}</span>
@@ -574,7 +574,7 @@ export function TransitionsPanel({
                         {/* Action details */}
                         <div className="flex-1 min-w-0">
                           <div className="text-xs font-medium text-text-primary flex items-center gap-1.5">
-                            <span>{ACTION_LABELS[action.type]}</span>
+                            <span>{ACTION_LABELS[action.type] ?? action.type}</span>
                             {isCurrent && animation.isPlaying && (
                               <span className={`animate-pulse ${color.text} text-[10px]`}>
                                 {ACTION_ACTIVE_LABELS[action.type]}

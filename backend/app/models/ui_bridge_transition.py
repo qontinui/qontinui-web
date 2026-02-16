@@ -66,8 +66,11 @@ class UIBridgeTransition(Base):
         JSON, default=list, nullable=False, server_default="[]"
     )
 
-    # Actions to execute for this transition
-    # Each action: {"type": "click"|"type"|"select"|"wait"|"navigate", "target": "element_id", ...}
+    # Actions to execute for this transition (JSON array)
+    # SDK actions: click, doubleClick, rightClick, type, clear, select, focus, blur,
+    # hover, scroll, check, uncheck, toggle, setValue, drag, submit, reset
+    # Workflow actions: wait, navigate
+    # Each action: {"type": "<action>", "target": "element_id", ...params}
     actions: Mapped[list] = mapped_column(
         JSON, default=list, nullable=False, server_default="[]"
     )

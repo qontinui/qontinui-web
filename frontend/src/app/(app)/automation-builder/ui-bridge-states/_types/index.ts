@@ -14,13 +14,70 @@ export type {
 // Transition Types
 // =============================================================================
 
+/**
+ * All UI Bridge SDK standard actions + workflow-level actions (wait, navigate).
+ *
+ * Parameterized actions: click, doubleClick, rightClick, type, select, scroll, drag
+ * No-param actions: clear, focus, blur, hover, check, uncheck, toggle, setValue, submit, reset
+ * Workflow-level actions: wait, navigate
+ */
+export type StandardActionType =
+  | "click"
+  | "doubleClick"
+  | "rightClick"
+  | "type"
+  | "clear"
+  | "select"
+  | "focus"
+  | "blur"
+  | "hover"
+  | "scroll"
+  | "check"
+  | "uncheck"
+  | "toggle"
+  | "setValue"
+  | "drag"
+  | "submit"
+  | "reset"
+  | "wait"
+  | "navigate";
+
 export interface TransitionAction {
-  type: "click" | "type" | "select" | "wait" | "navigate";
+  type: StandardActionType;
+  /** Target element ID (used by most element actions) */
   target?: string;
+  /** Text to type (type action) */
   text?: string;
-  value?: string;
+  /** Clear before typing (type action) */
+  clear_first?: boolean;
+  /** Keystroke delay in ms (type action) */
+  type_delay?: number;
+  /** Value to select or set (select / setValue actions) */
+  value?: string | string[];
+  /** Select by label instead of value (select action) */
+  select_by_label?: boolean;
+  /** URL to navigate to (navigate action) */
   url?: string;
+  /** Delay in milliseconds (wait action) */
   delay_ms?: number;
+  /** Scroll direction (scroll action) */
+  scroll_direction?: "up" | "down" | "left" | "right";
+  /** Scroll amount in pixels (scroll action) */
+  scroll_amount?: number;
+  /** Drag target element ID or selector (drag action) */
+  drag_target?: string;
+  /** Drag target position {x, y} or named position (drag action) */
+  drag_target_position?: string;
+  /** Number of intermediate mousemove steps (drag action) */
+  drag_steps?: number;
+  /** Hold delay before first move in ms (drag action) */
+  drag_hold_delay?: number;
+  /** Dispatch HTML5 drag events alongside mouse events (drag action) */
+  drag_html5?: boolean;
+  /** Mouse button: left, right, middle (click / doubleClick / rightClick) */
+  button?: "left" | "right" | "middle";
+  /** Click position relative to element (click / doubleClick / rightClick) */
+  position?: { x: number; y: number };
 }
 
 export interface UIBridgeTransition {

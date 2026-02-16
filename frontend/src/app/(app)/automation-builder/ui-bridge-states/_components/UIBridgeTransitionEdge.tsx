@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import type { TransitionEdgeData, TransitionAction } from "../_types";
 
-const ACTION_ICONS: Record<TransitionAction["type"], typeof MousePointer> = {
+const ACTION_ICONS: Partial<Record<TransitionAction["type"], typeof MousePointer>> = {
   click: MousePointer,
   type: TypeIcon,
   select: ListFilter,
@@ -25,7 +25,7 @@ const ACTION_ICONS: Record<TransitionAction["type"], typeof MousePointer> = {
   navigate: Globe,
 };
 
-const ACTION_COLORS: Record<TransitionAction["type"], string> = {
+const ACTION_COLORS: Partial<Record<TransitionAction["type"], string>> = {
   click: "text-blue-400",
   type: "text-amber-400",
   select: "text-purple-400",
@@ -106,7 +106,7 @@ function UIBridgeTransitionEdgeInner(props: EdgeProps) {
                 <span className="flex items-center gap-0.5">
                   {uniqueActionTypes.slice(0, 3).map((actionType) => {
                     const Icon = ACTION_ICONS[actionType];
-                    const colorClass = isActive ? "" : ACTION_COLORS[actionType];
+                    const colorClass = isActive ? "" : (ACTION_COLORS[actionType] ?? "text-gray-400");
                     return Icon ? (
                       <Icon key={actionType} className={`size-3 ${colorClass}`} />
                     ) : null;

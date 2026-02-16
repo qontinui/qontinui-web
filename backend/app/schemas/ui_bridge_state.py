@@ -173,19 +173,85 @@ class UIBridgeStateConfigListResponse(BaseModel):
 
 
 class UIBridgeTransitionActionCreate(BaseModel):
-    """Schema for a transition action."""
+    """Schema for a transition action.
+
+    Supports all UI Bridge SDK standard actions:
+      click, doubleClick, rightClick, type, clear, select, focus, blur,
+      hover, scroll, check, uncheck, toggle, setValue, drag, submit, reset
+
+    Plus workflow-level actions: wait, navigate
+    """
 
     type: str = Field(
-        ..., description="Action type: click, type, select, wait, navigate"
+        ...,
+        description=(
+            "Action type. SDK element actions: click, doubleClick, rightClick, "
+            "type, clear, select, focus, blur, hover, scroll, check, uncheck, "
+            "toggle, setValue, drag, submit, reset. "
+            "Workflow actions: wait, navigate"
+        ),
     )
     target: str | None = Field(None, description="Target element ID")
-    text: str | None = Field(None, description="Text to type (for type actions)")
-    value: str | None = Field(None, description="Value to select (for select actions)")
-    url: str | None = Field(
-        None, description="URL to navigate to (for navigate actions)"
+
+    # type action
+    text: str | None = Field(None, description="Text to type (type action)")
+    clear_first: bool | None = Field(
+        None, description="Clear existing value before typing (type action)"
     )
+    type_delay: int | None = Field(
+        None, description="Delay between keystrokes in ms (type action)"
+    )
+
+    # select / setValue actions
+    value: str | list[str] | None = Field(
+        None, description="Value(s) to select or set (select / setValue actions)"
+    )
+    select_by_label: bool | None = Field(
+        None, description="Select by label instead of value (select action)"
+    )
+
+    # navigate action
+    url: str | None = Field(None, description="URL to navigate to (navigate action)")
+
+    # wait action
     delay_ms: int | None = Field(
-        None, description="Delay in milliseconds (for wait actions)"
+        None, description="Delay in milliseconds (wait action)"
+    )
+
+    # scroll action
+    scroll_direction: str | None = Field(
+        None, description="Scroll direction: up, down, left, right (scroll action)"
+    )
+    scroll_amount: int | None = Field(
+        None, description="Scroll amount in pixels (scroll action)"
+    )
+
+    # drag action
+    drag_target: str | None = Field(
+        None, description="Target element ID or data-ui-id to drag to (drag action)"
+    )
+    drag_target_position: str | None = Field(
+        None,
+        description="Position on target: center, top, bottom, left, right (drag action)",
+    )
+    drag_steps: int | None = Field(
+        None, description="Number of intermediate mouse move steps (drag action)"
+    )
+    drag_hold_delay: int | None = Field(
+        None, description="Milliseconds to hold before releasing (drag action)"
+    )
+    drag_html5: bool | None = Field(
+        None,
+        description="Dispatch HTML5 drag events alongside mouse events (drag action)",
+    )
+
+    # click / doubleClick / rightClick actions
+    button: str | None = Field(
+        None, description="Mouse button: left, right, middle (click actions)"
+    )
+    position: dict | None = Field(
+        None,
+        description="Click position {x, y} relative to element (click actions)",
     )
 
 

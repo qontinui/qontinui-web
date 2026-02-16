@@ -15,6 +15,7 @@ import type {
   UIBridgeTransition,
   UIBridgeTransitionCreate,
   TransitionAction,
+  StandardActionType,
   SavedStateWithDetails,
 } from "../_types";
 
@@ -27,7 +28,28 @@ interface UIBridgeTransitionEditorProps {
   onClose: () => void;
 }
 
-const ACTION_TYPES = ["click", "type", "select", "wait", "navigate"] as const;
+/** All SDK standard actions + workflow-level actions, grouped for the dropdown */
+const ACTION_TYPES = [
+  // Common element actions
+  "click", "doubleClick", "rightClick", "type", "clear", "select",
+  // Focus & interaction
+  "focus", "blur", "hover", "scroll",
+  // Checkbox / toggle
+  "check", "uncheck", "toggle",
+  // Value manipulation
+  "setValue",
+  // Drag & drop
+  "drag",
+  // Form actions
+  "submit", "reset",
+  // Workflow-level
+  "wait", "navigate",
+] as const;
+
+/** Actions that only need a target element ID (no extra params) */
+const NO_PARAM_ACTIONS = new Set<StandardActionType>([
+  "clear", "focus", "blur", "hover", "check", "uncheck", "toggle", "submit", "reset",
+]);
 
 export function UIBridgeTransitionEditor({
   transition,
@@ -210,7 +232,7 @@ export function UIBridgeTransitionEditor({
               <div key={i} className="flex gap-1 items-start">
                 <Select
                   value={action.type}
-                  onValueChange={(v) => updateAction(i, { type: v as TransitionAction["type"] })}
+                  onValueChange={(v) => updateAction(i, { type: v as StandardActionType })}
                 >
                   <SelectTrigger className="w-20 h-7 text-[10px]">
                     <SelectValue />
@@ -223,25 +245,96 @@ export function UIBridgeTransitionEditor({
                     ))}
                   </SelectContent>
                 </Select>
-                <Input
-                  value={action.target || action.url || action.text || ""}
-                  onChange={(e) => {
-                    if (action.type === "navigate") {
-                      updateAction(i, { url: e.target.value });
-                    } else if (action.type === "type") {
-                      updateAction(i, { text: e.target.value });
-                    } else {
-                      updateAction(i, { target: e.target.value });
-                    }
-                  }}
-                  placeholder={
-                    action.type === "navigate" ? "URL" :
-                    action.type === "type" ? "Text" :
-                    action.type === "wait" ? "Delay (ms)" :
-                    "Element ID"
-                  }
-                  className="h-7 text-[10px] flex-1"
-                />
+                {action.type === "drag" ? (
+                  <div className="flex flex-col gap-1 flex-1">
+                    <Input
+                      value={action.target || ""}
+                      onChange={(e) => updateAction(i, { target: e.target.value })}
+                      placeholder="Source element ID"
+                      className="h-7 text-[10px]"
+                    />
+                    <Input
+                      value={action.drag_target || ""}
+                      onChange={(e) => updateAction(i, { drag_target: e.target.value })}
+                      placeholder="Drop target data-ui-id"
+                      className="h-7 text-[10px]"
+                    />
+                  </div>
+                ) : action.type === "scroll" ? (
+                  <div className="flex gap-1 flex-1">
+                    <Select
+                      value={action.scroll_direction || "down"}
+                      onValueChange={(v) => updateAction(i, { scroll_direction: v as "up" | "down" | "left" | "right" })}
+                    >
+                      <SelectTrigger className="w-16 h-7 text-[10px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(["up", "down", "left", "right"] as const).map((d) => (
+                          <SelectItem key={d} value={d} className="text-xs">{d}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      value={action.scroll_amount?.toString() || ""}
+                      onChange={(e) => updateAction(i, { scroll_amount: parseInt(e.target.value) || undefined })}
+                      placeholder="Pixels"
+                      className="h-7 text-[10px] flex-1"
+                      type="number"
+                    />
+                  </div>
+                ) : action.type === "type" ? (
+                  <Input
+                    value={action.text || ""}
+                    onChange={(e) => updateAction(i, { text: e.target.value })}
+                    placeholder="Text to type"
+                    className="h-7 text-[10px] flex-1"
+                  />
+                ) : action.type === "navigate" ? (
+                  <Input
+                    value={action.url || ""}
+                    onChange={(e) => updateAction(i, { url: e.target.value })}
+                    placeholder="URL"
+                    className="h-7 text-[10px] flex-1"
+                  />
+                ) : action.type === "wait" ? (
+                  <Input
+                    value={action.delay_ms?.toString() || ""}
+                    onChange={(e) => updateAction(i, { delay_ms: parseInt(e.target.value) || undefined })}
+                    placeholder="Delay (ms)"
+                    className="h-7 text-[10px] flex-1"
+                    type="number"
+                  />
+                ) : action.type === "select" || action.type === "setValue" ? (
+                  <div className="flex flex-col gap-1 flex-1">
+                    <Input
+                      value={action.target || ""}
+                      onChange={(e) => updateAction(i, { target: e.target.value })}
+                      placeholder="Element ID"
+                      className="h-7 text-[10px]"
+                    />
+                    <Input
+                      value={Array.isArray(action.value) ? action.value.join(", ") : action.value || ""}
+                      onChange={(e) => updateAction(i, { value: e.target.value })}
+                      placeholder="Value"
+                      className="h-7 text-[10px]"
+                    />
+                  </div>
+                ) : NO_PARAM_ACTIONS.has(action.type) ? (
+                  <Input
+                    value={action.target || ""}
+                    onChange={(e) => updateAction(i, { target: e.target.value })}
+                    placeholder="Element ID"
+                    className="h-7 text-[10px] flex-1"
+                  />
+                ) : (
+                  <Input
+                    value={action.target || ""}
+                    onChange={(e) => updateAction(i, { target: e.target.value })}
+                    placeholder="Element ID"
+                    className="h-7 text-[10px] flex-1"
+                  />
+                )}
                 <Button variant="ghost" size="sm" onClick={() => removeAction(i)} className="h-7 w-7 p-0">
                   <Trash2 className="size-3 text-red-500" />
                 </Button>

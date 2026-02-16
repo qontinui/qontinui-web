@@ -60,7 +60,7 @@ const ELEMENT_COLORS: Record<string, string> = {
   nav: "border-cyan-400 bg-cyan-500/10 text-cyan-300",
 };
 
-const ACTION_ICONS: Record<TransitionAction["type"], typeof MousePointer> = {
+const ACTION_ICONS: Partial<Record<TransitionAction["type"], typeof MousePointer>> = {
   click: MousePointer,
   type: TypeIcon,
   select: Target,
@@ -68,7 +68,7 @@ const ACTION_ICONS: Record<TransitionAction["type"], typeof MousePointer> = {
   navigate: Globe,
 };
 
-const ACTION_COLORS: Record<TransitionAction["type"], string> = {
+const ACTION_COLORS: Partial<Record<TransitionAction["type"], string>> = {
   click: "text-blue-400",
   type: "text-amber-400",
   select: "text-purple-400",
@@ -912,7 +912,7 @@ export function StateViewPanel({
                           {[...new Set(t.actions.map((a) => a.type))].slice(0, 3).map((actionType) => {
                             const ActionIcon = ACTION_ICONS[actionType];
                             return ActionIcon ? (
-                              <ActionIcon key={actionType} className={`size-2.5 ${ACTION_COLORS[actionType]}`} />
+                              <ActionIcon key={actionType} className={`size-2.5 ${ACTION_COLORS[actionType] ?? "text-gray-400"}`} />
                             ) : null;
                           })}
                         </span>
@@ -950,7 +950,7 @@ export function StateViewPanel({
                           {[...new Set(t.actions.map((a) => a.type))].slice(0, 3).map((actionType) => {
                             const ActionIcon = ACTION_ICONS[actionType];
                             return ActionIcon ? (
-                              <ActionIcon key={actionType} className={`size-2.5 ${ACTION_COLORS[actionType]}`} />
+                              <ActionIcon key={actionType} className={`size-2.5 ${ACTION_COLORS[actionType] ?? "text-gray-400"}`} />
                             ) : null;
                           })}
                         </span>
