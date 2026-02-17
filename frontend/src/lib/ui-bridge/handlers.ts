@@ -1450,4 +1450,45 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
       return error((e as Error).message, "COMMAND_FAILED");
     }
   },
+
+  // --------------------------------------------------------------------------
+  // Performance Diagnostics Endpoints
+  // --------------------------------------------------------------------------
+
+  async getPerformanceEntries(): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand<unknown>("getPerformanceEntries", {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async clearPerformanceEntries(): Promise<APIResponse<{ cleared: boolean }>> {
+    try {
+      const result = await queueCommand<{ cleared: boolean }>(
+        "clearPerformanceEntries",
+        {}
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getBrowserEvents(params?: {
+    type?: string;
+    since?: number;
+    limit?: number;
+  }): Promise<APIResponse<{ events: unknown[]; count: number }>> {
+    try {
+      const result = await queueCommand<{ events: unknown[]; count: number }>(
+        "getBrowserEvents",
+        params ?? {}
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
 };

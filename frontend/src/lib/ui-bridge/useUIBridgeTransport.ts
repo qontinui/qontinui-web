@@ -653,6 +653,59 @@ export function useUIBridgeTransport(
           return { errors, count: errors.length };
         }
 
+        // ========== Performance Diagnostics ==========
+        case "getPerformanceEntries": {
+          const entries: Record<string, unknown> = {};
+          const navEntries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
+          if (navEntries.length > 0) {
+            const n = navEntries[0];
+            entries.navigation = {
+              ttfbMs: Math.round(n.responseStart - n.requestStart),
+              domInteractiveMs: Math.round(n.domInteractive),
+              domCompleteMs: Math.round(n.domComplete),
+              loadEventMs: Math.round(n.loadEventEnd),
+              redirectMs: Math.round(n.redirectEnd - n.redirectStart),
+              dnsMs: Math.round(n.domainLookupEnd - n.domainLookupStart),
+              tcpMs: Math.round(n.connectEnd - n.connectStart),
+            };
+          }
+          const resEntries = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+          entries.resources = resEntries.map(e => ({
+            name: e.name,
+            initiatorType: e.initiatorType,
+            startTime: Math.round(e.startTime),
+            duration: Math.round(e.duration),
+            transferSize: e.transferSize ?? 0,
+            ttfbMs: Math.round(e.responseStart - e.requestStart),
+            downloadMs: Math.round(e.responseEnd - e.responseStart),
+          }));
+          entries.paint = performance.getEntriesByType('paint').map(e => ({
+            name: e.name,
+            startTime: Math.round(e.startTime),
+          }));
+          return entries;
+        }
+
+        case "clearPerformanceEntries": {
+          performance.clearResourceTimings();
+          return { cleared: true };
+        }
+
+        case "getBrowserEvents": {
+          const { type, since: evtSince, limit: evtLimit } = payload as { type?: string; since?: number; limit?: number };
+          const w2 = window as unknown as Record<string, unknown>;
+          const bridge2 = w2.__UI_BRIDGE__ as Record<string, unknown> | undefined;
+          const capture2 = bridge2?.browserCapture as
+            | { getByType(t: string): unknown[]; getSince(ts: number): unknown[]; getRecent(n?: number): unknown[] }
+            | undefined;
+          if (!capture2) return { events: [], count: 0 };
+          let events: unknown[];
+          if (type) events = capture2.getByType(type);
+          else if (evtSince) events = capture2.getSince(evtSince);
+          else events = capture2.getRecent(evtLimit ?? 100);
+          return { events, count: events.length };
+        }
+
         default:
           throw new Error(`Unknown command action: ${action}`);
       }
