@@ -50,6 +50,8 @@ class UnifiedWorkflowCreate(BaseModel):
     disabled_context_ids: list[str] = Field(default_factory=list)
     auto_include_contexts: bool = True
     prompt_template: str | None = None
+    enable_sweep: bool = False
+    max_sweep_iterations: int = 5
     generated_by_task_run_id: str | None = None
     project_id: str | None = None
 
@@ -79,6 +81,8 @@ class UnifiedWorkflowUpdate(BaseModel):
     disabled_context_ids: list[str] | None = None
     auto_include_contexts: bool | None = None
     prompt_template: str | None = None
+    enable_sweep: bool | None = None
+    max_sweep_iterations: int | None = None
     generated_by_task_run_id: str | None = None
     project_id: str | None = None
 
@@ -111,6 +115,8 @@ class UnifiedWorkflowResponse(BaseModel):
     disabled_context_ids: list[str]
     auto_include_contexts: bool
     prompt_template: str | None
+    enable_sweep: bool
+    max_sweep_iterations: int
     generated_by_task_run_id: str | None
     created_at: datetime
     modified_at: datetime  # Exposed as modified_at for frontend compat
@@ -186,6 +192,12 @@ def _model_to_response(workflow: UnifiedWorkflow) -> UnifiedWorkflowResponse:
             else True
         ),
         prompt_template=workflow.prompt_template,
+        enable_sweep=workflow.enable_sweep
+        if workflow.enable_sweep is not None
+        else False,
+        max_sweep_iterations=workflow.max_sweep_iterations
+        if workflow.max_sweep_iterations is not None
+        else 5,
         generated_by_task_run_id=workflow.generated_by_task_run_id,
         created_at=workflow.created_at,
         modified_at=workflow.updated_at,

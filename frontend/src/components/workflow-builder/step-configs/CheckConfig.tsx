@@ -20,6 +20,7 @@ const CHECK_TYPE_OPTIONS: { value: CheckType; label: string }[] = [
   { value: "security", label: "Security" },
   { value: "custom_command", label: "Custom Command" },
   { value: "ai_review", label: "AI Review" },
+  { value: "ci_cd", label: "CI/CD" },
 ];
 
 interface CheckConfigProps {
@@ -29,6 +30,7 @@ interface CheckConfigProps {
 
 export function CheckConfig({ step, onUpdate }: CheckConfigProps) {
   const isAiReview = step.check_type === "ai_review";
+  const isCiCd = step.check_type === "ci_cd";
 
   return (
     <div className="space-y-4">
@@ -53,7 +55,111 @@ export function CheckConfig({ step, onUpdate }: CheckConfigProps) {
         </Select>
       </div>
 
-      {isAiReview ? (
+      {isCiCd ? (
+        <>
+          <div>
+            <label className="block text-xs font-medium text-zinc-400 mb-1">
+              Repository
+            </label>
+            <Input
+              className="font-mono bg-zinc-800 border-zinc-700 text-zinc-200 text-sm"
+              placeholder="owner/repo"
+              value={step.repository ?? ""}
+              onChange={(e) =>
+                onUpdate({ repository: e.target.value || undefined })
+              }
+            />
+            <p className="text-xs text-zinc-500 mt-1">
+              GitHub repository (e.g., jspindev/qontinui-runner). Leave blank to
+              auto-detect from working directory.
+            </p>
+          </div>
+          {!step.repository && (
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1">
+                Working Directory
+              </label>
+              <Input
+                className="bg-zinc-800 border-zinc-700 text-zinc-200 text-sm"
+                placeholder="Path to git repo root"
+                value={step.working_directory ?? ""}
+                onChange={(e) =>
+                  onUpdate({
+                    working_directory: e.target.value || undefined,
+                  })
+                }
+              />
+              <p className="text-xs text-zinc-500 mt-1">
+                Git repo directory to auto-detect the GitHub repository from.
+              </p>
+            </div>
+          )}
+          <div>
+            <label className="block text-xs font-medium text-zinc-400 mb-1">
+              Workflow Name
+            </label>
+            <Input
+              className="bg-zinc-800 border-zinc-700 text-zinc-200 text-sm"
+              placeholder="CI"
+              value={step.workflow_name ?? ""}
+              onChange={(e) =>
+                onUpdate({ workflow_name: e.target.value || undefined })
+              }
+            />
+            <p className="text-xs text-zinc-500 mt-1">
+              GitHub Actions workflow name to filter by (optional).
+            </p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-zinc-400 mb-1">
+              Branch
+            </label>
+            <Input
+              className="bg-zinc-800 border-zinc-700 text-zinc-200 text-sm"
+              placeholder="main"
+              value={step.branch ?? ""}
+              onChange={(e) =>
+                onUpdate({ branch: e.target.value || undefined })
+              }
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label className="flex items-center gap-2 text-sm text-zinc-400">
+              <input
+                type="checkbox"
+                className="rounded"
+                checked={step.wait_for_completion ?? false}
+                onChange={(e) =>
+                  onUpdate({ wait_for_completion: e.target.checked })
+                }
+              />
+              Wait for in-progress runs
+            </label>
+            <p className="text-xs text-zinc-500 ml-6">
+              Poll until the CI run finishes instead of failing immediately when
+              in progress.
+            </p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-zinc-400 mb-1">
+              Timeout (seconds)
+            </label>
+            <Input
+              type="number"
+              className="bg-zinc-800 border-zinc-700 text-zinc-200 text-sm"
+              placeholder="300"
+              value={step.timeout_seconds ?? ""}
+              onChange={(e) =>
+                onUpdate({
+                  timeout_seconds: e.target.value
+                    ? Number(e.target.value)
+                    : undefined,
+                })
+              }
+            />
+          </div>
+        </>
+      ) : isAiReview ? (
         <>
           <div>
             <label className="block text-xs font-medium text-zinc-400 mb-1">

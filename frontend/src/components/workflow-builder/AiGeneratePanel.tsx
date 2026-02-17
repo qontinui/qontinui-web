@@ -118,6 +118,7 @@ export function AiGeneratePanel({
   const [model, setModel] = useState("");
   const [maxFixIterations, setMaxFixIterations] = useState("");
   const [autoIncludeContexts, setAutoIncludeContexts] = useState(true);
+  const [generationMode, setGenerationMode] = useState<"standard" | "plan">("standard");
 
   // Context section
   const [showContext, setShowContext] = useState(false);
@@ -183,6 +184,7 @@ export function AiGeneratePanel({
         ? parseInt(maxFixIterations, 10)
         : undefined,
       auto_include_contexts: autoIncludeContexts,
+      generation_mode: generationMode !== "standard" ? generationMode : undefined,
     };
   }, [
     description,
@@ -195,6 +197,7 @@ export function AiGeneratePanel({
     model,
     maxFixIterations,
     autoIncludeContexts,
+    generationMode,
   ]);
 
   const handleGenerate = async () => {
@@ -290,9 +293,33 @@ export function AiGeneratePanel({
           {/* Description */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label className="text-sm text-zinc-300">
-                What should the workflow do?
-              </Label>
+              <div className="flex items-center gap-3">
+                <Label className="text-sm text-zinc-300">
+                  {generationMode === "plan" ? "Paste your implementation plan" : "What should the workflow do?"}
+                </Label>
+                <div className="flex rounded-md border border-zinc-700 overflow-hidden">
+                  <button
+                    className={`px-2.5 py-0.5 text-xs transition-colors ${
+                      generationMode === "standard"
+                        ? "bg-zinc-700 text-zinc-200"
+                        : "bg-zinc-800 text-zinc-500 hover:text-zinc-300"
+                    }`}
+                    onClick={() => setGenerationMode("standard")}
+                  >
+                    Describe
+                  </button>
+                  <button
+                    className={`px-2.5 py-0.5 text-xs transition-colors ${
+                      generationMode === "plan"
+                        ? "bg-zinc-700 text-zinc-200"
+                        : "bg-zinc-800 text-zinc-500 hover:text-zinc-300"
+                    }`}
+                    onClick={() => setGenerationMode("plan")}
+                  >
+                    Plan
+                  </button>
+                </div>
+              </div>
               {generationPrompts.length > 0 && (
                 <Popover
                   open={showPromptPicker}
@@ -334,8 +361,10 @@ export function AiGeneratePanel({
               )}
             </div>
             <Textarea
-              className="min-h-[120px] bg-zinc-800 border-zinc-700 text-zinc-200 text-sm"
-              placeholder={`e.g., Run TypeScript type checking on the web frontend and fix any errors\ne.g., Check the runner API health, then verify UI Bridge elements are registered\ne.g., Run pytest with coverage and fix failing tests`}
+              className={`bg-zinc-800 border-zinc-700 text-zinc-200 text-sm ${generationMode === "plan" ? "min-h-[200px] font-mono text-xs" : "min-h-[120px]"}`}
+              placeholder={generationMode === "plan"
+                ? "1. Add sweep fields to the database schema\n2. Update the Rust structs with new fields\n3. Wire the fields into the executor\n4. Add frontend UI controls\n5. Run cargo test to verify compilation"
+                : "e.g., Run TypeScript type checking on the web frontend and fix any errors\ne.g., Check the runner API health, then verify UI Bridge elements are registered\ne.g., Run pytest with coverage and fix failing tests"}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               autoFocus

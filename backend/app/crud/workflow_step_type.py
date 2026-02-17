@@ -216,13 +216,22 @@ DEFAULT_STEP_TYPES: list[dict] = [
         "sort_order": 20,
     },
     {
+        "step_type": "check_ci_cd",
+        "phase": "setup",
+        "label": "CI/CD Check",
+        "description": "Check GitHub CI/CD pipeline status",
+        "icon": "GitBranch",
+        "color": "purple",
+        "sort_order": 21,
+    },
+    {
         "step_type": "screenshot",
         "phase": "setup",
         "label": "Screenshot",
         "description": "Capture current screen state",
         "icon": "Camera",
         "color": "pink",
-        "sort_order": 21,
+        "sort_order": 22,
     },
     {
         "step_type": "awas_discover",
@@ -361,13 +370,22 @@ DEFAULT_STEP_TYPES: list[dict] = [
         "sort_order": 11,
     },
     {
+        "step_type": "check_ci_cd",
+        "phase": "verification",
+        "label": "CI/CD Check",
+        "description": "Check GitHub CI/CD pipeline status",
+        "icon": "GitBranch",
+        "color": "purple",
+        "sort_order": 12,
+    },
+    {
         "step_type": "screenshot",
         "phase": "verification",
         "label": "Screenshot",
         "description": "Capture current screen state",
         "icon": "Camera",
         "color": "pink",
-        "sort_order": 12,
+        "sort_order": 13,
     },
     {
         "step_type": "state",
@@ -376,7 +394,7 @@ DEFAULT_STEP_TYPES: list[dict] = [
         "description": "Go to a stored application state",
         "icon": "Navigation",
         "color": "blue",
-        "sort_order": 13,
+        "sort_order": 14,
     },
     {
         "step_type": "workflow_ref",
@@ -385,7 +403,7 @@ DEFAULT_STEP_TYPES: list[dict] = [
         "description": "Execute another saved workflow",
         "icon": "GitBranch",
         "color": "purple",
-        "sort_order": 14,
+        "sort_order": 15,
     },
     {
         "step_type": "gui_action",
@@ -394,7 +412,7 @@ DEFAULT_STEP_TYPES: list[dict] = [
         "description": "Click, type, or press hotkeys",
         "icon": "MousePointer2",
         "color": "orange",
-        "sort_order": 15,
+        "sort_order": 16,
     },
     {
         "step_type": "macro",
@@ -403,7 +421,7 @@ DEFAULT_STEP_TYPES: list[dict] = [
         "description": "Execute a saved macro (action sequence)",
         "icon": "Layers",
         "color": "pink",
-        "sort_order": 16,
+        "sort_order": 17,
     },
     {
         "step_type": "script",
@@ -412,7 +430,7 @@ DEFAULT_STEP_TYPES: list[dict] = [
         "description": "Browser automation with Playwright",
         "icon": "FileCode",
         "color": "emerald",
-        "sort_order": 17,
+        "sort_order": 18,
     },
     {
         "step_type": "api_request",
@@ -421,7 +439,7 @@ DEFAULT_STEP_TYPES: list[dict] = [
         "description": "Verify API responses with assertions",
         "icon": "Globe",
         "color": "cyan",
-        "sort_order": 18,
+        "sort_order": 19,
     },
     {
         "step_type": "shell_command",
@@ -430,7 +448,7 @@ DEFAULT_STEP_TYPES: list[dict] = [
         "description": "Run shell commands for verification",
         "icon": "Terminal",
         "color": "gray",
-        "sort_order": 19,
+        "sort_order": 20,
     },
     {
         "step_type": "prompt",
@@ -439,7 +457,7 @@ DEFAULT_STEP_TYPES: list[dict] = [
         "description": "AI-evaluated success criteria",
         "icon": "Bot",
         "color": "violet",
-        "sort_order": 20,
+        "sort_order": 21,
     },
     {
         "step_type": "mcp_call",
@@ -448,7 +466,7 @@ DEFAULT_STEP_TYPES: list[dict] = [
         "description": "Call an MCP tool for verification",
         "icon": "Plug",
         "color": "indigo",
-        "sort_order": 21,
+        "sort_order": 22,
     },
     {
         "step_type": "awas_execute",
@@ -457,7 +475,7 @@ DEFAULT_STEP_TYPES: list[dict] = [
         "description": "Execute an AWAS action for verification",
         "icon": "Play",
         "color": "teal",
-        "sort_order": 22,
+        "sort_order": 23,
     },
     {
         "step_type": "awas_list_actions",
@@ -466,7 +484,7 @@ DEFAULT_STEP_TYPES: list[dict] = [
         "description": "List available AWAS actions",
         "icon": "List",
         "color": "teal",
-        "sort_order": 23,
+        "sort_order": 24,
     },
     {
         "step_type": "awas_extract_elements",
@@ -475,7 +493,7 @@ DEFAULT_STEP_TYPES: list[dict] = [
         "description": "Extract AWAS elements from HTML",
         "icon": "FileSearch",
         "color": "teal",
-        "sort_order": 24,
+        "sort_order": 25,
     },
     {
         "step_type": "spec",
@@ -484,7 +502,7 @@ DEFAULT_STEP_TYPES: list[dict] = [
         "description": "Verify UI elements against spec assertions",
         "icon": "ShieldCheck",
         "color": "emerald",
-        "sort_order": 25,
+        "sort_order": 26,
     },
     {
         "step_type": "gate",
@@ -493,7 +511,7 @@ DEFAULT_STEP_TYPES: list[dict] = [
         "description": "Aggregate step results to control agentic loop",
         "icon": "ShieldCheck",
         "color": "red",
-        "sort_order": 26,
+        "sort_order": 27,
     },
     # ── Agentic phase ──
     {
@@ -687,13 +705,22 @@ DEFAULT_STEP_TYPES: list[dict] = [
         "sort_order": 20,
     },
     {
+        "step_type": "check_ci_cd",
+        "phase": "completion",
+        "label": "CI/CD Check",
+        "description": "Check GitHub CI/CD pipeline status",
+        "icon": "GitBranch",
+        "color": "purple",
+        "sort_order": 21,
+    },
+    {
         "step_type": "screenshot",
         "phase": "completion",
         "label": "Screenshot",
         "description": "Capture final screen state",
         "icon": "Camera",
         "color": "pink",
-        "sort_order": 21,
+        "sort_order": 22,
     },
 ]
 
@@ -850,6 +877,40 @@ async def seed_default_step_types(
     return rows
 
 
+async def backfill_missing_built_in_step_types(
+    db: AsyncSession, user_id: UUID, existing: list[StepTypeConfig]
+) -> list[StepTypeConfig]:
+    """Add any built-in step types that are missing from the user's config.
+
+    This handles the case where new built-in step types are added after a user
+    has already been seeded. Only inserts types where (step_type, phase) is not
+    already present.
+    """
+    runner_types = await fetch_step_types_from_runner()
+    source_types = runner_types if runner_types else DEFAULT_STEP_TYPES
+
+    existing_keys = {(r.step_type, r.phase) for r in existing}
+    new_rows: list[StepTypeConfig] = []
+    for entry in source_types:
+        key = (entry["step_type"], entry["phase"])
+        if key not in existing_keys:
+            row = StepTypeConfig(user_id=user_id, is_built_in=True, **entry)
+            db.add(row)
+            new_rows.append(row)
+
+    if new_rows:
+        logger.info(
+            "Backfilled %d missing built-in step types for user %s: %s",
+            len(new_rows),
+            user_id,
+            [(r.step_type, r.phase) for r in new_rows],
+        )
+        await db.commit()
+        for row in new_rows:
+            await db.refresh(row)
+    return new_rows
+
+
 async def get_user_step_types(
     db: AsyncSession, user_id: UUID, phase: str | None = None
 ) -> list[StepTypeConfig]:
@@ -861,6 +922,12 @@ async def get_user_step_types(
     rows = list(result.scalars().all())
     if not rows and phase is None:
         rows = await seed_default_step_types(db, user_id)
+    elif rows and phase is None:
+        # Backfill any new built-in types added since the user was seeded
+        new_rows = await backfill_missing_built_in_step_types(db, user_id, rows)
+        if new_rows:
+            rows.extend(new_rows)
+            rows.sort(key=lambda r: (r.phase, r.sort_order))
     return rows
 
 

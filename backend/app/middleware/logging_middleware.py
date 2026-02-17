@@ -3,10 +3,14 @@ Logging Middleware
 
 Automatically logs all HTTP requests with performance metrics and context.
 Integrates with structlog for structured JSON logging.
+Writes velocity JSONL entries for response time analysis.
 """
 
+import json
 import time
 from collections.abc import Callable
+from datetime import datetime, UTC
+from pathlib import Path
 
 import structlog
 from fastapi import Request, Response
@@ -16,6 +20,40 @@ from starlette.types import ASGIApp
 from app.core.logging_helpers import log_error, log_request
 
 logger = structlog.get_logger(__name__)
+
+# Velocity JSONL output path
+_VELOCITY_JSONL_PATH: Path | None = None
+_VELOCITY_FILE = None
+
+
+def _get_velocity_file():
+    """Lazily open the velocity JSONL file for appending."""
+    global _VELOCITY_JSONL_PATH, _VELOCITY_FILE
+    if _VELOCITY_FILE is not None:
+        return _VELOCITY_FILE
+
+    # Resolve .dev-logs/ relative to the project parent directory
+    dev_logs_dir = Path(__file__).resolve().parents[4] / ".dev-logs"
+    dev_logs_dir.mkdir(parents=True, exist_ok=True)
+    _VELOCITY_JSONL_PATH = dev_logs_dir / "backend-velocity.jsonl"
+
+    try:
+        _VELOCITY_FILE = open(_VELOCITY_JSONL_PATH, "a", encoding="utf-8")
+    except OSError:
+        pass
+    return _VELOCITY_FILE
+
+
+def _write_velocity_entry(entry: dict) -> None:
+    """Write a velocity entry to the JSONL file."""
+    f = _get_velocity_file()
+    if f is None:
+        return
+    try:
+        f.write(json.dumps(entry, default=str) + "\n")
+        f.flush()
+    except OSError:
+        pass
 
 
 class LoggingMiddleware(BaseHTTPMiddleware):
@@ -37,12 +75,13 @@ class LoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         # Start timer
         start_time = time.time()
+        start_dt = datetime.now(UTC)
 
         # Extract request context
         method = request.method
         path = request.url.path
-        str(request.url.query) if request.url.query else None
         ip_address = self._get_client_ip(request)
+        request_id = request.headers.get("X-Request-ID", "")
 
         # Skip health check logging (too noisy)
         if path == "/health":
@@ -82,6 +121,25 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                     user_id=user_id,
                 )
 
+            # Write velocity JSONL entry
+            end_dt = datetime.now(UTC)
+            _write_velocity_entry(
+                {
+                    "service": "backend",
+                    "name": "HTTP request",
+                    "start_ts": start_dt.isoformat(),
+                    "end_ts": end_dt.isoformat(),
+                    "duration_ms": round(duration_ms, 2),
+                    "attributes": {
+                        "http.method": method,
+                        "http.route": path,
+                        "http.status_code": status_code,
+                        "request_id": request_id,
+                    },
+                    "success": status_code < 500,
+                }
+            )
+
             return response  # type: ignore[no-any-return]
 
         except Exception as e:
@@ -96,6 +154,26 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                 path=path,
                 duration_ms=duration_ms,
                 ip_address=ip_address,
+            )
+
+            # Write velocity JSONL entry for errors
+            end_dt = datetime.now(UTC)
+            _write_velocity_entry(
+                {
+                    "service": "backend",
+                    "name": "HTTP request",
+                    "start_ts": start_dt.isoformat(),
+                    "end_ts": end_dt.isoformat(),
+                    "duration_ms": round(duration_ms, 2),
+                    "attributes": {
+                        "http.method": method,
+                        "http.route": path,
+                        "http.status_code": 500,
+                        "request_id": request_id,
+                    },
+                    "success": False,
+                    "error": f"{type(e).__name__}: {e}",
+                }
             )
 
             # Re-raise to let FastAPI's exception handlers deal with it

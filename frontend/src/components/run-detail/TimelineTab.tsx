@@ -151,6 +151,7 @@ const STEP_TYPE_ICONS: Record<string, { icon: LucideIcon; bg: string; text: stri
   check_typecheck: { icon: FileType, bg: "bg-cyan-500/10", text: "text-cyan-400" },
   check_build: { icon: Package, bg: "bg-cyan-500/10", text: "text-cyan-400" },
   check_group: { icon: CheckCircle, bg: "bg-cyan-500/10", text: "text-cyan-400" },
+  check_ci_cd: { icon: GitBranch, bg: "bg-purple-500/10", text: "text-purple-400" },
   log_watch: { icon: FileSearch, bg: "bg-cyan-500/10", text: "text-cyan-400" },
   error_resolved: { icon: CheckCircle, bg: "bg-green-500/10", text: "text-green-400" },
   // Other

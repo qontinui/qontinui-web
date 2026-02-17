@@ -200,6 +200,21 @@ class UnifiedWorkflow(Base):
         nullable=True,
     )
 
+    # Completion sweep configuration
+    enable_sweep: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+        default=False,
+    )
+
+    max_sweep_iterations: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("5"),
+        default=5,
+    )
+
     # Provenance
     generated_by_task_run_id: Mapped[str | None] = mapped_column(
         String(255),

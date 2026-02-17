@@ -56,8 +56,12 @@ class ApiClient {
     options: RequestInit = {},
     attempt = 1
   ): Promise<Response> {
+    const requestId = crypto.randomUUID();
+    const start = performance.now();
+
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
+      "X-Request-ID": requestId,
       ...(options.headers as Record<string, string>),
     };
 
@@ -130,9 +134,21 @@ class ApiClient {
         return this.fetchWithAuth(url, options, attempt + 1);
       }
 
+      const durationMs = Math.round(performance.now() - start);
+      const method = options.method || "GET";
+      if (durationMs > 1000) {
+        logger.warn(`[API] SLOW ${method} ${url} ${response.status} ${durationMs}ms [${requestId}]`);
+      } else if (process.env.NODE_ENV === "development") {
+        logger.debug(`[API] ${method} ${url} ${response.status} ${durationMs}ms [${requestId}]`);
+      }
+
       return response;
     } catch (error: unknown) {
       clearTimeout(timeoutId);
+
+      const durationMs = Math.round(performance.now() - start);
+      const method = options.method || "GET";
+      logger.error(`[API] FAIL ${method} ${url} ${durationMs}ms [${requestId}]`, error);
 
       if (error instanceof Error && error.name === "AbortError") {
         throw new Error("Request timeout");

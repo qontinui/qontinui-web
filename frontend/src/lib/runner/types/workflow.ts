@@ -19,6 +19,8 @@ export interface GenerateWorkflowRequest {
   auto_include_contexts?: boolean;
   /** Maximum verification->fix iterations (default: 3, 0 = skip verification) */
   max_fix_iterations?: number;
+  /** Generation mode: "standard" (default) or "plan" */
+  generation_mode?: "standard" | "plan";
 }
 
 /** One pass of the verification->fix loop during workflow generation. */

@@ -49,6 +49,7 @@ const CATEGORIES: CategoryDef[] = [
       "check_security",
       "check_custom",
       "check_ai_review",
+      "check_ci_cd",
     ],
   },
   {
@@ -105,6 +106,7 @@ function resolveStepType(displayType: string): {
       check_security: "security",
       check_custom: "custom_command",
       check_ai_review: "ai_review",
+      check_ci_cd: "ci_cd",
     };
     return { type: "check", subType: checkTypeMap[displayType] };
   }

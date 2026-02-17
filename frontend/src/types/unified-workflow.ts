@@ -198,7 +198,9 @@ export type CheckType =
   | "analyze"
   | "security"
   | "custom_command"
-  | "ai_review";
+  | "http_status"
+  | "ai_review"
+  | "ci_cd";
 
 export interface CheckStep extends BaseStep {
   type: "check";
@@ -218,6 +220,14 @@ export interface CheckStep extends BaseStep {
   ai_review_input_path?: string;
   /** Whether to validate the input as a workflow JSON */
   ai_review_validate_as_workflow?: boolean;
+  /** CI/CD: GitHub repository in owner/repo format */
+  repository?: string;
+  /** CI/CD: GitHub Actions workflow name filter */
+  workflow_name?: string;
+  /** CI/CD: Branch filter */
+  branch?: string;
+  /** CI/CD: Wait for in-progress runs to complete */
+  wait_for_completion?: boolean;
 }
 
 export interface CheckGroupStep extends BaseStep {
@@ -460,6 +470,8 @@ export interface UnifiedWorkflow {
   health_check_enabled?: boolean;
   health_check_urls?: HealthCheckUrl[];
   prompt_template?: string | null;
+  enable_sweep?: boolean;
+  max_sweep_iterations?: number;
   category: string;
   tags: string[];
   created_at: string;
@@ -766,6 +778,14 @@ export const STEP_TYPES: Record<WorkflowPhase, StepTypeInfo[]> = {
       phase: "setup",
     },
     {
+      type: "check_ci_cd",
+      label: "CI/CD Check",
+      description: "Check GitHub CI/CD pipeline status",
+      icon: "GitBranch",
+      color: "purple",
+      phase: "setup",
+    },
+    {
       type: "screenshot",
       label: "Screenshot",
       description: "Capture current screen state",
@@ -901,6 +921,14 @@ export const STEP_TYPES: Record<WorkflowPhase, StepTypeInfo[]> = {
       description: "AI-powered review of file contents",
       icon: "Bot",
       color: "violet",
+      phase: "verification",
+    },
+    {
+      type: "check_ci_cd",
+      label: "CI/CD Check",
+      description: "Check GitHub CI/CD pipeline status",
+      icon: "GitBranch",
+      color: "purple",
       phase: "verification",
     },
     {
@@ -1201,6 +1229,14 @@ export const STEP_TYPES: Record<WorkflowPhase, StepTypeInfo[]> = {
       description: "AI-powered review of file contents",
       icon: "Bot",
       color: "violet",
+      phase: "completion",
+    },
+    {
+      type: "check_ci_cd",
+      label: "CI/CD Check",
+      description: "Check GitHub CI/CD pipeline status",
+      icon: "GitBranch",
+      color: "purple",
       phase: "completion",
     },
     {
