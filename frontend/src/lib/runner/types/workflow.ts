@@ -6,6 +6,14 @@ import type { UnifiedWorkflow } from "@/types/unified-workflow";
 
 export type { UnifiedWorkflow } from "@/types/unified-workflow";
 
+/** Record of a single discovery tool execution during workflow generation. */
+export interface DiscoveryCall {
+  tool_name: string;
+  input_summary: string;
+  success: boolean;
+  duration_ms: number;
+}
+
 export interface GenerateWorkflowRequest {
   description: string;
   category?: string;
@@ -21,6 +29,8 @@ export interface GenerateWorkflowRequest {
   max_fix_iterations?: number;
   /** Generation mode: "standard" (default) or "plan" */
   generation_mode?: "standard" | "plan";
+  /** Discovery mode: "auto" (default), "enabled" (always), "disabled" (never) */
+  discovery_mode?: "auto" | "enabled" | "disabled";
 }
 
 /** One pass of the verification->fix loop during workflow generation. */
@@ -43,6 +53,8 @@ export interface GenerateWorkflowResponse {
   model_used: string | null;
   /** Details of each verification->fix iteration (empty when skipped) */
   verification_iterations?: VerificationIteration[];
+  /** Discovery tool calls made during generation */
+  discovery_calls?: DiscoveryCall[];
 }
 
 /** Response from async workflow generation */

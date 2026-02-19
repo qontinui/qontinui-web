@@ -26,8 +26,29 @@ repos:
         types_or: [javascript, jsx, ts, tsx]
         additional_dependencies: []
 
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
+    hooks:
+      - id: prettier
+        files: ^frontend/.*\.(ts|tsx|js|jsx|json|css)$
+        exclude: ^(node_modules/|dist/)
+
   - repo: local
     hooks:
+      - id: tsc-typecheck
+        name: TypeScript type check (frontend)
+        entry: bash -c 'cd frontend && npx tsc --noEmit'
+        language: system
+        pass_filenames: false
+        files: ^frontend/.*\.(ts|tsx)$
+
+      - id: mypy
+        name: Python type check (mypy)
+        entry: bash -c 'cd backend && poetry run mypy .'
+        language: system
+        pass_filenames: false
+        files: ^backend/.*\.py$
+
       - id: validate-line-endings
         name: Validate no CRLF left (text files)
         entry: bash -c 'if git grep -I $'"'\r'"'$ -- "$(git rev-parse --show-toplevel)" >/dev/null; then echo "CRLF line endings detected. Convert to LF." >&2; exit 1; fi'

@@ -6,6 +6,7 @@ export type MenuMode = "simple" | "advanced";
 
 interface MenuModeState {
   menuMode: MenuMode;
+  _lastSyncAt: number | null;
   setMenuMode: (mode: MenuMode) => void;
   toggleMenuMode: () => void;
   syncFromRunner: () => Promise<void>;
@@ -15,6 +16,7 @@ export const useMenuModeStore = create<MenuModeState>()(
   persist(
     (set, get) => ({
       menuMode: "simple",
+      _lastSyncAt: null,
       setMenuMode: (mode: MenuMode) => {
         set({ menuMode: mode });
         // Push to runner so it stays in sync
@@ -27,6 +29,9 @@ export const useMenuModeStore = create<MenuModeState>()(
         runnerApi.setAppMode(newMode).catch(() => {});
       },
       syncFromRunner: async () => {
+        const state = get();
+        if (state._lastSyncAt && Date.now() - state._lastSyncAt < 5000) return;
+        set({ _lastSyncAt: Date.now() });
         try {
           const result = await runnerApi.getAppMode();
           const mode = result.mode as MenuMode;
@@ -40,6 +45,7 @@ export const useMenuModeStore = create<MenuModeState>()(
     }),
     {
       name: "qontinui-menu-mode",
-    }
-  )
+      partialize: (state) => ({ menuMode: state.menuMode }),
+    },
+  ),
 );

@@ -30,7 +30,11 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { runnerApi, useContextsDetailed, usePromptsDetailed } from "@/lib/runner-api";
+import {
+  runnerApi,
+  useContextsDetailed,
+  usePromptsDetailed,
+} from "@/lib/runner-api";
 import type { ContextItem } from "@/lib/runner-api";
 
 // =============================================================================
@@ -63,7 +67,7 @@ async function autoSaveGenerationPrompt(promptText: string): Promise<void> {
     const existing = await runnerApi.getPrompts();
     const trimmed = promptText.trim();
     const isDuplicate = existing.some(
-      (p) => p.category === "Generation" && p.content.trim() === trimmed
+      (p) => p.category === "Generation" && p.content.trim() === trimmed,
     );
     if (isDuplicate) return;
 
@@ -118,7 +122,12 @@ export function AiGeneratePanel({
   const [model, setModel] = useState("");
   const [maxFixIterations, setMaxFixIterations] = useState("");
   const [autoIncludeContexts, setAutoIncludeContexts] = useState(true);
-  const [generationMode, setGenerationMode] = useState<"standard" | "plan">("standard");
+  const [generationMode, setGenerationMode] = useState<"standard" | "plan">(
+    "standard",
+  );
+  const [discoveryMode, setDiscoveryMode] = useState<
+    "auto" | "enabled" | "disabled"
+  >("auto");
 
   // Context section
   const [showContext, setShowContext] = useState(false);
@@ -128,7 +137,7 @@ export function AiGeneratePanel({
   const { data: savedPrompts } = usePromptsDetailed();
   const generationPrompts = useMemo(
     () => (savedPrompts || []).filter((p) => p.category === "Generation"),
-    [savedPrompts]
+    [savedPrompts],
   );
 
   // Saved contexts
@@ -144,7 +153,7 @@ export function AiGeneratePanel({
     setSelectedContextIds((prev) =>
       prev.includes(contextId)
         ? prev.filter((id) => id !== contextId)
-        : [...prev, contextId]
+        : [...prev, contextId],
     );
   }, []);
 
@@ -184,7 +193,9 @@ export function AiGeneratePanel({
         ? parseInt(maxFixIterations, 10)
         : undefined,
       auto_include_contexts: autoIncludeContexts,
-      generation_mode: generationMode !== "standard" ? generationMode : undefined,
+      generation_mode:
+        generationMode !== "standard" ? generationMode : undefined,
+      discovery_mode: discoveryMode !== "auto" ? discoveryMode : undefined,
     };
   }, [
     description,
@@ -198,6 +209,7 @@ export function AiGeneratePanel({
     maxFixIterations,
     autoIncludeContexts,
     generationMode,
+    discoveryMode,
   ]);
 
   const handleGenerate = async () => {
@@ -205,7 +217,7 @@ export function AiGeneratePanel({
     setIsSubmitting(true);
     try {
       const response = await runnerApi.generateWorkflowAsync(
-        buildGenerateRequest()
+        buildGenerateRequest(),
       );
       autoSaveGenerationPrompt(description); // fire-and-forget
       onNavigateToActiveRuns(response.task_run_id);
@@ -213,7 +225,7 @@ export function AiGeneratePanel({
       toast.error(
         err instanceof Error
           ? err.message
-          : "Failed to start workflow generation"
+          : "Failed to start workflow generation",
       );
     } finally {
       setIsSubmitting(false);
@@ -226,7 +238,7 @@ export function AiGeneratePanel({
     const toastId = toast.loading("Starting workflow generation...");
     try {
       const response = await runnerApi.generateWorkflowAsync(
-        buildGenerateRequest()
+        buildGenerateRequest(),
       );
       autoSaveGenerationPrompt(description); // fire-and-forget
       localStorage.setItem(
@@ -234,7 +246,7 @@ export function AiGeneratePanel({
         JSON.stringify({
           taskRunId: response.task_run_id,
           timestamp: Date.now(),
-        } satisfies AutoRunAfterGenerate)
+        } satisfies AutoRunAfterGenerate),
       );
       toast.dismiss(toastId);
       onNavigateToActiveRuns(response.task_run_id);
@@ -243,7 +255,7 @@ export function AiGeneratePanel({
         err instanceof Error
           ? err.message
           : "Failed to start workflow generation",
-        { id: toastId }
+        { id: toastId },
       );
     } finally {
       setIsSubmitting(false);
@@ -258,7 +270,7 @@ export function AiGeneratePanel({
       acc[scope].push(ctx);
       return acc;
     },
-    {} as Record<string, ContextItem[]>
+    {} as Record<string, ContextItem[]>,
   );
 
   return (
@@ -295,7 +307,9 @@ export function AiGeneratePanel({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <Label className="text-sm text-zinc-300">
-                  {generationMode === "plan" ? "Paste your implementation plan" : "What should the workflow do?"}
+                  {generationMode === "plan"
+                    ? "Paste your implementation plan"
+                    : "What should the workflow do?"}
                 </Label>
                 <div className="flex rounded-md border border-zinc-700 overflow-hidden">
                   <button
@@ -326,11 +340,7 @@ export function AiGeneratePanel({
                   onOpenChange={setShowPromptPicker}
                 >
                   <PopoverTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 text-xs"
-                    >
+                    <Button variant="ghost" size="sm" className="h-6 text-xs">
                       <BookOpen className="w-3 h-3 mr-1" />
                       Saved ({generationPrompts.length})
                     </Button>
@@ -362,9 +372,11 @@ export function AiGeneratePanel({
             </div>
             <Textarea
               className={`bg-zinc-800 border-zinc-700 text-zinc-200 text-sm ${generationMode === "plan" ? "min-h-[200px] font-mono text-xs" : "min-h-[120px]"}`}
-              placeholder={generationMode === "plan"
-                ? "1. Add sweep fields to the database schema\n2. Update the Rust structs with new fields\n3. Wire the fields into the executor\n4. Add frontend UI controls\n5. Run cargo test to verify compilation"
-                : "e.g., Run TypeScript type checking on the web frontend and fix any errors\ne.g., Check the runner API health, then verify UI Bridge elements are registered\ne.g., Run pytest with coverage and fix failing tests"}
+              placeholder={
+                generationMode === "plan"
+                  ? "1. Add sweep fields to the database schema\n2. Update the Rust structs with new fields\n3. Wire the fields into the executor\n4. Add frontend UI controls\n5. Run cargo test to verify compilation"
+                  : "e.g., Run TypeScript type checking on the web frontend and fix any errors\ne.g., Check the runner API health, then verify UI Bridge elements are registered\ne.g., Run pytest with coverage and fix failing tests"
+              }
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               autoFocus
@@ -443,7 +455,7 @@ export function AiGeneratePanel({
                               </label>
                             ))}
                           </div>
-                        )
+                        ),
                       )}
                     </div>
                   )}
@@ -564,6 +576,22 @@ export function AiGeneratePanel({
                     onChange={(e) => setMaxFixIterations(e.target.value)}
                   />
                 </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-zinc-400">Discovery</Label>
+                  <select
+                    value={discoveryMode}
+                    onChange={(e) =>
+                      setDiscoveryMode(
+                        e.target.value as "auto" | "enabled" | "disabled",
+                      )
+                    }
+                    className="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm h-8 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="auto">Auto</option>
+                    <option value="enabled">Enabled (all tools)</option>
+                    <option value="disabled">Disabled</option>
+                  </select>
+                </div>
                 <div className="flex items-end pb-1">
                   <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
                     <Checkbox
@@ -578,7 +606,6 @@ export function AiGeneratePanel({
               </div>
             </CollapsibleContent>
           </Collapsible>
-
         </div>
       </div>
 

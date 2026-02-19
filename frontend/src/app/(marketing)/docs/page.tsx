@@ -2,9 +2,9 @@ import Link from "next/link";
 import { Rocket, Globe, Terminal, FileCode, Zap } from "lucide-react";
 
 export const metadata = {
-  title: "Qontinui Documentation - Get Started with GUI Automation",
+  title: "Qontinui Documentation - Get Started",
   description:
-    "Complete documentation for Qontinui GUI automation platform. Learn how to build, test, and run intelligent automation workflows.",
+    "Complete documentation for the Qontinui AI development platform. Learn how to orchestrate AI coding sessions with verification loops, error monitoring, and workflow automation.",
 };
 
 export default function DocsHomePage() {
@@ -15,7 +15,8 @@ export default function DocsHomePage() {
         <div className="max-w-4xl mx-auto text-center">
           <h1 className="text-5xl font-bold mb-6">Qontinui Documentation</h1>
           <p className="text-xl text-muted-foreground mb-8">
-            Everything you need to build intelligent GUI automation workflows
+            Everything you need to orchestrate AI development with feedback
+            loops
           </p>
         </div>
       </section>
@@ -54,7 +55,7 @@ export default function DocsHomePage() {
             <DocSection
               icon={<Globe className="w-8 h-8 text-primary" />}
               title="Qontinui Web"
-              description="Visual configuration builder for creating automation workflows in your browser"
+              description="Configuration builder for creating automation workflows in your browser"
               links={[
                 { href: "/docs/web/overview", label: "Overview" },
                 { href: "/docs/web/states", label: "Working with States" },
@@ -67,7 +68,7 @@ export default function DocsHomePage() {
             <DocSection
               icon={<Terminal className="w-8 h-8 text-accent" />}
               title="Qontinui Runner"
-              description="Desktop application for executing automation workflows on your system"
+              description="Desktop application for orchestrating AI coding sessions with feedback loops"
               links={[
                 { href: "/docs/runner/installation", label: "Installation" },
                 {
@@ -113,7 +114,7 @@ export default function DocsHomePage() {
             <DocSection
               icon={<Zap className="w-8 h-8 text-primary" />}
               title="Core Concepts"
-              description="Understand the model-based architecture behind Qontinui"
+              description="Understand the architecture behind Qontinui"
               links={[
                 {
                   href: "/docs/concepts/model-based",

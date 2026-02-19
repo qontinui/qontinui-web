@@ -2,9 +2,9 @@ import Link from "next/link";
 import { Download } from "lucide-react";
 
 export const metadata = {
-  title: "Qontinui Runner Documentation - Desktop Automation Executor",
+  title: "Qontinui Runner Documentation - AI Development Desktop App",
   description:
-    "Complete guide to using Qontinui Runner for executing GUI automation workflows on your desktop.",
+    "Complete guide to using Qontinui Runner to orchestrate AI coding sessions with verification loops, error monitoring, and workflow automation.",
 };
 
 export default function RunnerDocsPage() {
@@ -23,7 +23,8 @@ export default function RunnerDocsPage() {
             Qontinui Runner
           </h1>
           <p className="text-xl text-muted-foreground">
-            Desktop application for executing real GUI automation workflows
+            Desktop application for orchestrating AI coding sessions with
+            automated feedback loops
           </p>
         </div>
 
@@ -33,9 +34,8 @@ export default function RunnerDocsPage() {
             What is Qontinui Runner?
           </h2>
           <p className="text-foreground mb-4">
-            Qontinui Runner is a desktop application that executes automation
-            workflows created in Qontinui Web. It performs <strong>real</strong>{" "}
-            GUI automation on your system:
+            Qontinui Runner is a desktop application that orchestrates AI coding
+            sessions with automated feedback loops. It provides:
           </p>
           <ul className="space-y-2 text-foreground">
             <li className="flex items-start gap-2">

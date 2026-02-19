@@ -4,7 +4,7 @@ import { Download, CheckCircle } from "lucide-react";
 export const metadata = {
   title: "Getting Started with Qontinui - Quick Start Guide",
   description:
-    "Learn how to create your first GUI automation workflow with Qontinui in just a few minutes.",
+    "Learn how to set up Qontinui and run your first AI development workflow with verification loops in just a few minutes.",
 };
 
 export default function GettingStartedPage() {
@@ -21,7 +21,8 @@ export default function GettingStartedPage() {
           </Link>
           <h1 className="text-4xl font-bold mb-4">Getting Started</h1>
           <p className="text-xl text-muted-foreground">
-            Create your first GUI automation workflow in 3 simple steps
+            Get up and running with AI development feedback loops in 3 simple
+            steps
           </p>
         </div>
 

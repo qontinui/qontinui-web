@@ -163,7 +163,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
   const { elements, getElement } = useUIBridge();
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
+    null,
   );
 
   /**
@@ -172,7 +172,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
   const executeCommand = useCallback(
     async (
       action: string,
-      payload: Record<string, unknown>
+      payload: Record<string, unknown>,
     ): Promise<unknown> => {
       switch (action) {
         // ========== Control Snapshot ==========
@@ -219,14 +219,20 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           const startTime = performance.now();
           const { id, request } = payload as {
             id: string;
-            request: { action: string; value?: string; params?: Record<string, unknown>; text?: string; clear?: boolean };
+            request: {
+              action: string;
+              value?: string;
+              params?: Record<string, unknown>;
+              text?: string;
+              clear?: boolean;
+            };
           };
 
           // Create structured failure helper
           const createFailure = (
             errorCode: string,
             message: string,
-            elementState?: unknown
+            elementState?: unknown,
           ) => ({
             success: false,
             error: message,
@@ -251,19 +257,19 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           if (!element) {
             return createFailure(
               "ELEMENT_NOT_FOUND",
-              `Element ${id} not found`
+              `Element ${id} not found`,
             );
           }
 
           // Get the DOM element
           const domElement = document.querySelector(
-            `[data-ui-id="${id}"]`
+            `[data-ui-id="${id}"]`,
           ) as HTMLElement | null;
           if (!domElement) {
             return createFailure(
               "ELEMENT_NOT_FOUND",
               `DOM element for ${id} not found`,
-              element
+              element,
             );
           }
 
@@ -281,7 +287,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
                 visible: false,
                 enabled: !(domElement as HTMLButtonElement).disabled,
                 rect: domElement.getBoundingClientRect(),
-              }
+              },
             );
           }
 
@@ -294,7 +300,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
                 visible: true,
                 enabled: false,
                 rect: domElement.getBoundingClientRect(),
-              }
+              },
             );
           }
 
@@ -315,26 +321,37 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
                   domElement instanceof HTMLInputElement ||
                   domElement instanceof HTMLTextAreaElement
                 ) {
-                  const proto = domElement instanceof HTMLTextAreaElement
-                    ? HTMLTextAreaElement.prototype
-                    : HTMLInputElement.prototype;
-                  const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+                  const proto =
+                    domElement instanceof HTMLTextAreaElement
+                      ? HTMLTextAreaElement.prototype
+                      : HTMLInputElement.prototype;
+                  const nativeSetter = Object.getOwnPropertyDescriptor(
+                    proto,
+                    "value",
+                  )?.set;
                   const text = request.params?.text || request.text || "";
                   if (request.params?.clear || request.clear) {
-                    if (nativeSetter) nativeSetter.call(domElement, '');
-                    else domElement.value = '';
-                    domElement.dispatchEvent(new Event('input', { bubbles: true }));
+                    if (nativeSetter) nativeSetter.call(domElement, "");
+                    else domElement.value = "";
+                    domElement.dispatchEvent(
+                      new Event("input", { bubbles: true }),
+                    );
                   }
                   domElement.focus();
                   const current = domElement.value;
-                  if (nativeSetter) nativeSetter.call(domElement, current + text);
+                  if (nativeSetter)
+                    nativeSetter.call(domElement, current + text);
                   else domElement.value = current + text;
-                  domElement.dispatchEvent(new Event('input', { bubbles: true }));
-                  domElement.dispatchEvent(new Event('change', { bubbles: true }));
+                  domElement.dispatchEvent(
+                    new Event("input", { bubbles: true }),
+                  );
+                  domElement.dispatchEvent(
+                    new Event("change", { bubbles: true }),
+                  );
                 } else {
                   return createFailure(
                     "UNSUPPORTED_ACTION",
-                    `Cannot type into ${domElement.tagName} element`
+                    `Cannot type into ${domElement.tagName} element`,
                   );
                 }
                 break;
@@ -343,18 +360,26 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
                   domElement instanceof HTMLInputElement ||
                   domElement instanceof HTMLTextAreaElement
                 ) {
-                  const clearProto = domElement instanceof HTMLTextAreaElement
-                    ? HTMLTextAreaElement.prototype
-                    : HTMLInputElement.prototype;
-                  const clearSetter = Object.getOwnPropertyDescriptor(clearProto, 'value')?.set;
-                  if (clearSetter) clearSetter.call(domElement, '');
-                  else domElement.value = '';
-                  domElement.dispatchEvent(new Event('input', { bubbles: true }));
-                  domElement.dispatchEvent(new Event('change', { bubbles: true }));
+                  const clearProto =
+                    domElement instanceof HTMLTextAreaElement
+                      ? HTMLTextAreaElement.prototype
+                      : HTMLInputElement.prototype;
+                  const clearSetter = Object.getOwnPropertyDescriptor(
+                    clearProto,
+                    "value",
+                  )?.set;
+                  if (clearSetter) clearSetter.call(domElement, "");
+                  else domElement.value = "";
+                  domElement.dispatchEvent(
+                    new Event("input", { bubbles: true }),
+                  );
+                  domElement.dispatchEvent(
+                    new Event("change", { bubbles: true }),
+                  );
                 } else {
                   return createFailure(
                     "UNSUPPORTED_ACTION",
-                    `Cannot clear ${domElement.tagName} element`
+                    `Cannot clear ${domElement.tagName} element`,
                   );
                 }
                 break;
@@ -363,23 +388,28 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
                   domElement instanceof HTMLInputElement ||
                   domElement instanceof HTMLTextAreaElement
                 ) {
-                  const setProto = domElement instanceof HTMLTextAreaElement
-                    ? HTMLTextAreaElement.prototype
-                    : HTMLInputElement.prototype;
-                  const setSetter = Object.getOwnPropertyDescriptor(setProto, 'value')?.set;
-                  const val = request.value || (request.params?.value as string) || "";
+                  const setProto =
+                    domElement instanceof HTMLTextAreaElement
+                      ? HTMLTextAreaElement.prototype
+                      : HTMLInputElement.prototype;
+                  const setSetter = Object.getOwnPropertyDescriptor(
+                    setProto,
+                    "value",
+                  )?.set;
+                  const val =
+                    request.value || (request.params?.value as string) || "";
                   if (setSetter) setSetter.call(domElement, val);
                   else domElement.value = val;
                   domElement.dispatchEvent(
-                    new Event("input", { bubbles: true })
+                    new Event("input", { bubbles: true }),
                   );
                   domElement.dispatchEvent(
-                    new Event("change", { bubbles: true })
+                    new Event("change", { bubbles: true }),
                   );
                 } else {
                   return createFailure(
                     "UNSUPPORTED_ACTION",
-                    `Cannot set value on ${domElement.tagName} element`
+                    `Cannot set value on ${domElement.tagName} element`,
                   );
                 }
                 break;
@@ -387,12 +417,12 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
                 if (domElement instanceof HTMLSelectElement) {
                   domElement.value = request.value || "";
                   domElement.dispatchEvent(
-                    new Event("change", { bubbles: true })
+                    new Event("change", { bubbles: true }),
                   );
                 } else {
                   return createFailure(
                     "UNSUPPORTED_ACTION",
-                    `Cannot select on ${domElement.tagName} element`
+                    `Cannot select on ${domElement.tagName} element`,
                   );
                 }
                 break;
@@ -400,12 +430,12 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
                 if (domElement instanceof HTMLInputElement) {
                   domElement.checked = true;
                   domElement.dispatchEvent(
-                    new Event("change", { bubbles: true })
+                    new Event("change", { bubbles: true }),
                   );
                 } else {
                   return createFailure(
                     "UNSUPPORTED_ACTION",
-                    `Cannot check ${domElement.tagName} element`
+                    `Cannot check ${domElement.tagName} element`,
                   );
                 }
                 break;
@@ -413,25 +443,25 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
                 if (domElement instanceof HTMLInputElement) {
                   domElement.checked = false;
                   domElement.dispatchEvent(
-                    new Event("change", { bubbles: true })
+                    new Event("change", { bubbles: true }),
                   );
                 } else {
                   return createFailure(
                     "UNSUPPORTED_ACTION",
-                    `Cannot uncheck ${domElement.tagName} element`
+                    `Cannot uncheck ${domElement.tagName} element`,
                   );
                 }
                 break;
               default:
                 return createFailure(
                   "UNSUPPORTED_ACTION",
-                  `Unknown action: ${actionType}`
+                  `Unknown action: ${actionType}`,
                 );
             }
           } catch (actionError) {
             return createFailure(
               "ACTION_REJECTED",
-              `Action failed: ${(actionError as Error).message}`
+              `Action failed: ${(actionError as Error).message}`,
             );
           }
 
@@ -447,7 +477,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         case "highlightElement": {
           const { id } = payload;
           const domElement = document.querySelector(
-            `[data-ui-id="${id}"]`
+            `[data-ui-id="${id}"]`,
           ) as HTMLElement | null;
           if (domElement) {
             const originalOutline = domElement.style.outline;
@@ -490,14 +520,20 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         case "aiSearch": {
           // Import AI search functionality dynamically
           const { createSearchEngine } = await import("@qontinui/ui-bridge/ai");
-          const searchEngine = createSearchEngine({});
+          const searchEngine = createSearchEngine({ includeHidden: true });
           searchEngine.updateElements(elements);
-          const searchResponse = searchEngine.search(
-            payload as Parameters<typeof searchEngine.search>[0]
-          );
+          // Default to fuzzy matching for AI search
+          const searchCriteria = {
+            fuzzy: true,
+            ...(payload as Parameters<typeof searchEngine.search>[0]),
+          };
+          const searchResponse = searchEngine.search(searchCriteria);
           return {
             results: searchResponse.results,
             total: searchResponse.results.length,
+            scannedCount: searchResponse.scannedCount,
+            _debug_handler: "SSE_v2",
+            _debug_elementCount: elements.length,
             timestamp: Date.now(),
           };
         }
@@ -521,7 +557,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
                 element: { id: string; description: string; type: string };
                 confidence: number;
               }>;
-            } = {}
+            } = {},
           ) => ({
             success: false,
             executedAction: instruction,
@@ -556,14 +592,14 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           if (!parsed) {
             return createAIFailure(
               "PARSE_ERROR",
-              `Could not parse instruction: "${instruction}"`
+              `Could not parse instruction: "${instruction}"`,
             );
           }
 
           // Find the target element
           const { createSearchEngine } = await import("@qontinui/ui-bridge/ai");
           // elements is available from hook scope
-          const searchEngine = createSearchEngine({});
+          const searchEngine = createSearchEngine({ includeHidden: true });
           searchEngine.updateElements(elements);
 
           const searchResponse = searchEngine.search({
@@ -575,7 +611,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           if (searchResults.length === 0) {
             return createAIFailure(
               "ELEMENT_NOT_FOUND",
-              `No element found matching: "${parsed.targetDescription}"`
+              `No element found matching: "${parsed.targetDescription}"`,
             );
           }
 
@@ -594,13 +630,13 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
                   },
                   confidence: r.confidence,
                 })),
-              }
+              },
             );
           }
 
           const targetElement = firstResult.element;
           const domElement = document.querySelector(
-            `[data-ui-id="${targetElement.id}"]`
+            `[data-ui-id="${targetElement.id}"]`,
           ) as HTMLElement | null;
 
           if (!domElement) {
@@ -617,7 +653,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
                   },
                   confidence: r.confidence,
                 })),
-              }
+              },
             );
           }
 
@@ -640,7 +676,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
                   },
                   confidence: r.confidence,
                 })),
-              }
+              },
             );
           }
 
@@ -658,7 +694,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
                   },
                   confidence: r.confidence,
                 })),
-              }
+              },
             );
           }
 
@@ -675,16 +711,16 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
                 ) {
                   domElement.value = parsed.value || "";
                   domElement.dispatchEvent(
-                    new Event("input", { bubbles: true })
+                    new Event("input", { bubbles: true }),
                   );
                   domElement.dispatchEvent(
-                    new Event("change", { bubbles: true })
+                    new Event("change", { bubbles: true }),
                   );
                 } else {
                   return createAIFailure(
                     "UNSUPPORTED_ACTION",
                     `Cannot type into ${domElement.tagName} element`,
-                    { elementId: targetElement.id }
+                    { elementId: targetElement.id },
                   );
                 }
                 break;
@@ -692,13 +728,13 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
                 if (domElement instanceof HTMLSelectElement) {
                   domElement.value = parsed.value || "";
                   domElement.dispatchEvent(
-                    new Event("change", { bubbles: true })
+                    new Event("change", { bubbles: true }),
                   );
                 } else {
                   return createAIFailure(
                     "UNSUPPORTED_ACTION",
                     `Cannot select on ${domElement.tagName} element`,
-                    { elementId: targetElement.id }
+                    { elementId: targetElement.id },
                   );
                 }
                 break;
@@ -706,13 +742,13 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
                 if (domElement instanceof HTMLInputElement) {
                   domElement.checked = true;
                   domElement.dispatchEvent(
-                    new Event("change", { bubbles: true })
+                    new Event("change", { bubbles: true }),
                   );
                 } else {
                   return createAIFailure(
                     "UNSUPPORTED_ACTION",
                     `Cannot check ${domElement.tagName} element`,
-                    { elementId: targetElement.id }
+                    { elementId: targetElement.id },
                   );
                 }
                 break;
@@ -720,13 +756,13 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
                 if (domElement instanceof HTMLInputElement) {
                   domElement.checked = false;
                   domElement.dispatchEvent(
-                    new Event("change", { bubbles: true })
+                    new Event("change", { bubbles: true }),
                   );
                 } else {
                   return createAIFailure(
                     "UNSUPPORTED_ACTION",
                     `Cannot uncheck ${domElement.tagName} element`,
-                    { elementId: targetElement.id }
+                    { elementId: targetElement.id },
                   );
                 }
                 break;
@@ -734,14 +770,14 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
                 return createAIFailure(
                   "UNSUPPORTED_ACTION",
                   `Unsupported action: ${parsed.action}`,
-                  { elementId: targetElement.id }
+                  { elementId: targetElement.id },
                 );
             }
           } catch (actionError) {
             return createAIFailure(
               "ACTION_REJECTED",
               `Action failed: ${(actionError as Error).message}`,
-              { elementId: targetElement.id }
+              { elementId: targetElement.id },
             );
           }
 
@@ -763,7 +799,9 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           const executor = createAssertionExecutor({});
           // Cast RegisteredElement[] to the expected type - both share the same core structure
           executor.updateElements(
-            elements as unknown as Parameters<typeof executor.updateElements>[0]
+            elements as unknown as Parameters<
+              typeof executor.updateElements
+            >[0],
           );
           const assertionRequest = payload as {
             target: string;
@@ -786,7 +824,9 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           const executor = createAssertionExecutor({});
           // Cast RegisteredElement[] to the expected type - both share the same core structure
           executor.updateElements(
-            elements as unknown as Parameters<typeof executor.updateElements>[0]
+            elements as unknown as Parameters<
+              typeof executor.updateElements
+            >[0],
           );
           const batchRequest = payload as {
             assertions: Array<{
@@ -852,7 +892,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
             suggestedActions: [],
           }));
           return generatePageSummary(
-            aiElements as Parameters<typeof generatePageSummary>[0]
+            aiElements as Parameters<typeof generatePageSummary>[0],
           );
         }
 
@@ -924,13 +964,13 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
                   element: { description?: string; id: string };
                   confidence: number;
                 },
-                idx: number
+                idx: number,
               ) => ({
                 element: r.element,
                 similarity: r.confidence,
                 rank: idx + 1,
                 embeddedText: r.element.description || r.element.id,
-              })
+              }),
             ),
             bestMatch:
               limitedResults.length > 0
@@ -954,7 +994,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           throw new Error(`Unknown command action: ${action}`);
       }
     },
-    [elements, getElement]
+    [elements, getElement],
   );
 
   /**
@@ -977,7 +1017,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         console.error("[UIBridge] Failed to send command response:", e);
       }
     },
-    []
+    [],
   );
 
   /**
@@ -988,7 +1028,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
       try {
         const result = await executeCommand(
           command.action,
-          command.payload as Record<string, unknown>
+          command.payload as Record<string, unknown>,
         );
 
         // Check if result contains a failure (structured error)
@@ -1035,7 +1075,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
         });
       }
     },
-    [executeCommand, sendResponse]
+    [executeCommand, sendResponse],
   );
 
   /**

@@ -12,7 +12,7 @@ import {
 export const metadata = {
   title: "Qontinui Runner - AI Development Desktop App",
   description:
-    "Open-source desktop application that orchestrates AI coding sessions with verification loops, error monitoring, UI Bridge visual feedback, and multi-provider support.",
+    "Open-source desktop application that orchestrates AI coding sessions with automated feedback loops, verification, error monitoring, and multi-provider support.",
 };
 
 export default function RunnerPage() {

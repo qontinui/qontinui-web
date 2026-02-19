@@ -48,7 +48,7 @@ const WEBSOCKET_ENDPOINT = "/api/ui-bridge/ws";
  */
 function setReactInputValue(
   element: HTMLInputElement | HTMLTextAreaElement,
-  value: string
+  value: string,
 ) {
   const proto =
     element instanceof HTMLTextAreaElement
@@ -172,7 +172,7 @@ function generateClientId(): string {
 function calculateReconnectDelay(attempt: number): number {
   const baseDelay = Math.min(
     INITIAL_RECONNECT_DELAY_MS * Math.pow(RECONNECT_MULTIPLIER, attempt - 1),
-    MAX_RECONNECT_DELAY_MS
+    MAX_RECONNECT_DELAY_MS,
   );
 
   // Add jitter (+/- 10%)
@@ -185,10 +185,15 @@ function calculateReconnectDelay(attempt: number): number {
  */
 export function useUIBridgeTransport(
   enabled: boolean = true,
-  options: UIBridgeTransportOptions = {}
+  options: UIBridgeTransportOptions = {},
 ): UIBridgeTransportResult {
   const { mode = "auto", wsUrl, verbose = false } = options;
-  const { elements, getElement, createSnapshot } = useUIBridge();
+  const {
+    elements,
+    getElement,
+    createSnapshot,
+    find: findElements,
+  } = useUIBridge();
 
   // State
   const [connectionState, setConnectionState] =
@@ -204,11 +209,10 @@ export function useUIBridgeTransport(
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const sseReconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
+    null,
   );
   const isIntentionallyClosed = useRef(false);
   const isTabVisibleRef = useRef(true);
-
 
   /**
    * Log helper (only logs if verbose is enabled)
@@ -219,7 +223,7 @@ export function useUIBridgeTransport(
         console.log(`[UIBridgeTransport] ${message}`, ...args);
       }
     },
-    [verbose]
+    [verbose],
   );
 
   /**
@@ -229,7 +233,7 @@ export function useUIBridgeTransport(
   const executeCommand = useCallback(
     async (
       action: string,
-      payload: Record<string, unknown>
+      payload: Record<string, unknown>,
     ): Promise<unknown> => {
       switch (action) {
         // ========== Control Snapshot ==========
@@ -261,7 +265,13 @@ export function useUIBridgeTransport(
         case "executeElementAction": {
           const { id, request } = payload as {
             id: string;
-            request: { action: string; value?: string; params?: Record<string, unknown>; text?: string; clear?: boolean };
+            request: {
+              action: string;
+              value?: string;
+              params?: Record<string, unknown>;
+              text?: string;
+              clear?: boolean;
+            };
           };
           const element = getElement(id);
           if (!element) {
@@ -270,7 +280,7 @@ export function useUIBridgeTransport(
 
           // Get the DOM element
           const domElement = document.querySelector(
-            `[data-ui-id="${id}"]`
+            `[data-ui-id="${id}"]`,
           ) as HTMLElement | null;
           if (!domElement) {
             throw new Error(`DOM element for ${id} not found`);
@@ -315,7 +325,7 @@ export function useUIBridgeTransport(
               ) {
                 setReactInputValue(
                   domElement,
-                  request.value || (request.params?.value as string) || ""
+                  request.value || (request.params?.value as string) || "",
                 );
               }
               break;
@@ -323,7 +333,7 @@ export function useUIBridgeTransport(
               if (domElement instanceof HTMLSelectElement) {
                 domElement.value = request.value || "";
                 domElement.dispatchEvent(
-                  new Event("change", { bubbles: true })
+                  new Event("change", { bubbles: true }),
                 );
               }
               break;
@@ -331,7 +341,7 @@ export function useUIBridgeTransport(
               if (domElement instanceof HTMLInputElement) {
                 domElement.checked = true;
                 domElement.dispatchEvent(
-                  new Event("change", { bubbles: true })
+                  new Event("change", { bubbles: true }),
                 );
               }
               break;
@@ -339,7 +349,7 @@ export function useUIBridgeTransport(
               if (domElement instanceof HTMLInputElement) {
                 domElement.checked = false;
                 domElement.dispatchEvent(
-                  new Event("change", { bubbles: true })
+                  new Event("change", { bubbles: true }),
                 );
               }
               break;
@@ -357,7 +367,7 @@ export function useUIBridgeTransport(
         case "highlightElement": {
           const { id } = payload;
           const domElement = document.querySelector(
-            `[data-ui-id="${id}"]`
+            `[data-ui-id="${id}"]`,
           ) as HTMLElement | null;
           if (domElement) {
             const originalOutline = domElement.style.outline;
@@ -388,14 +398,19 @@ export function useUIBridgeTransport(
         // ========== AI Commands ==========
         case "aiSearch": {
           const { createSearchEngine } = await import("@qontinui/ui-bridge/ai");
-          const searchEngine = createSearchEngine({});
-          searchEngine.updateElements(elements);
-          const searchResponse = searchEngine.search(
-            payload as Parameters<typeof searchEngine.search>[0]
-          );
+          const searchEngine = createSearchEngine({ includeHidden: true });
+          // Use findElements() for fresh DOM scan instead of stale useMemo elements
+          const freshElements = await findElements();
+          searchEngine.updateElements(freshElements.elements);
+          const criteria = payload as Parameters<typeof searchEngine.search>[0];
+          if (criteria.fuzzy === undefined) {
+            criteria.fuzzy = true;
+          }
+          const searchResponse = searchEngine.search(criteria);
           return {
             results: searchResponse.results,
             total: searchResponse.results.length,
+            scannedCount: freshElements.elements.length,
             timestamp: Date.now(),
           };
         }
@@ -410,8 +425,10 @@ export function useUIBridgeTransport(
           }
 
           const { createSearchEngine } = await import("@qontinui/ui-bridge/ai");
-          const searchEngine = createSearchEngine({});
-          searchEngine.updateElements(elements);
+          const searchEngine = createSearchEngine({ includeHidden: true });
+          // Use findElements() for fresh DOM scan instead of stale useMemo elements
+          const freshExecElements = await findElements();
+          searchEngine.updateElements(freshExecElements.elements);
 
           const searchResponse = searchEngine.search({
             text: parsed.targetDescription,
@@ -421,13 +438,13 @@ export function useUIBridgeTransport(
           const firstResult = searchResponse.results[0];
           if (!firstResult) {
             throw new Error(
-              `No element found matching: ${parsed.targetDescription}`
+              `No element found matching: ${parsed.targetDescription}`,
             );
           }
 
           const targetElement = firstResult.element;
           const domElement = document.querySelector(
-            `[data-ui-id="${targetElement.id}"]`
+            `[data-ui-id="${targetElement.id}"]`,
           ) as HTMLElement | null;
 
           if (!domElement) {
@@ -446,7 +463,7 @@ export function useUIBridgeTransport(
                 domElement.value = parsed.value || "";
                 domElement.dispatchEvent(new Event("input", { bubbles: true }));
                 domElement.dispatchEvent(
-                  new Event("change", { bubbles: true })
+                  new Event("change", { bubbles: true }),
                 );
               }
               break;
@@ -454,7 +471,7 @@ export function useUIBridgeTransport(
               if (domElement instanceof HTMLSelectElement) {
                 domElement.value = parsed.value || "";
                 domElement.dispatchEvent(
-                  new Event("change", { bubbles: true })
+                  new Event("change", { bubbles: true }),
                 );
               }
               break;
@@ -462,7 +479,7 @@ export function useUIBridgeTransport(
               if (domElement instanceof HTMLInputElement) {
                 domElement.checked = true;
                 domElement.dispatchEvent(
-                  new Event("change", { bubbles: true })
+                  new Event("change", { bubbles: true }),
                 );
               }
               break;
@@ -470,7 +487,7 @@ export function useUIBridgeTransport(
               if (domElement instanceof HTMLInputElement) {
                 domElement.checked = false;
                 domElement.dispatchEvent(
-                  new Event("change", { bubbles: true })
+                  new Event("change", { bubbles: true }),
                 );
               }
               break;
@@ -491,8 +508,12 @@ export function useUIBridgeTransport(
             await import("@qontinui/ui-bridge/ai");
           type AssertionType = import("@qontinui/ui-bridge/ai").AssertionType;
           const executor = createAssertionExecutor({});
+          // Use findElements() for fresh DOM scan instead of stale useMemo elements
+          const freshAssertElements = await findElements();
           executor.updateElements(
-            elements as unknown as Parameters<typeof executor.updateElements>[0]
+            freshAssertElements.elements as unknown as Parameters<
+              typeof executor.updateElements
+            >[0],
           );
           const assertionRequest = payload as {
             target: string;
@@ -512,8 +533,12 @@ export function useUIBridgeTransport(
             await import("@qontinui/ui-bridge/ai");
           type AssertionType = import("@qontinui/ui-bridge/ai").AssertionType;
           const executor = createAssertionExecutor({});
+          // Use findElements() for fresh DOM scan instead of stale useMemo elements
+          const freshBatchElements = await findElements();
           executor.updateElements(
-            elements as unknown as Parameters<typeof executor.updateElements>[0]
+            freshBatchElements.elements as unknown as Parameters<
+              typeof executor.updateElements
+            >[0],
           );
           const batchRequest = payload as {
             assertions: Array<{
@@ -538,14 +563,16 @@ export function useUIBridgeTransport(
           const { createSnapshotManager } =
             await import("@qontinui/ui-bridge/ai");
           const manager = createSnapshotManager({});
+          // Use createSnapshot() for fresh data instead of stale useMemo elements
+          const freshSnapshot = createSnapshot();
           const controlSnapshot = {
             timestamp: Date.now(),
-            elements: elements.map((e) => ({
+            elements: freshSnapshot.elements.map((e) => ({
               id: e.id,
               type: e.type,
               label: e.label,
               actions: e.actions,
-              state: e.getState(),
+              state: e.state,
             })),
             components: [],
             workflows: [],
@@ -574,7 +601,7 @@ export function useUIBridgeTransport(
             suggestedActions: [],
           }));
           return generatePageSummary(
-            aiElements as Parameters<typeof generatePageSummary>[0]
+            aiElements as Parameters<typeof generatePageSummary>[0],
           );
         }
 
@@ -641,12 +668,18 @@ export function useUIBridgeTransport(
           const w = window as unknown as Record<string, unknown>;
           const bridge = w.__UI_BRIDGE__ as Record<string, unknown> | undefined;
           const capture = bridge?.browserCapture as
-            | { getConsoleSince(ts: number): unknown[]; getConsoleRecent(n?: number): unknown[] }
+            | {
+                getConsoleSince(ts: number): unknown[];
+                getConsoleRecent(n?: number): unknown[];
+              }
             | undefined;
           if (!capture) {
             return { errors: [], count: 0 };
           }
-          const { since, limit } = payload as { since?: number; limit?: number };
+          const { since, limit } = payload as {
+            since?: number;
+            limit?: number;
+          };
           const errors = since
             ? capture.getConsoleSince(since)
             : capture.getConsoleRecent(limit ?? 50);
@@ -656,9 +689,11 @@ export function useUIBridgeTransport(
         // ========== Performance Diagnostics ==========
         case "getPerformanceEntries": {
           const entries: Record<string, unknown> = {};
-          const navEntries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
-          if (navEntries.length > 0) {
-            const n = navEntries[0];
+          const navEntries = performance.getEntriesByType(
+            "navigation",
+          ) as PerformanceNavigationTiming[];
+          const n = navEntries[0];
+          if (n) {
             entries.navigation = {
               ttfbMs: Math.round(n.responseStart - n.requestStart),
               domInteractiveMs: Math.round(n.domInteractive),
@@ -669,8 +704,10 @@ export function useUIBridgeTransport(
               tcpMs: Math.round(n.connectEnd - n.connectStart),
             };
           }
-          const resEntries = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
-          entries.resources = resEntries.map(e => ({
+          const resEntries = performance.getEntriesByType(
+            "resource",
+          ) as PerformanceResourceTiming[];
+          entries.resources = resEntries.map((e) => ({
             name: e.name,
             initiatorType: e.initiatorType,
             startTime: Math.round(e.startTime),
@@ -679,7 +716,7 @@ export function useUIBridgeTransport(
             ttfbMs: Math.round(e.responseStart - e.requestStart),
             downloadMs: Math.round(e.responseEnd - e.responseStart),
           }));
-          entries.paint = performance.getEntriesByType('paint').map(e => ({
+          entries.paint = performance.getEntriesByType("paint").map((e) => ({
             name: e.name,
             startTime: Math.round(e.startTime),
           }));
@@ -692,11 +729,21 @@ export function useUIBridgeTransport(
         }
 
         case "getBrowserEvents": {
-          const { type, since: evtSince, limit: evtLimit } = payload as { type?: string; since?: number; limit?: number };
+          const {
+            type,
+            since: evtSince,
+            limit: evtLimit,
+          } = payload as { type?: string; since?: number; limit?: number };
           const w2 = window as unknown as Record<string, unknown>;
-          const bridge2 = w2.__UI_BRIDGE__ as Record<string, unknown> | undefined;
+          const bridge2 = w2.__UI_BRIDGE__ as
+            | Record<string, unknown>
+            | undefined;
           const capture2 = bridge2?.browserCapture as
-            | { getByType(t: string): unknown[]; getSince(ts: number): unknown[]; getRecent(n?: number): unknown[] }
+            | {
+                getByType(t: string): unknown[];
+                getSince(ts: number): unknown[];
+                getRecent(n?: number): unknown[];
+              }
             | undefined;
           if (!capture2) return { events: [], count: 0 };
           let events: unknown[];
@@ -710,7 +757,7 @@ export function useUIBridgeTransport(
           throw new Error(`Unknown command action: ${action}`);
       }
     },
-    [elements, getElement, createSnapshot]
+    [elements, getElement, createSnapshot, findElements],
   );
 
   /**
@@ -723,7 +770,7 @@ export function useUIBridgeTransport(
         log("Sent WebSocket response:", response.commandId, response.success);
       }
     },
-    [log]
+    [log],
   );
 
   /**
@@ -737,7 +784,7 @@ export function useUIBridgeTransport(
       try {
         const result = await executeCommand(
           action,
-          payload as Record<string, unknown>
+          payload as Record<string, unknown>,
         );
 
         sendWSResponse({
@@ -757,7 +804,7 @@ export function useUIBridgeTransport(
         });
       }
     },
-    [executeCommand, sendWSResponse, log]
+    [executeCommand, sendWSResponse, log],
   );
 
   /**
@@ -784,11 +831,11 @@ export function useUIBridgeTransport(
       } catch (parseError: unknown) {
         console.error(
           "[UIBridgeTransport] Failed to parse WebSocket message:",
-          parseError
+          parseError,
         );
       }
     },
-    [handleWSCommand, log]
+    [handleWSCommand, log],
   );
 
   /**
@@ -870,11 +917,11 @@ export function useUIBridgeTransport(
         // Only log in verbose mode or when WebSocket is explicitly required.
         if (mode === "websocket") {
           console.error(
-            "[UIBridgeTransport] WebSocket connection failed (websocket-only mode)"
+            "[UIBridgeTransport] WebSocket connection failed (websocket-only mode)",
           );
         } else if (verbose) {
           console.debug(
-            "[UIBridgeTransport] WebSocket unavailable, will use HTTP fallback"
+            "[UIBridgeTransport] WebSocket unavailable, will use HTTP fallback",
           );
         }
       };
@@ -885,12 +932,12 @@ export function useUIBridgeTransport(
       if (mode === "websocket") {
         console.error(
           "[UIBridgeTransport] Failed to create WebSocket:",
-          wsError
+          wsError,
         );
       } else if (verbose) {
         console.debug(
           "[UIBridgeTransport] WebSocket creation failed, using HTTP fallback:",
-          wsError
+          wsError,
         );
       }
       setConnectionState("disconnected");
@@ -910,7 +957,7 @@ export function useUIBridgeTransport(
       try {
         const result = await executeCommand(
           command.action,
-          command.payload as Record<string, unknown>
+          command.payload as Record<string, unknown>,
         );
 
         await fetch(COMMANDS_ENDPOINT, {
@@ -934,7 +981,7 @@ export function useUIBridgeTransport(
         });
       }
     },
-    [executeCommand]
+    [executeCommand],
   );
 
   /**

@@ -7,11 +7,7 @@ import { TutorialProvider } from "@/contexts/tutorial";
 import { UIBridgeWrapper, RenderLogWrapper } from "@/lib/ui-bridge";
 import { QueryProvider } from "@/lib/providers/query-provider";
 import { ErrorBoundary } from "@/components/error-boundary";
-import { RefreshTokenExpiryWarning } from "@/components/refresh-token-expiry-warning";
-import { OfflineIndicator } from "@/components/offline-indicator";
-import { OnboardingTour } from "@/components/onboarding-tour";
-import { ContextualTutorialEnhanced } from "@/components/tutorial";
-import { DBErrorHandler } from "@/components/db-error-handler";
+import { ClientOverlays } from "@/components/ClientOverlays";
 import "./globals.css";
 import "@/styles/tutorial.css";
 
@@ -30,9 +26,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Qontinui - AI Development Companion",
+  metadataBase: new URL("https://qontinui.io"),
+  title: "Qontinui - Open Source AI Development Platform",
   description:
-    "Desktop companion app for AI development with verification loops, error monitoring, and workflow orchestration",
+    "An open-source desktop app that orchestrates AI coding sessions with automated feedback loops, verification, and error monitoring. Multi-provider support for Claude and Gemini.",
   icons: {
     icon: "/q-logo.png",
     apple: "/q-logo.png",
@@ -49,7 +46,6 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <DBErrorHandler />
         <ErrorBoundary>
           <QueryProvider>
             <AuthProvider>
@@ -60,14 +56,8 @@ export default function RootLayout({
                     enableMutationObserver={false}
                     mutationDebounceMs={500}
                   >
-                    {/* <ActivityTracker /> */}
-                    {/* BetaBanner moved to app layout to properly respect sidebar */}
                     {children}
-                    {/* <SessionTimeoutWarning /> */}
-                    <RefreshTokenExpiryWarning />
-                    <OfflineIndicator />
-                    <OnboardingTour />
-                    <ContextualTutorialEnhanced />
+                    <ClientOverlays />
                   </RenderLogWrapper>
                 </UIBridgeWrapper>
               </TutorialProvider>

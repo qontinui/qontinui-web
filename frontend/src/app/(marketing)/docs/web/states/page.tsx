@@ -11,7 +11,7 @@ import {
 export const metadata = {
   title: "Working with States - Qontinui Web Documentation",
   description:
-    "Learn how to define states in Qontinui for model-based GUI automation using visual identification.",
+    "Learn how to define states in Qontinui for workflow automation using visual identification.",
 };
 
 export default function StatesDocPage() {

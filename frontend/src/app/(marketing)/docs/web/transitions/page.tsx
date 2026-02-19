@@ -4,7 +4,7 @@ import { ArrowRight, CheckCircle2 } from "lucide-react";
 export const metadata = {
   title: "State Transitions - Qontinui Web Documentation",
   description:
-    "Learn how to connect states with transitions in Qontinui for model-based GUI automation.",
+    "Learn how to connect states with transitions in Qontinui for workflow automation and AI development feedback loops.",
 };
 
 export default function TransitionsDocPage() {

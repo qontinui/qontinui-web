@@ -10,7 +10,7 @@ import {
 export const metadata = {
   title: "Image Recognition - Qontinui Web Documentation",
   description:
-    "Learn how Qontinui uses visual recognition and template matching for reliable GUI automation.",
+    "Learn how Qontinui uses visual recognition and template matching for reliable workflow verification.",
 };
 
 export default function ImageRecognitionDocPage() {
