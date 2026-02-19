@@ -49,8 +49,6 @@ import { CollapsibleNavItem } from "./CollapsibleNavItem";
 import { UserMenu } from "./UserMenu";
 import { CollapseToggle } from "./CollapseToggle";
 import { HelpButton } from "./HelpButton";
-import { MenuModeToggle } from "./MenuModeToggle";
-import { useMenuModeStore } from "@/stores/menu-mode";
 import { createLogger } from "@/lib/logger";
 const logger = createLogger("UnifiedSidebar");
 
@@ -108,10 +106,9 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  // Prevent hydration mismatch + sync mode from runner
+  // Prevent hydration mismatch
   React.useEffect(() => {
     setMounted(true);
-    useMenuModeStore.getState().syncFromRunner();
   }, []);
 
   const { currentOrganization, organizations, loading, switchOrganization } =
@@ -251,18 +248,14 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
     }
   }, [createProject, handleProjectChange]);
 
-  // Filter nav items based on admin status, hidden flag, and menu mode
+  // Filter nav items based on admin status and hidden flag
   const isDevelopment = process.env.NODE_ENV === "development";
-  const menuMode = useMenuModeStore((s) => s.menuMode);
   const filterNavItems = useCallback(
     (items: NavItem[]): NavItem[] => {
       return items
         .filter((item) => {
           // hidden items only show in development
           if (item.hidden && (!mounted || !isDevelopment)) return false;
-          // advancedOnly items only show in advanced mode
-          if (item.advancedOnly && mounted && menuMode !== "advanced")
-            return false;
           if (authLoading || !user) return !item.adminOnly;
           return !item.adminOnly || user.is_superuser === true;
         })
@@ -272,7 +265,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
         }))
         .filter((item) => !item.children || item.children.length > 0);
     },
-    [mounted, isDevelopment, menuMode, authLoading, user],
+    [mounted, isDevelopment, authLoading, user],
   );
 
   const visibleNavItems = useMemo(() => {
@@ -514,7 +507,6 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
           )}
         >
           <HelpButton isCollapsed={isCollapsed} />
-          <MenuModeToggle isCollapsed={isCollapsed} />
           <UserMenu
             isCollapsed={isCollapsed}
             user={user}

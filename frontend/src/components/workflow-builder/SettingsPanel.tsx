@@ -206,44 +206,6 @@ export function SettingsPanel() {
               </label>
             </div>
 
-            {/* Completion Sweep (only when iteration settings are shown) */}
-            {features.showIterationSettings && (
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 text-sm text-zinc-400">
-                  <input
-                    type="checkbox"
-                    className="rounded"
-                    checked={workflow.enable_sweep === true}
-                    onChange={(e) =>
-                      updateWorkflow({ enable_sweep: e.target.checked })
-                    }
-                  />
-                  Enable completion sweep
-                </label>
-                {workflow.enable_sweep && (
-                  <div className="pl-6">
-                    <label className="block text-xs font-medium text-zinc-400 mb-1">
-                      Max sweep iterations
-                    </label>
-                    <Input
-                      type="number"
-                      className="bg-zinc-800 border-zinc-700 text-zinc-200 text-sm w-24"
-                      min={1}
-                      max={20}
-                      value={workflow.max_sweep_iterations ?? 5}
-                      onChange={(e) =>
-                        updateWorkflow({
-                          max_sweep_iterations: e.target.value
-                            ? parseInt(e.target.value)
-                            : 5,
-                        })
-                      }
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-
             {/* Health check URLs */}
             {workflow.health_check_enabled !== false && (
               <div>
@@ -261,7 +223,7 @@ export function SettingsPanel() {
                           (item, j) =>
                             j === i
                               ? { name: e.target.value, url: item.url }
-                              : item
+                              : item,
                         );
                         updateWorkflow({ health_check_urls: urls });
                       }}
@@ -275,7 +237,7 @@ export function SettingsPanel() {
                           (item, j) =>
                             j === i
                               ? { name: item.name, url: e.target.value }
-                              : item
+                              : item,
                         );
                         updateWorkflow({ health_check_urls: urls });
                       }}
@@ -284,7 +246,7 @@ export function SettingsPanel() {
                       className="text-red-400 hover:text-red-300 text-sm px-1"
                       onClick={() => {
                         const urls = (workflow.health_check_urls ?? []).filter(
-                          (_, j) => j !== i
+                          (_, j) => j !== i,
                         );
                         updateWorkflow({ health_check_urls: urls });
                       }}

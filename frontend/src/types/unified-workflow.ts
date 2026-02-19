@@ -10,6 +10,12 @@
  * The Verification/Agentic loop continues until all required checks pass or max iterations.
  * Setup and Completion run exactly once - at the beginning and end respectively.
  *
+ * Step Types (4 core types):
+ *   command  - Shell commands, checks, check groups
+ *   test     - Verification tests (playwright, vision, python, repository, custom)
+ *   ui_bridge - UI Bridge SDK interactions (navigate, execute, assert, snapshot)
+ *   prompt   - AI task instructions
+ *
  * Ported from qontinui-runner/src/types/unified-workflow.ts
  */
 
@@ -45,72 +51,20 @@ export interface HealthCheckUrl {
 // Step Types
 // =============================================================================
 
-interface BaseStep {
+export interface BaseStep {
   id: string;
   name: string;
+  fail_on_console_errors?: boolean;
+  inputs?: Record<string, string>;
+  extract?: Record<string, string>;
+  depends_on?: string[];
+  required?: boolean;
+  retry?: { count: number; delay_ms: number };
 }
 
-// --- SETUP Phase Steps ---
-
-export interface ScriptStep extends BaseStep {
-  type: "script";
-  phase: "setup" | "completion";
-  code?: string;
-  script_id?: string;
-  target_url?: string;
-  refinement_enabled: boolean;
-}
-
-export interface StateStep extends BaseStep {
-  type: "state";
-  phase: "setup" | "verification" | "completion";
-  state_id: string;
-  state_name?: string;
-  timeout_seconds?: number;
-  run_on_subsequent_iterations?: boolean;
-}
-
-export interface WorkflowRefStep extends BaseStep {
-  type: "workflow_ref";
-  phase: "setup" | "verification" | "completion";
-  workflow_id: string;
-  workflow_name?: string;
-  run_on_subsequent_iterations?: boolean;
-}
-
-export interface MacroRefStep extends BaseStep {
-  type: "macro";
-  phase: "setup" | "verification" | "completion";
-  macro_id: string;
-  macro_name?: string;
-  monitor_index?: number;
-}
-
-// --- GUI Action Steps ---
-
-export type GuiActionType =
-  | "click"
-  | "double_click"
-  | "right_click"
-  | "type"
-  | "hotkey"
-  | "scroll";
-
-export interface GuiActionStep extends BaseStep {
-  type: "gui_action";
-  phase: "setup" | "verification" | "completion";
-  action: GuiActionType;
-  target_image_ids?: string[];
-  target_image_names?: string[];
-  text_input?: string;
-  hotkey?: string;
-  scroll_direction?: "up" | "down";
-  pause_after_ms?: number;
-  monitor_index?: number;
-  run_on_subsequent_iterations?: boolean;
-}
-
-// --- API Request Steps ---
+// -----------------------------------------------------------------------------
+// API Request Builder Types (used by the API request builder tab, not workflow steps)
+// -----------------------------------------------------------------------------
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -139,24 +93,9 @@ export interface ApiAssertion {
   operator?: "equals" | "contains" | "matches" | "greater_than" | "less_than";
 }
 
-export interface ApiRequestStep extends BaseStep {
-  type: "api_request";
-  phase: "setup" | "verification" | "completion";
-  method: HttpMethod;
-  url: string;
-  headers?: Record<string, string>;
-  body?: string;
-  content_type?: ApiContentType;
-  timeout_ms?: number;
-  follow_redirects?: boolean;
-  extractions?: ApiVariableExtraction[];
-  assertions?: ApiAssertion[];
-  output_variable?: string;
-  credential_id?: string;
-  run_on_subsequent_iterations?: boolean;
-}
-
-// --- VERIFICATION Phase Steps ---
+// -----------------------------------------------------------------------------
+// Test Steps
+// -----------------------------------------------------------------------------
 
 export type TestType =
   | "playwright"
@@ -184,12 +123,9 @@ export interface TestStep extends BaseStep {
   execution_mode?: PlaywrightExecutionMode;
 }
 
-export interface ScreenshotStep extends BaseStep {
-  type: "screenshot";
-  phase: "setup" | "verification" | "completion";
-  delay_ms?: number;
-  monitor?: "all" | "primary" | "left" | "right" | number;
-}
+// -----------------------------------------------------------------------------
+// Check Types (used by command steps)
+// -----------------------------------------------------------------------------
 
 export type CheckType =
   | "lint"
@@ -202,41 +138,39 @@ export type CheckType =
   | "ai_review"
   | "ci_cd";
 
-export interface CheckStep extends BaseStep {
-  type: "check";
+// -----------------------------------------------------------------------------
+// Command Steps (unified: shell_command + check + check_group)
+// -----------------------------------------------------------------------------
+
+export interface CommandStep extends BaseStep {
+  type: "command";
   phase: "setup" | "verification" | "completion";
-  check_type: CheckType;
-  tool?: string;
-  check_id?: string;
   command?: string;
   working_directory?: string;
+  timeout_seconds?: number;
+  fail_on_error?: boolean;
+  run_on_subsequent_iterations?: boolean;
+  shell_command_id?: string;
+
+  // Check-specific fields (when check_type is set)
+  check_type?: CheckType;
+  tool?: string;
+  check_id?: string;
   config_path?: string;
   auto_fix?: boolean;
   fail_on_warning?: boolean;
-  timeout_seconds?: number;
-  /** Prompt for AI review check type */
-  ai_review_prompt?: string;
-  /** Path to read input for AI review */
-  ai_review_input_path?: string;
-  /** Whether to validate the input as a workflow JSON */
-  ai_review_validate_as_workflow?: boolean;
-  /** CI/CD: GitHub repository in owner/repo format */
   repository?: string;
-  /** CI/CD: GitHub Actions workflow name filter */
   workflow_name?: string;
-  /** CI/CD: Branch filter */
   branch?: string;
-  /** CI/CD: Wait for in-progress runs to complete */
   wait_for_completion?: boolean;
+
+  // Check group fields (when check_group_id is set)
+  check_group_id?: string;
 }
 
-export interface CheckGroupStep extends BaseStep {
-  type: "check_group";
-  phase: "setup" | "verification" | "completion";
-  check_group_id: string;
-}
-
-// --- AGENTIC Phase Steps ---
+// -----------------------------------------------------------------------------
+// Prompt Steps
+// -----------------------------------------------------------------------------
 
 export interface PromptStep extends BaseStep {
   type: "prompt";
@@ -246,204 +180,47 @@ export interface PromptStep extends BaseStep {
   provider?: string;
   model?: string;
   is_summary_step?: boolean;
-  /** Prompt mode: "session" runs a full AI session, "response" returns a single response. Defaults to "session". */
-  prompt_mode?: "session" | "response";
-  /** Path to write the AI response output */
-  output_path?: string;
-  /** Path to read and append to the prompt */
-  input_path?: string;
 }
 
-export interface ShellCommandStep extends BaseStep {
-  type: "shell_command";
+// -----------------------------------------------------------------------------
+// UI Bridge Steps
+// -----------------------------------------------------------------------------
+
+export interface UiBridgeStep extends BaseStep {
+  type: "ui_bridge";
   phase: "setup" | "verification" | "completion";
-  command: string;
-  shell_command_id?: string;
-  working_directory?: string;
-  timeout_seconds?: number;
-  fail_on_error?: boolean;
-  run_on_subsequent_iterations?: boolean;
-}
-
-// --- MCP Call Steps ---
-
-export interface McpCallStep extends BaseStep {
-  type: "mcp_call";
-  phase: "setup" | "verification" | "completion";
-  server_id: string;
-  server_name?: string;
-  tool_name: string;
-  tool_description?: string;
-  arguments?: Record<string, unknown>;
-  timeout_seconds?: number;
-  extractions?: ApiVariableExtraction[];
-  assertions?: ApiAssertion[];
-  fail_on_error?: boolean;
-  run_on_subsequent_iterations?: boolean;
-}
-
-// --- AWAS Steps ---
-
-export interface AwasDiscoverStep extends BaseStep {
-  type: "awas_discover";
-  phase: "setup";
-  url: string;
-  timeout_seconds?: number;
-}
-
-export interface AwasExecuteStep extends BaseStep {
-  type: "awas_execute";
-  phase: "setup" | "verification";
-  url: string;
-  action_id: string;
-  params?: Record<string, unknown>;
-  timeout_seconds?: number;
-}
-
-export interface AwasCheckSupportStep extends BaseStep {
-  type: "awas_check_support";
-  phase: "setup";
-  url: string;
-  timeout_seconds?: number;
-}
-
-export interface AwasListActionsStep extends BaseStep {
-  type: "awas_list_actions";
-  phase: "setup" | "verification";
+  action: "navigate" | "execute" | "assert" | "snapshot";
   url?: string;
-  timeout_seconds?: number;
+  instruction?: string;
+  target?: string;
+  assert_type?: "exists" | "text_equals" | "contains" | "visible" | "enabled";
+  expected?: string;
+  timeout_ms?: number;
 }
 
-export interface AwasExtractElementsStep extends BaseStep {
-  type: "awas_extract_elements";
-  phase: "verification";
-  html: string;
-  base_url?: string;
-}
+// =============================================================================
+// Step Type Names
+// =============================================================================
 
-// --- UI Bridge Spec Steps ---
-
-export interface SpecStep extends BaseStep {
-  type: "spec";
-  phase: "verification";
-  spec_group: unknown;
-  element_source: "control" | "external";
-  stop_on_failure?: boolean;
-  description?: string;
-}
-
-// --- Gate Steps ---
-
-export interface GateStep extends BaseStep {
-  type: "gate";
-  phase: "verification";
-  required_steps: string[];
-  stop_on_failure?: boolean;
-  description?: string;
-}
-
-// --- Save Workflow Artifact Steps ---
-
-/** Save a generated workflow JSON to the library */
-export interface SaveWorkflowArtifactStep extends BaseStep {
-  type: "save_workflow_artifact";
-  phase: "completion";
-  /** Path to the workflow JSON file to save */
-  artifact_input_path: string;
-}
+export type StepTypeName = "command" | "test" | "ui_bridge" | "prompt";
 
 // =============================================================================
 // Unified Step Type
 // =============================================================================
 
-export type UnifiedStep =
-  | ScriptStep
-  | StateStep
-  | WorkflowRefStep
-  | MacroRefStep
-  | GuiActionStep
-  | ApiRequestStep
-  | McpCallStep
-  | TestStep
-  | CheckStep
-  | CheckGroupStep
-  | ScreenshotStep
-  | PromptStep
-  | ShellCommandStep
-  | SpecStep
-  | GateStep
-  | SaveWorkflowArtifactStep
-  | AwasDiscoverStep
-  | AwasExecuteStep
-  | AwasCheckSupportStep
-  | AwasListActionsStep
-  | AwasExtractElementsStep;
+export type UnifiedStep = CommandStep | PromptStep | TestStep | UiBridgeStep;
 
-export type AwasStep =
-  | AwasDiscoverStep
-  | AwasExecuteStep
-  | AwasCheckSupportStep
-  | AwasListActionsStep
-  | AwasExtractElementsStep;
-
-export type SetupStep =
-  | ScriptStep
-  | StateStep
-  | WorkflowRefStep
-  | MacroRefStep
-  | GuiActionStep
-  | ApiRequestStep
-  | McpCallStep
-  | PromptStep
-  | ShellCommandStep
-  | TestStep
-  | CheckStep
-  | CheckGroupStep
-  | ScreenshotStep
-  | AwasDiscoverStep
-  | AwasExecuteStep
-  | AwasCheckSupportStep
-  | AwasListActionsStep;
+export type SetupStep = CommandStep | PromptStep | TestStep | UiBridgeStep;
 
 export type VerificationStep =
-  | ScriptStep
-  | StateStep
-  | WorkflowRefStep
-  | MacroRefStep
-  | GuiActionStep
-  | ApiRequestStep
-  | McpCallStep
+  | CommandStep
   | PromptStep
-  | ShellCommandStep
   | TestStep
-  | CheckStep
-  | CheckGroupStep
-  | ScreenshotStep
-  | SpecStep
-  | GateStep
-  | AwasDiscoverStep
-  | AwasExecuteStep
-  | AwasCheckSupportStep
-  | AwasListActionsStep
-  | AwasExtractElementsStep;
+  | UiBridgeStep;
 
 export type AgenticStep = PromptStep;
 
-export type CompletionStep =
-  | ScriptStep
-  | StateStep
-  | WorkflowRefStep
-  | MacroRefStep
-  | GuiActionStep
-  | ApiRequestStep
-  | McpCallStep
-  | PromptStep
-  | ShellCommandStep
-  | TestStep
-  | CheckStep
-  | CheckGroupStep
-  | ScreenshotStep
-  | SaveWorkflowArtifactStep;
+export type CompletionStep = CommandStep | PromptStep | TestStep | UiBridgeStep;
 
 // =============================================================================
 // Workflow
@@ -470,8 +247,6 @@ export interface UnifiedWorkflow {
   health_check_enabled?: boolean;
   health_check_urls?: HealthCheckUrl[];
   prompt_template?: string | null;
-  enable_sweep?: boolean;
-  max_sweep_iterations?: number;
   category: string;
   tags: string[];
   created_at: string;
@@ -487,52 +262,35 @@ export interface WorkflowFeatures {
   hasVerification: boolean;
   hasAgentic: boolean;
   hasCompletion: boolean;
-  hasPlaywrightScripts: boolean;
-  hasQontinuiAutomation: boolean;
-  hasPlaywrightTests: boolean;
-  requiresConfig: boolean;
+  hasUiBridge: boolean;
   showIterationSettings: boolean;
   hasAiPrompts: boolean;
 }
 
 export function detectWorkflowFeatures(
-  workflow: UnifiedWorkflow
+  workflow: UnifiedWorkflow,
 ): WorkflowFeatures {
+  const allSteps: UnifiedStep[] = [
+    ...workflow.setup_steps,
+    ...workflow.verification_steps,
+    ...workflow.agentic_steps,
+    ...(workflow.completion_steps ?? []),
+  ];
+
   const hasSetup = workflow.setup_steps.length > 0;
   const hasVerification = workflow.verification_steps.length > 0;
   const hasAgentic = workflow.agentic_steps.length > 0;
   const hasCompletion = (workflow.completion_steps ?? []).length > 0;
 
-  const hasPlaywrightScripts = workflow.setup_steps.some(
-    (s) => s.type === "script"
-  );
-  const hasQontinuiAutomation =
-    workflow.setup_steps.some(
-      (s) =>
-        s.type === "state" ||
-        s.type === "workflow_ref" ||
-        s.type === "gui_action"
-    ) || workflow.verification_steps.some((s) => s.type === "gui_action");
-
-  const hasPlaywrightTests = workflow.verification_steps.some(
-    (s) => s.type === "test" && s.test_type === "playwright"
-  );
-
-  const hasAiPrompts =
-    workflow.setup_steps.some((s) => s.type === "prompt") ||
-    workflow.verification_steps.some((s) => s.type === "prompt") ||
-    workflow.agentic_steps.some((s) => s.type === "prompt") ||
-    (workflow.completion_steps ?? []).some((s) => s.type === "prompt");
+  const hasUiBridge = allSteps.some((s) => s.type === "ui_bridge");
+  const hasAiPrompts = allSteps.some((s) => s.type === "prompt");
 
   return {
     hasSetup,
     hasVerification,
     hasAgentic,
     hasCompletion,
-    hasPlaywrightScripts,
-    hasQontinuiAutomation,
-    hasPlaywrightTests,
-    requiresConfig: hasQontinuiAutomation,
+    hasUiBridge,
     showIterationSettings: hasAgentic,
     hasAiPrompts,
   };
@@ -564,7 +322,7 @@ export async function fetchStepTypes(): Promise<Record<
       process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
     const response = await fetch(
       `${API_BASE_URL}/api/v1/workflow-config/step-types`,
-      { credentials: "include" }
+      { credentials: "include" },
     );
     if (!response.ok) return null;
 
@@ -598,8 +356,8 @@ export async function fetchStepTypes(): Promise<Record<
       });
     }
 
-    // Validate we got reasonable data (at least some setup + verification types)
-    if (result.setup.length < 3 || result.verification.length < 3) return null;
+    // Validate we got reasonable data
+    if (result.setup.length < 2 || result.verification.length < 2) return null;
 
     return result;
   } catch {
@@ -607,448 +365,77 @@ export async function fetchStepTypes(): Promise<Record<
   }
 }
 
+/**
+ * All step types organized by phase.
+ * 4 core types available in setup, verification, and completion.
+ * Agentic phase is restricted to AI Prompt only.
+ */
 export const STEP_TYPES: Record<WorkflowPhase, StepTypeInfo[]> = {
   setup: [
     {
-      type: "script",
-      label: "Playwright Script",
-      description: "Browser automation with Playwright",
-      icon: "FileCode",
-      color: "emerald",
-      phase: "setup",
-    },
-    {
-      type: "state",
-      label: "Navigate to State",
-      description: "Go to a stored application state",
-      icon: "Navigation",
-      color: "blue",
-      phase: "setup",
-    },
-    {
-      type: "workflow_ref",
-      label: "Run Workflow",
-      description: "Execute another saved workflow",
-      icon: "GitBranch",
-      color: "purple",
-      phase: "setup",
-    },
-    {
-      type: "macro",
-      label: "Run Macro",
-      description: "Execute a saved macro (action sequence)",
-      icon: "Layers",
-      color: "pink",
-      phase: "setup",
-    },
-    {
-      type: "gui_action",
-      label: "GUI Action",
-      description: "Click, type, or press hotkeys",
-      icon: "MousePointer2",
-      color: "orange",
-      phase: "setup",
-    },
-    {
-      type: "api_request",
-      label: "API Request",
-      description: "Make HTTP requests to APIs",
-      icon: "Globe",
-      color: "cyan",
-      phase: "setup",
-    },
-    {
-      type: "prompt",
-      label: "AI Setup Task",
-      description: "AI-driven environment preparation",
-      icon: "Bot",
-      color: "violet",
-      phase: "setup",
-    },
-    {
-      type: "shell_command",
-      label: "Shell Command",
-      description: "Run shell commands (git, scripts, etc.)",
+      type: "command",
+      label: "Command",
+      description: "Run shell commands or checks",
       icon: "Terminal",
       color: "gray",
       phase: "setup",
     },
     {
-      type: "mcp_call",
-      label: "MCP Call",
-      description: "Call a tool on an MCP server",
-      icon: "Plug",
-      color: "indigo",
-      phase: "setup",
-    },
-    {
-      type: "test_playwright",
-      label: "Playwright Test",
-      description: "Browser assertions and checks",
+      type: "test",
+      label: "Test",
+      description: "Run verification tests",
       icon: "TestTube2",
       color: "green",
       phase: "setup",
     },
     {
-      type: "test_vision",
-      label: "Qontinui Vision Test",
-      description: "Visual element detection",
-      icon: "Eye",
-      color: "cyan",
+      type: "ui_bridge",
+      label: "UI Bridge",
+      description: "Interact with UI via UI Bridge SDK",
+      icon: "Monitor",
+      color: "emerald",
       phase: "setup",
     },
     {
-      type: "test_python",
-      label: "Python Test",
-      description: "White-box unit tests",
-      icon: "Code",
-      color: "yellow",
-      phase: "setup",
-    },
-    {
-      type: "test_repository",
-      label: "Repository Test",
-      description: "Run tests from your repo (pytest, jest, cargo)",
-      icon: "Package",
-      color: "indigo",
-      phase: "setup",
-    },
-    {
-      type: "test_custom",
-      label: "Custom Test Command",
-      description: "Any shell command for testing",
-      icon: "Terminal",
-      color: "gray",
-      phase: "setup",
-    },
-    {
-      type: "check_lint",
-      label: "Lint Check",
-      description: "Run linting checks (ruff, eslint, clippy)",
-      icon: "AlertTriangle",
-      color: "cyan",
-      phase: "setup",
-    },
-    {
-      type: "check_format",
-      label: "Format Check",
-      description: "Run formatting checks (black, prettier, rustfmt)",
-      icon: "AlignLeft",
-      color: "cyan",
-      phase: "setup",
-    },
-    {
-      type: "check_typecheck",
-      label: "Type Check",
-      description: "Run type checking (mypy, tsc)",
-      icon: "FileType",
-      color: "cyan",
-      phase: "setup",
-    },
-    {
-      type: "check_analyze",
-      label: "Code Analysis",
-      description: "Run code analysis",
-      icon: "Search",
-      color: "indigo",
-      phase: "setup",
-    },
-    {
-      type: "check_security",
-      label: "Security Check",
-      description: "Run security scans",
-      icon: "Shield",
-      color: "red",
-      phase: "setup",
-    },
-    {
-      type: "check_custom",
-      label: "Custom Check",
-      description: "Run custom check command",
-      icon: "Terminal",
-      color: "cyan",
-      phase: "setup",
-    },
-    {
-      type: "check_ai_review",
-      label: "AI Review",
-      description: "AI-powered review of file contents",
+      type: "prompt",
+      label: "AI Task",
+      description: "AI-driven task",
       icon: "Bot",
       color: "violet",
-      phase: "setup",
-    },
-    {
-      type: "check_ci_cd",
-      label: "CI/CD Check",
-      description: "Check GitHub CI/CD pipeline status",
-      icon: "GitBranch",
-      color: "purple",
-      phase: "setup",
-    },
-    {
-      type: "screenshot",
-      label: "Screenshot",
-      description: "Capture current screen state",
-      icon: "Camera",
-      color: "pink",
-      phase: "setup",
-    },
-    {
-      type: "awas_discover",
-      label: "AWAS Discover",
-      description: "Discover AWAS manifest from a URL",
-      icon: "Search",
-      color: "teal",
-      phase: "setup",
-    },
-    {
-      type: "awas_check_support",
-      label: "AWAS Check Support",
-      description: "Check if URL supports AWAS",
-      icon: "CheckCircle",
-      color: "teal",
-      phase: "setup",
-    },
-    {
-      type: "awas_list_actions",
-      label: "AWAS List Actions",
-      description: "List available AWAS actions",
-      icon: "List",
-      color: "teal",
-      phase: "setup",
-    },
-    {
-      type: "awas_execute",
-      label: "AWAS Execute",
-      description: "Execute an AWAS action",
-      icon: "Play",
-      color: "teal",
       phase: "setup",
     },
   ],
   verification: [
     {
-      type: "test_playwright",
-      label: "Playwright Test",
-      description: "Browser assertions and checks",
+      type: "command",
+      label: "Command",
+      description: "Run commands for verification",
+      icon: "Terminal",
+      color: "gray",
+      phase: "verification",
+    },
+    {
+      type: "test",
+      label: "Test",
+      description: "Run verification tests",
       icon: "TestTube2",
       color: "green",
       phase: "verification",
     },
     {
-      type: "test_vision",
-      label: "Qontinui Vision Test",
-      description: "Visual element detection",
-      icon: "Eye",
-      color: "cyan",
-      phase: "verification",
-    },
-    {
-      type: "test_python",
-      label: "Python Test",
-      description: "White-box unit tests",
-      icon: "Code",
-      color: "yellow",
-      phase: "verification",
-    },
-    {
-      type: "test_repository",
-      label: "Repository Test",
-      description: "Run tests from your repo (pytest, jest, cargo)",
-      icon: "Package",
-      color: "indigo",
-      phase: "verification",
-    },
-    {
-      type: "test_custom",
-      label: "Custom Test Command",
-      description: "Any shell command for testing",
-      icon: "Terminal",
-      color: "gray",
-      phase: "verification",
-    },
-    {
-      type: "check_lint",
-      label: "Lint Check",
-      description: "Run linting checks (ruff, eslint, clippy)",
-      icon: "AlertTriangle",
-      color: "cyan",
-      phase: "verification",
-    },
-    {
-      type: "check_format",
-      label: "Format Check",
-      description: "Run formatting checks (black, prettier, rustfmt)",
-      icon: "AlignLeft",
-      color: "cyan",
-      phase: "verification",
-    },
-    {
-      type: "check_typecheck",
-      label: "Type Check",
-      description: "Run type checking (mypy, tsc)",
-      icon: "FileType",
-      color: "cyan",
-      phase: "verification",
-    },
-    {
-      type: "check_analyze",
-      label: "Code Analysis",
-      description: "Run code analysis",
-      icon: "Search",
-      color: "indigo",
-      phase: "verification",
-    },
-    {
-      type: "check_security",
-      label: "Security Check",
-      description: "Run security scans",
-      icon: "Shield",
-      color: "red",
-      phase: "verification",
-    },
-    {
-      type: "check_custom",
-      label: "Custom Check",
-      description: "Run custom check command",
-      icon: "Terminal",
-      color: "cyan",
-      phase: "verification",
-    },
-    {
-      type: "check_ai_review",
-      label: "AI Review",
-      description: "AI-powered review of file contents",
-      icon: "Bot",
-      color: "violet",
-      phase: "verification",
-    },
-    {
-      type: "check_ci_cd",
-      label: "CI/CD Check",
-      description: "Check GitHub CI/CD pipeline status",
-      icon: "GitBranch",
-      color: "purple",
-      phase: "verification",
-    },
-    {
-      type: "screenshot",
-      label: "Screenshot",
-      description: "Capture current screen state",
-      icon: "Camera",
-      color: "pink",
-      phase: "verification",
-    },
-    {
-      type: "state",
-      label: "Navigate to State",
-      description: "Go to a stored application state",
-      icon: "Navigation",
-      color: "blue",
-      phase: "verification",
-    },
-    {
-      type: "workflow_ref",
-      label: "Run Workflow",
-      description: "Execute another saved workflow",
-      icon: "GitBranch",
-      color: "purple",
-      phase: "verification",
-    },
-    {
-      type: "gui_action",
-      label: "GUI Action",
-      description: "Click, type, or press hotkeys",
-      icon: "MousePointer2",
-      color: "orange",
-      phase: "verification",
-    },
-    {
-      type: "macro",
-      label: "Run Macro",
-      description: "Execute a saved macro (action sequence)",
-      icon: "Layers",
-      color: "pink",
-      phase: "verification",
-    },
-    {
-      type: "script",
-      label: "Playwright Script",
-      description: "Browser automation with Playwright",
-      icon: "FileCode",
+      type: "ui_bridge",
+      label: "UI Bridge",
+      description: "Verify UI state via UI Bridge",
+      icon: "Monitor",
       color: "emerald",
-      phase: "verification",
-    },
-    {
-      type: "api_request",
-      label: "API Request",
-      description: "Verify API responses with assertions",
-      icon: "Globe",
-      color: "cyan",
-      phase: "verification",
-    },
-    {
-      type: "shell_command",
-      label: "Shell Command",
-      description: "Run shell commands for verification",
-      icon: "Terminal",
-      color: "gray",
       phase: "verification",
     },
     {
       type: "prompt",
       label: "AI Verification",
-      description: "AI-evaluated success criteria",
+      description: "AI-evaluated criteria",
       icon: "Bot",
       color: "violet",
-      phase: "verification",
-    },
-    {
-      type: "mcp_call",
-      label: "MCP Call",
-      description: "Call an MCP tool for verification",
-      icon: "Plug",
-      color: "indigo",
-      phase: "verification",
-    },
-    {
-      type: "awas_execute",
-      label: "AWAS Execute",
-      description: "Execute an AWAS action for verification",
-      icon: "Play",
-      color: "teal",
-      phase: "verification",
-    },
-    {
-      type: "awas_list_actions",
-      label: "AWAS List Actions",
-      description: "List available AWAS actions",
-      icon: "List",
-      color: "teal",
-      phase: "verification",
-    },
-    {
-      type: "awas_extract_elements",
-      label: "AWAS Extract Elements",
-      description: "Extract AWAS elements from HTML",
-      icon: "FileSearch",
-      color: "teal",
-      phase: "verification",
-    },
-    {
-      type: "spec",
-      label: "UI Bridge Spec",
-      description: "Verify UI elements against spec assertions",
-      icon: "ShieldCheck",
-      color: "emerald",
-      phase: "verification",
-    },
-    {
-      type: "gate",
-      label: "Gate",
-      description: "Aggregate step results to control agentic loop",
-      icon: "ShieldCheck",
-      color: "red",
       phase: "verification",
     },
   ],
@@ -1064,243 +451,39 @@ export const STEP_TYPES: Record<WorkflowPhase, StepTypeInfo[]> = {
   ],
   completion: [
     {
-      type: "prompt",
-      label: "AI Completion Task",
-      description: "Final AI actions after loop exits",
-      icon: "Bot",
-      color: "violet",
-      phase: "completion",
-    },
-    {
-      type: "script",
-      label: "Playwright Script",
-      description: "Final browser automation",
-      icon: "FileCode",
-      color: "emerald",
-      phase: "completion",
-    },
-    {
-      type: "api_request",
-      label: "API Request",
-      description: "Final API calls (notifications, cleanup)",
-      icon: "Globe",
-      color: "cyan",
-      phase: "completion",
-    },
-    {
-      type: "shell_command",
-      label: "Shell Command",
-      description: "Run shell commands (git commit, cleanup, etc.)",
+      type: "command",
+      label: "Command",
+      description: "Run cleanup commands",
       icon: "Terminal",
       color: "gray",
       phase: "completion",
     },
     {
-      type: "mcp_call",
-      label: "MCP Call",
-      description: "Call an MCP tool (notifications, cleanup)",
-      icon: "Plug",
-      color: "indigo",
-      phase: "completion",
-    },
-    {
-      type: "workflow_ref",
-      label: "Run Workflow",
-      description: "Execute another saved workflow",
-      icon: "GitBranch",
-      color: "purple",
-      phase: "completion",
-    },
-    {
-      type: "state",
-      label: "Navigate to State",
-      description: "Return to a specific application state",
-      icon: "Navigation",
-      color: "blue",
-      phase: "completion",
-    },
-    {
-      type: "macro",
-      label: "Run Macro",
-      description: "Execute a saved macro (action sequence)",
-      icon: "Layers",
-      color: "pink",
-      phase: "completion",
-    },
-    {
-      type: "gui_action",
-      label: "GUI Action",
-      description: "Click, type, or press hotkeys",
-      icon: "MousePointer2",
-      color: "orange",
-      phase: "completion",
-    },
-    {
-      type: "test_playwright",
-      label: "Playwright Test",
-      description: "Final browser assertions",
+      type: "test",
+      label: "Test",
+      description: "Final tests",
       icon: "TestTube2",
       color: "green",
       phase: "completion",
     },
     {
-      type: "test_vision",
-      label: "Qontinui Vision Test",
-      description: "Final visual verification",
-      icon: "Eye",
-      color: "cyan",
+      type: "ui_bridge",
+      label: "UI Bridge",
+      description: "Final UI interactions",
+      icon: "Monitor",
+      color: "emerald",
       phase: "completion",
     },
     {
-      type: "test_python",
-      label: "Python Test",
-      description: "Final unit tests",
-      icon: "Code",
-      color: "yellow",
-      phase: "completion",
-    },
-    {
-      type: "test_repository",
-      label: "Repository Test",
-      description: "Run final tests from repo",
-      icon: "Package",
-      color: "indigo",
-      phase: "completion",
-    },
-    {
-      type: "test_custom",
-      label: "Custom Test Command",
-      description: "Any shell command for final testing",
-      icon: "Terminal",
-      color: "gray",
-      phase: "completion",
-    },
-    {
-      type: "check_lint",
-      label: "Lint Check",
-      description: "Final linting (ruff, eslint, clippy)",
-      icon: "AlertTriangle",
-      color: "cyan",
-      phase: "completion",
-    },
-    {
-      type: "check_format",
-      label: "Format Check",
-      description: "Final formatting (black, prettier, rustfmt)",
-      icon: "AlignLeft",
-      color: "cyan",
-      phase: "completion",
-    },
-    {
-      type: "check_typecheck",
-      label: "Type Check",
-      description: "Final type checking (mypy, tsc)",
-      icon: "FileType",
-      color: "cyan",
-      phase: "completion",
-    },
-    {
-      type: "check_analyze",
-      label: "Code Analysis",
-      description: "Final code analysis",
-      icon: "Search",
-      color: "indigo",
-      phase: "completion",
-    },
-    {
-      type: "check_security",
-      label: "Security Check",
-      description: "Final security scans",
-      icon: "Shield",
-      color: "red",
-      phase: "completion",
-    },
-    {
-      type: "check_custom",
-      label: "Custom Check",
-      description: "Run custom check command",
-      icon: "Terminal",
-      color: "cyan",
-      phase: "completion",
-    },
-    {
-      type: "check_ai_review",
-      label: "AI Review",
-      description: "AI-powered review of file contents",
+      type: "prompt",
+      label: "AI Completion",
+      description: "Final AI actions",
       icon: "Bot",
       color: "violet",
       phase: "completion",
     },
-    {
-      type: "check_ci_cd",
-      label: "CI/CD Check",
-      description: "Check GitHub CI/CD pipeline status",
-      icon: "GitBranch",
-      color: "purple",
-      phase: "completion",
-    },
-    {
-      type: "screenshot",
-      label: "Screenshot",
-      description: "Capture final screen state",
-      icon: "Camera",
-      color: "pink",
-      phase: "completion",
-    },
-    {
-      type: "save_workflow_artifact",
-      label: "Save Workflow Artifact",
-      description: "Save a generated workflow JSON to the library",
-      icon: "Save",
-      color: "emerald",
-      phase: "completion",
-    },
   ],
 };
-
-export const GUI_ACTION_TYPES: {
-  type: GuiActionType;
-  label: string;
-  icon: string;
-  description: string;
-}[] = [
-  {
-    type: "click",
-    label: "Click",
-    icon: "MousePointer2",
-    description: "Single click on target",
-  },
-  {
-    type: "double_click",
-    label: "Double-Click",
-    icon: "MousePointerClick",
-    description: "Double-click on target",
-  },
-  {
-    type: "right_click",
-    label: "Right-Click",
-    icon: "MousePointer",
-    description: "Context menu click",
-  },
-  {
-    type: "type",
-    label: "Type Text",
-    icon: "Keyboard",
-    description: "Type text at cursor",
-  },
-  {
-    type: "hotkey",
-    label: "Hotkey",
-    icon: "Command",
-    description: "Press key combination",
-  },
-  {
-    type: "scroll",
-    label: "Scroll",
-    icon: "ArrowUpDown",
-    description: "Scroll up or down",
-  },
-];
 
 export const PHASE_INFO: Record<
   WorkflowPhase,
@@ -1355,91 +538,34 @@ export function generateStepId(): string {
 
 export function createDefaultStep(
   type: UnifiedStep["type"],
-  phase: WorkflowPhase
+  phase: WorkflowPhase,
 ): UnifiedStep {
   const id = generateStepId();
 
   switch (type) {
-    case "script":
+    case "command":
       return {
         id,
-        type: "script",
-        phase: "setup",
-        name: "New Script",
-        refinement_enabled: true,
-      };
-    case "state":
-      return {
-        id,
-        type: "state",
-        phase: "setup",
-        name: "Navigate to State",
-        state_id: "",
-      };
-    case "workflow_ref":
-      return {
-        id,
-        type: "workflow_ref",
+        type: "command",
         phase: phase as "setup" | "verification" | "completion",
-        name: "Run Workflow",
-        workflow_id: "",
-      };
-    case "gui_action":
-      return {
-        id,
-        type: "gui_action",
-        phase: phase as "setup" | "verification" | "completion",
-        name: "GUI Action",
-        action: "click",
+        name: "Command",
+        command: "",
       };
     case "test":
       return {
         id,
         type: "test",
-        phase: "verification",
+        phase: phase as "setup" | "verification" | "completion",
         name: "New Test",
         test_type: "custom_command",
       };
-    case "check":
+    case "ui_bridge":
       return {
         id,
-        type: "check",
-        phase: "verification",
-        name: "New Check",
-        check_type: "custom_command",
-      };
-    case "check_group":
-      return {
-        id,
-        type: "check_group",
-        phase: "verification",
-        name: "Check Group",
-        check_group_id: "",
-      };
-    case "screenshot":
-      return {
-        id,
-        type: "screenshot",
-        phase: "verification",
-        name: "Screenshot",
-      };
-    case "api_request":
-      return {
-        id,
-        type: "api_request",
+        type: "ui_bridge",
         phase: phase as "setup" | "verification" | "completion",
-        name: "API Request",
-        method: "GET",
-        url: "",
-      };
-    case "mcp_call":
-      return {
-        id,
-        type: "mcp_call",
-        phase: phase as "setup" | "verification" | "completion",
-        name: "MCP Call",
-        server_id: "",
-        tool_name: "",
+        name: "UI Bridge",
+        action: "snapshot",
       };
     case "prompt": {
       const promptNames: Record<WorkflowPhase, string> = {
@@ -1456,86 +582,13 @@ export function createDefaultStep(
         content: "",
       };
     }
-    case "shell_command":
-      return {
-        id,
-        type: "shell_command",
-        phase: phase as "setup" | "verification" | "completion",
-        name: "Shell Command",
-        command: "",
-      };
-    case "awas_discover":
-      return {
-        id,
-        type: "awas_discover",
-        phase: "setup",
-        name: "AWAS Discover",
-        url: "",
-      };
-    case "awas_execute":
-      return {
-        id,
-        type: "awas_execute",
-        phase: phase as "setup" | "verification",
-        name: "AWAS Execute",
-        url: "",
-        action_id: "",
-      };
-    case "awas_check_support":
-      return {
-        id,
-        type: "awas_check_support",
-        phase: "setup",
-        name: "AWAS Check Support",
-        url: "",
-      };
-    case "awas_list_actions":
-      return {
-        id,
-        type: "awas_list_actions",
-        phase: phase as "setup" | "verification",
-        name: "AWAS List Actions",
-      };
-    case "awas_extract_elements":
-      return {
-        id,
-        type: "awas_extract_elements",
-        phase: "verification",
-        name: "AWAS Extract Elements",
-        html: "",
-      };
-    case "spec":
-      return {
-        id,
-        type: "spec",
-        phase: "verification",
-        name: "Spec Verification",
-        spec_group: {},
-        element_source: "control",
-      };
-    case "gate":
-      return {
-        id,
-        type: "gate",
-        phase: "verification",
-        name: "Gate",
-        required_steps: [],
-      };
-    case "save_workflow_artifact":
-      return {
-        id,
-        type: "save_workflow_artifact",
-        phase: "completion",
-        name: "Save Workflow Artifact",
-        artifact_input_path: "",
-      } as SaveWorkflowArtifactStep;
     default:
       throw new Error(`Unknown step type: ${type}`);
   }
 }
 
 export function createDefaultWorkflow(
-  includeSummaryStep: boolean = true
+  includeSummaryStep: boolean = true,
 ): Omit<UnifiedWorkflow, "id" | "created_at" | "modified_at"> {
   return {
     name: "",
@@ -1582,38 +635,18 @@ export function getStepPhase(step: UnifiedStep): WorkflowPhase {
 
 export function canStepExistInPhase(
   stepType: UnifiedStep["type"],
-  phase: WorkflowPhase
+  phase: WorkflowPhase,
 ): boolean {
   if (phase === "agentic") {
     return stepType === "prompt";
   }
 
   switch (stepType) {
-    case "script":
-    case "state":
-    case "gui_action":
-    case "workflow_ref":
-    case "macro":
-    case "api_request":
-    case "mcp_call":
+    case "command":
     case "test":
-    case "check":
-    case "check_group":
-    case "screenshot":
+    case "ui_bridge":
     case "prompt":
-    case "shell_command":
       return true;
-    case "awas_discover":
-    case "awas_check_support":
-    case "awas_execute":
-    case "awas_list_actions":
-    case "awas_extract_elements":
-      return true;
-    case "spec":
-    case "gate":
-      return phase === "verification";
-    case "save_workflow_artifact":
-      return phase === "completion";
     default:
       return false;
   }

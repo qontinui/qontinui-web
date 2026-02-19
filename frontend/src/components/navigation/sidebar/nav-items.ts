@@ -62,10 +62,8 @@ import {
 import type { NavItem } from "./types";
 
 // =============================================================================
-// Navigation Items — Progressive Disclosure
+// Navigation Items
 //
-// Items without `advancedOnly` are always visible (simple mode).
-// Items with `advancedOnly: true` only appear in advanced mode.
 // Items with `hidden: true` only appear in development mode.
 // Items with `adminOnly: true` only appear for superusers.
 // =============================================================================
@@ -119,7 +117,6 @@ export const navItems: NavItem[] = [
         icon: React.createElement(Bug, { className: "size-4" }),
         route: "/runs/findings",
         color: "#4A90D9",
-        advancedOnly: true,
       },
       {
         id: "runs-statistics",
@@ -128,7 +125,6 @@ export const navItems: NavItem[] = [
         icon: React.createElement(TrendingUp, { className: "size-4" }),
         route: "/runs/statistics",
         color: "#4A90D9",
-        advancedOnly: true,
       },
       {
         id: "runs-learning",
@@ -137,7 +133,6 @@ export const navItems: NavItem[] = [
         icon: React.createElement(Brain, { className: "size-4" }),
         route: "/runs/learning",
         color: "#4A90D9",
-        advancedOnly: true,
       },
       {
         id: "runs-checkpoints",
@@ -146,7 +141,6 @@ export const navItems: NavItem[] = [
         icon: React.createElement(Flag, { className: "size-4" }),
         route: "/runs/checkpoints",
         color: "#4A90D9",
-        advancedOnly: true,
       },
       {
         id: "runs-discoveries",
@@ -155,7 +149,6 @@ export const navItems: NavItem[] = [
         icon: React.createElement(Compass, { className: "size-4" }),
         route: "/runs/discoveries",
         color: "#4A90D9",
-        advancedOnly: true,
       },
     ],
   },
@@ -189,7 +182,6 @@ export const navItems: NavItem[] = [
         icon: React.createElement(Monitor, { className: "size-4" }),
         route: "/monitor",
         color: "#10B981",
-        advancedOnly: true,
       },
     ],
   },
@@ -231,7 +223,6 @@ export const navItems: NavItem[] = [
         icon: React.createElement(Brain, { className: "size-4" }),
         route: "/settings/agentic",
         color: "#FFD700",
-        advancedOnly: true,
       },
       {
         id: "settings-self-healing",
@@ -240,7 +231,6 @@ export const navItems: NavItem[] = [
         icon: React.createElement(ShieldCheck, { className: "size-4" }),
         route: "/settings/self-healing",
         color: "#FFD700",
-        advancedOnly: true,
       },
       {
         id: "settings-playwright",
@@ -249,7 +239,6 @@ export const navItems: NavItem[] = [
         icon: React.createElement(FlaskConical, { className: "size-4" }),
         route: "/settings/playwright",
         color: "#FFD700",
-        advancedOnly: true,
       },
       {
         id: "settings-mcp",
@@ -258,7 +247,6 @@ export const navItems: NavItem[] = [
         icon: React.createElement(Wifi, { className: "size-4" }),
         route: "/settings/mcp",
         color: "#FFD700",
-        advancedOnly: true,
       },
       {
         id: "settings-log-sources",
@@ -267,7 +255,6 @@ export const navItems: NavItem[] = [
         icon: React.createElement(FolderOpen, { className: "size-4" }),
         route: "/settings/log-sources",
         color: "#FFD700",
-        advancedOnly: true,
       },
       {
         id: "settings-storage",
@@ -276,7 +263,6 @@ export const navItems: NavItem[] = [
         icon: React.createElement(HardDrive, { className: "size-4" }),
         route: "/settings/storage",
         color: "#FFD700",
-        advancedOnly: true,
       },
       {
         id: "settings-backup",
@@ -285,7 +271,6 @@ export const navItems: NavItem[] = [
         icon: React.createElement(Archive, { className: "size-4" }),
         route: "/settings/backup",
         color: "#FFD700",
-        advancedOnly: true,
       },
       {
         id: "settings-updates",
@@ -294,7 +279,6 @@ export const navItems: NavItem[] = [
         icon: React.createElement(Download, { className: "size-4" }),
         route: "/settings/updates",
         color: "#FFD700",
-        advancedOnly: true,
       },
       {
         id: "settings-debug",
@@ -303,7 +287,6 @@ export const navItems: NavItem[] = [
         icon: React.createElement(FlaskConical, { className: "size-4" }),
         route: "/settings/debug",
         color: "#FFD700",
-        advancedOnly: true,
       },
     ],
   },
@@ -316,7 +299,7 @@ export const navItems: NavItem[] = [
   },
 
   // ===========================================================================
-  // Advanced-only items
+  // Always visible (were previously advanced-only)
   // ===========================================================================
   {
     id: "execute",
@@ -324,7 +307,6 @@ export const navItems: NavItem[] = [
     icon: React.createElement(Play, { className: "size-5" }),
     route: "/execute",
     color: "#10B981",
-    advancedOnly: true,
   },
   {
     id: "library",
@@ -356,6 +338,7 @@ export const navItems: NavItem[] = [
         icon: React.createElement(FileCode, { className: "size-4" }),
         route: "/build/scripts",
         color: "var(--brand-secondary)",
+        hidden: true,
       },
       {
         id: "components-checks",
@@ -364,6 +347,7 @@ export const navItems: NavItem[] = [
         icon: React.createElement(CheckCircle2, { className: "size-4" }),
         route: "/build/checks",
         color: "var(--brand-secondary)",
+        hidden: true,
       },
       {
         id: "components-check-groups",
@@ -372,7 +356,7 @@ export const navItems: NavItem[] = [
         icon: React.createElement(Layers, { className: "size-4" }),
         route: "/build/check-groups",
         color: "var(--brand-secondary)",
-        advancedOnly: true,
+        hidden: true,
       },
       {
         id: "components-api-requests",
@@ -381,6 +365,7 @@ export const navItems: NavItem[] = [
         icon: React.createElement(Globe, { className: "size-4" }),
         route: "/build/api-requests",
         color: "var(--brand-secondary)",
+        hidden: true,
       },
       {
         id: "components-shell-commands",
@@ -389,6 +374,7 @@ export const navItems: NavItem[] = [
         icon: React.createElement(Terminal, { className: "size-4" }),
         route: "/build/shell-commands",
         color: "var(--brand-secondary)",
+        hidden: true,
       },
       {
         id: "components-contexts",
@@ -405,7 +391,7 @@ export const navItems: NavItem[] = [
         icon: React.createElement(Zap, { className: "size-4" }),
         route: "/build/macros",
         color: "var(--brand-secondary)",
-        advancedOnly: true,
+        hidden: true,
       },
       {
         id: "components-scriptlets",
@@ -414,7 +400,7 @@ export const navItems: NavItem[] = [
         icon: React.createElement(Code2, { className: "size-4" }),
         route: "/build/scriptlets",
         color: "var(--brand-secondary)",
-        advancedOnly: true,
+        hidden: true,
       },
     ],
   },
@@ -425,7 +411,6 @@ export const navItems: NavItem[] = [
     icon: React.createElement(Sparkles, { className: "size-5" }),
     route: "/build/discover",
     color: "var(--brand-secondary)",
-    advancedOnly: true,
   },
   {
     id: "review",
@@ -434,7 +419,6 @@ export const navItems: NavItem[] = [
     icon: React.createElement(ScanSearch, { className: "size-5" }),
     route: "/build/review-workflow",
     color: "var(--brand-secondary)",
-    advancedOnly: true,
   },
   {
     id: "run-plan",
@@ -443,7 +427,6 @@ export const navItems: NavItem[] = [
     icon: React.createElement(Calendar, { className: "size-5" }),
     route: "/tools/run-plan",
     color: "var(--brand-secondary)",
-    advancedOnly: true,
   },
   {
     id: "state-machine",
@@ -452,7 +435,6 @@ export const navItems: NavItem[] = [
     icon: React.createElement(Network, { className: "size-5" }),
     route: "/automation-builder/ui-bridge-states",
     color: "var(--brand-secondary)",
-    advancedOnly: true,
   },
   {
     id: "tools",
@@ -460,7 +442,6 @@ export const navItems: NavItem[] = [
     icon: React.createElement(Wrench, { className: "size-5" }),
     route: "/tools/error-monitor",
     color: "#F59E0B",
-    advancedOnly: true,
     children: [
       {
         id: "tools-error-monitor",
@@ -494,7 +475,6 @@ export const navItems: NavItem[] = [
     icon: React.createElement(Sliders, { className: "size-5" }),
     route: "/configure/log-sources",
     color: "#8B5CF6",
-    advancedOnly: true,
     children: [
       {
         id: "configure-log-sources",
@@ -528,7 +508,6 @@ export const navItems: NavItem[] = [
     icon: React.createElement(Clock, { className: "size-5" }),
     route: "/schedule",
     color: "#06B6D4",
-    advancedOnly: true,
   },
 
   // ===========================================================================

@@ -2,69 +2,34 @@
 
 import React from "react";
 import {
-  FileCode,
-  Navigation,
-  GitBranch,
-  Layers,
-  MousePointer2,
-  Globe,
   Bot,
   Terminal,
-  Plug,
   TestTube2,
   Eye,
   Code,
   Package,
-  AlertTriangle,
-  AlignLeft,
-  FileType,
-  Search,
-  Shield,
-  Camera,
   MessageSquare,
-  ShieldCheck,
+  Monitor,
   Lock,
   ChevronUp,
   ChevronDown,
   Trash2,
-  Play,
-  List,
-  CheckCircle,
-  Save,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type {
   UnifiedStep,
   WorkflowPhase,
   PromptStep,
-  GuiActionStep,
   TestStep,
-  CheckStep,
-  SaveWorkflowArtifactStep,
+  CommandStep,
+  UiBridgeStep,
 } from "@/types/unified-workflow";
 
 const STEP_ICONS: Record<string, React.ElementType> = {
-  script: FileCode,
-  state: Navigation,
-  workflow_ref: GitBranch,
-  macro: Layers,
-  gui_action: MousePointer2,
-  api_request: Globe,
-  prompt: Bot,
-  shell_command: Terminal,
-  mcp_call: Plug,
+  command: Terminal,
   test: TestTube2,
-  check: AlertTriangle,
-  check_group: ShieldCheck,
-  screenshot: Camera,
-  spec: ShieldCheck,
-  gate: ShieldCheck,
-  awas_discover: Search,
-  awas_execute: Play,
-  awas_check_support: CheckCircle,
-  awas_list_actions: List,
-  awas_extract_elements: Search,
-  save_workflow_artifact: Save,
+  ui_bridge: Monitor,
+  prompt: Bot,
 };
 
 const TEST_ICONS: Record<string, React.ElementType> = {
@@ -75,21 +40,9 @@ const TEST_ICONS: Record<string, React.ElementType> = {
   custom_command: Terminal,
 };
 
-const CHECK_ICONS: Record<string, React.ElementType> = {
-  lint: AlertTriangle,
-  format: AlignLeft,
-  typecheck: FileType,
-  analyze: Search,
-  security: Shield,
-  custom_command: Terminal,
-  ai_review: Bot,
-};
-
 function getStepIcon(step: UnifiedStep): React.ElementType {
   if (step.type === "test")
     return TEST_ICONS[(step as TestStep).test_type] ?? TestTube2;
-  if (step.type === "check")
-    return CHECK_ICONS[(step as CheckStep).check_type] ?? AlertTriangle;
   if (step.type === "prompt") {
     if (step.phase === "agentic") return MessageSquare;
     return Bot;
@@ -99,52 +52,24 @@ function getStepIcon(step: UnifiedStep): React.ElementType {
 
 function getStepSubtitle(step: UnifiedStep): string {
   switch (step.type) {
-    case "script":
-      return step.target_url
-        ? `URL: ${step.target_url}`
-        : step.script_id
-          ? "Saved script"
-          : "Inline script";
-    case "state":
-      return step.state_name ?? step.state_id ?? "";
-    case "workflow_ref":
-      return step.workflow_name ?? step.workflow_id ?? "";
-    case "macro":
-      return step.macro_name ?? step.macro_id ?? "";
-    case "gui_action": {
-      const s = step as GuiActionStep;
-      if (s.action === "type") return `Type: "${s.text_input ?? ""}"`;
-      if (s.action === "hotkey") return `Hotkey: ${s.hotkey ?? ""}`;
-      if (s.action === "scroll")
-        return `Scroll ${s.scroll_direction ?? "down"}`;
-      return s.target_image_names?.join(", ") ?? s.action;
+    case "command": {
+      const cmd = step as CommandStep;
+      if (cmd.check_type) return cmd.check_type.replace(/_/g, " ");
+      if (cmd.check_group_id) return `Group: ${cmd.check_group_id}`;
+      return cmd.command
+        ? cmd.command.slice(0, 60) + (cmd.command.length > 60 ? "..." : "")
+        : "";
     }
-    case "api_request":
-      return `${step.method} ${step.url || "(no URL)"}`;
+    case "test":
+      return (step as TestStep).test_type.replace(/_/g, " ");
+    case "ui_bridge": {
+      const ub = step as UiBridgeStep;
+      return ub.action ?? "";
+    }
     case "prompt":
       return step.content
         ? step.content.slice(0, 60) + (step.content.length > 60 ? "..." : "")
         : "";
-    case "shell_command":
-      return step.command ? step.command.slice(0, 60) : "";
-    case "mcp_call":
-      return `${step.server_name ?? step.server_id}::${step.tool_name}`;
-    case "test":
-      return (step as TestStep).test_type.replace(/_/g, " ");
-    case "check":
-      return `${(step as CheckStep).check_type} ${(step as CheckStep).tool ? `(${(step as CheckStep).tool})` : ""}`.trim();
-    case "check_group":
-      return step.check_group_id;
-    case "screenshot":
-      return step.monitor ? `Monitor: ${step.monitor}` : "All monitors";
-    case "gate":
-      return `${step.required_steps.length} required step(s)`;
-    case "spec":
-      return step.description ?? "";
-    case "save_workflow_artifact":
-      return (
-        (step as SaveWorkflowArtifactStep).artifact_input_path || "(no path)"
-      );
     default:
       return "";
   }

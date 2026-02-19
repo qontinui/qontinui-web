@@ -18,16 +18,7 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { toast } from "sonner";
-import {
-  Loader2,
-  Save,
-  Settings,
-  FileText,
-  Wrench,
-  Layers,
-  Info,
-} from "lucide-react";
-import { useMenuModeStore } from "@/stores/menu-mode";
+import { Loader2, Save, Settings, FileText, Wrench, Info } from "lucide-react";
 
 export default function GeneralSettingsPage() {
   const { isOffline, isLoading: healthLoading } = useRunnerHealth();
@@ -37,8 +28,6 @@ export default function GeneralSettingsPage() {
   // Form state
   const [autoLoadLastConfig, setAutoLoadLastConfig] = useState(false);
   const [includeSummaryStep, setIncludeSummaryStep] = useState(true);
-  const menuMode = useMenuModeStore((s) => s.menuMode);
-  const setMenuMode = useMenuModeStore((s) => s.setMenuMode);
 
   useEffect(() => {
     if (isOffline) {
@@ -73,7 +62,7 @@ export default function GeneralSettingsPage() {
       toast.success("Settings saved");
     } catch (err) {
       toast.error(
-        `Failed to save: ${err instanceof Error ? err.message : "Unknown error"}`
+        `Failed to save: ${err instanceof Error ? err.message : "Unknown error"}`,
       );
     } finally {
       setSaving(false);
@@ -194,54 +183,6 @@ export default function GeneralSettingsPage() {
               including key findings and outcomes. You can always toggle this
               per workflow.
             </p>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Menu Mode Section */}
-      <Card className="bg-surface-raised/30 border-border-subtle/50">
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
-            <Layers className="size-4" />
-            Menu Mode
-          </CardTitle>
-          <CardDescription>
-            Control how much of the navigation is visible
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={() => setMenuMode("simple")}
-              className={`flex flex-col items-center gap-2 p-4 rounded-lg border transition-colors ${
-                menuMode === "simple"
-                  ? "bg-brand-primary/10 border-brand-primary/30 text-brand-primary"
-                  : "bg-surface-canvas/30 border-border-subtle/30 text-text-muted hover:text-text-primary hover:border-border-subtle/60"
-              }`}
-            >
-              <Wrench className="size-6" />
-              <span className="text-sm font-medium">Simple</span>
-              <span className="text-[11px] text-center opacity-70">
-                Essential navigation only — Dashboard, Workflows, Runs, Runners,
-                Settings
-              </span>
-            </button>
-
-            <button
-              onClick={() => setMenuMode("advanced")}
-              className={`flex flex-col items-center gap-2 p-4 rounded-lg border transition-colors ${
-                menuMode === "advanced"
-                  ? "bg-brand-primary/10 border-brand-primary/30 text-brand-primary"
-                  : "bg-surface-canvas/30 border-border-subtle/30 text-text-muted hover:text-text-primary hover:border-border-subtle/60"
-              }`}
-            >
-              <Layers className="size-6" />
-              <span className="text-sm font-medium">Advanced</span>
-              <span className="text-[11px] text-center opacity-70">
-                Full navigation with all tools, components, and configuration
-                pages
-              </span>
-            </button>
           </div>
         </CardContent>
       </Card>
