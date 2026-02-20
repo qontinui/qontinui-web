@@ -41,7 +41,7 @@ export function RequireProject({
 
   // Consider project selected if either context has it, URL has it, or local data was imported
   const hasProjectSelected = Boolean(
-    projectId || urlProjectId || hasLocalImportedData
+    projectId || urlProjectId || hasLocalImportedData,
   );
 
   if (isLoading) {
@@ -72,7 +72,7 @@ export function RequireProject({
               asChild
               className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
             >
-              <Link href="/dashboard">
+              <Link href="/build/workflows">
                 <Plus className="w-4 h-4 mr-2" />
                 Create First Project
               </Link>
@@ -102,7 +102,7 @@ export function RequireProject({
               asChild
               className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
             >
-              <Link href="/dashboard">
+              <Link href="/build/workflows">
                 <Plus className="w-4 h-4 mr-2" />
                 Create First Project
               </Link>
@@ -132,7 +132,7 @@ export function RequireProject({
               asChild
               className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
             >
-              <Link href="/dashboard">
+              <Link href="/build/workflows">
                 <FolderOpen className="w-4 h-4 mr-2" />
                 Go to Dashboard
               </Link>

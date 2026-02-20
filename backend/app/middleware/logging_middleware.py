@@ -9,7 +9,7 @@ Writes velocity JSONL entries for response time analysis.
 import json
 import time
 from collections.abc import Callable
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 
 import structlog

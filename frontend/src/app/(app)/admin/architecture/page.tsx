@@ -28,7 +28,7 @@ export default function ArchitecturePage() {
 
     if (!authLoading && user && !user.is_superuser) {
       toast.error("Access denied - Admin privileges required");
-      router.push("/dashboard");
+      router.push("/build/workflows");
       return;
     }
   }, [user, authLoading, router]);
@@ -64,7 +64,7 @@ export default function ArchitecturePage() {
             </Button>
             <Button
               variant="outline"
-              onClick={() => router.push("/dashboard")}
+              onClick={() => router.push("/build/workflows")}
               className="flex items-center gap-2"
             >
               <Home className="h-4 w-4" />

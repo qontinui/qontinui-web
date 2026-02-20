@@ -117,9 +117,11 @@ export default function HelpPage() {
               <ul className="space-y-2">
                 <SectionItem>Workflows</SectionItem>
                 <SectionItem>Tests and Checks</SectionItem>
-                <SectionItem>Shell Commands, API Requests, Scripts</SectionItem>
+                <SectionItem>
+                  Shell Commands, API Requests, Playwright Tests
+                </SectionItem>
                 <SectionItem>Contexts and Macros</SectionItem>
-                <SectionItem>Scriptlets and Check Groups</SectionItem>
+                <SectionItem>Prompt Snippets and Check Groups</SectionItem>
                 <SectionItem>State Explorer</SectionItem>
               </ul>
             </CardContent>

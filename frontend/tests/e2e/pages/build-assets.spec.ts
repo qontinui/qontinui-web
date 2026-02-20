@@ -5,7 +5,7 @@
  * - /build/api-requests - Saved API request management with two-panel layout
  * - /build/checks - Verification checks list with create button
  * - /build/contexts - AI contexts management with create button
- * - /build/scripts - Python scripts list with create button
+ * - /build/playwright-tests - Playwright tests list with create button
  * - /build/shell-commands - Shell commands list with create button
  * - /build/library - Unified asset browser with type filters and search
  *
@@ -191,13 +191,13 @@ test.describe("Build - Contexts", () => {
   });
 });
 
-test.describe("Build - Scripts", () => {
-  test("should load scripts page without errors", async ({ page }) => {
-    await page.goto("/build/scripts");
+test.describe("Build - Playwright Tests", () => {
+  test("should load playwright tests page without errors", async ({ page }) => {
+    await page.goto("/build/playwright-tests");
     await page.waitForLoadState("networkidle");
 
     await page.screenshot({
-      path: "test-results/build-scripts.png",
+      path: "test-results/build-playwright-tests.png",
       fullPage: true,
     });
 
@@ -205,30 +205,32 @@ test.describe("Build - Scripts", () => {
     expect(pageContent).not.toContain("Internal Server Error");
   });
 
-  test("should display Python scripts heading or offline state", async ({
+  test("should display Playwright Tests heading or offline state", async ({
     page,
   }) => {
-    await page.goto("/build/scripts");
+    await page.goto("/build/playwright-tests");
     await page.waitForLoadState("networkidle");
 
-    const hasHeading = (await page.locator("text=Python Scripts").count()) > 0;
+    const hasHeading =
+      (await page.locator("text=Playwright Tests").count()) > 0;
     const hasOfflineState =
       (await page.locator("text=Runner Not Connected").count()) > 0;
 
     expect(hasHeading || hasOfflineState).toBeTruthy();
   });
 
-  test("should show scripts list and create button or offline state", async ({
+  test("should show playwright tests list and create button or offline state", async ({
     page,
   }) => {
-    await page.goto("/build/scripts");
+    await page.goto("/build/playwright-tests");
     await page.waitForLoadState("networkidle");
 
     const hasSearchInput =
-      (await page.locator('input[placeholder="Search scripts..."]').count()) >
-      0;
+      (await page
+        .locator('input[placeholder="Search playwright tests..."]')
+        .count()) > 0;
     const hasNewButton =
-      (await page.locator('button:has-text("New Script")').count()) > 0;
+      (await page.locator('button:has-text("New Test")').count()) > 0;
     const hasOfflineState =
       (await page.locator("text=Runner Not Connected").count()) > 0;
 
@@ -236,10 +238,11 @@ test.describe("Build - Scripts", () => {
   });
 
   test("should gracefully handle runner offline state", async ({ page }) => {
-    await page.goto("/build/scripts");
+    await page.goto("/build/playwright-tests");
     await page.waitForLoadState("networkidle");
 
-    const hasContent = (await page.locator("text=Python Scripts").count()) > 0;
+    const hasContent =
+      (await page.locator("text=Playwright Tests").count()) > 0;
     const hasOfflineState =
       (await page.locator("text=Runner Not Connected").count()) > 0;
 
@@ -354,7 +357,7 @@ test.describe("Build - Library", () => {
     await page.waitForLoadState("networkidle");
 
     // The library page has an "All" filter button plus up to 9 type-specific filters
-    // (Workflow, Test, API Request, Check, Context, Script, Shell Command, Prompt, Scriptlet)
+    // (Workflow, Test, API Request, Check, Context, Playwright Test, Shell Command, Prompt, Prompt Snippet)
     const hasAllFilter =
       (await page.locator('button:has-text("All")').count()) > 0;
     const hasOfflineState =
@@ -379,7 +382,7 @@ test.describe("Build - Library", () => {
       (await page.locator("text=Runner Not Connected").count()) > 0;
 
     expect(
-      hasItemCount || hasNoAssets || hasNoMatching || hasOfflineState
+      hasItemCount || hasNoAssets || hasNoMatching || hasOfflineState,
     ).toBeTruthy();
   });
 

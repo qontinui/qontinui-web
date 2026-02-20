@@ -41,7 +41,7 @@ export default function BillingCanceledPage() {
               View Plans Again
             </Button>
             <Button
-              onClick={() => router.push("/dashboard")}
+              onClick={() => router.push("/build/workflows")}
               variant="outline"
               className="w-full"
             >

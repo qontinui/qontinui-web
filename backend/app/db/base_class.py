@@ -18,8 +18,8 @@ from app.models.library import (  # noqa
     CheckGroup,
     Context,
     Macro,
+    PromptSnippet,
     SavedApiRequest,
-    Scriptlet,
     ShellCommand,
 )
 from app.models.project import Project  # noqa

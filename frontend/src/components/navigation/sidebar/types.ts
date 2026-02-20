@@ -11,4 +11,6 @@ export interface NavItem {
   badge?: "beta" | "experimental";
   adminOnly?: boolean;
   hidden?: boolean;
+  /** When set on the first item in a group, renders a section label above it. */
+  group?: string;
 }

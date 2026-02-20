@@ -22,7 +22,11 @@ import {
   MapPin,
   RefreshCw,
   WifiOff,
+  Download,
+  LogIn,
+  FolderOpen,
 } from "lucide-react";
+import Link from "next/link";
 import { useDisconnectRunner } from "@/hooks/useRunners";
 import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
 import { formatRelativeTime } from "@/utils/formatDuration";
@@ -102,9 +106,50 @@ export function ActiveConnectionsList() {
         <h3 className="text-xl font-semibold text-text-muted mb-2">
           No Active Connections
         </h3>
-        <p className="text-text-muted">
+        <p className="text-text-muted mb-8">
           No runners are currently connected to your account
         </p>
+
+        <div className="max-w-lg mx-auto space-y-4 text-left mb-8">
+          {[
+            {
+              icon: Download,
+              label: "Download the Runner",
+              description: "Get the Qontinui Runner app for your platform",
+            },
+            {
+              icon: LogIn,
+              label: "Log In",
+              description: "Sign in with your Qontinui account credentials",
+            },
+            {
+              icon: FolderOpen,
+              label: "Select a Project",
+              description: "Choose a project folder for the runner to work in",
+            },
+          ].map((step, i) => (
+            <div key={step.label} className="flex items-start gap-3">
+              <div className="flex items-center justify-center w-6 h-6 rounded-full bg-brand-primary/20 text-brand-primary text-xs font-bold shrink-0 mt-0.5">
+                {i + 1}
+              </div>
+              <step.icon className="w-4 h-4 text-text-muted shrink-0 mt-1" />
+              <div>
+                <p className="text-sm font-medium text-white">{step.label}</p>
+                <p className="text-xs text-text-muted">{step.description}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <Button
+          asChild
+          className="bg-brand-primary hover:bg-brand-primary/80 text-black"
+        >
+          <Link href="/download">
+            <Download className="w-4 h-4 mr-2" />
+            Download Runner
+          </Link>
+        </Button>
       </div>
     );
   }

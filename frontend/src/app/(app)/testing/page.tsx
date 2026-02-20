@@ -55,7 +55,7 @@ export default function TestingDashboard() {
             <div className="flex items-center gap-4">
               <Button
                 variant="ghost"
-                onClick={() => router.push("/dashboard")}
+                onClick={() => router.push("/build/workflows")}
                 className="text-text-muted hover:text-white"
                 data-ui-id="testing-page-back-btn"
               >

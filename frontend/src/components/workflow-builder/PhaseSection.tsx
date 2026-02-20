@@ -1,13 +1,34 @@
 "use client";
 
 import React, { useState } from "react";
-import { ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Plus,
+  Trash2,
+  Terminal,
+  Monitor,
+  Bot,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
 import type { UnifiedStep, WorkflowPhase } from "@/types/unified-workflow";
 import { PHASE_INFO } from "@/types/unified-workflow";
 import { useWorkflowBuilder } from "./WorkflowBuilderContext";
@@ -46,6 +67,7 @@ interface PhaseSectionProps {
   phase: WorkflowPhase;
   steps: UnifiedStep[];
   onAddStep: (phase: WorkflowPhase) => void;
+  onQuickAddStep?: (type: string, phase: WorkflowPhase) => void;
   renderStep: (step: UnifiedStep, index: number) => React.ReactNode;
 }
 
@@ -53,22 +75,52 @@ export function PhaseSection({
   phase,
   steps,
   onAddStep,
+  onQuickAddStep,
   renderStep,
 }: PhaseSectionProps) {
-  const { state, togglePhase, removeStep } = useWorkflowBuilder();
+  const { state, togglePhase, removeStep, reorderSteps } = useWorkflowBuilder();
   const isExpanded = state.expandedPhases[phase];
   const colors = PHASE_COLORS[phase];
   const info = PHASE_INFO[phase];
   const [selectedForDelete, setSelectedForDelete] = useState<Set<string>>(
-    new Set()
+    new Set(),
   );
   const [isSelectionMode, setIsSelectionMode] = useState(false);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
 
   const handleBatchDelete = () => {
     selectedForDelete.forEach((stepId) => removeStep(stepId, phase));
     setSelectedForDelete(new Set());
     setIsSelectionMode(false);
   };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const stepIds = steps.map((s) => s.id);
+    const oldIndex = stepIds.indexOf(active.id as string);
+    const newIndex = stepIds.indexOf(over.id as string);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const newOrder = arrayMove(stepIds, oldIndex, newIndex);
+    reorderSteps(phase, newOrder);
+  };
+
+  const sortableIds = steps.map((s) => s.id);
+
+  // Quick-add: for agentic phase only show prompt
+  const quickAddTypes =
+    phase === "agentic"
+      ? [{ type: "prompt", icon: Bot, title: "Add Prompt" }]
+      : [
+          { type: "command", icon: Terminal, title: "Add Command" },
+          { type: "ui_bridge", icon: Monitor, title: "Add UI Bridge" },
+          { type: "prompt", icon: Bot, title: "Add Prompt" },
+        ];
 
   return (
     <Collapsible open={isExpanded} onOpenChange={() => togglePhase(phase)}>
@@ -116,6 +168,19 @@ export function PhaseSection({
                   {isSelectionMode ? "Cancel" : "Select"}
                 </Button>
               )}
+              {onQuickAddStep &&
+                quickAddTypes.map(({ type, icon: QIcon, title }) => (
+                  <Button
+                    key={type}
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0 text-zinc-500 hover:text-zinc-300"
+                    onClick={() => onQuickAddStep(type, phase)}
+                    title={title}
+                  >
+                    <QIcon className="w-3.5 h-3.5" />
+                  </Button>
+                ))}
               <Button
                 variant="ghost"
                 size="sm"
@@ -128,6 +193,17 @@ export function PhaseSection({
             </div>
           </div>
         </CollapsibleTrigger>
+
+        {/* Collapsed summary: show first few step names */}
+        {!isExpanded && steps.length > 0 && (
+          <div className="px-3 pb-2 text-xs text-zinc-500 truncate">
+            {steps
+              .slice(0, 3)
+              .map((s) => s.name)
+              .join(" \u2192 ")}
+            {steps.length > 3 && ` +${steps.length - 3} more`}
+          </div>
+        )}
 
         <CollapsibleContent>
           <div className="px-2 pb-2">
@@ -148,26 +224,37 @@ export function PhaseSection({
                 </Button>
               </div>
             ) : (
-              <div className="space-y-1">
-                {steps.map((step, index) => (
-                  <div key={step.id} className="flex items-center gap-1">
-                    {isSelectionMode && (
-                      <input
-                        type="checkbox"
-                        className="w-3.5 h-3.5 rounded"
-                        checked={selectedForDelete.has(step.id)}
-                        onChange={() => {
-                          const next = new Set(selectedForDelete);
-                          if (next.has(step.id)) next.delete(step.id);
-                          else next.add(step.id);
-                          setSelectedForDelete(next);
-                        }}
-                      />
-                    )}
-                    <div className="flex-1">{renderStep(step, index)}</div>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext
+                  items={sortableIds}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="space-y-1">
+                    {steps.map((step, index) => (
+                      <div key={step.id} className="flex items-center gap-1">
+                        {isSelectionMode && (
+                          <input
+                            type="checkbox"
+                            className="w-3.5 h-3.5 rounded"
+                            checked={selectedForDelete.has(step.id)}
+                            onChange={() => {
+                              const next = new Set(selectedForDelete);
+                              if (next.has(step.id)) next.delete(step.id);
+                              else next.add(step.id);
+                              setSelectedForDelete(next);
+                            }}
+                          />
+                        )}
+                        <div className="flex-1">{renderStep(step, index)}</div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </SortableContext>
+              </DndContext>
             )}
           </div>
         </CollapsibleContent>

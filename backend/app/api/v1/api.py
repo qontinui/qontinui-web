@@ -235,7 +235,7 @@ api_router.include_router(
 api_router.include_router(
     semantic_search.router, prefix="/search", tags=["semantic-search"]
 )
-# Library items (checks, check groups, shell commands, API requests, contexts, macros, scriptlets)
+# Library items (checks, check groups, shell commands, API requests, contexts, macros, prompt snippets)
 api_router.include_router(library.router, prefix="/library", tags=["library"])
 # Error monitor entries
 api_router.include_router(

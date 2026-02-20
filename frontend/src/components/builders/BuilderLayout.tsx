@@ -40,6 +40,7 @@ interface BuilderLayoutProps<T extends BuilderItem> {
   onDelete: (ids: string[]) => Promise<void>;
   refetch: () => Promise<void>;
   renderListItem: (item: T, isSelected: boolean) => ReactNode;
+  renderListActions?: (item: T) => ReactNode;
   renderEditor: (item: T) => ReactNode;
   emptyIcon: LucideIcon;
   emptyTitle: string;
@@ -64,6 +65,7 @@ export function BuilderLayout<T extends BuilderItem>({
   onDelete,
   refetch,
   renderListItem,
+  renderListActions,
   renderEditor,
   emptyIcon: EmptyIcon,
   emptyTitle,
@@ -85,7 +87,7 @@ export function BuilderLayout<T extends BuilderItem>({
     return items.filter(
       (item) =>
         item.name.toLowerCase().includes(q) ||
-        (item.description && item.description.toLowerCase().includes(q))
+        (item.description && item.description.toLowerCase().includes(q)),
     );
   }, [items, searchQuery]);
 
@@ -232,7 +234,7 @@ export function BuilderLayout<T extends BuilderItem>({
                 return (
                   <div
                     key={item.id}
-                    className={`flex items-center gap-2 rounded-lg px-2 py-2 cursor-pointer transition-colors
+                    className={`group/item relative flex items-center gap-2 rounded-lg px-2 py-2 cursor-pointer transition-colors
                       ${isSelected ? `bg-${accentColor}-500/10 border border-${accentColor}-500/30` : "border border-transparent hover:bg-surface-raised/60"}
                     `}
                     onClick={() => {
@@ -253,6 +255,14 @@ export function BuilderLayout<T extends BuilderItem>({
                     <div className="flex-1 min-w-0">
                       {renderListItem(item, isSelected)}
                     </div>
+                    {renderListActions && !selectionMode && (
+                      <div
+                        className="absolute right-1.5 top-1.5 opacity-0 group-hover/item:opacity-100 transition-opacity"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {renderListActions(item)}
+                      </div>
+                    )}
                   </div>
                 );
               })}

@@ -10,11 +10,10 @@
  * The Verification/Agentic loop continues until all required checks pass or max iterations.
  * Setup and Completion run exactly once - at the beginning and end respectively.
  *
- * Step Types (4 core types):
- *   command  - Shell commands, checks, check groups
- *   test     - Verification tests (playwright, vision, python, repository, custom)
+ * Step Types (3 core types by execution mechanism):
+ *   command   - Subprocess execution (shell commands, checks, check groups, tests)
  *   ui_bridge - UI Bridge SDK interactions (navigate, execute, assert, snapshot)
- *   prompt   - AI task instructions
+ *   prompt    - AI provider calls (task instructions, evaluation)
  *
  * Ported from qontinui-runner/src/types/unified-workflow.ts
  */
@@ -94,7 +93,7 @@ export interface ApiAssertion {
 }
 
 // -----------------------------------------------------------------------------
-// Test Steps
+// Test Types (used by command steps when test_type is set)
 // -----------------------------------------------------------------------------
 
 export type TestType =
@@ -105,23 +104,6 @@ export type TestType =
   | "custom_command";
 
 export type PlaywrightExecutionMode = "independent" | "chained";
-
-export interface TestStep extends BaseStep {
-  type: "test";
-  phase: "setup" | "verification" | "completion";
-  test_type: TestType;
-  command?: string;
-  working_directory?: string;
-  code?: string;
-  test_id?: string;
-  timeout_seconds?: number;
-  description?: string;
-  script_id?: string;
-  script_content?: string;
-  target_url?: string;
-  fused_script_id?: string;
-  execution_mode?: PlaywrightExecutionMode;
-}
 
 // -----------------------------------------------------------------------------
 // Check Types (used by command steps)
@@ -166,6 +148,16 @@ export interface CommandStep extends BaseStep {
 
   // Check group fields (when check_group_id is set)
   check_group_id?: string;
+
+  // Test fields (when test_type is set, dispatches to test handler)
+  test_type?: TestType;
+  test_id?: string;
+  code?: string;
+  script_id?: string;
+  script_content?: string;
+  target_url?: string;
+  fused_script_id?: string;
+  execution_mode?: PlaywrightExecutionMode;
 }
 
 // -----------------------------------------------------------------------------
@@ -202,25 +194,21 @@ export interface UiBridgeStep extends BaseStep {
 // Step Type Names
 // =============================================================================
 
-export type StepTypeName = "command" | "test" | "ui_bridge" | "prompt";
+export type StepTypeName = "command" | "ui_bridge" | "prompt";
 
 // =============================================================================
 // Unified Step Type
 // =============================================================================
 
-export type UnifiedStep = CommandStep | PromptStep | TestStep | UiBridgeStep;
+export type UnifiedStep = CommandStep | PromptStep | UiBridgeStep;
 
-export type SetupStep = CommandStep | PromptStep | TestStep | UiBridgeStep;
+export type SetupStep = CommandStep | PromptStep | UiBridgeStep;
 
-export type VerificationStep =
-  | CommandStep
-  | PromptStep
-  | TestStep
-  | UiBridgeStep;
+export type VerificationStep = CommandStep | PromptStep | UiBridgeStep;
 
 export type AgenticStep = PromptStep;
 
-export type CompletionStep = CommandStep | PromptStep | TestStep | UiBridgeStep;
+export type CompletionStep = CommandStep | PromptStep | UiBridgeStep;
 
 // =============================================================================
 // Workflow
@@ -367,7 +355,7 @@ export async function fetchStepTypes(): Promise<Record<
 
 /**
  * All step types organized by phase.
- * 4 core types available in setup, verification, and completion.
+ * 3 core types available in setup, verification, and completion.
  * Agentic phase is restricted to AI Prompt only.
  */
 export const STEP_TYPES: Record<WorkflowPhase, StepTypeInfo[]> = {
@@ -375,17 +363,9 @@ export const STEP_TYPES: Record<WorkflowPhase, StepTypeInfo[]> = {
     {
       type: "command",
       label: "Command",
-      description: "Run shell commands or checks",
+      description: "Run shell commands, checks, or tests",
       icon: "Terminal",
       color: "gray",
-      phase: "setup",
-    },
-    {
-      type: "test",
-      label: "Test",
-      description: "Run verification tests",
-      icon: "TestTube2",
-      color: "green",
       phase: "setup",
     },
     {
@@ -409,17 +389,9 @@ export const STEP_TYPES: Record<WorkflowPhase, StepTypeInfo[]> = {
     {
       type: "command",
       label: "Command",
-      description: "Run commands for verification",
+      description: "Run commands, checks, or tests for verification",
       icon: "Terminal",
       color: "gray",
-      phase: "verification",
-    },
-    {
-      type: "test",
-      label: "Test",
-      description: "Run verification tests",
-      icon: "TestTube2",
-      color: "green",
       phase: "verification",
     },
     {
@@ -453,17 +425,9 @@ export const STEP_TYPES: Record<WorkflowPhase, StepTypeInfo[]> = {
     {
       type: "command",
       label: "Command",
-      description: "Run cleanup commands",
+      description: "Run cleanup commands or final tests",
       icon: "Terminal",
       color: "gray",
-      phase: "completion",
-    },
-    {
-      type: "test",
-      label: "Test",
-      description: "Final tests",
-      icon: "TestTube2",
-      color: "green",
       phase: "completion",
     },
     {
@@ -551,14 +515,6 @@ export function createDefaultStep(
         name: "Command",
         command: "",
       };
-    case "test":
-      return {
-        id,
-        type: "test",
-        phase: phase as "setup" | "verification" | "completion",
-        name: "New Test",
-        test_type: "custom_command",
-      };
     case "ui_bridge":
       return {
         id,
@@ -643,7 +599,6 @@ export function canStepExistInPhase(
 
   switch (stepType) {
     case "command":
-    case "test":
     case "ui_bridge":
     case "prompt":
       return true;

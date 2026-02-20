@@ -74,7 +74,7 @@ export default function DatasetsPage() {
 
     if (!authLoading && user && !user.is_superuser) {
       toast.error("Access denied - Admin privileges required");
-      router.push("/dashboard");
+      router.push("/build/workflows");
       return;
     }
   }, [user, authLoading, router]);
@@ -166,7 +166,7 @@ export default function DatasetsPage() {
             </p>
             <Button
               variant="outline"
-              onClick={() => router.push("/dashboard")}
+              onClick={() => router.push("/build/workflows")}
               className="mt-4"
             >
               <LayoutDashboard className="mr-2 h-4 w-4" />
@@ -184,7 +184,7 @@ export default function DatasetsPage() {
       <div className="mb-6 flex items-center gap-4">
         <Button
           variant="ghost"
-          onClick={() => router.push("/dashboard")}
+          onClick={() => router.push("/build/workflows")}
           className="hover:bg-primary/10"
         >
           <LayoutDashboard className="mr-2 h-4 w-4" />

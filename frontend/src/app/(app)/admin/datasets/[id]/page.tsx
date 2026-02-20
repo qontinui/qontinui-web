@@ -122,7 +122,7 @@ export default function DatasetViewerPage() {
     }
     if (!authLoading && user && !user.is_superuser) {
       toast.error("Access denied - Admin privileges required");
-      router.push("/dashboard");
+      router.push("/build/workflows");
       return;
     }
   }, [user, authLoading, router]);
@@ -187,7 +187,7 @@ export default function DatasetViewerPage() {
     try {
       const anns = await datasetService.getImageAnnotations(
         datasetId,
-        selectedImage.id
+        selectedImage.id,
       );
       // Filter annotations based on current filters
       const filtered = anns.filter((ann) => {
@@ -219,7 +219,7 @@ export default function DatasetViewerPage() {
 
   const handleSourceFilterChange = (
     source: AnnotationSource,
-    checked: boolean
+    checked: boolean,
   ) => {
     setFilters((prev) => ({
       ...prev,
@@ -231,7 +231,7 @@ export default function DatasetViewerPage() {
 
   const handleReviewStatusFilterChange = (
     status: ReviewStatus,
-    checked: boolean
+    checked: boolean,
   ) => {
     setFilters((prev) => ({
       ...prev,
@@ -248,8 +248,8 @@ export default function DatasetViewerPage() {
         prev.map((a) =>
           a.id === annotation.id
             ? { ...a, review_status: "approved" as ReviewStatus }
-            : a
-        )
+            : a,
+        ),
       );
       toast.success("Annotation approved");
     } catch (_error) {
@@ -264,8 +264,8 @@ export default function DatasetViewerPage() {
         prev.map((a) =>
           a.id === annotation.id
             ? { ...a, review_status: "rejected" as ReviewStatus }
-            : a
-        )
+            : a,
+        ),
       );
       toast.success("Annotation rejected");
     } catch (_error) {
@@ -280,8 +280,8 @@ export default function DatasetViewerPage() {
         prev.map((a) =>
           a.id === annotation.id
             ? { ...a, review_status: "flagged" as ReviewStatus }
-            : a
-        )
+            : a,
+        ),
       );
       toast.success("Annotation flagged for review");
     } catch (_error) {
@@ -326,8 +326,8 @@ export default function DatasetViewerPage() {
                 review_status: "approved" as ReviewStatus,
                 verified: true,
               }
-            : a
-        )
+            : a,
+        ),
       );
       toast.success(`Approved ${result.updated_count} annotation(s)`);
       setSelectedAnnotationIds(new Set());
@@ -350,8 +350,8 @@ export default function DatasetViewerPage() {
         prev.map((a) =>
           selectedAnnotationIds.has(a.id)
             ? { ...a, review_status: "rejected" as ReviewStatus }
-            : a
-        )
+            : a,
+        ),
       );
       toast.success(`Rejected ${result.updated_count} annotation(s)`);
       setSelectedAnnotationIds(new Set());
@@ -374,8 +374,8 @@ export default function DatasetViewerPage() {
         prev.map((a) =>
           selectedAnnotationIds.has(a.id)
             ? { ...a, review_status: "flagged" as ReviewStatus }
-            : a
-        )
+            : a,
+        ),
       );
       toast.success(`Flagged ${result.updated_count} annotation(s)`);
       setSelectedAnnotationIds(new Set());
@@ -672,7 +672,7 @@ export default function DatasetViewerPage() {
                         onCheckedChange={(checked) =>
                           handleReviewStatusFilterChange(
                             status,
-                            checked as boolean
+                            checked as boolean,
                           )
                         }
                       />
@@ -720,7 +720,7 @@ export default function DatasetViewerPage() {
                     <img
                       src={datasetService.getImageThumbnailUrl(
                         datasetId,
-                        image.image_hash
+                        image.image_hash,
                       )}
                       alt={image.filename}
                       className="w-full aspect-square object-cover"
@@ -803,7 +803,7 @@ export default function DatasetViewerPage() {
                   <ImageCanvas
                     imageUrl={datasetService.getImageUrl(
                       datasetId,
-                      selectedImage.image_hash
+                      selectedImage.image_hash,
                     )}
                     boxes={canvasBoxes}
                     selectedBoxId={selectedAnnotation?.id || null}

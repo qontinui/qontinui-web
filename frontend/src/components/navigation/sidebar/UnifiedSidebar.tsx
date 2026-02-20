@@ -313,7 +313,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
   const buildRoute = useCallback(
     (route: string): string => {
       if (route.includes(":projectId")) {
-        if (!projectId) return "/dashboard";
+        if (!projectId) return "/build/workflows";
         return route.replace(":projectId", projectId);
       }
 
@@ -472,27 +472,38 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
               isCollapsed && "items-center",
             )}
           >
-            {visibleNavItems.map((item) =>
-              item.children ? (
-                <CollapsibleNavItem
-                  key={item.id}
-                  item={item}
-                  isCollapsed={isCollapsed}
-                  onNavigate={handleNavigation}
-                  isRouteActive={isRouteActive}
-                  mounted={mounted}
-                />
-              ) : (
-                <NavItemButton
-                  key={item.id}
-                  item={item}
-                  isCollapsed={isCollapsed}
-                  isActive={isRouteActive(item.route, item)}
-                  onClick={() => handleNavigation(item.route)}
-                  mounted={mounted}
-                />
-              ),
-            )}
+            {visibleNavItems.map((item) => (
+              <React.Fragment key={item.id}>
+                {item.group &&
+                  (isCollapsed ? (
+                    <div className="my-1.5 h-px w-6 bg-border-subtle" />
+                  ) : (
+                    <div className="flex items-center gap-2 px-2 pt-4 pb-1 first:pt-0">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                        {item.group}
+                      </span>
+                      <div className="h-px flex-1 bg-border-subtle/50" />
+                    </div>
+                  ))}
+                {item.children ? (
+                  <CollapsibleNavItem
+                    item={item}
+                    isCollapsed={isCollapsed}
+                    onNavigate={handleNavigation}
+                    isRouteActive={isRouteActive}
+                    mounted={mounted}
+                  />
+                ) : (
+                  <NavItemButton
+                    item={item}
+                    isCollapsed={isCollapsed}
+                    isActive={isRouteActive(item.route, item)}
+                    onClick={() => handleNavigation(item.route)}
+                    mounted={mounted}
+                  />
+                )}
+              </React.Fragment>
+            ))}
           </nav>
         </ScrollArea>
 

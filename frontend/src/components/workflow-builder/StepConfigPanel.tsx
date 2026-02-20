@@ -7,7 +7,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import type {
   WorkflowPhase,
   CommandStep,
-  TestStep,
   UiBridgeStep,
   PromptStep,
   TestType,
@@ -19,6 +18,46 @@ import { useWorkflowBuilder } from "./WorkflowBuilderContext";
 // Command Step Config
 // =============================================================================
 
+type CommandMode = "shell" | "check" | "test";
+
+function detectCommandMode(step: CommandStep): CommandMode {
+  if (step.test_type || step.test_id) return "test";
+  if (step.check_type || step.check_group_id) return "check";
+  return "shell";
+}
+
+function CommandModeSelector({
+  mode,
+  onChange,
+}: {
+  mode: CommandMode;
+  onChange: (mode: CommandMode) => void;
+}) {
+  const modes: { value: CommandMode; label: string }[] = [
+    { value: "shell", label: "Shell Command" },
+    { value: "check", label: "Check" },
+    { value: "test", label: "Test" },
+  ];
+
+  return (
+    <div className="flex rounded-md bg-zinc-800 p-0.5 mb-4">
+      {modes.map(({ value, label }) => (
+        <button
+          key={value}
+          className={`flex-1 px-2 py-1 text-xs font-medium rounded transition-colors ${
+            mode === value
+              ? "bg-blue-600 text-white"
+              : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700"
+          }`}
+          onClick={() => onChange(value)}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function CommandConfig({
   step,
   onUpdate,
@@ -26,8 +65,67 @@ function CommandConfig({
   step: CommandStep;
   onUpdate: (updates: Record<string, unknown>) => void;
 }) {
+  const mode = detectCommandMode(step);
+
+  const handleModeChange = (newMode: CommandMode) => {
+    // Clear fields from the old mode
+    const clearFields: Record<string, undefined> = {};
+    if (mode === "test" && newMode !== "test") {
+      clearFields.test_type = undefined;
+      clearFields.test_id = undefined;
+      clearFields.code = undefined;
+      clearFields.script_id = undefined;
+      clearFields.script_content = undefined;
+      clearFields.target_url = undefined;
+      clearFields.fused_script_id = undefined;
+      clearFields.execution_mode = undefined;
+    }
+    if (mode === "check" && newMode !== "check") {
+      clearFields.check_type = undefined;
+      clearFields.check_id = undefined;
+      clearFields.check_group_id = undefined;
+      clearFields.tool = undefined;
+      clearFields.config_path = undefined;
+      clearFields.auto_fix = undefined;
+      clearFields.fail_on_warning = undefined;
+    }
+    // Set defaults for the new mode
+    const setFields: Record<string, unknown> = {};
+    if (newMode === "test") {
+      setFields.test_type = "custom_command";
+    }
+    if (newMode === "check") {
+      setFields.check_type = "custom_command";
+    }
+    onUpdate({ ...clearFields, ...setFields });
+  };
+
   return (
     <div className="space-y-4">
+      <CommandModeSelector mode={mode} onChange={handleModeChange} />
+
+      {mode === "test" && <TestFieldsConfig step={step} onUpdate={onUpdate} />}
+
+      {mode === "check" && (
+        <CheckFieldsConfig step={step} onUpdate={onUpdate} />
+      )}
+
+      {mode === "shell" && (
+        <ShellCommandFields step={step} onUpdate={onUpdate} />
+      )}
+    </div>
+  );
+}
+
+function ShellCommandFields({
+  step,
+  onUpdate,
+}: {
+  step: CommandStep;
+  onUpdate: (updates: Record<string, unknown>) => void;
+}) {
+  return (
+    <>
       <div>
         <label className="block text-xs font-medium text-zinc-400 mb-1">
           Command
@@ -94,19 +192,86 @@ function CommandConfig({
           Run on subsequent iterations
         </label>
       )}
-    </div>
+    </>
+  );
+}
+
+function CheckFieldsConfig({
+  step,
+  onUpdate,
+}: {
+  step: CommandStep;
+  onUpdate: (updates: Record<string, unknown>) => void;
+}) {
+  return (
+    <>
+      <div>
+        <label className="block text-xs font-medium text-zinc-400 mb-1">
+          Check Type
+        </label>
+        <select
+          value={step.check_type ?? "custom_command"}
+          onChange={(e) => onUpdate({ check_type: e.target.value })}
+          className="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 text-sm focus:ring-2 focus:ring-blue-500/50"
+        >
+          <option value="lint">Lint</option>
+          <option value="format">Format</option>
+          <option value="typecheck">Type Check</option>
+          <option value="analyze">Analyze</option>
+          <option value="security">Security</option>
+          <option value="http_status">HTTP Status</option>
+          <option value="ai_review">AI Review</option>
+          <option value="ci_cd">CI/CD</option>
+          <option value="custom_command">Custom Command</option>
+        </select>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-zinc-400 mb-1">
+          Command
+        </label>
+        <input
+          type="text"
+          value={step.command ?? ""}
+          onChange={(e) => onUpdate({ command: e.target.value })}
+          placeholder="Check command to run"
+          className="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 text-sm focus:ring-2 focus:ring-blue-500/50"
+        />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-zinc-400 mb-1">
+          Timeout (seconds)
+        </label>
+        <input
+          type="number"
+          className="w-32 px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 text-sm focus:ring-2 focus:ring-blue-500/50"
+          value={step.timeout_seconds ?? 60}
+          onChange={(e) =>
+            onUpdate({ timeout_seconds: parseInt(e.target.value) || undefined })
+          }
+        />
+      </div>
+      <label className="flex items-center gap-2 text-sm text-zinc-400">
+        <input
+          type="checkbox"
+          className="rounded"
+          checked={step.auto_fix ?? false}
+          onChange={(e) => onUpdate({ auto_fix: e.target.checked })}
+        />
+        Auto-fix
+      </label>
+    </>
   );
 }
 
 // =============================================================================
-// Test Step Config
+// Test Fields Config (shown inside CommandConfig when test_type is set)
 // =============================================================================
 
-function TestConfig({
+function TestFieldsConfig({
   step,
   onUpdate,
 }: {
-  step: TestStep;
+  step: CommandStep;
   onUpdate: (updates: Record<string, unknown>) => void;
 }) {
   return (
@@ -116,7 +281,7 @@ function TestConfig({
           Test Type
         </label>
         <select
-          value={step.test_type}
+          value={step.test_type ?? "custom_command"}
           onChange={(e) => onUpdate({ test_type: e.target.value as TestType })}
           className="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 text-sm focus:ring-2 focus:ring-blue-500/50"
         >
@@ -422,8 +587,6 @@ export function StepConfigPanel() {
     switch (selectedStep.type) {
       case "command":
         return <CommandConfig step={selectedStep} onUpdate={handleUpdate} />;
-      case "test":
-        return <TestConfig step={selectedStep} onUpdate={handleUpdate} />;
       case "ui_bridge":
         return <UiBridgeConfig step={selectedStep} onUpdate={handleUpdate} />;
       case "prompt":

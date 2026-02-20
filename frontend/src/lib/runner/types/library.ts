@@ -61,7 +61,7 @@ export interface SavedPrompt {
   updated_at?: string;
 }
 
-export interface Scriptlet {
+export interface PromptSnippet {
   id: string;
   name: string;
   content: string;

@@ -6,7 +6,7 @@ import type {
   Check,
   CheckGroup,
   Macro,
-  Scriptlet,
+  PromptSnippet,
   PlaywrightScript,
   SavedApiRequest,
   SavedPrompt,
@@ -47,7 +47,7 @@ export function useShellCommands() {
 }
 
 export function usePlaywrightScriptsDetailed() {
-  return useRunnerQuery<PlaywrightScript[]>("/playwright/scripts");
+  return useRunnerQuery<PlaywrightScript[]>("/playwright/tests");
 }
 
 export function useSavedApiRequestsDetailed() {
@@ -90,8 +90,8 @@ export function usePrompts() {
   return useRunnerQuery<LibraryItem[]>("/prompts");
 }
 
-export function useScriptlets() {
-  return useRunnerQuery<LibraryItem[]>("/scriptlets");
+export function usePromptSnippets() {
+  return useRunnerQuery<LibraryItem[]>("/prompt-snippets");
 }
 
 export function useMacrosDetailed() {
@@ -102,12 +102,12 @@ export function useMacro(id: string | null) {
   return useRunnerQuery<Macro>(id ? `/macros/${id}` : null, { enabled: !!id });
 }
 
-export function useScriptletsDetailed() {
-  return useRunnerQuery<Scriptlet[]>("/scriptlets");
+export function usePromptSnippetsDetailed() {
+  return useRunnerQuery<PromptSnippet[]>("/prompt-snippets");
 }
 
-export function useScriptletDetailed(id: string | null) {
-  return useRunnerQuery<Scriptlet>(id ? `/scriptlets/${id}` : null, {
+export function usePromptSnippetDetailed(id: string | null) {
+  return useRunnerQuery<PromptSnippet>(id ? `/prompt-snippets/${id}` : null, {
     enabled: !!id,
   });
 }
@@ -117,6 +117,6 @@ export function useCheckGroupChecks(groupId: string | null) {
     groupId ? `/check-groups/${groupId}/checks` : null,
     {
       enabled: !!groupId,
-    }
+    },
   );
 }

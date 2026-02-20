@@ -57,7 +57,7 @@ export function Header() {
                 </span>
                 <Button
                   variant="outline"
-                  onClick={() => router.push("/dashboard")}
+                  onClick={() => router.push("/build/workflows")}
                   className="border-primary/50 hover:border-primary hover:bg-primary/10"
                 >
                   Dashboard

@@ -2,7 +2,7 @@
 API endpoints for library item management.
 
 Provides generic CRUD for all library types: checks, check groups,
-shell commands, saved API requests, contexts, macros, and scriptlets.
+shell commands, saved API requests, contexts, macros, and prompt snippets.
 """
 
 from uuid import UUID
@@ -18,8 +18,8 @@ from app.models.library import (
     CheckGroup,
     Context,
     Macro,
+    PromptSnippet,
     SavedApiRequest,
-    Scriptlet,
     ShellCommand,
 )
 from app.models.user import User
@@ -41,14 +41,14 @@ from app.schemas.library import (
     MacroResponse,
     MacroUpdate,
     Pagination,
+    PromptSnippetCreate,
+    PromptSnippetListResponse,
+    PromptSnippetResponse,
+    PromptSnippetUpdate,
     SavedApiRequestCreate,
     SavedApiRequestListResponse,
     SavedApiRequestResponse,
     SavedApiRequestUpdate,
-    ScriptletCreate,
-    ScriptletListResponse,
-    ScriptletResponse,
-    ScriptletUpdate,
     ShellCommandCreate,
     ShellCommandListResponse,
     ShellCommandResponse,
@@ -663,12 +663,12 @@ async def delete_macro(
 
 
 # =============================================================================
-# Scriptlets
+# Prompt Snippets
 # =============================================================================
 
 
-@router.get("/scriptlets", response_model=ScriptletListResponse)
-async def list_scriptlets(
+@router.get("/prompt-snippets", response_model=PromptSnippetListResponse)
+async def list_prompt_snippets(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
     project_id: UUID | None = Query(None),
@@ -676,18 +676,18 @@ async def list_scriptlets(
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
 ):
-    """List scriptlets for the current user."""
+    """List prompt snippets for the current user."""
     items, total = await crud.list_items(
         db,
-        Scriptlet,
+        PromptSnippet,
         current_user.id,
         project_id=project_id,
         search=search,
         offset=offset,
         limit=limit,
     )
-    return ScriptletListResponse(
-        items=[ScriptletResponse.model_validate(i) for i in items],
+    return PromptSnippetListResponse(
+        items=[PromptSnippetResponse.model_validate(i) for i in items],
         pagination=Pagination(
             total=total, limit=limit, offset=offset, has_more=(offset + limit) < total
         ),
@@ -695,63 +695,75 @@ async def list_scriptlets(
 
 
 @router.post(
-    "/scriptlets", response_model=ScriptletResponse, status_code=status.HTTP_201_CREATED
+    "/prompt-snippets",
+    response_model=PromptSnippetResponse,
+    status_code=status.HTTP_201_CREATED,
 )
-async def create_scriptlet(
-    data: ScriptletCreate,
+async def create_prompt_snippet(
+    data: PromptSnippetCreate,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
 ):
-    """Create a new scriptlet."""
-    item = await crud.create_item(db, Scriptlet, current_user.id, data.model_dump())
-    logger.info("scriptlet_created", scriptlet_id=item.id, user_id=current_user.id)
-    return ScriptletResponse.model_validate(item)
+    """Create a new prompt snippet."""
+    item = await crud.create_item(db, PromptSnippet, current_user.id, data.model_dump())
+    logger.info(
+        "prompt_snippet_created", prompt_snippet_id=item.id, user_id=current_user.id
+    )
+    return PromptSnippetResponse.model_validate(item)
 
 
-@router.get("/scriptlets/{scriptlet_id}", response_model=ScriptletResponse)
-async def get_scriptlet(
-    scriptlet_id: UUID,
+@router.get("/prompt-snippets/{snippet_id}", response_model=PromptSnippetResponse)
+async def get_prompt_snippet(
+    snippet_id: UUID,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
 ):
-    """Get a scriptlet by ID."""
-    item = await crud.get_item(db, Scriptlet, scriptlet_id, current_user.id)
+    """Get a prompt snippet by ID."""
+    item = await crud.get_item(db, PromptSnippet, snippet_id, current_user.id)
     if not item:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Scriptlet not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Prompt snippet not found"
         )
-    return ScriptletResponse.model_validate(item)
+    return PromptSnippetResponse.model_validate(item)
 
 
-@router.put("/scriptlets/{scriptlet_id}", response_model=ScriptletResponse)
-async def update_scriptlet(
-    scriptlet_id: UUID,
-    data: ScriptletUpdate,
+@router.put("/prompt-snippets/{snippet_id}", response_model=PromptSnippetResponse)
+async def update_prompt_snippet(
+    snippet_id: UUID,
+    data: PromptSnippetUpdate,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
 ):
-    """Update a scriptlet."""
-    item = await crud.get_item(db, Scriptlet, scriptlet_id, current_user.id)
+    """Update a prompt snippet."""
+    item = await crud.get_item(db, PromptSnippet, snippet_id, current_user.id)
     if not item:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Scriptlet not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Prompt snippet not found"
         )
     updated = await crud.update_item(db, item, data.model_dump(exclude_unset=True))
-    logger.info("scriptlet_updated", scriptlet_id=scriptlet_id, user_id=current_user.id)
-    return ScriptletResponse.model_validate(updated)
+    logger.info(
+        "prompt_snippet_updated",
+        prompt_snippet_id=snippet_id,
+        user_id=current_user.id,
+    )
+    return PromptSnippetResponse.model_validate(updated)
 
 
-@router.delete("/scriptlets/{scriptlet_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_scriptlet(
-    scriptlet_id: UUID,
+@router.delete("/prompt-snippets/{snippet_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_prompt_snippet(
+    snippet_id: UUID,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
 ):
-    """Delete a scriptlet."""
-    item = await crud.get_item(db, Scriptlet, scriptlet_id, current_user.id)
+    """Delete a prompt snippet."""
+    item = await crud.get_item(db, PromptSnippet, snippet_id, current_user.id)
     if not item:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Scriptlet not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Prompt snippet not found"
         )
     await crud.delete_item(db, item)
-    logger.info("scriptlet_deleted", scriptlet_id=scriptlet_id, user_id=current_user.id)
+    logger.info(
+        "prompt_snippet_deleted",
+        prompt_snippet_id=snippet_id,
+        user_id=current_user.id,
+    )

@@ -16,7 +16,7 @@ import type {
   PlaywrightScript,
   SavedPrompt,
   Macro,
-  Scriptlet,
+  PromptSnippet,
 } from "./types/library";
 import type {
   AwasDiscoverResponse,
@@ -94,7 +94,7 @@ export const runnerApi = {
   executePlan: (plan: ExecutePlanRequest) =>
     runnerFetch<{ success: boolean; execution_id: string; message: string }>(
       "/execute-plan",
-      { method: "POST", body: JSON.stringify(plan) }
+      { method: "POST", body: JSON.stringify(plan) },
     ),
   runWorkflow: (workflowId: string, monitor?: string) =>
     runnerFetch<{ task_run_id: string }>(
@@ -102,7 +102,7 @@ export const runnerApi = {
       {
         method: "POST",
         body: JSON.stringify({ monitor }),
-      }
+      },
     ),
   saveLogSource: (source: Partial<LogSource>) =>
     runnerFetch<LogSource>("/log-sources", {
@@ -163,7 +163,7 @@ export const runnerApi = {
       iteration?: number;
       status?: string;
       error?: string;
-    }
+    },
   ) =>
     runnerFetch<TestHookResponse>(`/hooks/${id}/test`, {
       method: "POST",
@@ -270,27 +270,27 @@ export const runnerApi = {
       method: "POST",
     }),
 
-  // Playwright Scripts CRUD
-  getPlaywrightScripts: () =>
-    runnerFetch<PlaywrightScript[]>("/playwright/scripts"),
-  createPlaywrightScript: (script: Partial<PlaywrightScript>) =>
-    runnerFetch<PlaywrightScript>("/playwright/scripts", {
+  // Playwright Tests CRUD
+  getPlaywrightTests: () =>
+    runnerFetch<PlaywrightScript[]>("/playwright/tests"),
+  createPlaywrightTest: (script: Partial<PlaywrightScript>) =>
+    runnerFetch<PlaywrightScript>("/playwright/tests", {
       method: "POST",
       body: JSON.stringify(script),
     }),
-  updatePlaywrightScript: (id: string, script: Partial<PlaywrightScript>) =>
-    runnerFetch<PlaywrightScript>(`/playwright/scripts/${id}`, {
+  updatePlaywrightTest: (id: string, script: Partial<PlaywrightScript>) =>
+    runnerFetch<PlaywrightScript>(`/playwright/tests/${id}`, {
       method: "PUT",
       body: JSON.stringify(script),
     }),
-  deletePlaywrightScript: (id: string) =>
-    runnerFetch<void>(`/playwright/scripts/${id}`, { method: "DELETE" }),
-  runPlaywrightScript: (id: string) =>
-    runnerFetch<{ task_run_id: string }>(`/playwright/scripts/${id}/run`, {
+  deletePlaywrightTest: (id: string) =>
+    runnerFetch<void>(`/playwright/tests/${id}`, { method: "DELETE" }),
+  runPlaywrightTest: (id: string) =>
+    runnerFetch<{ task_run_id: string }>(`/playwright/tests/${id}/run`, {
       method: "POST",
     }),
-  duplicatePlaywrightScript: (id: string, newName?: string) =>
-    runnerFetch<PlaywrightScript>(`/playwright/scripts/${id}/duplicate`, {
+  duplicatePlaywrightTest: (id: string, newName?: string) =>
+    runnerFetch<PlaywrightScript>(`/playwright/tests/${id}/duplicate`, {
       method: "POST",
       body: JSON.stringify({ new_name: newName }),
     }),
@@ -348,7 +348,7 @@ export const runnerApi = {
         method: "POST",
         body: JSON.stringify(request),
         timeoutMs: 30000, // Quick response - just starts the task
-      }
+      },
     ),
 
   // Get result data from a completed task run
@@ -366,13 +366,12 @@ export const runnerApi = {
   // Create context from file path
   createContextFromFile: (
     scope: string,
-    request: CreateContextFromFileRequest
+    request: CreateContextFromFileRequest,
   ) =>
     runnerFetch<ContextItem>(`/contexts/${scope}/from-file`, {
       method: "POST",
       body: JSON.stringify(request),
     }),
-
 
   // Run workflow
   runUnifiedWorkflow: (id: string) =>
@@ -384,7 +383,7 @@ export const runnerApi = {
   // Continue a task run with additional sessions
   continueTaskRun: (
     id: string | number,
-    options: { additional_sessions: number }
+    options: { additional_sessions: number },
   ) =>
     runnerFetch<void>(`/task-runs/${id}/continue`, {
       method: "POST",
@@ -415,7 +414,7 @@ export const runnerApi = {
   aiGenerateShellCommand: (
     userPrompt: string,
     targetOs?: string,
-    category?: string
+    category?: string,
   ) =>
     runnerFetch<{
       success: boolean;
@@ -473,12 +472,12 @@ export const runnerApi = {
       body: JSON.stringify({ user_prompt: userPrompt, category }),
     }),
 
-  aiGenerateScriptlet: (userPrompt: string, language?: string) =>
+  aiGeneratePromptSnippet: (userPrompt: string, language?: string) =>
     runnerFetch<{
       success: boolean;
       data: Record<string, unknown>;
       message?: string;
-    }>("/ai/generate-scriptlet", {
+    }>("/ai/generate-prompt-snippet", {
       method: "POST",
       body: JSON.stringify({
         user_prompt: userPrompt,
@@ -488,7 +487,7 @@ export const runnerApi = {
 
   aiSuggestCheckGroups: (
     userPrompt: string,
-    existingChecks: Array<Record<string, unknown>>
+    existingChecks: Array<Record<string, unknown>>,
   ) =>
     runnerFetch<{
       success: boolean;
@@ -524,7 +523,7 @@ export const runnerApi = {
 
   generateChecks: (
     workspaceScan: Record<string, unknown>,
-    userPreferences?: Record<string, unknown>
+    userPreferences?: Record<string, unknown>,
   ) =>
     runnerFetch<GenerateChecksResponse>("/checks/generate", {
       method: "POST",
@@ -544,7 +543,7 @@ export const runnerApi = {
   importCurlToLibrary: (
     curlCommand: string,
     name?: string,
-    category?: string
+    category?: string,
   ) =>
     runnerFetch<SavedApiRequest>("/api-request/import-to-library", {
       method: "POST",
@@ -559,7 +558,7 @@ export const runnerApi = {
     body?: string,
     contentType?: string,
     timeoutMs?: number,
-    followRedirects?: boolean
+    followRedirects?: boolean,
   ) =>
     runnerFetch<ApiRequestTestResult>("/api-request/test", {
       method: "POST",
@@ -597,14 +596,14 @@ export const runnerApi = {
     }),
 
   // Playwright import/export
-  importPlaywrightScript: (data: Record<string, unknown>) =>
-    runnerFetch<PlaywrightScript>("/playwright/scripts/import", {
+  importPlaywrightTest: (data: Record<string, unknown>) =>
+    runnerFetch<PlaywrightScript>("/playwright/tests/import", {
       method: "POST",
       body: JSON.stringify(data),
     }),
 
-  exportPlaywrightScript: (id: string) =>
-    runnerFetch<Record<string, unknown>>(`/playwright/scripts/${id}/export`, {
+  exportPlaywrightTest: (id: string) =>
+    runnerFetch<Record<string, unknown>>(`/playwright/tests/${id}/export`, {
       method: "GET",
     }),
 
@@ -634,24 +633,25 @@ export const runnerApi = {
     runnerFetch<Macro[]>(`/macros/search?q=${encodeURIComponent(query)}`),
   getMacroCategories: () => runnerFetch<string[]>("/macros/categories"),
 
-  // Scriptlets CRUD
-  getScriptlets: () => runnerFetch<Scriptlet[]>("/scriptlets"),
-  getScriptlet: (id: string) => runnerFetch<Scriptlet>(`/scriptlets/${id}`),
-  createScriptlet: (scriptlet: Partial<Scriptlet>) =>
-    runnerFetch<Scriptlet>("/scriptlets", {
+  // Prompt Snippets CRUD
+  getPromptSnippets: () => runnerFetch<PromptSnippet[]>("/prompt-snippets"),
+  getPromptSnippet: (id: string) =>
+    runnerFetch<PromptSnippet>(`/prompt-snippets/${id}`),
+  createPromptSnippet: (snippet: Partial<PromptSnippet>) =>
+    runnerFetch<PromptSnippet>("/prompt-snippets", {
       method: "POST",
-      body: JSON.stringify(scriptlet),
+      body: JSON.stringify(snippet),
     }),
-  updateScriptlet: (id: string, scriptlet: Partial<Scriptlet>) =>
-    runnerFetch<Scriptlet>(`/scriptlets/${id}`, {
+  updatePromptSnippet: (id: string, snippet: Partial<PromptSnippet>) =>
+    runnerFetch<PromptSnippet>(`/prompt-snippets/${id}`, {
       method: "PUT",
-      body: JSON.stringify(scriptlet),
+      body: JSON.stringify(snippet),
     }),
-  deleteScriptlet: (id: string) =>
-    runnerFetch<void>(`/scriptlets/${id}`, { method: "DELETE" }),
-  searchScriptlets: (query: string) =>
-    runnerFetch<Scriptlet[]>(
-      `/scriptlets/search?q=${encodeURIComponent(query)}`
+  deletePromptSnippet: (id: string) =>
+    runnerFetch<void>(`/prompt-snippets/${id}`, { method: "DELETE" }),
+  searchPromptSnippets: (query: string) =>
+    runnerFetch<PromptSnippet[]>(
+      `/prompt-snippets/search?q=${encodeURIComponent(query)}`,
     ),
 
   // AWAS
@@ -671,7 +671,7 @@ export const runnerApi = {
     url: string,
     actionId: string,
     params?: Record<string, unknown>,
-    timeoutSeconds?: number
+    timeoutSeconds?: number,
   ) =>
     runnerFetch<AwasExecuteResponse>("/awas/execute", {
       method: "POST",
@@ -688,7 +688,7 @@ export const runnerApi = {
       {
         method: "POST",
         body: JSON.stringify({ html, base_url: baseUrl }),
-      }
+      },
     ),
 
   // State Explorer
@@ -753,8 +753,7 @@ export const runnerApi = {
     }),
 
   // App Mode
-  getAppMode: () =>
-    runnerFetch<{ mode: string }>("/settings/app-mode"),
+  getAppMode: () => runnerFetch<{ mode: string }>("/settings/app-mode"),
   setAppMode: (mode: string) =>
     runnerFetch<void>("/settings/app-mode", {
       method: "PUT",
@@ -834,7 +833,7 @@ export const runnerApi = {
     }),
   hasSelfHealingApiKey: (provider: string) =>
     runnerFetch<{ has_key: boolean }>(
-      `/settings/self-healing/has-key/${provider}`
+      `/settings/self-healing/has-key/${provider}`,
     ),
 
   // Mobile Settings
@@ -874,7 +873,7 @@ export const runnerApi = {
     options?: {
       conflict_resolution?: string;
       categories?: Record<string, boolean>;
-    }
+    },
   ) =>
     runnerFetch<{
       imported: number;
@@ -924,7 +923,7 @@ export const runnerApi = {
       {
         method: "POST",
         body: JSON.stringify({ fps: fps ?? 30, output_dir: outputDir }),
-      }
+      },
     ),
 
   stopInteractionRecording: () =>
@@ -952,7 +951,7 @@ export const runnerApi = {
   updateFindingStatus: (
     findingId: string,
     status: string,
-    resolution?: string
+    resolution?: string,
   ) =>
     runnerFetch<void>(`/findings/${findingId}/status`, {
       method: "PUT",
@@ -997,6 +996,35 @@ export const runnerApi = {
     runnerFetch<void>(`/task-runs/${id}/pause`, { method: "POST" }),
   resumeTaskRun: (id: string | number) =>
     runnerFetch<void>(`/task-runs/${id}/resume`, { method: "POST" }),
+
+  // UI Bridge App Discovery & Comparison
+  uiBridgeScanWeb: () =>
+    runnerFetch<{ apps: unknown[] }>("/ui-bridge/apps/scan/web"),
+  uiBridgeScanDesktop: () =>
+    runnerFetch<{ apps: unknown[] }>("/ui-bridge/apps/scan/desktop"),
+  uiBridgeConnect: (config: { url: string; port?: number }) =>
+    runnerFetch<{ success: boolean }>("/ui-bridge/sdk/connect", {
+      method: "POST",
+      body: JSON.stringify(config),
+    }),
+  uiBridgeSwitch: (url: string) =>
+    runnerFetch<{ success: boolean }>("/ui-bridge/sdk/switch", {
+      method: "POST",
+      body: JSON.stringify({ url }),
+    }),
+  uiBridgeSnapshot: () =>
+    runnerFetch<Record<string, unknown>>("/ui-bridge/sdk/snapshot"),
+  aiCompareSnapshots: (data: {
+    reference_snapshot: unknown;
+    target_snapshot: unknown;
+    comparison_mode: string;
+    user_prompt?: string;
+  }) =>
+    runnerFetch<Record<string, unknown>>("/ai/compare-snapshots", {
+      method: "POST",
+      body: JSON.stringify(data),
+      timeoutMs: 120000,
+    }),
 
   // Execute Action
   executeAction: (params: {

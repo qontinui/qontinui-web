@@ -1,13 +1,17 @@
 "use client";
 
 /**
- * React Query hooks for runner-native entities (scripts, scriptlets, tests).
+ * React Query hooks for runner-native entities (playwright tests, prompt snippets, tests).
  * These entities live entirely in the runner (not backend API).
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { runnerApi } from "@/lib/runner/runner-api-object";
-import type { PlaywrightScript, Scriptlet } from "@/lib/runner/types/library";
+import type {
+  PlaywrightScript,
+  PromptSnippet,
+  SavedPrompt,
+} from "@/lib/runner/types/library";
 
 // =============================================================================
 // Query Key Factory
@@ -22,105 +26,172 @@ export const runnerEntityKeys = {
 };
 
 // =============================================================================
-// Scripts (Playwright)
+// Playwright Tests
 // =============================================================================
 
-export function useScriptsList() {
+export function usePlaywrightTestsList() {
   return useQuery({
-    queryKey: runnerEntityKeys.list("scripts"),
-    queryFn: () => runnerApi.getPlaywrightScripts(),
+    queryKey: runnerEntityKeys.list("playwright-tests"),
+    queryFn: () => runnerApi.getPlaywrightTests(),
     staleTime: 30000,
   });
 }
 
-export function useCreateScript() {
+export function useCreatePlaywrightTest() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: Partial<PlaywrightScript>) =>
-      runnerApi.createPlaywrightScript(data),
+      runnerApi.createPlaywrightTest(data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: runnerEntityKeys.type("scripts") });
+      qc.invalidateQueries({
+        queryKey: runnerEntityKeys.type("playwright-tests"),
+      });
     },
   });
 }
 
-export function useUpdateScript() {
+export function useUpdatePlaywrightTest() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<PlaywrightScript> }) =>
-      runnerApi.updatePlaywrightScript(id, data),
+    mutationFn: ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: Partial<PlaywrightScript>;
+    }) => runnerApi.updatePlaywrightTest(id, data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: runnerEntityKeys.type("scripts") });
+      qc.invalidateQueries({
+        queryKey: runnerEntityKeys.type("playwright-tests"),
+      });
     },
   });
 }
 
-export function useDeleteScript() {
+export function useDeletePlaywrightTest() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => runnerApi.deletePlaywrightScript(id),
+    mutationFn: (id: string) => runnerApi.deletePlaywrightTest(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: runnerEntityKeys.type("scripts") });
+      qc.invalidateQueries({
+        queryKey: runnerEntityKeys.type("playwright-tests"),
+      });
     },
   });
 }
 
-export function useDuplicateScript() {
+export function useDuplicatePlaywrightTest() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, newName }: { id: string; newName?: string }) =>
-      runnerApi.duplicatePlaywrightScript(id, newName),
+      runnerApi.duplicatePlaywrightTest(id, newName),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: runnerEntityKeys.type("scripts") });
+      qc.invalidateQueries({
+        queryKey: runnerEntityKeys.type("playwright-tests"),
+      });
     },
   });
 }
 
 // =============================================================================
-// Scriptlets
+// Prompt Snippets
 // =============================================================================
 
-export function useRunnerScriptletsList() {
+export function useRunnerPromptSnippetsList() {
   return useQuery({
-    queryKey: runnerEntityKeys.list("scriptlets"),
-    queryFn: () => runnerApi.getScriptlets(),
+    queryKey: runnerEntityKeys.list("prompt-snippets"),
+    queryFn: () => runnerApi.getPromptSnippets(),
     staleTime: 30000,
   });
 }
 
-export function useCreateRunnerScriptlet() {
+export function useCreateRunnerPromptSnippet() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: Partial<Scriptlet>) => runnerApi.createScriptlet(data),
+    mutationFn: (data: Partial<PromptSnippet>) =>
+      runnerApi.createPromptSnippet(data),
     onSuccess: () => {
       qc.invalidateQueries({
-        queryKey: runnerEntityKeys.type("scriptlets"),
+        queryKey: runnerEntityKeys.type("prompt-snippets"),
       });
     },
   });
 }
 
-export function useUpdateRunnerScriptlet() {
+export function useUpdateRunnerPromptSnippet() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<Scriptlet> }) =>
-      runnerApi.updateScriptlet(id, data),
+    mutationFn: ({ id, data }: { id: string; data: Partial<PromptSnippet> }) =>
+      runnerApi.updatePromptSnippet(id, data),
     onSuccess: () => {
       qc.invalidateQueries({
-        queryKey: runnerEntityKeys.type("scriptlets"),
+        queryKey: runnerEntityKeys.type("prompt-snippets"),
       });
     },
   });
 }
 
-export function useDeleteRunnerScriptlet() {
+export function useDeleteRunnerPromptSnippet() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => runnerApi.deleteScriptlet(id),
+    mutationFn: (id: string) => runnerApi.deletePromptSnippet(id),
     onSuccess: () => {
       qc.invalidateQueries({
-        queryKey: runnerEntityKeys.type("scriptlets"),
+        queryKey: runnerEntityKeys.type("prompt-snippets"),
       });
+    },
+  });
+}
+
+// =============================================================================
+// Prompts (Tasks)
+// =============================================================================
+
+export function usePromptsList() {
+  return useQuery({
+    queryKey: runnerEntityKeys.list("prompts"),
+    queryFn: () => runnerApi.getPrompts(),
+    staleTime: 30000,
+  });
+}
+
+export function useCreatePrompt() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<SavedPrompt>) => runnerApi.createPrompt(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: runnerEntityKeys.type("prompts") });
+    },
+  });
+}
+
+export function useUpdatePrompt() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<SavedPrompt> }) =>
+      runnerApi.updatePrompt(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: runnerEntityKeys.type("prompts") });
+    },
+  });
+}
+
+export function useDeletePrompt() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => runnerApi.deletePrompt(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: runnerEntityKeys.type("prompts") });
+    },
+  });
+}
+
+export function useDuplicatePrompt() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => runnerApi.duplicatePrompt(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: runnerEntityKeys.type("prompts") });
     },
   });
 }
@@ -171,7 +242,13 @@ export function useCreateTest() {
 export function useUpdateTest() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<RunnerTest> }) => {
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: Partial<RunnerTest>;
+    }) => {
       const { runnerFetch } = await import("@/lib/runner/api-client");
       return runnerFetch<RunnerTest>(`/tests/${id}`, {
         method: "PUT",

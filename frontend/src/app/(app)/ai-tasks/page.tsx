@@ -184,7 +184,7 @@ export default function AITasksPage() {
             <div className="flex items-center gap-4">
               <Button
                 variant="ghost"
-                onClick={() => router.push("/dashboard")}
+                onClick={() => router.push("/build/workflows")}
                 className="text-text-muted hover:text-white"
               >
                 <ArrowLeft className="w-4 h-4 mr-2" />
@@ -284,7 +284,7 @@ export default function AITasksPage() {
                             className="border-border-subtle/50 hover:bg-surface-raised/30 cursor-pointer"
                             onClick={() =>
                               router.push(
-                                `/ai-tasks/${task.id}${projectId ? `?project=${projectId}` : ""}`
+                                `/ai-tasks/${task.id}${projectId ? `?project=${projectId}` : ""}`,
                               )
                             }
                           >
@@ -317,7 +317,7 @@ export default function AITasksPage() {
                               <div className="text-sm text-text-muted">
                                 {format(
                                   new Date(task.created_at),
-                                  "MMM dd, yyyy HH:mm"
+                                  "MMM dd, yyyy HH:mm",
                                 )}
                               </div>
                             </TableCell>

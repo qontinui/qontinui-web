@@ -87,7 +87,7 @@ export default function MobileAdminDashboard() {
 
     if (!authLoading && user && !user.is_superuser) {
       toast.error("Access denied - Admin privileges required");
-      router.push("/dashboard");
+      router.push("/build/workflows");
       return;
     }
   }, [user, authLoading, router]);
@@ -122,12 +122,12 @@ export default function MobileAdminDashboard() {
     healthOverview?.overall_status === "degraded" ||
     healthOverview?.overall_status === "down" ||
     securityWarnings?.some(
-      (w) => w.severity === "high" || w.severity === "critical"
+      (w) => w.severity === "high" || w.severity === "critical",
     );
 
   const criticalWarnings =
     securityWarnings?.filter(
-      (w) => w.severity === "critical" || w.severity === "high"
+      (w) => w.severity === "critical" || w.severity === "high",
     ) || [];
 
   return (

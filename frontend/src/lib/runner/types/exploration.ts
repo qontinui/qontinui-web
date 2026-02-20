@@ -52,6 +52,46 @@ export interface ExplorationReport {
   details?: unknown;
 }
 
+// =============================================================================
+// App Comparison Types
+// =============================================================================
+
+export interface DiscoveredApp {
+  appId: string;
+  appName: string;
+  appType: "web" | "desktop" | "mobile";
+  url: string;
+  port: number;
+  framework?: string;
+  elementCount?: number;
+  capabilities: string[];
+}
+
+export interface ComparisonSpec {
+  id: string;
+  name: string;
+  description: string;
+  type:
+    | "missing_element"
+    | "extra_element"
+    | "different_text"
+    | "different_structure"
+    | "layout_mismatch";
+  severity: "critical" | "major" | "minor" | "info";
+  suggestion?: string;
+  confidence: number;
+}
+
+export interface ComparisonResult {
+  specs: ComparisonSpec[];
+  summary: string;
+  totalDifferences: number;
+  criticalCount: number;
+  majorCount: number;
+  minorCount: number;
+  infoCount: number;
+}
+
 export interface ContextAutoInclude {
   taskMentions?: string[];
   actionTypes?: string[];

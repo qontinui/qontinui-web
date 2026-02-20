@@ -33,7 +33,7 @@ export default function AnnotationsPage() {
   useEffect(() => {
     if (!loading && !user?.is_superuser) {
       toast.error("Admin access required");
-      router.push("/dashboard");
+      router.push("/build/workflows");
     }
   }, [user, loading, router]);
 

@@ -29,7 +29,7 @@ export default function RunnerPage() {
       <div className="mb-6 flex items-center gap-4">
         <Button
           variant="ghost"
-          onClick={() => router.push("/dashboard")}
+          onClick={() => router.push("/build/workflows")}
           className="hover:bg-primary/10"
         >
           <LayoutDashboard className="mr-2 h-4 w-4" />

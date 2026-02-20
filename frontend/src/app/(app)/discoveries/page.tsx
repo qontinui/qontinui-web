@@ -38,7 +38,7 @@ export default function DiscoveriesPage() {
   const { data: pendingCount } = usePendingDiscoveriesCount();
 
   const handleBackToDashboard = () => {
-    router.push("/dashboard");
+    router.push("/build/workflows");
   };
 
   // Show loading while auth is checking

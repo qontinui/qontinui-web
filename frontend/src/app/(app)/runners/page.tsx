@@ -19,7 +19,7 @@ export default function RunnersPage() {
   const { connections: activeConnections } = useRealtimeConnections();
 
   const handleBackToDashboard = () => {
-    router.push("/dashboard");
+    router.push("/build/workflows");
   };
 
   // Show loading while auth is checking
@@ -79,8 +79,8 @@ export default function RunnersPage() {
         <div className="mb-8">
           <h2 className="text-3xl font-bold mb-2">Manage Desktop Runners</h2>
           <p className="text-text-muted">
-            Create tokens, monitor connections, and view connection history for
-            your desktop runners
+            Monitor connections and view connection history for your desktop
+            runners
           </p>
         </div>
 

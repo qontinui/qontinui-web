@@ -77,7 +77,7 @@ export default function ProfilePage() {
   };
 
   const handleBackToDashboard = () => {
-    router.push("/dashboard");
+    router.push("/build/workflows");
   };
 
   // Show loading while auth is checking

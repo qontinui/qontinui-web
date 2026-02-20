@@ -34,24 +34,15 @@ logger = logging.getLogger(__name__)
 # Each entry: (step_type, phase, label, description, icon, color, sort_order)
 
 DEFAULT_STEP_TYPES: list[dict] = [
-    # ── Setup phase (4 core types) ──
+    # ── Setup phase (3 core types) ──
     {
         "step_type": "command",
         "phase": "setup",
         "label": "Command",
-        "description": "Run shell commands or checks",
+        "description": "Run shell commands, checks, or tests",
         "icon": "Terminal",
         "color": "gray",
         "sort_order": 1,
-    },
-    {
-        "step_type": "test",
-        "phase": "setup",
-        "label": "Test",
-        "description": "Run verification tests",
-        "icon": "TestTube2",
-        "color": "green",
-        "sort_order": 2,
     },
     {
         "step_type": "ui_bridge",
@@ -60,7 +51,7 @@ DEFAULT_STEP_TYPES: list[dict] = [
         "description": "Interact with UI via UI Bridge SDK",
         "icon": "Monitor",
         "color": "emerald",
-        "sort_order": 3,
+        "sort_order": 2,
     },
     {
         "step_type": "prompt",
@@ -69,26 +60,17 @@ DEFAULT_STEP_TYPES: list[dict] = [
         "description": "AI-driven task",
         "icon": "Bot",
         "color": "violet",
-        "sort_order": 4,
+        "sort_order": 3,
     },
-    # ── Verification phase (4 core types) ──
+    # ── Verification phase (3 core types) ──
     {
         "step_type": "command",
         "phase": "verification",
         "label": "Command",
-        "description": "Run commands for verification",
+        "description": "Run commands, checks, or tests for verification",
         "icon": "Terminal",
         "color": "gray",
         "sort_order": 1,
-    },
-    {
-        "step_type": "test",
-        "phase": "verification",
-        "label": "Test",
-        "description": "Run verification tests",
-        "icon": "TestTube2",
-        "color": "green",
-        "sort_order": 2,
     },
     {
         "step_type": "ui_bridge",
@@ -97,7 +79,7 @@ DEFAULT_STEP_TYPES: list[dict] = [
         "description": "Verify UI state via UI Bridge",
         "icon": "Monitor",
         "color": "emerald",
-        "sort_order": 3,
+        "sort_order": 2,
     },
     {
         "step_type": "prompt",
@@ -106,7 +88,7 @@ DEFAULT_STEP_TYPES: list[dict] = [
         "description": "AI-evaluated criteria",
         "icon": "Bot",
         "color": "violet",
-        "sort_order": 4,
+        "sort_order": 3,
     },
     # ── Agentic phase (prompt only) ──
     {
@@ -118,24 +100,15 @@ DEFAULT_STEP_TYPES: list[dict] = [
         "color": "amber",
         "sort_order": 1,
     },
-    # ── Completion phase (4 core types) ──
+    # ── Completion phase (3 core types) ──
     {
         "step_type": "command",
         "phase": "completion",
         "label": "Command",
-        "description": "Run cleanup commands",
+        "description": "Run cleanup commands or final tests",
         "icon": "Terminal",
         "color": "gray",
         "sort_order": 1,
-    },
-    {
-        "step_type": "test",
-        "phase": "completion",
-        "label": "Test",
-        "description": "Final tests",
-        "icon": "TestTube2",
-        "color": "green",
-        "sort_order": 2,
     },
     {
         "step_type": "ui_bridge",
@@ -144,7 +117,7 @@ DEFAULT_STEP_TYPES: list[dict] = [
         "description": "Final UI interactions",
         "icon": "Monitor",
         "color": "emerald",
-        "sort_order": 3,
+        "sort_order": 2,
     },
     {
         "step_type": "prompt",
@@ -153,7 +126,7 @@ DEFAULT_STEP_TYPES: list[dict] = [
         "description": "Final AI actions",
         "icon": "Bot",
         "color": "violet",
-        "sort_order": 4,
+        "sort_order": 3,
     },
 ]
 
@@ -344,6 +317,36 @@ async def backfill_missing_built_in_step_types(
     return new_rows
 
 
+async def cleanup_removed_built_in_step_types(
+    db: AsyncSession, user_id: UUID, existing: list[StepTypeConfig]
+) -> None:
+    """Remove built-in step types that are no longer in the defaults.
+
+    When a built-in step type is removed (e.g., "test" merged into "command"),
+    this cleans up the stale rows so users don't see outdated types.
+    """
+    runner_types = await fetch_step_types_from_runner()
+    source_types = runner_types if runner_types else DEFAULT_STEP_TYPES
+
+    valid_keys = {(entry["step_type"], entry["phase"]) for entry in source_types}
+    removed: list[StepTypeConfig] = []
+
+    for row in existing:
+        if row.is_built_in and (row.step_type, row.phase) not in valid_keys:
+            removed.append(row)
+
+    if removed:
+        logger.info(
+            "Removing %d stale built-in step types for user %s: %s",
+            len(removed),
+            user_id,
+            [(r.step_type, r.phase) for r in removed],
+        )
+        for row in removed:
+            await db.delete(row)
+        await db.commit()
+
+
 async def get_user_step_types(
     db: AsyncSession, user_id: UUID, phase: str | None = None
 ) -> list[StepTypeConfig]:
@@ -356,6 +359,15 @@ async def get_user_step_types(
     if not rows and phase is None:
         rows = await seed_default_step_types(db, user_id)
     elif rows and phase is None:
+        # Clean up stale built-in types (e.g., "test" merged into "command")
+        await cleanup_removed_built_in_step_types(db, user_id, rows)
+        # Re-query after cleanup to get accurate list
+        result = await db.execute(
+            select(StepTypeConfig)
+            .filter(StepTypeConfig.user_id == user_id)
+            .order_by(StepTypeConfig.phase, StepTypeConfig.sort_order)
+        )
+        rows = list(result.scalars().all())
         # Backfill any new built-in types added since the user was seeded
         new_rows = await backfill_missing_built_in_step_types(db, user_id, rows)
         if new_rows:

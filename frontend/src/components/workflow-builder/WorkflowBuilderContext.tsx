@@ -71,6 +71,14 @@ type WorkflowBuilderAction =
         direction: "up" | "down";
       };
     }
+  | {
+      type: "REORDER_STEPS";
+      payload: { phase: WorkflowPhase; stepIds: string[] };
+    }
+  | {
+      type: "DUPLICATE_STEP";
+      payload: { stepId: string; phase: WorkflowPhase };
+    }
   | { type: "SELECT_STEP"; payload: string | null }
   | { type: "TOGGLE_PHASE"; payload: WorkflowPhase }
   | {
@@ -89,7 +97,7 @@ type WorkflowBuilderAction =
 
 function workflowBuilderReducer(
   state: WorkflowBuilderState,
-  action: WorkflowBuilderAction
+  action: WorkflowBuilderAction,
 ): WorkflowBuilderState {
   switch (action.type) {
     case "SET_WORKFLOW":
@@ -165,7 +173,7 @@ function workflowBuilderReducer(
           const existingSteps = state.workflow.completion_steps ?? [];
           const summaryIndex = existingSteps.findIndex(
             (s) =>
-              s.type === "prompt" && (s as PromptStep).is_summary_step === true
+              s.type === "prompt" && (s as PromptStep).is_summary_step === true,
           );
 
           let newSteps: CompletionStep[];
@@ -203,7 +211,7 @@ function workflowBuilderReducer(
             workflow: {
               ...state.workflow,
               setup_steps: state.workflow.setup_steps.filter(
-                (s) => s.id !== stepId
+                (s) => s.id !== stepId,
               ),
             },
             selectedStepId: clearSelection,
@@ -214,7 +222,7 @@ function workflowBuilderReducer(
             workflow: {
               ...state.workflow,
               verification_steps: state.workflow.verification_steps.filter(
-                (s) => s.id !== stepId
+                (s) => s.id !== stepId,
               ),
             },
             selectedStepId: clearSelection,
@@ -225,7 +233,7 @@ function workflowBuilderReducer(
             workflow: {
               ...state.workflow,
               agentic_steps: state.workflow.agentic_steps.filter(
-                (s) => s.id !== stepId
+                (s) => s.id !== stepId,
               ),
             },
             selectedStepId: clearSelection,
@@ -236,7 +244,7 @@ function workflowBuilderReducer(
             workflow: {
               ...state.workflow,
               completion_steps: (state.workflow.completion_steps ?? []).filter(
-                (s) => s.id !== stepId
+                (s) => s.id !== stepId,
               ),
             },
             selectedStepId: clearSelection,
@@ -256,7 +264,7 @@ function workflowBuilderReducer(
             workflow: {
               ...state.workflow,
               setup_steps: state.workflow.setup_steps.map((s) =>
-                s.id === step.id ? (step as SetupStep) : s
+                s.id === step.id ? (step as SetupStep) : s,
               ),
             },
           };
@@ -266,7 +274,7 @@ function workflowBuilderReducer(
             workflow: {
               ...state.workflow,
               verification_steps: state.workflow.verification_steps.map((s) =>
-                s.id === step.id ? (step as VerificationStep) : s
+                s.id === step.id ? (step as VerificationStep) : s,
               ),
             },
           };
@@ -276,7 +284,7 @@ function workflowBuilderReducer(
             workflow: {
               ...state.workflow,
               agentic_steps: state.workflow.agentic_steps.map((s) =>
-                s.id === step.id ? (step as AgenticStep) : s
+                s.id === step.id ? (step as AgenticStep) : s,
               ),
             },
           };
@@ -286,7 +294,7 @@ function workflowBuilderReducer(
             workflow: {
               ...state.workflow,
               completion_steps: (state.workflow.completion_steps ?? []).map(
-                (s) => (s.id === step.id ? (step as CompletionStep) : s)
+                (s) => (s.id === step.id ? (step as CompletionStep) : s),
               ),
             },
           };
@@ -351,7 +359,7 @@ function workflowBuilderReducer(
             workflow: {
               ...state.workflow,
               verification_steps: moveInArray(
-                state.workflow.verification_steps
+                state.workflow.verification_steps,
               ),
             },
           };
@@ -369,10 +377,131 @@ function workflowBuilderReducer(
             workflow: {
               ...state.workflow,
               completion_steps: moveInArray(
-                state.workflow.completion_steps ?? []
+                state.workflow.completion_steps ?? [],
               ),
             },
           };
+        default:
+          return state;
+      }
+    }
+
+    case "REORDER_STEPS": {
+      const { phase: reorderPhase, stepIds } = action.payload;
+
+      const reorderArray = <T extends { id: string }>(arr: T[]): T[] => {
+        const map = new Map(arr.map((s) => [s.id, s]));
+        const reordered: T[] = [];
+        for (const id of stepIds) {
+          const item = map.get(id);
+          if (item) reordered.push(item);
+        }
+        // Append any items not in stepIds (e.g. summary step)
+        for (const item of arr) {
+          if (!stepIds.includes(item.id)) reordered.push(item);
+        }
+        return reordered;
+      };
+
+      switch (reorderPhase) {
+        case "setup":
+          return {
+            ...state,
+            workflow: {
+              ...state.workflow,
+              setup_steps: reorderArray(state.workflow.setup_steps),
+            },
+          };
+        case "verification":
+          return {
+            ...state,
+            workflow: {
+              ...state.workflow,
+              verification_steps: reorderArray(
+                state.workflow.verification_steps,
+              ),
+            },
+          };
+        case "agentic":
+          return {
+            ...state,
+            workflow: {
+              ...state.workflow,
+              agentic_steps: reorderArray(state.workflow.agentic_steps),
+            },
+          };
+        case "completion":
+          return {
+            ...state,
+            workflow: {
+              ...state.workflow,
+              completion_steps: reorderArray(
+                state.workflow.completion_steps ?? [],
+              ),
+            },
+          };
+        default:
+          return state;
+      }
+    }
+
+    case "DUPLICATE_STEP": {
+      const { stepId: dupStepId, phase: dupPhase } = action.payload;
+
+      const duplicateInArray = <T extends { id: string; name: string }>(
+        arr: T[],
+      ): { arr: T[]; newId: string | null } => {
+        const index = arr.findIndex((s) => s.id === dupStepId);
+        if (index === -1) return { arr, newId: null };
+        const original = arr[index]!;
+        const newId = generateStepId();
+        const clone = {
+          ...JSON.parse(JSON.stringify(original)),
+          id: newId,
+          name: `${original.name} (copy)`,
+        } as T;
+        const newArr = [...arr];
+        newArr.splice(index + 1, 0, clone);
+        return { arr: newArr, newId };
+      };
+
+      switch (dupPhase) {
+        case "setup": {
+          const { arr, newId } = duplicateInArray(state.workflow.setup_steps);
+          return {
+            ...state,
+            workflow: { ...state.workflow, setup_steps: arr },
+            selectedStepId: newId ?? state.selectedStepId,
+          };
+        }
+        case "verification": {
+          const { arr, newId } = duplicateInArray(
+            state.workflow.verification_steps,
+          );
+          return {
+            ...state,
+            workflow: { ...state.workflow, verification_steps: arr },
+            selectedStepId: newId ?? state.selectedStepId,
+          };
+        }
+        case "agentic": {
+          const { arr, newId } = duplicateInArray(state.workflow.agentic_steps);
+          return {
+            ...state,
+            workflow: { ...state.workflow, agentic_steps: arr },
+            selectedStepId: newId ?? state.selectedStepId,
+          };
+        }
+        case "completion": {
+          const { arr, newId } = duplicateInArray(
+            state.workflow.completion_steps ?? [],
+          );
+          return {
+            ...state,
+            workflow: { ...state.workflow, completion_steps: arr },
+            selectedStepId: newId ?? state.selectedStepId,
+          };
+        }
         default:
           return state;
       }
@@ -450,8 +579,10 @@ interface WorkflowBuilderContextValue {
   moveStep: (
     stepId: string,
     phase: WorkflowPhase,
-    direction: "up" | "down"
+    direction: "up" | "down",
   ) => void;
+  reorderSteps: (phase: WorkflowPhase, stepIds: string[]) => void;
+  duplicateStep: (stepId: string, phase: WorkflowPhase) => void;
   selectStep: (stepId: string | null) => void;
   getSelectedStep: () => UnifiedStep | null;
   togglePhase: (phase: WorkflowPhase) => void;
@@ -465,7 +596,7 @@ interface WorkflowBuilderContextValue {
   exportWorkflow: (id: string) => Promise<WorkflowExport | null>;
   importWorkflow: (
     workflow: UnifiedWorkflow,
-    conflictStrategy?: "keep" | "generate" | "overwrite"
+    conflictStrategy?: "keep" | "generate" | "overwrite",
   ) => Promise<WorkflowImportResult | null>;
 }
 
@@ -577,7 +708,7 @@ export function WorkflowBuilderProvider({
 
   const features = useMemo(
     () => detectWorkflowFeatures(state.workflow),
-    [state.workflow]
+    [state.workflow],
   );
 
   const hasUnsavedChanges = useMemo(() => {
@@ -591,7 +722,7 @@ export function WorkflowBuilderProvider({
 
   const isEmpty = useMemo(
     () => isWorkflowEmpty(state.workflow),
-    [state.workflow]
+    [state.workflow],
   );
 
   const setWorkflow = useCallback((workflow: UnifiedWorkflow) => {
@@ -622,8 +753,19 @@ export function WorkflowBuilderProvider({
     (stepId: string, phase: WorkflowPhase, direction: "up" | "down") => {
       dispatch({ type: "MOVE_STEP", payload: { stepId, phase, direction } });
     },
-    []
+    [],
   );
+
+  const reorderSteps = useCallback(
+    (phase: WorkflowPhase, stepIds: string[]) => {
+      dispatch({ type: "REORDER_STEPS", payload: { phase, stepIds } });
+    },
+    [],
+  );
+
+  const duplicateStep = useCallback((stepId: string, phase: WorkflowPhase) => {
+    dispatch({ type: "DUPLICATE_STEP", payload: { stepId, phase } });
+  }, []);
 
   const selectStep = useCallback((stepId: string | null) => {
     dispatch({ type: "SELECT_STEP", payload: stepId });
@@ -654,7 +796,7 @@ export function WorkflowBuilderProvider({
     (phase: WorkflowPhase, expanded: boolean) => {
       dispatch({ type: "SET_PHASE_EXPANDED", payload: { phase, expanded } });
     },
-    []
+    [],
   );
 
   const setLoading = useCallback((loading: boolean) => {
@@ -737,13 +879,13 @@ export function WorkflowBuilderProvider({
         return null;
       }
     },
-    []
+    [],
   );
 
   const importWorkflow = useCallback(
     async (
       workflow: UnifiedWorkflow,
-      conflictStrategy: "keep" | "generate" | "overwrite" = "generate"
+      conflictStrategy: "keep" | "generate" | "overwrite" = "generate",
     ): Promise<WorkflowImportResult | null> => {
       dispatch({ type: "SET_LOADING", payload: true });
       dispatch({ type: "SET_ERROR", payload: null });
@@ -764,7 +906,7 @@ export function WorkflowBuilderProvider({
         return null;
       }
     },
-    []
+    [],
   );
 
   const value: WorkflowBuilderContextValue = {
@@ -779,6 +921,8 @@ export function WorkflowBuilderProvider({
     removeStep,
     updateStep,
     moveStep,
+    reorderSteps,
+    duplicateStep,
     selectStep,
     getSelectedStep,
     togglePhase,
@@ -808,7 +952,7 @@ export function useWorkflowBuilder(): WorkflowBuilderContextValue {
   const context = useContext(WorkflowBuilderContext);
   if (!context) {
     throw new Error(
-      "useWorkflowBuilder must be used within a WorkflowBuilderProvider"
+      "useWorkflowBuilder must be used within a WorkflowBuilderProvider",
     );
   }
   return context;

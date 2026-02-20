@@ -2,7 +2,7 @@
  * Library service for backend CRUD operations on library items.
  *
  * Covers: checks, check groups, shell commands, saved API requests,
- * contexts, macros, and scriptlets.
+ * contexts, macros, and prompt snippets.
  */
 
 import { httpClient } from "@/services/service-factory";
@@ -141,7 +141,9 @@ export interface ShellCommandCreate {
   tags?: string[];
   project_id?: string | null;
 }
-export type ShellCommandUpdate = Partial<Omit<ShellCommandCreate, "project_id">>;
+export type ShellCommandUpdate = Partial<
+  Omit<ShellCommandCreate, "project_id">
+>;
 
 // --- SavedApiRequest ---
 
@@ -185,7 +187,9 @@ export interface SavedApiRequestCreate {
   tags?: string[];
   project_id?: string | null;
 }
-export type SavedApiRequestUpdate = Partial<Omit<SavedApiRequestCreate, "project_id">>;
+export type SavedApiRequestUpdate = Partial<
+  Omit<SavedApiRequestCreate, "project_id">
+>;
 
 // --- Context ---
 
@@ -266,9 +270,9 @@ export interface MacroCreate {
 }
 export type MacroUpdate = Partial<Omit<MacroCreate, "project_id">>;
 
-// --- Scriptlet ---
+// --- Prompt Snippet ---
 
-export interface ScriptletItem {
+export interface PromptSnippetItem {
   id: string;
   created_by_user_id: string;
   project_id: string | null;
@@ -282,12 +286,12 @@ export interface ScriptletItem {
   updated_at: string;
 }
 
-export interface ScriptletListResponse {
-  items: ScriptletItem[];
+export interface PromptSnippetListResponse {
+  items: PromptSnippetItem[];
   pagination: Pagination;
 }
 
-export interface ScriptletCreate {
+export interface PromptSnippetCreate {
   name: string;
   description?: string | null;
   language: string;
@@ -296,7 +300,9 @@ export interface ScriptletCreate {
   tags?: string[];
   project_id?: string | null;
 }
-export type ScriptletUpdate = Partial<Omit<ScriptletCreate, "project_id">>;
+export type PromptSnippetUpdate = Partial<
+  Omit<PromptSnippetCreate, "project_id">
+>;
 
 // =============================================================================
 // Helper
@@ -317,20 +323,20 @@ function buildQuery(params?: LibraryListParams): string {
 // Generic CRUD factory
 // =============================================================================
 
-function createCrud<T, TCreate, TUpdate, TList extends { items: T[]; pagination: Pagination }>(
-  resource: string
-) {
+function createCrud<
+  T,
+  TCreate,
+  TUpdate,
+  TList extends { items: T[]; pagination: Pagination },
+>(resource: string) {
   return {
     list: (params?: LibraryListParams) =>
       httpClient.get<TList>(`${BASE}/${resource}${buildQuery(params)}`),
-    get: (id: string) =>
-      httpClient.get<T>(`${BASE}/${resource}/${id}`),
-    create: (data: TCreate) =>
-      httpClient.post<T>(`${BASE}/${resource}`, data),
+    get: (id: string) => httpClient.get<T>(`${BASE}/${resource}/${id}`),
+    create: (data: TCreate) => httpClient.post<T>(`${BASE}/${resource}`, data),
     update: (id: string, data: TUpdate) =>
       httpClient.put<T>(`${BASE}/${resource}/${id}`, data),
-    delete: (id: string) =>
-      httpClient.delete(`${BASE}/${resource}/${id}`),
+    delete: (id: string) => httpClient.delete(`${BASE}/${resource}/${id}`),
   };
 }
 
@@ -338,10 +344,45 @@ function createCrud<T, TCreate, TUpdate, TList extends { items: T[]; pagination:
 // Exports
 // =============================================================================
 
-export const checksApi = createCrud<CheckItem, CheckCreate, CheckUpdate, CheckListResponse>("checks");
-export const checkGroupsApi = createCrud<CheckGroupItem, CheckGroupCreate, CheckGroupUpdate, CheckGroupListResponse>("check-groups");
-export const shellCommandsApi = createCrud<ShellCommandItem, ShellCommandCreate, ShellCommandUpdate, ShellCommandListResponse>("shell-commands");
-export const apiRequestsApi = createCrud<SavedApiRequestItem, SavedApiRequestCreate, SavedApiRequestUpdate, SavedApiRequestListResponse>("api-requests");
-export const contextsApi = createCrud<ContextItem, ContextCreate, ContextUpdate, ContextListResponse>("contexts");
-export const macrosApi = createCrud<MacroItem, MacroCreate, MacroUpdate, MacroListResponse>("macros");
-export const scriptletsApi = createCrud<ScriptletItem, ScriptletCreate, ScriptletUpdate, ScriptletListResponse>("scriptlets");
+export const checksApi = createCrud<
+  CheckItem,
+  CheckCreate,
+  CheckUpdate,
+  CheckListResponse
+>("checks");
+export const checkGroupsApi = createCrud<
+  CheckGroupItem,
+  CheckGroupCreate,
+  CheckGroupUpdate,
+  CheckGroupListResponse
+>("check-groups");
+export const shellCommandsApi = createCrud<
+  ShellCommandItem,
+  ShellCommandCreate,
+  ShellCommandUpdate,
+  ShellCommandListResponse
+>("shell-commands");
+export const apiRequestsApi = createCrud<
+  SavedApiRequestItem,
+  SavedApiRequestCreate,
+  SavedApiRequestUpdate,
+  SavedApiRequestListResponse
+>("api-requests");
+export const contextsApi = createCrud<
+  ContextItem,
+  ContextCreate,
+  ContextUpdate,
+  ContextListResponse
+>("contexts");
+export const macrosApi = createCrud<
+  MacroItem,
+  MacroCreate,
+  MacroUpdate,
+  MacroListResponse
+>("macros");
+export const promptSnippetsApi = createCrud<
+  PromptSnippetItem,
+  PromptSnippetCreate,
+  PromptSnippetUpdate,
+  PromptSnippetListResponse
+>("prompt-snippets");

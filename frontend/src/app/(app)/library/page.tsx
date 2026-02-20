@@ -3,7 +3,6 @@
 import Link from "next/link";
 import {
   ShieldCheck,
-  Layers,
   Terminal,
   Globe,
   BookOpen,
@@ -14,22 +13,18 @@ import {
   TestTube2,
   ArrowRight,
 } from "lucide-react";
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   useChecksList,
-  useCheckGroupsList,
   useShellCommandsList,
   useApiRequestsList,
   useContextsList,
   useMacrosList,
 } from "@/hooks/useLibrary";
 import {
-  useScriptsList,
-  useRunnerScriptletsList,
+  usePlaywrightTestsList,
+  useRunnerPromptSnippetsList,
   useTestsList,
 } from "@/components/builders/hooks/useRunnerEntity";
 
@@ -39,17 +34,19 @@ import {
 
 const libraryTypes = [
   {
-    name: "Scripts",
-    description: "Playwright browser automation scripts for testing and interaction.",
-    href: "/build/scripts",
+    name: "Playwright Tests",
+    description:
+      "Playwright browser automation tests for testing and interaction.",
+    href: "/build/playwright-tests",
     icon: FileCode,
     color: "text-blue-400",
     bgColor: "bg-blue-500/10",
-    countKey: "scripts" as const,
+    countKey: "playwrightTests" as const,
   },
   {
     name: "Tests",
-    description: "Automated tests including Playwright, Python, and vision-based testing.",
+    description:
+      "Automated tests including Playwright, Python, and vision-based testing.",
     href: "/build/tests",
     icon: TestTube2,
     color: "text-emerald-400",
@@ -58,21 +55,13 @@ const libraryTypes = [
   },
   {
     name: "Checks",
-    description: "Verification checks for linting, formatting, type checking, and more.",
+    description:
+      "Verification checks and check groups for linting, formatting, and more.",
     href: "/build/checks",
     icon: ShieldCheck,
     color: "text-green-400",
     bgColor: "bg-green-500/10",
     countKey: "checks" as const,
-  },
-  {
-    name: "Check Groups",
-    description: "Organized collections of checks that run together as a suite.",
-    href: "/build/check-groups",
-    icon: Layers,
-    color: "text-teal-400",
-    bgColor: "bg-teal-500/10",
-    countKey: "checkGroups" as const,
   },
   {
     name: "Shell Commands",
@@ -103,7 +92,8 @@ const libraryTypes = [
   },
   {
     name: "Macros",
-    description: "Sequential action macros combining clicks, keystrokes, and navigation.",
+    description:
+      "Sequential action macros combining clicks, keystrokes, and navigation.",
     href: "/build/macros",
     icon: Zap,
     color: "text-amber-400",
@@ -111,13 +101,14 @@ const libraryTypes = [
     countKey: "macros" as const,
   },
   {
-    name: "Scriptlets",
-    description: "Reusable code snippets for inline logic and data transformations.",
-    href: "/build/scriptlets",
+    name: "Prompt Snippets",
+    description:
+      "Reusable prompt snippets for inline logic and data transformations.",
+    href: "/build/prompt-snippets",
     icon: Code2,
     color: "text-indigo-400",
     bgColor: "bg-indigo-500/10",
-    countKey: "scriptlets" as const,
+    countKey: "promptSnippets" as const,
   },
 ];
 
@@ -128,25 +119,23 @@ const libraryTypes = [
 export default function LibraryPage() {
   // Fetch counts from all sources
   const { data: checks } = useChecksList();
-  const { data: checkGroups } = useCheckGroupsList();
   const { data: shellCommands } = useShellCommandsList();
   const { data: apiRequests } = useApiRequestsList();
   const { data: contexts } = useContextsList();
   const { data: macros } = useMacrosList();
-  const { data: scripts } = useScriptsList();
-  const { data: scriptlets } = useRunnerScriptletsList();
+  const { data: playwrightTests } = usePlaywrightTestsList();
+  const { data: promptSnippets } = useRunnerPromptSnippetsList();
   const { data: tests } = useTestsList();
 
   const counts: Record<string, number> = {
-    scripts: scripts?.length ?? 0,
+    playwrightTests: playwrightTests?.length ?? 0,
     tests: tests?.length ?? 0,
     checks: checks?.length ?? 0,
-    checkGroups: checkGroups?.length ?? 0,
     shellCommands: shellCommands?.length ?? 0,
     apiRequests: apiRequests?.length ?? 0,
     contexts: contexts?.length ?? 0,
     macros: macros?.length ?? 0,
-    scriptlets: scriptlets?.length ?? 0,
+    promptSnippets: promptSnippets?.length ?? 0,
   };
 
   const totalItems = Object.values(counts).reduce((a, b) => a + b, 0);
@@ -157,9 +146,11 @@ export default function LibraryPage() {
       <div className="flex items-center gap-3">
         <Library className="size-8 text-text-primary" />
         <div className="flex-1">
-          <h1 className="text-2xl font-bold tracking-tight text-text-primary">Library</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-text-primary">
+            Step Library
+          </h1>
           <p className="text-sm text-text-muted">
-            Manage reusable automation components
+            Browse and manage reusable workflow steps
           </p>
         </div>
         <Badge variant="outline" className="text-sm tabular-nums">
@@ -178,13 +169,20 @@ export default function LibraryPage() {
               <Card className="h-full transition-all hover:border-border-subtle hover:bg-surface-raised/40 cursor-pointer border-border-subtle/50 bg-surface-raised/20">
                 <CardContent className="p-4">
                   <div className="flex items-start gap-3">
-                    <div className={`flex size-10 items-center justify-center rounded-lg ${item.bgColor} shrink-0`}>
+                    <div
+                      className={`flex size-10 items-center justify-center rounded-lg ${item.bgColor} shrink-0`}
+                    >
                       <Icon className={`size-5 ${item.color}`} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-semibold text-text-primary">{item.name}</h3>
-                        <Badge variant="secondary" className="text-[10px] px-1.5 tabular-nums">
+                        <h3 className="text-sm font-semibold text-text-primary">
+                          {item.name}
+                        </h3>
+                        <Badge
+                          variant="secondary"
+                          className="text-[10px] px-1.5 tabular-nums"
+                        >
                           {count}
                         </Badge>
                       </div>

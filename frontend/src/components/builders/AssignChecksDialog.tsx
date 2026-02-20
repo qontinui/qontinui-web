@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { useChecks } from "@/lib/runner-api";
+import { useChecksList } from "@/hooks/useLibrary";
 import { Search } from "lucide-react";
 
 interface AssignChecksDialogProps {
@@ -30,7 +30,7 @@ export function AssignChecksDialog({
   selectedCheckIds,
   onSave,
 }: AssignChecksDialogProps) {
-  const { data: checks } = useChecks();
+  const { data: checks } = useChecksList();
   const [localSelected, setLocalSelected] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -50,7 +50,7 @@ export function AssignChecksDialog({
       (check) =>
         check.name.toLowerCase().includes(q) ||
         (check.check_type && check.check_type.toLowerCase().includes(q)) ||
-        (check.description && check.description.toLowerCase().includes(q))
+        (check.description && check.description.toLowerCase().includes(q)),
     );
   }, [checks, searchQuery]);
 

@@ -108,7 +108,7 @@ export default function WorkflowVisualizationPage() {
   const [images, setImages] = useState<ImageAsset[]>([]);
   const [, setTransitions] = useState<Transition[]>([]);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(
-    null
+    null,
   );
   const [projects, setProjects] = useState<string[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>("all");
@@ -126,13 +126,13 @@ export default function WorkflowVisualizationPage() {
 
   // Canvas mode: "perception" shows only found images, "config" shows all configured positions
   const [canvasMode, setCanvasMode] = useState<"perception" | "config">(
-    "perception"
+    "perception",
   );
 
   // Historical playback state
   const [testRuns, setTestRuns] = useState<TestRunSummary[]>([]);
   const [selectedTestRunId, setSelectedTestRunId] = useState<string | null>(
-    null
+    null,
   );
   const [historicalResults, setHistoricalResults] = useState<
     HistoricalResult[]
@@ -171,7 +171,7 @@ export default function WorkflowVisualizationPage() {
   // Convert Set to array for display
   const liveActiveStateIdsArray = useMemo(
     () => Array.from(liveActiveStateIds),
-    [liveActiveStateIds]
+    [liveActiveStateIds],
   );
 
   // Auth protection
@@ -195,7 +195,7 @@ export default function WorkflowVisualizationPage() {
           ]);
 
         setWorkflows(
-          loadedWorkflows as Array<Workflow & { projectName?: string }>
+          loadedWorkflows as Array<Workflow & { projectName?: string }>,
         );
         setStates(loadedStates);
         setTransitions(loadedTransitions);
@@ -211,7 +211,7 @@ export default function WorkflowVisualizationPage() {
             ...loadedImages
               .map((img) => (img as { projectName?: string }).projectName)
               .filter(Boolean),
-          ])
+          ]),
         ) as string[];
         setProjects(projectNames);
 
@@ -246,7 +246,7 @@ export default function WorkflowVisualizationPage() {
     try {
       const res = await fetch(
         `${API_BASE_URL}/api/v1/testing/runs?project_id=${projectId}&limit=50&sort_order=desc`,
-        { credentials: "include" }
+        { credentials: "include" },
       );
       if (!res.ok) throw new Error("Failed to fetch test runs");
       const data = (await res.json()) as {
@@ -281,7 +281,7 @@ export default function WorkflowVisualizationPage() {
       try {
         const res = await fetch(
           `${API_BASE_URL}/api/v1/historical/test-run/${selectedTestRunId}`,
-          { credentials: "include" }
+          { credentials: "include" },
         );
         if (!res.ok) throw new Error("Failed to fetch historical results");
         const data = (await res.json()) as {
@@ -361,7 +361,7 @@ export default function WorkflowVisualizationPage() {
       : workflows.filter((w) => w.projectName === selectedProject);
 
   const selectedWorkflow = filteredWorkflows.find(
-    (w) => w.id === selectedWorkflowId
+    (w) => w.id === selectedWorkflowId,
   );
 
   // Initialize active states when workflow is selected
@@ -497,7 +497,7 @@ export default function WorkflowVisualizationPage() {
           <div className="mb-6 flex items-center gap-4">
             <Button
               variant="ghost"
-              onClick={() => router.push("/dashboard")}
+              onClick={() => router.push("/build/workflows")}
               className="hover:bg-primary/10"
             >
               <LayoutDashboard className="mr-2 h-4 w-4" />
@@ -749,7 +749,7 @@ export default function WorkflowVisualizationPage() {
                                       </Badge>
                                       <span className="truncate">
                                         {new Date(
-                                          run.started_at
+                                          run.started_at,
                                         ).toLocaleDateString()}{" "}
                                         {run.workflow_name || run.run_name}
                                       </span>

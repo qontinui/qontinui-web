@@ -39,20 +39,20 @@ export function StateStructureReview({
   const router = useRouter();
 
   const [structure, setStructure] = useState<DiscoveredStateStructure | null>(
-    null
+    null,
   );
   const [loading, setLoading] = useState(true);
   const [selectedStateIds, setSelectedStateIds] = useState<Set<string>>(
-    new Set()
+    new Set(),
   );
   const [selectedTransitionIds, setSelectedTransitionIds] = useState<
     Set<string>
   >(new Set());
   const [selectedNode, setSelectedNode] = useState<DiscoveredState | null>(
-    null
+    null,
   );
   const [selectedEdge, setSelectedEdge] = useState<DiscoveredTransition | null>(
-    null
+    null,
   );
   const [accepting, setAccepting] = useState(false);
 
@@ -197,7 +197,7 @@ export function StateStructureReview({
         setSelectedEdge(null);
       }
     },
-    [structure]
+    [structure],
   );
 
   const handleEdgeClick = useCallback(
@@ -208,7 +208,7 @@ export function StateStructureReview({
         setSelectedNode(null);
       }
     },
-    [structure]
+    [structure],
   );
 
   const toggleStateSelection = (stateId: string) => {
@@ -252,21 +252,21 @@ export function StateStructureReview({
 
       const response = await recordingService.acceptStateStructure(
         recordingId,
-        request
+        request,
       );
 
       toast.success(
-        `Created ${response.created_states.length} states and ${response.created_transitions.length} transitions`
+        `Created ${response.created_states.length} states and ${response.created_transitions.length} transitions`,
       );
 
       // Redirect to project after 2 seconds
       setTimeout(() => {
-        router.push(`/dashboard`);
+        router.push(`/build/workflows`);
       }, 2000);
     } catch (error: unknown) {
       console.error("Failed to accept structure:", error);
       toast.error(
-        error instanceof Error ? error.message : "Failed to accept structure"
+        error instanceof Error ? error.message : "Failed to accept structure",
       );
     } finally {
       setAccepting(false);
@@ -283,20 +283,20 @@ export function StateStructureReview({
 
       const response = await recordingService.acceptStateStructure(
         recordingId,
-        request
+        request,
       );
 
       toast.success(
-        `Created ${response.created_states.length} states and ${response.created_transitions.length} transitions`
+        `Created ${response.created_states.length} states and ${response.created_transitions.length} transitions`,
       );
 
       setTimeout(() => {
-        router.push(`/dashboard`);
+        router.push(`/build/workflows`);
       }, 2000);
     } catch (error: unknown) {
       console.error("Failed to accept structure:", error);
       toast.error(
-        error instanceof Error ? error.message : "Failed to accept structure"
+        error instanceof Error ? error.message : "Failed to accept structure",
       );
     } finally {
       setAccepting(false);
@@ -468,7 +468,7 @@ export function StateStructureReview({
                   <span className="text-muted-foreground">Confidence</span>
                   <Badge
                     className={getConfidenceColor(
-                      getConfidenceLevel(selectedNode.confidence)
+                      getConfidenceLevel(selectedNode.confidence),
                     )}
                   >
                     {Math.round((selectedNode.confidence || 0) * 100)}%
@@ -534,7 +534,7 @@ export function StateStructureReview({
                   <span className="text-muted-foreground">Confidence</span>
                   <Badge
                     className={getConfidenceColor(
-                      getConfidenceLevel(selectedEdge.confidence)
+                      getConfidenceLevel(selectedEdge.confidence),
                     )}
                   >
                     {Math.round((selectedEdge.confidence || 0) * 100)}%

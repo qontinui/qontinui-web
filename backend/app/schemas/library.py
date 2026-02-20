@@ -398,12 +398,12 @@ class MacroListResponse(BaseModel):
 
 
 # =============================================================================
-# Scriptlet
+# PromptSnippet
 # =============================================================================
 
 
-class ScriptletCreate(BaseModel):
-    """Create a new scriptlet."""
+class PromptSnippetCreate(BaseModel):
+    """Create a new prompt snippet."""
 
     name: str = Field(..., max_length=255)
     description: str | None = None
@@ -414,8 +414,8 @@ class ScriptletCreate(BaseModel):
     project_id: UUID | None = None
 
 
-class ScriptletUpdate(BaseModel):
-    """Update a scriptlet."""
+class PromptSnippetUpdate(BaseModel):
+    """Update a prompt snippet."""
 
     name: str | None = Field(default=None, max_length=255)
     description: str | None = None
@@ -425,8 +425,8 @@ class ScriptletUpdate(BaseModel):
     tags: list[str] | None = None
 
 
-class ScriptletResponse(BaseModel):
-    """Scriptlet response."""
+class PromptSnippetResponse(BaseModel):
+    """Prompt snippet response."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -443,8 +443,8 @@ class ScriptletResponse(BaseModel):
     updated_at: datetime
 
 
-class ScriptletListResponse(BaseModel):
-    """Paginated list of scriptlets."""
+class PromptSnippetListResponse(BaseModel):
+    """Paginated list of prompt snippets."""
 
-    items: list[ScriptletResponse]
+    items: list[PromptSnippetResponse]
     pagination: Pagination

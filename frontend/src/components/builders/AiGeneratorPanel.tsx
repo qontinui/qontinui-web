@@ -44,7 +44,15 @@ export interface AiGeneratorPanelProps {
 // Accent color mapping
 // =============================================================================
 
-type AccentColor = "purple" | "violet" | "indigo" | "amber" | "pink";
+type AccentColor =
+  | "purple"
+  | "violet"
+  | "indigo"
+  | "amber"
+  | "pink"
+  | "orange"
+  | "emerald"
+  | "teal";
 
 const accentColorMap: Record<
   AccentColor,
@@ -74,6 +82,21 @@ const accentColorMap: Record<
     bg: "bg-pink-600",
     hover: "hover:bg-pink-700",
     ring: "focus-visible:ring-pink-600/20",
+  },
+  orange: {
+    bg: "bg-orange-600",
+    hover: "hover:bg-orange-700",
+    ring: "focus-visible:ring-orange-600/20",
+  },
+  emerald: {
+    bg: "bg-emerald-600",
+    hover: "hover:bg-emerald-700",
+    ring: "focus-visible:ring-emerald-600/20",
+  },
+  teal: {
+    bg: "bg-teal-600",
+    hover: "hover:bg-teal-700",
+    ring: "focus-visible:ring-teal-600/20",
   },
 };
 
@@ -129,7 +152,7 @@ export function AiGeneratorPanel({
             "flex items-center gap-2 w-full px-3 py-2 rounded-lg",
             "bg-surface-raised/50 border border-border-subtle",
             "hover:border-text-muted transition-colors",
-            "text-left text-sm font-medium text-text-secondary"
+            "text-left text-sm font-medium text-text-secondary",
           )}
         >
           {Icon ? (
@@ -141,7 +164,7 @@ export function AiGeneratorPanel({
           <ChevronDown
             className={cn(
               "size-4 text-text-muted transition-transform duration-200",
-              open && "rotate-180"
+              open && "rotate-180",
             )}
           />
         </button>
@@ -175,7 +198,7 @@ export function AiGeneratorPanel({
                     className={cn(
                       "gap-1.5 text-white ml-auto",
                       colors.bg,
-                      colors.hover
+                      colors.hover,
                     )}
                   >
                     <Check className="size-3.5" />
@@ -199,7 +222,7 @@ export function AiGeneratorPanel({
                         "bg-surface-raised/50 text-text-muted",
                         "border border-border-subtle hover:border-text-muted",
                         "px-2 py-1 rounded text-xs",
-                        "transition-colors"
+                        "transition-colors",
                       )}
                     >
                       {template.label}
@@ -242,7 +265,7 @@ export function AiGeneratorPanel({
                   className={cn(
                     "gap-1.5 text-white ml-auto",
                     colors.bg,
-                    colors.hover
+                    colors.hover,
                   )}
                 >
                   {generating ? (

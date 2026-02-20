@@ -21,7 +21,6 @@ import {
   Video,
   Monitor,
   Server,
-  Link,
   Store,
   CreditCard,
   TestTube2,
@@ -35,18 +34,11 @@ import {
   Bug,
   TrendingUp,
   Brain,
-  Flag,
-  Terminal,
-  ListChecks,
   Wrench,
   Eye,
-  Calendar,
-  FileCode,
   Webhook,
   Library,
   ScanSearch,
-  Zap,
-  Code2,
   Bot,
   ShieldCheck,
   FlaskConical,
@@ -54,10 +46,9 @@ import {
   FolderOpen,
   HardDrive,
   Archive,
-  Compass,
-  Clock,
-  HelpCircle,
   Layers,
+  ListChecks,
+  HelpCircle,
 } from "lucide-react";
 import type { NavItem } from "./types";
 
@@ -66,26 +57,58 @@ import type { NavItem } from "./types";
 //
 // Items with `hidden: true` only appear in development mode.
 // Items with `adminOnly: true` only appear for superusers.
+// Items with `group: "Label"` render a section separator above them.
 // =============================================================================
 
 export const navItems: NavItem[] = [
   // ===========================================================================
-  // Always visible (simple mode)
+  // Build — Create and design workflows and steps
   // ===========================================================================
-  {
-    id: "dashboard",
-    label: "Dashboard",
-    icon: React.createElement(LayoutDashboard, { className: "size-5" }),
-    route: "/dashboard",
-    color: "var(--brand-primary)",
-  },
   {
     id: "workflows",
     label: "Workflows",
-    description: "Unified workflow editor",
+    description: "Workflow editor and AI generator",
     icon: React.createElement(Workflow, { className: "size-5" }),
     route: "/build/workflows",
     color: "var(--brand-secondary)",
+    group: "Build",
+  },
+  {
+    id: "step-builders",
+    label: "Step Builders",
+    description: "Build individual workflow steps",
+    icon: React.createElement(Layers, { className: "size-5" }),
+    route: "/build/templates",
+    color: "var(--brand-secondary)",
+  },
+  {
+    id: "step-library",
+    label: "Step Library",
+    description: "Browse and manage all created steps",
+    icon: React.createElement(Library, { className: "size-5" }),
+    route: "/library",
+    color: "var(--brand-secondary)",
+  },
+  {
+    id: "inspector",
+    label: "Inspector",
+    description: "UI Bridge element inspection",
+    icon: React.createElement(ScanSearch, { className: "size-5" }),
+    route: "/tools/inspector",
+    color: "var(--brand-secondary)",
+  },
+
+  // ===========================================================================
+  // Run — Execute workflows and view results
+  // ===========================================================================
+  {
+    id: "execute",
+    label: "Execute",
+    description: "Run and schedule workflows",
+    icon: React.createElement(Play, { className: "size-5" }),
+    route: "/execute",
+    color: "#10B981",
+    group: "Run",
   },
   {
     id: "runs",
@@ -95,6 +118,14 @@ export const navItems: NavItem[] = [
     color: "#4A90D9",
     children: [
       {
+        id: "runs-active",
+        label: "Active",
+        description: "Live monitoring dashboard",
+        icon: React.createElement(Activity, { className: "size-4" }),
+        route: "/runs/active",
+        color: "#4A90D9",
+      },
+      {
         id: "runs-history",
         label: "History",
         description: "Run history browser",
@@ -103,11 +134,11 @@ export const navItems: NavItem[] = [
         color: "#4A90D9",
       },
       {
-        id: "runs-active",
-        label: "Active",
-        description: "Live monitoring dashboard",
-        icon: React.createElement(Activity, { className: "size-4" }),
-        route: "/runs/active",
+        id: "runs-errors",
+        label: "Errors",
+        description: "Error monitoring and resolution",
+        icon: React.createElement(AlertCircle, { className: "size-4" }),
+        route: "/tools/error-monitor",
         color: "#4A90D9",
       },
       {
@@ -133,57 +164,40 @@ export const navItems: NavItem[] = [
         icon: React.createElement(Brain, { className: "size-4" }),
         route: "/runs/learning",
         color: "#4A90D9",
+        hidden: true,
       },
       {
         id: "runs-checkpoints",
         label: "Checkpoints",
         description: "Execution checkpoint browser",
-        icon: React.createElement(Flag, { className: "size-4" }),
+        icon: React.createElement(ListChecks, { className: "size-4" }),
         route: "/runs/checkpoints",
         color: "#4A90D9",
+        hidden: true,
       },
       {
         id: "runs-discoveries",
         label: "Discoveries",
         description: "GUI state exploration results",
-        icon: React.createElement(Compass, { className: "size-4" }),
+        icon: React.createElement(Search, { className: "size-4" }),
         route: "/runs/discoveries",
         color: "#4A90D9",
+        hidden: true,
       },
     ],
   },
+
+  // ===========================================================================
+  // Manage — Infrastructure and configuration
+  // ===========================================================================
   {
     id: "runners",
     label: "Runners",
+    description: "Connected desktop runners",
     icon: React.createElement(Server, { className: "size-5" }),
     route: "/runners",
     color: "#10B981",
-    children: [
-      {
-        id: "runner-list",
-        label: "Manage",
-        description: "View and configure your runners",
-        icon: React.createElement(Server, { className: "size-4" }),
-        route: "/runners",
-        color: "#10B981",
-      },
-      {
-        id: "connect-runner",
-        label: "Connect",
-        description: "Connect a new desktop runner",
-        icon: React.createElement(Link, { className: "size-4" }),
-        route: "/connect-runner",
-        color: "#10B981",
-      },
-      {
-        id: "monitor",
-        label: "Monitor",
-        description: "Real-time runner monitoring",
-        icon: React.createElement(Monitor, { className: "size-4" }),
-        route: "/monitor",
-        color: "#10B981",
-      },
-    ],
+    group: "Manage",
   },
   {
     id: "settings",
@@ -251,9 +265,25 @@ export const navItems: NavItem[] = [
       {
         id: "settings-log-sources",
         label: "Log Sources",
-        description: "Global log configuration",
+        description: "Log file monitoring config",
         icon: React.createElement(FolderOpen, { className: "size-4" }),
         route: "/settings/log-sources",
+        color: "#FFD700",
+      },
+      {
+        id: "settings-finding-rules",
+        label: "Finding Rules",
+        description: "Finding categories and rules",
+        icon: React.createElement(ListChecks, { className: "size-4" }),
+        route: "/configure/finding-rules",
+        color: "#FFD700",
+      },
+      {
+        id: "settings-hooks",
+        label: "Hooks",
+        description: "Workflow lifecycle hooks",
+        icon: React.createElement(Webhook, { className: "size-4" }),
+        route: "/configure/hooks",
         color: "#FFD700",
       },
       {
@@ -299,118 +329,24 @@ export const navItems: NavItem[] = [
   },
 
   // ===========================================================================
-  // Always visible (were previously advanced-only)
+  // Hidden items (dev-only)
   // ===========================================================================
   {
-    id: "execute",
-    label: "Execute",
-    icon: React.createElement(Play, { className: "size-5" }),
-    route: "/execute",
-    color: "#10B981",
-  },
-  {
-    id: "library",
-    label: "Library",
-    description: "Cross-category asset browser",
-    icon: React.createElement(Library, { className: "size-5" }),
-    route: "/library",
-    color: "var(--brand-secondary)",
-  },
-  {
-    id: "components",
-    label: "Build",
-    icon: React.createElement(Box, { className: "size-5" }),
-    route: "/build/tests",
-    color: "var(--brand-secondary)",
-    children: [
-      {
-        id: "components-tests",
-        label: "Tests",
-        description: "Automated test builder",
-        icon: React.createElement(TestTube2, { className: "size-4" }),
-        route: "/build/tests",
-        color: "var(--brand-secondary)",
-      },
-      {
-        id: "components-scripts",
-        label: "Scripts",
-        description: "Playwright script editor",
-        icon: React.createElement(FileCode, { className: "size-4" }),
-        route: "/build/scripts",
-        color: "var(--brand-secondary)",
-        hidden: true,
-      },
-      {
-        id: "components-checks",
-        label: "Checks",
-        description: "Verification check editor",
-        icon: React.createElement(CheckCircle2, { className: "size-4" }),
-        route: "/build/checks",
-        color: "var(--brand-secondary)",
-        hidden: true,
-      },
-      {
-        id: "components-check-groups",
-        label: "Check Groups",
-        description: "Check group manager",
-        icon: React.createElement(Layers, { className: "size-4" }),
-        route: "/build/check-groups",
-        color: "var(--brand-secondary)",
-        hidden: true,
-      },
-      {
-        id: "components-api-requests",
-        label: "API Requests",
-        description: "API request builder",
-        icon: React.createElement(Globe, { className: "size-4" }),
-        route: "/build/api-requests",
-        color: "var(--brand-secondary)",
-        hidden: true,
-      },
-      {
-        id: "components-shell-commands",
-        label: "Shell Commands",
-        description: "Shell command editor",
-        icon: React.createElement(Terminal, { className: "size-4" }),
-        route: "/build/shell-commands",
-        color: "var(--brand-secondary)",
-        hidden: true,
-      },
-      {
-        id: "components-contexts",
-        label: "Contexts",
-        description: "AI context authoring",
-        icon: React.createElement(BookOpen, { className: "size-4" }),
-        route: "/build/contexts",
-        color: "var(--brand-secondary)",
-      },
-      {
-        id: "components-macros",
-        label: "Macros",
-        description: "Sequential action macros",
-        icon: React.createElement(Zap, { className: "size-4" }),
-        route: "/build/macros",
-        color: "var(--brand-secondary)",
-        hidden: true,
-      },
-      {
-        id: "components-scriptlets",
-        label: "Scriptlets",
-        description: "Reusable code snippets",
-        icon: React.createElement(Code2, { className: "size-4" }),
-        route: "/build/scriptlets",
-        color: "var(--brand-secondary)",
-        hidden: true,
-      },
-    ],
+    id: "dashboard",
+    label: "Dashboard",
+    icon: React.createElement(LayoutDashboard, { className: "size-5" }),
+    route: "/build/workflows",
+    color: "var(--brand-primary)",
+    hidden: true,
   },
   {
     id: "discover",
     label: "Discover",
-    description: "AI-powered workflow generation",
+    description: "AI-powered workflow generation (duplicate of Workflows)",
     icon: React.createElement(Sparkles, { className: "size-5" }),
     route: "/build/discover",
     color: "var(--brand-secondary)",
+    hidden: true,
   },
   {
     id: "review",
@@ -419,14 +355,7 @@ export const navItems: NavItem[] = [
     icon: React.createElement(ScanSearch, { className: "size-5" }),
     route: "/build/review-workflow",
     color: "var(--brand-secondary)",
-  },
-  {
-    id: "run-plan",
-    label: "Run Plan",
-    description: "Plan/schedule executions",
-    icon: React.createElement(Calendar, { className: "size-5" }),
-    route: "/tools/run-plan",
-    color: "var(--brand-secondary)",
+    hidden: true,
   },
   {
     id: "state-machine",
@@ -435,99 +364,32 @@ export const navItems: NavItem[] = [
     icon: React.createElement(Network, { className: "size-5" }),
     route: "/automation-builder/ui-bridge-states",
     color: "var(--brand-secondary)",
+    hidden: true,
   },
   {
-    id: "tools",
-    label: "Tools",
-    icon: React.createElement(Wrench, { className: "size-5" }),
-    route: "/tools/error-monitor",
-    color: "#F59E0B",
-    children: [
-      {
-        id: "tools-error-monitor",
-        label: "Error Monitor",
-        description: "Log error monitoring",
-        icon: React.createElement(AlertCircle, { className: "size-4" }),
-        route: "/tools/error-monitor",
-        color: "#F59E0B",
-      },
-      {
-        id: "tools-inspector",
-        label: "Inspector",
-        description: "UI & accessibility inspector",
-        icon: React.createElement(ScanSearch, { className: "size-4" }),
-        route: "/tools/inspector",
-        color: "#F59E0B",
-      },
-      {
-        id: "tools-capture",
-        label: "Capture",
-        description: "Screen capture and recording",
-        icon: React.createElement(Video, { className: "size-4" }),
-        route: "/tools/capture",
-        color: "#F59E0B",
-      },
-    ],
-  },
-  {
-    id: "configure",
-    label: "Configure",
+    id: "run-plan",
+    label: "Run Plan",
+    description: "Plan/schedule executions",
     icon: React.createElement(Sliders, { className: "size-5" }),
-    route: "/configure/log-sources",
-    color: "#8B5CF6",
-    children: [
-      {
-        id: "configure-log-sources",
-        label: "Log Sources",
-        description: "Log file monitoring config",
-        icon: React.createElement(FileText, { className: "size-4" }),
-        route: "/configure/log-sources",
-        color: "#8B5CF6",
-      },
-      {
-        id: "configure-finding-rules",
-        label: "Finding Rules",
-        description: "Finding categories & rules",
-        icon: React.createElement(ListChecks, { className: "size-4" }),
-        route: "/configure/finding-rules",
-        color: "#8B5CF6",
-      },
-      {
-        id: "configure-hooks",
-        label: "Hooks",
-        description: "Workflow lifecycle hooks",
-        icon: React.createElement(Webhook, { className: "size-4" }),
-        route: "/configure/hooks",
-        color: "#8B5CF6",
-      },
-    ],
+    route: "/tools/run-plan",
+    color: "var(--brand-secondary)",
+    hidden: true,
   },
   {
     id: "schedule",
     label: "Schedule",
-    icon: React.createElement(Clock, { className: "size-5" }),
+    description: "Scheduled task automation",
+    icon: React.createElement(Sliders, { className: "size-5" }),
     route: "/schedule",
     color: "#06B6D4",
+    hidden: true,
   },
-
-  // ===========================================================================
-  // Hidden items (dev-only, unchanged)
-  // ===========================================================================
   {
     id: "build-flow-designer",
     label: "Flow Designer",
     description: "AI-assisted workflow structure designer",
     icon: React.createElement(GitBranch, { className: "size-5" }),
     route: "/build/flow-designer",
-    color: "var(--brand-secondary)",
-    hidden: true,
-  },
-  {
-    id: "build-awas",
-    label: "AWAS",
-    description: "Web Action Standards explorer",
-    icon: React.createElement(Webhook, { className: "size-5" }),
-    route: "/build/awas",
     color: "var(--brand-secondary)",
     hidden: true,
   },
@@ -550,6 +412,24 @@ export const navItems: NavItem[] = [
         description: "GUI automation control surface",
         icon: React.createElement(Play, { className: "size-4" }),
         route: "/tools/visual-automation",
+        color: "#10B981",
+        hidden: true,
+      },
+      {
+        id: "visual-automation-monitor",
+        label: "Monitor",
+        description: "Real-time automation monitoring",
+        icon: React.createElement(Monitor, { className: "size-4" }),
+        route: "/monitor",
+        color: "#10B981",
+        hidden: true,
+      },
+      {
+        id: "visual-automation-capture",
+        label: "Capture",
+        description: "Screen capture and recording",
+        icon: React.createElement(Video, { className: "size-4" }),
+        route: "/tools/capture",
         color: "#10B981",
         hidden: true,
       },
@@ -998,7 +878,7 @@ export const navItems: NavItem[] = [
   },
 
   // ===========================================================================
-  // Admin (superuser only, unchanged)
+  // Admin (superuser only)
   // ===========================================================================
   {
     id: "admin",

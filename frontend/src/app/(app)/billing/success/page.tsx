@@ -24,7 +24,7 @@ export default function BillingSuccessPage() {
       setCountdown((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          router.push("/dashboard");
+          router.push("/build/workflows");
           return 0;
         }
         return prev - 1;
@@ -66,7 +66,7 @@ export default function BillingSuccessPage() {
               Redirecting to dashboard in {countdown} seconds...
             </p>
             <Button
-              onClick={() => router.push("/dashboard")}
+              onClick={() => router.push("/build/workflows")}
               className="w-full"
             >
               Go to Dashboard Now

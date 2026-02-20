@@ -15,7 +15,7 @@ import {
   apiRequestsApi,
   contextsApi,
   macrosApi,
-  scriptletsApi,
+  promptSnippetsApi,
 } from "@/services/library-service";
 
 // =============================================================================
@@ -25,15 +25,22 @@ import {
 export const libraryKeys = {
   all: ["library"] as const,
   type: (t: string) => [...libraryKeys.all, t] as const,
-  list: (t: string, params?: LibraryListParams) => [...libraryKeys.type(t), "list", params] as const,
-  detail: (t: string, id: string) => [...libraryKeys.type(t), "detail", id] as const,
+  list: (t: string, params?: LibraryListParams) =>
+    [...libraryKeys.type(t), "list", params] as const,
+  detail: (t: string, id: string) =>
+    [...libraryKeys.type(t), "detail", id] as const,
 };
 
 // =============================================================================
 // Generic hook factory
 // =============================================================================
 
-interface CrudApi<T, TCreate, TUpdate, TList extends { items: T[]; pagination: Pagination }> {
+interface CrudApi<
+  T,
+  TCreate,
+  TUpdate,
+  TList extends { items: T[]; pagination: Pagination },
+> {
   list: (params?: LibraryListParams) => Promise<TList>;
   get: (id: string) => Promise<T>;
   create: (data: TCreate) => Promise<T>;
@@ -41,7 +48,12 @@ interface CrudApi<T, TCreate, TUpdate, TList extends { items: T[]; pagination: P
   delete: (id: string) => Promise<unknown>;
 }
 
-function useLibraryList<T, TCreate, TUpdate, TList extends { items: T[]; pagination: Pagination }>(
+function useLibraryList<
+  T,
+  TCreate,
+  TUpdate,
+  TList extends { items: T[]; pagination: Pagination },
+>(
   type: string,
   api: CrudApi<T, TCreate, TUpdate, TList>,
   params?: LibraryListParams,
@@ -56,11 +68,12 @@ function useLibraryList<T, TCreate, TUpdate, TList extends { items: T[]; paginat
   });
 }
 
-function useLibraryDetail<T, TCreate, TUpdate, TList extends { items: T[]; pagination: Pagination }>(
-  type: string,
-  api: CrudApi<T, TCreate, TUpdate, TList>,
-  id: string | null,
-) {
+function useLibraryDetail<
+  T,
+  TCreate,
+  TUpdate,
+  TList extends { items: T[]; pagination: Pagination },
+>(type: string, api: CrudApi<T, TCreate, TUpdate, TList>, id: string | null) {
   return useQuery({
     queryKey: libraryKeys.detail(type, id ?? ""),
     queryFn: () => api.get(id!),
@@ -69,10 +82,12 @@ function useLibraryDetail<T, TCreate, TUpdate, TList extends { items: T[]; pagin
   });
 }
 
-function useLibraryCreate<T, TCreate, TUpdate, TList extends { items: T[]; pagination: Pagination }>(
-  type: string,
-  api: CrudApi<T, TCreate, TUpdate, TList>,
-) {
+function useLibraryCreate<
+  T,
+  TCreate,
+  TUpdate,
+  TList extends { items: T[]; pagination: Pagination },
+>(type: string, api: CrudApi<T, TCreate, TUpdate, TList>) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: TCreate) => api.create(data),
@@ -82,23 +97,28 @@ function useLibraryCreate<T, TCreate, TUpdate, TList extends { items: T[]; pagin
   });
 }
 
-function useLibraryUpdate<T, TCreate, TUpdate, TList extends { items: T[]; pagination: Pagination }>(
-  type: string,
-  api: CrudApi<T, TCreate, TUpdate, TList>,
-) {
+function useLibraryUpdate<
+  T,
+  TCreate,
+  TUpdate,
+  TList extends { items: T[]; pagination: Pagination },
+>(type: string, api: CrudApi<T, TCreate, TUpdate, TList>) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: TUpdate }) => api.update(id, data),
+    mutationFn: ({ id, data }: { id: string; data: TUpdate }) =>
+      api.update(id, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: libraryKeys.type(type) });
     },
   });
 }
 
-function useLibraryDelete<T, TCreate, TUpdate, TList extends { items: T[]; pagination: Pagination }>(
-  type: string,
-  api: CrudApi<T, TCreate, TUpdate, TList>,
-) {
+function useLibraryDelete<
+  T,
+  TCreate,
+  TUpdate,
+  TList extends { items: T[]; pagination: Pagination },
+>(type: string, api: CrudApi<T, TCreate, TUpdate, TList>) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.delete(id),
@@ -116,12 +136,9 @@ export const useChecksList = (params?: LibraryListParams) =>
   useLibraryList("checks", checksApi, params);
 export const useCheck = (id: string | null) =>
   useLibraryDetail("checks", checksApi, id);
-export const useCreateCheck = () =>
-  useLibraryCreate("checks", checksApi);
-export const useUpdateCheck = () =>
-  useLibraryUpdate("checks", checksApi);
-export const useDeleteCheck = () =>
-  useLibraryDelete("checks", checksApi);
+export const useCreateCheck = () => useLibraryCreate("checks", checksApi);
+export const useUpdateCheck = () => useLibraryUpdate("checks", checksApi);
+export const useDeleteCheck = () => useLibraryDelete("checks", checksApi);
 
 // =============================================================================
 // Check Groups
@@ -176,12 +193,9 @@ export const useContextsList = (params?: LibraryListParams) =>
   useLibraryList("contexts", contextsApi, params);
 export const useContext = (id: string | null) =>
   useLibraryDetail("contexts", contextsApi, id);
-export const useCreateContext = () =>
-  useLibraryCreate("contexts", contextsApi);
-export const useUpdateContext = () =>
-  useLibraryUpdate("contexts", contextsApi);
-export const useDeleteContext = () =>
-  useLibraryDelete("contexts", contextsApi);
+export const useCreateContext = () => useLibraryCreate("contexts", contextsApi);
+export const useUpdateContext = () => useLibraryUpdate("contexts", contextsApi);
+export const useDeleteContext = () => useLibraryDelete("contexts", contextsApi);
 
 // =============================================================================
 // Macros
@@ -191,24 +205,21 @@ export const useMacrosList = (params?: LibraryListParams) =>
   useLibraryList("macros", macrosApi, params);
 export const useMacro = (id: string | null) =>
   useLibraryDetail("macros", macrosApi, id);
-export const useCreateMacro = () =>
-  useLibraryCreate("macros", macrosApi);
-export const useUpdateMacro = () =>
-  useLibraryUpdate("macros", macrosApi);
-export const useDeleteMacro = () =>
-  useLibraryDelete("macros", macrosApi);
+export const useCreateMacro = () => useLibraryCreate("macros", macrosApi);
+export const useUpdateMacro = () => useLibraryUpdate("macros", macrosApi);
+export const useDeleteMacro = () => useLibraryDelete("macros", macrosApi);
 
 // =============================================================================
-// Scriptlets
+// Prompt Snippets
 // =============================================================================
 
-export const useScriptletsList = (params?: LibraryListParams) =>
-  useLibraryList("scriptlets", scriptletsApi, params);
-export const useScriptlet = (id: string | null) =>
-  useLibraryDetail("scriptlets", scriptletsApi, id);
-export const useCreateScriptlet = () =>
-  useLibraryCreate("scriptlets", scriptletsApi);
-export const useUpdateScriptlet = () =>
-  useLibraryUpdate("scriptlets", scriptletsApi);
-export const useDeleteScriptlet = () =>
-  useLibraryDelete("scriptlets", scriptletsApi);
+export const usePromptSnippetsList = (params?: LibraryListParams) =>
+  useLibraryList("prompt-snippets", promptSnippetsApi, params);
+export const usePromptSnippet = (id: string | null) =>
+  useLibraryDetail("prompt-snippets", promptSnippetsApi, id);
+export const useCreatePromptSnippet = () =>
+  useLibraryCreate("prompt-snippets", promptSnippetsApi);
+export const useUpdatePromptSnippet = () =>
+  useLibraryUpdate("prompt-snippets", promptSnippetsApi);
+export const useDeletePromptSnippet = () =>
+  useLibraryDelete("prompt-snippets", promptSnippetsApi);

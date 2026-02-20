@@ -2,7 +2,7 @@
 Library models for reusable automation components.
 
 Includes: Check, CheckGroup, ShellCommand, SavedApiRequest,
-Context, Macro, Scriptlet.
+Context, Macro, PromptSnippet.
 """
 
 from datetime import datetime
@@ -378,10 +378,10 @@ class Macro(Base):
     )
 
 
-class Scriptlet(Base):
+class PromptSnippet(Base):
     """Code snippet for automation."""
 
-    __tablename__ = "library_scriptlets"
+    __tablename__ = "library_prompt_snippets"
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),

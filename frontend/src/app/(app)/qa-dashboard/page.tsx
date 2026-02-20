@@ -34,7 +34,7 @@ export default function QADashboard() {
   >(() => (testRunIdParam ? "live" : "overview"));
   const [liveTestRunId] = useState<string | null>(() => testRunIdParam || null);
   const [liveWorkflowName] = useState<string | null>(
-    () => workflowNameParam || null
+    () => workflowNameParam || null,
   );
 
   useEffect(() => {
@@ -69,7 +69,7 @@ export default function QADashboard() {
             <div className="flex items-center gap-4">
               <Button
                 variant="ghost"
-                onClick={() => router.push("/dashboard")}
+                onClick={() => router.push("/build/workflows")}
                 className="text-text-muted hover:text-white"
                 data-ui-id="qa-dashboard-back-btn"
               >

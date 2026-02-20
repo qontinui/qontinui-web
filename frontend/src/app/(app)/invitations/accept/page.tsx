@@ -73,7 +73,7 @@ function getRoleDescription(role: MemberRole): string {
 }
 
 function getRoleBadgeVariant(
-  role: MemberRole
+  role: MemberRole,
 ): "default" | "secondary" | "outline" {
   switch (role) {
     case "owner":
@@ -97,7 +97,7 @@ function AcceptInvitationContent() {
 
   const [status, setStatus] = useState<InvitationStatus>("loading");
   const [invitationData, setInvitationData] = useState<InvitationData | null>(
-    null
+    null,
   );
   const [isAccepting, setIsAccepting] = useState(false);
   const [isDeclining, setIsDeclining] = useState(false);
@@ -153,7 +153,7 @@ function AcceptInvitationContent() {
 
       // Redirect to organization dashboard or projects
       setTimeout(() => {
-        router.push("/dashboard");
+        router.push("/build/workflows");
       }, 1500);
     } catch (error) {
       const message =
@@ -176,7 +176,7 @@ function AcceptInvitationContent() {
 
       // Redirect to dashboard
       setTimeout(() => {
-        router.push("/dashboard");
+        router.push("/build/workflows");
       }, 1000);
     } catch (error) {
       const message =
@@ -224,7 +224,7 @@ function AcceptInvitationContent() {
           </CardContent>
           <CardFooter>
             <Button
-              onClick={() => router.push("/dashboard")}
+              onClick={() => router.push("/build/workflows")}
               variant="outline"
               className="w-full"
             >
@@ -262,7 +262,7 @@ function AcceptInvitationContent() {
           </CardContent>
           <CardFooter>
             <Button
-              onClick={() => router.push("/dashboard")}
+              onClick={() => router.push("/build/workflows")}
               className="w-full"
             >
               Go to Dashboard
@@ -298,7 +298,7 @@ function AcceptInvitationContent() {
           </CardContent>
           <CardFooter>
             <Button
-              onClick={() => router.push("/dashboard")}
+              onClick={() => router.push("/build/workflows")}
               variant="outline"
               className="w-full"
             >

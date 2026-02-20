@@ -70,7 +70,7 @@ const HealthDashboardTab = dynamic(
         Loading Health Dashboard...
       </div>
     ),
-  }
+  },
 );
 
 const NotificationsTab = dynamic(
@@ -81,7 +81,7 @@ const NotificationsTab = dynamic(
         Loading Notifications...
       </div>
     ),
-  }
+  },
 );
 
 const DownloadsTab = dynamic(() => import("@/components/admin/DownloadsTab"), {
@@ -105,7 +105,7 @@ export default function AdminDashboard() {
 
     if (!authLoading && user && !user.is_superuser) {
       toast.error("Access denied - Admin privileges required");
-      router.push("/dashboard");
+      router.push("/build/workflows");
       return;
     }
   }, [user, authLoading, router]);
@@ -157,7 +157,7 @@ export default function AdminDashboard() {
               </Button>
               <Button
                 variant="outline"
-                onClick={() => router.push("/dashboard")}
+                onClick={() => router.push("/build/workflows")}
                 className="flex items-center gap-2"
                 data-ui-id="admin-page-dashboard-btn"
               >

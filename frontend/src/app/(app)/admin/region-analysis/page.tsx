@@ -68,7 +68,7 @@ export default function RegionAnalysisPage() {
 
     if (!authLoading && user && !user.is_superuser) {
       toast.error("Access denied - Admin privileges required");
-      router.push("/dashboard");
+      router.push("/build/workflows");
       return;
     }
 
@@ -131,7 +131,7 @@ export default function RegionAnalysisPage() {
       <div className="mb-6 flex items-center gap-4">
         <Button
           variant="ghost"
-          onClick={() => router.push("/dashboard")}
+          onClick={() => router.push("/build/workflows")}
           className="hover:bg-primary/10"
         >
           <LayoutDashboard className="mr-2 h-4 w-4" />
@@ -346,10 +346,10 @@ export default function RegionAnalysisPage() {
                     avg_confidence:
                       job.fused_regions.reduce(
                         (sum, r) => sum + r.confidence,
-                        0
+                        0,
                       ) / job.fused_regions.length,
                     multi_vote_regions: job.fused_regions.filter(
-                      (r) => r.votes > 1
+                      (r) => r.votes > 1,
                     ).length,
                     total_grid_cells: job.total_grid_cells,
                   },
