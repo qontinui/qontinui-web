@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import Image from "next/image";
 import { useEventTriggeredFetch } from "@/contexts/RunnerEventContext";
 import type { TaskRunScreenshot } from "@/lib/runner-api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -71,12 +72,17 @@ function ScreenshotImage({
   }
 
   return (
-    <img
+    <Image
       src={url}
       alt={screenshot.description || `Screenshot at ${screenshot.timestamp}`}
+      width={0}
+      height={0}
+      sizes="100vw"
+      style={{ width: "100%", height: "auto" }}
       className={`object-contain rounded-lg cursor-pointer ${className || ""}`}
       onClick={onClick}
       onError={() => setHasError(true)}
+      unoptimized
     />
   );
 }
@@ -88,12 +94,17 @@ export function ScreenshotsWidget({ runId }: { runId: string }) {
     {
       transform: (raw: unknown) => {
         const obj = raw as Record<string, unknown>;
-        if (obj && typeof obj === "object" && "screenshots" in obj && Array.isArray(obj.screenshots))
+        if (
+          obj &&
+          typeof obj === "object" &&
+          "screenshots" in obj &&
+          Array.isArray(obj.screenshots)
+        )
           return obj.screenshots as TaskRunScreenshot[];
         if (Array.isArray(raw)) return raw as TaskRunScreenshot[];
         return [];
       },
-    }
+    },
   );
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [autoSelectLatest, setAutoSelectLatest] = useState(true);

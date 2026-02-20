@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import Image from "next/image";
 import { useRunnerHealth } from "@/lib/runner-api";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { usePageSpecs } from "@/hooks/usePageSpecs";
@@ -83,7 +84,7 @@ export default function InspectorPage() {
 
   // Action form state
   const [actionType, setActionType] = useState<"click" | "type" | "focus">(
-    "click"
+    "click",
   );
   const [typeText, setTypeText] = useState("");
   const [actionResult, setActionResult] = useState<{
@@ -133,7 +134,7 @@ export default function InspectorPage() {
     (el: ExternalElement) => {
       selectElement(el);
     },
-    [selectElement]
+    [selectElement],
   );
 
   // Execute action on selected element
@@ -149,7 +150,7 @@ export default function InspectorPage() {
         const result = await desktop.executeAction(
           el.id,
           actionType,
-          actionType === "type" ? { text: typeText } : undefined
+          actionType === "type" ? { text: typeText } : undefined,
         );
         setActionResult({
           success: result.success,
@@ -161,7 +162,7 @@ export default function InspectorPage() {
         const result = await bridge.executeAction(
           el.id,
           actionType,
-          actionType === "type" ? { text: typeText } : {}
+          actionType === "type" ? { text: typeText } : {},
         );
         setActionResult({
           success: result.success,
@@ -274,7 +275,9 @@ export default function InspectorPage() {
       </header>
 
       <main className="p-6 max-w-7xl mx-auto space-y-6">
-        {isOffline && <RunnerPartialState message="Runner offline — this tool requires the runner for execution" />}
+        {isOffline && (
+          <RunnerPartialState message="Runner offline — this tool requires the runner for execution" />
+        )}
 
         {/* Connection Panel */}
         <ConnectionPanel
@@ -462,17 +465,21 @@ export default function InspectorPage() {
                 </h3>
               </div>
               <div className="relative max-h-[400px] overflow-auto rounded-lg border border-border-subtle/30">
-                <img
+                <Image
                   src={`data:image/png;base64,${bridge.pageScreenshot.data}`}
                   alt="Page screenshot"
-                  className="w-full"
+                  width={0}
+                  height={0}
+                  sizes="100vw"
+                  style={{ width: "100%", height: "auto" }}
+                  unoptimized
                 />
               </div>
               <p className="text-xs text-text-muted mt-2">
                 {bridge.pageScreenshot.viewport.width}x
                 {bridge.pageScreenshot.viewport.height} — captured{" "}
                 {new Date(
-                  bridge.pageScreenshot.capturedAt
+                  bridge.pageScreenshot.capturedAt,
                 ).toLocaleTimeString()}
               </p>
             </CardContent>

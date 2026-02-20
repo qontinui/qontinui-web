@@ -12,10 +12,7 @@
  */
 
 import { useState, useMemo } from "react";
-import {
-  useTaskRunCheckpoints,
-  useTaskRunEvents,
-} from "@/lib/runner-api";
+import { useTaskRunCheckpoints, useTaskRunEvents } from "@/lib/runner-api";
 import type { Checkpoint, TaskRunEvent } from "@/lib/runner-api";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -120,48 +117,131 @@ const PHASE_COLORS: Record<WorkflowPhase, { bg: string; text: string }> = {
 };
 
 // Step type to icon mapping (matches runner's STEP_ICON_CONFIG in step-icons.ts)
-const STEP_TYPE_ICONS: Record<string, { icon: LucideIcon; bg: string; text: string }> = {
+const STEP_TYPE_ICONS: Record<
+  string,
+  { icon: LucideIcon; bg: string; text: string }
+> = {
   // AI steps
-  ai_session: { icon: MessageSquare, bg: "bg-amber-500/10", text: "text-amber-400" },
+  ai_session: {
+    icon: MessageSquare,
+    bg: "bg-amber-500/10",
+    text: "text-amber-400",
+  },
   ai: { icon: MessageSquare, bg: "bg-amber-500/10", text: "text-amber-400" },
-  ai_analysis: { icon: MessageSquare, bg: "bg-amber-500/10", text: "text-amber-400" },
-  prompt: { icon: MessageSquare, bg: "bg-amber-500/10", text: "text-amber-400" },
+  ai_analysis: {
+    icon: MessageSquare,
+    bg: "bg-amber-500/10",
+    text: "text-amber-400",
+  },
+  prompt: {
+    icon: MessageSquare,
+    bg: "bg-amber-500/10",
+    text: "text-amber-400",
+  },
   // Setup/scripting steps
   script: { icon: FileCode, bg: "bg-emerald-500/10", text: "text-emerald-400" },
   state: { icon: Navigation, bg: "bg-blue-500/10", text: "text-blue-400" },
-  workflow: { icon: GitBranch, bg: "bg-purple-500/10", text: "text-purple-400" },
-  workflow_ref: { icon: GitBranch, bg: "bg-purple-500/10", text: "text-purple-400" },
+  workflow: {
+    icon: GitBranch,
+    bg: "bg-purple-500/10",
+    text: "text-purple-400",
+  },
+  workflow_ref: {
+    icon: GitBranch,
+    bg: "bg-purple-500/10",
+    text: "text-purple-400",
+  },
   // Interaction steps
-  gui_action: { icon: MousePointer2, bg: "bg-orange-500/10", text: "text-orange-400" },
-  action: { icon: MousePointer2, bg: "bg-orange-500/10", text: "text-orange-400" },
-  automation: { icon: MousePointer2, bg: "bg-orange-500/10", text: "text-orange-400" },
-  shell_command: { icon: Terminal, bg: "bg-gray-500/10", text: "text-gray-400" },
+  gui_action: {
+    icon: MousePointer2,
+    bg: "bg-orange-500/10",
+    text: "text-orange-400",
+  },
+  action: {
+    icon: MousePointer2,
+    bg: "bg-orange-500/10",
+    text: "text-orange-400",
+  },
+  automation: {
+    icon: MousePointer2,
+    bg: "bg-orange-500/10",
+    text: "text-orange-400",
+  },
+  shell_command: {
+    icon: Terminal,
+    bg: "bg-gray-500/10",
+    text: "text-gray-400",
+  },
   shell: { icon: Terminal, bg: "bg-gray-500/10", text: "text-gray-400" },
   api_request: { icon: Globe, bg: "bg-cyan-500/10", text: "text-cyan-400" },
   // Test steps
   test: { icon: TestTube2, bg: "bg-green-500/10", text: "text-green-400" },
-  test_playwright: { icon: TestTube2, bg: "bg-green-500/10", text: "text-green-400" },
-  playwright: { icon: TestTube2, bg: "bg-green-500/10", text: "text-green-400" },
+  test_playwright: {
+    icon: TestTube2,
+    bg: "bg-green-500/10",
+    text: "text-green-400",
+  },
+  playwright: {
+    icon: TestTube2,
+    bg: "bg-green-500/10",
+    text: "text-green-400",
+  },
   test_vision: { icon: Eye, bg: "bg-green-500/10", text: "text-green-400" },
   test_python: { icon: Code, bg: "bg-green-500/10", text: "text-green-400" },
-  test_repository: { icon: Package, bg: "bg-green-500/10", text: "text-green-400" },
+  test_repository: {
+    icon: Package,
+    bg: "bg-green-500/10",
+    text: "text-green-400",
+  },
   // Check steps
   check: { icon: AlertTriangle, bg: "bg-cyan-500/10", text: "text-cyan-400" },
-  check_lint: { icon: AlertTriangle, bg: "bg-cyan-500/10", text: "text-cyan-400" },
-  check_typecheck: { icon: FileType, bg: "bg-cyan-500/10", text: "text-cyan-400" },
+  check_lint: {
+    icon: AlertTriangle,
+    bg: "bg-cyan-500/10",
+    text: "text-cyan-400",
+  },
+  check_typecheck: {
+    icon: FileType,
+    bg: "bg-cyan-500/10",
+    text: "text-cyan-400",
+  },
   check_build: { icon: Package, bg: "bg-cyan-500/10", text: "text-cyan-400" },
-  check_group: { icon: CheckCircle, bg: "bg-cyan-500/10", text: "text-cyan-400" },
-  check_ci_cd: { icon: GitBranch, bg: "bg-purple-500/10", text: "text-purple-400" },
+  check_group: {
+    icon: CheckCircle,
+    bg: "bg-cyan-500/10",
+    text: "text-cyan-400",
+  },
+  check_ci_cd: {
+    icon: GitBranch,
+    bg: "bg-purple-500/10",
+    text: "text-purple-400",
+  },
   log_watch: { icon: FileSearch, bg: "bg-cyan-500/10", text: "text-cyan-400" },
-  error_resolved: { icon: CheckCircle, bg: "bg-green-500/10", text: "text-green-400" },
+  error_resolved: {
+    icon: CheckCircle,
+    bg: "bg-green-500/10",
+    text: "text-green-400",
+  },
   // Other
   screenshot: { icon: Camera, bg: "bg-pink-500/10", text: "text-pink-400" },
   // AWAS step types
   awas_discover: { icon: Search, bg: "bg-teal-500/10", text: "text-teal-400" },
   awas_execute: { icon: Play, bg: "bg-teal-500/10", text: "text-teal-400" },
-  awas_check_support: { icon: CheckCircle, bg: "bg-teal-500/10", text: "text-teal-400" },
-  awas_list_actions: { icon: List, bg: "bg-teal-500/10", text: "text-teal-400" },
-  awas_extract_elements: { icon: FileSearch, bg: "bg-teal-500/10", text: "text-teal-400" },
+  awas_check_support: {
+    icon: CheckCircle,
+    bg: "bg-teal-500/10",
+    text: "text-teal-400",
+  },
+  awas_list_actions: {
+    icon: List,
+    bg: "bg-teal-500/10",
+    text: "text-teal-400",
+  },
+  awas_extract_elements: {
+    icon: FileSearch,
+    bg: "bg-teal-500/10",
+    text: "text-teal-400",
+  },
 };
 
 // Progress type to color mapping (matches runner's InlineProgressBar semantic coloring)
@@ -186,7 +266,9 @@ function formatDuration(ms: number | null | undefined): string {
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
   if (minutes < 60)
-    return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+    return remainingSeconds > 0
+      ? `${minutes}m ${remainingSeconds}s`
+      : `${minutes}m`;
   const hours = Math.floor(minutes / 60);
   const remainingMinutes = minutes % 60;
   return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
@@ -280,7 +362,8 @@ function InlineProgressBar({
   total: number;
   progressType: string;
 }) {
-  const pct = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
+  const pct =
+    total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
   const colors = PROGRESS_COLORS[progressType] ?? PROGRESS_COLORS["default"]!;
 
   return (
@@ -346,26 +429,26 @@ function buildStagesFromCheckpoints(checkpoints: Checkpoint[]): StageData[] {
 
     const startedAt =
       timestamps.length > 0
-        ? steps.find(
+        ? (steps.find(
             (s) =>
               s.started_at &&
-              new Date(s.started_at).getTime() === Math.min(...timestamps)
-          )?.started_at ?? null
+              new Date(s.started_at).getTime() === Math.min(...timestamps),
+          )?.started_at ?? null)
         : null;
 
     const endedAt =
       endTimestamps.length > 0
-        ? steps.find(
+        ? (steps.find(
             (s) =>
               s.completed_at &&
-              new Date(s.completed_at).getTime() === Math.max(...endTimestamps)
-          )?.completed_at ?? null
+              new Date(s.completed_at).getTime() === Math.max(...endTimestamps),
+          )?.completed_at ?? null)
         : null;
 
     // Compute total duration from individual step durations
     const totalDurationMs = steps.reduce(
       (sum, s) => sum + (s.duration_ms || 0),
-      0
+      0,
     );
 
     // Show iteration for verification/agentic when iteration is defined
@@ -516,8 +599,7 @@ function StageSection({ stage }: { stage: StageData }) {
             </span>
           )}
           <span className="text-sm text-text-muted">
-            ({stage.steps.length}{" "}
-            {stage.steps.length === 1 ? "step" : "steps"})
+            ({stage.steps.length} {stage.steps.length === 1 ? "step" : "steps"})
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -619,13 +701,16 @@ export function TimelineTab({ runId }: { runId: string }) {
   const isLoading = checkpointsQuery.isLoading && eventsQuery.isLoading;
   const error = checkpointsQuery.error && eventsQuery.error;
 
-  const checkpoints = checkpointsQuery.data ?? [];
+  const checkpoints = useMemo(
+    () => checkpointsQuery.data ?? [],
+    [checkpointsQuery.data],
+  );
   const events = eventsQuery.data ?? [];
 
   // Build stages from checkpoints
   const stages = useMemo(
     () => buildStagesFromCheckpoints(checkpoints),
-    [checkpoints]
+    [checkpoints],
   );
 
   if (isLoading) {

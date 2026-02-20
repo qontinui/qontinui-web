@@ -47,6 +47,10 @@ export function AutomationProviderV2({ children }: AutomationProviderProps) {
   // subscribing to the entire store), but the context value should only change
   // when actual data properties change. This prevents cascading re-renders
   // of all useAutomation() consumers on every store update.
+  // The bridge object is recreated every render by useAutomationStore(), so including
+  // it in deps would defeat memoization. We list individual data properties to re-memoize only when
+  // actual data changes, preventing cascading re-renders of all useAutomation() consumers.
+  /* eslint-disable react-hooks/exhaustive-deps */
   const contextValue = useMemo(
     () => automationBridge,
     [
@@ -63,8 +67,9 @@ export function AutomationProviderV2({ children }: AutomationProviderProps) {
       automationBridge.executionRecords,
       automationBridge.lastSaved,
       automationBridge.isLoadingFromBackend,
-    ]
+    ],
   );
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   return (
     <AutomationContext.Provider value={contextValue}>

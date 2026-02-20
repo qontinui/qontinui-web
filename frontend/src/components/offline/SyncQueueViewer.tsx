@@ -51,7 +51,7 @@ export function SyncQueueViewer() {
     return () => {
       unsubscribe();
     };
-  }, []);
+  }, [isOpen]);
 
   // Only poll for item details when the panel is open
   useEffect(() => {
