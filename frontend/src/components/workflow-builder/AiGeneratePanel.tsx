@@ -36,6 +36,8 @@ import {
   usePromptsDetailed,
 } from "@/lib/runner-api";
 import type { ContextItem } from "@/lib/runner-api";
+import { SpecSourceSection, type SpecSourceState } from "./SpecSourceSection";
+import { buildSpecPrompt } from "@/lib/spec-prompt-builder";
 
 // =============================================================================
 // Auto-run localStorage signal
@@ -52,7 +54,6 @@ export interface AutoRunAfterGenerate {
 // =============================================================================
 
 export interface AiGeneratePanelProps {
-  onWorkflowGenerated: (workflowId: string) => void;
   onCreateManually: () => void;
   isCreatingManually: boolean;
   onNavigateToActiveRuns: (taskRunId: string) => void;
@@ -67,7 +68,7 @@ async function autoSaveGenerationPrompt(promptText: string): Promise<void> {
     const existing = await runnerApi.getPrompts();
     const trimmed = promptText.trim();
     const isDuplicate = existing.some(
-      (p) => p.category === "Generation" && p.content.trim() === trimmed,
+      (p) => p.category === "Generation" && p.content.trim() === trimmed
     );
     if (isDuplicate) return;
 
@@ -123,7 +124,7 @@ export function AiGeneratePanel({
   const [maxFixIterations, setMaxFixIterations] = useState("");
   const [autoIncludeContexts, setAutoIncludeContexts] = useState(true);
   const [generationMode, setGenerationMode] = useState<"standard" | "plan">(
-    "standard",
+    "standard"
   );
   const [discoveryMode, setDiscoveryMode] = useState<
     "auto" | "enabled" | "disabled"
@@ -132,12 +133,20 @@ export function AiGeneratePanel({
   // Context section
   const [showContext, setShowContext] = useState(false);
 
+  // Page Specs section
+  const [specState, setSpecState] = useState<SpecSourceState>({
+    discoveredSpecs: [],
+    selectedGroupIds: new Set(),
+  });
+  const hasSpecs =
+    specState.discoveredSpecs.length > 0 && specState.selectedGroupIds.size > 0;
+
   // Saved prompts (generation category)
   const [showPromptPicker, setShowPromptPicker] = useState(false);
   const { data: savedPrompts } = usePromptsDetailed();
   const generationPrompts = useMemo(
     () => (savedPrompts || []).filter((p) => p.category === "Generation"),
-    [savedPrompts],
+    [savedPrompts]
   );
 
   // Saved contexts
@@ -153,7 +162,7 @@ export function AiGeneratePanel({
     setSelectedContextIds((prev) =>
       prev.includes(contextId)
         ? prev.filter((id) => id !== contextId)
-        : [...prev, contextId],
+        : [...prev, contextId]
     );
   }, []);
 
@@ -179,8 +188,29 @@ export function AiGeneratePanel({
       .map((t) => t.trim())
       .filter(Boolean);
 
+    // Build combined description: spec prompt + user description
+    let fullDescription = "";
+    if (
+      specState.discoveredSpecs.length > 0 &&
+      specState.selectedGroupIds.size > 0
+    ) {
+      const specResult = buildSpecPrompt({
+        discoveredSpecs: specState.discoveredSpecs,
+        selectedGroupIds: specState.selectedGroupIds,
+      });
+      fullDescription = specResult.prompt;
+      if (description.trim()) {
+        fullDescription += `\n\n## Additional Instructions\n${description.trim()}`;
+      }
+      if (!tags.includes("spec-generated")) {
+        tags.push("spec-generated");
+      }
+    } else {
+      fullDescription = description.trim();
+    }
+
     return {
-      description: description.trim(),
+      description: fullDescription,
       category: category.trim() || undefined,
       tags: tags.length > 0 ? tags : undefined,
       context_ids:
@@ -210,22 +240,27 @@ export function AiGeneratePanel({
     autoIncludeContexts,
     generationMode,
     discoveryMode,
+    specState,
   ]);
 
+  const canGenerate = description.trim() || hasSpecs;
+
   const handleGenerate = async () => {
-    if (!description.trim()) return;
+    if (!canGenerate) return;
     setIsSubmitting(true);
     try {
       const response = await runnerApi.generateWorkflowAsync(
-        buildGenerateRequest(),
+        buildGenerateRequest()
       );
-      autoSaveGenerationPrompt(description); // fire-and-forget
+      if (description.trim()) {
+        autoSaveGenerationPrompt(description); // fire-and-forget
+      }
       onNavigateToActiveRuns(response.task_run_id);
     } catch (err) {
       toast.error(
         err instanceof Error
           ? err.message
-          : "Failed to start workflow generation",
+          : "Failed to start workflow generation"
       );
     } finally {
       setIsSubmitting(false);
@@ -233,20 +268,22 @@ export function AiGeneratePanel({
   };
 
   const handleGenerateAndRun = async () => {
-    if (!description.trim()) return;
+    if (!canGenerate) return;
     setIsSubmitting(true);
     const toastId = toast.loading("Starting workflow generation...");
     try {
       const response = await runnerApi.generateWorkflowAsync(
-        buildGenerateRequest(),
+        buildGenerateRequest()
       );
-      autoSaveGenerationPrompt(description); // fire-and-forget
+      if (description.trim()) {
+        autoSaveGenerationPrompt(description); // fire-and-forget
+      }
       localStorage.setItem(
         AUTO_RUN_AFTER_GENERATE_KEY,
         JSON.stringify({
           taskRunId: response.task_run_id,
           timestamp: Date.now(),
-        } satisfies AutoRunAfterGenerate),
+        } satisfies AutoRunAfterGenerate)
       );
       toast.dismiss(toastId);
       onNavigateToActiveRuns(response.task_run_id);
@@ -255,7 +292,7 @@ export function AiGeneratePanel({
         err instanceof Error
           ? err.message
           : "Failed to start workflow generation",
-        { id: toastId },
+        { id: toastId }
       );
     } finally {
       setIsSubmitting(false);
@@ -270,7 +307,7 @@ export function AiGeneratePanel({
       acc[scope].push(ctx);
       return acc;
     },
-    {} as Record<string, ContextItem[]>,
+    {} as Record<string, ContextItem[]>
   );
 
   return (
@@ -373,15 +410,20 @@ export function AiGeneratePanel({
             <Textarea
               className={`bg-zinc-800 border-zinc-700 text-zinc-200 text-sm ${generationMode === "plan" ? "min-h-[200px] font-mono text-xs" : "min-h-[120px]"}`}
               placeholder={
-                generationMode === "plan"
-                  ? "1. Add sweep fields to the database schema\n2. Update the Rust structs with new fields\n3. Wire the fields into the executor\n4. Add frontend UI controls\n5. Run cargo test to verify compilation"
-                  : "e.g., Run TypeScript type checking on the web frontend and fix any errors\ne.g., Check the runner API health, then verify UI Bridge elements are registered\ne.g., Run pytest with coverage and fix failing tests"
+                hasSpecs
+                  ? "Optional: add additional instructions for the AI..."
+                  : generationMode === "plan"
+                    ? "1. Add sweep fields to the database schema\n2. Update the Rust structs with new fields\n3. Wire the fields into the executor\n4. Add frontend UI controls\n5. Run cargo test to verify compilation"
+                    : "e.g., Run TypeScript type checking on the web frontend and fix any errors\ne.g., Check the runner API health, then verify UI Bridge elements are registered\ne.g., Run pytest with coverage and fix failing tests"
               }
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               autoFocus
             />
           </div>
+
+          {/* Page Specs Section */}
+          <SpecSourceSection onSpecsChanged={setSpecState} />
 
           {/* Context Section */}
           <Collapsible open={showContext} onOpenChange={setShowContext}>
@@ -455,7 +497,7 @@ export function AiGeneratePanel({
                               </label>
                             ))}
                           </div>
-                        ),
+                        )
                       )}
                     </div>
                   )}
@@ -582,7 +624,7 @@ export function AiGeneratePanel({
                     value={discoveryMode}
                     onChange={(e) =>
                       setDiscoveryMode(
-                        e.target.value as "auto" | "enabled" | "disabled",
+                        e.target.value as "auto" | "enabled" | "disabled"
                       )
                     }
                     className="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm h-8 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
@@ -614,7 +656,7 @@ export function AiGeneratePanel({
         <div className="max-w-3xl mx-auto flex items-center gap-3">
           <Button
             onClick={handleGenerate}
-            disabled={!description.trim() || isSubmitting}
+            disabled={!canGenerate || isSubmitting}
             className="px-6"
           >
             {isSubmitting ? (
@@ -627,7 +669,7 @@ export function AiGeneratePanel({
           <Button
             variant="outline"
             onClick={handleGenerateAndRun}
-            disabled={!description.trim() || isSubmitting}
+            disabled={!canGenerate || isSubmitting}
             className="px-6"
           >
             {isSubmitting ? (

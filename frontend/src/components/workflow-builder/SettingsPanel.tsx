@@ -8,13 +8,87 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { ChevronDown, ChevronRight, Settings } from "lucide-react";
+import { ChevronDown, ChevronRight, Settings, FileCode } from "lucide-react";
 import { useWorkflowBuilder } from "./WorkflowBuilderContext";
+import { PromptTemplateEditor } from "./PromptTemplateEditor";
+import type { LogSourceSelection } from "@/types/unified-workflow";
+
+// =============================================================================
+// Provider / Model Configuration
+// =============================================================================
+
+const PROVIDER_OPTIONS = [
+  { value: "", label: "Use Default (from Settings)" },
+  { value: "claude_cli", label: "Claude CLI" },
+  { value: "anthropic_api", label: "Anthropic API" },
+  { value: "openai_api", label: "OpenAI API" },
+  { value: "gemini_api", label: "Gemini API" },
+];
+
+const MODELS_BY_PROVIDER: Record<
+  string,
+  Array<{ value: string; label: string }>
+> = {
+  claude_cli: [
+    { value: "", label: "Default" },
+    { value: "claude-sonnet-4-20250514", label: "Claude Sonnet 4" },
+    { value: "claude-opus-4-20250514", label: "Claude Opus 4" },
+  ],
+  anthropic_api: [
+    { value: "", label: "Default" },
+    { value: "claude-sonnet-4-20250514", label: "Claude Sonnet 4" },
+    { value: "claude-opus-4-20250514", label: "Claude Opus 4" },
+  ],
+  openai_api: [
+    { value: "", label: "Default" },
+    { value: "gpt-4o", label: "GPT-4o" },
+    { value: "gpt-4o-mini", label: "GPT-4o Mini" },
+    { value: "o1", label: "o1" },
+    { value: "o1-mini", label: "o1-mini" },
+  ],
+  gemini_api: [
+    { value: "", label: "Default" },
+    { value: "gemini-3-flash-preview", label: "Gemini 3 Flash (Fast)" },
+    { value: "gemini-3-pro-preview", label: "Gemini 3 Pro" },
+    { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+    { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+  ],
+};
+
+// =============================================================================
+// Log Source Helpers
+// =============================================================================
+
+function getLogSourceValue(selection: LogSourceSelection | undefined): string {
+  if (!selection) return "default";
+  if (typeof selection === "string") return selection;
+  if (typeof selection === "object" && "profile_id" in selection) {
+    return `profile:${selection.profile_id}`;
+  }
+  return "default";
+}
+
+function parseLogSourceValue(value: string): LogSourceSelection | undefined {
+  if (value === "default") return undefined;
+  if (value === "ai" || value === "all") return value;
+  if (value.startsWith("profile:")) {
+    return { profile_id: value.slice("profile:".length) };
+  }
+  return undefined;
+}
+
+// =============================================================================
+// Component
+// =============================================================================
 
 export function SettingsPanel() {
   const { state, updateWorkflow, features } = useWorkflowBuilder();
   const workflow = state.workflow;
   const [isOpen, setIsOpen] = React.useState(true);
+  const [isPromptTemplateOpen, setIsPromptTemplateOpen] = React.useState(false);
+
+  const selectClass =
+    "w-full h-9 px-3 rounded-md bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-600";
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
@@ -137,35 +211,105 @@ export function SettingsPanel() {
               </div>
             )}
 
-            {/* AI provider/model overrides */}
+            {/* AI Provider / Model (dropdowns) */}
             {features.hasAiPrompts && (
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-zinc-400 mb-1">
                     AI Provider
                   </label>
-                  <Input
-                    className="bg-zinc-800 border-zinc-700 text-zinc-200 text-sm"
-                    placeholder="Default"
+                  <select
+                    className={selectClass}
                     value={workflow.provider ?? ""}
                     onChange={(e) =>
-                      updateWorkflow({ provider: e.target.value || undefined })
+                      updateWorkflow({
+                        provider: e.target.value || undefined,
+                        model: undefined,
+                      })
                     }
-                  />
+                  >
+                    {PROVIDER_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-zinc-400 mb-1">
                     AI Model
                   </label>
-                  <Input
-                    className="bg-zinc-800 border-zinc-700 text-zinc-200 text-sm"
-                    placeholder="Default"
-                    value={workflow.model ?? ""}
-                    onChange={(e) =>
-                      updateWorkflow({ model: e.target.value || undefined })
-                    }
-                  />
+                  {workflow.provider &&
+                  MODELS_BY_PROVIDER[workflow.provider] ? (
+                    <select
+                      className={selectClass}
+                      value={workflow.model ?? ""}
+                      onChange={(e) =>
+                        updateWorkflow({ model: e.target.value || undefined })
+                      }
+                    >
+                      {MODELS_BY_PROVIDER[workflow.provider]!.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <Input
+                      className="bg-zinc-800 border-zinc-700 text-zinc-200 text-sm"
+                      placeholder="Default"
+                      value={workflow.model ?? ""}
+                      onChange={(e) =>
+                        updateWorkflow({ model: e.target.value || undefined })
+                      }
+                    />
+                  )}
                 </div>
+              </div>
+            )}
+
+            {/* Log Source Selection */}
+            {features.showIterationSettings && (
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1">
+                  Log Sources
+                </label>
+                <select
+                  className={selectClass}
+                  value={getLogSourceValue(workflow.log_source_selection)}
+                  onChange={(e) =>
+                    updateWorkflow({
+                      log_source_selection: parseLogSourceValue(e.target.value),
+                    })
+                  }
+                >
+                  <option value="default">
+                    Default (from global settings)
+                  </option>
+                  <option value="ai">AI-based selection</option>
+                  <option value="all">All enabled sources</option>
+                </select>
+                <p className="mt-1 text-[10px] text-zinc-500">
+                  Controls which log files are monitored during execution
+                </p>
+              </div>
+            )}
+
+            {/* Prompt template editor button (only when agentic steps exist) */}
+            {features.showIterationSettings && (
+              <div>
+                <button
+                  onClick={() => setIsPromptTemplateOpen(true)}
+                  className="flex items-center gap-2 w-full px-3 py-2 rounded-md border border-zinc-700 bg-zinc-800/50 hover:bg-zinc-800 text-sm text-zinc-300 hover:text-zinc-100 transition-colors"
+                >
+                  <FileCode className="w-4 h-4 text-amber-400" />
+                  <span>Edit Prompt Template</span>
+                  {workflow.prompt_template && (
+                    <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">
+                      Custom
+                    </span>
+                  )}
+                </button>
               </div>
             )}
 
@@ -223,7 +367,7 @@ export function SettingsPanel() {
                           (item, j) =>
                             j === i
                               ? { name: e.target.value, url: item.url }
-                              : item,
+                              : item
                         );
                         updateWorkflow({ health_check_urls: urls });
                       }}
@@ -237,7 +381,7 @@ export function SettingsPanel() {
                           (item, j) =>
                             j === i
                               ? { name: item.name, url: e.target.value }
-                              : item,
+                              : item
                         );
                         updateWorkflow({ health_check_urls: urls });
                       }}
@@ -246,7 +390,7 @@ export function SettingsPanel() {
                       className="text-red-400 hover:text-red-300 text-sm px-1"
                       onClick={() => {
                         const urls = (workflow.health_check_urls ?? []).filter(
-                          (_, j) => j !== i,
+                          (_, j) => j !== i
                         );
                         updateWorkflow({ health_check_urls: urls });
                       }}
@@ -272,6 +416,11 @@ export function SettingsPanel() {
           </div>
         </CollapsibleContent>
       </div>
+
+      <PromptTemplateEditor
+        isOpen={isPromptTemplateOpen}
+        onClose={() => setIsPromptTemplateOpen(false)}
+      />
     </Collapsible>
   );
 }

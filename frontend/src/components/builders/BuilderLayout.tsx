@@ -14,8 +14,26 @@ import {
   Trash2,
   CheckSquare,
   X,
+  Clock,
   type LucideIcon,
 } from "lucide-react";
+
+function formatRelativeTime(dateStr?: string): string | null {
+  if (!dateStr) return null;
+  try {
+    const date = new Date(dateStr);
+    const now = Date.now();
+    const diff = now - date.getTime();
+    if (diff < 0 || isNaN(diff)) return null;
+    if (diff < 60_000) return "Just now";
+    if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+    if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+    if (diff < 604_800_000) return `${Math.floor(diff / 86_400_000)}d ago`;
+    return date.toLocaleDateString();
+  } catch {
+    return null;
+  }
+}
 
 export interface BuilderItem {
   id: string;
@@ -49,6 +67,23 @@ interface BuilderLayoutProps<T extends BuilderItem> {
   searchPlaceholder?: string;
   initialSelectedId?: string | null;
 }
+
+const ACCENT_CLASSES: Record<string, { bg: string; border: string }> = {
+  cyan: { bg: "bg-cyan-500/10", border: "border-cyan-500/30" },
+  emerald: { bg: "bg-emerald-500/10", border: "border-emerald-500/30" },
+  blue: { bg: "bg-blue-500/10", border: "border-blue-500/30" },
+  green: { bg: "bg-green-500/10", border: "border-green-500/30" },
+  teal: { bg: "bg-teal-500/10", border: "border-teal-500/30" },
+  amber: { bg: "bg-amber-500/10", border: "border-amber-500/30" },
+  violet: { bg: "bg-violet-500/10", border: "border-violet-500/30" },
+  purple: { bg: "bg-purple-500/10", border: "border-purple-500/30" },
+  orange: { bg: "bg-orange-500/10", border: "border-orange-500/30" },
+  sky: { bg: "bg-sky-500/10", border: "border-sky-500/30" },
+  lime: { bg: "bg-lime-500/10", border: "border-lime-500/30" },
+  pink: { bg: "bg-pink-500/10", border: "border-pink-500/30" },
+  rose: { bg: "bg-rose-500/10", border: "border-rose-500/30" },
+  red: { bg: "bg-red-500/10", border: "border-red-500/30" },
+};
 
 export function BuilderLayout<T extends BuilderItem>({
   title,
@@ -87,7 +122,7 @@ export function BuilderLayout<T extends BuilderItem>({
     return items.filter(
       (item) =>
         item.name.toLowerCase().includes(q) ||
-        (item.description && item.description.toLowerCase().includes(q)),
+        (item.description && item.description.toLowerCase().includes(q))
     );
   }, [items, searchQuery]);
 
@@ -235,7 +270,7 @@ export function BuilderLayout<T extends BuilderItem>({
                   <div
                     key={item.id}
                     className={`group/item relative flex items-center gap-2 rounded-lg px-2 py-2 cursor-pointer transition-colors
-                      ${isSelected ? `bg-${accentColor}-500/10 border border-${accentColor}-500/30` : "border border-transparent hover:bg-surface-raised/60"}
+                      ${isSelected ? `${ACCENT_CLASSES[accentColor]?.bg ?? "bg-cyan-500/10"} border ${ACCENT_CLASSES[accentColor]?.border ?? "border-cyan-500/30"}` : "border border-transparent hover:bg-surface-raised/60"}
                     `}
                     onClick={() => {
                       if (selectionMode) {
@@ -254,6 +289,14 @@ export function BuilderLayout<T extends BuilderItem>({
                     )}
                     <div className="flex-1 min-w-0">
                       {renderListItem(item, isSelected)}
+                      {item.updated_at && (
+                        <div className="flex items-center gap-1 pl-6 mt-0.5">
+                          <Clock className="size-2.5 text-text-muted/50" />
+                          <span className="text-[9px] text-text-muted/50">
+                            {formatRelativeTime(item.updated_at)}
+                          </span>
+                        </div>
+                      )}
                     </div>
                     {renderListActions && !selectionMode && (
                       <div

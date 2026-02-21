@@ -274,6 +274,31 @@ export function useDeleteTest() {
   });
 }
 
+export function useDuplicateTest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, newName }: { id: string; newName?: string }) => {
+      const { runnerFetch } = await import("@/lib/runner/api-client");
+      // Get original, create copy
+      const original = await runnerFetch<RunnerTest>(`/tests/${id}`);
+      const copy = {
+        ...original,
+        id: undefined,
+        name: newName ?? `${original.name} (Copy)`,
+        created_at: undefined,
+        updated_at: undefined,
+      };
+      return runnerFetch<RunnerTest>("/tests", {
+        method: "POST",
+        body: JSON.stringify(copy),
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: runnerEntityKeys.type("tests") });
+    },
+  });
+}
+
 export function useExecuteTest() {
   return useMutation({
     mutationFn: async (id: string) => {
