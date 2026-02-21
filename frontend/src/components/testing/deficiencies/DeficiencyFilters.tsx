@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -70,6 +70,7 @@ export function DeficiencyFilters({
   className,
 }: DeficiencyFiltersProps) {
   const [localFilters, setLocalFilters] = useState<Filters>(filters);
+  const [prevFilters, setPrevFilters] = useState<Filters>(filters);
   const [severityOpen, setSeverityOpen] = useState(true);
   const [typeOpen, setTypeOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(true);
@@ -77,10 +78,10 @@ export function DeficiencyFilters({
   const [tagsOpen, setTagsOpen] = useState(false);
   const [dateOpen, setDateOpen] = useState(false);
 
-  // Sync local filters with prop filters
-  useEffect(() => {
+  if (filters !== prevFilters) {
+    setPrevFilters(filters);
     setLocalFilters(filters);
-  }, [filters]);
+  }
 
   const handleSearchChange = (search: string) => {
     const updated = { ...localFilters, search };

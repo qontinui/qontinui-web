@@ -487,6 +487,7 @@ export function SnapshotTestGenerator({
           className="text-lg font-semibold text-neutral-100"
           data-ui-element
           role="heading"
+          aria-level={2}
         >
           Snapshot Test Generator
         </h2>

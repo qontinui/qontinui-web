@@ -47,6 +47,7 @@ export function ProjectSwitcher({
           variant="outline"
           role="combobox"
           aria-expanded={open}
+          aria-controls="project-switcher-list"
           aria-label="Select project"
           className={cn("w-full justify-between", className)}
           disabled={loading}
@@ -70,7 +71,7 @@ export function ProjectSwitcher({
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-[280px]" align="start">
+      <DropdownMenuContent id="project-switcher-list" className="w-[280px]" align="start">
         <DropdownMenuLabel>Projects</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {projects.length === 0 ? (

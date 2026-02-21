@@ -68,12 +68,13 @@ export function WelcomeModal() {
   } = useOnboardingStore();
 
   const [dontShowAgain, setDontShowAgain] = useState(dontShowWelcomeAgain);
+  const [prevDontShowWelcomeAgain, setPrevDontShowWelcomeAgain] = useState(dontShowWelcomeAgain);
   const [isClosing, setIsClosing] = useState(false);
 
-  // Update local state when store changes
-  useEffect(() => {
+  if (dontShowWelcomeAgain !== prevDontShowWelcomeAgain) {
+    setPrevDontShowWelcomeAgain(dontShowWelcomeAgain);
     setDontShowAgain(dontShowWelcomeAgain);
-  }, [dontShowWelcomeAgain]);
+  }
 
   // Handle modal close with animation
   const handleClose = () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Transition, State } from "@/contexts/automation-context/types";
 import { Workflow } from "@/lib/action-schema/action-types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,10 +38,11 @@ export function TransitionDetailsPanel({
   onClose,
 }: TransitionDetailsPanelProps) {
   const [localTransition, setLocalTransition] = useState(transition);
-
-  useEffect(() => {
+  const [prevTransition, setPrevTransition] = useState(transition);
+  if (transition !== prevTransition) {
+    setPrevTransition(transition);
     setLocalTransition(transition);
-  }, [transition]);
+  }
 
   if (!localTransition) {
     return (

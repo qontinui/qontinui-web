@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { X, Check } from "lucide-react";
 import { ScreenshotLocation, AnchorType } from "../../types/Screenshot";
 import { StateImage, State } from "../../contexts/automation-context/types";
@@ -18,11 +18,14 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
 }) => {
   const [location, setLocation] =
     useState<ScreenshotLocation>(selectedLocation);
+  const [prevSelectedLocation, setPrevSelectedLocation] =
+    useState<ScreenshotLocation>(selectedLocation);
   const [showSaved, setShowSaved] = useState(false);
 
-  useEffect(() => {
+  if (selectedLocation !== prevSelectedLocation) {
+    setPrevSelectedLocation(selectedLocation);
     setLocation(selectedLocation);
-  }, [selectedLocation]);
+  }
 
   const showSavedIndicator = () => {
     setShowSaved(true);

@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import {
   ReactFlow,
   Node,
@@ -155,12 +155,15 @@ export function StateTransitionGraph({
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [prevInitialNodes, setPrevInitialNodes] = useState(initialNodes);
+  const [prevInitialEdges, setPrevInitialEdges] = useState(initialEdges);
 
-  // Update nodes and edges when data changes
-  useEffect(() => {
+  if (initialNodes !== prevInitialNodes || initialEdges !== prevInitialEdges) {
+    setPrevInitialNodes(initialNodes);
+    setPrevInitialEdges(initialEdges);
     setNodes(initialNodes);
     setEdges(initialEdges);
-  }, [initialNodes, initialEdges, setNodes, setEdges]);
+  }
 
   const onNodeClick = (_event: React.MouseEvent, node: Node) => {
     onStateClick?.(node.id);

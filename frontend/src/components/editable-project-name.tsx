@@ -30,10 +30,11 @@ export function EditableProjectName({
     }
   }, [isEditing]);
 
-  // Update local state when prop changes
-  useEffect(() => {
+  const [prevName, setPrevName] = useState(name);
+  if (name !== prevName) {
+    setPrevName(name);
     setEditedName(name);
-  }, [name]);
+  }
 
   const handleStartEditing = (e: React.MouseEvent) => {
     e.stopPropagation();
