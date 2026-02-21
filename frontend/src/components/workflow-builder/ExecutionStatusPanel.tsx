@@ -18,6 +18,9 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 
+const POLL_INTERVAL_MS = 3000;
+const TIMER_INTERVAL_MS = 1000;
+
 // Phase colors matching the workflow builder
 const PHASE_COLORS: Record<string, string> = {
   setup: "text-blue-400 bg-blue-500/10 border-blue-500/30",
@@ -118,7 +121,7 @@ export function ExecutionStatusPanel({
     };
 
     poll();
-    pollRef.current = setInterval(poll, 3000);
+    pollRef.current = setInterval(poll, POLL_INTERVAL_MS);
 
     return () => {
       active = false;
@@ -132,7 +135,7 @@ export function ExecutionStatusPanel({
       timerRef.current = setInterval(() => {
         const start = new Date(workflowState.workflow_start_time).getTime();
         setElapsedSeconds(Math.floor((Date.now() - start) / 1000));
-      }, 1000);
+      }, TIMER_INTERVAL_MS);
     }
 
     return () => {

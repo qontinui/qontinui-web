@@ -1,7 +1,13 @@
 "use client";
 
 import React, { useState } from "react";
-import { Terminal, X, Plus } from "lucide-react";
+import { Terminal, Plus } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -151,26 +157,16 @@ export function CurlImportDialog({
     onClose();
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl w-[560px] max-h-[80vh] flex flex-col">
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-[560px] max-h-[80vh] flex flex-col gap-0 p-0">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
-          <div className="flex items-center gap-2">
+        <DialogHeader className="px-5 py-4 border-b border-zinc-800">
+          <DialogTitle className="flex items-center gap-2">
             <Terminal className="w-5 h-5 text-cyan-400" />
-            <h2 className="text-base font-semibold text-zinc-100">
-              Import from curl
-            </h2>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+            Import from curl
+          </DialogTitle>
+        </DialogHeader>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
@@ -273,7 +269,7 @@ export function CurlImportDialog({
             </Button>
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

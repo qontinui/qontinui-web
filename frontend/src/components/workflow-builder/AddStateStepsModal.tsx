@@ -10,9 +10,14 @@ import {
   MapPin,
   Image,
   Type,
-  X,
   Plus,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -218,26 +223,16 @@ export function AddStateStepsModal({
     }
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl w-[640px] max-h-[80vh] flex flex-col">
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-[640px] max-h-[80vh] flex flex-col gap-0 p-0">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
-          <div className="flex items-center gap-2">
+        <DialogHeader className="px-5 py-4 border-b border-zinc-800">
+          <DialogTitle className="flex items-center gap-2">
             <Layers className="w-5 h-5 text-emerald-400" />
-            <h2 className="text-base font-semibold text-zinc-100">
-              Add State Steps
-            </h2>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+            Add State Steps
+          </DialogTitle>
+        </DialogHeader>
 
         {/* Config Path */}
         <div className="px-5 py-3 border-b border-zinc-800/50">
@@ -481,7 +476,7 @@ export function AddStateStepsModal({
             </div>
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
