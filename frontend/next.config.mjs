@@ -1,3 +1,4 @@
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import bundleAnalyzer from '@next/bundle-analyzer';
@@ -33,7 +34,13 @@ const nextConfig = {
     swcPlugins,
   },
   webpack: (config, { dev }) => {
-    config.resolve.alias['@qontinui/schemas'] = path.resolve(__dirname, '../../qontinui-schemas/generated/typescript');
+    // Only alias @qontinui/schemas when the local package exists (dev environment).
+    // In CI/Vercel builds, the parent directory is not available. All schemas
+    // imports are type-only (erased by SWC) so the alias is not needed in production.
+    const schemasPath = path.resolve(__dirname, '../../qontinui-schemas/generated/typescript');
+    if (fs.existsSync(schemasPath)) {
+      config.resolve.alias['@qontinui/schemas'] = schemasPath;
+    }
 
     // In dev mode, ignore noisy directories to prevent spurious HMR recompilations
     if (dev) {

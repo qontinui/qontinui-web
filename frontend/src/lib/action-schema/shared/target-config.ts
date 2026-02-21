@@ -32,11 +32,15 @@ import type {
   MatchAdjustment,
 } from "@qontinui/schemas/targets";
 
-// Import SearchStrategy enum (not type-only since it's used as a value)
-import { SearchStrategy } from "@qontinui/schemas/targets";
-
-// Re-export the SearchStrategy enum (as value, not just type)
-export { SearchStrategy };
+// SearchStrategy enum - defined locally to avoid runtime dependency on @qontinui/schemas
+// (which is not published to npm and unavailable in CI/Vercel builds).
+// Must stay in sync with @qontinui/schemas/targets SearchStrategy.
+export enum SearchStrategy {
+  FIRST = "FIRST",
+  ALL = "ALL",
+  BEST = "BEST",
+  EACH = "EACH",
+}
 
 // Re-export types that don't need modification
 export type {
