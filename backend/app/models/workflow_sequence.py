@@ -15,9 +15,7 @@ class WorkflowSequence(Base):
 
     __tablename__ = "workflow_sequences"
 
-    id = Column(
-        UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4
-    )
+    id = Column(UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
     project_id = Column(
         UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False, index=True
     )

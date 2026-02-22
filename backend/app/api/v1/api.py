@@ -243,6 +243,4 @@ api_router.include_router(
     error_monitor.router, prefix="/error-monitor", tags=["error-monitor"]
 )
 # Workflow sequences (ordered workflow execution)
-api_router.include_router(
-    workflow_sequences.router, tags=["workflow-sequences"]
-)
+api_router.include_router(workflow_sequences.router, tags=["workflow-sequences"])
