@@ -92,6 +92,19 @@ export interface ComparisonResult {
   infoCount: number;
 }
 
+// =============================================================================
+// Saved Snapshot Types
+// =============================================================================
+
+export interface SavedSnapshot {
+  id: string;
+  name: string;
+  app_url: string;
+  snapshot_data: Record<string, unknown>;
+  project_id?: string;
+  created_at: string;
+}
+
 export interface ContextAutoInclude {
   taskMentions?: string[];
   actionTypes?: string[];

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ExternalElement } from "@/hooks/use-external-ui-bridge";
+import type { ExternalElement } from "@/hooks/use-inspector";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -55,7 +55,10 @@ export function ElementsPanel({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-1 max-h-[500px] overflow-y-auto">
+            <div
+              className="space-y-1 overflow-y-auto"
+              style={{ maxHeight: "500px" }}
+            >
               {filteredElements.length === 0 ? (
                 <p className="text-sm text-text-muted py-4 text-center">
                   No elements match your search

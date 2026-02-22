@@ -120,8 +120,8 @@ let latestSemanticSnapshot: SemanticSnapshot | null = null;
 // ============================================================================
 // Next.js dev mode compiles each API route into a separate module graph.
 // Module-level variables are duplicated across routes, breaking the command
-// relay (SSE stream subscribes to one Set, snapshot handler checks a different
-// Set). Using globalThis for commandListeners and pendingCommands ensures all
+// relay (SSE stream subscribes to one Map, snapshot handler checks a different
+// Map). Using globalThis for tabListeners and pendingCommands ensures all
 // routes share the same instances.
 
 interface QueuedCommand {
@@ -132,6 +132,11 @@ interface QueuedCommand {
 }
 
 type CommandListener = (command: QueuedCommand) => void;
+
+interface TabListener {
+  tabId: string;
+  callback: CommandListener;
+}
 
 interface PendingCommand {
   resolve: (value: unknown) => void;
@@ -144,13 +149,13 @@ const g = globalThis as any;
 if (!g.__uiBridgePendingCommands) {
   g.__uiBridgePendingCommands = new Map<string, PendingCommand>();
 }
-if (!g.__uiBridgeCommandListeners) {
-  g.__uiBridgeCommandListeners = new Set<CommandListener>();
+if (!g.__uiBridgeTabListeners) {
+  g.__uiBridgeTabListeners = new Map<string, TabListener>();
 }
 
 const pendingCommands: Map<string, PendingCommand> =
   g.__uiBridgePendingCommands;
-const commandListeners: Set<CommandListener> = g.__uiBridgeCommandListeners;
+const tabListeners: Map<string, TabListener> = g.__uiBridgeTabListeners;
 
 const MAX_PENDING_COMMANDS = 200;
 
@@ -161,13 +166,23 @@ const SSE_COMMAND_TIMEOUT_MS = 15000;
 /**
  * Subscribe to new commands. Returns an unsubscribe function.
  * Used by the SSE stream endpoint to push commands to the browser.
+ * Each tab registers with a unique tabId for targeted command dispatch.
  */
-export function subscribeToCommands(listener: CommandListener): () => void {
-  commandListeners.add(listener);
-  console.log(`[ui-bridge] SSE listener connected (total: ${commandListeners.size})`);
+export function subscribeToCommands(
+  listener: CommandListener,
+  tabId?: string
+): () => void {
+  const id =
+    tabId || `anon_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  tabListeners.set(id, { tabId: id, callback: listener });
+  console.log(
+    `[ui-bridge] SSE listener connected: ${id} (total: ${tabListeners.size})`
+  );
   return () => {
-    commandListeners.delete(listener);
-    console.log(`[ui-bridge] SSE listener disconnected (total: ${commandListeners.size})`);
+    tabListeners.delete(id);
+    console.log(
+      `[ui-bridge] SSE listener disconnected: ${id} (total: ${tabListeners.size})`
+    );
   };
 }
 
@@ -175,7 +190,14 @@ export function subscribeToCommands(listener: CommandListener): () => void {
  * Check if any SSE listeners are connected
  */
 export function hasCommandListeners(): boolean {
-  return commandListeners.size > 0;
+  return tabListeners.size > 0;
+}
+
+/**
+ * Get list of connected tab IDs
+ */
+export function getConnectedTabs(): string[] {
+  return Array.from(tabListeners.keys());
 }
 
 // ============================================================================
@@ -264,9 +286,23 @@ export function getWebSocketClientCount(): number {
 }
 
 /**
- * Get a connected WebSocket client (returns first connected client)
+ * Get a connected WebSocket client.
+ * If targetTabId is provided, returns that specific client (since clientId IS tabId).
+ * Otherwise returns the first connected client (backward compatible).
  */
-function getConnectedClient(): WebSocketClientEntry | null {
+function getConnectedClient(targetTabId?: string): WebSocketClientEntry | null {
+  if (targetTabId) {
+    const entry = wsClients.get(targetTabId);
+    if (entry) {
+      if (entry.client.isConnected()) {
+        return entry;
+      } else {
+        wsClients.delete(targetTabId);
+      }
+    }
+    return null;
+  }
+
   for (const [clientId, entry] of wsClients.entries()) {
     if (entry.client.isConnected()) {
       return entry;
@@ -279,15 +315,18 @@ function getConnectedClient(): WebSocketClientEntry | null {
 }
 
 /**
- * Send a command via WebSocket to a connected client
- * Returns true if command was sent, false if no client available
+ * Send a command via WebSocket to a connected client.
+ * If targetTabId is provided, sends only to that specific tab's WebSocket.
+ * Otherwise sends to the first connected client (backward compatible).
+ * Returns true if command was sent, false if no client available.
  */
 function sendCommandViaWebSocket(
   commandId: string,
   action: string,
-  payload: unknown
+  payload: unknown,
+  targetTabId?: string
 ): boolean {
-  const clientEntry = getConnectedClient();
+  const clientEntry = getConnectedClient(targetTabId);
   if (!clientEntry) {
     return false;
   }
@@ -349,10 +388,7 @@ function generateCommandId(): string {
 // Commands that cause the page to unload (navigation, refresh) will never
 // receive a browser response because the old page dies before it can POST
 // back. These are resolved immediately after delivery ("fire-and-forget").
-const FIRE_AND_FORGET_COMMANDS = new Set([
-  "pageNavigate",
-  "pageRefresh",
-]);
+const FIRE_AND_FORGET_COMMANDS = new Set(["pageNavigate", "pageRefresh"]);
 
 /**
  * Queue a command to be executed in the browser.
@@ -361,18 +397,29 @@ const FIRE_AND_FORGET_COMMANDS = new Set([
  *
  * For navigation/refresh commands, resolves immediately after delivery since
  * the page unloads before a response can be sent.
+ *
+ * If options.targetTabId is provided, the command is sent only to that tab.
+ * Otherwise, the command is broadcast to all connected tabs (backward compatible).
  */
-export function queueCommand<T>(action: string, payload: unknown): Promise<T> {
+export function queueCommand<T>(
+  action: string,
+  payload: unknown,
+  options?: { targetTabId?: string }
+): Promise<T> {
+  const targetTabId = options?.targetTabId;
   const commandId = generateCommandId();
   const fireAndForget = FIRE_AND_FORGET_COMMANDS.has(action);
-  console.log(`[ui-bridge] queueCommand: ${action} (ws=${wsClients.size}, sse=${commandListeners.size}${fireAndForget ? ", fire-and-forget" : ""})`);
+  console.log(
+    `[ui-bridge] queueCommand: ${action} (ws=${wsClients.size}, sse=${tabListeners.size}${targetTabId ? `, target=${targetTabId}` : ""}${fireAndForget ? ", fire-and-forget" : ""})`
+  );
 
   return new Promise((resolve, reject) => {
     // Try WebSocket delivery first
     const sentViaWebSocket = sendCommandViaWebSocket(
       commandId,
       action,
-      payload
+      payload,
+      targetTabId
     );
 
     let transport = "none";
@@ -384,11 +431,11 @@ export function queueCommand<T>(action: string, payload: unknown): Promise<T> {
     }
 
     // Fail fast if no transport is available at all
-    if (!sentViaWebSocket && commandListeners.size === 0) {
+    if (!sentViaWebSocket && tabListeners.size === 0) {
       reject(
         new Error(
           `No browser connected — no WebSocket clients and no SSE listeners. ` +
-          `Ensure the web app is open in a browser tab.`
+            `Ensure the web app is open in a browser tab.`
         )
       );
       return;
@@ -399,22 +446,38 @@ export function queueCommand<T>(action: string, payload: unknown): Promise<T> {
     // it can send a response, so waiting would always hit the timeout.
     if (fireAndForget) {
       // Still need to deliver via SSE if not sent via WebSocket
-      if (!sentViaWebSocket && commandListeners.size > 0) {
+      if (!sentViaWebSocket && tabListeners.size > 0) {
         const command: QueuedCommand = {
           commandId,
           action,
           payload,
           timestamp: Date.now(),
         };
-        for (const listener of commandListeners) {
-          try {
-            listener(command);
-          } catch {
-            // Listener failed, will be cleaned up by self-cleaning mechanism
+        if (targetTabId) {
+          const listener = tabListeners.get(targetTabId);
+          if (listener) {
+            try {
+              listener.callback(command);
+            } catch {
+              /* self-cleaning */
+            }
+          }
+        } else {
+          for (const listener of tabListeners.values()) {
+            try {
+              listener.callback(command);
+            } catch {
+              /* self-cleaning */
+            }
           }
         }
       }
-      resolve({ success: true, fireAndForget: true, action, timestamp: Date.now() } as T);
+      resolve({
+        success: true,
+        fireAndForget: true,
+        action,
+        timestamp: Date.now(),
+      } as T);
       return;
     }
 
@@ -458,13 +521,24 @@ export function queueCommand<T>(action: string, payload: unknown): Promise<T> {
         timestamp: Date.now(),
       };
 
-      if (commandListeners.size > 0) {
+      if (tabListeners.size > 0) {
         transport = "SSE";
-        for (const listener of commandListeners) {
-          try {
-            listener(command);
-          } catch {
-            // Listener failed, will be cleaned up by self-cleaning mechanism
+        if (targetTabId) {
+          const listener = tabListeners.get(targetTabId);
+          if (listener) {
+            try {
+              listener.callback(command);
+            } catch {
+              /* self-cleaning */
+            }
+          }
+        } else {
+          for (const listener of tabListeners.values()) {
+            try {
+              listener.callback(command);
+            } catch {
+              /* self-cleaning */
+            }
           }
         }
       } else {
@@ -495,7 +569,9 @@ export function queueCommand<T>(action: string, payload: unknown): Promise<T> {
 export function resolveCommand(commandId: string, result: unknown): boolean {
   const pending = pendingCommands.get(commandId);
   if (!pending) {
-    console.log(`[ui-bridge] resolveCommand: ${commandId} not found (already timed out or resolved)`);
+    console.log(
+      `[ui-bridge] resolveCommand: ${commandId} not found (already timed out or resolved)`
+    );
     return false;
   }
 
@@ -530,7 +606,8 @@ export function getTransportDiagnostics() {
   return {
     pendingCommandCount: pendingCommands.size,
     pendingCommandIds: Array.from(pendingCommands.keys()),
-    commandListenerCount: commandListeners.size,
+    commandListenerCount: tabListeners.size,
+    connectedTabs: Array.from(tabListeners.keys()),
     wsClientCount: wsClients.size,
     wsClientIds: Array.from(wsClients.keys()),
     commandQueueLength: commandQueue.length,
@@ -721,34 +798,44 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
   // Find / Discovery
   // --------------------------------------------------------------------------
 
-  async find(request?: FindRequest): Promise<APIResponse<FindResponse>> {
+  async find(
+    request?: FindRequest & { targetTabId?: string }
+  ): Promise<APIResponse<FindResponse>> {
     try {
-      const result = await queueCommand<FindResponse>("find", request || {});
+      const { targetTabId, ...payload } = request || {};
+      const result = await queueCommand<FindResponse>("find", payload, {
+        targetTabId,
+      });
       return success(result);
     } catch (e) {
       return error((e as Error).message, "COMMAND_FAILED");
     }
   },
 
-  async discover(request?: FindRequest): Promise<APIResponse<FindResponse>> {
+  async discover(
+    request?: FindRequest & { targetTabId?: string }
+  ): Promise<APIResponse<FindResponse>> {
     // Deprecated - use find
     try {
-      const result = await queueCommand<FindResponse>(
-        "discover",
-        request || {}
-      );
+      const { targetTabId, ...payload } = request || {};
+      const result = await queueCommand<FindResponse>("discover", payload, {
+        targetTabId,
+      });
       return success(result);
     } catch (e) {
       return error((e as Error).message, "COMMAND_FAILED");
     }
   },
 
-  async getControlSnapshot(): Promise<APIResponse<ControlSnapshot>> {
+  async getControlSnapshot(request?: {
+    targetTabId?: string;
+  }): Promise<APIResponse<ControlSnapshot>> {
     // Request fresh snapshot from browser
     try {
       const result = await queueCommand<ControlSnapshot>(
         "getControlSnapshot",
-        {}
+        {},
+        { targetTabId: request?.targetTabId }
       );
       updateControlSnapshot(result);
       return success(result);
@@ -843,16 +930,15 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
     }
   },
 
-
   async getConsoleErrors(params?: {
     since?: number;
     limit?: number;
   }): Promise<APIResponse<{ errors: CapturedError[]; count: number }>> {
     try {
-      const result = await queueCommand<{ errors: CapturedError[]; count: number }>(
-        "getConsoleErrors",
-        params ?? {}
-      );
+      const result = await queueCommand<{
+        errors: CapturedError[];
+        count: number;
+      }>("getConsoleErrors", params ?? {});
       return success(result);
     } catch (e) {
       return error((e as Error).message, "COMMAND_FAILED");
@@ -1007,23 +1093,8 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
   // Page Navigation Endpoints
   // --------------------------------------------------------------------------
 
-  async pageRefresh(): Promise<
-    APIResponse<{ success: boolean; url?: string; timestamp: number }>
-  > {
-    try {
-      const result = await queueCommand<{
-        success: boolean;
-        url?: string;
-        timestamp: number;
-      }>("pageRefresh", {});
-      return success(result);
-    } catch (e) {
-      return error((e as Error).message, "COMMAND_FAILED");
-    }
-  },
-
-  async pageNavigate(request: {
-    url: string;
+  async pageRefresh(request?: {
+    targetTabId?: string;
   }): Promise<
     APIResponse<{ success: boolean; url?: string; timestamp: number }>
   > {
@@ -1032,14 +1103,35 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
         success: boolean;
         url?: string;
         timestamp: number;
-      }>("pageNavigate", request);
+      }>("pageRefresh", {}, { targetTabId: request?.targetTabId });
       return success(result);
     } catch (e) {
       return error((e as Error).message, "COMMAND_FAILED");
     }
   },
 
-  async pageGoBack(): Promise<
+  async pageNavigate(request: {
+    url: string;
+    targetTabId?: string;
+  }): Promise<
+    APIResponse<{ success: boolean; url?: string; timestamp: number }>
+  > {
+    try {
+      const { targetTabId, ...payload } = request;
+      const result = await queueCommand<{
+        success: boolean;
+        url?: string;
+        timestamp: number;
+      }>("pageNavigate", payload, { targetTabId });
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async pageGoBack(request?: {
+    targetTabId?: string;
+  }): Promise<
     APIResponse<{ success: boolean; url?: string; timestamp: number }>
   > {
     try {
@@ -1047,14 +1139,16 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
         success: boolean;
         url?: string;
         timestamp: number;
-      }>("pageGoBack", {});
+      }>("pageGoBack", {}, { targetTabId: request?.targetTabId });
       return success(result);
     } catch (e) {
       return error((e as Error).message, "COMMAND_FAILED");
     }
   },
 
-  async pageGoForward(): Promise<
+  async pageGoForward(request?: {
+    targetTabId?: string;
+  }): Promise<
     APIResponse<{ success: boolean; url?: string; timestamp: number }>
   > {
     try {
@@ -1062,7 +1156,7 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
         success: boolean;
         url?: string;
         timestamp: number;
-      }>("pageGoForward", {});
+      }>("pageGoForward", {}, { targetTabId: request?.targetTabId });
       return success(result);
     } catch (e) {
       return error((e as Error).message, "COMMAND_FAILED");

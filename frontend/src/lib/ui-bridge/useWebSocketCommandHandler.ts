@@ -55,7 +55,7 @@ export type WebSocketConnectionState =
 function calculateReconnectDelay(attempt: number): number {
   const baseDelay = Math.min(
     INITIAL_RECONNECT_DELAY_MS * Math.pow(RECONNECT_MULTIPLIER, attempt - 1),
-    MAX_RECONNECT_DELAY_MS,
+    MAX_RECONNECT_DELAY_MS
   );
   const jitter = baseDelay * JITTER_FACTOR * (Math.random() * 2 - 1);
   return Math.round(baseDelay + jitter);
@@ -95,12 +95,59 @@ export function useWebSocketCommandHandler() {
   const isIntentionallyClosed = useRef(false);
 
   /**
+   * Read all specs from the global SpecStore
+   */
+  function handleGetSpecs(): {
+    specs: Array<{ specId: string; config: unknown }>;
+  } {
+    try {
+      const w = window as unknown as Record<string, unknown>;
+      // Try window.__QONTINUI_SPEC_STORE__ first (set by usePageSpecs)
+      const store = w.__QONTINUI_SPEC_STORE__ as
+        | { getAll?: () => Map<string, unknown> }
+        | undefined;
+      if (store?.getAll) {
+        const allSpecs = store.getAll();
+        const specs = Array.from(allSpecs.entries()).map(
+          ([specId, config]) => ({
+            specId,
+            config,
+          })
+        );
+        return { specs };
+      }
+      // Fallback: try __UI_BRIDGE__.specs.getGlobalSpecStore()
+      const uiBridge = w.__UI_BRIDGE__ as
+        | {
+            specs?: {
+              getGlobalSpecStore?: () => { getAll: () => Map<string, unknown> };
+            };
+          }
+        | undefined;
+      if (uiBridge?.specs?.getGlobalSpecStore) {
+        const specStore = uiBridge.specs.getGlobalSpecStore();
+        const allSpecs = specStore.getAll();
+        const specs = Array.from(allSpecs.entries()).map(
+          ([specId, config]) => ({
+            specId,
+            config,
+          })
+        );
+        return { specs };
+      }
+      return { specs: [] };
+    } catch {
+      return { specs: [] };
+    }
+  }
+
+  /**
    * Execute a UI Bridge command and return the result
    */
   const handleCommand = useCallback(
     async (
       action: string,
-      payload: Record<string, unknown>,
+      payload: Record<string, unknown>
     ): Promise<unknown> => {
       switch (action) {
         // ========== Control Snapshot ==========
@@ -161,7 +208,7 @@ export function useWebSocketCommandHandler() {
 
           // Get the DOM element
           const domElement = document.querySelector(
-            `[data-ui-id="${id}"]`,
+            `[data-ui-id="${id}"]`
           ) as HTMLElement | null;
           if (!domElement) {
             throw new Error(`DOM element for ${id} not found`);
@@ -189,14 +236,14 @@ export function useWebSocketCommandHandler() {
                     : HTMLInputElement.prototype;
                 const typeSetter = Object.getOwnPropertyDescriptor(
                   typeProto,
-                  "value",
+                  "value"
                 )?.set;
                 const text = request.params?.text || request.text || "";
                 if (request.params?.clear || request.clear) {
                   if (typeSetter) typeSetter.call(domElement, "");
                   else domElement.value = "";
                   domElement.dispatchEvent(
-                    new Event("input", { bubbles: true }),
+                    new Event("input", { bubbles: true })
                   );
                 }
                 domElement.focus();
@@ -205,7 +252,7 @@ export function useWebSocketCommandHandler() {
                 else domElement.value = current + text;
                 domElement.dispatchEvent(new Event("input", { bubbles: true }));
                 domElement.dispatchEvent(
-                  new Event("change", { bubbles: true }),
+                  new Event("change", { bubbles: true })
                 );
               }
               break;
@@ -220,13 +267,13 @@ export function useWebSocketCommandHandler() {
                     : HTMLInputElement.prototype;
                 const clearSetter = Object.getOwnPropertyDescriptor(
                   clearProto,
-                  "value",
+                  "value"
                 )?.set;
                 if (clearSetter) clearSetter.call(domElement, "");
                 else domElement.value = "";
                 domElement.dispatchEvent(new Event("input", { bubbles: true }));
                 domElement.dispatchEvent(
-                  new Event("change", { bubbles: true }),
+                  new Event("change", { bubbles: true })
                 );
               }
               break;
@@ -241,7 +288,7 @@ export function useWebSocketCommandHandler() {
                     : HTMLInputElement.prototype;
                 const nativeSetter = Object.getOwnPropertyDescriptor(
                   setProto,
-                  "value",
+                  "value"
                 )?.set;
                 if (nativeSetter) {
                   nativeSetter.call(domElement, request.value || "");
@@ -250,7 +297,7 @@ export function useWebSocketCommandHandler() {
                 }
                 domElement.dispatchEvent(new Event("input", { bubbles: true }));
                 domElement.dispatchEvent(
-                  new Event("change", { bubbles: true }),
+                  new Event("change", { bubbles: true })
                 );
               }
               break;
@@ -258,7 +305,7 @@ export function useWebSocketCommandHandler() {
               if (domElement instanceof HTMLSelectElement) {
                 domElement.value = request.value || "";
                 domElement.dispatchEvent(
-                  new Event("change", { bubbles: true }),
+                  new Event("change", { bubbles: true })
                 );
               }
               break;
@@ -266,7 +313,7 @@ export function useWebSocketCommandHandler() {
               if (domElement instanceof HTMLInputElement) {
                 domElement.checked = true;
                 domElement.dispatchEvent(
-                  new Event("change", { bubbles: true }),
+                  new Event("change", { bubbles: true })
                 );
               }
               break;
@@ -274,7 +321,7 @@ export function useWebSocketCommandHandler() {
               if (domElement instanceof HTMLInputElement) {
                 domElement.checked = false;
                 domElement.dispatchEvent(
-                  new Event("change", { bubbles: true }),
+                  new Event("change", { bubbles: true })
                 );
               }
               break;
@@ -292,7 +339,7 @@ export function useWebSocketCommandHandler() {
         case "highlightElement": {
           const { id } = payload;
           const domElement = document.querySelector(
-            `[data-ui-id="${id}"]`,
+            `[data-ui-id="${id}"]`
           ) as HTMLElement | null;
           if (domElement) {
             const originalOutline = domElement.style.outline;
@@ -310,6 +357,12 @@ export function useWebSocketCommandHandler() {
         // ========== Find / Discovery ==========
         case "find":
         case "discover": {
+          // Check if this is a getSpecs request routed through find/discover
+          const findPayload = payload as Record<string, unknown> | undefined;
+          if (findPayload?.action === "getSpecs") {
+            return handleGetSpecs();
+          }
+
           const elements = bridge.elements;
           return {
             elements: elements.map((e) => {
@@ -330,6 +383,11 @@ export function useWebSocketCommandHandler() {
             durationMs: 0,
             timestamp: Date.now(),
           };
+        }
+
+        // ========== Spec Discovery ==========
+        case "getSpecs": {
+          return handleGetSpecs();
         }
 
         // ========== AI Commands ==========
@@ -374,13 +432,13 @@ export function useWebSocketCommandHandler() {
 
           if (searchResponse.results.length === 0) {
             throw new Error(
-              `No element found matching: ${parsed.targetDescription}`,
+              `No element found matching: ${parsed.targetDescription}`
             );
           }
 
           const targetElement = searchResponse.results[0]!.element;
           const domElement = document.querySelector(
-            `[data-ui-id="${targetElement.id}"]`,
+            `[data-ui-id="${targetElement.id}"]`
           ) as HTMLElement | null;
 
           if (!domElement) {
@@ -400,7 +458,7 @@ export function useWebSocketCommandHandler() {
                 domElement.value = parsed.value || "";
                 domElement.dispatchEvent(new Event("input", { bubbles: true }));
                 domElement.dispatchEvent(
-                  new Event("change", { bubbles: true }),
+                  new Event("change", { bubbles: true })
                 );
               }
               break;
@@ -408,7 +466,7 @@ export function useWebSocketCommandHandler() {
               if (domElement instanceof HTMLSelectElement) {
                 domElement.value = parsed.value || "";
                 domElement.dispatchEvent(
-                  new Event("change", { bubbles: true }),
+                  new Event("change", { bubbles: true })
                 );
               }
               break;
@@ -416,7 +474,7 @@ export function useWebSocketCommandHandler() {
               if (domElement instanceof HTMLInputElement) {
                 domElement.checked = true;
                 domElement.dispatchEvent(
-                  new Event("change", { bubbles: true }),
+                  new Event("change", { bubbles: true })
                 );
               }
               break;
@@ -424,7 +482,7 @@ export function useWebSocketCommandHandler() {
               if (domElement instanceof HTMLInputElement) {
                 domElement.checked = false;
                 domElement.dispatchEvent(
-                  new Event("change", { bubbles: true }),
+                  new Event("change", { bubbles: true })
                 );
               }
               break;
@@ -448,7 +506,7 @@ export function useWebSocketCommandHandler() {
           executor.updateElements(
             bridge.elements as unknown as Parameters<
               typeof executor.updateElements
-            >[0],
+            >[0]
           );
           const assertionRequest = payload as {
             target: string;
@@ -471,7 +529,7 @@ export function useWebSocketCommandHandler() {
           executor.updateElements(
             bridge.elements as unknown as Parameters<
               typeof executor.updateElements
-            >[0],
+            >[0]
           );
           const batchRequest = payload as {
             assertions: Array<{
@@ -534,7 +592,7 @@ export function useWebSocketCommandHandler() {
             suggestedActions: [],
           }));
           return generatePageSummary(
-            aiElements as Parameters<typeof generatePageSummary>[0],
+            aiElements as Parameters<typeof generatePageSummary>[0]
           );
         }
 
@@ -570,7 +628,7 @@ export function useWebSocketCommandHandler() {
           throw new Error(`Unknown command action: ${action}`);
       }
     },
-    [bridge],
+    [bridge]
   );
 
   /**
@@ -590,7 +648,7 @@ export function useWebSocketCommandHandler() {
         wsRef.current.send(JSON.stringify(response));
       }
     },
-    [],
+    []
   );
 
   /**
@@ -607,7 +665,7 @@ export function useWebSocketCommandHandler() {
           try {
             const result = await handleCommand(
               action,
-              payload as Record<string, unknown>,
+              payload as Record<string, unknown>
             );
             sendResponse(commandId, true, result);
           } catch (e) {
@@ -617,14 +675,14 @@ export function useWebSocketCommandHandler() {
           // Acknowledgment received
           console.log(
             "[WebSocketCommandHandler] Command acknowledged:",
-            message.commandId,
+            message.commandId
           );
         }
       } catch (e) {
         console.error("[WebSocketCommandHandler] Failed to parse message:", e);
       }
     },
-    [handleCommand, sendResponse],
+    [handleCommand, sendResponse]
   );
 
   /**
@@ -655,7 +713,7 @@ export function useWebSocketCommandHandler() {
               type: "command_ready",
               clientId: clientIdRef.current,
               timestamp: Date.now(),
-            }),
+            })
           );
         };
 
@@ -663,7 +721,7 @@ export function useWebSocketCommandHandler() {
           console.log(
             "[WebSocketCommandHandler] Disconnected:",
             event.code,
-            event.reason,
+            event.reason
           );
           wsRef.current = null;
 
@@ -696,7 +754,7 @@ export function useWebSocketCommandHandler() {
         setConnectionState("disconnected");
       }
     },
-    [handleMessage],
+    [handleMessage]
   );
 
   /**

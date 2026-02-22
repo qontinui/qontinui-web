@@ -4,9 +4,7 @@ import Link from "next/link";
 import {
   ShieldCheck,
   Terminal,
-  Globe,
   BookOpen,
-  Zap,
   Code2,
   Library,
   FileCode,
@@ -18,9 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   useChecksList,
   useShellCommandsList,
-  useApiRequestsList,
   useContextsList,
-  useMacrosList,
 } from "@/hooks/useLibrary";
 import {
   usePlaywrightTestsList,
@@ -73,15 +69,6 @@ const libraryTypes = [
     countKey: "shellCommands" as const,
   },
   {
-    name: "API Requests",
-    description: "Saved HTTP requests for interacting with APIs and services.",
-    href: "/build/api-requests",
-    icon: Globe,
-    color: "text-sky-400",
-    bgColor: "bg-sky-500/10",
-    countKey: "apiRequests" as const,
-  },
-  {
     name: "Contexts",
     description: "AI context documents for domain knowledge and instructions.",
     href: "/build/contexts",
@@ -91,20 +78,10 @@ const libraryTypes = [
     countKey: "contexts" as const,
   },
   {
-    name: "Macros",
-    description:
-      "Sequential action macros combining clicks, keystrokes, and navigation.",
-    href: "/build/macros",
-    icon: Zap,
-    color: "text-amber-400",
-    bgColor: "bg-amber-500/10",
-    countKey: "macros" as const,
-  },
-  {
     name: "Prompt Snippets",
     description:
       "Reusable prompt snippets for inline logic and data transformations.",
-    href: "/build/prompt-snippets",
+    href: "/build/playwright-tests",
     icon: Code2,
     color: "text-indigo-400",
     bgColor: "bg-indigo-500/10",
@@ -120,9 +97,7 @@ export default function LibraryPage() {
   // Fetch counts from all sources
   const { data: checks } = useChecksList();
   const { data: shellCommands } = useShellCommandsList();
-  const { data: apiRequests } = useApiRequestsList();
   const { data: contexts } = useContextsList();
-  const { data: macros } = useMacrosList();
   const { data: playwrightTests } = usePlaywrightTestsList();
   const { data: promptSnippets } = useRunnerPromptSnippetsList();
   const { data: tests } = useTestsList();
@@ -132,9 +107,7 @@ export default function LibraryPage() {
     tests: tests?.length ?? 0,
     checks: checks?.length ?? 0,
     shellCommands: shellCommands?.length ?? 0,
-    apiRequests: apiRequests?.length ?? 0,
     contexts: contexts?.length ?? 0,
-    macros: macros?.length ?? 0,
     promptSnippets: promptSnippets?.length ?? 0,
   };
 

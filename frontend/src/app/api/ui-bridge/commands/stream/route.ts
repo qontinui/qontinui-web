@@ -14,13 +14,14 @@ const HEARTBEAT_INTERVAL_MS = 30000;
 
 export async function GET(request: NextRequest) {
   const encoder = new TextEncoder();
+  const tabId = request.nextUrl.searchParams.get("tabId") ?? undefined;
 
   const stream = new ReadableStream({
     start(controller) {
-      // Send initial connection event
+      // Send initial connection event (include tabId so client can confirm)
       controller.enqueue(
         encoder.encode(
-          `data: ${JSON.stringify({ type: "connected", timestamp: Date.now() })}\n\n`
+          `data: ${JSON.stringify({ type: "connected", tabId, timestamp: Date.now() })}\n\n`
         )
       );
 
@@ -37,10 +38,12 @@ export async function GET(request: NextRequest) {
             unsubscribed = true;
             unsubscribe();
             clearInterval(heartbeat);
-            console.log("[ui-bridge] SSE listener self-cleaned (stream closed)");
+            console.log(
+              "[ui-bridge] SSE listener self-cleaned (stream closed)"
+            );
           }
         }
-      });
+      }, tabId);
 
       // Heartbeat to keep the connection alive and detect dead connections
       const heartbeat = setInterval(() => {
@@ -52,7 +55,9 @@ export async function GET(request: NextRequest) {
           if (!unsubscribed) {
             unsubscribed = true;
             unsubscribe();
-            console.log("[ui-bridge] SSE listener self-cleaned (heartbeat failed)");
+            console.log(
+              "[ui-bridge] SSE listener self-cleaned (heartbeat failed)"
+            );
           }
         }
       }, HEARTBEAT_INTERVAL_MS);

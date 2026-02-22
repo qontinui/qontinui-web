@@ -1,6 +1,6 @@
 "use client";
 
-import type { ExternalElement } from "@/hooks/use-external-ui-bridge";
+import type { ExternalElement } from "@/hooks/use-inspector";
 import {
   Card,
   CardContent,
@@ -30,7 +30,6 @@ interface ActionsPanelProps {
   actionResult: { success: boolean; message: string } | null;
   isExecutingAction: boolean;
   onExecuteAction: () => void;
-  targetType: "browser" | "desktop";
   onHighlightElement?: (id: string) => Promise<void>;
 }
 
@@ -43,7 +42,6 @@ export function ActionsPanel({
   actionResult,
   isExecutingAction,
   onExecuteAction,
-  targetType,
   onHighlightElement,
 }: ActionsPanelProps) {
   return (
@@ -72,7 +70,7 @@ export function ActionsPanel({
                   </p>
                 )}
               </div>
-              {targetType === "browser" && onHighlightElement && (
+              {onHighlightElement && (
                 <Button
                   size="sm"
                   variant="ghost"

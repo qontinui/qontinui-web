@@ -345,6 +345,7 @@ export interface VerificationStepResult {
   config: StepExecutionConfig;
   verification_details: VerificationStepDetails | null;
   output_data: Record<string, unknown> | null;
+  comparison_result?: import("@/lib/runner/types/exploration").ComparisonResult;
 }
 
 export interface GateEvaluationResult {

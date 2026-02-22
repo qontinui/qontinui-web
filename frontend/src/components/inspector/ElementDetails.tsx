@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { ExternalElement } from "@/hooks/use-external-ui-bridge";
+import type { ExternalElement } from "@/hooks/use-inspector";
 import { Badge } from "@/components/ui/badge";
 import { ChevronRight } from "lucide-react";
 

@@ -181,13 +181,17 @@ export interface PromptStep extends BaseStep {
 export interface UiBridgeStep extends BaseStep {
   type: "ui_bridge";
   phase: "setup" | "verification" | "completion";
-  action: "navigate" | "execute" | "assert" | "snapshot";
+  action: "navigate" | "execute" | "assert" | "snapshot" | "compare";
   url?: string;
   instruction?: string;
   target?: string;
   assert_type?: "exists" | "text_equals" | "contains" | "visible" | "enabled";
   expected?: string;
   timeout_ms?: number;
+  // Comparison fields (when action === "compare")
+  comparison_mode?: "structural" | "visual" | "both";
+  reference_snapshot_id?: string;
+  severity_threshold?: "critical" | "major" | "minor" | "info";
 }
 
 // =============================================================================
@@ -256,7 +260,7 @@ export interface WorkflowFeatures {
 }
 
 export function detectWorkflowFeatures(
-  workflow: UnifiedWorkflow,
+  workflow: UnifiedWorkflow
 ): WorkflowFeatures {
   const allSteps: UnifiedStep[] = [
     ...workflow.setup_steps,
@@ -310,7 +314,7 @@ export async function fetchStepTypes(): Promise<Record<
       process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
     const response = await fetch(
       `${API_BASE_URL}/api/v1/workflow-config/step-types`,
-      { credentials: "include" },
+      { credentials: "include" }
     );
     if (!response.ok) return null;
 
@@ -502,7 +506,7 @@ export function generateStepId(): string {
 
 export function createDefaultStep(
   type: UnifiedStep["type"],
-  phase: WorkflowPhase,
+  phase: WorkflowPhase
 ): UnifiedStep {
   const id = generateStepId();
 
@@ -544,7 +548,7 @@ export function createDefaultStep(
 }
 
 export function createDefaultWorkflow(
-  includeSummaryStep: boolean = true,
+  includeSummaryStep: boolean = true
 ): Omit<UnifiedWorkflow, "id" | "created_at" | "modified_at"> {
   return {
     name: "",
@@ -591,7 +595,7 @@ export function getStepPhase(step: UnifiedStep): WorkflowPhase {
 
 export function canStepExistInPhase(
   stepType: UnifiedStep["type"],
-  phase: WorkflowPhase,
+  phase: WorkflowPhase
 ): boolean {
   if (phase === "agentic") {
     return stepType === "prompt";

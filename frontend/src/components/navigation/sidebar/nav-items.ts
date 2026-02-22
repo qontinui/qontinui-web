@@ -13,6 +13,7 @@ import {
   Camera,
   Box,
   GitBranch,
+  GitCompare,
   Scan,
   Target,
   Sliders,
@@ -95,6 +96,14 @@ export const navItems: NavItem[] = [
     description: "UI Bridge element inspection",
     icon: React.createElement(ScanSearch, { className: "size-5" }),
     route: "/tools/inspector",
+    color: "var(--brand-secondary)",
+  },
+  {
+    id: "compare-apps",
+    label: "Compare Apps",
+    description: "Compare UI Bridge app snapshots",
+    icon: React.createElement(GitCompare, { className: "size-5" }),
+    route: "/tools/compare",
     color: "var(--brand-secondary)",
   },
 

@@ -21,6 +21,8 @@ import {
   Wrench,
 } from "lucide-react";
 import { useBackendVerificationResults } from "@/hooks/useTaskRunsBackend";
+import { ComparisonResultInline } from "@/components/run-detail/ComparisonResultInline";
+import type { ComparisonResult } from "@/lib/runner/types/exploration";
 import type {
   VerificationResultResponse,
   VerificationStepResult,
@@ -143,9 +145,7 @@ function CheckResultCard({ check }: { check: IndividualCheckResult }) {
         <div className="border-t border-border-subtle/30 px-3 py-2 bg-surface-canvas/30 space-y-2">
           {check.error_message && (
             <div>
-              <div className="text-xs font-medium text-red-400 mb-1">
-                Error
-              </div>
+              <div className="text-xs font-medium text-red-400 mb-1">Error</div>
               <pre className="text-xs text-red-300 bg-red-500/10 px-2 py-1.5 rounded font-mono whitespace-pre-wrap">
                 {check.error_message}
               </pre>
@@ -324,6 +324,18 @@ function StepResultCard({ step }: { step: VerificationStepResult }) {
               </div>
             </div>
           )}
+
+          {/* Comparison Results (from UI Bridge compare steps) */}
+          {(() => {
+            const compResult =
+              step.comparison_result ??
+              (step.output_data?.comparison_result as
+                | ComparisonResult
+                | undefined);
+            return compResult ? (
+              <ComparisonResultInline result={compResult} />
+            ) : null;
+          })()}
         </div>
       )}
     </div>

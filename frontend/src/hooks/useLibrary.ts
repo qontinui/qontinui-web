@@ -12,10 +12,7 @@ import {
   checksApi,
   checkGroupsApi,
   shellCommandsApi,
-  apiRequestsApi,
   contextsApi,
-  macrosApi,
-  promptSnippetsApi,
 } from "@/services/library-service";
 
 // =============================================================================
@@ -56,7 +53,7 @@ function useLibraryList<
 >(
   type: string,
   api: CrudApi<T, TCreate, TUpdate, TList>,
-  params?: LibraryListParams,
+  params?: LibraryListParams
 ) {
   return useQuery({
     queryKey: libraryKeys.list(type, params),
@@ -171,21 +168,6 @@ export const useDeleteShellCommand = () =>
   useLibraryDelete("shell-commands", shellCommandsApi);
 
 // =============================================================================
-// Saved API Requests
-// =============================================================================
-
-export const useApiRequestsList = (params?: LibraryListParams) =>
-  useLibraryList("api-requests", apiRequestsApi, params);
-export const useApiRequest = (id: string | null) =>
-  useLibraryDetail("api-requests", apiRequestsApi, id);
-export const useCreateApiRequest = () =>
-  useLibraryCreate("api-requests", apiRequestsApi);
-export const useUpdateApiRequest = () =>
-  useLibraryUpdate("api-requests", apiRequestsApi);
-export const useDeleteApiRequest = () =>
-  useLibraryDelete("api-requests", apiRequestsApi);
-
-// =============================================================================
 // Contexts
 // =============================================================================
 
@@ -196,30 +178,3 @@ export const useContext = (id: string | null) =>
 export const useCreateContext = () => useLibraryCreate("contexts", contextsApi);
 export const useUpdateContext = () => useLibraryUpdate("contexts", contextsApi);
 export const useDeleteContext = () => useLibraryDelete("contexts", contextsApi);
-
-// =============================================================================
-// Macros
-// =============================================================================
-
-export const useMacrosList = (params?: LibraryListParams) =>
-  useLibraryList("macros", macrosApi, params);
-export const useMacro = (id: string | null) =>
-  useLibraryDetail("macros", macrosApi, id);
-export const useCreateMacro = () => useLibraryCreate("macros", macrosApi);
-export const useUpdateMacro = () => useLibraryUpdate("macros", macrosApi);
-export const useDeleteMacro = () => useLibraryDelete("macros", macrosApi);
-
-// =============================================================================
-// Prompt Snippets
-// =============================================================================
-
-export const usePromptSnippetsList = (params?: LibraryListParams) =>
-  useLibraryList("prompt-snippets", promptSnippetsApi, params);
-export const usePromptSnippet = (id: string | null) =>
-  useLibraryDetail("prompt-snippets", promptSnippetsApi, id);
-export const useCreatePromptSnippet = () =>
-  useLibraryCreate("prompt-snippets", promptSnippetsApi);
-export const useUpdatePromptSnippet = () =>
-  useLibraryUpdate("prompt-snippets", promptSnippetsApi);
-export const useDeletePromptSnippet = () =>
-  useLibraryDelete("prompt-snippets", promptSnippetsApi);

@@ -80,8 +80,10 @@ export function CollapsibleNavItem({
           <TooltipTrigger asChild>
             <DropdownMenuTrigger asChild>
               <button
+                data-ui-id={`nav-${item.id}`}
                 data-nav-id={item.id}
                 data-tutorial-id={`nav-${item.id}`}
+                data-route={item.route}
                 className={cn(
                   "flex size-10 items-center justify-center rounded-md transition-colors",
                   isParentActive
@@ -173,8 +175,10 @@ export function CollapsibleNavItem({
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
       <CollapsibleTrigger asChild>
         <button
+          data-ui-id={`nav-${item.id}`}
           data-nav-id={item.id}
           data-tutorial-id={`nav-${item.id}`}
+          data-route={item.route}
           className={cn(
             "flex w-full items-center gap-3 rounded-md px-2 py-2 text-sm transition-colors",
             isParentActive
@@ -221,6 +225,8 @@ export function CollapsibleNavItem({
             return (
               <button
                 key={child.id}
+                data-ui-id={`nav-${child.id}`}
+                data-route={child.route}
                 onClick={() => onNavigate(child.route)}
                 className={cn(
                   "flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",

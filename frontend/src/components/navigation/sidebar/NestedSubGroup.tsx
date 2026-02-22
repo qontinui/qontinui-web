@@ -38,6 +38,8 @@ export function NestedSubGroup({
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
       <CollapsibleTrigger asChild>
         <button
+          data-ui-id={`nav-${item.id}`}
+          data-route={item.route}
           className={cn(
             "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
             isGroupActive
@@ -64,6 +66,8 @@ export function NestedSubGroup({
             return (
               <button
                 key={grandchild.id}
+                data-ui-id={`nav-${grandchild.id}`}
+                data-route={grandchild.route}
                 onClick={() => onNavigate(grandchild.route)}
                 className={cn(
                   "flex items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors",

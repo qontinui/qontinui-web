@@ -190,11 +190,11 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
   useEffect(() => {
     runnerApi
       .uiBridgeStatus()
-      .then((res) => {
-        if (res.data?.connected) {
+      .then((status) => {
+        if (status?.connected) {
           setIsConnected(true);
-          setConnectedAppName(res.data.app?.app_name || "SDK App");
-          if (res.data.url) setSdkUrl((prev) => prev || res.data.url || "");
+          setConnectedAppName(status.app?.appName || status.url || "Connected");
+          if (status.url) setSdkUrl((prev) => prev || status.url || "");
         }
       })
       .catch(() => {
@@ -220,9 +220,9 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
     try {
       await runnerApi.uiBridgeConnect({ url: sdkUrl.trim() });
       const status = await runnerApi.uiBridgeStatus();
-      if (status.data?.connected) {
+      if (status?.connected) {
         setIsConnected(true);
-        setConnectedAppName(status.data.app?.app_name || "SDK App");
+        setConnectedAppName(status.app?.appName || status.url || "Connected");
       } else {
         throw new Error("Connection failed");
       }
@@ -253,10 +253,7 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
     setIsDiscovering(true);
     try {
       const res = await runnerApi.uiBridgeDiscover({ action: "getSpecs" });
-      if (!res.success && res.error) {
-        throw new Error(res.error);
-      }
-      const newSpecs = parseDiscoveredSpecs(res.data?.specs);
+      const newSpecs = parseDiscoveredSpecs(res?.specs);
       if (newSpecs.length === 0) {
         setConnectionError("No specs found on the current page");
         return;

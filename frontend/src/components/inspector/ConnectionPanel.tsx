@@ -1,183 +1,227 @@
 "use client";
 
-import type { ActiveSource } from "@/hooks/use-inspector";
-import type { UseExternalUIBridgeReturn } from "@/hooks/use-external-ui-bridge";
-import type { DesktopState } from "@/hooks/use-inspector";
+import { useState } from "react";
+import type { SdkConnection } from "@/hooks/use-inspector";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
-  Globe,
-  Monitor,
-  RefreshCw,
   Loader2,
   Unplug,
   CheckCircle2,
   AlertCircle,
   Plug,
+  RefreshCw,
+  Search,
+  Plus,
 } from "lucide-react";
 
 interface ConnectionPanelProps {
-  activeSource: ActiveSource;
-  bridge: UseExternalUIBridgeReturn;
-  desktop: DesktopState;
+  connections: SdkConnection[];
+  activeConnection: SdkConnection | null;
+  connectUrl: string;
+  onConnectUrlChange: (url: string) => void;
+  isConnecting: boolean;
+  onConnect: (url: string) => Promise<void>;
+  onDisconnect: (url?: string) => Promise<void>;
+  onSwitch: (url: string) => Promise<void>;
+  onRefresh: () => Promise<void>;
+  onDiscover: () => Promise<void>;
+  isDiscovering: boolean;
+  elementCount: number;
+  error: string | null;
+  tabs?: string[];
+  targetTabId?: string | null;
+  onTargetTabChange?: (tabId: string | null) => void;
 }
 
 export function ConnectionPanel({
-  activeSource,
-  bridge,
-  desktop,
+  connections,
+  activeConnection,
+  connectUrl,
+  onConnectUrlChange,
+  isConnecting,
+  onConnect,
+  onDisconnect,
+  onSwitch,
+  onRefresh,
+  onDiscover,
+  isDiscovering,
+  elementCount,
+  error,
+  tabs = [],
+  targetTabId,
+  onTargetTabChange,
 }: ConnectionPanelProps) {
-  const hasDesktopElements = desktop.elements.length > 0;
+  const [showConnectInput, setShowConnectInput] = useState(false);
+
+  const handleConnect = () => {
+    if (connectUrl.trim()) {
+      onConnect(connectUrl.trim());
+      onConnectUrlChange("");
+      setShowConnectInput(false);
+    }
+  };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      {/* Browser Tab Connection */}
-      <Card
-        className={`bg-surface-raised/50 border-border-subtle/50 transition-colors ${
-          activeSource === "browser" ? "ring-1 ring-purple-500/40" : ""
-        }`}
-      >
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base text-white flex items-center gap-2">
-              <Globe className="w-4 h-4" />
-              Browser Tab
-            </CardTitle>
-            {bridge.isExtensionConnected ? (
+    <Card className="bg-surface-raised/50 border-border-subtle/50">
+      <CardHeader className="pb-2 pt-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm text-white flex items-center gap-2">
+            <Plug className="w-3.5 h-3.5" />
+            Connected Apps
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onRefresh}
+              className="text-text-muted hover:text-white h-7 px-2"
+            >
+              <RefreshCw className="w-3 h-3" />
+            </Button>
+            {activeConnection && (
               <Badge variant="success" className="text-[10px] gap-1">
-                <Plug className="w-3 h-3" />
-                Extension
-              </Badge>
-            ) : (
-              <Badge variant="secondary" className="text-[10px]">
-                No Extension
+                <CheckCircle2 className="w-3 h-3" />
+                Connected
               </Badge>
             )}
           </div>
-          <CardDescription className="text-text-muted text-xs">
-            Connect via Chrome extension
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2 pb-3">
+        {/* App dropdown */}
+        {connections.length > 0 && (
           <div className="flex items-center gap-2">
-            <Button
-              onClick={bridge.refreshTabs}
-              disabled={bridge.isLoadingTabs}
-              size="sm"
-              variant="outline"
+            <select
+              value={activeConnection?.url ?? ""}
+              onChange={(e) => {
+                if (e.target.value) {
+                  onSwitch(e.target.value);
+                }
+              }}
+              className="flex-1 h-9 rounded-md border border-border-subtle/50 bg-surface-raised/50 px-3 text-sm text-white focus:border-purple-500/50 focus:outline-none"
             >
-              {bridge.isLoadingTabs ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
-              ) : (
-                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
-              )}
-              Refresh Tabs
-            </Button>
-            {bridge.connectedTabInfo && (
+              {connections.map((conn) => (
+                <option key={conn.url} value={conn.url}>
+                  {conn.app.appName || conn.url}
+                  {conn.app.appName ? ` (${conn.url})` : ""}
+                </option>
+              ))}
+            </select>
+            {activeConnection && (
               <Button
-                onClick={bridge.disconnect}
                 size="sm"
                 variant="destructive"
+                onClick={() => onDisconnect(activeConnection.url)}
+                className="h-9"
               >
                 <Unplug className="w-3.5 h-3.5 mr-1.5" />
                 Disconnect
               </Button>
             )}
           </div>
+        )}
 
-          {bridge.connectedTabInfo && (
-            <div className="flex items-center gap-2 bg-green-950/20 border border-green-500/30 rounded-lg p-2.5">
-              <CheckCircle2 className="w-4 h-4 text-green-400 flex-shrink-0" />
-              <div className="min-w-0">
-                <p className="text-sm text-green-400 font-medium truncate">
-                  {bridge.connectedTabInfo.title}
-                </p>
-                <p className="text-xs text-text-muted truncate">
-                  {bridge.connectedTabInfo.url}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {bridge.browserTabs.length > 0 && !bridge.connectedTabInfo && (
-            <div className="space-y-1 max-h-[150px] overflow-y-auto">
-              {bridge.browserTabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => bridge.connectToTab(tab.id)}
-                  className="w-full text-left p-2 rounded-lg border border-border-subtle/30 bg-surface-canvas/30 hover:bg-surface-hover transition-colors"
-                >
-                  <p className="text-sm text-text-primary truncate">
-                    {tab.title}
-                  </p>
-                  <p className="text-xs text-text-muted truncate">{tab.url}</p>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {bridge.error && (
-            <div className="flex items-center gap-2 text-red-400 bg-red-950/20 border border-red-500/30 rounded-lg p-2">
-              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-              <p className="text-xs">{bridge.error}</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Desktop App Connection */}
-      <Card
-        className={`bg-surface-raised/50 border-border-subtle/50 transition-colors ${
-          activeSource === "desktop" ? "ring-1 ring-purple-500/40" : ""
-        }`}
-      >
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base text-white flex items-center gap-2">
-              <Monitor className="w-4 h-4" />
-              Desktop App
-            </CardTitle>
-            {hasDesktopElements && (
-              <Badge variant="success" className="text-[10px] gap-1">
-                <CheckCircle2 className="w-3 h-3" />
-                {desktop.elements.length} elements
-              </Badge>
+        {/* Connect new app */}
+        {showConnectInput ? (
+          <div className="flex items-center gap-2">
+            <Input
+              placeholder="http://localhost:3001"
+              value={connectUrl}
+              onChange={(e) => onConnectUrlChange(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleConnect()}
+              className="flex-1 h-8 bg-surface-raised/50 border-border-subtle/50 text-white placeholder:text-text-muted text-sm"
+              autoFocus
+            />
+            <Button
+              size="sm"
+              onClick={handleConnect}
+              disabled={isConnecting || !connectUrl.trim()}
+              className="h-8"
+            >
+              {isConnecting ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Plug className="w-3.5 h-3.5 mr-1.5" />
+              )}
+              {isConnecting ? "" : "Connect"}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowConnectInput(false)}
+              className="h-8 px-2"
+            >
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowConnectInput(true)}
+              className="h-8"
+            >
+              <Plus className="w-3.5 h-3.5 mr-1.5" />
+              Connect New App
+            </Button>
+            <Button
+              onClick={onDiscover}
+              disabled={isDiscovering || !activeConnection}
+              size="sm"
+              variant="outline"
+              className="h-8"
+            >
+              {isDiscovering ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+              ) : (
+                <Search className="w-3.5 h-3.5 mr-1.5" />
+              )}
+              Discover Elements
+            </Button>
+            {elementCount > 0 && (
+              <span className="text-xs text-text-muted">
+                {elementCount} element{elementCount !== 1 ? "s" : ""}
+              </span>
             )}
           </div>
-          <CardDescription className="text-text-muted text-xs">
-            Inspect Runner&apos;s own UI elements
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Button
-            onClick={desktop.discover}
-            disabled={desktop.isDiscovering}
-            size="sm"
-            variant="outline"
-          >
-            {desktop.isDiscovering ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
-            ) : (
-              <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
-            )}
-            Discover Elements
-          </Button>
+        )}
 
-          {desktop.error && (
-            <div className="flex items-center gap-2 text-red-400 bg-red-950/20 border border-red-500/30 rounded-lg p-2">
-              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-              <p className="text-xs">{desktop.error}</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+        {/* Tab targeting selector */}
+        {tabs.length > 0 && onTargetTabChange && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-text-muted whitespace-nowrap">
+              Target tab:
+            </span>
+            <select
+              value={targetTabId ?? ""}
+              onChange={(e) => {
+                onTargetTabChange(e.target.value || null);
+              }}
+              className="flex-1 h-7 rounded-md border border-border-subtle/50 bg-surface-raised/50 px-2 text-xs text-white focus:border-purple-500/50 focus:outline-none"
+            >
+              <option value="">All tabs (broadcast)</option>
+              {tabs.map((tabId) => (
+                <option key={tabId} value={tabId}>
+                  {tabId.length > 24
+                    ? `${tabId.slice(0, 12)}...${tabId.slice(-8)}`
+                    : tabId}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {error && (
+          <div className="flex items-center gap-2 text-red-400 bg-red-950/20 border border-red-500/30 rounded-lg p-2">
+            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+            <p className="text-xs">{error}</p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

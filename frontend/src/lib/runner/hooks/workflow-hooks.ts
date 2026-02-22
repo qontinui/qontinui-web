@@ -1,12 +1,11 @@
 "use client";
 
-import { useRunnerQuery, useRunnerMutation, DEFAULT_POLL_INTERVAL } from "../api-client";
+import {
+  useRunnerQuery,
+  useRunnerMutation,
+  DEFAULT_POLL_INTERVAL,
+} from "../api-client";
 import type { GuiLockInfo } from "../types/task-run";
-
-// Workflow queue
-export function useWorkflowQueue() {
-  return useRunnerQuery<Record<string, unknown>[]>("/workflow-queue");
-}
 
 // Mutations
 export function useRunWorkflow() {

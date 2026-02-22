@@ -27,8 +27,10 @@ export function NavItemButton({
   const content = (
     <button
       onClick={onClick}
+      data-ui-id={`nav-${item.id}`}
       data-nav-id={item.id}
       data-tutorial-id={`nav-${item.id}`}
+      data-route={item.route}
       className={cn(
         "flex w-full items-center gap-3 rounded-md px-2 py-2 text-sm transition-colors",
         isActive

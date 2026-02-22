@@ -13,6 +13,8 @@ import type {
   IndividualCheckResult,
   CheckIssueDetail,
 } from "@/lib/runner-api";
+import { ComparisonResultInline } from "@/components/run-detail/ComparisonResultInline";
+import type { ComparisonResult } from "@/lib/runner/types/exploration";
 import { Badge } from "@/components/ui/badge";
 import {
   RefreshCw,
@@ -65,6 +67,7 @@ interface NormalizedTestResult {
   step_type?: string;
   test_type?: string;
   check_results?: IndividualCheckResult[];
+  comparison_result?: ComparisonResult;
 }
 
 interface IterationGroup {
@@ -185,6 +188,17 @@ export function TestResultsTab({ runId, loopResult }: TestResultsTabProps) {
             step_type: step.step_type,
             test_type: step.config?.test_type ?? undefined,
             check_results: vd?.check_results ?? undefined,
+            comparison_result:
+              (
+                step as VerificationStepResult & {
+                  comparison_result?: ComparisonResult;
+                }
+              ).comparison_result ??
+              ((
+                step as VerificationStepResult & {
+                  output_data?: Record<string, unknown>;
+                }
+              ).output_data?.comparison_result as ComparisonResult | undefined),
           };
         }
       );
@@ -465,7 +479,8 @@ function TestResultCard({ test, isExpanded, onToggle }: TestResultCardProps) {
     !!test.error_message ||
     !!test.stack_trace ||
     !!test.screenshot_path ||
-    (test.check_results && test.check_results.length > 0);
+    (test.check_results && test.check_results.length > 0) ||
+    !!test.comparison_result;
 
   return (
     <>
@@ -604,12 +619,18 @@ function TestResultCard({ test, isExpanded, onToggle }: TestResultCardProps) {
             </div>
           )}
 
+          {/* Comparison Results */}
+          {test.comparison_result && (
+            <ComparisonResultInline result={test.comparison_result} />
+          )}
+
           {/* No additional details */}
           {!test.console_output &&
             !test.page_snapshot &&
             !test.error_message &&
             !test.screenshot_path &&
-            (!test.check_results || test.check_results.length === 0) && (
+            (!test.check_results || test.check_results.length === 0) &&
+            !test.comparison_result && (
               <p className="text-sm text-text-muted">
                 No additional details available for this test.
               </p>

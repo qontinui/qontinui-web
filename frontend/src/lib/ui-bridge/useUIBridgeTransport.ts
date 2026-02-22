@@ -48,7 +48,7 @@ const WEBSOCKET_ENDPOINT = "/api/ui-bridge/ws";
  */
 function setReactInputValue(
   element: HTMLInputElement | HTMLTextAreaElement,
-  value: string,
+  value: string
 ) {
   const proto =
     element instanceof HTMLTextAreaElement
@@ -160,10 +160,21 @@ export interface UIBridgeTransportResult {
 }
 
 /**
- * Generate a unique client ID for WebSocket identification
+ * Get or create a stable tab ID using sessionStorage.
+ * sessionStorage is per-tab: survives same-origin navigation and refreshes,
+ * but a new tab/window gets a new ID.
  */
-function generateClientId(): string {
-  return `client_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+function getOrCreateTabId(): string {
+  const key = "__uiBridge_tabId";
+  if (typeof sessionStorage !== "undefined") {
+    const existing = sessionStorage.getItem(key);
+    if (existing) return existing;
+    const id = `tab_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+    sessionStorage.setItem(key, id);
+    return id;
+  }
+  // Fallback for SSR or environments without sessionStorage
+  return `tab_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 }
 
 /**
@@ -172,7 +183,7 @@ function generateClientId(): string {
 function calculateReconnectDelay(attempt: number): number {
   const baseDelay = Math.min(
     INITIAL_RECONNECT_DELAY_MS * Math.pow(RECONNECT_MULTIPLIER, attempt - 1),
-    MAX_RECONNECT_DELAY_MS,
+    MAX_RECONNECT_DELAY_MS
   );
 
   // Add jitter (+/- 10%)
@@ -185,7 +196,7 @@ function calculateReconnectDelay(attempt: number): number {
  */
 export function useUIBridgeTransport(
   enabled: boolean = true,
-  options: UIBridgeTransportOptions = {},
+  options: UIBridgeTransportOptions = {}
 ): UIBridgeTransportResult {
   const { mode = "auto", wsUrl, verbose = false } = options;
   const {
@@ -205,11 +216,11 @@ export function useUIBridgeTransport(
 
   // Refs
   const wsRef = useRef<WebSocket | null>(null);
-  const clientIdRef = useRef<string>(generateClientId());
+  const clientIdRef = useRef<string>(getOrCreateTabId());
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const sseReconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
+    null
   );
   const isIntentionallyClosed = useRef(false);
   const isTabVisibleRef = useRef(true);
@@ -223,8 +234,53 @@ export function useUIBridgeTransport(
         console.log(`[UIBridgeTransport] ${message}`, ...args);
       }
     },
-    [verbose],
+    [verbose]
   );
+
+  /**
+   * Read all specs from the global SpecStore
+   */
+  function handleGetSpecs(): {
+    specs: Array<{ specId: string; config: unknown }>;
+  } {
+    try {
+      const w = window as unknown as Record<string, unknown>;
+      const store = w.__QONTINUI_SPEC_STORE__ as
+        | { getAll?: () => Map<string, unknown> }
+        | undefined;
+      if (store?.getAll) {
+        const allSpecs = store.getAll();
+        const specs = Array.from(allSpecs.entries()).map(
+          ([specId, config]) => ({
+            specId,
+            config,
+          })
+        );
+        return { specs };
+      }
+      const uiBridge = w.__UI_BRIDGE__ as
+        | {
+            specs?: {
+              getGlobalSpecStore?: () => { getAll: () => Map<string, unknown> };
+            };
+          }
+        | undefined;
+      if (uiBridge?.specs?.getGlobalSpecStore) {
+        const specStore = uiBridge.specs.getGlobalSpecStore();
+        const allSpecs = specStore.getAll();
+        const specs = Array.from(allSpecs.entries()).map(
+          ([specId, config]) => ({
+            specId,
+            config,
+          })
+        );
+        return { specs };
+      }
+      return { specs: [] };
+    } catch {
+      return { specs: [] };
+    }
+  }
 
   /**
    * Execute a command and return the result
@@ -233,7 +289,7 @@ export function useUIBridgeTransport(
   const executeCommand = useCallback(
     async (
       action: string,
-      payload: Record<string, unknown>,
+      payload: Record<string, unknown>
     ): Promise<unknown> => {
       switch (action) {
         // ========== Control Snapshot ==========
@@ -280,7 +336,7 @@ export function useUIBridgeTransport(
 
           // Get the DOM element
           const domElement = document.querySelector(
-            `[data-ui-id="${id}"]`,
+            `[data-ui-id="${id}"]`
           ) as HTMLElement | null;
           if (!domElement) {
             throw new Error(`DOM element for ${id} not found`);
@@ -325,7 +381,7 @@ export function useUIBridgeTransport(
               ) {
                 setReactInputValue(
                   domElement,
-                  request.value || (request.params?.value as string) || "",
+                  request.value || (request.params?.value as string) || ""
                 );
               }
               break;
@@ -333,7 +389,7 @@ export function useUIBridgeTransport(
               if (domElement instanceof HTMLSelectElement) {
                 domElement.value = request.value || "";
                 domElement.dispatchEvent(
-                  new Event("change", { bubbles: true }),
+                  new Event("change", { bubbles: true })
                 );
               }
               break;
@@ -341,7 +397,7 @@ export function useUIBridgeTransport(
               if (domElement instanceof HTMLInputElement) {
                 domElement.checked = true;
                 domElement.dispatchEvent(
-                  new Event("change", { bubbles: true }),
+                  new Event("change", { bubbles: true })
                 );
               }
               break;
@@ -349,7 +405,7 @@ export function useUIBridgeTransport(
               if (domElement instanceof HTMLInputElement) {
                 domElement.checked = false;
                 domElement.dispatchEvent(
-                  new Event("change", { bubbles: true }),
+                  new Event("change", { bubbles: true })
                 );
               }
               break;
@@ -367,7 +423,7 @@ export function useUIBridgeTransport(
         case "highlightElement": {
           const { id } = payload;
           const domElement = document.querySelector(
-            `[data-ui-id="${id}"]`,
+            `[data-ui-id="${id}"]`
           ) as HTMLElement | null;
           if (domElement) {
             const originalOutline = domElement.style.outline;
@@ -385,6 +441,12 @@ export function useUIBridgeTransport(
         // ========== Find / Discovery ==========
         case "find":
         case "discover": {
+          // Check if this is a getSpecs request routed through find/discover
+          const findPayload = payload as Record<string, unknown> | undefined;
+          if (findPayload?.action === "getSpecs") {
+            return handleGetSpecs();
+          }
+
           // Use createSnapshot() for fresh DOM scan (same as getControlSnapshot)
           const snapshot = createSnapshot();
           return {
@@ -393,6 +455,11 @@ export function useUIBridgeTransport(
             durationMs: 0,
             timestamp: Date.now(),
           };
+        }
+
+        // ========== Spec Discovery ==========
+        case "getSpecs": {
+          return handleGetSpecs();
         }
 
         // ========== AI Commands ==========
@@ -438,13 +505,13 @@ export function useUIBridgeTransport(
           const firstResult = searchResponse.results[0];
           if (!firstResult) {
             throw new Error(
-              `No element found matching: ${parsed.targetDescription}`,
+              `No element found matching: ${parsed.targetDescription}`
             );
           }
 
           const targetElement = firstResult.element;
           const domElement = document.querySelector(
-            `[data-ui-id="${targetElement.id}"]`,
+            `[data-ui-id="${targetElement.id}"]`
           ) as HTMLElement | null;
 
           if (!domElement) {
@@ -463,7 +530,7 @@ export function useUIBridgeTransport(
                 domElement.value = parsed.value || "";
                 domElement.dispatchEvent(new Event("input", { bubbles: true }));
                 domElement.dispatchEvent(
-                  new Event("change", { bubbles: true }),
+                  new Event("change", { bubbles: true })
                 );
               }
               break;
@@ -471,7 +538,7 @@ export function useUIBridgeTransport(
               if (domElement instanceof HTMLSelectElement) {
                 domElement.value = parsed.value || "";
                 domElement.dispatchEvent(
-                  new Event("change", { bubbles: true }),
+                  new Event("change", { bubbles: true })
                 );
               }
               break;
@@ -479,7 +546,7 @@ export function useUIBridgeTransport(
               if (domElement instanceof HTMLInputElement) {
                 domElement.checked = true;
                 domElement.dispatchEvent(
-                  new Event("change", { bubbles: true }),
+                  new Event("change", { bubbles: true })
                 );
               }
               break;
@@ -487,7 +554,7 @@ export function useUIBridgeTransport(
               if (domElement instanceof HTMLInputElement) {
                 domElement.checked = false;
                 domElement.dispatchEvent(
-                  new Event("change", { bubbles: true }),
+                  new Event("change", { bubbles: true })
                 );
               }
               break;
@@ -513,7 +580,7 @@ export function useUIBridgeTransport(
           executor.updateElements(
             freshAssertElements.elements as unknown as Parameters<
               typeof executor.updateElements
-            >[0],
+            >[0]
           );
           const assertionRequest = payload as {
             target: string;
@@ -538,7 +605,7 @@ export function useUIBridgeTransport(
           executor.updateElements(
             freshBatchElements.elements as unknown as Parameters<
               typeof executor.updateElements
-            >[0],
+            >[0]
           );
           const batchRequest = payload as {
             assertions: Array<{
@@ -601,7 +668,7 @@ export function useUIBridgeTransport(
             suggestedActions: [],
           }));
           return generatePageSummary(
-            aiElements as Parameters<typeof generatePageSummary>[0],
+            aiElements as Parameters<typeof generatePageSummary>[0]
           );
         }
 
@@ -690,7 +757,7 @@ export function useUIBridgeTransport(
         case "getPerformanceEntries": {
           const entries: Record<string, unknown> = {};
           const navEntries = performance.getEntriesByType(
-            "navigation",
+            "navigation"
           ) as PerformanceNavigationTiming[];
           const n = navEntries[0];
           if (n) {
@@ -705,7 +772,7 @@ export function useUIBridgeTransport(
             };
           }
           const resEntries = performance.getEntriesByType(
-            "resource",
+            "resource"
           ) as PerformanceResourceTiming[];
           entries.resources = resEntries.map((e) => ({
             name: e.name,
@@ -757,7 +824,7 @@ export function useUIBridgeTransport(
           throw new Error(`Unknown command action: ${action}`);
       }
     },
-    [elements, getElement, createSnapshot, findElements],
+    [elements, getElement, createSnapshot, findElements]
   );
 
   /**
@@ -770,7 +837,7 @@ export function useUIBridgeTransport(
         log("Sent WebSocket response:", response.commandId, response.success);
       }
     },
-    [log],
+    [log]
   );
 
   /**
@@ -784,7 +851,7 @@ export function useUIBridgeTransport(
       try {
         const result = await executeCommand(
           action,
-          payload as Record<string, unknown>,
+          payload as Record<string, unknown>
         );
 
         sendWSResponse({
@@ -804,7 +871,7 @@ export function useUIBridgeTransport(
         });
       }
     },
-    [executeCommand, sendWSResponse, log],
+    [executeCommand, sendWSResponse, log]
   );
 
   /**
@@ -831,11 +898,11 @@ export function useUIBridgeTransport(
       } catch (parseError: unknown) {
         console.error(
           "[UIBridgeTransport] Failed to parse WebSocket message:",
-          parseError,
+          parseError
         );
       }
     },
-    [handleWSCommand, log],
+    [handleWSCommand, log]
   );
 
   /**
@@ -917,11 +984,11 @@ export function useUIBridgeTransport(
         // Only log in verbose mode or when WebSocket is explicitly required.
         if (mode === "websocket") {
           console.error(
-            "[UIBridgeTransport] WebSocket connection failed (websocket-only mode)",
+            "[UIBridgeTransport] WebSocket connection failed (websocket-only mode)"
           );
         } else if (verbose) {
           console.debug(
-            "[UIBridgeTransport] WebSocket unavailable, will use HTTP fallback",
+            "[UIBridgeTransport] WebSocket unavailable, will use HTTP fallback"
           );
         }
       };
@@ -932,12 +999,12 @@ export function useUIBridgeTransport(
       if (mode === "websocket") {
         console.error(
           "[UIBridgeTransport] Failed to create WebSocket:",
-          wsError,
+          wsError
         );
       } else if (verbose) {
         console.debug(
           "[UIBridgeTransport] WebSocket creation failed, using HTTP fallback:",
-          wsError,
+          wsError
         );
       }
       setConnectionState("disconnected");
@@ -957,7 +1024,7 @@ export function useUIBridgeTransport(
       try {
         const result = await executeCommand(
           command.action,
-          command.payload as Record<string, unknown>,
+          command.payload as Record<string, unknown>
         );
 
         await fetch(COMMANDS_ENDPOINT, {
@@ -981,7 +1048,7 @@ export function useUIBridgeTransport(
         });
       }
     },
-    [executeCommand],
+    [executeCommand]
   );
 
   /**
@@ -996,7 +1063,9 @@ export function useUIBridgeTransport(
     setActiveTransport("sse");
     setConnectionState("connected");
 
-    const es = new EventSource(COMMANDS_STREAM_ENDPOINT);
+    const es = new EventSource(
+      `${COMMANDS_STREAM_ENDPOINT}?tabId=${clientIdRef.current}`
+    );
     eventSourceRef.current = es;
 
     es.onmessage = (event) => {

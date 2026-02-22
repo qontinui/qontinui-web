@@ -1,6 +1,6 @@
 "use client";
 
-import type { CommandHistoryEntry } from "@/hooks/use-external-ui-bridge";
+import type { CommandHistoryEntry } from "@/hooks/use-inspector";
 import {
   Card,
   CardContent,
@@ -58,7 +58,7 @@ export function ApiPanel({
             Send Command
           </CardTitle>
           <CardDescription className="text-text-muted">
-            Send raw commands to /extension/command
+            Send raw commands to the SDK API
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

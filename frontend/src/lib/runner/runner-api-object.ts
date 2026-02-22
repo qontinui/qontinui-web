@@ -1006,6 +1006,7 @@ export const runnerApi = {
     runnerFetch<{ success: boolean }>("/ui-bridge/sdk/connect", {
       method: "POST",
       body: JSON.stringify(config),
+      timeoutMs: 15000,
     }),
   uiBridgeSwitch: (url: string) =>
     runnerFetch<{ success: boolean }>("/ui-bridge/sdk/switch", {
@@ -1015,37 +1016,90 @@ export const runnerApi = {
   uiBridgeSnapshot: () =>
     runnerFetch<Record<string, unknown>>("/ui-bridge/sdk/snapshot"),
   uiBridgeDisconnect: (url?: string) =>
-    runnerFetch<{ success: boolean }>("/ui-bridge/sdk/disconnect", {
+    runnerFetch<string>("/ui-bridge/sdk/disconnect", {
       method: "POST",
       body: url ? JSON.stringify({ url }) : undefined,
     }),
   uiBridgeStatus: () =>
     runnerFetch<{
-      success: boolean;
-      data: {
-        connected: boolean;
-        app?: { app_name: string; version?: string };
-        url?: string;
-        connected_at?: string;
-        all_connections: Array<{
-          url: string;
-          app: { app_name: string; version?: string };
-          connected_at: string;
-          is_active: boolean;
-        }>;
+      connected: boolean;
+      app?: {
+        appId?: string;
+        appName?: string;
+        appType?: string;
+        framework?: string;
+        version?: string;
+        port?: number;
       };
+      url?: string;
+      connectedAt?: number;
+      allConnections?: Array<{
+        url: string;
+        app: { appId?: string; appName?: string; version?: string };
+        connectedAt: number;
+        isActive: boolean;
+      }>;
     }>("/ui-bridge/sdk/status"),
   uiBridgeDiscover: (params: Record<string, unknown>) =>
     runnerFetch<{
-      success: boolean;
-      data?: {
-        specs?: Array<{ specId: string; config: Record<string, unknown> }>;
-      };
-      error?: string;
+      specs?: Array<{ specId: string; config: Record<string, unknown> }>;
     }>("/ui-bridge/sdk/discover", {
       method: "POST",
       body: JSON.stringify(params),
+      timeoutMs: 15000,
     }),
+  uiBridgeConnections: () =>
+    runnerFetch<
+      Array<{
+        url: string;
+        app: { appId?: string; appName?: string; version?: string };
+        connectedAt: number;
+        isActive: boolean;
+      }>
+    >("/ui-bridge/sdk/connections"),
+  uiBridgeCheckHealth: () =>
+    runnerFetch<Record<string, unknown>>("/ui-bridge/sdk/check-health"),
+  uiBridgeElements: () =>
+    runnerFetch<{ elements: Array<Record<string, unknown>> }>(
+      "/ui-bridge/sdk/elements"
+    ),
+  uiBridgeElement: (id: string) =>
+    runnerFetch<Record<string, unknown>>(
+      `/ui-bridge/sdk/element/${encodeURIComponent(id)}`
+    ),
+  uiBridgeElementAction: (
+    id: string,
+    action: string,
+    params?: Record<string, unknown>
+  ) =>
+    runnerFetch<Record<string, unknown>>(
+      `/ui-bridge/sdk/element/${encodeURIComponent(id)}/action`,
+      {
+        method: "POST",
+        body: JSON.stringify({ action, params }),
+      }
+    ),
+  uiBridgeTabs: () => runnerFetch<{ tabs: string[] }>("/ui-bridge/sdk/tabs"),
+  uiBridgePageNavigate: (url: string, targetTabId?: string) =>
+    runnerFetch<Record<string, unknown>>("/ui-bridge/sdk/page/navigate", {
+      method: "POST",
+      body: JSON.stringify({ url, ...(targetTabId ? { targetTabId } : {}) }),
+    }),
+  uiBridgePageBack: () =>
+    runnerFetch<Record<string, unknown>>("/ui-bridge/sdk/page/back", {
+      method: "POST",
+    }),
+  uiBridgePageForward: () =>
+    runnerFetch<Record<string, unknown>>("/ui-bridge/sdk/page/forward", {
+      method: "POST",
+    }),
+  uiBridgeHighlight: (id: string) =>
+    runnerFetch<Record<string, unknown>>(
+      `/ui-bridge/sdk/debug/highlight/${encodeURIComponent(id)}`,
+      { method: "POST" }
+    ),
+  uiBridgeScreenshot: () =>
+    runnerFetch<Record<string, unknown>>("/ui-bridge/sdk/screenshot"),
   aiCompareSnapshots: (data: {
     reference_snapshot: unknown;
     target_snapshot: unknown;
@@ -1056,6 +1110,46 @@ export const runnerApi = {
       method: "POST",
       body: JSON.stringify(data),
       timeoutMs: 120000,
+    }),
+
+  // Comparison Snapshot CRUD
+  listComparisonSnapshots: (projectId?: string) =>
+    runnerFetch<{ snapshots: import("./types/exploration").SavedSnapshot[] }>(
+      projectId
+        ? `/comparison-snapshots?project_id=${encodeURIComponent(projectId)}`
+        : "/comparison-snapshots"
+    ),
+  getComparisonSnapshot: (id: string) =>
+    runnerFetch<import("./types/exploration").SavedSnapshot>(
+      `/comparison-snapshots/${encodeURIComponent(id)}`
+    ),
+  saveComparisonSnapshot: (data: {
+    name: string;
+    app_url: string;
+    snapshot_data: Record<string, unknown>;
+    project_id?: string;
+  }) =>
+    runnerFetch<import("./types/exploration").SavedSnapshot>(
+      "/comparison-snapshots",
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      }
+    ),
+  deleteComparisonSnapshot: (id: string) =>
+    runnerFetch<{ success: boolean }>(
+      `/comparison-snapshots/${encodeURIComponent(id)}`,
+      { method: "DELETE" }
+    ),
+
+  // Run workflow sequence (ordered batch execution)
+  runWorkflowSequence: (workflowIds: string[], stopOnFailure: boolean) =>
+    runnerFetch<{ task_run_id: string }>("/unified-workflows/run-sequence", {
+      method: "POST",
+      body: JSON.stringify({
+        workflow_ids: workflowIds,
+        stop_on_failure: stopOnFailure,
+      }),
     }),
 
   // Execute Action

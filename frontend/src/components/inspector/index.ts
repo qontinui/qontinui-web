@@ -6,3 +6,4 @@ export { SearchPanel } from "./SearchPanel";
 export { AccessibilityPanel } from "./AccessibilityPanel";
 export { SpecsPanel } from "./SpecsPanel";
 export { ApiPanel } from "./ApiPanel";
+export { SiteTreePanel } from "./SiteTreePanel";

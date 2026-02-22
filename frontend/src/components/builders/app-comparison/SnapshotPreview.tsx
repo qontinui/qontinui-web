@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Camera, Loader2, Sparkles } from "lucide-react";
+import { Camera, Loader2, Sparkles, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { runnerApi } from "@/lib/runner/runner-api-object";
@@ -100,6 +100,31 @@ export function SnapshotPreview({
     };
   };
 
+  const [saving, setSaving] = useState<"ref" | "target" | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+
+  const handleSaveSnapshot = async (
+    which: "ref" | "target",
+    snapshot: Record<string, unknown>,
+    app: DiscoveredApp
+  ) => {
+    setSaving(which);
+    setSaveSuccess(null);
+    try {
+      await runnerApi.saveComparisonSnapshot({
+        name: `${app.appName} snapshot`,
+        app_url: app.url,
+        snapshot_data: snapshot,
+      });
+      setSaveSuccess(which);
+      setTimeout(() => setSaveSuccess(null), 3000);
+    } catch {
+      // Error silently handled — button state resets
+    } finally {
+      setSaving(null);
+    }
+  };
+
   const refStats = getSnapshotStats(refSnapshot);
   const targetStats = getSnapshotStats(targetSnapshot);
 
@@ -137,6 +162,11 @@ export function SnapshotPreview({
               snapshot={refSnapshot}
               stats={refStats}
               accentColor="cyan"
+              onSave={() =>
+                handleSaveSnapshot("ref", refSnapshot, referenceApp)
+              }
+              saving={saving === "ref"}
+              saved={saveSuccess === "ref"}
             />
             <SnapshotCard
               label="Target"
@@ -144,6 +174,11 @@ export function SnapshotPreview({
               snapshot={targetSnapshot}
               stats={targetStats}
               accentColor="emerald"
+              onSave={() =>
+                handleSaveSnapshot("target", targetSnapshot, targetApp)
+              }
+              saving={saving === "target"}
+              saved={saveSuccess === "target"}
             />
           </div>
 
@@ -157,7 +192,7 @@ export function SnapshotPreview({
                   <span className="text-text-primary">
                     {Math.max(
                       0,
-                      refStats.elementCount - targetStats.elementCount,
+                      refStats.elementCount - targetStats.elementCount
                     )}
                   </span>
                 </span>
@@ -169,7 +204,7 @@ export function SnapshotPreview({
                   <span className="text-text-primary">
                     {Math.max(
                       0,
-                      targetStats.elementCount - refStats.elementCount,
+                      targetStats.elementCount - refStats.elementCount
                     )}
                   </span>
                 </span>
@@ -224,6 +259,9 @@ function SnapshotCard({
   appName,
   stats,
   accentColor,
+  onSave,
+  saving,
+  saved,
 }: {
   label: string;
   appName: string;
@@ -234,6 +272,9 @@ function SnapshotCard({
     interactiveCount: number;
   } | null;
   accentColor: "cyan" | "emerald";
+  onSave?: () => void;
+  saving?: boolean;
+  saved?: boolean;
 }) {
   const borderColor =
     accentColor === "cyan" ? "border-cyan-500/30" : "border-emerald-500/30";
@@ -245,15 +286,37 @@ function SnapshotCard({
     <div
       className={`rounded-lg border ${borderColor} ${bgColor} p-4 space-y-3`}
     >
-      <div>
-        <span
-          className={`text-[10px] uppercase tracking-wider font-medium ${textColor}`}
-        >
-          {label}
-        </span>
-        <p className="text-sm font-medium text-text-primary mt-0.5">
-          {appName}
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <span
+            className={`text-[10px] uppercase tracking-wider font-medium ${textColor}`}
+          >
+            {label}
+          </span>
+          <p className="text-sm font-medium text-text-primary mt-0.5">
+            {appName}
+          </p>
+        </div>
+        {onSave && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-[10px] text-text-muted hover:text-text-primary"
+            onClick={onSave}
+            disabled={saving}
+          >
+            {saving ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : saved ? (
+              "Saved"
+            ) : (
+              <>
+                <Save className="size-3 mr-1" />
+                Save as Reference
+              </>
+            )}
+          </Button>
+        )}
       </div>
       {stats && (
         <div className="flex gap-3">

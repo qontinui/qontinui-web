@@ -1,6 +1,6 @@
 "use client";
 
-import type { DiscoveredSpec } from "@/hooks/use-external-ui-bridge";
+import type { DiscoveredSpec } from "@/hooks/use-inspector";
 import {
   Card,
   CardContent,
@@ -52,7 +52,6 @@ interface SpecsPanelProps {
   onExport: (spec: DiscoveredSpec) => void;
   expandedGroups: Set<string>;
   onToggleGroup: (id: string) => void;
-  targetType: "browser" | "desktop";
   isConnected: boolean;
 }
 
@@ -63,7 +62,6 @@ export function SpecsPanel({
   onExport,
   expandedGroups,
   onToggleGroup,
-  targetType,
   isConnected,
 }: SpecsPanelProps) {
   const totalGroups = discoveredSpecs.reduce(
@@ -89,9 +87,7 @@ export function SpecsPanel({
             Page Specs
           </CardTitle>
           <CardDescription className="text-text-muted">
-            {targetType === "desktop"
-              ? "Discover page specs registered in the Runner\u2019s own webview"
-              : "Discover page specs from the connected browser tab\u2019s SpecStore"}
+            Discover page specs from the connected app&apos;s SpecStore
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -122,12 +118,10 @@ export function SpecsPanel({
             )}
           </div>
 
-          {!isConnected && targetType === "browser" && (
+          {!isConnected && (
             <div className="flex items-center gap-2 text-amber-400 bg-amber-950/20 border border-amber-500/30 rounded-lg p-3">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              <p className="text-sm">
-                Connect to a browser tab to discover specs
-              </p>
+              <p className="text-sm">Connect to an app to discover specs</p>
             </div>
           )}
         </CardContent>
@@ -295,9 +289,9 @@ export function SpecsPanel({
                 No Specs Discovered
               </h3>
               <p className="text-sm text-text-muted max-w-md mx-auto">
-                {targetType === "desktop"
-                  ? 'Click "Discover Specs" to find page specs registered in the Runner\u2019s webview via usePageSpecs().'
-                  : 'Connect to a browser tab that has page specs registered via usePageSpecs(), then click "Discover Specs" to view and inspect them.'}
+                Connect to an app that has page specs registered via
+                usePageSpecs(), then click &quot;Discover Specs&quot; to view
+                and inspect them.
               </p>
             </div>
           </CardContent>

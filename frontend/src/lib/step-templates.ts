@@ -118,7 +118,7 @@ const NON_AGENTIC_PHASES: WorkflowPhase[] = [
 
 function makeCommand(
   phase: WorkflowPhase,
-  overrides: Partial<CommandStep>,
+  overrides: Partial<CommandStep>
 ): CommandStep {
   return {
     id: generateStepId(),
@@ -131,7 +131,7 @@ function makeCommand(
 
 function makeUiBridge(
   phase: WorkflowPhase,
-  overrides: Partial<UiBridgeStep>,
+  overrides: Partial<UiBridgeStep>
 ): UiBridgeStep {
   return {
     id: generateStepId(),
@@ -145,7 +145,7 @@ function makeUiBridge(
 
 function makePrompt(
   phase: WorkflowPhase,
-  overrides: Partial<PromptStep>,
+  overrides: Partial<PromptStep>
 ): PromptStep {
   return {
     id: generateStepId(),
@@ -206,7 +206,7 @@ export const BUILT_IN_TEMPLATES: StepTemplate[] = [
     color: "green",
     tags: ["playwright", "snippets", "e2e"],
     applicablePhases: NON_AGENTIC_PHASES,
-    builderPageUrl: "/build/prompt-snippets",
+    builderPageUrl: "/build/playwright-tests",
     createStep: (phase) =>
       makeCommand(phase, {
         name: "Playwright + Snippets",
@@ -426,6 +426,23 @@ export const BUILT_IN_TEMPLATES: StepTemplate[] = [
         action: "snapshot",
       }),
   },
+  {
+    id: "ui-bridge-compare",
+    name: "UI Bridge Compare",
+    description: "Compare current app state against a reference snapshot",
+    category: "ui_bridge",
+    icon: "GitCompare",
+    color: "pink",
+    tags: ["compare", "ui-bridge", "snapshot", "diff"],
+    applicablePhases: ["verification", "completion"],
+    builderPageUrl: "/tools/compare",
+    createStep: (phase) =>
+      makeUiBridge(phase, {
+        name: "Compare App State",
+        action: "compare",
+        comparison_mode: "structural",
+      }),
+  },
 
   // ── AI ───────────────────────────────────────────────────────────────────
   {
@@ -480,61 +497,7 @@ export const BUILT_IN_TEMPLATES: StepTemplate[] = [
   },
 
   // ── API ─────────────────────────────────────────────────────────────────
-  {
-    id: "api-get",
-    name: "API GET Request",
-    description: "Make an HTTP GET request and check status",
-    category: "api",
-    icon: "Globe",
-    color: "sky",
-    tags: ["api", "http", "get", "rest"],
-    applicablePhases: NON_AGENTIC_PHASES,
-    builderPageUrl: "/build/api-requests",
-    createStep: (phase) =>
-      makeCommand(phase, {
-        name: "API GET Request",
-        check_type: "http_status",
-        command: "curl -s -o /dev/null -w '%{http_code}' ",
-      }),
-  },
-  {
-    id: "api-post",
-    name: "API POST Request",
-    description: "Make an HTTP POST request and check status",
-    category: "api",
-    icon: "Globe",
-    color: "sky",
-    tags: ["api", "http", "post", "rest"],
-    applicablePhases: NON_AGENTIC_PHASES,
-    builderPageUrl: "/build/api-requests",
-    createStep: (phase) =>
-      makeCommand(phase, {
-        name: "API POST Request",
-        check_type: "http_status",
-        command:
-          "curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' ",
-      }),
-  },
-
-  // ── Macros ──────────────────────────────────────────────────────────────
-  {
-    id: "run-macro",
-    name: "Run Macro",
-    description: "Execute a saved action macro",
-    category: "macros",
-    icon: "Zap",
-    color: "amber",
-    tags: ["macro", "automation", "sequence"],
-    applicablePhases: NON_AGENTIC_PHASES,
-    builderPageUrl: "/build/macros",
-    createStep: (phase) =>
-      makeCommand(phase, {
-        name: "Run Macro",
-        command: "# Select a macro from Build > Macros",
-      }),
-  },
-
-  // ── Tasks / Exploration / AWAS ────────────────────────────────────────
+  // ── Tasks / Exploration ────────────────────────────────────────
   {
     id: "run-task",
     name: "Run Task",
@@ -567,22 +530,6 @@ export const BUILT_IN_TEMPLATES: StepTemplate[] = [
         command: "# Configure in Build > State Explorer",
       }),
   },
-  {
-    id: "awas-action",
-    name: "AWAS Action",
-    description: "Execute a web action via AWAS",
-    category: "api",
-    icon: "Webhook",
-    color: "teal",
-    tags: ["awas", "web-action", "api"],
-    applicablePhases: NON_AGENTIC_PHASES,
-    builderPageUrl: "/build/awas",
-    createStep: (phase) =>
-      makeCommand(phase, {
-        name: "AWAS Action",
-        command: "# Configure in Build > AWAS",
-      }),
-  },
 ];
 
 // =============================================================================
@@ -594,7 +541,7 @@ export function getTemplatesForPhase(phase: WorkflowPhase): StepTemplate[] {
 }
 
 export function getTemplatesByCategory(
-  category: TemplateCategory,
+  category: TemplateCategory
 ): StepTemplate[] {
   return BUILT_IN_TEMPLATES.filter((t) => t.category === category);
 }

@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "description": "Specs for the unified Inspector page — verifies page structure, connection panel, inspector tabs, element discovery, and empty states",
+  "description": "Specs for the Inspector page — verifies page structure, SDK connection panel, inspector tabs, element discovery, and semantic page overview for inspecting connected applications",
   "groups": [
     {
       "id": "insp-page-structure",
@@ -46,19 +46,19 @@
     },
     {
       "id": "insp-connection-panel",
-      "name": "Connection Panel",
-      "description": "Verify both connection options are present",
+      "name": "SDK Connection Panel",
+      "description": "Verify the unified SDK connection panel with app selector, connect/disconnect, and element discovery",
       "category": "element-presence",
       "assertions": [
         {
-          "id": "insp-browser-tab-heading",
-          "description": "Browser Tab connection card heading is present",
+          "id": "insp-app-dropdown",
+          "description": "App selector dropdown is present for switching between connected apps",
           "category": "element-presence",
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "heading", "textContent": "Browser Tab" },
-            "label": "Browser Tab heading"
+            "criteria": { "role": "combobox" },
+            "label": "App selector dropdown"
           },
           "assertionType": "exists",
           "source": "manual",
@@ -66,14 +66,14 @@
           "enabled": true
         },
         {
-          "id": "insp-desktop-app-heading",
-          "description": "Desktop App connection card heading is present",
+          "id": "insp-disconnect-button",
+          "description": "Disconnect button is present to disconnect from the active app",
           "category": "element-presence",
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "heading", "textContent": "Desktop App" },
-            "label": "Desktop App heading"
+            "criteria": { "role": "button", "textContent": "Disconnect" },
+            "label": "Disconnect button"
           },
           "assertionType": "exists",
           "source": "manual",
@@ -81,14 +81,14 @@
           "enabled": true
         },
         {
-          "id": "insp-refresh-tabs-button",
-          "description": "Refresh Tabs button is present",
+          "id": "insp-connect-new-app-button",
+          "description": "Connect New App button is present",
           "category": "element-presence",
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Refresh Tabs" },
-            "label": "Refresh Tabs button"
+            "criteria": { "role": "button", "textContent": "Connect New App" },
+            "label": "Connect New App button"
           },
           "assertionType": "exists",
           "source": "manual",
@@ -119,12 +119,12 @@
     {
       "id": "insp-inspector-tabs",
       "name": "Inspector Tabs",
-      "description": "Verify all six inspector tab buttons are present",
+      "description": "Verify all six inspector tab buttons are present for navigating between inspection modes",
       "category": "element-presence",
       "assertions": [
         {
           "id": "insp-elements-tab",
-          "description": "Elements tab button exists",
+          "description": "Elements tab button exists — browse and select discovered UI elements",
           "category": "element-presence",
           "severity": "critical",
           "target": {
@@ -139,7 +139,7 @@
         },
         {
           "id": "insp-actions-tab",
-          "description": "Actions tab button exists",
+          "description": "Actions tab button exists — execute click/type/focus on selected elements",
           "category": "element-presence",
           "severity": "critical",
           "target": {
@@ -154,7 +154,7 @@
         },
         {
           "id": "insp-accessibility-tab",
-          "description": "Accessibility tab button exists",
+          "description": "Accessibility tab button exists — inspect ARIA and accessibility properties",
           "category": "element-presence",
           "severity": "critical",
           "target": {
@@ -169,7 +169,7 @@
         },
         {
           "id": "insp-search-tab",
-          "description": "Search tab button exists",
+          "description": "Search tab button exists — filter elements by type, role, visibility",
           "category": "element-presence",
           "severity": "critical",
           "target": {
@@ -184,7 +184,7 @@
         },
         {
           "id": "insp-specs-tab",
-          "description": "Specs tab button exists",
+          "description": "Specs tab button exists — discover and view page-level semantic specs",
           "category": "element-presence",
           "severity": "critical",
           "target": {
@@ -199,7 +199,7 @@
         },
         {
           "id": "insp-api-tab",
-          "description": "API tab button exists",
+          "description": "API tab button exists — send raw SDK commands",
           "category": "element-presence",
           "severity": "critical",
           "target": {
@@ -216,9 +216,90 @@
       "source": "manual"
     },
     {
+      "id": "insp-page-purpose",
+      "name": "Page Purpose",
+      "description": "The Inspector page allows developers to connect to any UI Bridge SDK-enabled application, discover its UI elements, inspect their properties, execute actions, view accessibility info, and discover page-level semantic specs. It serves as a universal debugging and testing tool for the qontinui platform.",
+      "category": "semantic",
+      "assertions": [
+        {
+          "id": "insp-purpose-connect",
+          "description": "Users can connect to any application running the UI Bridge SDK by entering its URL",
+          "category": "semantic",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Connected Apps" },
+            "label": "Connection panel heading"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "insp-purpose-discover",
+          "description": "Users can discover all registered UI elements from the connected application",
+          "category": "semantic",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "Discover Elements"
+            },
+            "label": "Discover Elements button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "insp-purpose-inspect",
+          "description": "Users can select any discovered element to view its full properties including type, bounds, visibility, and available actions",
+          "category": "semantic",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Element Details" },
+            "label": "Element details panel"
+          },
+          "assertionType": "exists",
+          "condition": {
+            "type": "hasText",
+            "target": {
+              "type": "search",
+              "criteria": { "textContent": "elements found" },
+              "label": "Element count indicator"
+            },
+            "text": "found"
+          },
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "insp-purpose-specs",
+          "description": "Users can discover page-level semantic specs that describe what each page of the connected application is supposed to achieve",
+          "category": "semantic",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Page Specs" },
+            "label": "Page Specs panel"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
       "id": "insp-element-details",
       "name": "Element Details",
-      "description": "Verify the element detail panel displays correctly",
+      "description": "Verify the element detail panel displays correctly when elements are discovered",
       "category": "element-presence",
       "assertions": [
         {
@@ -277,12 +358,12 @@
     {
       "id": "insp-empty-states",
       "name": "Empty States",
-      "description": "Verify empty state before any connection",
+      "description": "Verify empty state before element discovery",
       "category": "state-consistency",
       "assertions": [
         {
           "id": "insp-no-elements-empty",
-          "description": "Shows 'No Elements Loaded' empty state before any connection",
+          "description": "Shows 'No Elements Loaded' empty state before any elements are discovered",
           "category": "state-consistency",
           "severity": "info",
           "target": {
@@ -301,24 +382,9 @@
     {
       "id": "insp-accessibility",
       "name": "Accessibility",
-      "description": "Verify ARIA and keyboard accessibility",
+      "description": "Verify ARIA and keyboard accessibility of key interactive elements",
       "category": "accessibility",
       "assertions": [
-        {
-          "id": "insp-refresh-tabs-accessible",
-          "description": "Refresh Tabs button is keyboard accessible",
-          "category": "accessibility",
-          "severity": "warning",
-          "target": {
-            "type": "search",
-            "criteria": { "role": "button", "textContent": "Refresh Tabs" },
-            "label": "Refresh Tabs button"
-          },
-          "assertionType": "exists",
-          "source": "manual",
-          "reviewed": true,
-          "enabled": true
-        },
         {
           "id": "insp-discover-button-accessible",
           "description": "Discover Elements button is keyboard accessible",
@@ -336,6 +402,24 @@
           "source": "manual",
           "reviewed": true,
           "enabled": true
+        },
+        {
+          "id": "insp-disconnect-button-accessible",
+          "description": "Disconnect button is keyboard accessible",
+          "category": "accessibility",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "Disconnect"
+            },
+            "label": "Disconnect button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
         }
       ],
       "source": "manual"
@@ -346,12 +430,14 @@
     "author": "Joshua Spinak",
     "createdAt": "2026-02-09T00:00:00.000Z",
     "pageUrl": "/tools/inspector",
-    "elementSource": "control",
+    "elementSource": "sdk",
     "tags": [
       "inspector",
       "ui-bridge",
+      "sdk",
       "accessibility",
       "element-discovery",
+      "page-specs",
       "tier-1"
     ]
   }

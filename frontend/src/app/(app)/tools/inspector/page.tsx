@@ -1,15 +1,11 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import Image from "next/image";
 import { useRunnerHealth } from "@/lib/runner-api";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { usePageSpecs } from "@/hooks/usePageSpecs";
 import { useInspector } from "@/hooks/use-inspector";
-import type {
-  ExternalElement,
-  DiscoveredSpec,
-} from "@/hooks/use-external-ui-bridge";
+import type { ExternalElement, DiscoveredSpec } from "@/hooks/use-inspector";
 import {
   ConnectionPanel,
   ElementsPanel,
@@ -18,6 +14,7 @@ import {
   AccessibilityPanel,
   SpecsPanel,
   ApiPanel,
+  SiteTreePanel,
 } from "@/components/inspector";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -30,10 +27,8 @@ import {
   Play,
   AlertCircle,
   Layers,
-  Plug,
   Terminal,
   Shield,
-  Camera,
   ScanSearch,
   Accessibility,
 } from "lucide-react";
@@ -69,22 +64,35 @@ export default function InspectorPage() {
 
   const inspector = useInspector();
   const {
-    activeSource,
     activeTab,
     setActiveTab,
-    bridge,
-    desktop,
+    connections,
+    activeConnection,
+    connectUrl,
+    setConnectUrl,
+    isConnecting,
+    connect,
+    disconnect,
+    switchTo,
+    refreshConnections,
     elements,
     selectedElement,
     selectElement,
+    discoverElements,
+    isDiscovering,
+    highlightElement,
     isConnected,
     error: currentError,
     isLoadingElements: isLoading,
+    discoveredLinks,
+    tabs,
+    targetTabId,
+    setTargetTabId,
   } = inspector;
 
   // Action form state
   const [actionType, setActionType] = useState<"click" | "type" | "focus">(
-    "click",
+    "click"
   );
   const [typeText, setTypeText] = useState("");
   const [actionResult, setActionResult] = useState<{
@@ -134,10 +142,10 @@ export default function InspectorPage() {
     (el: ExternalElement) => {
       selectElement(el);
     },
-    [selectElement],
+    [selectElement]
   );
 
-  // Execute action on selected element
+  // Execute action on selected element (unified SDK)
   const handleExecuteAction = useCallback(async () => {
     const el = selectedElement;
     if (!el) return;
@@ -146,31 +154,17 @@ export default function InspectorPage() {
     setActionResult(null);
 
     try {
-      if (activeSource === "desktop") {
-        const result = await desktop.executeAction(
-          el.id,
-          actionType,
-          actionType === "type" ? { text: typeText } : undefined,
-        );
-        setActionResult({
-          success: result.success,
-          message: result.success
-            ? `${actionType} on ${el.id} succeeded`
-            : result.error || "Action failed",
-        });
-      } else {
-        const result = await bridge.executeAction(
-          el.id,
-          actionType,
-          actionType === "type" ? { text: typeText } : {},
-        );
-        setActionResult({
-          success: result.success,
-          message: result.success
-            ? `${actionType} on ${el.id} succeeded`
-            : result.error || "Action failed",
-        });
-      }
+      const result = await inspector.executeAction(
+        el.id,
+        actionType,
+        actionType === "type" ? { text: typeText } : undefined
+      );
+      setActionResult({
+        success: result.success,
+        message: result.success
+          ? `${actionType} on ${el.id} succeeded`
+          : result.error || "Action failed",
+      });
     } catch (err) {
       setActionResult({
         success: false,
@@ -179,41 +173,34 @@ export default function InspectorPage() {
     } finally {
       setIsExecutingAction(false);
     }
-  }, [selectedElement, activeSource, actionType, typeText, bridge, desktop]);
+  }, [selectedElement, actionType, typeText, inspector]);
 
-  // Send raw API command
+  // Send raw API command (SDK-based)
   const handleSendApiCommand = useCallback(async () => {
     if (!apiAction.trim()) return;
     setIsSendingApi(true);
     try {
       const params = JSON.parse(apiParams);
-      await bridge.sendCommand(apiAction.trim(), params);
+      await inspector.sendCommand(apiAction.trim(), params);
     } catch {
-      await bridge.sendCommand(apiAction.trim(), {});
+      await inspector.sendCommand(apiAction.trim(), {});
     } finally {
       setIsSendingApi(false);
     }
-  }, [apiAction, apiParams, bridge]);
+  }, [apiAction, apiParams, inspector]);
 
-  // Discover specs (source-aware)
+  // Discover specs (unified SDK)
   const handleDiscoverSpecs = useCallback(async () => {
     setIsLoadingSpecs(true);
     try {
-      if (activeSource === "browser") {
-        const result = await bridge.getSpecs();
-        if (result.success && result.data?.specs) {
-          setDiscoveredSpecs(result.data.specs);
-        }
-      } else {
-        const specs = await desktop.discoverSpecs();
-        setDiscoveredSpecs(specs);
-      }
+      const specs = await inspector.discoverSpecs();
+      setDiscoveredSpecs(specs);
     } catch {
       setDiscoveredSpecs([]);
     } finally {
       setIsLoadingSpecs(false);
     }
-  }, [activeSource, bridge, desktop]);
+  }, [inspector]);
 
   // Export spec as JSON
   const handleExportSpec = useCallback((spec: DiscoveredSpec) => {
@@ -249,110 +236,81 @@ export default function InspectorPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
+    <div className="h-full overflow-y-auto bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       {/* Header */}
       <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <ScanSearch className="w-6 h-6 text-amber-400" />
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-amber-400 to-orange-400 bg-clip-text text-transparent">
+        <div className="flex items-center justify-between px-6 py-2">
+          <div className="flex items-center gap-2">
+            <ScanSearch className="w-5 h-5 text-amber-400" />
+            <h1 className="text-xl font-bold bg-gradient-to-r from-amber-400 to-orange-400 bg-clip-text text-transparent">
               Inspector
             </h1>
           </div>
-          <div className="flex items-center gap-3">
-            {bridge.isExtensionConnected && (
-              <Badge variant="info" className="gap-1.5">
-                <Plug className="w-3 h-3" />
-                Extension Connected
-              </Badge>
-            )}
-            <Badge variant="success" className="gap-1.5">
-              <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
-              Runner Connected
-            </Badge>
-          </div>
+          <Badge variant="success" className="gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
+            Runner Connected
+          </Badge>
         </div>
       </header>
 
-      <main className="p-6 max-w-7xl mx-auto space-y-6">
+      <main className="p-4 max-w-7xl mx-auto space-y-3">
         {isOffline && (
           <RunnerPartialState message="Runner offline — this tool requires the runner for execution" />
         )}
 
         {/* Connection Panel */}
         <ConnectionPanel
-          activeSource={activeSource}
-          bridge={bridge}
-          desktop={desktop}
+          connections={connections}
+          activeConnection={activeConnection}
+          connectUrl={connectUrl}
+          onConnectUrlChange={setConnectUrl}
+          isConnecting={isConnecting}
+          onConnect={connect}
+          onDisconnect={disconnect}
+          onSwitch={switchTo}
+          onRefresh={refreshConnections}
+          onDiscover={discoverElements}
+          isDiscovering={isDiscovering}
+          elementCount={elements.length}
+          error={currentError}
+          tabs={tabs}
+          targetTabId={targetTabId}
+          onTargetTabChange={setTargetTabId}
         />
 
-        {/* Inspector Tabs */}
-        <div className="flex gap-1 bg-surface-raised/50 rounded-lg p-1 border border-border-subtle/30 w-fit">
-          {TAB_CONFIG.map(({ key, label, icon: Icon }) => (
-            <button
-              key={key}
-              onClick={() => setActiveTab(key)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                activeTab === key
-                  ? "bg-purple-600/20 text-purple-400"
-                  : "text-text-muted hover:text-white hover:bg-surface-hover"
-              }`}
-            >
-              <Icon className="w-3.5 h-3.5" />
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {/* Elements tab: refresh button */}
-        {activeTab === "elements" && activeSource && (
-          <div className="flex items-center gap-3">
+        {/* Inspector Tabs + Refresh */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex gap-1 bg-surface-raised/50 rounded-lg p-1 border border-border-subtle/30">
+            {TAB_CONFIG.map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                onClick={() => setActiveTab(key)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === key
+                    ? "bg-purple-600/20 text-purple-400"
+                    : "text-text-muted hover:text-white hover:bg-surface-hover"
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {label}
+              </button>
+            ))}
+          </div>
+          {activeTab === "elements" && isConnected && (
             <Button
-              onClick={
-                activeSource === "desktop"
-                  ? desktop.discover
-                  : bridge.refreshElements
-              }
+              size="sm"
+              onClick={discoverElements}
               disabled={isLoading}
-              className="bg-brand-primary hover:bg-brand-primary/90 text-black font-semibold"
+              className="bg-brand-primary hover:bg-brand-primary/90 text-black font-semibold h-8"
             >
               {isLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                  Refreshing...
-                </>
+                <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
-                <>
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                  Refresh Elements
-                </>
+                <RefreshCw className="w-4 h-4" />
               )}
             </Button>
-            {elements.length > 0 && (
-              <span className="text-sm text-text-muted">
-                {elements.length} element{elements.length !== 1 ? "s" : ""}{" "}
-                found
-                {activeSource === "desktop" ? " (Desktop)" : " (Browser)"}
-              </span>
-            )}
-            {activeSource === "browser" &&
-              bridge.connectionStatus === "connected" && (
-                <Button
-                  onClick={bridge.capturePageScreenshot}
-                  disabled={bridge.isCapturingScreenshot}
-                  size="sm"
-                  variant="outline"
-                >
-                  {bridge.isCapturingScreenshot ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
-                  ) : (
-                    <Camera className="w-3.5 h-3.5 mr-1.5" />
-                  )}
-                  Screenshot
-                </Button>
-              )}
-          </div>
-        )}
+          )}
+        </div>
 
         {currentError && (
           <div className="flex items-center gap-2 text-red-400 bg-red-950/20 border border-red-500/30 rounded-lg p-3">
@@ -361,130 +319,109 @@ export default function InspectorPage() {
           </div>
         )}
 
-        {/* Tab Content */}
-        {activeTab === "elements" && (
-          <ElementsPanel
-            elements={elements}
-            filteredElements={filteredElements}
-            selectedElement={selectedElement}
-            onSelectElement={handleSelectElement}
-            searchQuery={controlSearch}
-            onSearchChange={setControlSearch}
-          />
-        )}
-
-        {activeTab === "actions" && (
-          <ActionsPanel
-            selectedElement={selectedElement}
-            actionType={actionType}
-            onActionTypeChange={setActionType}
-            typeText={typeText}
-            onTypeTextChange={setTypeText}
-            actionResult={actionResult}
-            isExecutingAction={isExecutingAction}
-            onExecuteAction={handleExecuteAction}
-            targetType={activeSource === "desktop" ? "desktop" : "browser"}
-            onHighlightElement={
-              activeSource === "browser" ? bridge.highlightElement : undefined
-            }
-          />
-        )}
-
-        {activeTab === "accessibility" && <AccessibilityPanel />}
-
-        {activeTab === "search" && (
-          <SearchPanel
-            elements={elements}
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            searchFilter={searchFilter}
-            onFilterChange={setSearchFilter}
-            filteredElements={filteredElements}
-            selectedElement={selectedElement}
-            onSelectElement={handleSelectElement}
-          />
-        )}
-
-        {activeTab === "specs" && (
-          <SpecsPanel
-            discoveredSpecs={discoveredSpecs}
-            isLoading={isLoadingSpecs}
-            onDiscover={handleDiscoverSpecs}
-            onExport={handleExportSpec}
-            expandedGroups={expandedGroups}
-            onToggleGroup={toggleGroup}
-            targetType={activeSource === "desktop" ? "desktop" : "browser"}
-            isConnected={isConnected}
-          />
-        )}
-
-        {activeTab === "api" && (
-          <ApiPanel
-            apiAction={apiAction}
-            onApiActionChange={setApiAction}
-            apiParams={apiParams}
-            onApiParamsChange={setApiParams}
-            isSending={isSendingApi}
-            onSend={handleSendApiCommand}
-            commandHistory={bridge.commandHistory}
-            onClearHistory={bridge.clearCommandHistory}
-            lastResult={bridge.lastCommandResult}
-          />
-        )}
-
-        {/* Empty state for elements tab */}
-        {activeTab === "elements" &&
-          elements.length === 0 &&
-          !currentError &&
-          !isLoading && (
-            <Card className="bg-surface-raised/50 border-border-subtle/50">
-              <CardContent className="py-12">
-                <div className="text-center">
-                  <Layers className="w-12 h-12 mx-auto mb-4 text-text-muted" />
-                  <h3 className="text-lg font-medium text-text-secondary mb-2">
-                    No Elements Loaded
-                  </h3>
-                  <p className="text-sm text-text-muted max-w-md mx-auto">
-                    Connect to a browser tab or click &quot;Discover
-                    Elements&quot; on the Desktop panel above to start
-                    inspecting.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+        {/* Two-column layout: Page Tree sidebar + Tab Content */}
+        <div className={discoveredLinks.length > 0 ? "flex gap-4" : ""}>
+          {/* Page Tree sidebar */}
+          {discoveredLinks.length > 0 && (
+            <div className="w-64 flex-shrink-0">
+              <SiteTreePanel
+                discoveredLinks={discoveredLinks}
+                onNavigate={inspector.navigateToPage}
+                isNavigating={inspector.isNavigating}
+              />
+            </div>
           )}
 
-        {/* Screenshot preview */}
-        {bridge.pageScreenshot && (
-          <Card className="bg-surface-raised/50 border-border-subtle/50">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-2 mb-3">
-                <Camera className="w-4 h-4 text-white" />
-                <h3 className="text-base font-semibold text-white">
-                  Page Screenshot
-                </h3>
-              </div>
-              <div className="relative max-h-[400px] overflow-auto rounded-lg border border-border-subtle/30">
-                <Image
-                  src={`data:image/png;base64,${bridge.pageScreenshot.data}`}
-                  alt="Page screenshot"
-                  width={0}
-                  height={0}
-                  sizes="100vw"
-                  style={{ width: "100%", height: "auto" }}
-                  unoptimized
-                />
-              </div>
-              <p className="text-xs text-text-muted mt-2">
-                {bridge.pageScreenshot.viewport.width}x
-                {bridge.pageScreenshot.viewport.height} — captured{" "}
-                {new Date(
-                  bridge.pageScreenshot.capturedAt,
-                ).toLocaleTimeString()}
-              </p>
-            </CardContent>
-          </Card>
-        )}
+          {/* Tab Content */}
+          <div className="flex-1 min-w-0 space-y-6">
+            {activeTab === "elements" && (
+              <ElementsPanel
+                elements={elements}
+                filteredElements={filteredElements}
+                selectedElement={selectedElement}
+                onSelectElement={handleSelectElement}
+                searchQuery={controlSearch}
+                onSearchChange={setControlSearch}
+              />
+            )}
+
+            {activeTab === "actions" && (
+              <ActionsPanel
+                selectedElement={selectedElement}
+                actionType={actionType}
+                onActionTypeChange={setActionType}
+                typeText={typeText}
+                onTypeTextChange={setTypeText}
+                actionResult={actionResult}
+                isExecutingAction={isExecutingAction}
+                onExecuteAction={handleExecuteAction}
+                onHighlightElement={highlightElement}
+              />
+            )}
+
+            {activeTab === "accessibility" && <AccessibilityPanel />}
+
+            {activeTab === "search" && (
+              <SearchPanel
+                elements={elements}
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+                searchFilter={searchFilter}
+                onFilterChange={setSearchFilter}
+                filteredElements={filteredElements}
+                selectedElement={selectedElement}
+                onSelectElement={handleSelectElement}
+              />
+            )}
+
+            {activeTab === "specs" && (
+              <SpecsPanel
+                discoveredSpecs={discoveredSpecs}
+                isLoading={isLoadingSpecs}
+                onDiscover={handleDiscoverSpecs}
+                onExport={handleExportSpec}
+                expandedGroups={expandedGroups}
+                onToggleGroup={toggleGroup}
+                isConnected={isConnected}
+              />
+            )}
+
+            {activeTab === "api" && (
+              <ApiPanel
+                apiAction={apiAction}
+                onApiActionChange={setApiAction}
+                apiParams={apiParams}
+                onApiParamsChange={setApiParams}
+                isSending={isSendingApi}
+                onSend={handleSendApiCommand}
+                commandHistory={inspector.commandHistory}
+                onClearHistory={inspector.clearCommandHistory}
+                lastResult={inspector.lastCommandResult}
+              />
+            )}
+
+            {/* Empty state for elements tab */}
+            {activeTab === "elements" &&
+              elements.length === 0 &&
+              !currentError &&
+              !isLoading && (
+                <Card className="bg-surface-raised/50 border-border-subtle/50">
+                  <CardContent className="py-12">
+                    <div className="text-center">
+                      <Layers className="w-12 h-12 mx-auto mb-4 text-text-muted" />
+                      <h3 className="text-lg font-medium text-text-secondary mb-2">
+                        No Elements Loaded
+                      </h3>
+                      <p className="text-sm text-text-muted max-w-md mx-auto">
+                        Connect to an app or click &quot;Discover Elements&quot;
+                        to start inspecting.
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+          </div>
+        </div>
       </main>
     </div>
   );
