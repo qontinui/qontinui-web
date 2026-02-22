@@ -69,16 +69,16 @@ class ConnectionHandler:
             True if connection is allowed, False if rate limited.
         """
         if not RateLimiter.check_connection_rate_limit(
-            self.client_ip, limit=5, window=60
+            self.client_ip, limit=30, window=60
         ):
             await self.websocket.close(
                 code=status.WS_1008_POLICY_VIOLATION,
-                reason="Connection rate limit exceeded. Maximum 5 connections per minute.",
+                reason="Connection rate limit exceeded. Maximum 30 connections per minute.",
             )
             logger.warning(
                 "websocket_connection_rate_limited",
                 client_ip=self.client_ip,
-                limit=5,
+                limit=30,
                 window=60,
             )
             return False

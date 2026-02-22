@@ -59,6 +59,25 @@ if __name__ == "__main__":
     # Check if port is in use and kill the process if needed
     kill_process_on_port(settings.PORT)
 
+    reload_excludes = [
+        "backup_migrations",
+        ".venv",
+        "htmlcov",
+        "logs",
+        "test-results",
+        "uploads",
+        "user_projects",
+        "data",
+        "terraform",
+        "docs",
+        "*.log",
+        "*.pyc",
+    ]
+
     uvicorn.run(
-        "app.main:app", host=settings.HOST, port=settings.PORT, reload=settings.RELOAD
+        "app.main:app",
+        host=settings.HOST,
+        port=settings.PORT,
+        reload=settings.RELOAD,
+        reload_excludes=reload_excludes if settings.RELOAD else None,
     )
