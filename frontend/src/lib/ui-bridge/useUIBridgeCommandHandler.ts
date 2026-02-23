@@ -954,6 +954,15 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           return [];
         }
 
+        case "getTabInfo": {
+          return {
+            url: window.location.href,
+            pathname: window.location.pathname,
+            title: document.title,
+            timestamp: Date.now(),
+          };
+        }
+
         case "getElementTree": {
           // Build a tree representation
           // elements is available from hook scope

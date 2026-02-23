@@ -712,6 +712,15 @@ export function useUIBridgeTransport(
           return [];
         }
 
+        case "getTabInfo": {
+          return {
+            url: window.location.href,
+            pathname: window.location.pathname,
+            title: document.title,
+            timestamp: Date.now(),
+          };
+        }
+
         case "getElementTree": {
           return {
             root: document.title,

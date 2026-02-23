@@ -200,6 +200,47 @@ export function getConnectedTabs(): string[] {
   return Array.from(tabListeners.keys());
 }
 
+export interface TabInfo {
+  tabId: string;
+  url?: string;
+  pathname?: string;
+  title?: string;
+}
+
+/**
+ * Get connected tabs with page info (URL, title) by querying each tab.
+ * Falls back to ID-only entries if a tab doesn't respond in time.
+ */
+export async function getTabsWithInfo(): Promise<TabInfo[]> {
+  const tabIds = getConnectedTabs();
+  const results: TabInfo[] = [];
+
+  await Promise.all(
+    tabIds.map(async (tabId) => {
+      try {
+        const info = await Promise.race([
+          queueCommand<{ url?: string; pathname?: string; title?: string }>(
+            "getTabInfo",
+            {},
+            { targetTabId: tabId }
+          ),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+        ]);
+        results.push({
+          tabId,
+          url: info?.url,
+          pathname: info?.pathname,
+          title: info?.title,
+        });
+      } catch {
+        results.push({ tabId });
+      }
+    })
+  );
+
+  return results;
+}
+
 // ============================================================================
 // WebSocket Client Registry
 // ============================================================================

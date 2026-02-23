@@ -296,7 +296,7 @@ export const runnerApi = {
     }),
 
   // Prompts CRUD
-  getPrompts: () => runnerFetch<SavedPrompt[]>("/prompts/detailed"),
+  getPrompts: () => runnerFetch<SavedPrompt[]>("/prompts"),
   createPrompt: (prompt: Partial<SavedPrompt>) =>
     runnerFetch<SavedPrompt>("/prompts", {
       method: "POST",
@@ -1079,7 +1079,16 @@ export const runnerApi = {
         body: JSON.stringify({ action, params }),
       }
     ),
-  uiBridgeTabs: () => runnerFetch<{ tabs: string[] }>("/ui-bridge/sdk/tabs"),
+  uiBridgeTabs: () =>
+    runnerFetch<{
+      tabs: string[];
+      tabsInfo?: Array<{
+        tabId: string;
+        url?: string;
+        pathname?: string;
+        title?: string;
+      }>;
+    }>("/ui-bridge/sdk/tabs"),
   uiBridgePageNavigate: (url: string, targetTabId?: string) =>
     runnerFetch<Record<string, unknown>>("/ui-bridge/sdk/page/navigate", {
       method: "POST",

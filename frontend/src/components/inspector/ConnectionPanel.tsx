@@ -31,9 +31,6 @@ interface ConnectionPanelProps {
   isDiscovering: boolean;
   elementCount: number;
   error: string | null;
-  tabs?: string[];
-  targetTabId?: string | null;
-  onTargetTabChange?: (tabId: string | null) => void;
 }
 
 export function ConnectionPanel({
@@ -50,9 +47,6 @@ export function ConnectionPanel({
   isDiscovering,
   elementCount,
   error,
-  tabs = [],
-  targetTabId,
-  onTargetTabChange,
 }: ConnectionPanelProps) {
   const [showConnectInput, setShowConnectInput] = useState(false);
 
@@ -187,31 +181,6 @@ export function ConnectionPanel({
                 {elementCount} element{elementCount !== 1 ? "s" : ""}
               </span>
             )}
-          </div>
-        )}
-
-        {/* Tab targeting selector */}
-        {tabs.length > 0 && onTargetTabChange && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-text-muted whitespace-nowrap">
-              Target tab:
-            </span>
-            <select
-              value={targetTabId ?? ""}
-              onChange={(e) => {
-                onTargetTabChange(e.target.value || null);
-              }}
-              className="flex-1 h-7 rounded-md border border-border-subtle/50 bg-surface-raised/50 px-2 text-xs text-white focus:border-purple-500/50 focus:outline-none"
-            >
-              <option value="">All tabs (broadcast)</option>
-              {tabs.map((tabId) => (
-                <option key={tabId} value={tabId}>
-                  {tabId.length > 24
-                    ? `${tabId.slice(0, 12)}...${tabId.slice(-8)}`
-                    : tabId}
-                </option>
-              ))}
-            </select>
           </div>
         )}
 

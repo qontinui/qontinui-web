@@ -66,6 +66,7 @@ interface BuilderLayoutProps<T extends BuilderItem> {
   itemLabel?: string;
   searchPlaceholder?: string;
   initialSelectedId?: string | null;
+  pageDescription?: string;
 }
 
 const ACCENT_CLASSES: Record<string, { bg: string; border: string }> = {
@@ -108,6 +109,7 @@ export function BuilderLayout<T extends BuilderItem>({
   itemLabel = "item",
   searchPlaceholder,
   initialSelectedId,
+  pageDescription,
 }: BuilderLayoutProps<T>) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectionMode, setSelectionMode] = useState(false);
@@ -167,7 +169,7 @@ export function BuilderLayout<T extends BuilderItem>({
       <div className="w-80 shrink-0 border-r border-border-subtle/50 flex flex-col bg-surface-canvas/50">
         {/* Header */}
         <div className="p-4 border-b border-border-subtle/50">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-1.5">
             <div className="flex items-center gap-2">
               <Icon className={`size-5 ${iconColor}`} />
               <h2 className="font-semibold text-text-primary text-sm">
@@ -221,6 +223,9 @@ export function BuilderLayout<T extends BuilderItem>({
               )}
             </div>
           </div>
+          {pageDescription && (
+            <p className="text-xs text-text-muted mb-2">{pageDescription}</p>
+          )}
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-text-muted" />
             <Input

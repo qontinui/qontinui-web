@@ -1,6 +1,6 @@
 """CRUD operations for workflow sequence management."""
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog

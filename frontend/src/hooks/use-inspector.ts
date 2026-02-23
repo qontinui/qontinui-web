@@ -8,6 +8,12 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { runnerApi } from "@/lib/runner/runner-api-object";
+import {
+  transformSdkElements as transformSdkElementsPure,
+  extractLinks as extractLinksPure,
+  unwrapElementResponse,
+} from "@/lib/ui-bridge/link-extractor";
+import { unwrapSpecResponse } from "@/lib/ui-bridge/spec-parser";
 
 // =============================================================================
 // Types
@@ -78,10 +84,9 @@ export interface SdkConnection {
   isActive: boolean;
 }
 
-export interface DiscoveredLink {
-  url: string;
-  text: string;
-}
+// Re-export DiscoveredLink from its canonical location
+import type { DiscoveredLink } from "@/lib/ui-bridge/types";
+export type { DiscoveredLink } from "@/lib/ui-bridge/types";
 
 export type InspectorTab =
   | "elements"
@@ -282,107 +287,15 @@ export function useInspector(): UseInspectorReturn {
   // Element inspection
   // -------------------------------------------------------------------------
 
-  /**
-   * Transform raw SDK elements into ExternalElement shape.
-   * SDK elements have: { id, type, label, state: { visible, enabled, rect, textContent }, actions, category }
-   * ExternalElement expects: { id, tagName, type, bounds, visible, enabled, text, actions, ... }
-   */
   const transformSdkElements = useCallback(
-    (rawElems: unknown[]): ExternalElement[] => {
-      return rawElems.map((raw) => {
-        const el = raw as Record<string, unknown>;
-        const state = (el.state ?? {}) as Record<string, unknown>;
-        const rect = (state.rect ?? {}) as Record<string, number>;
-        const identifier = (el.identifier ?? {}) as Record<string, unknown>;
-
-        return {
-          id: (el.id as string) ?? "",
-          tagName: (el.tagName as string) ?? (el.type as string) ?? "",
-          type: (el.type as string) ?? "",
-          bounds: {
-            x: rect.x ?? rect.left ?? 0,
-            y: rect.y ?? rect.top ?? 0,
-            width: rect.width ?? 0,
-            height: rect.height ?? 0,
-          },
-          visible: (state.visible as boolean) ?? true,
-          enabled: (state.enabled as boolean) ?? true,
-          focused: (state.focused as boolean) ?? false,
-          value: state.value as string | undefined,
-          text:
-            (el.label as string) ?? (state.textContent as string) ?? undefined,
-          label: (el.label as string) ?? undefined,
-          actions: (el.actions as string[]) ?? [],
-          role: (el.role as string) ?? undefined,
-          accessibleName: (el.accessibleName as string) ?? undefined,
-          is_interactive: el.category === "interactive",
-          interactive: el.category === "interactive",
-          ref: (identifier.uiId as string) ?? undefined,
-          selector: (identifier.selector as string) ?? undefined,
-          href: (el.href as string) ?? (state.href as string) ?? undefined,
-          dataRoute: (state.dataRoute as string) ?? undefined,
-        } as ExternalElement;
-      });
-    },
+    (rawElems: unknown[]): ExternalElement[] =>
+      transformSdkElementsPure(rawElems),
     []
   );
 
-  /** Extract navigable pages from SDK-discovered elements.
-   *  Looks for: elements with data-route, anchor elements with href,
-   *  and navigation buttons with route metadata. */
   const extractLinks = useCallback(
-    (elems: ExternalElement[]): DiscoveredLink[] => {
-      const links: DiscoveredLink[] = [];
-      const seenUrls = new Set<string>();
-
-      const addLink = (url: string, text: string) => {
-        if (!seenUrls.has(url)) {
-          seenUrls.add(url);
-          links.push({ url, text });
-        }
-      };
-
-      for (const el of elems) {
-        const id = el.id || "";
-        const label =
-          el.text?.replace(/hidden$/i, "").trim() ||
-          el.label?.replace(/hidden$/i, "").trim() ||
-          "";
-
-        // 1. Elements with data-route (nav items, route buttons)
-        if (el.dataRoute && !el.dataRoute.includes(":")) {
-          addLink(el.dataRoute, label || id);
-          continue;
-        }
-
-        // 2. Anchor/link elements with href
-        if (
-          (el.tagName === "a" || el.tagName === "A" || el.role === "link") &&
-          el.href
-        ) {
-          try {
-            const href = el.href;
-            if (
-              href.startsWith("/") ||
-              (activeConnection &&
-                href.startsWith(new URL(activeConnection.url).origin))
-            ) {
-              const normalizedUrl = href.startsWith("/")
-                ? href
-                : new URL(href).pathname;
-              addLink(
-                normalizedUrl,
-                label || el.accessibleName || normalizedUrl
-              );
-            }
-          } catch {
-            // Invalid URL — skip
-          }
-        }
-      }
-
-      return links.sort((a, b) => a.url.localeCompare(b.url));
-    },
+    (elems: ExternalElement[]): DiscoveredLink[] =>
+      extractLinksPure(elems, activeConnection?.url),
     [activeConnection]
   );
 
@@ -390,29 +303,8 @@ export function useInspector(): UseInspectorReturn {
     setIsDiscovering(true);
     setError(null);
     try {
-      // Discover triggers element scan and returns elements in the response.
-      // SDK proxy endpoints return {data: ...} without "success", so
-      // runnerFetch does NOT unwrap the envelope. We handle it here.
       const raw = await runnerApi.uiBridgeDiscover({ interactive_only: false });
-      const wrapped = raw as unknown as Record<string, unknown>;
-
-      // Extract elements: try wrapped.data.elements, then wrapped.elements, then wrapped.data (array)
-      let rawElems: unknown[] = [];
-      if (
-        wrapped?.data &&
-        typeof wrapped.data === "object" &&
-        !Array.isArray(wrapped.data)
-      ) {
-        const inner = wrapped.data as Record<string, unknown>;
-        rawElems = (inner.elements ?? []) as unknown[];
-      } else if (Array.isArray(wrapped?.data)) {
-        rawElems = wrapped.data;
-      } else if (wrapped?.elements) {
-        rawElems = wrapped.elements as unknown[];
-      } else if (Array.isArray(wrapped)) {
-        rawElems = wrapped;
-      }
-
+      const rawElems = unwrapElementResponse(raw);
       const elemList = transformSdkElements(rawElems);
       setElements(elemList);
       setSelectedElement(null);
@@ -497,31 +389,21 @@ export function useInspector(): UseInspectorReturn {
   const discoverSpecs = useCallback(async (): Promise<DiscoveredSpec[]> => {
     try {
       const raw = await runnerApi.uiBridgeDiscover({ action: "getSpecs" });
-      // SDK proxy returns {data: ...} without "success" → not unwrapped by runnerFetch
-      const wrapped = raw as unknown as Record<string, unknown>;
-      const inner = (wrapped?.data ?? wrapped) as Record<string, unknown>;
-
-      if (inner?.specs && Array.isArray(inner.specs)) {
-        return (inner.specs as Array<{ specId: string; config: unknown }>).map(
-          (s) => ({ specId: s.specId, config: s.config })
-        );
+      const specs = unwrapSpecResponse(raw);
+      if (specs.length > 0) {
+        return specs.map((s) => {
+          const obj = s as Record<string, unknown>;
+          return { specId: obj.specId as string, config: obj.config };
+        });
       }
 
-      // Fallback: try snapshot approach
+      // Fallback: try snapshot specStore
       const snapRaw = await runnerApi.uiBridgeSnapshot();
-      const snapWrapped = snapRaw as unknown as Record<string, unknown>;
-      const snapInner = (snapWrapped?.data ?? snapWrapped) as Record<
-        string,
-        unknown
-      >;
-      const specStore = snapInner?.specStore || snapInner?.specs;
-      if (specStore && typeof specStore === "object") {
-        return Object.entries(specStore).map(([specId, config]) => ({
-          specId,
-          config,
-        }));
-      }
-      return [];
+      const snapSpecs = unwrapSpecResponse(snapRaw);
+      return snapSpecs.map((s) => {
+        const obj = s as Record<string, unknown>;
+        return { specId: obj.specId as string, config: obj.config };
+      });
     } catch {
       return [];
     }

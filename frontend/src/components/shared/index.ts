@@ -13,3 +13,5 @@ export {
   type StepProgressData,
   type StepProgressMarkerProps,
 } from "./StepProgressMarker";
+export { PageTreePanel, type PageTreePanelProps } from "./PageTree";
+export type { TreeNode } from "./PageTree";

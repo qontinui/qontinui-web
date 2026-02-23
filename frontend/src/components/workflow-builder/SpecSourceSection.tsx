@@ -34,9 +34,9 @@ import {
   buildSpecPrompt,
   type DiscoveredSpec,
   type SpecGroup,
-  type SpecAssertion,
-  type SpecConfig,
 } from "@/lib/spec-prompt-builder";
+import { parseDiscoveredSpecs } from "@/lib/ui-bridge/spec-parser";
+import { PageTreeSection } from "./PageTreeSection";
 
 // =============================================================================
 // Types
@@ -58,76 +58,6 @@ interface PersistedSpecState {
   sdkUrl: string;
   discoveredSpecs: DiscoveredSpec[];
   selectedGroupIds: string[];
-}
-
-// =============================================================================
-// Runtime parser for discover response
-// =============================================================================
-
-function parseAssertion(raw: Record<string, unknown>): SpecAssertion | null {
-  if (typeof raw.id !== "string" || typeof raw.description !== "string") {
-    return null;
-  }
-  return {
-    id: raw.id,
-    description: raw.description,
-    category: typeof raw.category === "string" ? raw.category : "unknown",
-    severity:
-      raw.severity === "critical" ||
-      raw.severity === "warning" ||
-      raw.severity === "info"
-        ? raw.severity
-        : "info",
-    enabled: raw.enabled !== false,
-    target: raw.target as Record<string, unknown> | undefined,
-    assertionType:
-      typeof raw.assertionType === "string" ? raw.assertionType : undefined,
-    condition: raw.condition as Record<string, unknown> | undefined,
-  };
-}
-
-function parseGroup(raw: Record<string, unknown>): SpecGroup | null {
-  if (typeof raw.id !== "string" || typeof raw.name !== "string") {
-    return null;
-  }
-  const rawAssertions = Array.isArray(raw.assertions) ? raw.assertions : [];
-  const assertions = rawAssertions
-    .map((a: unknown) => parseAssertion(a as Record<string, unknown>))
-    .filter((a): a is SpecAssertion => a !== null);
-  return {
-    id: raw.id,
-    name: raw.name,
-    description: typeof raw.description === "string" ? raw.description : "",
-    category: typeof raw.category === "string" ? raw.category : "unknown",
-    assertions,
-    source: typeof raw.source === "string" ? raw.source : undefined,
-  };
-}
-
-function parseDiscoveredSpecs(rawSpecs: unknown): DiscoveredSpec[] {
-  if (!Array.isArray(rawSpecs)) return [];
-  const results: DiscoveredSpec[] = [];
-  for (const raw of rawSpecs) {
-    if (typeof raw !== "object" || raw === null) continue;
-    const obj = raw as Record<string, unknown>;
-    if (typeof obj.specId !== "string") continue;
-    const rawConfig = obj.config as Record<string, unknown> | undefined;
-    if (!rawConfig) continue;
-    const rawGroups = Array.isArray(rawConfig.groups) ? rawConfig.groups : [];
-    const groups = rawGroups
-      .map((g: unknown) => parseGroup(g as Record<string, unknown>))
-      .filter((g): g is SpecGroup => g !== null);
-    const config: SpecConfig = {
-      version:
-        typeof rawConfig.version === "string" ? rawConfig.version : "1.0.0",
-      description:
-        typeof rawConfig.description === "string" ? rawConfig.description : "",
-      groups,
-      metadata: rawConfig.metadata as SpecConfig["metadata"],
-    };
-    results.push({ specId: obj.specId, config });
-  }
-  return results;
 }
 
 // =============================================================================
@@ -289,6 +219,30 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
   const handleClearAll = useCallback(() => {
     updateSelection([], new Set());
   }, [updateSelection]);
+
+  // Handle specs discovered from page tree navigation
+  const handleTreeSpecsDiscovered = useCallback(
+    (_pageUrl: string, newSpecs: DiscoveredSpec[]) => {
+      // Merge new specs with existing, replacing duplicates by specId
+      const existingMap = new Map(discoveredSpecs.map((s) => [s.specId, s]));
+      for (const spec of newSpecs) {
+        existingMap.set(spec.specId, spec);
+      }
+      const merged = Array.from(existingMap.values());
+
+      // Auto-select all groups from newly discovered specs
+      const newIds = new Set(selectedGroupIds);
+      for (const spec of newSpecs) {
+        for (const group of spec.config?.groups ?? []) {
+          newIds.add(group.id);
+        }
+      }
+
+      updateSelection(merged, newIds);
+      setConnectionError(null);
+    },
+    [discoveredSpecs, selectedGroupIds, updateSelection]
+  );
 
   // Toggle a spec group
   const toggleGroup = useCallback(
@@ -459,6 +413,13 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
             </p>
           )}
         </div>
+
+        {/* Page Tree (browse pages to discover specs) */}
+        <PageTreeSection
+          isConnected={isConnected}
+          appOrigin={sdkUrl.trim() || undefined}
+          onSpecsDiscovered={handleTreeSpecsDiscovered}
+        />
 
         {/* Spec Group List */}
         {discoveredSpecs.length > 0 && (

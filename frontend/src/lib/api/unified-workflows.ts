@@ -36,7 +36,8 @@ async function runnerFetch<T>(
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(
-      body.error || `Runner API error: ${response.status} ${response.statusText}`
+      body.error ||
+        `Runner API error: ${response.status} ${response.statusText}`
     );
   }
 
@@ -164,6 +165,20 @@ export function useUnifiedWorkflows() {
   useEffect(() => {
     setIsLoading(true);
     fetchData();
+  }, [fetchData]);
+
+  // Refetch when page regains visibility or focus (picks up workflows created by the runner)
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") fetchData();
+    };
+    const onFocus = () => fetchData();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("focus", onFocus);
+    };
   }, [fetchData]);
 
   return { data, isLoading, error, isOffline, refetch: fetchData };

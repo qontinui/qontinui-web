@@ -106,6 +106,14 @@ export const navItems: NavItem[] = [
     route: "/tools/compare",
     color: "var(--brand-secondary)",
   },
+  {
+    id: "page-sweep",
+    label: "Page Sweep",
+    description: "Spec-driven workflows for every page",
+    icon: React.createElement(Globe, { className: "size-5" }),
+    route: "/build/page-sweep",
+    color: "var(--brand-secondary)",
+  },
 
   // ===========================================================================
   // Run — Execute workflows and view results

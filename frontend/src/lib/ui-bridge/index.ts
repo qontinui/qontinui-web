@@ -41,3 +41,4 @@ export {
   type UIBridgeTransportOptions,
   type UIBridgeTransportResult,
 } from "./useUIBridgeTransport";
+export type { DiscoveredLink, PageNodeStatus } from "./types";

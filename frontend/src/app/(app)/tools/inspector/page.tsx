@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRunnerHealth } from "@/lib/runner-api";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { usePageSpecs } from "@/hooks/usePageSpecs";
@@ -16,6 +16,8 @@ import {
   ApiPanel,
   SiteTreePanel,
 } from "@/components/inspector";
+import { useTargetSelector } from "@/hooks/useTargetSelector";
+import { TargetSelector } from "@/components/ui-bridge/TargetSelector";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -85,10 +87,21 @@ export default function InspectorPage() {
     error: currentError,
     isLoadingElements: isLoading,
     discoveredLinks,
-    tabs,
-    targetTabId,
-    setTargetTabId,
   } = inspector;
+
+  // Target selector (shared hook)
+  const {
+    targets,
+    selectedTargetId,
+    setSelectedTargetId,
+    refresh: refreshTargets,
+    isLoading: isLoadingTargets,
+  } = useTargetSelector({ selfPathname: "/tools/inspector" });
+
+  // Sync selected target to inspector's tab targeting
+  useEffect(() => {
+    inspector.setTargetTabId(selectedTargetId);
+  }, [selectedTargetId, inspector]);
 
   // Action form state
   const [actionType, setActionType] = useState<"click" | "type" | "focus">(
@@ -273,10 +286,19 @@ export default function InspectorPage() {
           isDiscovering={isDiscovering}
           elementCount={elements.length}
           error={currentError}
-          tabs={tabs}
-          targetTabId={targetTabId}
-          onTargetTabChange={setTargetTabId}
         />
+
+        {/* Target Selector */}
+        {targets.length > 1 && (
+          <TargetSelector
+            targets={targets}
+            selectedTargetId={selectedTargetId}
+            onTargetChange={setSelectedTargetId}
+            onRefresh={refreshTargets}
+            isLoading={isLoadingTargets}
+            label="Target:"
+          />
+        )}
 
         {/* Inspector Tabs + Refresh */}
         <div className="flex items-center gap-3 flex-wrap">

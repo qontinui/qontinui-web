@@ -27,8 +27,6 @@ export interface GenerateWorkflowRequest {
   auto_include_contexts?: boolean;
   /** Maximum verification->fix iterations (default: 3, 0 = skip verification) */
   max_fix_iterations?: number;
-  /** Generation mode: "standard" (default) or "plan" */
-  generation_mode?: "standard" | "plan";
   /** Discovery mode: "auto" (default), "enabled" (always), "disabled" (never) */
   discovery_mode?: "auto" | "enabled" | "disabled";
 }
