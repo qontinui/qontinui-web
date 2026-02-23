@@ -213,10 +213,9 @@ export interface TabInfo {
  */
 export async function getTabsWithInfo(): Promise<TabInfo[]> {
   const tabIds = getConnectedTabs();
-  const results: TabInfo[] = [];
 
-  await Promise.all(
-    tabIds.map(async (tabId) => {
+  const results = await Promise.all(
+    tabIds.map(async (tabId): Promise<TabInfo> => {
       try {
         const info = await Promise.race([
           queueCommand<{ url?: string; pathname?: string; title?: string }>(
@@ -226,14 +225,14 @@ export async function getTabsWithInfo(): Promise<TabInfo[]> {
           ),
           new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
         ]);
-        results.push({
+        return {
           tabId,
           url: info?.url,
           pathname: info?.pathname,
           title: info?.title,
-        });
+        };
       } catch {
-        results.push({ tabId });
+        return { tabId };
       }
     })
   );

@@ -87,6 +87,7 @@ export default function InspectorPage() {
     error: currentError,
     isLoadingElements: isLoading,
     discoveredLinks,
+    setTargetTabId,
   } = inspector;
 
   // Target selector (shared hook)
@@ -100,8 +101,8 @@ export default function InspectorPage() {
 
   // Sync selected target to inspector's tab targeting
   useEffect(() => {
-    inspector.setTargetTabId(selectedTargetId);
-  }, [selectedTargetId, inspector]);
+    setTargetTabId(selectedTargetId);
+  }, [selectedTargetId, setTargetTabId]);
 
   // Action form state
   const [actionType, setActionType] = useState<"click" | "type" | "focus">(
