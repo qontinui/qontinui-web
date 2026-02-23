@@ -1,6 +1,6 @@
 """CRUD operations for workflow sequence management."""
 
-from datetime import datetime
+from datetime import datetime, UTC
 from uuid import UUID
 
 import structlog
@@ -109,7 +109,7 @@ async def update_workflow_sequence(
     for field, value in update_dict.items():
         setattr(sequence, field, value)
 
-    sequence.updated_at = datetime.utcnow()  # type: ignore[assignment]
+    sequence.updated_at = datetime.now(UTC)  # type: ignore[assignment]
     await db.commit()
     await db.refresh(sequence)
 

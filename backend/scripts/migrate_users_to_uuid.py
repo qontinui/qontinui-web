@@ -37,8 +37,7 @@ async def export_users(engine):
 
     async with async_session() as session:
         try:
-            result = await session.execute(
-                text("""
+            result = await session.execute(text("""
                     SELECT
                         id, email, username, full_name, hashed_password,
                         is_active, is_superuser, is_verified, is_beta,
@@ -46,8 +45,7 @@ async def export_users(engine):
                         created_at, updated_at, email_verification_token
                     FROM users
                     ORDER BY created_at
-                """)
-            )
+                """))
             users = result.fetchall()
 
             # Convert to list of dicts
@@ -94,13 +92,11 @@ async def drop_all_tables(engine):
     async with async_session() as session:
         try:
             # Get all table names
-            result = await session.execute(
-                text("""
+            result = await session.execute(text("""
                     SELECT tablename
                     FROM pg_tables
                     WHERE schemaname = 'public'
-                """)
-            )
+                """))
             tables = [row[0] for row in result.fetchall()]
 
             if not tables:

@@ -87,10 +87,13 @@ class ConnectionHandler:
     async def accept_connection(self) -> None:
         """Accept the WebSocket connection."""
         await self.websocket.accept()
+        params = dict(self.websocket.query_params)
+        if "token" in params:
+            params["token"] = "***REDACTED***"
         logger.info(
             "automation_ws_runner_incoming_request",
             client_ip=self.client_ip,
-            query_params=dict(self.websocket.query_params),
+            query_params=params,
             path=str(self.websocket.url.path),
         )
 

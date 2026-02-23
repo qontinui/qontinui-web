@@ -1,7 +1,7 @@
 """Workflow sequence model for storing ordered workflow execution sequences."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, UTC
 
 from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
@@ -29,9 +29,14 @@ class WorkflowSequence(Base):
     stop_on_failure = Column(Boolean, nullable=False, default=True)
     schedule = Column(JSON, nullable=True)
 
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(
+        DateTime, nullable=False, default=lambda: datetime.now(UTC)
+    )
     updated_at = Column(
-        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
 
     project = relationship("Project", backref="workflow_sequences")

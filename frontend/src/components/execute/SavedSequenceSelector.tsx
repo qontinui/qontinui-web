@@ -106,11 +106,14 @@ export function SavedSequenceSelector({
                     size="icon"
                     className="h-6 w-6 text-text-muted hover:text-red-400 hover:bg-red-400/10 shrink-0"
                     disabled={deletingId === seq.id}
-                    onClick={(e) => {
+                    onClick={async (e) => {
                       e.stopPropagation();
                       setDeletingId(seq.id);
-                      onDelete(seq.id);
-                      setDeletingId(null);
+                      try {
+                        await onDelete(seq.id);
+                      } finally {
+                        setDeletingId(null);
+                      }
                     }}
                   >
                     {deletingId === seq.id ? (
