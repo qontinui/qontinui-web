@@ -14,8 +14,11 @@ export function DevDebugInit() {
     // Only in development
     if (process.env.NODE_ENV !== "development") return;
 
+    let cancelled = false;
+
     // Dynamically import to avoid issues in production builds
     import("@/lib/dev-debug-logger").then(({ devDebugLogger }) => {
+      if (cancelled) return;
       if (devDebugLogger.isEnabled()) {
         console.info("[DevDebugInit] Dev debug logger active");
 
@@ -38,6 +41,10 @@ export function DevDebugInit() {
         console.info("[DevDebugInit] Use window.clearDevLogs() to clear logs");
       }
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return null;

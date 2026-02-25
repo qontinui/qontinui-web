@@ -37,6 +37,8 @@ export default function DevResetPage() {
       return;
     }
 
+    const controller = new AbortController();
+
     const clearAndCollectDebug = async () => {
       // Collect debug info BEFORE clearing
       const localStorageData: Record<string, string> = {};
@@ -74,11 +76,13 @@ export default function DevResetPage() {
         await fetch("/api/v1/auth/jwt/logout", {
           method: "POST",
           credentials: "include",
+          signal: controller.signal,
         });
         console.log(
           "[DevReset] Logout endpoint called (HttpOnly cookies cleared)"
         );
       } catch (_e) {
+        if (_e instanceof DOMException && _e.name === "AbortError") return;
         console.log(
           "[DevReset] Logout endpoint failed (may already be logged out)"
         );
@@ -118,6 +122,7 @@ export default function DevResetPage() {
     };
 
     clearAndCollectDebug();
+    return () => controller.abort();
   }, [router]);
 
   // Countdown and redirect (only if countdown is active)

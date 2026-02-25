@@ -186,16 +186,19 @@ export function RAGTestingTab() {
 
   // Load RAG elements when project changes (optional - segmentation works without them)
   useEffect(() => {
-    async function loadElements() {
-      if (!projectId) {
-        setRagElements([]);
-        return;
-      }
+    if (!projectId) {
+      setRagElements([]);
+      return;
+    }
 
+    const controller = new AbortController();
+
+    async function loadElements() {
       setLoadingElements(true);
       try {
         const response = await fetch(
-          `${RUNNER_URL}/api/rag/projects/${projectId}/elements`
+          `${RUNNER_URL}/api/rag/projects/${projectId}/elements`,
+          { signal: controller.signal }
         );
         if (!response.ok) {
           // 404 is expected when no RAG config exists - not an error, just no elements
@@ -208,6 +211,7 @@ export function RAGTestingTab() {
         const elements = await response.json();
         setRagElements(elements);
       } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
         // Network errors or other issues - just set empty array and continue
         console.warn(
           "RAG elements not available (segmentation-only mode):",
@@ -220,6 +224,7 @@ export function RAGTestingTab() {
     }
 
     loadElements();
+    return () => controller.abort();
   }, [projectId]);
 
   // Preload mask images when segments change

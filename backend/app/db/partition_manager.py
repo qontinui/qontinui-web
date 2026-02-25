@@ -200,6 +200,10 @@ async def create_monthly_partition(
     start_date, end_date = get_month_boundaries(year, month)
     partition_name = format_partition_name(table_name, start_date, "monthly")
 
+    # Validate identifiers before use in DDL (defense-in-depth)
+    _validate_identifier(table_name)
+    _validate_identifier(partition_name)
+
     # Check if partition already exists
     check_query = text("""
         SELECT EXISTS (
@@ -297,6 +301,10 @@ async def create_weekly_partition(
 
     start_date, end_date = get_week_boundaries(reference_date)
     partition_name = format_partition_name(table_name, start_date, "weekly")
+
+    # Validate identifiers before use in DDL (defense-in-depth)
+    _validate_identifier(table_name)
+    _validate_identifier(partition_name)
 
     # Check if partition already exists
     check_query = text("""

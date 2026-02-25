@@ -113,6 +113,8 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
   useEffect(() => {
     if (!isOpen || snapshotsLoading || snapshots.length === 0) return;
 
+    const controller = new AbortController();
+
     const loadThumbnails = async () => {
       const snapshotsToLoad = snapshots.filter(
         (snapshot) =>
@@ -132,7 +134,8 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
         snapshotsToLoad.map(async (snapshot) => {
           try {
             const response = await fetch(
-              `/api/integration-testing/snapshots/${snapshot.run_id}/thumbnails?limit=4`
+              `/api/integration-testing/snapshots/${snapshot.run_id}/thumbnails?limit=4`,
+              { signal: controller.signal }
             );
 
             if (!response.ok) {
@@ -142,6 +145,8 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
             const data: ThumbnailData = await response.json();
             return { run_id: snapshot.run_id, data };
           } catch (error) {
+            if (error instanceof DOMException && error.name === "AbortError")
+              return null;
             console.error(
               `Failed to load thumbnails for ${snapshot.run_id}:`,
               error
@@ -150,6 +155,8 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
           }
         })
       );
+
+      if (controller.signal.aborted) return;
 
       // Update cache with results
       const newCache = new Map(thumbnailCache);
@@ -167,20 +174,24 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
     };
 
     loadThumbnails();
+    return () => controller.abort();
   }, [isOpen, snapshots, snapshotsLoading, thumbnailCache, loadingThumbnails]);
 
   // Load screenshots when snapshot is selected
   useEffect(() => {
-    const loadScreenshots = async () => {
-      if (!selectedSnapshot) {
-        setScreenshots([]);
-        return;
-      }
+    if (!selectedSnapshot) {
+      setScreenshots([]);
+      return;
+    }
 
+    const controller = new AbortController();
+
+    const loadScreenshots = async () => {
       setLoading(true);
       try {
         const response = await fetch(
-          `/api/integration-testing/snapshots/${selectedSnapshot.run_id}/screenshots`
+          `/api/integration-testing/snapshots/${selectedSnapshot.run_id}/screenshots`,
+          { signal: controller.signal }
         );
 
         if (!response.ok) {
@@ -207,6 +218,8 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
 
         setScreenshots(screenshotList);
       } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError")
+          return;
         console.error("Failed to load screenshots:", error);
         setScreenshots([]);
       } finally {
@@ -215,6 +228,7 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
     };
 
     loadScreenshots();
+    return () => controller.abort();
   }, [selectedSnapshot]);
 
   // Analyze unique states and counts

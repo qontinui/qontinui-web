@@ -44,12 +44,15 @@ export default function DemoProjectPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const controller = new AbortController();
+
     const fetchPublicProject = async () => {
       try {
         const apiUrl =
           process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
         const response = await fetch(
-          `${apiUrl}/api/v1/public/projects/${projectId}`
+          `${apiUrl}/api/v1/public/projects/${projectId}`,
+          { signal: controller.signal }
         );
 
         if (!response.ok) {
@@ -62,6 +65,7 @@ export default function DemoProjectPage() {
         const data = await response.json();
         setProject(data);
       } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
         setError(err instanceof Error ? err.message : "An error occurred");
       } finally {
         setLoading(false);
@@ -69,6 +73,7 @@ export default function DemoProjectPage() {
     };
 
     fetchPublicProject();
+    return () => controller.abort();
   }, [projectId]);
 
   if (loading) {

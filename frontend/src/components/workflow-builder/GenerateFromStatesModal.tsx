@@ -66,9 +66,13 @@ export function GenerateFromStatesModal({
     setIsCheckingConfig(true);
     setError(null);
 
+    const controller = new AbortController();
+
     (async () => {
       try {
-        const res = await fetch(`${RUNNER_API_BASE}/status`);
+        const res = await fetch(`${RUNNER_API_BASE}/status`, {
+          signal: controller.signal,
+        });
         if (!res.ok) throw new Error("Runner not available");
         const status = await res.json();
         const configPath = status.data?.config_path ?? status.config_path;
@@ -82,6 +86,7 @@ export function GenerateFromStatesModal({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ path: configPath }),
+          signal: controller.signal,
         });
         if (!parseRes.ok) throw new Error("Failed to parse config");
         const result = await parseRes.json();
@@ -89,13 +94,16 @@ export function GenerateFromStatesModal({
         const loadedStates: ConfigState[] = data.states ?? [];
         setStates(loadedStates);
         setHasConfig(loadedStates.length > 0);
-      } catch {
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
         setHasConfig(false);
         setStates([]);
       } finally {
         setIsCheckingConfig(false);
       }
     })();
+
+    return () => controller.abort();
   }, [isOpen]);
 
   const handleGenerate = useCallback(() => {

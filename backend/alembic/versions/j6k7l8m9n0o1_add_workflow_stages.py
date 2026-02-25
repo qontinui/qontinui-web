@@ -25,12 +25,8 @@ def upgrade() -> None:
         op.f("ix_workflow_sequences_project_id"),
         table_name="workflow_sequences",
     )
-    op.drop_index(
-        op.f("ix_workflow_sequences_name"), table_name="workflow_sequences"
-    )
-    op.drop_index(
-        op.f("ix_workflow_sequences_id"), table_name="workflow_sequences"
-    )
+    op.drop_index(op.f("ix_workflow_sequences_name"), table_name="workflow_sequences")
+    op.drop_index(op.f("ix_workflow_sequences_id"), table_name="workflow_sequences")
     op.drop_index(
         op.f("ix_workflow_sequences_created_by"),
         table_name="workflow_sequences",

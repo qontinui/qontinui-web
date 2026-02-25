@@ -271,17 +271,19 @@ export default function WorkflowVisualizationPage() {
 
   // Fetch historical results when test run is selected
   useEffect(() => {
-    const fetchHistoricalResults = async () => {
-      if (!selectedTestRunId) {
-        setHistoricalResults([]);
-        return;
-      }
+    if (!selectedTestRunId) {
+      setHistoricalResults([]);
+      return;
+    }
 
+    const controller = new AbortController();
+
+    const fetchHistoricalResults = async () => {
       setLoadingHistoricalData(true);
       try {
         const res = await fetch(
           `${API_BASE_URL}/api/v1/historical/test-run/${selectedTestRunId}`,
-          { credentials: "include" }
+          { credentials: "include", signal: controller.signal }
         );
         if (!res.ok) throw new Error("Failed to fetch historical results");
         const data = (await res.json()) as {
@@ -294,6 +296,8 @@ export default function WorkflowVisualizationPage() {
           toast.success(`Loaded ${data.results.length} recognition results`);
         }
       } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError")
+          return;
         console.error("Failed to fetch historical results:", error);
         setHistoricalResults([]);
         toast.error("Failed to load historical data");
@@ -303,6 +307,7 @@ export default function WorkflowVisualizationPage() {
     };
 
     fetchHistoricalResults();
+    return () => controller.abort();
   }, [selectedTestRunId]);
 
   // Convert historical results to found images format for canvas

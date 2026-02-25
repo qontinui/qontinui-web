@@ -82,11 +82,14 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
 
   // Load project screenshot hashes on mount
   useEffect(() => {
+    const controller = new AbortController();
+
     const loadProjectHashes = async () => {
       try {
         const projectId = "default";
         const response = await fetch(
-          `http://localhost:8000/api/state-discovery/project/${projectId}/screenshots`
+          `http://localhost:8000/api/state-discovery/project/${projectId}/screenshots`,
+          { signal: controller.signal }
         );
 
         if (response.ok) {
@@ -97,11 +100,14 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
           setProjectHashes(hashes);
         }
       } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError")
+          return;
         console.error("Failed to load project hashes:", error);
       }
     };
 
     loadProjectHashes();
+    return () => controller.abort();
   }, []);
 
   // Generate thumbnails for uploaded files
@@ -157,11 +163,14 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
 
   // Load saved project screenshots on mount
   useEffect(() => {
+    const controller = new AbortController();
+
     const loadProjectScreenshots = async () => {
       try {
         const projectId = "default";
         const response = await fetch(
-          `http://localhost:8000/api/state-discovery/project/${projectId}/screenshots`
+          `http://localhost:8000/api/state-discovery/project/${projectId}/screenshots`,
+          { signal: controller.signal }
         );
         if (response.ok) {
           const data = await response.json();
@@ -178,10 +187,13 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
           }
         }
       } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError")
+          return;
         console.error("Failed to check for saved screenshots:", error);
       }
     };
     loadProjectScreenshots();
+    return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only on mount
 

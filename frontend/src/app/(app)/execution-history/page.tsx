@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { useProject } from "@/hooks/automation/useProject";
@@ -133,6 +133,12 @@ export default function ExecutionHistoryPage() {
     }
   }, [user, authLoading, router]);
 
+  // Change workflow and reset run selection together
+  const handleWorkflowChange = useCallback((workflow: string | null) => {
+    setSelectedWorkflow(workflow);
+    setSelectedRunId(null);
+  }, []);
+
   // Update URL when selections change
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -148,11 +154,6 @@ export default function ExecutionHistoryPage() {
     }
     window.history.replaceState({}, "", url.toString());
   }, [selectedWorkflow, selectedRunId]);
-
-  // Reset run selection when workflow changes
-  useEffect(() => {
-    setSelectedRunId(null);
-  }, [selectedWorkflow]);
 
   if (authLoading) {
     return (
@@ -219,7 +220,7 @@ export default function ExecutionHistoryPage() {
                         <Select
                           value={selectedWorkflow || ""}
                           onValueChange={(value) =>
-                            setSelectedWorkflow(value || null)
+                            handleWorkflowChange(value || null)
                           }
                         >
                           <SelectTrigger className="w-full bg-surface-raised/50 border-border-default">

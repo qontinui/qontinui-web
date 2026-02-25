@@ -27,11 +27,15 @@ export default function DemoPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const controller = new AbortController();
+
     const fetchPublicProjects = async () => {
       try {
         const apiUrl =
           process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-        const response = await fetch(`${apiUrl}/api/v1/public/projects`);
+        const response = await fetch(`${apiUrl}/api/v1/public/projects`, {
+          signal: controller.signal,
+        });
 
         if (!response.ok) {
           throw new Error("Failed to fetch public projects");
@@ -40,6 +44,7 @@ export default function DemoPage() {
         const data = await response.json();
         setProjects(data);
       } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
         setError(err instanceof Error ? err.message : "An error occurred");
       } finally {
         setLoading(false);
@@ -47,6 +52,7 @@ export default function DemoPage() {
     };
 
     fetchPublicProjects();
+    return () => controller.abort();
   }, []);
 
   return (

@@ -66,20 +66,23 @@ export function DirectPatternCreation() {
 
   // Load screenshots when snapshots are selected
   useEffect(() => {
-    const loadScreenshots = async () => {
-      if (selectedSnapshots.length === 0) {
-        setScreenshots([]);
-        setCurrentScreenshotIndex(0);
-        return;
-      }
+    if (selectedSnapshots.length === 0) {
+      setScreenshots([]);
+      setCurrentScreenshotIndex(0);
+      return;
+    }
 
+    const controller = new AbortController();
+
+    const loadScreenshots = async () => {
       setLoadingScreenshots(true);
       try {
         const allScreenshots: SnapshotScreenshot[] = [];
 
         for (const snapshot of selectedSnapshots) {
           const response = await fetch(
-            `/api/integration-testing/snapshots/${snapshot.run_id}/screenshots`
+            `/api/integration-testing/snapshots/${snapshot.run_id}/screenshots`,
+            { signal: controller.signal }
           );
 
           if (!response.ok) {
@@ -113,6 +116,8 @@ export function DirectPatternCreation() {
           `Loaded ${allScreenshots.length} screenshots from ${selectedSnapshots.length} snapshot(s)`
         );
       } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError")
+          return;
         console.error("Failed to load screenshots:", error);
         toast.error("Failed to load screenshots");
         setScreenshots([]);
@@ -122,6 +127,7 @@ export function DirectPatternCreation() {
     };
 
     loadScreenshots();
+    return () => controller.abort();
   }, [selectedSnapshots]);
 
   // Extract pattern from current screenshot

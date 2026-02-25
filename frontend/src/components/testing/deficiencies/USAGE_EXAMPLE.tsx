@@ -47,6 +47,8 @@ export function DeficiencyDashboard() {
 
   // Fetch deficiencies from API
   useEffect(() => {
+    const controller = new AbortController();
+
     const fetchDeficiencies = async () => {
       setLoading(true);
       try {
@@ -62,10 +64,14 @@ export function DeficiencyDashboard() {
           queryParams.append("date_from", filters.date_from);
         if (filters.date_to) queryParams.append("date_to", filters.date_to);
 
-        const response = await fetch(`/api/deficiencies?${queryParams}`);
+        const response = await fetch(`/api/deficiencies?${queryParams}`, {
+          signal: controller.signal,
+        });
         const data = await response.json();
         setDeficiencies(data);
       } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError")
+          return;
         console.error("Failed to fetch deficiencies:", error);
       } finally {
         setLoading(false);
@@ -73,21 +79,29 @@ export function DeficiencyDashboard() {
     };
 
     fetchDeficiencies();
+    return () => controller.abort();
   }, [filters]);
 
   // Fetch users for assignment
   useEffect(() => {
+    const controller = new AbortController();
+
     const fetchUsers = async () => {
       try {
-        const response = await fetch("/api/users");
+        const response = await fetch("/api/users", {
+          signal: controller.signal,
+        });
         const data = await response.json();
         setUsers(data);
       } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError")
+          return;
         console.error("Failed to fetch users:", error);
       }
     };
 
     fetchUsers();
+    return () => controller.abort();
   }, []);
 
   // Fetch tags for filtering
@@ -102,11 +116,17 @@ export function DeficiencyDashboard() {
   useEffect(() => {
     if (!selectedDeficiency) return;
 
+    const controller = new AbortController();
+
     const fetchDetails = async () => {
       try {
         const [commentsRes, activitiesRes] = await Promise.all([
-          fetch(`/api/deficiencies/${selectedDeficiency.id}/comments`),
-          fetch(`/api/deficiencies/${selectedDeficiency.id}/activities`),
+          fetch(`/api/deficiencies/${selectedDeficiency.id}/comments`, {
+            signal: controller.signal,
+          }),
+          fetch(`/api/deficiencies/${selectedDeficiency.id}/activities`, {
+            signal: controller.signal,
+          }),
         ]);
 
         const commentsData = await commentsRes.json();
@@ -115,11 +135,14 @@ export function DeficiencyDashboard() {
         setComments(commentsData);
         setActivities(activitiesData);
       } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError")
+          return;
         console.error("Failed to fetch deficiency details:", error);
       }
     };
 
     fetchDetails();
+    return () => controller.abort();
   }, [selectedDeficiency]);
 
   // Handlers

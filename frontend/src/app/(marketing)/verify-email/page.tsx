@@ -25,6 +25,8 @@ export default function VerifyEmail() {
       return;
     }
 
+    const controller = new AbortController();
+
     const verifyEmail = async () => {
       try {
         const apiUrl =
@@ -33,6 +35,7 @@ export default function VerifyEmail() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ token }),
+          signal: controller.signal,
         });
 
         const data = await response.json();
@@ -53,12 +56,15 @@ export default function VerifyEmail() {
           );
         }
       } catch (_error: unknown) {
+        if (_error instanceof DOMException && _error.name === "AbortError")
+          return;
         setStatus("error");
         setMessage("Failed to verify email. Please try again later.");
       }
     };
 
     verifyEmail();
+    return () => controller.abort();
   }, [token, router]);
 
   return (

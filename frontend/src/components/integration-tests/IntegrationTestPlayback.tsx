@@ -81,13 +81,15 @@ export const IntegrationTestPlayback: React.FC<
 
   // Load frames from API
   useEffect(() => {
-    const loadFrames = async () => {
-      if (historicalResultIds.length === 0) {
-        setError("No historical results to display");
-        setIsLoading(false);
-        return;
-      }
+    if (historicalResultIds.length === 0) {
+      setError("No historical results to display");
+      setIsLoading(false);
+      return;
+    }
 
+    const controller = new AbortController();
+
+    const loadFrames = async () => {
       setIsLoading(true);
       setError(null);
 
@@ -100,6 +102,7 @@ export const IntegrationTestPlayback: React.FC<
             body: JSON.stringify({
               historical_result_ids: historicalResultIds,
             }),
+            signal: controller.signal,
           }
         );
 
@@ -110,6 +113,7 @@ export const IntegrationTestPlayback: React.FC<
         const data: PlaybackFrame[] = await response.json();
         setFrames(data);
       } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
         setError(err instanceof Error ? err.message : "Failed to load frames");
       } finally {
         setIsLoading(false);
@@ -117,6 +121,7 @@ export const IntegrationTestPlayback: React.FC<
     };
 
     loadFrames();
+    return () => controller.abort();
   }, [historicalResultIds]);
 
   // Navigation functions

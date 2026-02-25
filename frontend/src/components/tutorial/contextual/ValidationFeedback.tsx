@@ -7,7 +7,7 @@
  * Shows success/failure messages with hints and animated transitions.
  */
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle, XCircle, AlertCircle, Lightbulb } from "lucide-react";
 
@@ -44,6 +44,14 @@ export const ValidationFeedback: React.FC<ValidationFeedbackProps> = ({
 }) => {
   const [showHint, setShowHint] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
+  const prevStatusRef = useRef(status);
+
+  // Reset showHint and isVisible when status changes (ref comparison instead of useEffect)
+  if (prevStatusRef.current !== status) {
+    prevStatusRef.current = status;
+    setShowHint(false);
+    setIsVisible(true);
+  }
 
   useEffect(() => {
     if (status === "success" && autoHideDuration > 0) {
@@ -55,11 +63,6 @@ export const ValidationFeedback: React.FC<ValidationFeedbackProps> = ({
     }
     return undefined;
   }, [status, autoHideDuration, onDismiss]);
-
-  useEffect(() => {
-    setShowHint(false);
-    setIsVisible(true);
-  }, [status]);
 
   if (status === "idle" || !isVisible) {
     return null;

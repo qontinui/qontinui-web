@@ -63,25 +63,26 @@ export function DiscoveryPanel({
 
   // Check if local runner is available directly (fallback when backend WS registration fails)
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     const checkLocal = async () => {
       setCheckingLocalRunner(true);
       try {
         const res = await fetch(`${LOCAL_RUNNER_URL}/status`, {
-          signal: AbortSignal.timeout(2000),
+          signal: controller.signal,
         });
-        if (!cancelled && res.ok) {
+        if (res.ok) {
           setLocalRunnerAvailable(true);
         }
-      } catch {
-        if (!cancelled) setLocalRunnerAvailable(false);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setLocalRunnerAvailable(false);
       } finally {
-        if (!cancelled) setCheckingLocalRunner(false);
+        if (!controller.signal.aborted) setCheckingLocalRunner(false);
       }
     };
     checkLocal();
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, []);
 
@@ -148,13 +149,13 @@ export function DiscoveryPanel({
   // Auto-load completed exploration results from runner (survives page navigation)
   useEffect(() => {
     if (!runnerUrl || discovery.renders) return;
-    let cancelled = false;
+    const controller = new AbortController();
     const loadPendingResults = async () => {
       try {
         const statusRes = await fetch(`${runnerUrl}/ui-bridge/explore/status`, {
-          signal: AbortSignal.timeout(2000),
+          signal: controller.signal,
         });
-        if (!statusRes.ok || cancelled) return;
+        if (!statusRes.ok) return;
         const statusData = await statusRes.json();
         const status = statusData.data || statusData;
         if (status.status !== "completed" || !status.has_results) return;
@@ -162,15 +163,15 @@ export function DiscoveryPanel({
         const resultsRes = await fetch(
           `${runnerUrl}/ui-bridge/explore/results`,
           {
-            signal: AbortSignal.timeout(5000),
+            signal: controller.signal,
           }
         );
-        if (!resultsRes.ok || cancelled) return;
+        if (!resultsRes.ok) return;
         const resultsData = await resultsRes.json();
         const results =
           resultsData.data?.data || resultsData.data || resultsData;
         const renderLogs = results?.render_logs || [];
-        if (renderLogs.length === 0 || cancelled) return;
+        if (renderLogs.length === 0) return;
 
         const mapped = renderLogs.map(
           (
@@ -193,16 +194,17 @@ export function DiscoveryPanel({
             trigger: idx === 0 ? "initial_load" : "action",
           })
         );
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           discovery.setRenders(mapped, "explore");
         }
-      } catch {
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
         // Silently ignore — runner may not be available
       }
     };
     loadPendingResults();
     return () => {
-      cancelled = true;
+      controller.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runnerUrl, discovery.renders, discovery.setRenders]);

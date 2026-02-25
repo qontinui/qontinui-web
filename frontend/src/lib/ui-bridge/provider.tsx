@@ -131,11 +131,14 @@ export function UIBridgeWrapper({
   // Clear the JSONL file on mount (new session)
   useEffect(() => {
     if (!isDev) return;
+    const controller = new AbortController();
     fetch(EVENTS_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ clear: true }),
+      signal: controller.signal,
     }).catch(() => {});
+    return () => controller.abort();
   }, []);
 
   // Flush remaining events on page unload
