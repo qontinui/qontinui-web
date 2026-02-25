@@ -23,7 +23,10 @@ interface UIBridgeTransitionEditorProps {
   transition: UIBridgeTransition | null;
   states: SavedStateWithDetails[];
   onSave: (data: UIBridgeTransitionCreate) => Promise<void>;
-  onUpdate: (id: string, data: Partial<UIBridgeTransitionCreate>) => Promise<void>;
+  onUpdate: (
+    id: string,
+    data: Partial<UIBridgeTransitionCreate>
+  ) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onClose: () => void;
 }
@@ -31,24 +34,44 @@ interface UIBridgeTransitionEditorProps {
 /** All SDK standard actions + workflow-level actions, grouped for the dropdown */
 const ACTION_TYPES = [
   // Common element actions
-  "click", "doubleClick", "rightClick", "type", "clear", "select",
+  "click",
+  "doubleClick",
+  "rightClick",
+  "type",
+  "clear",
+  "select",
   // Focus & interaction
-  "focus", "blur", "hover", "scroll",
+  "focus",
+  "blur",
+  "hover",
+  "scroll",
   // Checkbox / toggle
-  "check", "uncheck", "toggle",
+  "check",
+  "uncheck",
+  "toggle",
   // Value manipulation
   "setValue",
   // Drag & drop
   "drag",
   // Form actions
-  "submit", "reset",
+  "submit",
+  "reset",
   // Workflow-level
-  "wait", "navigate",
+  "wait",
+  "navigate",
 ] as const;
 
 /** Actions that only need a target element ID (no extra params) */
 const NO_PARAM_ACTIONS = new Set<StandardActionType>([
-  "clear", "focus", "blur", "hover", "check", "uncheck", "toggle", "submit", "reset",
+  "clear",
+  "focus",
+  "blur",
+  "hover",
+  "check",
+  "uncheck",
+  "toggle",
+  "submit",
+  "reset",
 ]);
 
 export function UIBridgeTransitionEditor({
@@ -62,12 +85,22 @@ export function UIBridgeTransitionEditor({
   const isEditing = !!transition;
 
   const [name, setName] = useState(transition?.name ?? "");
-  const [fromStates, setFromStates] = useState<string[]>(transition?.from_states ?? []);
-  const [activateStates, setActivateStates] = useState<string[]>(transition?.activate_states ?? []);
-  const [exitStates, setExitStates] = useState<string[]>(transition?.exit_states ?? []);
-  const [actions, setActions] = useState<TransitionAction[]>(transition?.actions ?? []);
+  const [fromStates, setFromStates] = useState<string[]>(
+    transition?.from_states ?? []
+  );
+  const [activateStates, setActivateStates] = useState<string[]>(
+    transition?.activate_states ?? []
+  );
+  const [exitStates, setExitStates] = useState<string[]>(
+    transition?.exit_states ?? []
+  );
+  const [actions, setActions] = useState<TransitionAction[]>(
+    transition?.actions ?? []
+  );
   const [pathCost, setPathCost] = useState(transition?.path_cost ?? 1.0);
-  const [staysVisible, setStaysVisible] = useState(transition?.stays_visible ?? false);
+  const [staysVisible, setStaysVisible] = useState(
+    transition?.stays_visible ?? false
+  );
   const [isSaving, setIsSaving] = useState(false);
 
   // Reset form when transition changes
@@ -104,9 +137,25 @@ export function UIBridgeTransitionEditor({
     } finally {
       setIsSaving(false);
     }
-  }, [name, fromStates, activateStates, exitStates, actions, pathCost, staysVisible, isEditing, transition, onSave, onUpdate]);
+  }, [
+    name,
+    fromStates,
+    activateStates,
+    exitStates,
+    actions,
+    pathCost,
+    staysVisible,
+    isEditing,
+    transition,
+    onSave,
+    onUpdate,
+  ]);
 
-  const toggleState = (list: string[], setList: (v: string[]) => void, stateId: string) => {
+  const toggleState = (
+    list: string[],
+    setList: (v: string[]) => void,
+    stateId: string
+  ) => {
     if (list.includes(stateId)) {
       setList(list.filter((s) => s !== stateId));
     } else {
@@ -143,7 +192,9 @@ export function UIBridgeTransitionEditor({
       <div className="p-4 space-y-4">
         {/* Name */}
         <div>
-          <label className="text-xs font-medium text-text-muted mb-1 block">Name</label>
+          <label className="text-xs font-medium text-text-muted mb-1 block">
+            Name
+          </label>
           <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -161,7 +212,9 @@ export function UIBridgeTransitionEditor({
             {states.map((s) => (
               <button
                 key={s.state_id}
-                onClick={() => toggleState(fromStates, setFromStates, s.state_id)}
+                onClick={() =>
+                  toggleState(fromStates, setFromStates, s.state_id)
+                }
                 className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
                   fromStates.includes(s.state_id)
                     ? "bg-blue-100 border-blue-300 text-blue-700 dark:bg-blue-900/30 dark:border-blue-700 dark:text-blue-300"
@@ -183,7 +236,9 @@ export function UIBridgeTransitionEditor({
             {states.map((s) => (
               <button
                 key={s.state_id}
-                onClick={() => toggleState(activateStates, setActivateStates, s.state_id)}
+                onClick={() =>
+                  toggleState(activateStates, setActivateStates, s.state_id)
+                }
                 className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
                   activateStates.includes(s.state_id)
                     ? "bg-green-100 border-green-300 text-green-700 dark:bg-green-900/30 dark:border-green-700 dark:text-green-300"
@@ -205,7 +260,9 @@ export function UIBridgeTransitionEditor({
             {states.map((s) => (
               <button
                 key={s.state_id}
-                onClick={() => toggleState(exitStates, setExitStates, s.state_id)}
+                onClick={() =>
+                  toggleState(exitStates, setExitStates, s.state_id)
+                }
                 className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
                   exitStates.includes(s.state_id)
                     ? "bg-red-100 border-red-300 text-red-700 dark:bg-red-900/30 dark:border-red-700 dark:text-red-300"
@@ -221,8 +278,15 @@ export function UIBridgeTransitionEditor({
         {/* Actions */}
         <div>
           <div className="flex items-center justify-between mb-1">
-            <label className="text-xs font-medium text-text-muted">Actions</label>
-            <Button variant="ghost" size="sm" onClick={addAction} className="h-6 px-2">
+            <label className="text-xs font-medium text-text-muted">
+              Actions
+            </label>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={addAction}
+              className="h-6 px-2"
+            >
               <Plus className="size-3 mr-1" />
               <span className="text-[10px]">Add</span>
             </Button>
@@ -232,7 +296,9 @@ export function UIBridgeTransitionEditor({
               <div key={i} className="flex gap-1 items-start">
                 <Select
                   value={action.type}
-                  onValueChange={(v) => updateAction(i, { type: v as StandardActionType })}
+                  onValueChange={(v) =>
+                    updateAction(i, { type: v as StandardActionType })
+                  }
                 >
                   <SelectTrigger className="w-20 h-7 text-[10px]">
                     <SelectValue />
@@ -249,13 +315,17 @@ export function UIBridgeTransitionEditor({
                   <div className="flex flex-col gap-1 flex-1">
                     <Input
                       value={action.target || ""}
-                      onChange={(e) => updateAction(i, { target: e.target.value })}
+                      onChange={(e) =>
+                        updateAction(i, { target: e.target.value })
+                      }
                       placeholder="Source element ID"
                       className="h-7 text-[10px]"
                     />
                     <Input
                       value={action.drag_target || ""}
-                      onChange={(e) => updateAction(i, { drag_target: e.target.value })}
+                      onChange={(e) =>
+                        updateAction(i, { drag_target: e.target.value })
+                      }
                       placeholder="Drop target data-ui-id"
                       className="h-7 text-[10px]"
                     />
@@ -264,20 +334,34 @@ export function UIBridgeTransitionEditor({
                   <div className="flex gap-1 flex-1">
                     <Select
                       value={action.scroll_direction || "down"}
-                      onValueChange={(v) => updateAction(i, { scroll_direction: v as "up" | "down" | "left" | "right" })}
+                      onValueChange={(v) =>
+                        updateAction(i, {
+                          scroll_direction: v as
+                            | "up"
+                            | "down"
+                            | "left"
+                            | "right",
+                        })
+                      }
                     >
                       <SelectTrigger className="w-16 h-7 text-[10px]">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         {(["up", "down", "left", "right"] as const).map((d) => (
-                          <SelectItem key={d} value={d} className="text-xs">{d}</SelectItem>
+                          <SelectItem key={d} value={d} className="text-xs">
+                            {d}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                     <Input
                       value={action.scroll_amount?.toString() || ""}
-                      onChange={(e) => updateAction(i, { scroll_amount: parseInt(e.target.value) || undefined })}
+                      onChange={(e) =>
+                        updateAction(i, {
+                          scroll_amount: parseInt(e.target.value) || undefined,
+                        })
+                      }
                       placeholder="Pixels"
                       className="h-7 text-[10px] flex-1"
                       type="number"
@@ -300,7 +384,11 @@ export function UIBridgeTransitionEditor({
                 ) : action.type === "wait" ? (
                   <Input
                     value={action.delay_ms?.toString() || ""}
-                    onChange={(e) => updateAction(i, { delay_ms: parseInt(e.target.value) || undefined })}
+                    onChange={(e) =>
+                      updateAction(i, {
+                        delay_ms: parseInt(e.target.value) || undefined,
+                      })
+                    }
                     placeholder="Delay (ms)"
                     className="h-7 text-[10px] flex-1"
                     type="number"
@@ -309,13 +397,21 @@ export function UIBridgeTransitionEditor({
                   <div className="flex flex-col gap-1 flex-1">
                     <Input
                       value={action.target || ""}
-                      onChange={(e) => updateAction(i, { target: e.target.value })}
+                      onChange={(e) =>
+                        updateAction(i, { target: e.target.value })
+                      }
                       placeholder="Element ID"
                       className="h-7 text-[10px]"
                     />
                     <Input
-                      value={Array.isArray(action.value) ? action.value.join(", ") : action.value || ""}
-                      onChange={(e) => updateAction(i, { value: e.target.value })}
+                      value={
+                        Array.isArray(action.value)
+                          ? action.value.join(", ")
+                          : action.value || ""
+                      }
+                      onChange={(e) =>
+                        updateAction(i, { value: e.target.value })
+                      }
                       placeholder="Value"
                       className="h-7 text-[10px]"
                     />
@@ -323,19 +419,28 @@ export function UIBridgeTransitionEditor({
                 ) : NO_PARAM_ACTIONS.has(action.type) ? (
                   <Input
                     value={action.target || ""}
-                    onChange={(e) => updateAction(i, { target: e.target.value })}
+                    onChange={(e) =>
+                      updateAction(i, { target: e.target.value })
+                    }
                     placeholder="Element ID"
                     className="h-7 text-[10px] flex-1"
                   />
                 ) : (
                   <Input
                     value={action.target || ""}
-                    onChange={(e) => updateAction(i, { target: e.target.value })}
+                    onChange={(e) =>
+                      updateAction(i, { target: e.target.value })
+                    }
                     placeholder="Element ID"
                     className="h-7 text-[10px] flex-1"
                   />
                 )}
-                <Button variant="ghost" size="sm" onClick={() => removeAction(i)} className="h-7 w-7 p-0">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => removeAction(i)}
+                  className="h-7 w-7 p-0"
+                >
                   <Trash2 className="size-3 text-red-500" />
                 </Button>
               </div>
@@ -345,7 +450,9 @@ export function UIBridgeTransitionEditor({
 
         {/* Path Cost */}
         <div>
-          <label className="text-xs font-medium text-text-muted mb-1 block">Path Cost</label>
+          <label className="text-xs font-medium text-text-muted mb-1 block">
+            Path Cost
+          </label>
           <Input
             type="number"
             value={pathCost}

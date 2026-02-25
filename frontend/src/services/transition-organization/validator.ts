@@ -270,10 +270,7 @@ export function validateTransitionGraph(
     for (const transition of transitions) {
       if (transition.type === "OutgoingTransition") {
         const outgoing = transition as OutgoingTransition;
-        if (
-          outgoing.toState &&
-          unreachableStates.includes(outgoing.toState)
-        ) {
+        if (outgoing.toState && unreachableStates.includes(outgoing.toState)) {
           report.issues.push({
             severity: "info",
             type: "unreachable",
@@ -294,9 +291,7 @@ export function validateTransitionGraph(
   report.warningCount = report.issues.filter(
     (i) => i.severity === "warning"
   ).length;
-  report.infoCount = report.issues.filter(
-    (i) => i.severity === "info"
-  ).length;
+  report.infoCount = report.issues.filter((i) => i.severity === "info").length;
 
   return report;
 }

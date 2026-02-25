@@ -18,21 +18,21 @@ const UnifiedSidebar = nextDynamic(
     import("@/components/navigation").then((m) => ({
       default: m.UnifiedSidebar,
     })),
-  { ssr: false },
+  { ssr: false }
 );
 const SyncQueueViewer = nextDynamic(
   () =>
     import("@/components/offline/SyncQueueViewer").then((m) => ({
       default: m.SyncQueueViewer,
     })),
-  { ssr: false },
+  { ssr: false }
 );
 const SessionTimeoutWarning = nextDynamic(
   () =>
     import("@/components/session-timeout-warning").then((m) => ({
       default: m.SessionTimeoutWarning,
     })),
-  { ssr: false },
+  { ssr: false }
 );
 
 function SidebarSkeleton({ isCollapsed }: { isCollapsed: boolean }) {
@@ -40,7 +40,7 @@ function SidebarSkeleton({ isCollapsed }: { isCollapsed: boolean }) {
     <div
       className={cn(
         "fixed left-0 top-0 h-screen bg-surface-canvas border-r border-border-subtle",
-        isCollapsed ? "w-16" : "w-64",
+        isCollapsed ? "w-16" : "w-64"
       )}
     />
   );
@@ -57,7 +57,7 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
       <div
         className={cn(
           "flex-1 flex flex-col min-h-0 transition-all duration-300",
-          isCollapsed ? "ml-16" : "ml-64",
+          isCollapsed ? "ml-16" : "ml-64"
         )}
       >
         <BetaBanner />

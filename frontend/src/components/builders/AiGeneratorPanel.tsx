@@ -152,7 +152,7 @@ export function AiGeneratorPanel({
             "flex items-center gap-2 w-full px-3 py-2 rounded-lg",
             "bg-surface-raised/50 border border-border-subtle",
             "hover:border-text-muted transition-colors",
-            "text-left text-sm font-medium text-text-secondary",
+            "text-left text-sm font-medium text-text-secondary"
           )}
         >
           {Icon ? (
@@ -164,7 +164,7 @@ export function AiGeneratorPanel({
           <ChevronDown
             className={cn(
               "size-4 text-text-muted transition-transform duration-200",
-              open && "rotate-180",
+              open && "rotate-180"
             )}
           />
         </button>
@@ -198,7 +198,7 @@ export function AiGeneratorPanel({
                     className={cn(
                       "gap-1.5 text-white ml-auto",
                       colors.bg,
-                      colors.hover,
+                      colors.hover
                     )}
                   >
                     <Check className="size-3.5" />
@@ -222,7 +222,7 @@ export function AiGeneratorPanel({
                         "bg-surface-raised/50 text-text-muted",
                         "border border-border-subtle hover:border-text-muted",
                         "px-2 py-1 rounded text-xs",
-                        "transition-colors",
+                        "transition-colors"
                       )}
                     >
                       {template.label}
@@ -265,7 +265,7 @@ export function AiGeneratorPanel({
                   className={cn(
                     "gap-1.5 text-white ml-auto",
                     colors.bg,
-                    colors.hover,
+                    colors.hover
                   )}
                 >
                   {generating ? (

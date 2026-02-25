@@ -6,13 +6,7 @@
  */
 
 import React from "react";
-import {
-  TestTube,
-  BookOpen,
-  AlertTriangle,
-  Clock,
-  Link2,
-} from "lucide-react";
+import { TestTube, BookOpen, AlertTriangle, Clock, Link2 } from "lucide-react";
 import { Badge } from "../../ui/badge";
 import {
   Tooltip,

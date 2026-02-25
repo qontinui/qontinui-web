@@ -61,15 +61,9 @@ export function useVisionExtraction({
 
     // Build screenshot source based on config
     let screenshotSource = "";
-    if (
-      visionConfig.source === "upload" &&
-      visionConfig.screenshotPath
-    ) {
+    if (visionConfig.source === "upload" && visionConfig.screenshotPath) {
       screenshotSource = visionConfig.screenshotPath;
-    } else if (
-      visionConfig.source === "window" &&
-      visionConfig.windowTitle
-    ) {
+    } else if (visionConfig.source === "window" && visionConfig.windowTitle) {
       screenshotSource = `window:${visionConfig.windowTitle}`;
     } else if (visionConfig.source === "monitor") {
       screenshotSource = `monitor:${visionConfig.monitorIndex ?? 0}`;
@@ -113,11 +107,7 @@ export function useVisionExtraction({
     if (data.success && data.data) {
       const visionSessionId = `vision_${Date.now()}`;
 
-      annotationStore.setSession(
-        visionSessionId,
-        undefined,
-        screenshotSource
-      );
+      annotationStore.setSession(visionSessionId, undefined, screenshotSource);
 
       const elements: AnnotatedElement[] = (data.data.elements || []).map(
         (

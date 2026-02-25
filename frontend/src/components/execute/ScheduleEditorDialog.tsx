@@ -199,7 +199,7 @@ export function ScheduleEditorDialog({
     return workflows.filter(
       (w) =>
         w.name.toLowerCase().includes(q) ||
-        (w.description && w.description.toLowerCase().includes(q)),
+        (w.description && w.description.toLowerCase().includes(q))
     );
   }, [workflows, workflowSearch]);
 
@@ -280,7 +280,7 @@ export function ScheduleEditorDialog({
       onSaved();
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to save schedule",
+        err instanceof Error ? err.message : "Failed to save schedule"
       );
     } finally {
       setIsSaving(false);
@@ -477,7 +477,7 @@ export function ScheduleEditorDialog({
                     value={intervalAmount}
                     onChange={(e) =>
                       setIntervalAmount(
-                        Math.max(1, parseInt(e.target.value) || 1),
+                        Math.max(1, parseInt(e.target.value) || 1)
                       )
                     }
                     className="w-24 bg-surface-canvas/50 border-border-subtle/50 text-sm"
@@ -539,7 +539,7 @@ export function ScheduleEditorDialog({
                       setTimeoutMinutes(
                         e.target.value === ""
                           ? ""
-                          : Math.max(0, parseInt(e.target.value) || 0),
+                          : Math.max(0, parseInt(e.target.value) || 0)
                       )
                     }
                     className="w-32 bg-surface-canvas/50 border-border-subtle/50 text-sm"

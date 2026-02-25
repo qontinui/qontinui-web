@@ -437,7 +437,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
         const annotationArea = page.locator(
           'canvas, [class*="annotation"], [data-testid*="annotation"]'
         );
-        const annotationVisible = await annotationArea
+        const _annotationVisible = await annotationArea
           .first()
           .isVisible({ timeout: 5000 })
           .catch(() => false);
@@ -516,7 +516,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
           const uploadArea = page.locator(
             'input[type="file"], button:has-text("Upload"), [class*="upload"], [class*="drop"]'
           );
-          const uploadVisible = await uploadArea
+          const _uploadVisible = await uploadArea
             .first()
             .isVisible({ timeout: 5000 })
             .catch(() => false);

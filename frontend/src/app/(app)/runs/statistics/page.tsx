@@ -1,6 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { usePageSpecs } from "@/hooks/usePageSpecs";
+import type { SpecConfig } from "@qontinui/ui-bridge/specs";
+import pageSpecJson from "./statistics.spec.uibridge.json";
 import { useRouter } from "next/navigation";
 import { useTaskRunList } from "@/hooks/useTaskRunData";
 import type { TaskRunView } from "@/lib/task-run-mappers";
@@ -29,6 +32,8 @@ import {
   PlayCircle,
   ArrowRight,
 } from "lucide-react";
+
+const pageSpec = pageSpecJson as unknown as SpecConfig;
 
 function formatDuration(seconds: number | null | undefined): string {
   if (seconds == null || isNaN(seconds)) return "-";
@@ -106,6 +111,7 @@ function computeStats(runs: TaskRunView[]): Stats {
 }
 
 export default function StatisticsPage() {
+  usePageSpecs({ statistics: pageSpec });
   const router = useRouter();
   const {
     data: runs,

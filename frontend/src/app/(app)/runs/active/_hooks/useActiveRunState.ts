@@ -33,7 +33,9 @@ export function useActiveRunState(): ActiveRunStateResult {
 
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [activeWidget, setActiveWidget] = useState<WidgetId>("timeline");
-  const [activeTab, setActiveTab] = useState<"dashboard" | WidgetId>("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | WidgetId>(
+    "dashboard"
+  );
   const lastKnownRunIds = useRef<Set<string>>(new Set());
 
   useEffect(() => {

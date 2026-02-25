@@ -78,7 +78,7 @@ test.describe("Automation Builder - Data Pages", () => {
 
       // Should either show RequireProject prompt or the contexts page
       // The RequireProject component shows "select a project" or "create a project"
-      const hasProjectPrompt =
+      const _hasProjectPrompt =
         (await page
           .getByText(/select.*project/i)
           .first()
@@ -123,7 +123,7 @@ test.describe("Automation Builder - Data Pages", () => {
 
         // Look for "AI Contexts" or "Contexts" text on the page
         const contextsHeading = page.getByText(/AI Contexts|Contexts/i);
-        const headingVisible = await contextsHeading
+        const _headingVisible = await contextsHeading
           .first()
           .isVisible({ timeout: 5000 })
           .catch(() => false);

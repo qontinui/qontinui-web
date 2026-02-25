@@ -15,3 +15,22 @@ export interface PageNodeStatus {
   isLoading: boolean;
   isActive: boolean;
 }
+
+/** A single SDK connection to an app. */
+export interface SdkConnection {
+  url: string;
+  app: { appId?: string; appName?: string; version?: string };
+  connectedAt: number;
+  isActive: boolean;
+}
+
+/** A targetable tab or app (web tab, desktop app, etc.). */
+export interface Target {
+  id: string;
+  type: "web" | "desktop" | "mobile";
+  label: string;
+  appName: string;
+  pathname?: string;
+  url?: string;
+  isSelf?: boolean;
+}

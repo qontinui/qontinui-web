@@ -120,7 +120,12 @@ export function DashboardLayout({
                   isRunning={isRunning}
                   onClick={() => onWidgetClick(widgetId)}
                 >
-                  <SummaryContent widgetId={widgetId} runId={runId} run={run} stepsData={stepsData} />
+                  <SummaryContent
+                    widgetId={widgetId}
+                    runId={runId}
+                    run={run}
+                    stepsData={stepsData}
+                  />
                 </SummaryCard>
               );
             })}

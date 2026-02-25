@@ -26,10 +26,7 @@ export function RegionsTab({
   removeRegion,
 }: RegionsTabProps) {
   return (
-    <TabsContent
-      value="regions"
-      className="flex-1 flex flex-col min-h-0 p-4"
-    >
+    <TabsContent value="regions" className="flex-1 flex flex-col min-h-0 p-4">
       <div className="flex items-center justify-between mb-2">
         <Label className="text-xs text-text-muted">State Regions</Label>
         <Info
@@ -53,9 +50,7 @@ export function RegionsTab({
             if (hasLinkedPosition) {
               // Find the state and image that this region is linked to
               const linkedState = allStates.find((s) =>
-                s.stateImages?.some(
-                  (img) => img.id === region.referenceImageId
-                )
+                s.stateImages?.some((img) => img.id === region.referenceImageId)
               );
               const linkedImage = linkedState?.stateImages?.find(
                 (img) => img.id === region.referenceImageId

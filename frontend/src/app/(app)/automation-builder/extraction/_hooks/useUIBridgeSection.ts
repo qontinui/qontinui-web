@@ -116,59 +116,54 @@ export function useUIBridgeSection({
   }, []);
 
   // Load renders from session
-  const loadSessionRenders = useCallback(
-    async (sessionId: string) => {
-      stateRef.current.setIsLoadingSessionRenders(true);
-      stateRef.current.setSelectedSessionId(sessionId);
-      try {
-        const listResponse = await fetch(
-          `/api/v1/render-logs?session_id=${sessionId}&page_size=200`,
+  const loadSessionRenders = useCallback(async (sessionId: string) => {
+    stateRef.current.setIsLoadingSessionRenders(true);
+    stateRef.current.setSelectedSessionId(sessionId);
+    try {
+      const listResponse = await fetch(
+        `/api/v1/render-logs?session_id=${sessionId}&page_size=200`,
+        { credentials: "include" }
+      );
+
+      if (!listResponse.ok) {
+        throw new Error("Failed to load render logs");
+      }
+
+      const listData = await listResponse.json();
+      const renders: RenderLogEntry[] = [];
+      for (const summary of listData.items) {
+        const detailResponse = await fetch(
+          `/api/v1/render-logs/${summary.id}`,
           { credentials: "include" }
         );
-
-        if (!listResponse.ok) {
-          throw new Error("Failed to load render logs");
+        if (detailResponse.ok) {
+          const detail = await detailResponse.json();
+          renders.push(detail);
         }
-
-        const listData = await listResponse.json();
-        const renders: RenderLogEntry[] = [];
-        for (const summary of listData.items) {
-          const detailResponse = await fetch(
-            `/api/v1/render-logs/${summary.id}`,
-            { credentials: "include" }
-          );
-          if (detailResponse.ok) {
-            const detail = await detailResponse.json();
-            renders.push(detail);
-          }
-        }
-
-        const formattedRenders = renders.map((r) => ({
-          id: `render_${r.id}`,
-          type: "dom_snapshot",
-          page_url: r.page_url,
-          snapshot: r.snapshot,
-        }));
-
-        stateRef.current.setSessionRenders(formattedRenders);
-        stateRef.current.setUploadedRenders(null);
-        stateRef.current.setDiscoveryResult(null);
-        stateRef.current.setStateDescriptions({});
-        stateRef.current.setCurrentSavedConfigId(null);
-        stateRef.current.setStateUuidMap({});
-
-        toast.success(
-          `Loaded ${formattedRenders.length} renders from session`
-        );
-      } catch (error) {
-        logger.error("Failed to load session renders:", error);
-        toast.error("Failed to load render logs from session");
-      } finally {
-        stateRef.current.setIsLoadingSessionRenders(false);
       }
-    },
-    []
-  );
+
+      const formattedRenders = renders.map((r) => ({
+        id: `render_${r.id}`,
+        type: "dom_snapshot",
+        page_url: r.page_url,
+        snapshot: r.snapshot,
+      }));
+
+      stateRef.current.setSessionRenders(formattedRenders);
+      stateRef.current.setUploadedRenders(null);
+      stateRef.current.setDiscoveryResult(null);
+      stateRef.current.setStateDescriptions({});
+      stateRef.current.setCurrentSavedConfigId(null);
+      stateRef.current.setStateUuidMap({});
+
+      toast.success(`Loaded ${formattedRenders.length} renders from session`);
+    } catch (error) {
+      logger.error("Failed to load session renders:", error);
+      toast.error("Failed to load render logs from session");
+    } finally {
+      stateRef.current.setIsLoadingSessionRenders(false);
+    }
+  }, []);
 
   // Handle file upload
   const handleFileUpload = useCallback(

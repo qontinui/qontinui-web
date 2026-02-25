@@ -133,7 +133,12 @@ export function useDomainKnowledge({
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setters are stable, read state values via closure
-    [projectId, state.currentSavedConfigId, state.selectedStateId, state.stateUuidMap]
+    [
+      projectId,
+      state.currentSavedConfigId,
+      state.selectedStateId,
+      state.stateUuidMap,
+    ]
   );
 
   // Unlink knowledge from state
@@ -178,7 +183,12 @@ export function useDomainKnowledge({
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setters are stable, read state values via closure
-    [projectId, state.currentSavedConfigId, state.selectedStateId, state.stateUuidMap]
+    [
+      projectId,
+      state.currentSavedConfigId,
+      state.selectedStateId,
+      state.stateUuidMap,
+    ]
   );
 
   // Load knowledge when in UI Bridge mode

@@ -1,0 +1,83 @@
+{
+  "version": "1.0.0",
+  "description": "Specs for the Error Monitor page — real-time error aggregation, triage, and auto-fix generation",
+  "groups": [
+    {
+      "id": "errmon-page-purpose",
+      "name": "Page Purpose",
+      "description": "The Error Monitor captures and aggregates errors from the runner in real-time, organized by severity (critical, error, warning, info). Users can triage errors by acknowledging, resolving, or ignoring them, view full stack traces and context, and generate auto-fix workflows from unresolved errors.",
+      "category": "semantic",
+      "assertions": [
+        {
+          "id": "errmon-purpose-monitor",
+          "description": "Users can see all captured errors organized by severity with auto-refreshing updates",
+          "category": "semantic",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Error Monitor" },
+            "label": "Error Monitor heading"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "errmon-purpose-filter",
+          "description": "Users can filter errors by severity level and status to focus on the most important issues",
+          "category": "semantic",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Critical" },
+            "label": "Critical severity filter"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "errmon-purpose-triage",
+          "description": "Users can triage errors by acknowledging, resolving with notes, or ignoring them",
+          "category": "semantic",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Total" },
+            "label": "Total errors summary card"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "errmon-purpose-autofix",
+          "description": "Users can generate auto-fix workflows from unresolved errors to automatically remediate issues",
+          "category": "semantic",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Fix Errors" },
+            "label": "Fix Errors button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    }
+  ],
+  "metadata": {
+    "component": "ErrorMonitor",
+    "author": "Joshua Spinak",
+    "createdAt": "2026-02-24T00:00:00.000Z",
+    "pageUrl": "/tools/error-monitor",
+    "elementSource": "sdk",
+    "tags": ["error-monitor", "triage", "auto-fix", "real-time", "tier-1"]
+  }
+}

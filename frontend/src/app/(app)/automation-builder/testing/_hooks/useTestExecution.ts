@@ -184,7 +184,14 @@ export function useTestExecution({
       results,
     });
     loadData();
-  }, [selectedTests, testCases, workflows, testingService, loadData, setExecution]);
+  }, [
+    selectedTests,
+    testCases,
+    workflows,
+    testingService,
+    loadData,
+    setExecution,
+  ]);
 
   return {
     handleRunTest,

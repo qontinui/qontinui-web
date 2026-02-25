@@ -20,7 +20,7 @@ interface UseLocalStorageCrudReturn<T extends LocalStorageItem> {
 }
 
 export function useLocalStorageCrud<T extends LocalStorageItem>(
-  storageKey: string,
+  storageKey: string
 ): UseLocalStorageCrudReturn<T> {
   const [data, setData] = useState<T[] | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
@@ -66,7 +66,7 @@ export function useLocalStorageCrud<T extends LocalStorageItem>(
       setData(updated);
       return newItem;
     },
-    [loadData, persistData],
+    [loadData, persistData]
   );
 
   const update = useCallback(
@@ -86,7 +86,7 @@ export function useLocalStorageCrud<T extends LocalStorageItem>(
       setData(updated);
       return updatedItem;
     },
-    [loadData, persistData],
+    [loadData, persistData]
   );
 
   const deleteItem = useCallback(
@@ -96,7 +96,7 @@ export function useLocalStorageCrud<T extends LocalStorageItem>(
       persistData(updated);
       setData(updated);
     },
-    [loadData, persistData],
+    [loadData, persistData]
   );
 
   const refetch = useCallback(async () => {

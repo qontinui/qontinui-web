@@ -34,7 +34,7 @@ export default function QADashboard() {
   >(() => (testRunIdParam ? "live" : "overview"));
   const [liveTestRunId] = useState<string | null>(() => testRunIdParam || null);
   const [liveWorkflowName] = useState<string | null>(
-    () => workflowNameParam || null,
+    () => workflowNameParam || null
   );
 
   useEffect(() => {

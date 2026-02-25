@@ -88,11 +88,14 @@ export class TestingClient {
     error?: string;
   }> {
     try {
-      const response = await fetch(`${this.base.baseUrl}/testing/status/${runId}`, {
-        method: "GET",
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(10000),
-      });
+      const response = await fetch(
+        `${this.base.baseUrl}/testing/status/${runId}`,
+        {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          signal: AbortSignal.timeout(10000),
+        }
+      );
 
       if (!response.ok) {
         return {
@@ -123,11 +126,14 @@ export class TestingClient {
     runId: string
   ): Promise<{ success: boolean; results?: TestResult[]; error?: string }> {
     try {
-      const response = await fetch(`${this.base.baseUrl}/testing/results/${runId}`, {
-        method: "GET",
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(30000),
-      });
+      const response = await fetch(
+        `${this.base.baseUrl}/testing/results/${runId}`,
+        {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          signal: AbortSignal.timeout(30000),
+        }
+      );
 
       if (!response.ok) {
         return {
@@ -194,11 +200,14 @@ export class TestingClient {
     runId: string
   ): Promise<{ success: boolean; run?: TestRunResult; error?: string }> {
     try {
-      const response = await fetch(`${this.base.baseUrl}/testing/end/${runId}`, {
-        method: "POST",
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(30000),
-      });
+      const response = await fetch(
+        `${this.base.baseUrl}/testing/end/${runId}`,
+        {
+          method: "POST",
+          headers: { Accept: "application/json" },
+          signal: AbortSignal.timeout(30000),
+        }
+      );
 
       if (!response.ok) {
         return {
@@ -382,11 +391,14 @@ export class TestingClient {
     error?: string;
   }> {
     try {
-      const response = await fetch(`${this.base.baseUrl}/testing/active-states`, {
-        method: "GET",
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(10000),
-      });
+      const response = await fetch(
+        `${this.base.baseUrl}/testing/active-states`,
+        {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          signal: AbortSignal.timeout(10000),
+        }
+      );
 
       if (!response.ok) {
         return {
@@ -492,11 +504,14 @@ export class TestingClient {
     error?: string;
   }> {
     try {
-      const response = await fetch(`${this.base.baseUrl}/testing/mocked-actions`, {
-        method: "GET",
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(10000),
-      });
+      const response = await fetch(
+        `${this.base.baseUrl}/testing/mocked-actions`,
+        {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          signal: AbortSignal.timeout(10000),
+        }
+      );
 
       if (!response.ok) {
         return {

@@ -11,14 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Loader2,
-  Plus,
-  Trash2,
-  Save,
-  AlertCircle,
-  X,
-} from "lucide-react";
+import { Loader2, Plus, Trash2, Save, AlertCircle, X } from "lucide-react";
 import {
   Select,
   SelectContent,

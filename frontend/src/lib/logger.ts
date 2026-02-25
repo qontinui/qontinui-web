@@ -9,23 +9,41 @@ const isDev = process.env.NODE_ENV === "development";
 
 type LogLevel = "debug" | "info" | "warn" | "error";
 
-function formatMessage(_level: LogLevel, context: string, message: string): string {
+function formatMessage(
+  _level: LogLevel,
+  context: string,
+  message: string
+): string {
   return `[${context}] ${message}`;
 }
 
 function createLogger(context: string) {
   return {
     debug(...args: unknown[]) {
-      if (isDev) console.debug(formatMessage("debug", context, String(args[0])), ...args.slice(1));
+      if (isDev)
+        console.debug(
+          formatMessage("debug", context, String(args[0])),
+          ...args.slice(1)
+        );
     },
     info(...args: unknown[]) {
-      if (isDev) console.info(formatMessage("info", context, String(args[0])), ...args.slice(1));
+      if (isDev)
+        console.info(
+          formatMessage("info", context, String(args[0])),
+          ...args.slice(1)
+        );
     },
     warn(...args: unknown[]) {
-      console.warn(formatMessage("warn", context, String(args[0])), ...args.slice(1));
+      console.warn(
+        formatMessage("warn", context, String(args[0])),
+        ...args.slice(1)
+      );
     },
     error(...args: unknown[]) {
-      console.error(formatMessage("error", context, String(args[0])), ...args.slice(1));
+      console.error(
+        formatMessage("error", context, String(args[0])),
+        ...args.slice(1)
+      );
     },
   };
 }

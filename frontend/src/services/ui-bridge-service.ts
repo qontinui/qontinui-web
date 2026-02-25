@@ -42,7 +42,7 @@ const DEFAULT_TIMEOUT = 10000;
 async function fetchBridge<T>(
   config: UIBridgeConfig,
   path: string,
-  options?: RequestInit,
+  options?: RequestInit
 ): Promise<T> {
   const url = `${config.baseUrl}${path}`;
   const controller = new AbortController();
@@ -59,7 +59,9 @@ async function fetchBridge<T>(
     });
 
     if (!response.ok) {
-      throw new Error(`UI Bridge error: ${response.status} ${response.statusText}`);
+      throw new Error(
+        `UI Bridge error: ${response.status} ${response.statusText}`
+      );
     }
 
     return await response.json();
@@ -82,7 +84,11 @@ export function createUIBridgeClient(config: UIBridgeConfig) {
     /**
      * Execute an action on a specific element.
      */
-    executeAction: (elementId: string, action: string, params?: Record<string, unknown>) =>
+    executeAction: (
+      elementId: string,
+      action: string,
+      params?: Record<string, unknown>
+    ) =>
       fetchBridge<UIBridgeActionResult>(config, "/control/action", {
         method: "POST",
         body: JSON.stringify({ elementId, action, ...params }),

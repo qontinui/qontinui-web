@@ -1109,47 +1109,6 @@ export const runnerApi = {
     ),
   uiBridgeScreenshot: () =>
     runnerFetch<Record<string, unknown>>("/ui-bridge/sdk/screenshot"),
-  aiCompareSnapshots: (data: {
-    reference_snapshot: unknown;
-    target_snapshot: unknown;
-    comparison_mode: string;
-    user_prompt?: string;
-  }) =>
-    runnerFetch<Record<string, unknown>>("/ai/compare-snapshots", {
-      method: "POST",
-      body: JSON.stringify(data),
-      timeoutMs: 120000,
-    }),
-
-  // Comparison Snapshot CRUD
-  listComparisonSnapshots: (projectId?: string) =>
-    runnerFetch<{ snapshots: import("./types/exploration").SavedSnapshot[] }>(
-      projectId
-        ? `/comparison-snapshots?project_id=${encodeURIComponent(projectId)}`
-        : "/comparison-snapshots"
-    ),
-  getComparisonSnapshot: (id: string) =>
-    runnerFetch<import("./types/exploration").SavedSnapshot>(
-      `/comparison-snapshots/${encodeURIComponent(id)}`
-    ),
-  saveComparisonSnapshot: (data: {
-    name: string;
-    app_url: string;
-    snapshot_data: Record<string, unknown>;
-    project_id?: string;
-  }) =>
-    runnerFetch<import("./types/exploration").SavedSnapshot>(
-      "/comparison-snapshots",
-      {
-        method: "POST",
-        body: JSON.stringify(data),
-      }
-    ),
-  deleteComparisonSnapshot: (id: string) =>
-    runnerFetch<{ success: boolean }>(
-      `/comparison-snapshots/${encodeURIComponent(id)}`,
-      { method: "DELETE" }
-    ),
 
   // Run workflow sequence (ordered batch execution)
   runWorkflowSequence: (workflowIds: string[], stopOnFailure: boolean) =>

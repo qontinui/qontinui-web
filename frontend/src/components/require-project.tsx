@@ -41,7 +41,7 @@ export function RequireProject({
 
   // Consider project selected if either context has it, URL has it, or local data was imported
   const hasProjectSelected = Boolean(
-    projectId || urlProjectId || hasLocalImportedData,
+    projectId || urlProjectId || hasLocalImportedData
   );
 
   if (isLoading) {

@@ -19,7 +19,11 @@ import {
   generateFlowchart,
 } from "./generator";
 import { getTemplates } from "./templates";
-import { generateTOC, searchDocumentation, compareDocVersions } from "./formatter";
+import {
+  generateTOC,
+  searchDocumentation,
+  compareDocVersions,
+} from "./formatter";
 import {
   exportDocumentation,
   exportAllDocumentation,

@@ -1,0 +1,53 @@
+{
+  "version": "1.0.0",
+  "description": "Specs for the Active Runs page — real-time monitoring of currently executing workflows",
+  "groups": [
+    {
+      "id": "active-page-purpose",
+      "name": "Page Purpose",
+      "description": "The Active Runs page provides real-time monitoring of currently executing workflows. It displays live status updates, execution progress, and output for all running task runs using event-driven updates.",
+      "category": "semantic",
+      "assertions": [
+        {
+          "id": "active-purpose-monitor",
+          "description": "Users can monitor all currently running workflows with live status updates",
+          "category": "semantic",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Active" },
+            "label": "Active runs heading"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "active-purpose-realtime",
+          "description": "Users receive real-time event-driven updates as workflows progress through their execution phases",
+          "category": "semantic",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "running" },
+            "label": "Running status indicator"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    }
+  ],
+  "metadata": {
+    "component": "ActiveRuns",
+    "author": "Joshua Spinak",
+    "createdAt": "2026-02-24T00:00:00.000Z",
+    "pageUrl": "/runs/active",
+    "elementSource": "sdk",
+    "tags": ["active-runs", "monitoring", "real-time", "tier-1"]
+  }
+}

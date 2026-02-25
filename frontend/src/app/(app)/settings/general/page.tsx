@@ -62,7 +62,7 @@ export default function GeneralSettingsPage() {
       toast.success("Settings saved");
     } catch (err) {
       toast.error(
-        `Failed to save: ${err instanceof Error ? err.message : "Unknown error"}`,
+        `Failed to save: ${err instanceof Error ? err.message : "Unknown error"}`
       );
     } finally {
       setSaving(false);

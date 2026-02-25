@@ -45,15 +45,21 @@ interface DiscoveryPanelProps {
   onConfigCreated: (configId: string) => void;
 }
 
-export function DiscoveryPanel({ discovery, onConfigCreated }: DiscoveryPanelProps) {
+export function DiscoveryPanel({
+  discovery,
+  onConfigCreated,
+}: DiscoveryPanelProps) {
   const [collectTab, setCollectTab] = useState<"explore" | "record">("explore");
-  const [selectedConnectionId, setSelectedConnectionId] = useState<number | null>(null);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<
+    number | null
+  >(null);
   const [localRunnerAvailable, setLocalRunnerAvailable] = useState(false);
   const [checkingLocalRunner, setCheckingLocalRunner] = useState(true);
 
   // Hooks
   const exploration = useUIBridgeExploration();
-  const { connections, isLoading: connectionsLoading } = useRealtimeConnections();
+  const { connections, isLoading: connectionsLoading } =
+    useRealtimeConnections();
 
   // Check if local runner is available directly (fallback when backend WS registration fails)
   useEffect(() => {
@@ -74,7 +80,9 @@ export function DiscoveryPanel({ discovery, onConfigCreated }: DiscoveryPanelPro
       }
     };
     checkLocal();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Auto-select local runner when no backend connections but local runner is available
@@ -88,7 +96,13 @@ export function DiscoveryPanel({ discovery, onConfigCreated }: DiscoveryPanelPro
     ) {
       setSelectedConnectionId(DIRECT_CONNECTION_ID);
     }
-  }, [connectionsLoading, checkingLocalRunner, connections.length, localRunnerAvailable, selectedConnectionId]);
+  }, [
+    connectionsLoading,
+    checkingLocalRunner,
+    connections.length,
+    localRunnerAvailable,
+    selectedConnectionId,
+  ]);
 
   // Derive runner URL from selected connection
   const selectedConnection = useMemo(
@@ -145,22 +159,37 @@ export function DiscoveryPanel({ discovery, onConfigCreated }: DiscoveryPanelPro
         const status = statusData.data || statusData;
         if (status.status !== "completed" || !status.has_results) return;
 
-        const resultsRes = await fetch(`${runnerUrl}/ui-bridge/explore/results`, {
-          signal: AbortSignal.timeout(5000),
-        });
+        const resultsRes = await fetch(
+          `${runnerUrl}/ui-bridge/explore/results`,
+          {
+            signal: AbortSignal.timeout(5000),
+          }
+        );
         if (!resultsRes.ok || cancelled) return;
         const resultsData = await resultsRes.json();
-        const results = resultsData.data?.data || resultsData.data || resultsData;
+        const results =
+          resultsData.data?.data || resultsData.data || resultsData;
         const renderLogs = results?.render_logs || [];
         if (renderLogs.length === 0 || cancelled) return;
 
         const mapped = renderLogs.map(
-          (log: { id?: string; type?: string; url?: string; timestamp?: string; snapshot?: Record<string, unknown> }, idx: number) => ({
+          (
+            log: {
+              id?: string;
+              type?: string;
+              url?: string;
+              timestamp?: string;
+              snapshot?: Record<string, unknown>;
+            },
+            idx: number
+          ) => ({
             id: log.id || `render_${idx}`,
             type: "dom_snapshot" as const,
             page_url: log.url || "",
             snapshot: log.snapshot || { root: {} },
-            timestamp: log.timestamp ? new Date(log.timestamp).getTime() : Date.now(),
+            timestamp: log.timestamp
+              ? new Date(log.timestamp).getTime()
+              : Date.now(),
             trigger: idx === 0 ? "initial_load" : "action",
           })
         );
@@ -172,7 +201,9 @@ export function DiscoveryPanel({ discovery, onConfigCreated }: DiscoveryPanelPro
       }
     };
     loadPendingResults();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runnerUrl, discovery.renders, discovery.setRenders]);
 
@@ -244,7 +275,9 @@ export function DiscoveryPanel({ discovery, onConfigCreated }: DiscoveryPanelPro
               <CardContent className="py-3 space-y-3">
                 <div className="flex items-center gap-2">
                   <Plug className="size-4 text-text-muted" />
-                  <span className="text-sm font-medium">Connect to SDK App</span>
+                  <span className="text-sm font-medium">
+                    Connect to SDK App
+                  </span>
                 </div>
 
                 {/* Compact row: Runner + SDK status */}
@@ -252,10 +285,18 @@ export function DiscoveryPanel({ discovery, onConfigCreated }: DiscoveryPanelPro
                   <div className="flex-1 min-w-0">
                     <Select
                       value={selectedConnectionId?.toString() ?? ""}
-                      onValueChange={(v) => setSelectedConnectionId(v ? Number(v) : null)}
+                      onValueChange={(v) =>
+                        setSelectedConnectionId(v ? Number(v) : null)
+                      }
                     >
                       <SelectTrigger className="h-8 text-sm">
-                        <SelectValue placeholder={connectionsLoading && checkingLocalRunner ? "Loading..." : "Select a runner..."} />
+                        <SelectValue
+                          placeholder={
+                            connectionsLoading && checkingLocalRunner
+                              ? "Loading..."
+                              : "Select a runner..."
+                          }
+                        />
                       </SelectTrigger>
                       <SelectContent>
                         {localRunnerAvailable && (
@@ -293,11 +334,15 @@ export function DiscoveryPanel({ discovery, onConfigCreated }: DiscoveryPanelPro
                   )}
                 </div>
 
-                {!connectionsLoading && !checkingLocalRunner && connections.length === 0 && !localRunnerAvailable && (
-                  <p className="text-xs text-text-muted">
-                    No runners detected. Start the qontinui-runner app to connect.
-                  </p>
-                )}
+                {!connectionsLoading &&
+                  !checkingLocalRunner &&
+                  connections.length === 0 &&
+                  !localRunnerAvailable && (
+                    <p className="text-xs text-text-muted">
+                      No runners detected. Start the qontinui-runner app to
+                      connect.
+                    </p>
+                  )}
 
                 {/* SDK app discovery results */}
                 {runnerUrl && (
@@ -307,9 +352,13 @@ export function DiscoveryPanel({ discovery, onConfigCreated }: DiscoveryPanelPro
                       <div className="flex items-center gap-2 p-2 bg-green-500/10 border border-green-500/20 rounded-md">
                         <CheckCircle2 className="size-4 text-green-500 shrink-0" />
                         <span className="text-sm text-text-primary truncate">
-                          Connected: <strong>{sdk.activeApp.app.appName}</strong>
+                          Connected:{" "}
+                          <strong>{sdk.activeApp.app.appName}</strong>
                         </span>
-                        <Badge variant="outline" className="ml-auto text-xs shrink-0">
+                        <Badge
+                          variant="outline"
+                          className="ml-auto text-xs shrink-0"
+                        >
                           {sdk.activeApp.url}
                         </Badge>
                       </div>
@@ -319,7 +368,9 @@ export function DiscoveryPanel({ discovery, onConfigCreated }: DiscoveryPanelPro
                     {!sdk.activeApp && sdk.apps.length > 0 && (
                       <div className="space-y-2">
                         {sdk.apps.map((app: SDKApp) => {
-                          const isConnected = sdk.connections.some((c) => c.url === app.url);
+                          const isConnected = sdk.connections.some(
+                            (c) => c.url === app.url
+                          );
                           const isActive = sdk.activeApp?.url === app.url;
                           return (
                             <div
@@ -331,11 +382,14 @@ export function DiscoveryPanel({ discovery, onConfigCreated }: DiscoveryPanelPro
                                   {app.appName}
                                 </div>
                                 <div className="text-xs text-text-muted">
-                                  {app.url} {app.framework && `(${app.framework})`}
+                                  {app.url}{" "}
+                                  {app.framework && `(${app.framework})`}
                                 </div>
                               </div>
                               {isActive ? (
-                                <Badge variant="secondary" className="shrink-0">Active</Badge>
+                                <Badge variant="secondary" className="shrink-0">
+                                  Active
+                                </Badge>
                               ) : isConnected ? (
                                 <Button
                                   variant="outline"
@@ -363,11 +417,14 @@ export function DiscoveryPanel({ discovery, onConfigCreated }: DiscoveryPanelPro
                       </div>
                     )}
 
-                    {!sdk.activeApp && sdk.apps.length === 0 && !sdk.isScanning && (
-                      <p className="text-xs text-text-muted">
-                        Click Scan to find apps with the UI Bridge SDK installed.
-                      </p>
-                    )}
+                    {!sdk.activeApp &&
+                      sdk.apps.length === 0 &&
+                      !sdk.isScanning && (
+                        <p className="text-xs text-text-muted">
+                          Click Scan to find apps with the UI Bridge SDK
+                          installed.
+                        </p>
+                      )}
                   </>
                 )}
               </CardContent>
@@ -375,7 +432,10 @@ export function DiscoveryPanel({ discovery, onConfigCreated }: DiscoveryPanelPro
 
             {/* Collection tabs — only shown when SDK app is connected */}
             {hasActiveSDKApp && (
-              <Tabs value={collectTab} onValueChange={(v) => setCollectTab(v as "explore" | "record")}>
+              <Tabs
+                value={collectTab}
+                onValueChange={(v) => setCollectTab(v as "explore" | "record")}
+              >
                 <TabsList>
                   <TabsTrigger value="explore" className="gap-1.5">
                     <Compass className="size-3.5" />
@@ -409,19 +469,28 @@ export function DiscoveryPanel({ discovery, onConfigCreated }: DiscoveryPanelPro
                   <Card>
                     <CardContent className="py-3 space-y-3">
                       <p className="text-sm text-text-muted">
-                        Capture snapshots from the connected SDK app. Navigate the app
-                        manually while recording to capture different UI states.
+                        Capture snapshots from the connected SDK app. Navigate
+                        the app manually while recording to capture different UI
+                        states.
                       </p>
 
                       {/* Recording controls */}
                       <div className="flex items-center gap-3">
                         {!sdk.isRecording ? (
-                          <Button onClick={() => sdk.startRecording()} variant="default" size="sm">
+                          <Button
+                            onClick={() => sdk.startRecording()}
+                            variant="default"
+                            size="sm"
+                          >
                             <Circle className="size-3.5 mr-1.5 text-red-400" />
                             Start Recording
                           </Button>
                         ) : (
-                          <Button onClick={handleStopRecording} variant="destructive" size="sm">
+                          <Button
+                            onClick={handleStopRecording}
+                            variant="destructive"
+                            size="sm"
+                          >
                             <Square className="size-3.5 mr-1.5" />
                             Stop Recording
                           </Button>
@@ -431,7 +500,9 @@ export function DiscoveryPanel({ discovery, onConfigCreated }: DiscoveryPanelPro
                           variant="outline"
                           size="sm"
                           onClick={sdk.captureNow}
-                          disabled={!sdk.isRecording && sdk.snapshots.length === 0}
+                          disabled={
+                            !sdk.isRecording && sdk.snapshots.length === 0
+                          }
                         >
                           <Camera className="size-3.5 mr-1.5" />
                           Capture Now
@@ -452,7 +523,11 @@ export function DiscoveryPanel({ discovery, onConfigCreated }: DiscoveryPanelPro
                       {/* Recording status */}
                       {(sdk.isRecording || sdk.snapshots.length > 0) && (
                         <div className="flex items-center gap-4">
-                          <Badge variant={sdk.isRecording ? "destructive" : "secondary"}>
+                          <Badge
+                            variant={
+                              sdk.isRecording ? "destructive" : "secondary"
+                            }
+                          >
                             {sdk.isRecording && (
                               <span className="size-2 rounded-full bg-red-400 mr-1.5 animate-pulse" />
                             )}
@@ -469,7 +544,10 @@ export function DiscoveryPanel({ discovery, onConfigCreated }: DiscoveryPanelPro
 
                       {/* Use snapshots button — shown when not recording and snapshots exist */}
                       {!sdk.isRecording && sdk.snapshots.length > 0 && (
-                        <Button onClick={handleUseRecordedSnapshots} className="w-full">
+                        <Button
+                          onClick={handleUseRecordedSnapshots}
+                          className="w-full"
+                        >
                           <Sparkles className="size-4 mr-2" />
                           Use {sdk.snapshots.length} Snapshots for Discovery
                         </Button>
@@ -517,7 +595,8 @@ export function DiscoveryPanel({ discovery, onConfigCreated }: DiscoveryPanelPro
               <Card>
                 <CardContent className="py-6 flex flex-col items-center gap-4">
                   <p className="text-sm text-text-secondary">
-                    Run state discovery on the collected render logs to identify UI states.
+                    Run state discovery on the collected render logs to identify
+                    UI states.
                   </p>
                   <Button
                     onClick={discovery.runDiscovery}
@@ -565,7 +644,10 @@ export function DiscoveryPanel({ discovery, onConfigCreated }: DiscoveryPanelPro
                   {/* State preview */}
                   <div className="border border-border-primary rounded-md p-3 space-y-1.5 max-h-40 overflow-y-auto">
                     {discovery.discoveryResult!.states.map((state) => (
-                      <div key={state.id} className="flex items-center justify-between text-sm">
+                      <div
+                        key={state.id}
+                        className="flex items-center justify-between text-sm"
+                      >
                         <span className="text-text-primary">{state.name}</span>
                         <span className="text-text-muted">
                           {(state.confidence * 100).toFixed(0)}% confidence
@@ -582,12 +664,16 @@ export function DiscoveryPanel({ discovery, onConfigCreated }: DiscoveryPanelPro
                         id="config-name"
                         placeholder="e.g., My App States"
                         value={discovery.configName}
-                        onChange={(e) => discovery.setConfigName(e.target.value)}
+                        onChange={(e) =>
+                          discovery.setConfigName(e.target.value)
+                        }
                       />
                     </div>
                     <Button
                       onClick={handleSave}
-                      disabled={discovery.isSaving || !discovery.configName.trim()}
+                      disabled={
+                        discovery.isSaving || !discovery.configName.trim()
+                      }
                       className="w-full"
                     >
                       {discovery.isSaving ? (

@@ -172,9 +172,9 @@ export function BuilderLayout<T extends BuilderItem>({
           <div className="flex items-center justify-between mb-1.5">
             <div className="flex items-center gap-2">
               <Icon className={`size-5 ${iconColor}`} />
-              <h2 className="font-semibold text-text-primary text-sm">
+              <h1 className="font-semibold text-text-primary text-sm">
                 {title}
-              </h2>
+              </h1>
               <Badge variant="secondary" className="text-[10px] px-1.5">
                 {itemCount}
               </Badge>
@@ -217,7 +217,8 @@ export function BuilderLayout<T extends BuilderItem>({
                     className={`h-7 px-2 ${iconColor}`}
                     onClick={onNew}
                   >
-                    <Plus className="size-3.5" />
+                    <Plus className="size-3.5 mr-1" />
+                    New
                   </Button>
                 </>
               )}

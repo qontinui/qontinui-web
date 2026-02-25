@@ -27,7 +27,7 @@ export default function DevResetPage() {
   const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
   const [isClearing, setIsClearing] = useState(true);
   const [redirectCountdown, setRedirectCountdown] = useState<number | null>(
-    null,
+    null
   ); // null = no auto-redirect
 
   useEffect(() => {
@@ -76,11 +76,11 @@ export default function DevResetPage() {
           credentials: "include",
         });
         console.log(
-          "[DevReset] Logout endpoint called (HttpOnly cookies cleared)",
+          "[DevReset] Logout endpoint called (HttpOnly cookies cleared)"
         );
       } catch (_e) {
         console.log(
-          "[DevReset] Logout endpoint failed (may already be logged out)",
+          "[DevReset] Logout endpoint failed (may already be logged out)"
         );
       }
 
@@ -218,7 +218,7 @@ export default function DevResetPage() {
                                   : value}
                               </span>
                             </div>
-                          ),
+                          )
                         )}
                       </pre>
                     )}
@@ -246,7 +246,7 @@ export default function DevResetPage() {
                                   : value}
                               </span>
                             </div>
-                          ),
+                          )
                         )}
                       </pre>
                     )}

@@ -70,7 +70,7 @@ const HealthDashboardTab = dynamic(
         Loading Health Dashboard...
       </div>
     ),
-  },
+  }
 );
 
 const NotificationsTab = dynamic(
@@ -81,7 +81,7 @@ const NotificationsTab = dynamic(
         Loading Notifications...
       </div>
     ),
-  },
+  }
 );
 
 const DownloadsTab = dynamic(() => import("@/components/admin/DownloadsTab"), {

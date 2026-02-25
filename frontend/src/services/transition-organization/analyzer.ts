@@ -140,10 +140,7 @@ export function getTransitionStatistics(
   ).length;
 
   const totalTimeout = transitions.reduce((sum, t) => sum + t.timeout, 0);
-  const totalRetryCount = transitions.reduce(
-    (sum, t) => sum + t.retryCount,
-    0
-  );
+  const totalRetryCount = transitions.reduce((sum, t) => sum + t.retryCount, 0);
 
   const withWorkflows = transitions.filter(
     (t) => t.workflows.length > 0
@@ -153,10 +150,7 @@ export function getTransitionStatistics(
   const workflowCounts = new Map<string, number>();
   for (const transition of transitions) {
     for (const workflowId of transition.workflows) {
-      workflowCounts.set(
-        workflowId,
-        (workflowCounts.get(workflowId) || 0) + 1
-      );
+      workflowCounts.set(workflowId, (workflowCounts.get(workflowId) || 0) + 1);
     }
   }
 
@@ -194,9 +188,7 @@ export function getTransitionStatistics(
     .map(([stateId, counts]) => ({ stateId, ...counts }))
     .sort(
       (a, b) =>
-        b.incomingCount +
-        b.outgoingCount -
-        (a.incomingCount + a.outgoingCount)
+        b.incomingCount + b.outgoingCount - (a.incomingCount + a.outgoingCount)
     )
     .slice(0, 10);
 
@@ -230,8 +222,7 @@ export function getTransitionStatistics(
       outgoing: outgoingCount,
       incoming: incomingCount,
     },
-    avgTimeout:
-      transitions.length > 0 ? totalTimeout / transitions.length : 0,
+    avgTimeout: transitions.length > 0 ? totalTimeout / transitions.length : 0,
     avgRetryCount:
       transitions.length > 0 ? totalRetryCount / transitions.length : 0,
     withWorkflows,
@@ -453,8 +444,8 @@ export function getTransitionsByPattern(
 
       if (pattern.criteria.deactivateStates) {
         checks++;
-        const deactivateMatch = pattern.criteria.deactivateStates.every(
-          (sid) => outgoing.deactivateStates.includes(sid)
+        const deactivateMatch = pattern.criteria.deactivateStates.every((sid) =>
+          outgoing.deactivateStates.includes(sid)
         );
         if (deactivateMatch) matches++;
       }

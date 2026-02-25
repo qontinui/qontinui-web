@@ -1,6 +1,9 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
+import { usePageSpecs } from "@/hooks/usePageSpecs";
+import type { SpecConfig } from "@qontinui/ui-bridge/specs";
+import pageSpecJson from "./execute.spec.uibridge.json";
 import { runnerApi } from "@/lib/runner-api";
 import { useUnifiedWorkflows } from "@/lib/api/unified-workflows";
 import { getTotalStepCount } from "@/types/unified-workflow";
@@ -34,6 +37,8 @@ import {
   DragOverlay,
 } from "@dnd-kit/core";
 import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
+
+const pageSpec = pageSpecJson as unknown as SpecConfig;
 
 // =============================================================================
 // Queue Tab — Workflow Sequence Builder
@@ -366,6 +371,7 @@ function QueueTabContent({
 // =============================================================================
 
 export default function ExecutePage() {
+  usePageSpecs({ execute: pageSpec });
   const {
     data: workflows,
     isLoading: workflowsLoading,

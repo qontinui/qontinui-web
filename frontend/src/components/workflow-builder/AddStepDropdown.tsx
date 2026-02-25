@@ -101,7 +101,7 @@ export function AddStepDropdown({
 
   // Group step types: scripted (command, ui_bridge) vs AI-driven (prompt)
   const scriptedTypes = stepTypes.filter(
-    (t) => t.type === "command" || t.type === "ui_bridge",
+    (t) => t.type === "command" || t.type === "ui_bridge"
   );
   const aiTypes = stepTypes.filter((t) => t.type === "prompt");
 
@@ -238,7 +238,7 @@ export function AddStepDropdown({
                           </div>
                         </div>
                       );
-                    },
+                    }
                   )}
                 </div>
 

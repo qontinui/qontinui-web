@@ -2,11 +2,11 @@
  * useInspector Hook
  *
  * Unified SDK connection model for the Inspector page.
- * All apps (including the runner itself) connect via the SDK connection manager.
- * No separate "browser" vs "desktop" modes — everything goes through SDK.
+ * Delegates connection management to useAppBrowser while keeping
+ * inspector-specific state (elements, specs, command history).
  */
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { runnerApi } from "@/lib/runner/runner-api-object";
 import {
   transformSdkElements as transformSdkElementsPure,
@@ -14,6 +14,8 @@ import {
   unwrapElementResponse,
 } from "@/lib/ui-bridge/link-extractor";
 import { unwrapSpecResponse } from "@/lib/ui-bridge/spec-parser";
+import { useAppBrowser } from "@/hooks/useAppBrowser";
+import type { UseAppBrowserReturn } from "@/hooks/useAppBrowser";
 
 // =============================================================================
 // Types
@@ -77,14 +79,7 @@ export interface CommandHistoryEntry {
   result: CommandResult;
 }
 
-export interface SdkConnection {
-  url: string;
-  app: { appId?: string; appName?: string; version?: string };
-  connectedAt: number;
-  isActive: boolean;
-}
-
-// Re-export DiscoveredLink from its canonical location
+// Re-export shared types from their canonical location
 import type { DiscoveredLink } from "@/lib/ui-bridge/types";
 export type { DiscoveredLink } from "@/lib/ui-bridge/types";
 
@@ -97,20 +92,12 @@ export type InspectorTab =
   | "api";
 
 export interface UseInspectorReturn {
+  // App browser (shared connection + page discovery)
+  browser: UseAppBrowserReturn;
+
   // Tabs
   activeTab: InspectorTab;
   setActiveTab: (t: InspectorTab) => void;
-
-  // SDK Connection management
-  connections: SdkConnection[];
-  activeConnection: SdkConnection | null;
-  connectUrl: string;
-  setConnectUrl: (url: string) => void;
-  isConnecting: boolean;
-  connect: (url: string) => Promise<void>;
-  disconnect: (url?: string) => Promise<void>;
-  switchTo: (url: string) => Promise<void>;
-  refreshConnections: () => Promise<void>;
 
   // Element inspection
   elements: ExternalElement[];
@@ -128,16 +115,10 @@ export interface UseInspectorReturn {
   // Specs
   discoverSpecs: () => Promise<DiscoveredSpec[]>;
 
-  // Discovered links (read-only page tree)
+  // Discovered links (from element discovery)
   discoveredLinks: DiscoveredLink[];
 
-  // Tab targeting
-  tabs: string[];
-  targetTabId: string | null;
-  setTargetTabId: (tabId: string | null) => void;
-  refreshTabs: () => Promise<void>;
-
-  // Page navigation (for SiteTreePanel)
+  // Page navigation
   navigateToPage: (url: string, tabId?: string) => Promise<void>;
   isNavigating: boolean;
 
@@ -169,12 +150,10 @@ const MAX_COMMAND_HISTORY = 50;
 export function useInspector(): UseInspectorReturn {
   const [activeTab, setActiveTab] = useState<InspectorTab>("elements");
 
-  // Connection state
-  const [connections, setConnections] = useState<SdkConnection[]>([]);
-  const [activeConnection, setActiveConnection] =
-    useState<SdkConnection | null>(null);
-  const [connectUrl, setConnectUrl] = useState("");
-  const [isConnecting, setIsConnecting] = useState(false);
+  // Delegate connection management to useAppBrowser
+  const browser = useAppBrowser({ selfPathname: "/tools/inspector" });
+
+  // Inspector-specific error state (connection errors come from browser)
   const [error, setError] = useState<string | null>(null);
 
   // Element state
@@ -182,10 +161,7 @@ export function useInspector(): UseInspectorReturn {
   const [selectedElement, setSelectedElement] =
     useState<ExternalElement | null>(null);
   const [isDiscovering, setIsDiscovering] = useState(false);
-  const [discoveredLinks, setDiscoveredLinks] = useState<DiscoveredLink[]>([]);
   const [isNavigating, setIsNavigating] = useState(false);
-  const [tabs, setTabs] = useState<string[]>([]);
-  const [targetTabId, setTargetTabId] = useState<string | null>(null);
 
   // Command history (for API tab)
   const [lastCommandResult, setLastCommandResult] =
@@ -194,94 +170,6 @@ export function useInspector(): UseInspectorReturn {
     []
   );
   const commandIdRef = useRef(0);
-
-  // -------------------------------------------------------------------------
-  // Connection management
-  // -------------------------------------------------------------------------
-
-  const refreshConnections = useCallback(async () => {
-    try {
-      const conns = await runnerApi.uiBridgeConnections();
-      setConnections(conns);
-      const active = conns.find((c) => c.isActive) ?? null;
-      setActiveConnection(active);
-    } catch {
-      // Runner might be offline — leave state as-is
-    }
-  }, []);
-
-  const refreshTabs = useCallback(async () => {
-    try {
-      const result = await runnerApi.uiBridgeTabs();
-      const data = result as unknown as Record<string, unknown>;
-      // Extract tabs array from response: try data.data.tabs, data.tabs, data.data
-      let tabList: string[] = [];
-      if (
-        data?.data &&
-        typeof data.data === "object" &&
-        !Array.isArray(data.data)
-      ) {
-        const inner = data.data as Record<string, unknown>;
-        tabList = (inner.tabs as string[]) ?? [];
-      } else if (Array.isArray(data?.tabs)) {
-        tabList = data.tabs as string[];
-      } else if (Array.isArray(data?.data)) {
-        tabList = data.data as string[];
-      }
-      setTabs(tabList);
-    } catch {
-      // SDK app might not support tabs endpoint
-    }
-  }, []);
-
-  const connect = useCallback(
-    async (url: string) => {
-      setIsConnecting(true);
-      setError(null);
-      try {
-        await runnerApi.uiBridgeConnect({ url });
-        await refreshConnections();
-        await refreshTabs();
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Failed to connect to app"
-        );
-      } finally {
-        setIsConnecting(false);
-      }
-    },
-    [refreshConnections, refreshTabs]
-  );
-
-  const disconnect = useCallback(
-    async (url?: string) => {
-      try {
-        await runnerApi.uiBridgeDisconnect(url);
-        setElements([]);
-        setSelectedElement(null);
-        await refreshConnections();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to disconnect");
-      }
-    },
-    [refreshConnections]
-  );
-
-  const switchTo = useCallback(
-    async (url: string) => {
-      try {
-        await runnerApi.uiBridgeSwitch(url);
-        setElements([]);
-        setSelectedElement(null);
-        await refreshConnections();
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Failed to switch connection"
-        );
-      }
-    },
-    [refreshConnections]
-  );
 
   // -------------------------------------------------------------------------
   // Element inspection
@@ -295,8 +183,8 @@ export function useInspector(): UseInspectorReturn {
 
   const extractLinks = useCallback(
     (elems: ExternalElement[]): DiscoveredLink[] =>
-      extractLinksPure(elems, activeConnection?.url),
-    [activeConnection]
+      extractLinksPure(elems, browser.activeConnection?.url),
+    [browser.activeConnection]
   );
 
   const discoverElements = useCallback(async () => {
@@ -309,16 +197,15 @@ export function useInspector(): UseInspectorReturn {
       setElements(elemList);
       setSelectedElement(null);
 
-      // Extract links for page tree
+      // Extract links and merge into browser's discovered links
       const links = extractLinks(elemList);
-      setDiscoveredLinks((prev) => {
+      browser.setDiscoveredLinks((prev) => {
         const existingUrls = new Set(prev.map((l) => l.url));
         const newLinks = links.filter((l) => !existingUrls.has(l.url));
-        return [...prev, ...newLinks];
+        return newLinks.length > 0 ? [...prev, ...newLinks] : prev;
       });
 
-      // Refresh connected tabs
-      await refreshTabs();
+      await browser.refreshTargets();
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to discover elements"
@@ -326,20 +213,15 @@ export function useInspector(): UseInspectorReturn {
     } finally {
       setIsDiscovering(false);
     }
-  }, [extractLinks, transformSdkElements, refreshTabs]);
+  }, [extractLinks, transformSdkElements, browser]);
 
-  /**
-   * Navigate the connected app to a URL and re-discover elements.
-   * Uses targetTabId to avoid navigating the inspector tab itself.
-   */
   const navigateToPage = useCallback(
     async (url: string, tabId?: string) => {
       setIsNavigating(true);
       setError(null);
       try {
-        const effectiveTabId = tabId ?? targetTabId ?? undefined;
+        const effectiveTabId = tabId ?? browser.selectedTargetId ?? undefined;
         await runnerApi.uiBridgePageNavigate(url, effectiveTabId);
-        // Wait for navigation to settle before re-discovering
         await new Promise((resolve) => setTimeout(resolve, 2000));
         await discoverElements();
       } catch (err) {
@@ -348,7 +230,7 @@ export function useInspector(): UseInspectorReturn {
         setIsNavigating(false);
       }
     },
-    [discoverElements, targetTabId]
+    [discoverElements, browser.selectedTargetId]
   );
 
   const selectElement = useCallback((el: ExternalElement | null) => {
@@ -378,7 +260,7 @@ export function useInspector(): UseInspectorReturn {
     try {
       await runnerApi.uiBridgeHighlight(id);
     } catch {
-      // Best effort — don't surface errors for highlight
+      // Best effort
     }
   }, []);
 
@@ -397,7 +279,6 @@ export function useInspector(): UseInspectorReturn {
         });
       }
 
-      // Fallback: try snapshot specStore
       const snapRaw = await runnerApi.uiBridgeSnapshot();
       const snapSpecs = unwrapSpecResponse(snapRaw);
       return snapSpecs.map((s) => {
@@ -420,7 +301,6 @@ export function useInspector(): UseInspectorReturn {
     ): Promise<CommandResult<T>> => {
       const startTime = Date.now();
       try {
-        // Route through SDK element action if it looks like an element command
         const response = await fetch(
           `http://localhost:9876/ui-bridge/sdk/${action}`,
           {
@@ -479,32 +359,28 @@ export function useInspector(): UseInspectorReturn {
   }, []);
 
   // -------------------------------------------------------------------------
-  // On mount: detect existing connections
+  // Clear inspector state when active connection changes
   // -------------------------------------------------------------------------
 
+  const activeConnectionUrl = browser.activeConnection?.url;
+  const prevConnectionUrl = useRef(activeConnectionUrl);
   useEffect(() => {
-    refreshConnections();
-  }, [refreshConnections]);
+    if (prevConnectionUrl.current !== activeConnectionUrl) {
+      setElements([]);
+      setSelectedElement(null);
+      prevConnectionUrl.current = activeConnectionUrl;
+    }
+  }, [activeConnectionUrl]);
 
   // -------------------------------------------------------------------------
-  // Derived state
+  // Return
   // -------------------------------------------------------------------------
-
-  const isConnected = activeConnection !== null;
 
   return {
+    browser,
+
     activeTab,
     setActiveTab,
-
-    connections,
-    activeConnection,
-    connectUrl,
-    setConnectUrl,
-    isConnecting,
-    connect,
-    disconnect,
-    switchTo,
-    refreshConnections,
 
     elements,
     selectedElement,
@@ -516,12 +392,7 @@ export function useInspector(): UseInspectorReturn {
 
     discoverSpecs,
 
-    discoveredLinks,
-
-    tabs,
-    targetTabId,
-    setTargetTabId,
-    refreshTabs,
+    discoveredLinks: browser.discoveredLinks,
 
     navigateToPage,
     isNavigating,
@@ -531,8 +402,8 @@ export function useInspector(): UseInspectorReturn {
     lastCommandResult,
     clearCommandHistory,
 
-    isConnected,
-    error,
+    isConnected: browser.isConnected,
+    error: error || browser.connectionError,
     isLoadingElements: isDiscovering,
   };
 }

@@ -214,11 +214,7 @@ export function StateStructure() {
     updateState,
   });
 
-  const {
-    handleStartImageDrag,
-    handleDragOver,
-    handleDrop,
-  } = useImageDrag({
+  const { handleStartImageDrag, handleDragOver, handleDrop } = useImageDrag({
     states,
     transitions,
     workflows,

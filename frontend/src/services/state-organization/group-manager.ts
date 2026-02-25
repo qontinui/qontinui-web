@@ -637,10 +637,7 @@ export class GroupManager {
   /**
    * Build group tree
    */
-  private buildGroupTree(
-    rootId: string | null,
-    depth = 0
-  ): GroupTreeNode[] {
+  private buildGroupTree(rootId: string | null, depth = 0): GroupTreeNode[] {
     const children = this.getChildren(rootId);
 
     return children.map((group) => {

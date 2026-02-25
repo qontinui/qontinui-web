@@ -241,170 +241,170 @@ function schedulePersist<T>(
  */
 export const useAutomationStore = create<AutomationStore>()(
   subscribeWithSelector(
-      immer((set, get, api) => ({
-        // Project slice
-        ...createProjectSlice(set, get, api),
+    immer((set, get, api) => ({
+      // Project slice
+      ...createProjectSlice(set, get, api),
 
-        // Workflow slice
-        ...createWorkflowSlice(set, get, api),
+      // Workflow slice
+      ...createWorkflowSlice(set, get, api),
 
-        // State slice
-        ...createStateSlice(set, get, api),
+      // State slice
+      ...createStateSlice(set, get, api),
 
-        // Transition slice
-        ...createTransitionSlice(set, get, api),
+      // Transition slice
+      ...createTransitionSlice(set, get, api),
 
-        // Image slice
-        ...createImageSlice(set, get, api),
+      // Image slice
+      ...createImageSlice(set, get, api),
 
-        // Screenshot slice
-        ...createScreenshotSlice(set, get, api),
+      // Screenshot slice
+      ...createScreenshotSlice(set, get, api),
 
-        // Schedule slice
-        ...createScheduleSlice(set, get, api),
+      // Schedule slice
+      ...createScheduleSlice(set, get, api),
 
-        // Settings slice
-        ...createSettingsSlice(set, get, api),
+      // Settings slice
+      ...createSettingsSlice(set, get, api),
 
-        // Context slice
-        ...createContextSlice(set, get, api),
+      // Context slice
+      ...createContextSlice(set, get, api),
 
-        // Cross-entity operations
-        ...createCrossEntitySlice(set, get, api),
+      // Cross-entity operations
+      ...createCrossEntitySlice(set, get, api),
 
-        // Configuration operations
-        getConfiguration: () => {
-          const state = get();
-          return {
-            name: state.projectName,
-            version: "2.0.0",
-            workflows: state.workflows,
-            states: state.states,
-            transitions: state.transitions,
-            images: state.images,
-            screenshots: state.screenshots,
-            schedules: state.schedules,
-            settings: state.settings,
-            categories: state.categories,
-            contexts: state.contexts,
-          };
-        },
+      // Configuration operations
+      getConfiguration: () => {
+        const state = get();
+        return {
+          name: state.projectName,
+          version: "2.0.0",
+          workflows: state.workflows,
+          states: state.states,
+          transitions: state.transitions,
+          images: state.images,
+          screenshots: state.screenshots,
+          schedules: state.schedules,
+          settings: state.settings,
+          categories: state.categories,
+          contexts: state.contexts,
+        };
+      },
 
-        loadConfiguration: async (config) => {
-          projectLogger.info("AutomationStore", "loadConfiguration", {
-            name: config.name,
-          });
+      loadConfiguration: async (config) => {
+        projectLogger.info("AutomationStore", "loadConfiguration", {
+          name: config.name,
+        });
 
-          set((state) => {
-            state.isLoadingFromBackend = true;
-          });
+        set((state) => {
+          state.isLoadingFromBackend = true;
+        });
 
-          try {
-            // Apply migrations to workflows
-            let workflows = config.workflows as Workflow[] | undefined;
-            if (workflows && workflows.length > 0) {
-              workflows = migrateWorkflows(workflows);
-            }
-
-            // Apply migrations to transitions
-            let transitions = config.transitions as Transition[] | undefined;
-            if (transitions && transitions.length > 0) {
-              transitions = migrateTransitions(transitions);
-            }
-
-            // Apply migrations to pattern images
-            let states = config.states as State[] | undefined;
-            let images = config.images as ImageAsset[] | undefined;
-            if (states && states.length > 0 && images) {
-              const migrationResult = migratePatternImages(states, images);
-              states = migrationResult.states;
-              // Merge new images from migration
-              if (migrationResult.newImages.length > 0) {
-                images = [...images, ...migrationResult.newImages];
-              }
-            }
-
-            // Convert categories from legacy string[] format to Category[] if needed
-            let categories: Category[] | undefined;
-            if (config.categories && Array.isArray(config.categories)) {
-              if (
-                config.categories.length > 0 &&
-                typeof config.categories[0] === "string"
-              ) {
-                // Legacy format: string[] - convert to Category[] with only "Main" enabled
-                categories = (config.categories as string[]).map((name) => ({
-                  name,
-                  automationEnabled: name.toLowerCase() === "main",
-                }));
-                projectLogger.info(
-                  "AutomationStore",
-                  "Migrated legacy categories to new format",
-                  {
-                    count: categories.length,
-                  }
-                );
-              } else {
-                // New format: Category[]
-                categories = config.categories as Category[];
-              }
-            }
-
-            set((state) => {
-              if (config.name) state.projectName = config.name as string;
-              if (workflows) state.workflows = workflows;
-              if (states) state.states = states;
-              if (transitions) state.transitions = transitions;
-              if (images) state.images = images;
-              if (config.screenshots)
-                state.screenshots =
-                  config.screenshots as AutomationStore["screenshots"];
-              if (config.schedules)
-                state.schedules =
-                  config.schedules as AutomationStore["schedules"];
-              if (config.settings)
-                state.settings = config.settings as AutomationStore["settings"];
-              if (categories) state.categories = categories;
-              if (config.contexts)
-                state.contexts = config.contexts as AutomationStore["contexts"];
-            });
-
-            projectLogger.info("AutomationStore", "Configuration loaded");
-          } finally {
-            set((state) => {
-              state.isLoadingFromBackend = false;
-            });
+        try {
+          // Apply migrations to workflows
+          let workflows = config.workflows as Workflow[] | undefined;
+          if (workflows && workflows.length > 0) {
+            workflows = migrateWorkflows(workflows);
           }
-        },
 
-        clearAllData: () => {
-          projectLogger.info("AutomationStore", "clearAllData");
-          const projectName = get().projectName;
+          // Apply migrations to transitions
+          let transitions = config.transitions as Transition[] | undefined;
+          if (transitions && transitions.length > 0) {
+            transitions = migrateTransitions(transitions);
+          }
 
-          set((state) => {
-            state.workflows = [];
-            state.states = [];
-            state.transitions = [];
-            state.images = [];
-            state.screenshots = [];
-            state.schedules = [];
-            state.executionRecords = [];
-            state.contexts = [];
-          });
+          // Apply migrations to pattern images
+          let states = config.states as State[] | undefined;
+          let images = config.images as ImageAsset[] | undefined;
+          if (states && states.length > 0 && images) {
+            const migrationResult = migratePatternImages(states, images);
+            states = migrationResult.states;
+            // Merge new images from migration
+            if (migrationResult.newImages.length > 0) {
+              images = [...images, ...migrationResult.newImages];
+            }
+          }
 
-          // Clear IndexedDB
-          if (projectName) {
-            clearIndexedDB(projectName).catch((error) => {
-              projectLogger.error(
+          // Convert categories from legacy string[] format to Category[] if needed
+          let categories: Category[] | undefined;
+          if (config.categories && Array.isArray(config.categories)) {
+            if (
+              config.categories.length > 0 &&
+              typeof config.categories[0] === "string"
+            ) {
+              // Legacy format: string[] - convert to Category[] with only "Main" enabled
+              categories = (config.categories as string[]).map((name) => ({
+                name,
+                automationEnabled: name.toLowerCase() === "main",
+              }));
+              projectLogger.info(
                 "AutomationStore",
-                "Failed to clear IndexedDB",
+                "Migrated legacy categories to new format",
                 {
-                  error,
+                  count: categories.length,
                 }
               );
-            });
+            } else {
+              // New format: Category[]
+              categories = config.categories as Category[];
+            }
           }
-        },
-      }))
+
+          set((state) => {
+            if (config.name) state.projectName = config.name as string;
+            if (workflows) state.workflows = workflows;
+            if (states) state.states = states;
+            if (transitions) state.transitions = transitions;
+            if (images) state.images = images;
+            if (config.screenshots)
+              state.screenshots =
+                config.screenshots as AutomationStore["screenshots"];
+            if (config.schedules)
+              state.schedules =
+                config.schedules as AutomationStore["schedules"];
+            if (config.settings)
+              state.settings = config.settings as AutomationStore["settings"];
+            if (categories) state.categories = categories;
+            if (config.contexts)
+              state.contexts = config.contexts as AutomationStore["contexts"];
+          });
+
+          projectLogger.info("AutomationStore", "Configuration loaded");
+        } finally {
+          set((state) => {
+            state.isLoadingFromBackend = false;
+          });
+        }
+      },
+
+      clearAllData: () => {
+        projectLogger.info("AutomationStore", "clearAllData");
+        const projectName = get().projectName;
+
+        set((state) => {
+          state.workflows = [];
+          state.states = [];
+          state.transitions = [];
+          state.images = [];
+          state.screenshots = [];
+          state.schedules = [];
+          state.executionRecords = [];
+          state.contexts = [];
+        });
+
+        // Clear IndexedDB
+        if (projectName) {
+          clearIndexedDB(projectName).catch((error) => {
+            projectLogger.error(
+              "AutomationStore",
+              "Failed to clear IndexedDB",
+              {
+                error,
+              }
+            );
+          });
+        }
+      },
+    }))
   )
 );
 

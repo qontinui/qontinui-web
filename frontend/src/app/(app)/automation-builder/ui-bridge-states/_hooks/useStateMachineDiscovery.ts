@@ -37,7 +37,9 @@ function getStorageKey(projectId: string | null): string | null {
   return projectId ? `${STORAGE_KEY_PREFIX}${projectId}` : null;
 }
 
-function loadPersistedState(projectId: string | null): PersistedDiscoveryState | null {
+function loadPersistedState(
+  projectId: string | null
+): PersistedDiscoveryState | null {
   if (typeof window === "undefined") return null;
   const key = getStorageKey(projectId);
   if (!key) return null;
@@ -50,7 +52,10 @@ function loadPersistedState(projectId: string | null): PersistedDiscoveryState |
   return null;
 }
 
-function savePersistedState(projectId: string | null, state: PersistedDiscoveryState): void {
+function savePersistedState(
+  projectId: string | null,
+  state: PersistedDiscoveryState
+): void {
   if (typeof window === "undefined") return;
   const key = getStorageKey(projectId);
   if (!key) return;
@@ -76,9 +81,14 @@ export function useStateMachineDiscovery(projectId: string | null) {
   // Load persisted state once on mount
   const [initial] = useState(() => loadPersistedState(projectId));
 
-  const [renders, setRendersState] = useState<unknown[] | null>(initial?.renders ?? null);
-  const [renderSource, setRenderSource] = useState<"explore" | "record" | null>(initial?.renderSource ?? null);
-  const [discoveryResult, setDiscoveryResult] = useState<UIBridgeDiscoveryResult | null>(initial?.discoveryResult ?? null);
+  const [renders, setRendersState] = useState<unknown[] | null>(
+    initial?.renders ?? null
+  );
+  const [renderSource, setRenderSource] = useState<"explore" | "record" | null>(
+    initial?.renderSource ?? null
+  );
+  const [discoveryResult, setDiscoveryResult] =
+    useState<UIBridgeDiscoveryResult | null>(initial?.discoveryResult ?? null);
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [configName, setConfigName] = useState(initial?.configName ?? "");
   const [isSaving, setIsSaving] = useState(false);
@@ -89,14 +99,22 @@ export function useStateMachineDiscovery(projectId: string | null) {
       clearPersistedState(projectId);
       return;
     }
-    savePersistedState(projectId, { renders, renderSource, discoveryResult, configName });
+    savePersistedState(projectId, {
+      renders,
+      renderSource,
+      discoveryResult,
+      configName,
+    });
   }, [projectId, renders, renderSource, discoveryResult, configName]);
 
-  const setRenders = useCallback((newRenders: unknown[], source: "explore" | "record") => {
-    setRendersState(newRenders);
-    setRenderSource(source);
-    setDiscoveryResult(null);
-  }, []);
+  const setRenders = useCallback(
+    (newRenders: unknown[], source: "explore" | "record") => {
+      setRendersState(newRenders);
+      setRenderSource(source);
+      setDiscoveryResult(null);
+    },
+    []
+  );
 
   const runDiscovery = useCallback(async () => {
     if (!renders || renders.length === 0) {
@@ -106,16 +124,19 @@ export function useStateMachineDiscovery(projectId: string | null) {
 
     setIsDiscovering(true);
     try {
-      const res = await fetch("/api/v1/state-discovery/ui-bridge/discover-states", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          renders,
-          include_html_ids: true,
-          strategy: "auto",
-        }),
-      });
+      const res = await fetch(
+        "/api/v1/state-discovery/ui-bridge/discover-states",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            renders,
+            include_html_ids: true,
+            strategy: "auto",
+          }),
+        }
+      );
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -151,17 +172,20 @@ export function useStateMachineDiscovery(projectId: string | null) {
 
     setIsSaving(true);
     try {
-      const res = await fetch(`/api/v1/projects/${projectId}/ui-bridge-discover`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          renders,
-          include_html_ids: true,
-          config_name: configName.trim(),
-          strategy: "auto",
-        }),
-      });
+      const res = await fetch(
+        `/api/v1/projects/${projectId}/ui-bridge-discover`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            renders,
+            include_html_ids: true,
+            config_name: configName.trim(),
+            strategy: "auto",
+          }),
+        }
+      );
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -169,7 +193,9 @@ export function useStateMachineDiscovery(projectId: string | null) {
       }
 
       const data: DiscoverAndSaveResponse = await res.json();
-      toast.success(`Saved config "${data.config.name}" with ${data.states.length} states`);
+      toast.success(
+        `Saved config "${data.config.name}" with ${data.states.length} states`
+      );
 
       // Clear discovery state — data is now persisted in DB
       setRendersState(null);

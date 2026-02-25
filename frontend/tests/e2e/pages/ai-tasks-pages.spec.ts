@@ -98,9 +98,9 @@ test.describe("AI Tasks - List Page", () => {
     const hasTableRows = (await page.locator("table tbody tr").count()) > 0;
 
     if (hasTableRows) {
-      const hasPreviousButton =
+      const _hasPreviousButton =
         (await page.locator('button:has-text("Previous")').count()) > 0;
-      const hasNextButton =
+      const _hasNextButton =
         (await page.locator('button:has-text("Next")').count()) > 0;
 
       // Pagination shows when totalPages > 1, so it might not be visible

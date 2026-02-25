@@ -1,8 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import {
-  apiClient,
-  type FindingCategoryConfig,
-} from "@/lib/api-client";
+import { apiClient, type FindingCategoryConfig } from "@/lib/api-client";
 
 export function useCategoryData() {
   const [categories, setCategories] = useState<FindingCategoryConfig[]>([]);

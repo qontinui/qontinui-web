@@ -1,6 +1,9 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { usePageSpecs } from "@/hooks/usePageSpecs";
+import type { SpecConfig } from "@qontinui/ui-bridge/specs";
+import pageSpecJson from "./findings.spec.uibridge.json";
 import { useFindingsSummary } from "@/hooks/useTaskRunData";
 import type { FindingView } from "@/lib/task-run-mappers";
 import { runnerApi } from "@/lib/runner";
@@ -35,6 +38,8 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
+
+const pageSpec = pageSpecJson as unknown as SpecConfig;
 
 function getSeverityIcon(severity: string) {
   switch (severity.toLowerCase()) {
@@ -71,7 +76,9 @@ function getSeverityBadge(severity: string) {
 }
 
 export default function FindingsPage() {
-  const { data, isLoading, error, isRunnerOffline, refetch } = useFindingsSummary();
+  usePageSpecs({ findings: pageSpec });
+  const { data, isLoading, error, isRunnerOffline, refetch } =
+    useFindingsSummary();
   const [severityFilter, setSeverityFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");

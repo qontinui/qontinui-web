@@ -301,7 +301,7 @@ function StatusIcon({ status }: { status: string }) {
 
 function getStepTypeIcon(
   stepType: string,
-  iconType?: string,
+  iconType?: string
 ): {
   icon: LucideIcon;
   bg: string;
@@ -432,7 +432,7 @@ function buildStagesFromCheckpoints(checkpoints: Checkpoint[]): StageData[] {
         ? (steps.find(
             (s) =>
               s.started_at &&
-              new Date(s.started_at).getTime() === Math.min(...timestamps),
+              new Date(s.started_at).getTime() === Math.min(...timestamps)
           )?.started_at ?? null)
         : null;
 
@@ -441,14 +441,14 @@ function buildStagesFromCheckpoints(checkpoints: Checkpoint[]): StageData[] {
         ? (steps.find(
             (s) =>
               s.completed_at &&
-              new Date(s.completed_at).getTime() === Math.max(...endTimestamps),
+              new Date(s.completed_at).getTime() === Math.max(...endTimestamps)
           )?.completed_at ?? null)
         : null;
 
     // Compute total duration from individual step durations
     const totalDurationMs = steps.reduce(
       (sum, s) => sum + (s.duration_ms || 0),
-      0,
+      0
     );
 
     // Show iteration for verification/agentic when iteration is defined
@@ -703,14 +703,14 @@ export function TimelineTab({ runId }: { runId: string }) {
 
   const checkpoints = useMemo(
     () => checkpointsQuery.data ?? [],
-    [checkpointsQuery.data],
+    [checkpointsQuery.data]
   );
   const events = eventsQuery.data ?? [];
 
   // Build stages from checkpoints
   const stages = useMemo(
     () => buildStagesFromCheckpoints(checkpoints),
-    [checkpoints],
+    [checkpoints]
   );
 
   if (isLoading) {

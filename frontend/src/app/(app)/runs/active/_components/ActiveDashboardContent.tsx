@@ -100,11 +100,7 @@ export function ActiveDashboardContent({
         />
       ) : (
         <div className="flex-1 min-h-0 p-4">
-          <WidgetContent
-            widgetId={activeTab}
-            runId={runId}
-            run={run}
-          />
+          <WidgetContent widgetId={activeTab} runId={runId} run={run} />
         </div>
       )}
 

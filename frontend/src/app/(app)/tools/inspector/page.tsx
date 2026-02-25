@@ -1,23 +1,20 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { useRunnerHealth } from "@/lib/runner-api";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { usePageSpecs } from "@/hooks/usePageSpecs";
 import { useInspector } from "@/hooks/use-inspector";
 import type { ExternalElement, DiscoveredSpec } from "@/hooks/use-inspector";
 import {
-  ConnectionPanel,
   ElementsPanel,
   ActionsPanel,
   SearchPanel,
   AccessibilityPanel,
   SpecsPanel,
   ApiPanel,
-  SiteTreePanel,
 } from "@/components/inspector";
-import { useTargetSelector } from "@/hooks/useTargetSelector";
-import { TargetSelector } from "@/components/ui-bridge/TargetSelector";
+import { AppBrowser } from "@/components/shared/AppBrowser";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -66,17 +63,9 @@ export default function InspectorPage() {
 
   const inspector = useInspector();
   const {
+    browser,
     activeTab,
     setActiveTab,
-    connections,
-    activeConnection,
-    connectUrl,
-    setConnectUrl,
-    isConnecting,
-    connect,
-    disconnect,
-    switchTo,
-    refreshConnections,
     elements,
     selectedElement,
     selectElement,
@@ -86,23 +75,7 @@ export default function InspectorPage() {
     isConnected,
     error: currentError,
     isLoadingElements: isLoading,
-    discoveredLinks,
-    setTargetTabId,
   } = inspector;
-
-  // Target selector (shared hook)
-  const {
-    targets,
-    selectedTargetId,
-    setSelectedTargetId,
-    refresh: refreshTargets,
-    isLoading: isLoadingTargets,
-  } = useTargetSelector({ selfPathname: "/tools/inspector" });
-
-  // Sync selected target to inspector's tab targeting
-  useEffect(() => {
-    setTargetTabId(selectedTargetId);
-  }, [selectedTargetId, setTargetTabId]);
 
   // Action form state
   const [actionType, setActionType] = useState<"click" | "type" | "focus">(
@@ -241,6 +214,14 @@ export default function InspectorPage() {
     });
   }, []);
 
+  // Handle page click in tree: navigate + re-discover elements
+  const handlePageNavigate = useCallback(
+    (url: string) => {
+      inspector.navigateToPage(url);
+    },
+    [inspector]
+  );
+
   if (healthLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas flex items-center justify-center">
@@ -272,177 +253,172 @@ export default function InspectorPage() {
           <RunnerPartialState message="Runner offline — this tool requires the runner for execution" />
         )}
 
-        {/* Connection Panel */}
-        <ConnectionPanel
-          connections={connections}
-          activeConnection={activeConnection}
-          connectUrl={connectUrl}
-          onConnectUrlChange={setConnectUrl}
-          isConnecting={isConnecting}
-          onConnect={connect}
-          onDisconnect={disconnect}
-          onSwitch={switchTo}
-          onRefresh={refreshConnections}
-          onDiscover={discoverElements}
-          isDiscovering={isDiscovering}
-          elementCount={elements.length}
-          error={currentError}
-        />
-
-        {/* Target Selector */}
-        {targets.length > 1 && (
-          <TargetSelector
-            targets={targets}
-            selectedTargetId={selectedTargetId}
-            onTargetChange={setSelectedTargetId}
-            onRefresh={refreshTargets}
-            isLoading={isLoadingTargets}
-            label="Target:"
-          />
-        )}
-
-        {/* Inspector Tabs + Refresh */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex gap-1 bg-surface-raised/50 rounded-lg p-1 border border-border-subtle/30">
-            {TAB_CONFIG.map(({ key, label, icon: Icon }) => (
-              <button
-                key={key}
-                onClick={() => setActiveTab(key)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                  activeTab === key
-                    ? "bg-purple-600/20 text-purple-400"
-                    : "text-text-muted hover:text-white hover:bg-surface-hover"
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                {label}
-              </button>
-            ))}
-          </div>
-          {activeTab === "elements" && isConnected && (
-            <Button
-              size="sm"
-              onClick={discoverElements}
-              disabled={isLoading}
-              className="bg-brand-primary hover:bg-brand-primary/90 text-black font-semibold h-8"
+        {/* Two-column layout: AppBrowser sidebar + Main Content */}
+        <div className="flex gap-4">
+          {/* Left sidebar: App Browser */}
+          <div className="w-72 flex-shrink-0 space-y-3">
+            <AppBrowser
+              browser={browser}
+              onPageClick={(url) => handlePageNavigate(url)}
+              isBusy={inspector.isNavigating}
             >
-              {isLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <RefreshCw className="w-4 h-4" />
+              {/* Discover Elements button in custom slot */}
+              {isConnected && (
+                <Button
+                  onClick={discoverElements}
+                  disabled={isDiscovering}
+                  size="sm"
+                  variant="outline"
+                  className="w-full h-8 text-xs"
+                >
+                  {isDiscovering ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                  ) : (
+                    <Search className="w-3.5 h-3.5 mr-1.5" />
+                  )}
+                  Discover Elements
+                  {elements.length > 0 && (
+                    <span className="text-text-muted ml-1">
+                      ({elements.length})
+                    </span>
+                  )}
+                </Button>
               )}
-            </Button>
-          )}
-        </div>
-
-        {currentError && (
-          <div className="flex items-center gap-2 text-red-400 bg-red-950/20 border border-red-500/30 rounded-lg p-3">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-            <p className="text-sm">{currentError}</p>
+            </AppBrowser>
           </div>
-        )}
 
-        {/* Two-column layout: Page Tree sidebar + Tab Content */}
-        <div className={discoveredLinks.length > 0 ? "flex gap-4" : ""}>
-          {/* Page Tree sidebar */}
-          {discoveredLinks.length > 0 && (
-            <div className="w-64 flex-shrink-0">
-              <SiteTreePanel
-                discoveredLinks={discoveredLinks}
-                onNavigate={inspector.navigateToPage}
-                isNavigating={inspector.isNavigating}
-              />
-            </div>
-          )}
-
-          {/* Tab Content */}
-          <div className="flex-1 min-w-0 space-y-6">
-            {activeTab === "elements" && (
-              <ElementsPanel
-                elements={elements}
-                filteredElements={filteredElements}
-                selectedElement={selectedElement}
-                onSelectElement={handleSelectElement}
-                searchQuery={controlSearch}
-                onSearchChange={setControlSearch}
-              />
-            )}
-
-            {activeTab === "actions" && (
-              <ActionsPanel
-                selectedElement={selectedElement}
-                actionType={actionType}
-                onActionTypeChange={setActionType}
-                typeText={typeText}
-                onTypeTextChange={setTypeText}
-                actionResult={actionResult}
-                isExecutingAction={isExecutingAction}
-                onExecuteAction={handleExecuteAction}
-                onHighlightElement={highlightElement}
-              />
-            )}
-
-            {activeTab === "accessibility" && <AccessibilityPanel />}
-
-            {activeTab === "search" && (
-              <SearchPanel
-                elements={elements}
-                searchQuery={searchQuery}
-                onSearchChange={setSearchQuery}
-                searchFilter={searchFilter}
-                onFilterChange={setSearchFilter}
-                filteredElements={filteredElements}
-                selectedElement={selectedElement}
-                onSelectElement={handleSelectElement}
-              />
-            )}
-
-            {activeTab === "specs" && (
-              <SpecsPanel
-                discoveredSpecs={discoveredSpecs}
-                isLoading={isLoadingSpecs}
-                onDiscover={handleDiscoverSpecs}
-                onExport={handleExportSpec}
-                expandedGroups={expandedGroups}
-                onToggleGroup={toggleGroup}
-                isConnected={isConnected}
-              />
-            )}
-
-            {activeTab === "api" && (
-              <ApiPanel
-                apiAction={apiAction}
-                onApiActionChange={setApiAction}
-                apiParams={apiParams}
-                onApiParamsChange={setApiParams}
-                isSending={isSendingApi}
-                onSend={handleSendApiCommand}
-                commandHistory={inspector.commandHistory}
-                onClearHistory={inspector.clearCommandHistory}
-                lastResult={inspector.lastCommandResult}
-              />
-            )}
-
-            {/* Empty state for elements tab */}
-            {activeTab === "elements" &&
-              elements.length === 0 &&
-              !currentError &&
-              !isLoading && (
-                <Card className="bg-surface-raised/50 border-border-subtle/50">
-                  <CardContent className="py-12">
-                    <div className="text-center">
-                      <Layers className="w-12 h-12 mx-auto mb-4 text-text-muted" />
-                      <h3 className="text-lg font-medium text-text-secondary mb-2">
-                        No Elements Loaded
-                      </h3>
-                      <p className="text-sm text-text-muted max-w-md mx-auto">
-                        Connect to an app or click &quot;Discover Elements&quot;
-                        to start inspecting.
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
+          {/* Main content */}
+          <div className="flex-1 min-w-0 space-y-3">
+            {/* Inspector Tabs + Refresh */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex gap-1 bg-surface-raised/50 rounded-lg p-1 border border-border-subtle/30">
+                {TAB_CONFIG.map(({ key, label, icon: Icon }) => (
+                  <button
+                    key={key}
+                    onClick={() => setActiveTab(key)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                      activeTab === key
+                        ? "bg-purple-600/20 text-purple-400"
+                        : "text-text-muted hover:text-white hover:bg-surface-hover"
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {activeTab === "elements" && isConnected && (
+                <Button
+                  size="sm"
+                  onClick={discoverElements}
+                  disabled={isLoading}
+                  className="bg-brand-primary hover:bg-brand-primary/90 text-black font-semibold h-8"
+                >
+                  {isLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-4 h-4" />
+                  )}
+                </Button>
               )}
+            </div>
+
+            {currentError && (
+              <div className="flex items-center gap-2 text-red-400 bg-red-950/20 border border-red-500/30 rounded-lg p-3">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <p className="text-sm">{currentError}</p>
+              </div>
+            )}
+
+            {/* Tab Content */}
+            <div className="space-y-6">
+              {activeTab === "elements" && (
+                <ElementsPanel
+                  elements={elements}
+                  filteredElements={filteredElements}
+                  selectedElement={selectedElement}
+                  onSelectElement={handleSelectElement}
+                  searchQuery={controlSearch}
+                  onSearchChange={setControlSearch}
+                />
+              )}
+
+              {activeTab === "actions" && (
+                <ActionsPanel
+                  selectedElement={selectedElement}
+                  actionType={actionType}
+                  onActionTypeChange={setActionType}
+                  typeText={typeText}
+                  onTypeTextChange={setTypeText}
+                  actionResult={actionResult}
+                  isExecutingAction={isExecutingAction}
+                  onExecuteAction={handleExecuteAction}
+                  onHighlightElement={highlightElement}
+                />
+              )}
+
+              {activeTab === "accessibility" && <AccessibilityPanel />}
+
+              {activeTab === "search" && (
+                <SearchPanel
+                  elements={elements}
+                  searchQuery={searchQuery}
+                  onSearchChange={setSearchQuery}
+                  searchFilter={searchFilter}
+                  onFilterChange={setSearchFilter}
+                  filteredElements={filteredElements}
+                  selectedElement={selectedElement}
+                  onSelectElement={handleSelectElement}
+                />
+              )}
+
+              {activeTab === "specs" && (
+                <SpecsPanel
+                  discoveredSpecs={discoveredSpecs}
+                  isLoading={isLoadingSpecs}
+                  onDiscover={handleDiscoverSpecs}
+                  onExport={handleExportSpec}
+                  expandedGroups={expandedGroups}
+                  onToggleGroup={toggleGroup}
+                  isConnected={isConnected}
+                />
+              )}
+
+              {activeTab === "api" && (
+                <ApiPanel
+                  apiAction={apiAction}
+                  onApiActionChange={setApiAction}
+                  apiParams={apiParams}
+                  onApiParamsChange={setApiParams}
+                  isSending={isSendingApi}
+                  onSend={handleSendApiCommand}
+                  commandHistory={inspector.commandHistory}
+                  onClearHistory={inspector.clearCommandHistory}
+                  lastResult={inspector.lastCommandResult}
+                />
+              )}
+
+              {/* Empty state for elements tab */}
+              {activeTab === "elements" &&
+                elements.length === 0 &&
+                !currentError &&
+                !isLoading && (
+                  <Card className="bg-surface-raised/50 border-border-subtle/50">
+                    <CardContent className="py-12">
+                      <div className="text-center">
+                        <Layers className="w-12 h-12 mx-auto mb-4 text-text-muted" />
+                        <h3 className="text-lg font-medium text-text-secondary mb-2">
+                          No Elements Loaded
+                        </h3>
+                        <p className="text-sm text-text-muted max-w-md mx-auto">
+                          Connect to an app or click &quot;Discover
+                          Elements&quot; to start inspecting.
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+            </div>
           </div>
         </div>
       </main>

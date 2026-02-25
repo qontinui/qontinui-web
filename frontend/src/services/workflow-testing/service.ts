@@ -5,10 +5,7 @@
  * Manages test cases, suites, execution, results, coverage, and persistence.
  */
 
-import type {
-  Workflow,
-  Action,
-} from "@/lib/action-schema/action-types";
+import type { Workflow, Action } from "@/lib/action-schema/action-types";
 import type {
   Assertion,
   AssertionResult,
@@ -135,10 +132,7 @@ export class WorkflowTestingService {
     return Array.from(this.testCases.values());
   }
 
-  duplicateTestCase(
-    testId: string,
-    options?: { name?: string }
-  ): TestCase {
+  duplicateTestCase(testId: string, options?: { name?: string }): TestCase {
     const original = this.testCases.get(testId);
     if (!original) {
       throw new Error(`Test case not found: ${testId}`);

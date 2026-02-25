@@ -10,7 +10,17 @@ import {
   FolderOpen,
   Plus,
   Play,
-  BookOpen,
+  Info,
+  Layers,
+  GitCompare,
+  Globe,
+  TestTube2,
+  Activity,
+  Monitor,
+  Rocket,
+  X,
+  Save,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,13 +41,57 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   runnerApi,
   useContextsDetailed,
   usePromptsDetailed,
+  useAiSettings,
 } from "@/lib/runner-api";
 import type { ContextItem } from "@/lib/runner-api";
 import { SpecSourceSection, type SpecSourceState } from "./SpecSourceSection";
-import { buildSpecPrompt } from "@/lib/spec-prompt-builder";
+import { buildSemanticSpecPrompt } from "@/lib/spec-prompt-builder";
+import {
+  GENERATION_TEMPLATES,
+  type WorkflowGenerationTemplate,
+} from "@/lib/workflow-generation-templates";
+
+// Icon lookup map for template icons
+const TEMPLATE_ICONS: Record<string, LucideIcon> = {
+  GitCompare,
+  Globe,
+  TestTube2,
+  Activity,
+  Monitor,
+  Rocket,
+};
+
+// Provider and model constants (shared with settings page)
+const PROVIDERS = [
+  { value: "claude_cli", label: "Claude CLI" },
+  { value: "claude_api", label: "Claude API" },
+  { value: "gemini_cli", label: "Gemini CLI" },
+  { value: "gemini_api", label: "Gemini API" },
+] as const;
+
+const CLAUDE_MODELS = [
+  { value: "claude-sonnet-4", label: "Claude Sonnet 4" },
+  { value: "claude-opus-4", label: "Claude Opus 4" },
+  { value: "claude-3-5-sonnet", label: "Claude 3.5 Sonnet" },
+  { value: "claude-3-opus", label: "Claude 3 Opus" },
+];
+
+const GEMINI_MODELS = [
+  { value: "gemini-3-flash", label: "Gemini 3 Flash" },
+  { value: "gemini-3-pro", label: "Gemini 3 Pro" },
+  { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+  { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+  { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
+];
 
 // =============================================================================
 // Auto-run localStorage signal
@@ -141,13 +195,42 @@ export function AiGeneratePanel({
   const hasSpecs =
     specState.discoveredSpecs.length > 0 && specState.selectedGroupIds.size > 0;
 
+  // Unified template picker (built-in + saved)
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+
   // Saved prompts (generation category)
-  const [showPromptPicker, setShowPromptPicker] = useState(false);
-  const { data: savedPrompts } = usePromptsDetailed();
+  const { data: savedPrompts, refetch: refetchPrompts } = usePromptsDetailed();
   const generationPrompts = useMemo(
     () => (savedPrompts || []).filter((p) => p.category === "Generation"),
     [savedPrompts]
   );
+
+  // AI settings (for provider/model defaults)
+  const { data: aiSettings } = useAiSettings();
+
+  // Initialize provider/model from settings when loaded
+  useEffect(() => {
+    if (aiSettings && !provider) {
+      setProvider(aiSettings.provider);
+    }
+  }, [aiSettings, provider]);
+
+  useEffect(() => {
+    if (aiSettings && !model) {
+      // Get the configured model for the current provider
+      const p = provider || aiSettings.provider;
+      if (p === "claude_api") setModel(aiSettings.claude_api.model);
+      else if (p === "gemini_cli") setModel(aiSettings.gemini_cli.model);
+      else if (p === "gemini_api") setModel(aiSettings.gemini_api.model);
+    }
+  }, [aiSettings, model, provider]);
+
+  // Models list changes based on selected provider
+  const modelsForProvider = useMemo(() => {
+    if (provider.startsWith("gemini")) return GEMINI_MODELS;
+    return CLAUDE_MODELS;
+  }, [provider]);
 
   // Saved contexts
   const { data: savedContexts, refetch: refetchContexts } =
@@ -165,6 +248,57 @@ export function AiGeneratePanel({
         : [...prev, contextId]
     );
   }, []);
+
+  const handleApplyTemplate = useCallback(
+    (template: WorkflowGenerationTemplate) => {
+      setDescription(template.content);
+      if (template.advancedDefaults) {
+        const d = template.advancedDefaults;
+        if (d.discoveryMode) setDiscoveryMode(d.discoveryMode);
+        if (d.category) setCategory(d.category);
+        if (d.tags) setTagsInput(d.tags);
+        setShowAdvanced(true);
+      }
+      setShowTemplates(false);
+    },
+    []
+  );
+
+  const handleSaveAsTemplate = useCallback(async () => {
+    const trimmed = description.trim();
+    if (!trimmed) return;
+    setIsSavingTemplate(true);
+    try {
+      const name =
+        trimmed.length > 60 ? trimmed.substring(0, 57) + "..." : trimmed;
+      await runnerApi.createPrompt({
+        name,
+        content: trimmed,
+        category: "Generation",
+        description: "",
+        tags: ["user-template"],
+      });
+      refetchPrompts();
+      toast.success("Template saved");
+    } catch {
+      toast.error("Failed to save template");
+    } finally {
+      setIsSavingTemplate(false);
+    }
+  }, [description, refetchPrompts]);
+
+  const handleDeleteSavedTemplate = useCallback(
+    async (id: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      try {
+        await runnerApi.deletePrompt(id);
+        refetchPrompts();
+      } catch {
+        toast.error("Failed to delete template");
+      }
+    },
+    [refetchPrompts]
+  );
 
   const handleImportFile = async () => {
     if (!filePath.trim()) return;
@@ -194,7 +328,7 @@ export function AiGeneratePanel({
       specState.discoveredSpecs.length > 0 &&
       specState.selectedGroupIds.size > 0
     ) {
-      const specResult = buildSpecPrompt({
+      const specResult = buildSemanticSpecPrompt({
         discoveredSpecs: specState.discoveredSpecs,
         selectedGroupIds: specState.selectedGroupIds,
       });
@@ -342,41 +476,95 @@ export function AiGeneratePanel({
               <Label className="text-sm text-zinc-300">
                 What should the workflow do?
               </Label>
-              {generationPrompts.length > 0 && (
-                <Popover
-                  open={showPromptPicker}
-                  onOpenChange={setShowPromptPicker}
-                >
-                  <PopoverTrigger asChild>
-                    <Button variant="ghost" size="sm" className="h-6 text-xs">
-                      <BookOpen className="w-3 h-3 mr-1" />
-                      Saved ({generationPrompts.length})
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-80 p-0" align="end">
-                    <div className="max-h-[300px] overflow-y-auto">
-                      {generationPrompts.map((prompt) => (
+              <Popover open={showTemplates} onOpenChange={setShowTemplates}>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-6 text-xs">
+                    <Layers className="w-3 h-3 mr-1" />
+                    Templates
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-80 p-0" align="end">
+                  <div className="max-h-[400px] overflow-y-auto">
+                    {/* Built-in templates */}
+                    <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 bg-zinc-900/50 border-b border-border">
+                      Built-in
+                    </div>
+                    {GENERATION_TEMPLATES.map((template) => {
+                      const IconComponent =
+                        TEMPLATE_ICONS[template.icon] || Layers;
+                      return (
                         <button
-                          key={prompt.id}
+                          key={template.id}
                           className="w-full text-left px-3 py-2 text-sm hover:bg-muted/50 border-b border-border last:border-0"
-                          onClick={() => {
-                            setDescription(prompt.content);
-                            setShowPromptPicker(false);
-                          }}
+                          onClick={() => handleApplyTemplate(template)}
                         >
-                          <div className="font-medium text-xs truncate">
-                            {prompt.name}
+                          <div className="flex items-center gap-1.5 font-medium text-xs">
+                            <IconComponent className="w-3 h-3 text-zinc-400 shrink-0" />
+                            {template.name}
                           </div>
                           <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                            {prompt.content.substring(0, 120)}
-                            {prompt.content.length > 120 && "..."}
+                            {template.description}
                           </div>
                         </button>
-                      ))}
+                      );
+                    })}
+
+                    {/* Saved templates */}
+                    {generationPrompts.length > 0 && (
+                      <>
+                        <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 bg-zinc-900/50 border-b border-border">
+                          My Templates ({generationPrompts.length})
+                        </div>
+                        {generationPrompts.map((prompt) => (
+                          <button
+                            key={prompt.id}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-muted/50 border-b border-border last:border-0 group"
+                            onClick={() => {
+                              setDescription(prompt.content);
+                              setShowTemplates(false);
+                            }}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="font-medium text-xs truncate min-w-0">
+                                {prompt.name}
+                              </div>
+                              <button
+                                className="shrink-0 p-0.5 rounded hover:bg-destructive/20 text-zinc-500 hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={(e) =>
+                                  handleDeleteSavedTemplate(prompt.id, e)
+                                }
+                                title="Delete template"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                              {prompt.content.substring(0, 120)}
+                              {prompt.content.length > 120 && "..."}
+                            </div>
+                          </button>
+                        ))}
+                      </>
+                    )}
+
+                    {/* Save current as template */}
+                    <div className="border-t border-border">
+                      <button
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-muted/50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 text-zinc-400 hover:text-zinc-200"
+                        disabled={!description.trim() || isSavingTemplate}
+                        onClick={handleSaveAsTemplate}
+                      >
+                        {isSavingTemplate ? (
+                          <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+                        ) : (
+                          <Save className="w-3 h-3 shrink-0" />
+                        )}
+                        Save Current as Template
+                      </button>
                     </div>
-                  </PopoverContent>
-                </Popover>
-              )}
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
             <Textarea
               className="bg-zinc-800 border-zinc-700 text-zinc-200 text-sm min-h-[120px]"
@@ -559,25 +747,54 @@ export function AiGeneratePanel({
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs text-zinc-400">AI Provider</Label>
-                  <Input
-                    className="bg-zinc-800 border-zinc-700 text-zinc-200 text-sm h-8"
-                    placeholder="default"
+                  <select
                     value={provider}
-                    onChange={(e) => setProvider(e.target.value)}
-                  />
+                    onChange={(e) => {
+                      setProvider(e.target.value);
+                      setModel(""); // Reset model when provider changes
+                    }}
+                    className="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm h-8 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="">Default (from Settings)</option>
+                    {PROVIDERS.map((p) => (
+                      <option key={p.value} value={p.value}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs text-zinc-400">Model</Label>
-                  <Input
-                    className="bg-zinc-800 border-zinc-700 text-zinc-200 text-sm h-8"
-                    placeholder="default"
+                  <select
                     value={model}
                     onChange={(e) => setModel(e.target.value)}
-                  />
+                    className="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm h-8 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="">Default (from Settings)</option>
+                    {modelsForProvider.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs text-zinc-400">
-                    Fix Iterations (0 = skip)
+                  <Label className="text-xs text-zinc-400 flex items-center gap-1">
+                    Verification Rounds
+                    <TooltipProvider delayDuration={200}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="w-3 h-3 text-zinc-500 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs p-3">
+                          <p className="text-xs text-muted-foreground">
+                            After generating, the AI reviews the workflow for
+                            errors and fixes them. Each round is one
+                            review-and-fix pass. Set to 0 to skip verification.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </Label>
                   <Input
                     type="number"
@@ -588,7 +805,51 @@ export function AiGeneratePanel({
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs text-zinc-400">Discovery</Label>
+                  <Label className="text-xs text-zinc-400 flex items-center gap-1">
+                    Discovery
+                    <TooltipProvider delayDuration={200}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="w-3 h-3 text-zinc-500 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent
+                          side="top"
+                          className="max-w-xs space-y-2 p-3"
+                        >
+                          <p className="font-medium text-xs">
+                            Pre-generation system scan
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Gathers context about your system (project
+                            structure, running apps, APIs, available tools) so
+                            the AI generates steps with real paths and correct
+                            configurations.
+                          </p>
+                          <div className="text-xs space-y-1 pt-1 border-t border-border">
+                            <p>
+                              <span className="text-zinc-300 font-medium">
+                                Auto
+                              </span>{" "}
+                              — Only runs tools matching keywords in your
+                              description
+                            </p>
+                            <p>
+                              <span className="text-zinc-300 font-medium">
+                                Enabled
+                              </span>{" "}
+                              — Runs all available tools (more thorough, slower)
+                            </p>
+                            <p>
+                              <span className="text-zinc-300 font-medium">
+                                Disabled
+                              </span>{" "}
+                              — Skips discovery entirely (fastest)
+                            </p>
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </Label>
                   <select
                     value={discoveryMode}
                     onChange={(e) =>
@@ -602,6 +863,9 @@ export function AiGeneratePanel({
                     <option value="enabled">Enabled (all tools)</option>
                     <option value="disabled">Disabled</option>
                   </select>
+                  <p className="text-[11px] text-zinc-500">
+                    Scans your system for context before generating.
+                  </p>
                 </div>
                 <div className="flex items-end pb-1">
                   <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
@@ -612,6 +876,20 @@ export function AiGeneratePanel({
                       }
                     />
                     Auto-include contexts
+                    <TooltipProvider delayDuration={200}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="w-3 h-3 text-zinc-500 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs p-3">
+                          <p className="text-xs text-muted-foreground">
+                            Automatically matches and includes relevant
+                            knowledge base documents based on keywords in your
+                            description.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </label>
                 </div>
               </div>

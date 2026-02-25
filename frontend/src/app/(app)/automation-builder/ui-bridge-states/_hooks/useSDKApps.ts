@@ -215,18 +215,19 @@ export function useSDKApps(runnerUrl: string | null) {
   /**
    * Capture a single SDK snapshot from the active app.
    */
-  const captureSnapshot = useCallback(async (): Promise<SDKSnapshotData | null> => {
-    if (!runnerUrl) return null;
-    try {
-      const res = await fetch(`${runnerUrl}/ui-bridge/sdk/snapshot`);
-      if (!res.ok) return null;
-      const data: SDKSnapshot = await res.json();
-      if (data.success === false || !data.data) return null;
-      return data.data;
-    } catch {
-      return null;
-    }
-  }, [runnerUrl]);
+  const captureSnapshot =
+    useCallback(async (): Promise<SDKSnapshotData | null> => {
+      if (!runnerUrl) return null;
+      try {
+        const res = await fetch(`${runnerUrl}/ui-bridge/sdk/snapshot`);
+        if (!res.ok) return null;
+        const data: SDKSnapshot = await res.json();
+        if (data.success === false || !data.data) return null;
+        return data.data;
+      } catch {
+        return null;
+      }
+    }, [runnerUrl]);
 
   /**
    * Start recording — periodically capture SDK snapshots.

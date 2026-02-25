@@ -27,8 +27,7 @@ function areTransitionsIdentical(t1: Transition, t2: Transition): boolean {
       o1.fromState === o2.fromState &&
       o1.toState === o2.toState &&
       o1.staysVisible === o2.staysVisible &&
-      JSON.stringify(o1.activateStates) ===
-        JSON.stringify(o2.activateStates) &&
+      JSON.stringify(o1.activateStates) === JSON.stringify(o2.activateStates) &&
       JSON.stringify(o1.deactivateStates) ===
         JSON.stringify(o2.deactivateStates)
     );
@@ -55,10 +54,7 @@ function calculateArraySimilarity(arr1: string[], arr2: string[]): number {
   return union.size > 0 ? intersection.size / union.size : 0;
 }
 
-function calculateTransitionSimilarity(
-  t1: Transition,
-  t2: Transition
-): number {
+function calculateTransitionSimilarity(t1: Transition, t2: Transition): number {
   if (t1.type !== t2.type) return 0;
 
   let score = 0;
@@ -82,17 +78,13 @@ function calculateTransitionSimilarity(
     const o2 = t2 as OutgoingTransition;
 
     factors++;
-    if (o1.fromState === o2.fromState && o1.toState === o2.toState)
-      score += 1;
+    if (o1.fromState === o2.fromState && o1.toState === o2.toState) score += 1;
 
     factors++;
     score += calculateArraySimilarity(o1.activateStates, o2.activateStates);
 
     factors++;
-    score += calculateArraySimilarity(
-      o1.deactivateStates,
-      o2.deactivateStates
-    );
+    score += calculateArraySimilarity(o1.deactivateStates, o2.deactivateStates);
 
     factors++;
     if (o1.staysVisible === o2.staysVisible) score += 1;

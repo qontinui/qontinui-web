@@ -1,0 +1,68 @@
+{
+  "version": "1.0.0",
+  "description": "Specs for the Findings page — aggregate and prioritize issues discovered across task runs",
+  "groups": [
+    {
+      "id": "findings-page-purpose",
+      "name": "Page Purpose",
+      "description": "The Findings page aggregates issues discovered across task runs, organized by severity (critical, high, medium, low) and category. Users can search and filter findings, expand them to see full details including file paths and stack traces, resolve individual findings, or trigger auto-fix workflows to remediate issues automatically.",
+      "category": "semantic",
+      "assertions": [
+        {
+          "id": "findings-purpose-aggregate",
+          "description": "Users can see all findings aggregated across task runs with severity and category breakdowns",
+          "category": "semantic",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Findings" },
+            "label": "Findings heading"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "findings-purpose-filter",
+          "description": "Users can filter findings by severity, category, and status to focus on actionable issues",
+          "category": "semantic",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Critical" },
+            "label": "Critical severity count"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "findings-purpose-resolve",
+          "description": "Users can resolve findings individually or trigger auto-fix workflows to remediate issues",
+          "category": "semantic",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Fix All" },
+            "label": "Fix All button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    }
+  ],
+  "metadata": {
+    "component": "Findings",
+    "author": "Joshua Spinak",
+    "createdAt": "2026-02-24T00:00:00.000Z",
+    "pageUrl": "/runs/findings",
+    "elementSource": "sdk",
+    "tags": ["findings", "triage", "issues", "auto-fix", "tier-1"]
+  }
+}

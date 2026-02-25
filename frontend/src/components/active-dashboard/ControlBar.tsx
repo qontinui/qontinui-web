@@ -331,7 +331,9 @@ export function ControlBar({ run, onRefresh }: ControlBarProps) {
           {run.task_name}
         </h3>
         <WorkflowStageIndicator
-          currentPhase={orchState?.workflow_stage || orchState?.phase || run.phase}
+          currentPhase={
+            orchState?.workflow_stage || orchState?.phase || run.phase
+          }
           isRunning={run.status === "running"}
         />
       </div>

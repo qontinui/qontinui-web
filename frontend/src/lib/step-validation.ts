@@ -12,7 +12,7 @@ export interface StepValidationIssue {
 }
 
 export function getStepValidationIssues(
-  step: UnifiedStep,
+  step: UnifiedStep
 ): StepValidationIssue[] {
   const issues: StepValidationIssue[] = [];
 

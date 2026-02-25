@@ -319,9 +319,7 @@ export function UIBridgeResultsSection({
                                 </div>
                               )}
                               <div>
-                                <span className="font-medium">
-                                  Appears in:
-                                </span>{" "}
+                                <span className="font-medium">Appears in:</span>{" "}
                                 {element.render_ids.length} renders
                               </div>
                             </div>

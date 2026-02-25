@@ -16,9 +16,7 @@ import {
   TrainingDataExportDialog,
 } from "@/components/extraction";
 import { useExtractionAnnotationStore } from "@/stores/extraction-annotation-store";
-import {
-  UITarsProgressPanel,
-} from "@/components/extraction/UITarsProgressPanel";
+import { UITarsProgressPanel } from "@/components/extraction/UITarsProgressPanel";
 import { WebExtractionProgressPanel } from "@/components/extraction/WebExtractionProgressPanel";
 import { ExtractionConfigPanel } from "@/components/web-extraction/ExtractionConfigPanel";
 import { StateExplorerView } from "@/components/web-extraction/StateExplorerView";
@@ -224,10 +222,9 @@ export function ExtractionPageContent() {
       } else {
         const runnerUrl = uiBridge.getRunnerUrl(state.selectedConnectionId);
         if (runnerUrl) {
-          const response = await fetch(
-            `${runnerUrl}/uitars-extraction/stop`,
-            { method: "POST" }
-          );
+          const response = await fetch(`${runnerUrl}/uitars-extraction/stop`, {
+            method: "POST",
+          });
           if (!response.ok) {
             logger.error("Failed to stop UI-TARS extraction");
           }
@@ -458,9 +455,7 @@ export function ExtractionPageContent() {
           data-states-count={webExtraction.stateMachineStates.length}
           data-history-count={webExtraction.extractionHistory.length}
           data-is-loading={state.isLoadingDetail ? "true" : "false"}
-          data-selected-extraction={
-            state.selectedHistoryExtractionId || "none"
-          }
+          data-selected-extraction={state.selectedHistoryExtractionId || "none"}
           data-extraction-method={config.method}
           data-main-tab={state.mainTab}
           aria-hidden="true"
@@ -597,9 +592,7 @@ export function ExtractionPageContent() {
                           isLoadingSessionRenders={
                             state.isLoadingSessionRenders
                           }
-                          loadRenderLogSessions={
-                            uiBridge.loadRenderLogSessions
-                          }
+                          loadRenderLogSessions={uiBridge.loadRenderLogSessions}
                           loadSessionRenders={uiBridge.loadSessionRenders}
                           savedConfigs={state.savedConfigs}
                           selectedConfigId={state.selectedConfigId}
@@ -1004,9 +997,7 @@ export function ExtractionPageContent() {
                             </Button>
                           )}
                           <Select
-                            value={
-                              state.selectedHistoryExtractionId || ""
-                            }
+                            value={state.selectedHistoryExtractionId || ""}
                             onValueChange={(value) => {
                               if (!value) return;
                               const extraction =
@@ -1106,8 +1097,7 @@ export function ExtractionPageContent() {
                                           ).toLocaleTimeString()}
                                         </span>
                                         <span className="text-text-muted">
-                                          (
-                                          {extraction.source_urls?.length ?? 0}{" "}
+                                          ({extraction.source_urls?.length ?? 0}{" "}
                                           URLs,{" "}
                                           {extraction.state_machine?.states
                                             ?.length ?? 0}{" "}
@@ -1168,9 +1158,7 @@ export function ExtractionPageContent() {
                       state.setShowLinkKnowledgeDialog
                     }
                     availableKnowledge={state.availableKnowledge}
-                    linkKnowledgeToState={
-                      domainKnowledge.linkKnowledgeToState
-                    }
+                    linkKnowledgeToState={domainKnowledge.linkKnowledgeToState}
                     unlinkKnowledgeFromState={
                       domainKnowledge.unlinkKnowledgeFromState
                     }
@@ -1207,9 +1195,7 @@ export function ExtractionPageContent() {
                             </h3>
                             <span className="text-sm text-text-muted">
                               Detected{" "}
-                              {
-                                state.visionExtractionProgress.elementsDetected
-                              }{" "}
+                              {state.visionExtractionProgress.elementsDetected}{" "}
                               elements
                             </span>
                           </div>
@@ -1307,8 +1293,7 @@ export function ExtractionPageContent() {
                                     )}
                                     <div className="text-[10px] text-text-muted mt-1 font-mono">
                                       {element.bbox.x}, {element.bbox.y} -{" "}
-                                      {element.bbox.width}x
-                                      {element.bbox.height}
+                                      {element.bbox.width}x{element.bbox.height}
                                     </div>
                                   </div>
                                 ))}
@@ -1418,8 +1403,7 @@ export function ExtractionPageContent() {
                             <span className="text-sm text-text-muted">
                               Discovered{" "}
                               {state.webExtractionProgress.statesFound} states
-                              and{" "}
-                              {state.webExtractionProgress.transitionsFound}{" "}
+                              and {state.webExtractionProgress.transitionsFound}{" "}
                               transitions from{" "}
                               {state.webExtractionProgress.pagesExtracted}{" "}
                               pages.

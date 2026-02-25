@@ -222,8 +222,10 @@ function DependencyGraphInner({
     return createEdges(nodes);
   }, [createNodes, createEdges]);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<WorkflowNode>(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<DependencyEdge>(initialEdges);
+  const [nodes, setNodes, onNodesChange] =
+    useNodesState<WorkflowNode>(initialNodes);
+  const [edges, setEdges, onEdgesChange] =
+    useEdgesState<DependencyEdge>(initialEdges);
 
   // Update nodes and edges when dependencies change
   useEffect(() => {
@@ -350,9 +352,7 @@ function DependencyGraphInner({
     (workflowId: string) => {
       const info = dependencyMap.get(workflowId);
       if (info?.dependencies) {
-        setHighlightedWorkflows(
-          new Set([workflowId, ...info.dependencies])
-        );
+        setHighlightedWorkflows(new Set([workflowId, ...info.dependencies]));
       }
     },
     [dependencyMap]
@@ -362,9 +362,7 @@ function DependencyGraphInner({
     (workflowId: string) => {
       const info = dependencyMap.get(workflowId);
       if (info?.dependents) {
-        setHighlightedWorkflows(
-          new Set([workflowId, ...info.dependents])
-        );
+        setHighlightedWorkflows(new Set([workflowId, ...info.dependents]));
       }
     },
     [dependencyMap]
@@ -382,9 +380,24 @@ function DependencyGraphInner({
         edges={edges as DependencyEdge[]}
         onNodesChange={onNodesChange as unknown as (changes: unknown[]) => void}
         onEdgesChange={onEdgesChange as unknown as (changes: unknown[]) => void}
-        onNodeClick={handleNodeClick as unknown as (event: React.MouseEvent, node: unknown) => void}
-        onNodeDoubleClick={handleNodeDoubleClick as unknown as (event: React.MouseEvent, node: unknown) => void}
-        onNodeContextMenu={handleNodeContextMenu as unknown as (event: React.MouseEvent, node: unknown) => void}
+        onNodeClick={
+          handleNodeClick as unknown as (
+            event: React.MouseEvent,
+            node: unknown
+          ) => void
+        }
+        onNodeDoubleClick={
+          handleNodeDoubleClick as unknown as (
+            event: React.MouseEvent,
+            node: unknown
+          ) => void
+        }
+        onNodeContextMenu={
+          handleNodeContextMenu as unknown as (
+            event: React.MouseEvent,
+            node: unknown
+          ) => void
+        }
         contextMenu={contextMenu}
         onCloseContextMenu={() => setContextMenu(null)}
         onOpenWorkflow={onOpenWorkflow}
@@ -488,8 +501,7 @@ function AnalysisPanel({
                     <div className="text-xs text-muted-foreground">
                       {circ.chain
                         .map(
-                          (id) =>
-                            workflows.find((w) => w.id === id)?.name || id
+                          (id) => workflows.find((w) => w.id === id)?.name || id
                         )
                         .slice(0, 3)
                         .join(" \u2192 ")}
@@ -603,8 +615,7 @@ function AnalysisPanel({
                     <div className="text-muted-foreground">
                       {item.chain
                         .map(
-                          (id) =>
-                            workflows.find((w) => w.id === id)?.name || id
+                          (id) => workflows.find((w) => w.id === id)?.name || id
                         )
                         .slice(0, 3)
                         .join(" \u2192 ")}
@@ -626,9 +637,7 @@ function AnalysisPanel({
             </h4>
             <div className="space-y-2 text-xs">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">
-                  Total Workflows:
-                </span>
+                <span className="text-muted-foreground">Total Workflows:</span>
                 <span className="font-medium">{workflows.length}</span>
               </div>
               <div className="flex justify-between">
@@ -640,17 +649,13 @@ function AnalysisPanel({
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">
-                  Avg Dependencies:
-                </span>
+                <span className="text-muted-foreground">Avg Dependencies:</span>
                 <span className="font-medium">
                   {analysis.avgDependencies.toFixed(2)}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">
-                  Circular Deps:
-                </span>
+                <span className="text-muted-foreground">Circular Deps:</span>
                 <span className="font-medium text-red-600">
                   {analysis.circularDependencies.length}
                 </span>

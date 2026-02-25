@@ -6,8 +6,8 @@ import { ExecutionTimelineWidget } from "@/components/active-dashboard/widgets/E
 import { FindingsWidget } from "@/components/active-dashboard/widgets/FindingsWidget";
 import { VerificationWidget } from "@/components/active-dashboard/widgets/VerificationWidget";
 import { ExecutionStatusWidget } from "@/components/active-dashboard/widgets/ExecutionStatusWidget";
-import { McpCallsWidget } from "@/components/active-dashboard/widgets/McpCallsWidget";
-import { ScreenshotsWidget } from "@/components/active-dashboard/widgets/ScreenshotsWidget";
+import { CommandWidget } from "@/components/active-dashboard/widgets/CommandWidget";
+import { UiBridgeWidget } from "@/components/active-dashboard/widgets/UiBridgeWidget";
 import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
 import type { WidgetId, WidgetConfig } from "../_lib";
@@ -32,14 +32,10 @@ export function WidgetContent({
       return <VerificationWidget runId={runId} />;
     case "status":
       return <ExecutionStatusWidget run={run} />;
-    case "mcp-calls":
-      return <McpCallsWidget runId={runId} />;
-    case "screenshots":
-      return <ScreenshotsWidget runId={runId} />;
-    case "shell-command":
-    case "api-request":
-    case "script":
-    case "workflow-ref":
+    case "command":
+      return <CommandWidget runId={runId} />;
+    case "ui-bridge":
+      return <UiBridgeWidget runId={runId} />;
     case "flow-execution":
       return <ExecutionStatusWidget run={run} />;
     default:

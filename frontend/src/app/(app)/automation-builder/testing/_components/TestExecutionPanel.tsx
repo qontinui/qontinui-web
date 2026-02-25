@@ -67,11 +67,7 @@ export function TestExecutionPanel({
                   <Play className="size-4" />
                   Run Selected
                 </Button>
-                <Button
-                  onClick={onDeleteSelected}
-                  variant="outline"
-                  size="sm"
-                >
+                <Button onClick={onDeleteSelected} variant="outline" size="sm">
                   <Trash2 className="size-4" />
                   Delete Selected
                 </Button>

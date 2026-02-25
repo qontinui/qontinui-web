@@ -2,7 +2,7 @@
  * tree-builder.ts
  *
  * Pure functions for building a hierarchical tree from a flat list of links.
- * Extracted from SiteTreePanel.tsx for reuse across inspector and workflow builder.
+ * Reusable across inspector, workflow builder, and page sweep.
  */
 
 import type { DiscoveredLink, PageNodeStatus } from "@/lib/ui-bridge/types";

@@ -1,6 +1,5 @@
 "use client";
 
-
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -41,13 +40,19 @@ export function EditorHeader({
       />
 
       {isDirty && (
-        <Badge variant="outline" className="text-[10px] text-amber-400 border-amber-400/30">
+        <Badge
+          variant="outline"
+          className="text-[10px] text-amber-400 border-amber-400/30"
+        >
           Unsaved
         </Badge>
       )}
 
       {isNew && (
-        <Badge variant="outline" className="text-[10px] text-emerald-400 border-emerald-400/30">
+        <Badge
+          variant="outline"
+          className="text-[10px] text-emerald-400 border-emerald-400/30"
+        >
           New
         </Badge>
       )}

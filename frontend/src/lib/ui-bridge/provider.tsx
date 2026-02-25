@@ -104,7 +104,10 @@ export function UIBridgeWrapper({
 
     // Use sendBeacon if available (more reliable during unload), else fetch
     if (typeof navigator !== "undefined" && navigator.sendBeacon) {
-      navigator.sendBeacon(EVENTS_ENDPOINT, new Blob([body], { type: "application/json" }));
+      navigator.sendBeacon(
+        EVENTS_ENDPOINT,
+        new Blob([body], { type: "application/json" })
+      );
     } else {
       fetch(EVENTS_ENDPOINT, {
         method: "POST",

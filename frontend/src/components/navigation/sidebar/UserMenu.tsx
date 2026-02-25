@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  ChevronDown,
-  Download,
-  Upload,
-  FileText,
-  LogOut,
-} from "lucide-react";
+import { ChevronDown, Download, Upload, FileText, LogOut } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,

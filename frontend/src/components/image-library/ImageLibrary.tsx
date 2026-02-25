@@ -29,11 +29,7 @@ import { cn } from "@/lib/utils";
 import { useAutomation } from "@/contexts/automation-context";
 import { toast } from "sonner";
 import type { ImageAsset } from "@/contexts/automation-context/types";
-import type {
-  ImageViewMode,
-  ImageGridSize,
-  ImageWithMetadata,
-} from "./types";
+import type { ImageViewMode, ImageGridSize, ImageWithMetadata } from "./types";
 import { useImageOrganization } from "./useImageOrganization";
 import {
   ImageUploadProgress,

@@ -80,10 +80,7 @@ export function useWebExtraction({
           });
           cleaned++;
         } catch (error) {
-          logger.error(
-            `Failed to cleanup extraction ${extraction.id}:`,
-            error
-          );
+          logger.error(`Failed to cleanup extraction ${extraction.id}:`, error);
         }
       }
       toast.success(
@@ -592,8 +589,7 @@ export function useWebExtraction({
       max_depth: webConfig.maxDepth,
       max_pages: webConfig.maxPages,
       session_id: sessionResult.id,
-      backend_url:
-        process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000",
+      backend_url: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000",
       auth_token: authToken || undefined,
     });
 

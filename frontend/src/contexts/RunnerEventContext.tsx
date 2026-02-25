@@ -111,7 +111,9 @@ export function useEventTriggeredFetch<T>(
   transformRef.current = transform;
 
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const fallbackIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fallbackIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null
+  );
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -126,7 +128,9 @@ export function useEventTriggeredFetch<T>(
     try {
       const raw = await runnerFetch<unknown>(path);
       if (!mountedRef.current) return;
-      const result = transformRef.current ? transformRef.current(raw) : (raw as T);
+      const result = transformRef.current
+        ? transformRef.current(raw)
+        : (raw as T);
       setData(result);
       setError(null);
       setIsOffline(false);
@@ -164,7 +168,8 @@ export function useEventTriggeredFetch<T>(
     if (!enabled || !path || !fallbackPollMs) return;
 
     const startPolling = () => {
-      if (fallbackIntervalRef.current) clearInterval(fallbackIntervalRef.current);
+      if (fallbackIntervalRef.current)
+        clearInterval(fallbackIntervalRef.current);
       fallbackIntervalRef.current = setInterval(fetchData, fallbackPollMs);
     };
 
@@ -217,7 +222,10 @@ export function useEventTriggeredFetch<T>(
           // Reset fallback poll timer so we don't double-fetch
           if (fallbackIntervalRef.current && fallbackPollMs) {
             clearInterval(fallbackIntervalRef.current);
-            fallbackIntervalRef.current = setInterval(fetchData, fallbackPollMs);
+            fallbackIntervalRef.current = setInterval(
+              fetchData,
+              fallbackPollMs
+            );
           }
         }, debounceMs);
       });

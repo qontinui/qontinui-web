@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { useRunnerHealth } from "@/lib/runner-api";
 import { useSharedOrchestratorState } from "@/contexts/SharedRunnerDataContext";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +15,7 @@ import {
   WifiOff,
   Activity,
   Zap,
+  Clock,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -27,62 +29,43 @@ interface BottomBarProps {
     iteration_count?: number;
     max_sessions?: number;
     sessions_count?: number;
+    started_at?: string;
   };
 }
 
 // ---------------------------------------------------------------------------
-// Circular Progress SVG
+// Elapsed Time Display
 // ---------------------------------------------------------------------------
 
-function CircularProgress({
-  current,
-  max,
-  size = 28,
-  strokeWidth = 3,
-}: {
-  current: number;
-  max: number;
-  size?: number;
-  strokeWidth?: number;
-}) {
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const progress = max > 0 ? Math.min(current / max, 1) : 0;
-  const dashOffset = circumference * (1 - progress);
-  const center = size / 2;
+function ElapsedTime({ startedAt }: { startedAt?: string }) {
+  const [elapsed, setElapsed] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!startedAt) return;
+    const startMs = new Date(startedAt).getTime();
+    const update = () => setElapsed(Math.floor((Date.now() - startMs) / 1000));
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [startedAt]);
+
+  if (!startedAt) return null;
+
+  const formatTime = (totalSec: number): string => {
+    if (totalSec < 60) return `${totalSec}s`;
+    const mins = Math.floor(totalSec / 60);
+    const secs = totalSec % 60;
+    if (mins < 60) return `${mins}m ${secs}s`;
+    const hours = Math.floor(mins / 60);
+    const remainMins = mins % 60;
+    return `${hours}h ${remainMins}m`;
+  };
 
   return (
     <div className="flex items-center gap-1.5">
-      <svg width={size} height={size} className="-rotate-90">
-        {/* Background circle */}
-        <circle
-          cx={center}
-          cy={center}
-          r={radius}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={strokeWidth}
-          className="text-white/5"
-        />
-        {/* Progress circle */}
-        <circle
-          cx={center}
-          cy={center}
-          r={radius}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={strokeWidth}
-          strokeDasharray={circumference}
-          strokeDashoffset={dashOffset}
-          strokeLinecap="round"
-          className={cn(
-            "transition-all duration-500",
-            progress >= 1 ? "text-green-500" : "text-brand-primary"
-          )}
-        />
-      </svg>
+      <Clock className="size-3 text-text-muted" />
       <span className="text-[10px] text-text-muted font-mono tabular-nums">
-        {current}/{max || "∞"}
+        {formatTime(elapsed)}
       </span>
     </div>
   );
@@ -197,14 +180,12 @@ function ConnectionStatus() {
 
 export function BottomBar({ run }: BottomBarProps) {
   const { data: orchState } = useSharedOrchestratorState();
-  const iterCurrent = run.iteration_count ?? run.sessions_count ?? 0;
-  const iterMax = run.max_sessions ?? 0;
 
   return (
     <div className="flex items-center justify-between px-4 py-1.5 bg-surface-canvas/80 border-t border-border-subtle/30 gap-4">
-      {/* Left: iteration progress */}
+      {/* Left: elapsed time + agent badge */}
       <div className="flex items-center gap-3">
-        <CircularProgress current={iterCurrent} max={iterMax} />
+        <ElapsedTime startedAt={run.started_at} />
         <AgentBadge agent={orchState?.active_agent} />
       </div>
 
@@ -216,7 +197,9 @@ export function BottomBar({ run }: BottomBarProps) {
             currentAction={orchState?.current_action}
           />
         ) : (
-          <span className="text-[10px] text-text-muted capitalize">{run.status}</span>
+          <span className="text-[10px] text-text-muted capitalize">
+            {run.status}
+          </span>
         )}
       </div>
 

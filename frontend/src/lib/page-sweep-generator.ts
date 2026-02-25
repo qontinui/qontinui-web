@@ -137,16 +137,18 @@ export function specToPageEntry(spec: DiscoveredSpec): PageEntry {
         severity: a.severity,
         enabled: a.enabled,
       })),
-      selected: true,
+      selected: g.category === "semantic",
     })
   );
+
+  const hasSemanticGroups = groups.some((g) => g.category === "semantic");
 
   return {
     page_url: pageUrl,
     spec_id: spec.specId,
     spec_description: spec.config?.description || "",
     groups,
-    selected: true,
+    selected: hasSemanticGroups,
     has_specs: true,
   };
 }

@@ -62,12 +62,17 @@ export interface SpecPromptResult {
   pageCount: number;
 }
 
-export function buildSpecPrompt({
+/**
+ * Build a natural-language prompt from semantic page specs only.
+ * Filters to groups with category "semantic" and presents them as
+ * high-level page purpose descriptions rather than technical assertions.
+ */
+export function buildSemanticSpecPrompt({
   discoveredSpecs,
   selectedGroupIds,
 }: BuildSpecPromptOptions): SpecPromptResult {
   const lines: string[] = [
-    "Create a verification workflow based on UI Bridge page specifications.",
+    "The following are semantic page specifications describing what each page is designed to do.",
     "",
   ];
 
@@ -78,46 +83,40 @@ export function buildSpecPrompt({
   for (const spec of discoveredSpecs) {
     const { config } = spec;
     const pageUrl = config.metadata?.pageUrl || spec.specId;
-    pageUrls.add(pageUrl);
 
-    const selectedGroups = config.groups.filter((g) =>
-      selectedGroupIds.has(g.id)
+    const selectedGroups = config.groups.filter(
+      (g) => selectedGroupIds.has(g.id) && g.category === "semantic"
     );
     if (selectedGroups.length === 0) continue;
 
-    lines.push(`## Page: ${pageUrl}`);
-    if (config.description) {
-      lines.push(`Spec: ${config.description}`);
-    }
+    pageUrls.add(pageUrl);
+    lines.push(`## ${pageUrl}`);
     lines.push("");
 
     for (const group of selectedGroups) {
       totalGroups++;
-      const enabledAssertions = group.assertions.filter((a) => a.enabled);
-
-      lines.push(`### ${group.name} (${group.category})`);
       if (group.description) {
         lines.push(group.description);
+        lines.push("");
       }
-      lines.push("Assertions:");
 
-      for (const assertion of enabledAssertions) {
-        totalAssertions++;
-        lines.push(
-          `- [${assertion.severity.toUpperCase()}] ${assertion.description}`
-        );
+      const enabledAssertions = group.assertions.filter((a) => a.enabled);
+      if (enabledAssertions.length > 0) {
+        lines.push("Key capabilities:");
+        for (const assertion of enabledAssertions) {
+          totalAssertions++;
+          lines.push(`- ${assertion.description}`);
+        }
+        lines.push("");
       }
-      lines.push("");
     }
   }
 
   const pageCount = pageUrls.size;
 
   lines.push(
-    `Summary: ${totalGroups} spec group${totalGroups !== 1 ? "s" : ""}, ${totalAssertions} assertion${totalAssertions !== 1 ? "s" : ""} across ${pageCount} page${pageCount !== 1 ? "s" : ""}.`,
-    "",
-    "Create verification steps using UI Bridge SDK assertions for each spec group.",
-    "Include setup (navigate + connect), agentic (fix failures), and completion (summary) steps."
+    "Use these page descriptions to understand what each page does and generate appropriate verification steps.",
+    "Determine your own element-level checks based on the semantic intent described above."
   );
 
   return {

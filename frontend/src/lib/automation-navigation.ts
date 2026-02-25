@@ -90,7 +90,7 @@ export function isAutomationBuilderRoute(path: string): boolean {
 export function getActiveRoute(pathname: string): AutomationRoute | undefined {
   // Exact match first
   const exactMatch = automationBuilderRoutes.find(
-    (route) => route.path === pathname,
+    (route) => route.path === pathname
   );
   if (exactMatch) return exactMatch;
 

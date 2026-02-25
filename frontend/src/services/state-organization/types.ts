@@ -53,10 +53,7 @@ export {
   STORAGE_KEY,
 } from "@/types/state-organization/types";
 
-import type {
-  State,
-  Transition,
-} from "@/contexts/automation-context/types";
+import type { State, Transition } from "@/contexts/automation-context/types";
 
 import type {
   StateGroup,

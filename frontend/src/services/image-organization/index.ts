@@ -83,12 +83,7 @@ export type { MetadataManagerDeps } from "./metadata-manager";
 export { searchImages, filterByUsage } from "./search-filter";
 export type { SearchFilterDeps } from "./search-filter";
 
-export {
-  bulkTag,
-  bulkMove,
-  bulkDelete,
-  bulkDownload,
-} from "./bulk-operations";
+export { bulkTag, bulkMove, bulkDelete, bulkDownload } from "./bulk-operations";
 export type { BulkOperationsDeps } from "./bulk-operations";
 
 export {
@@ -498,11 +493,7 @@ export class ImageOrganizationService {
     imageId: string,
     versionId: string
   ): OperationResult<ImageVersion> {
-    return metadataMgr.rollbackToVersion(
-      this.metadataDeps,
-      imageId,
-      versionId
-    );
+    return metadataMgr.rollbackToVersion(this.metadataDeps, imageId, versionId);
   }
 
   deleteImageVersion(

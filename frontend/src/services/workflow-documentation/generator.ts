@@ -155,9 +155,7 @@ function generateInputRequirements(workflow: Workflow): string {
     ) {
       parts.push("**Local Variables:**");
       Object.entries(workflow.variables.local).forEach(([key, value]) => {
-        parts.push(
-          `- \`${key}\`: ${typeof value} = ${JSON.stringify(value)}`
-        );
+        parts.push(`- \`${key}\`: ${typeof value} = ${JSON.stringify(value)}`);
       });
     }
 
@@ -167,9 +165,7 @@ function generateInputRequirements(workflow: Workflow): string {
     ) {
       parts.push("\n**Process Variables:**");
       Object.entries(workflow.variables.process).forEach(([key, value]) => {
-        parts.push(
-          `- \`${key}\`: ${typeof value} = ${JSON.stringify(value)}`
-        );
+        parts.push(`- \`${key}\`: ${typeof value} = ${JSON.stringify(value)}`);
       });
     }
 
@@ -179,9 +175,7 @@ function generateInputRequirements(workflow: Workflow): string {
     ) {
       parts.push("\n**Global Variables:**");
       Object.entries(workflow.variables.global).forEach(([key, value]) => {
-        parts.push(
-          `- \`${key}\`: ${typeof value} = ${JSON.stringify(value)}`
-        );
+        parts.push(`- \`${key}\`: ${typeof value} = ${JSON.stringify(value)}`);
       });
     }
   } else {
@@ -198,9 +192,7 @@ function generateInputRequirements(workflow: Workflow): string {
 
   // Initial screenshot
   if (workflow.initialScreenshotId) {
-    parts.push(
-      `\n### Initial Screenshot: \`${workflow.initialScreenshotId}\``
-    );
+    parts.push(`\n### Initial Screenshot: \`${workflow.initialScreenshotId}\``);
   }
 
   return parts.join("\n");
@@ -452,9 +444,7 @@ export function generateFlowchart(workflow: Workflow): string {
 function generateErrorHandlingSection(workflow: Workflow): string {
   const parts: string[] = ["## Error Handling\n"];
 
-  const errorHandlers = workflow.actions.filter(
-    (a) => a.type === "TRY_CATCH"
-  );
+  const errorHandlers = workflow.actions.filter((a) => a.type === "TRY_CATCH");
 
   if (errorHandlers.length > 0) {
     parts.push(
@@ -604,8 +594,7 @@ export function analyzeDependencies(workflow: Workflow): DependencyInfo[] {
 
     // Check for image dependencies
     if ("target" in action.config) {
-      const target = (action.config as { target?: { image?: string } })
-        .target;
+      const target = (action.config as { target?: { image?: string } }).target;
       if (target?.image) {
         dependencies.push({
           type: "resource",

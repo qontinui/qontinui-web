@@ -107,6 +107,14 @@ const nextConfig = {
           source: '/__ui-bridge__/:path*',
           destination: '/api/ui-bridge/:path*',
         },
+        // UI Bridge control endpoint rewrite for build pages.
+        // The runner constructs health-check/snapshot URLs by appending /control/:path
+        // to the page URL (e.g., /build/page-sweep/control/snapshot). Rewrite these
+        // to the actual UI Bridge API routes.
+        {
+          source: '/build/:page/control/:path*',
+          destination: '/api/ui-bridge/control/:path*',
+        },
       ],
       // afterFiles rewrites are checked after pages/public files
       // but before dynamic routes - this is the default behavior

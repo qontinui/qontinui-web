@@ -8,15 +8,7 @@
 "use client";
 
 import React from "react";
-import {
-  X,
-  Folder,
-  Move,
-  Tag,
-  Package,
-  Download,
-  Trash2,
-} from "lucide-react";
+import { X, Folder, Move, Tag, Package, Download, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -51,9 +43,7 @@ export function BulkActions({
   return (
     <div className="flex items-center justify-between p-3 bg-brand-success/10 border-b border-brand-success/20">
       <div className="flex items-center gap-2">
-        <span className="text-sm font-medium">
-          {selectedCount} selected
-        </span>
+        <span className="text-sm font-medium">{selectedCount} selected</span>
       </div>
       <div className="flex items-center gap-2">
         <DropdownMenu>
@@ -87,11 +77,7 @@ export function BulkActions({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <Button
-          variant="outline"
-          size="sm"
-          className="border-border-default"
-        >
+        <Button variant="outline" size="sm" className="border-border-default">
           <Tag className="w-4 h-4 mr-2" />
           Add Tags
         </Button>
@@ -119,11 +105,7 @@ export function BulkActions({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <Button
-          variant="outline"
-          size="sm"
-          className="border-border-default"
-        >
+        <Button variant="outline" size="sm" className="border-border-default">
           <Download className="w-4 h-4 mr-2" />
           Download
         </Button>

@@ -68,7 +68,8 @@ export function WelcomeModal() {
   } = useOnboardingStore();
 
   const [dontShowAgain, setDontShowAgain] = useState(dontShowWelcomeAgain);
-  const [prevDontShowWelcomeAgain, setPrevDontShowWelcomeAgain] = useState(dontShowWelcomeAgain);
+  const [prevDontShowWelcomeAgain, setPrevDontShowWelcomeAgain] =
+    useState(dontShowWelcomeAgain);
   const [isClosing, setIsClosing] = useState(false);
 
   if (dontShowWelcomeAgain !== prevDontShowWelcomeAgain) {

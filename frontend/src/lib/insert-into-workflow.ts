@@ -6,7 +6,7 @@ export function buildInsertWorkflowUrl(stepData: Partial<UnifiedStep>): string {
 }
 
 export function parseInsertStepParam(
-  param: string | null,
+  param: string | null
 ): Partial<UnifiedStep> | null {
   if (!param) return null;
   try {

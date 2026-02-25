@@ -39,17 +39,16 @@ export function ExportPanel({
 
         {configName && (
           <div className="text-xs text-text-muted space-y-1">
-            <div>Config: <strong>{configName}</strong></div>
+            <div>
+              Config: <strong>{configName}</strong>
+            </div>
             <div>States: {stateCount}</div>
             <div>Transitions: {transitionCount}</div>
           </div>
         )}
 
         <div className="flex gap-2">
-          <Button
-            onClick={onDownload}
-            disabled={isExporting || !configName}
-          >
+          <Button onClick={onDownload} disabled={isExporting || !configName}>
             {isExporting ? (
               <Loader2 className="size-4 mr-1.5 animate-spin" />
             ) : (

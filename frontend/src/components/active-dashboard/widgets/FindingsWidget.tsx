@@ -200,10 +200,17 @@ export function FindingsWidget({ runId }: { runId: string }) {
     {
       transform: (raw: unknown) => {
         const obj = raw as Record<string, unknown>;
-        if (obj && typeof obj === "object" && "knowledge" in obj && Array.isArray(obj.knowledge)) {
+        if (
+          obj &&
+          typeof obj === "object" &&
+          "knowledge" in obj &&
+          Array.isArray(obj.knowledge)
+        ) {
           const items = obj.knowledge as Array<Record<string, unknown>>;
           return {
-            findings: items.filter((k) => k.category === "finding") as unknown as Finding[],
+            findings: items.filter(
+              (k) => k.category === "finding"
+            ) as unknown as Finding[],
             observations: items
               .filter((k) => k.category === "observation")
               .map((k) => String(k.content || k.title || "")),

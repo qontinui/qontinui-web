@@ -2,11 +2,7 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import {
-  useRunnerHealth,
-  useGuiLock,
-  runnerApi,
-} from "@/lib/runner-api";
+import { useRunnerHealth, useGuiLock, runnerApi } from "@/lib/runner-api";
 import { useUnifiedWorkflows } from "@/lib/api/unified-workflows";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import {
@@ -164,7 +160,9 @@ export default function ExecuteVisualAutomationPage() {
         style={{ maxWidth: showToolkit ? "1200px" : "896px" }}
       >
         <div className="flex-1 space-y-6">
-          {isOffline && <RunnerPartialState message="Runner offline — this tool requires the runner for execution" />}
+          {isOffline && (
+            <RunnerPartialState message="Runner offline — this tool requires the runner for execution" />
+          )}
 
           {/* Config Status */}
           <Card className="bg-surface-raised/50 border-border-subtle/50">

@@ -75,10 +75,7 @@ export class Persistence {
         }
       }
     } catch (error) {
-      logger.error(
-        "Failed to load state organization from storage:",
-        error
-      );
+      logger.error("Failed to load state organization from storage:", error);
     }
   }
 

@@ -227,9 +227,7 @@ export function DashboardContent() {
                     </Button>
                     <Button
                       className="w-full justify-start bg-brand-success/10 hover:bg-brand-success/20 text-brand-success border border-brand-success/30"
-                      onClick={() =>
-                        router.push("/automation-builder/testing")
-                      }
+                      onClick={() => router.push("/automation-builder/testing")}
                     >
                       <TestTube className="w-4 h-4 mr-2" />
                       Run Tests

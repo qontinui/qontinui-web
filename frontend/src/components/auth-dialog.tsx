@@ -90,7 +90,7 @@ export function AuthDialog({
         data.email,
         data.username,
         data.password,
-        data.full_name,
+        data.full_name
       );
       toast.success("Account created successfully");
       onOpenChange(false);
@@ -99,7 +99,7 @@ export function AuthDialog({
       router.push("/build/workflows");
     } catch (error: unknown) {
       toast.error(
-        error instanceof Error ? error.message : "Registration failed",
+        error instanceof Error ? error.message : "Registration failed"
       );
     } finally {
       setLoading(false);

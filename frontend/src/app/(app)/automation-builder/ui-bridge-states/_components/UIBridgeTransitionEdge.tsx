@@ -17,7 +17,9 @@ import {
 } from "lucide-react";
 import type { TransitionEdgeData, TransitionAction } from "../_types";
 
-const ACTION_ICONS: Partial<Record<TransitionAction["type"], typeof MousePointer>> = {
+const ACTION_ICONS: Partial<
+  Record<TransitionAction["type"], typeof MousePointer>
+> = {
   click: MousePointer,
   type: TypeIcon,
   select: ListFilter,
@@ -95,9 +97,10 @@ function UIBridgeTransitionEdgeInner(props: EdgeProps) {
               className={`
                 flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-full border shadow-sm
                 transition-all duration-150
-                ${isActive
-                  ? "bg-brand-primary text-white border-brand-primary shadow-brand-primary/20"
-                  : "bg-surface-primary/95 text-text-muted border-border-primary hover:border-brand-primary/40 backdrop-blur-sm"
+                ${
+                  isActive
+                    ? "bg-brand-primary text-white border-brand-primary shadow-brand-primary/20"
+                    : "bg-surface-primary/95 text-text-muted border-border-primary hover:border-brand-primary/40 backdrop-blur-sm"
                 }
               `}
             >
@@ -106,14 +109,21 @@ function UIBridgeTransitionEdgeInner(props: EdgeProps) {
                 <span className="flex items-center gap-0.5">
                   {uniqueActionTypes.slice(0, 3).map((actionType) => {
                     const Icon = ACTION_ICONS[actionType];
-                    const colorClass = isActive ? "" : (ACTION_COLORS[actionType] ?? "text-gray-400");
+                    const colorClass = isActive
+                      ? ""
+                      : (ACTION_COLORS[actionType] ?? "text-gray-400");
                     return Icon ? (
-                      <Icon key={actionType} className={`size-3 ${colorClass}`} />
+                      <Icon
+                        key={actionType}
+                        className={`size-3 ${colorClass}`}
+                      />
                     ) : null;
                   })}
                 </span>
               )}
-              <span className="font-medium max-w-[120px] truncate">{edgeData.name}</span>
+              <span className="font-medium max-w-[120px] truncate">
+                {edgeData.name}
+              </span>
               {/* Source element target indicator */}
               {edgeData.firstActionTarget && !isActive && (
                 <span className="opacity-50 text-[8px] max-w-[60px] truncate">
@@ -127,13 +137,17 @@ function UIBridgeTransitionEdgeInner(props: EdgeProps) {
               )}
               {/* Action count badge when multiple actions */}
               {edgeData.actionCount > 1 && (
-                <span className={`text-[8px] px-1 rounded-full ${isActive ? "bg-white/20" : "bg-surface-secondary"}`}>
+                <span
+                  className={`text-[8px] px-1 rounded-full ${isActive ? "bg-white/20" : "bg-surface-secondary"}`}
+                >
                   {edgeData.actionCount}
                 </span>
               )}
               {/* Stays visible indicator */}
               {edgeData.staysVisible && (
-                <Eye className={`size-3 ${isActive ? "text-green-200" : "text-green-400"}`} />
+                <Eye
+                  className={`size-3 ${isActive ? "text-green-200" : "text-green-400"}`}
+                />
               )}
             </div>
           </div>

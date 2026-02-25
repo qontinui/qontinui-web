@@ -7,7 +7,13 @@ import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Image as ImageIcon, Target, MapPin, Inbox, Loader2 } from "lucide-react";
+import {
+  Image as ImageIcon,
+  Target,
+  MapPin,
+  Inbox,
+  Loader2,
+} from "lucide-react";
 
 function formatTime(timestamp: string): string {
   const date = new Date(timestamp);
@@ -96,7 +102,9 @@ export default function ImageRecognitionPage() {
         </div>
       </header>
 
-      {isOffline && <RunnerPartialState message="Runner offline — live data unavailable" />}
+      {isOffline && (
+        <RunnerPartialState message="Runner offline — live data unavailable" />
+      )}
 
       <main className="flex h-[calc(100vh-65px)]">
         {/* Left panel: Run list */}

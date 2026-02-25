@@ -9,10 +9,7 @@ export function useRAGScreenshot(
     useState<ScreenshotInfo | null>(null);
 
   const handleUploadScreenshot = useCallback(
-    (
-      file: File,
-      resetResults: () => void
-    ) => {
+    (file: File, resetResults: () => void) => {
       const url = URL.createObjectURL(file);
       setCurrentScreenshot({
         id: `screenshot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -25,10 +22,7 @@ export function useRAGScreenshot(
   );
 
   const handleSelectProjectScreenshot = useCallback(
-    (
-      screenshotId: string,
-      resetResults: () => void
-    ) => {
+    (screenshotId: string, resetResults: () => void) => {
       const projectScreenshot = screenshots.find((s) => s.id === screenshotId);
       if (projectScreenshot && projectScreenshot.url) {
         setCurrentScreenshot({
@@ -44,13 +38,10 @@ export function useRAGScreenshot(
     [screenshots]
   );
 
-  const handleClearScreenshot = useCallback(
-    (resetResults: () => void) => {
-      setCurrentScreenshot(null);
-      resetResults();
-    },
-    []
-  );
+  const handleClearScreenshot = useCallback((resetResults: () => void) => {
+    setCurrentScreenshot(null);
+    resetResults();
+  }, []);
 
   return {
     currentScreenshot,

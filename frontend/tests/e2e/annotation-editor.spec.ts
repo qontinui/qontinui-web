@@ -34,7 +34,7 @@ async function navigateToExtractionPage(page: Page): Promise<void> {
  * Helper to load a test screenshot into the annotation editor
  * This creates a mock screenshot URL in the store
  */
-async function loadTestScreenshot(page: Page): Promise<void> {
+async function _loadTestScreenshot(page: Page): Promise<void> {
   // Create a simple test image as data URL
   const testImageDataUrl = await page.evaluate(() => {
     const canvas = document.createElement("canvas");
@@ -87,7 +87,7 @@ async function getAnnotationCanvas(
 /**
  * Helper to draw a bounding box on the canvas
  */
-async function drawBoundingBox(
+async function _drawBoundingBox(
   page: Page,
   startX: number,
   startY: number,
@@ -107,7 +107,7 @@ async function drawBoundingBox(
 /**
  * Helper to select the draw tool
  */
-async function selectDrawTool(page: Page): Promise<void> {
+async function _selectDrawTool(page: Page): Promise<void> {
   // Look for the draw tool button in the toolbar
   const drawButton = page.locator(
     '[data-tool="draw"], button:has-text("Draw")'
@@ -123,7 +123,7 @@ async function selectDrawTool(page: Page): Promise<void> {
 /**
  * Helper to select the select tool
  */
-async function selectSelectTool(page: Page): Promise<void> {
+async function _selectSelectTool(page: Page): Promise<void> {
   const selectButton = page.locator(
     '[data-tool="select"], button:has-text("Select")'
   );
@@ -161,12 +161,12 @@ test.describe("Annotation Editor", () => {
       await navigateToExtractionPage(page);
 
       // The annotation editor area should exist
-      const editorArea = page.locator(
+      const _editorArea = page.locator(
         '[class*="annotation"], [data-testid="annotation-editor"]'
       );
 
       // Either find the editor or the canvas (depending on implementation)
-      const canvas = page.locator("canvas");
+      const _canvas = page.locator("canvas");
 
       // At minimum, verify we're on the extraction page
       await expect(page).toHaveURL(/extraction/);
@@ -209,7 +209,7 @@ test.describe("Annotation Editor", () => {
       await navigateToExtractionPage(page);
 
       // Look for properties panel or form
-      const propertiesPanel = page.locator(
+      const _propertiesPanel = page.locator(
         '[class*="properties"], [data-testid="element-form"], [class*="annotation-form"]'
       );
 
@@ -258,7 +258,7 @@ test.describe("Annotation Editor", () => {
       );
 
       // Check if export button exists somewhere on the page
-      const hasExportButton = await exportButton
+      const _hasExportButton = await exportButton
         .isVisible({ timeout: 5000 })
         .catch(() => false);
 
@@ -287,7 +287,7 @@ test.describe("Annotation Editor", () => {
 
         if (await dialog.isVisible({ timeout: 3000 }).catch(() => false)) {
           // Look for format selection in the dialog
-          const formatSelect = dialog.locator('select, [role="combobox"]');
+          const _formatSelect = dialog.locator('select, [role="combobox"]');
 
           await page.screenshot({
             path: "test-results/annotation-export-dialog.png",
@@ -303,10 +303,10 @@ test.describe("Annotation Editor", () => {
       await navigateToExtractionPage(page);
 
       // Look for view options like show labels, show confidence, etc.
-      const showLabelsToggle = page.locator(
+      const _showLabelsToggle = page.locator(
         'input[type="checkbox"]:near(:text("Labels")), button:has-text("Labels")'
       );
-      const showConfidenceToggle = page.locator(
+      const _showConfidenceToggle = page.locator(
         'input[type="checkbox"]:near(:text("Confidence")), button:has-text("Confidence")'
       );
 
@@ -320,13 +320,13 @@ test.describe("Annotation Editor", () => {
       await navigateToExtractionPage(page);
 
       // Look for zoom controls
-      const zoomIn = page.locator(
+      const _zoomIn = page.locator(
         'button:has-text("Zoom In"), button:has([data-lucide="zoom-in"]), [aria-label="Zoom in"]'
       );
-      const zoomOut = page.locator(
+      const _zoomOut = page.locator(
         'button:has-text("Zoom Out"), button:has([data-lucide="zoom-out"]), [aria-label="Zoom out"]'
       );
-      const zoomReset = page.locator(
+      const _zoomReset = page.locator(
         'button:has-text("Reset"), button:has-text("100%"), button:has-text("Fit")'
       );
 
@@ -343,7 +343,7 @@ test.describe("Annotation Editor", () => {
       await navigateToExtractionPage(page);
 
       // Look for grid toggle
-      const gridToggle = page.locator(
+      const _gridToggle = page.locator(
         'button:has-text("Grid"), input[type="checkbox"]:near(:text("Grid")), [data-testid="grid-toggle"]'
       );
 
@@ -359,10 +359,10 @@ test.describe("Annotation Editor", () => {
       await navigateToExtractionPage(page);
 
       // Look for undo/redo buttons
-      const undoButton = page.locator(
+      const _undoButton = page.locator(
         'button[aria-label="Undo"], button:has([data-lucide="undo"]), button:has-text("Undo")'
       );
-      const redoButton = page.locator(
+      const _redoButton = page.locator(
         'button[aria-label="Redo"], button:has([data-lucide="redo"]), button:has-text("Redo")'
       );
 
@@ -378,9 +378,9 @@ test.describe("Annotation Editor", () => {
       await navigateToExtractionPage(page);
 
       // Look for review status controls
-      const approveButton = page.locator('button:has-text("Approve")');
-      const rejectButton = page.locator('button:has-text("Reject")');
-      const statusBadge = page.locator(
+      const _approveButton = page.locator('button:has-text("Approve")');
+      const _rejectButton = page.locator('button:has-text("Reject")');
+      const _statusBadge = page.locator(
         '[class*="badge"]:has-text(/pending|approved|rejected/i)'
       );
 
@@ -396,10 +396,10 @@ test.describe("Annotation Editor", () => {
       await navigateToExtractionPage(page);
 
       // Look for version/history controls
-      const historyButton = page.locator(
+      const _historyButton = page.locator(
         'button:has-text("History"), button:has-text("Versions"), button:has([data-lucide="history"])'
       );
-      const saveVersionButton = page.locator('button:has-text("Save Version")');
+      const _saveVersionButton = page.locator('button:has-text("Save Version")');
 
       await page.screenshot({
         path: "test-results/annotation-version-history.png",
@@ -461,7 +461,7 @@ test.describe("Annotation Editor", () => {
       await navigateToExtractionPage(page);
 
       // Look for import button
-      const importButton = page.locator(
+      const _importButton = page.locator(
         'button:has-text("Import"), [data-testid="import-button"]'
       );
 
@@ -497,7 +497,7 @@ test.describe("Annotation Editor - Integration Tests", () => {
     // These may be conditionally rendered based on state
 
     // The page should have some form of editor/canvas area
-    const editorAreas = page.locator(
+    const _editorAreas = page.locator(
       '[class*="editor"], canvas, [class*="annotation"]'
     );
 
@@ -513,7 +513,7 @@ test.describe("Annotation Editor - Integration Tests", () => {
     await page.waitForLoadState("networkidle");
 
     // Check if localStorage has annotation store data
-    const storeData = await page.evaluate(() => {
+    const _storeData = await page.evaluate(() => {
       return localStorage.getItem("extraction-annotations");
     });
 

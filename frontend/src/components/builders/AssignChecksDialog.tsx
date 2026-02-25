@@ -50,7 +50,7 @@ export function AssignChecksDialog({
       (check) =>
         check.name.toLowerCase().includes(q) ||
         (check.check_type && check.check_type.toLowerCase().includes(q)) ||
-        (check.description && check.description.toLowerCase().includes(q)),
+        (check.description && check.description.toLowerCase().includes(q))
     );
   }, [checks, searchQuery]);
 

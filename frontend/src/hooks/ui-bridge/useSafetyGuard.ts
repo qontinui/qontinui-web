@@ -71,11 +71,7 @@ export function useSafetyGuard(
           selectedTabId?: number | null;
         };
         const tabs: BrowserTab[] = data?.tabs || [];
-        logger.info(
-          "[useSafetyGuard] Got",
-          tabs.length,
-          "browser tabs"
-        );
+        logger.info("[useSafetyGuard] Got", tabs.length, "browser tabs");
         setBrowserTabs(tabs);
 
         // If a tab was previously selected, verify it still exists
@@ -150,10 +146,7 @@ export function useSafetyGuard(
           throw new Error(result.error || "Failed to select tab");
         }
 
-        logger.info(
-          "[useSafetyGuard] Setting selectedBrowserTabId to:",
-          tabId
-        );
+        logger.info("[useSafetyGuard] Setting selectedBrowserTabId to:", tabId);
         setConfig({ selectedBrowserTabId: tabId });
         return { success: true, ...(result.data as Record<string, unknown>) };
       } catch (error) {

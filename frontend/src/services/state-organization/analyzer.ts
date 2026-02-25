@@ -86,9 +86,7 @@ export class Analyzer {
               : undefined,
           fromStateName:
             transition.type === "OutgoingTransition"
-              ? this.getStateName(
-                  (transition as OutgoingTransition).fromState
-                )
+              ? this.getStateName((transition as OutgoingTransition).fromState)
               : undefined,
           toStateId: transition.toState,
           toStateName: this.getStateName(transition.toState),
@@ -346,10 +344,7 @@ export class Analyzer {
       state1.regions.length,
       state2.regions.length
     );
-    const totalRegions = Math.max(
-      state1.regions.length,
-      state2.regions.length
-    );
+    const totalRegions = Math.max(state1.regions.length, state2.regions.length);
 
     const commonLocations = Math.min(
       state1.locations.length,
@@ -361,8 +356,7 @@ export class Analyzer {
     );
 
     // Weighted similarity score
-    const imageScore =
-      totalImages > 0 ? (commonImages / totalImages) * 50 : 0;
+    const imageScore = totalImages > 0 ? (commonImages / totalImages) * 50 : 0;
     const regionScore =
       totalRegions > 0 ? (commonRegions / totalRegions) * 30 : 0;
     const locationScore =
@@ -486,8 +480,7 @@ export class Analyzer {
         type: "warning",
         category: "high-complexity",
         message: `High complexity state (score: ${complexity.complexityScore})`,
-        suggestion:
-          "Consider breaking this state into smaller, simpler states",
+        suggestion: "Consider breaking this state into smaller, simpler states",
       });
     }
 

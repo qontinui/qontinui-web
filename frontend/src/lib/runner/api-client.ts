@@ -115,7 +115,9 @@ export function useRunnerQuery<T>(
     if (!path || !enabled) return;
     try {
       const raw = await runnerFetch<unknown>(path);
-      const result = transformRef.current ? transformRef.current(raw) : (raw as T);
+      const result = transformRef.current
+        ? transformRef.current(raw)
+        : (raw as T);
       setData(result);
       setError(null);
       setIsOffline(false);

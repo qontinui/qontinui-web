@@ -72,13 +72,20 @@ function getStatusBadge(status: string) {
   }
 }
 
-const VALID_TABS = ["summary", "findings", "tests", "ai-conversation", "data-logs"];
+const VALID_TABS = [
+  "summary",
+  "findings",
+  "tests",
+  "ai-conversation",
+  "data-logs",
+];
 
 export function RunDetailContent({ runId }: { runId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const initialTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : "summary";
+  const initialTab =
+    tabParam && VALID_TABS.includes(tabParam) ? tabParam : "summary";
 
   const {
     data: run,

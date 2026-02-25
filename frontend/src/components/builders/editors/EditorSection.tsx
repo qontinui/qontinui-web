@@ -23,6 +23,10 @@ export function EditorSection({
     <div className="border border-border-subtle/50 rounded-lg bg-surface-raised/20">
       <button
         type="button"
+        data-ui-id={`ui-editor-section-${title
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/-+$/, "")}`}
         onClick={() => setOpen(!open)}
         className="flex items-center gap-2 w-full px-4 py-2.5 text-left text-sm font-medium text-text-secondary hover:text-text-primary transition-colors"
       >

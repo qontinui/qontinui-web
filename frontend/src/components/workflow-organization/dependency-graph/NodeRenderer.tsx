@@ -23,8 +23,7 @@ function getNodeColor(data: NodeRendererProps["data"]): string {
 }
 
 function getStatusIcon(data: NodeRendererProps["data"]): React.ReactNode {
-  if (data.isCircular)
-    return <AlertCircle className="h-3 w-3 text-red-600" />;
+  if (data.isCircular) return <AlertCircle className="h-3 w-3 text-red-600" />;
   if (data.isUnused) return <EyeOff className="h-3 w-3 text-text-muted" />;
   if (data.isLeaf) return <Target className="h-3 w-3 text-green-600" />;
   return <Network className="h-3 w-3 text-blue-600" />;

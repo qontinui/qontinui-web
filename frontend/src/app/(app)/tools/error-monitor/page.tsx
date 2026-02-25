@@ -1,6 +1,9 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
+import { usePageSpecs } from "@/hooks/usePageSpecs";
+import type { SpecConfig } from "@qontinui/ui-bridge/specs";
+import pageSpecJson from "./error-monitor.spec.uibridge.json";
 import {
   useRunnerHealth,
   useErrorMonitorEntries,
@@ -38,6 +41,8 @@ import {
   FileText,
   X,
 } from "lucide-react";
+
+const pageSpec = pageSpecJson as unknown as SpecConfig;
 
 // ============================================================================
 // Types & Constants
@@ -391,6 +396,7 @@ function ErrorEntryCard({
 // ============================================================================
 
 export default function ErrorMonitorPage() {
+  usePageSpecs({ "error-monitor": pageSpec });
   const { isOffline, isLoading: healthLoading } = useRunnerHealth();
   const {
     data: entries,
@@ -586,7 +592,9 @@ export default function ErrorMonitorPage() {
 
       {/* Main Content */}
       <main className="p-6 max-w-5xl mx-auto space-y-6">
-        {isOffline && <RunnerPartialState message="Runner offline — this tool requires the runner for execution" />}
+        {isOffline && (
+          <RunnerPartialState message="Runner offline — this tool requires the runner for execution" />
+        )}
 
         {/* Fix error */}
         {fixError && (

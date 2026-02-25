@@ -180,8 +180,8 @@ Line: 42
           </h3>
           <p className="text-foreground mb-4">
             Each finding has a signature hash computed from its category, title,
-            and code location. If the AI reports the same finding across multiple
-            iterations or sessions, it won&apos;t create duplicates.
+            and code location. If the AI reports the same finding across
+            multiple iterations or sessions, it won&apos;t create duplicates.
           </p>
         </section>
 
@@ -220,9 +220,7 @@ Line: 42
               trigger="After agentic phase completes"
               category="finding, root_cause, solution, observation"
               description="Parses the AI's output for [FINDING:type] markers and stores them as knowledge entries for cross-iteration context"
-              icon={
-                <Eye className="w-5 h-5 text-purple-500 flex-shrink-0" />
-              }
+              icon={<Eye className="w-5 h-5 text-purple-500 flex-shrink-0" />}
             />
             <KnowledgeSource
               trigger="When verification passes"
@@ -294,9 +292,7 @@ Line: 42
             </li>
             <li className="flex items-start gap-2">
               <span className="text-primary font-bold">4.</span>
-              <span>
-                Recent observations about execution state
-              </span>
+              <span>Recent observations about execution state</span>
             </li>
           </ul>
         </section>
@@ -521,12 +517,9 @@ function ConceptCard({
 }: ConceptCardProps) {
   const borderClass =
     color === "orange" ? "border-orange-300" : "border-blue-300";
-  const bgClass =
-    color === "orange" ? "bg-orange-500/10" : "bg-blue-500/10";
-  const badgeBg =
-    color === "orange" ? "bg-orange-500/20" : "bg-blue-500/20";
-  const badgeText =
-    color === "orange" ? "text-orange-700" : "text-blue-700";
+  const bgClass = color === "orange" ? "bg-orange-500/10" : "bg-blue-500/10";
+  const badgeBg = color === "orange" ? "bg-orange-500/20" : "bg-blue-500/20";
+  const badgeText = color === "orange" ? "text-orange-700" : "text-blue-700";
 
   return (
     <div className={`border ${borderClass} ${bgClass} rounded-lg p-6`}>
@@ -590,8 +583,7 @@ function KnowledgeSource({
         <div>
           <h4 className="font-semibold text-foreground text-sm">{trigger}</h4>
           <p className="text-xs text-muted-foreground mb-1">
-            Category:{" "}
-            <code className="bg-muted px-1 rounded">{category}</code>
+            Category: <code className="bg-muted px-1 rounded">{category}</code>
           </p>
           <p className="text-sm text-foreground">{description}</p>
         </div>

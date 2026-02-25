@@ -208,8 +208,7 @@ export function filterByUsage(
         !workflowIds ||
         workflowIds.length === 0 ||
         record.usedIn.some(
-          (usage) =>
-            usage.type === "workflow" && workflowIds.includes(usage.id)
+          (usage) => usage.type === "workflow" && workflowIds.includes(usage.id)
         );
 
       const matchesState =

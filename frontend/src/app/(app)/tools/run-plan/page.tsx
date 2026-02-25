@@ -303,7 +303,9 @@ export default function RunPlanPage() {
 
       {/* Main Content */}
       <main className="p-6 max-w-3xl mx-auto space-y-6">
-        {isOffline && <RunnerPartialState message="Runner offline — this tool requires the runner for execution" />}
+        {isOffline && (
+          <RunnerPartialState message="Runner offline — this tool requires the runner for execution" />
+        )}
 
         {/* Mode Toggle */}
         <div className="flex items-center gap-2">

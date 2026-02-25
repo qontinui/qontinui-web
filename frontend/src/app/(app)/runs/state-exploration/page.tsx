@@ -112,7 +112,9 @@ export default function StateExplorationPage() {
         </div>
       </header>
 
-      {isOffline && <RunnerPartialState message="Runner offline — live data unavailable" />}
+      {isOffline && (
+        <RunnerPartialState message="Runner offline — live data unavailable" />
+      )}
 
       <main className="p-6 max-w-7xl mx-auto space-y-6">
         <p className="text-text-muted">

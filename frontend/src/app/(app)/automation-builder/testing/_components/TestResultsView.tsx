@@ -66,9 +66,7 @@ export function TestResultsView({
           ) : (
             <div className="text-center text-muted-foreground py-12">
               <BarChart3 className="size-12 mx-auto mb-4 opacity-50" />
-              <p className="text-sm">
-                Select a test or suite to view results
-              </p>
+              <p className="text-sm">Select a test or suite to view results</p>
             </div>
           )}
         </CardContent>

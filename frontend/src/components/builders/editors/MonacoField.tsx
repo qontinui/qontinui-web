@@ -28,7 +28,10 @@ export function MonacoField({
   readOnly = false,
 }: MonacoFieldProps) {
   return (
-    <div className="rounded border border-border-subtle/50 overflow-hidden" style={{ height }}>
+    <div
+      className="rounded border border-border-subtle/50 overflow-hidden"
+      style={{ height }}
+    >
       <MonacoEditor
         height="100%"
         language={language}

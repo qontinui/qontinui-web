@@ -19,13 +19,13 @@ interface AuthContextType {
   login: (
     username: string,
     password: string,
-    rememberMe?: boolean,
+    rememberMe?: boolean
   ) => Promise<User>;
   register: (
     email: string,
     username: string,
     password: string,
-    fullName?: string,
+    fullName?: string
   ) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (data: Partial<User>) => Promise<void>;
@@ -58,7 +58,7 @@ function shouldSkipDevAutoLogin(): boolean {
   // Skip if running in Playwright/automated browser (webdriver flag)
   if (navigator.webdriver) {
     console.log(
-      "[AuthContext] Dev auto-login skipped: Running in automated browser (Playwright/Selenium)",
+      "[AuthContext] Dev auto-login skipped: Running in automated browser (Playwright/Selenium)"
     );
     return true;
   }
@@ -67,7 +67,7 @@ function shouldSkipDevAutoLogin(): boolean {
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.has("skip_auto_login")) {
     console.log(
-      "[AuthContext] Dev auto-login skipped: skip_auto_login URL param present",
+      "[AuthContext] Dev auto-login skipped: skip_auto_login URL param present"
     );
     return true;
   }
@@ -126,7 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           case "TOKEN_REFRESH":
             // Another tab refreshed token - reload user data
             console.log(
-              "[AuthContext] Token refreshed in another tab, reloading user",
+              "[AuthContext] Token refreshed in another tab, reloading user"
             );
             checkAuth();
             break;
@@ -134,7 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
 
       console.log(
-        "[AuthContext] BroadcastChannel initialized for cross-tab sync",
+        "[AuthContext] BroadcastChannel initialized for cross-tab sync"
       );
     }
 
@@ -148,7 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         setUser(null);
         console.log(
-          "[AuthContext] Redirecting to home page due to session expiry",
+          "[AuthContext] Redirecting to home page due to session expiry"
         );
         window.location.href = "/";
       };
@@ -181,13 +181,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Check if access token is expired - if so, try to refresh it first
         if (authService.isAccessTokenExpired()) {
           console.log(
-            "[AuthContext] Access token is expired, attempting refresh...",
+            "[AuthContext] Access token is expired, attempting refresh..."
           );
           const refreshSuccess = await authService.refreshAccessToken();
 
           if (!refreshSuccess) {
             console.log(
-              "[AuthContext] Token refresh failed, user needs to re-login",
+              "[AuthContext] Token refresh failed, user needs to re-login"
             );
             authService.logout();
             return;
@@ -236,7 +236,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // If already authenticated, redirect away from landing page
     if (user) {
       console.log(
-        "[AuthContext] Dev mode: Already authenticated, skipping auto-login",
+        "[AuthContext] Dev mode: Already authenticated, skipping auto-login"
       );
       if (window.location.pathname === "/") {
         const dest = user.is_superuser ? "/admin" : "/build/workflows";
@@ -254,7 +254,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Check if dev credentials are configured via environment variables
     if (!DEV_AUTO_LOGIN.username || !DEV_AUTO_LOGIN.password) {
       console.log(
-        "[AuthContext] Dev mode: No auto-login credentials configured (set NEXT_PUBLIC_DEV_EMAIL and NEXT_PUBLIC_DEV_PASSWORD in .env.local)",
+        "[AuthContext] Dev mode: No auto-login credentials configured (set NEXT_PUBLIC_DEV_EMAIL and NEXT_PUBLIC_DEV_PASSWORD in .env.local)"
       );
       return;
     }
@@ -262,7 +262,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Auto-login in development
     console.log(
       "[AuthContext] Dev mode: Not authenticated, attempting auto-login with",
-      DEV_AUTO_LOGIN.username,
+      DEV_AUTO_LOGIN.username
     );
     hasAttemptedDevLogin.current = true;
 
@@ -292,7 +292,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               : String(err);
         console.error(
           "[AuthContext] Dev mode auto-login failed:",
-          errorMessage,
+          errorMessage
         );
       });
   }, [loading, user]);
@@ -300,7 +300,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (
     username: string,
     password: string,
-    rememberMe?: boolean,
+    rememberMe?: boolean
   ) => {
     try {
       const loggedInUser = await authService.login({
@@ -330,7 +330,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     email: string,
     username: string,
     password: string,
-    fullName?: string,
+    fullName?: string
   ) => {
     try {
       await authService.register({
@@ -394,7 +394,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           user: updatedUser,
         } as AuthBroadcastMessage);
         console.log(
-          "[AuthContext] Broadcasted USER_UPDATE event to other tabs",
+          "[AuthContext] Broadcasted USER_UPDATE event to other tabs"
         );
       }
     } catch (error) {
@@ -427,7 +427,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!response.ok) {
         console.error(
           "[AuthContext] Failed to get runner token:",
-          response.status,
+          response.status
         );
         return null;
       }
@@ -436,7 +436,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.log(
         "[AuthContext] Got runner token, expires in",
         data.expires_in,
-        "seconds",
+        "seconds"
       );
       return data.token;
     } catch (error) {

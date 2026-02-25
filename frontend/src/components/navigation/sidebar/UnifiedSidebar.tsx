@@ -29,7 +29,7 @@ const CreateOrganizationDialog = nextDynamic(
     import("@/components/collaboration/CreateOrganizationDialog").then((m) => ({
       default: m.CreateOrganizationDialog,
     })),
-  { ssr: false },
+  { ssr: false }
 );
 
 const ProjectExportDialog = nextDynamic(
@@ -37,9 +37,9 @@ const ProjectExportDialog = nextDynamic(
     import("@/components/automation-builder/components/ProjectExportDialog").then(
       (m) => ({
         default: m.ProjectExportDialog,
-      }),
+      })
     ),
-  { ssr: false },
+  { ssr: false }
 );
 import type { NavItem } from "./types";
 import { navItems } from "./nav-items";
@@ -228,7 +228,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
       url.searchParams.set("project", newProjectId);
       router.push(url.pathname + url.search);
     },
-    [contextProjectId, projects, setContextProjectId, setProjectName, router],
+    [contextProjectId, projects, setContextProjectId, setProjectName, router]
   );
 
   const handleCreateProject = useCallback(async () => {
@@ -243,7 +243,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
     } catch (error: unknown) {
       logger.error("Failed to create project:", error);
       toast.error(
-        error instanceof Error ? error.message : "Failed to create project",
+        error instanceof Error ? error.message : "Failed to create project"
       );
     }
   }, [createProject, handleProjectChange]);
@@ -265,7 +265,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
         }))
         .filter((item) => !item.children || item.children.length > 0);
     },
-    [mounted, isDevelopment, authLoading, user],
+    [mounted, isDevelopment, authLoading, user]
   );
 
   const visibleNavItems = useMemo(() => {
@@ -301,13 +301,13 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
           (child) =>
             checkRouteMatch(child.route) ||
             (child.children &&
-              child.children.some((gc) => checkRouteMatch(gc.route))),
+              child.children.some((gc) => checkRouteMatch(gc.route)))
         );
       }
 
       return checkRouteMatch(route);
     },
-    [pathname, searchParams],
+    [pathname, searchParams]
   );
 
   const buildRoute = useCallback(
@@ -325,14 +325,14 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
         return `${route}?project=${projectId}`;
       }
     },
-    [projectId],
+    [projectId]
   );
 
   const handleNavigation = useCallback(
     (route: string) => {
       router.push(buildRoute(route));
     },
-    [router, buildRoute],
+    [router, buildRoute]
   );
 
   const handleOrganizationChange = useCallback(
@@ -343,7 +343,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
         logger.error("[UnifiedSidebar] Failed to switch organization:", error);
       }
     },
-    [switchOrganization],
+    [switchOrganization]
   );
 
   const handleCreateOrganization = useCallback(() => {
@@ -364,7 +364,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
           | "member"
           | "viewer",
       })),
-    [organizations, user?.id],
+    [organizations, user?.id]
   );
 
   const switcherCurrentOrg = useMemo(
@@ -380,7 +380,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
               : "member") as "owner" | "admin" | "member" | "viewer",
           }
         : null,
-    [currentOrganization, user?.id],
+    [currentOrganization, user?.id]
   );
 
   return (
@@ -391,7 +391,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex flex-col border-r border-border-subtle bg-surface-canvas transition-all duration-200 ease-linear",
           isCollapsed ? "w-16" : "w-64",
-          className,
+          className
         )}
       >
         {/* Top Gradient */}
@@ -401,7 +401,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
         <div
           className={cn(
             "relative flex flex-col gap-3 p-3 border-b border-border-subtle",
-            isCollapsed && "items-center",
+            isCollapsed && "items-center"
           )}
         >
           {isCollapsed ? (
@@ -440,7 +440,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
         <div
           className={cn(
             "flex flex-col gap-3 p-3 border-b border-border-subtle",
-            isCollapsed && "items-center",
+            isCollapsed && "items-center"
           )}
         >
           {mounted ? (
@@ -456,7 +456,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
             <div
               className={cn(
                 "h-10 rounded-md bg-surface-raised/50 animate-pulse",
-                isCollapsed ? "w-10" : "w-full",
+                isCollapsed ? "w-10" : "w-full"
               )}
             />
           )}
@@ -469,7 +469,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
             data-tutorial-id="sidebar-nav"
             className={cn(
               "flex flex-col gap-1 py-3",
-              isCollapsed && "items-center",
+              isCollapsed && "items-center"
             )}
           >
             {visibleNavItems.map((item) => (
@@ -514,7 +514,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
         <div
           className={cn(
             "relative flex flex-col gap-2 border-t border-border-subtle p-3",
-            isCollapsed && "items-center",
+            isCollapsed && "items-center"
           )}
         >
           <HelpButton isCollapsed={isCollapsed} />

@@ -1,8 +1,5 @@
 import * as React from "react";
-import type {
-  TestCase,
-  Assertion,
-} from "@/services/workflow-testing";
+import type { TestCase, Assertion } from "@/services/workflow-testing";
 
 export function useTestCaseAssertions(testCase?: TestCase) {
   const [assertions, setAssertions] = React.useState<Assertion[]>(

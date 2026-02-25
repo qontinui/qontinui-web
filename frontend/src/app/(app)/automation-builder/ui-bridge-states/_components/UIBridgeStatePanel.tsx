@@ -57,7 +57,9 @@ export function UIBridgeStatePanel({
       <div className="flex items-center justify-between p-4 border-b border-border-primary">
         <div className="flex items-center gap-2">
           <Layers className="size-4 text-brand-primary" />
-          <h3 className="text-sm font-semibold text-text-primary">State Details</h3>
+          <h3 className="text-sm font-semibold text-text-primary">
+            State Details
+          </h3>
         </div>
         <Button variant="ghost" size="sm" onClick={onClose}>
           <X className="size-4" />
@@ -67,7 +69,9 @@ export function UIBridgeStatePanel({
       <div className="p-4 space-y-4">
         {/* Name */}
         <div>
-          <label className="text-xs font-medium text-text-muted mb-1 block">Name</label>
+          <label className="text-xs font-medium text-text-muted mb-1 block">
+            Name
+          </label>
           <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -77,7 +81,9 @@ export function UIBridgeStatePanel({
 
         {/* Description */}
         <div>
-          <label className="text-xs font-medium text-text-muted mb-1 block">Description</label>
+          <label className="text-xs font-medium text-text-muted mb-1 block">
+            Description
+          </label>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
@@ -99,7 +105,9 @@ export function UIBridgeStatePanel({
 
         {/* State ID */}
         <div>
-          <label className="text-xs font-medium text-text-muted mb-1 block">State ID</label>
+          <label className="text-xs font-medium text-text-muted mb-1 block">
+            State ID
+          </label>
           <code className="text-xs text-text-muted bg-surface-secondary px-2 py-1 rounded block">
             {state.state_id}
           </code>
@@ -107,7 +115,9 @@ export function UIBridgeStatePanel({
 
         {/* Confidence */}
         <div>
-          <label className="text-xs font-medium text-text-muted mb-1 block">Confidence</label>
+          <label className="text-xs font-medium text-text-muted mb-1 block">
+            Confidence
+          </label>
           <div className="text-sm text-text-primary">
             {Math.round(state.confidence * 100)}%
           </div>
@@ -155,7 +165,9 @@ export function UIBridgeStatePanel({
                   key={dk.id}
                   className="text-xs bg-surface-secondary p-2 rounded"
                 >
-                  <div className="font-medium text-text-primary">{dk.title}</div>
+                  <div className="font-medium text-text-primary">
+                    {dk.title}
+                  </div>
                 </div>
               ))}
             </div>

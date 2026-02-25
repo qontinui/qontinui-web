@@ -1,0 +1,83 @@
+{
+  "version": "1.0.0",
+  "description": "Specs for the Run History page — browse, search, and filter all task run executions",
+  "groups": [
+    {
+      "id": "runs-page-purpose",
+      "name": "Page Purpose",
+      "description": "The Run History page provides a comprehensive view of all task run executions. Users can search runs by name, filter by status (running, completed, failed, stopped) and type (GUI, AI), view summary statistics, and click into any run for full details. It supports bulk selection and deletion of runs.",
+      "category": "semantic",
+      "assertions": [
+        {
+          "id": "runs-purpose-browse",
+          "description": "Users can browse all task runs in a searchable, filterable table showing status, name, duration, and errors",
+          "category": "semantic",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Run History" },
+            "label": "Run History heading"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "runs-purpose-filter",
+          "description": "Users can filter runs by status and type to quickly find specific executions",
+          "category": "semantic",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "placeholder": "Search runs..." },
+            "label": "Search input"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "runs-purpose-stats",
+          "description": "Users can see summary statistics showing total, passed, and failed run counts at a glance",
+          "category": "semantic",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Total" },
+            "label": "Total runs badge"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "runs-purpose-details",
+          "description": "Users can click any run row to navigate to its detailed execution view",
+          "category": "semantic",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Status" },
+            "label": "Status column header"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    }
+  ],
+  "metadata": {
+    "component": "RunHistory",
+    "author": "Joshua Spinak",
+    "createdAt": "2026-02-24T00:00:00.000Z",
+    "pageUrl": "/runs",
+    "elementSource": "sdk",
+    "tags": ["run-history", "task-runs", "filtering", "tier-1"]
+  }
+}

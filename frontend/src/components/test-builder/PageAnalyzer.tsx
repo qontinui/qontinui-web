@@ -1195,6 +1195,7 @@ export function PageAnalyzer({
                         </div>
                         {analysis.data.annotated_screenshot_base64 && (
                           <div className="border border-border-subtle/30 rounded overflow-hidden">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                               src={`data:image/png;base64,${analysis.data.annotated_screenshot_base64}`}
                               alt="Annotated screenshot"

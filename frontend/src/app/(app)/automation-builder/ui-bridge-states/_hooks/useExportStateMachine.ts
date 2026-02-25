@@ -77,9 +77,7 @@ export function useExportStateMachine(configId: string | null) {
         }
       } else {
         const err = await res.json().catch(() => null);
-        toast.error(
-          err?.error ?? `Failed to push to runner (${res.status})`
-        );
+        toast.error(err?.error ?? `Failed to push to runner (${res.status})`);
       }
     } catch (err) {
       console.error("Push to runner failed:", err);

@@ -36,10 +36,9 @@ export function AccessibilityTab({ state }: AccessibilityTabProps) {
             </span>
           </div>
           <p className="text-xs text-text-muted">
-            Use accessibility selectors for ref-based element targeting
-            (@e1, @e2, etc.). Configure selectors per StateImage in the
-            Images tab, or capture the accessibility tree from a connected
-            browser.
+            Use accessibility selectors for ref-based element targeting (@e1,
+            @e2, etc.). Configure selectors per StateImage in the Images tab, or
+            capture the accessibility tree from a connected browser.
           </p>
           <div className="grid grid-cols-2 gap-2 pt-2">
             <div className="p-2 bg-surface-canvas/50 rounded border border-border-subtle">
@@ -64,9 +63,8 @@ export function AccessibilityTab({ state }: AccessibilityTabProps) {
         </div>
 
         {/* List StateImages with accessibility search mode */}
-        {state.stateImages?.filter(
-          (img) => img.searchMode === "accessibility"
-        ).length > 0 && (
+        {state.stateImages?.filter((img) => img.searchMode === "accessibility")
+          .length > 0 && (
           <div className="space-y-2">
             <Label className="text-xs text-text-secondary">
               StateImages using Accessibility Mode
@@ -83,10 +81,7 @@ export function AccessibilityTab({ state }: AccessibilityTabProps) {
                     <span className="text-sm">{img.name}</span>
                   </div>
                   {img.accessibilitySelector?.ref && (
-                    <Badge
-                      variant="outline"
-                      className="text-xs font-mono"
-                    >
+                    <Badge variant="outline" className="text-xs font-mono">
                       {img.accessibilitySelector.ref}
                     </Badge>
                   )}
@@ -103,17 +98,16 @@ export function AccessibilityTab({ state }: AccessibilityTabProps) {
         )}
 
         {/* Instructions for no accessibility configured */}
-        {state.stateImages?.filter(
-          (img) => img.searchMode === "accessibility"
-        ).length === 0 && (
+        {state.stateImages?.filter((img) => img.searchMode === "accessibility")
+          .length === 0 && (
           <div className="p-4 border border-dashed border-purple-500/30 rounded-lg text-center">
             <Accessibility className="w-8 h-8 text-purple-500/50 mx-auto mb-2" />
             <p className="text-sm text-text-muted">
               No StateImages configured for accessibility mode.
             </p>
             <p className="text-xs text-text-muted mt-1">
-              Set &quot;Search Mode&quot; to &quot;Accessibility&quot; on
-              a StateImage in the Images tab.
+              Set &quot;Search Mode&quot; to &quot;Accessibility&quot; on a
+              StateImage in the Images tab.
             </p>
           </div>
         )}

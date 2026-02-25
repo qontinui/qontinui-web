@@ -1,7 +1,7 @@
 "use client";
 
 import { RefreshCw } from "lucide-react";
-import type { Target } from "@/hooks/useTargetSelector";
+import type { Target } from "@/lib/ui-bridge/types";
 import {
   Select,
   SelectContent,

@@ -8,7 +8,7 @@ import {
   ChevronDown,
   ChevronRight,
   MapPin,
-  Image,
+  Image as ImageIcon,
   Type,
   Plus,
 } from "lucide-react";
@@ -343,7 +343,7 @@ export function AddStateStepsModal({
                     <div className="px-10 pb-2.5 space-y-1.5 text-xs">
                       {state.state_images && state.state_images.length > 0 && (
                         <div className="flex items-center gap-1.5 text-zinc-500">
-                          <Image className="w-3 h-3" />
+                          <ImageIcon className="w-3 h-3" />
                           <span>{state.state_images.length} image(s)</span>
                           {state.state_images.some((img) => img.ocr_text) && (
                             <span className="text-zinc-600">

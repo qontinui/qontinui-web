@@ -1,6 +1,9 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { usePageSpecs } from "@/hooks/usePageSpecs";
+import type { SpecConfig } from "@qontinui/ui-bridge/specs";
+import pageSpecJson from "./runs.spec.uibridge.json";
 import { useRouter } from "next/navigation";
 import { useTaskRunList } from "@/hooks/useTaskRunData";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
@@ -40,6 +43,8 @@ import {
   Brain,
 } from "lucide-react";
 import { toast } from "sonner";
+
+const pageSpec = pageSpecJson as unknown as SpecConfig;
 
 function getStatusBadge(status: string) {
   switch (status) {
@@ -96,6 +101,7 @@ function formatDateTime(dateString: string): string {
 }
 
 export default function RunHistoryPage() {
+  usePageSpecs({ runs: pageSpec });
   const router = useRouter();
   const {
     data: runs,
@@ -174,9 +180,7 @@ export default function RunHistoryPage() {
           Browse and filter all task runs from the Qontinui Runner.
         </p>
 
-        {isRunnerOffline && (
-          <RunnerPartialState />
-        )}
+        {isRunnerOffline && <RunnerPartialState />}
 
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-4">

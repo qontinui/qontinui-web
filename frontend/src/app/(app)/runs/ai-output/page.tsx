@@ -430,7 +430,9 @@ export default function AiOutputPage() {
         </div>
       </header>
 
-      {isOffline && <RunnerPartialState message="Runner offline — live data unavailable" />}
+      {isOffline && (
+        <RunnerPartialState message="Runner offline — live data unavailable" />
+      )}
 
       {/* Main content: two-panel layout */}
       {runsLoading ? (

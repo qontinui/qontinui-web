@@ -10,16 +10,43 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Trash2, ChevronUp, ChevronDown, MousePointerClick, Type, Command, ArrowRight, Clock, ArrowUpDown, GripVertical } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  ChevronUp,
+  ChevronDown,
+  MousePointerClick,
+  Type,
+  Command,
+  ArrowRight,
+  Clock,
+  ArrowUpDown,
+  GripVertical,
+} from "lucide-react";
 import type { MacroStep } from "@/services/library-service";
 
 const ACTION_TYPES = [
-  { value: "CLICK", label: "Click", icon: MousePointerClick, color: "text-blue-400" },
+  {
+    value: "CLICK",
+    label: "Click",
+    icon: MousePointerClick,
+    color: "text-blue-400",
+  },
   { value: "TYPE", label: "Type", icon: Type, color: "text-green-400" },
   { value: "HOTKEY", label: "Hotkey", icon: Command, color: "text-amber-400" },
-  { value: "GO_TO_STATE", label: "Go to State", icon: ArrowRight, color: "text-violet-400" },
+  {
+    value: "GO_TO_STATE",
+    label: "Go to State",
+    icon: ArrowRight,
+    color: "text-violet-400",
+  },
   { value: "WAIT", label: "Wait", icon: Clock, color: "text-gray-400" },
-  { value: "SCROLL", label: "Scroll", icon: ArrowUpDown, color: "text-cyan-400" },
+  {
+    value: "SCROLL",
+    label: "Scroll",
+    icon: ArrowUpDown,
+    color: "text-cyan-400",
+  },
 ] as const;
 
 interface MacroStepEditorProps {
@@ -95,7 +122,11 @@ export function MacroStepEditor({ steps, onChange }: MacroStepEditorProps) {
                 </SelectTrigger>
                 <SelectContent>
                   {ACTION_TYPES.map((a) => (
-                    <SelectItem key={a.value} value={a.value} className="text-xs">
+                    <SelectItem
+                      key={a.value}
+                      value={a.value}
+                      className="text-xs"
+                    >
                       {a.label}
                     </SelectItem>
                   ))}
@@ -141,7 +172,8 @@ export function MacroStepEditor({ steps, onChange }: MacroStepEditorProps) {
 
             {/* Action-specific fields */}
             <div className="pl-8 space-y-2">
-              {(step.action_type === "CLICK" || step.action_type === "TYPE") && (
+              {(step.action_type === "CLICK" ||
+                step.action_type === "TYPE") && (
                 <div className="flex items-center gap-2">
                   <label className="text-[10px] text-text-muted w-20 shrink-0">
                     Target Images
@@ -169,7 +201,9 @@ export function MacroStepEditor({ steps, onChange }: MacroStepEditorProps) {
                   </label>
                   <Input
                     value={step.text_input ?? ""}
-                    onChange={(e) => updateStep(index, { text_input: e.target.value })}
+                    onChange={(e) =>
+                      updateStep(index, { text_input: e.target.value })
+                    }
                     placeholder="Text to type..."
                     className="h-7 text-xs bg-surface-raised/50 border-border-subtle"
                   />
@@ -183,7 +217,9 @@ export function MacroStepEditor({ steps, onChange }: MacroStepEditorProps) {
                   </label>
                   <Input
                     value={step.hotkey ?? ""}
-                    onChange={(e) => updateStep(index, { hotkey: e.target.value })}
+                    onChange={(e) =>
+                      updateStep(index, { hotkey: e.target.value })
+                    }
                     placeholder="e.g. ctrl+s, alt+f4"
                     className="h-7 text-xs bg-surface-raised/50 border-border-subtle"
                   />
@@ -217,15 +253,26 @@ export function MacroStepEditor({ steps, onChange }: MacroStepEditorProps) {
                     Direction
                   </label>
                   <Select
-                    value={(step as unknown as Record<string, unknown>).scroll_direction as string ?? "down"}
-                    onValueChange={(val) => updateStep(index, { scroll_direction: val } as unknown as Partial<MacroStep>)}
+                    value={
+                      ((step as unknown as Record<string, unknown>)
+                        .scroll_direction as string) ?? "down"
+                    }
+                    onValueChange={(val) =>
+                      updateStep(index, {
+                        scroll_direction: val,
+                      } as unknown as Partial<MacroStep>)
+                    }
                   >
                     <SelectTrigger className="h-7 w-32 text-xs bg-surface-raised/50 border-border-subtle">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="up" className="text-xs">Up</SelectItem>
-                      <SelectItem value="down" className="text-xs">Down</SelectItem>
+                      <SelectItem value="up" className="text-xs">
+                        Up
+                      </SelectItem>
+                      <SelectItem value="down" className="text-xs">
+                        Down
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                   <label className="text-[10px] text-text-muted w-14 shrink-0 ml-2">
@@ -233,8 +280,15 @@ export function MacroStepEditor({ steps, onChange }: MacroStepEditorProps) {
                   </label>
                   <Input
                     type="number"
-                    value={(step as unknown as Record<string, unknown>).scroll_amount as number ?? 3}
-                    onChange={(e) => updateStep(index, { scroll_amount: Number(e.target.value) } as unknown as Partial<MacroStep>)}
+                    value={
+                      ((step as unknown as Record<string, unknown>)
+                        .scroll_amount as number) ?? 3
+                    }
+                    onChange={(e) =>
+                      updateStep(index, {
+                        scroll_amount: Number(e.target.value),
+                      } as unknown as Partial<MacroStep>)
+                    }
                     className="h-7 text-xs w-20 bg-surface-raised/50 border-border-subtle"
                   />
                 </div>
@@ -249,7 +303,9 @@ export function MacroStepEditor({ steps, onChange }: MacroStepEditorProps) {
                   type="number"
                   value={step.pause_after_ms ?? 500}
                   onChange={(e) =>
-                    updateStep(index, { pause_after_ms: Number(e.target.value) })
+                    updateStep(index, {
+                      pause_after_ms: Number(e.target.value),
+                    })
                   }
                   className="h-7 text-xs w-24 bg-surface-raised/50 border-border-subtle"
                 />
@@ -265,7 +321,9 @@ export function MacroStepEditor({ steps, onChange }: MacroStepEditorProps) {
                     type="number"
                     value={step.timeout_seconds ?? 30}
                     onChange={(e) =>
-                      updateStep(index, { timeout_seconds: Number(e.target.value) })
+                      updateStep(index, {
+                        timeout_seconds: Number(e.target.value),
+                      })
                     }
                     className="h-7 text-xs w-24 bg-surface-raised/50 border-border-subtle"
                   />

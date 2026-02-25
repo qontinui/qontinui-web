@@ -82,10 +82,7 @@ export function ResourceUsagePanel({ data }: ResourceUsagePanelProps) {
                       <Icon className="w-4 h-4" style={{ color }} />
                     </div>
                     <div>
-                      <p
-                        className="font-medium text-sm"
-                        style={{ color }}
-                      >
+                      <p className="font-medium text-sm" style={{ color }}>
                         {resource.name}
                       </p>
                       <div className="flex items-center gap-2 mt-1">

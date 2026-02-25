@@ -22,11 +22,6 @@ export function RunOutputPanel({
   config,
 }: RunOutputPanelProps) {
   return (
-    <FullWidget
-      widgetId={widgetId}
-      runId={runId}
-      run={run}
-      config={config}
-    />
+    <FullWidget widgetId={widgetId} runId={runId} run={run} config={config} />
   );
 }

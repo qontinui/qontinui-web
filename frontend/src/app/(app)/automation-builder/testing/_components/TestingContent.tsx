@@ -21,12 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -172,7 +167,8 @@ export function TestingContent() {
                     onDelete={handleDeleteTest}
                     isRunning={
                       state.execution.isRunning &&
-                      state.execution.currentTest === state.selectedTestCase.name
+                      state.execution.currentTest ===
+                        state.selectedTestCase.name
                     }
                   />
                 ) : state.selectedSuite ? (
@@ -388,9 +384,7 @@ function TestingHeader({
               <div className="flex items-center gap-3">
                 <AlertCircle className="size-8 text-red-500" />
                 <div>
-                  <p className="text-2xl font-bold">
-                    {stats.failedTestsCount}
-                  </p>
+                  <p className="text-2xl font-bold">{stats.failedTestsCount}</p>
                   <p className="text-xs text-muted-foreground">Failed Tests</p>
                 </div>
               </div>
@@ -424,7 +418,9 @@ interface TestNavigatorProps {
   setSelectedTestCase: (t: TestCase | null) => void;
   setSelectedWorkflow: (w: Workflow | null) => void;
   getTestStatus: (testId: string) => "passed" | "failed" | "not-run";
-  getTestStatusIcon: (status: "passed" | "failed" | "not-run") => React.ReactNode;
+  getTestStatusIcon: (
+    status: "passed" | "failed" | "not-run"
+  ) => React.ReactNode;
   getSuiteStatus: (
     suite: TestSuite
   ) => "passed" | "failed" | "partial" | "not-run";

@@ -135,15 +135,17 @@ class RunnerClient {
   getStatus = (...args: Parameters<ConfigClient["getStatus"]>) =>
     this.config.getStatus(...args);
 
-  captureScreenshot = (...args: Parameters<ConfigClient["captureScreenshot"]>) =>
-    this.config.captureScreenshot(...args);
+  captureScreenshot = (
+    ...args: Parameters<ConfigClient["captureScreenshot"]>
+  ) => this.config.captureScreenshot(...args);
 
   // ==========================================================================
   // Extraction Methods
   // ==========================================================================
 
-  startExtraction = (...args: Parameters<ExtractionClient["startExtraction"]>) =>
-    this.extraction.startExtraction(...args);
+  startExtraction = (
+    ...args: Parameters<ExtractionClient["startExtraction"]>
+  ) => this.extraction.startExtraction(...args);
 
   stopExtraction = (...args: Parameters<ExtractionClient["stopExtraction"]>) =>
     this.extraction.stopExtraction(...args);

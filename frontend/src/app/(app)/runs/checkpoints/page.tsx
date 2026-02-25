@@ -101,7 +101,9 @@ export default function CheckpointsPage() {
         </div>
       </header>
 
-      {isOffline && <RunnerPartialState message="Runner offline — live data unavailable" />}
+      {isOffline && (
+        <RunnerPartialState message="Runner offline — live data unavailable" />
+      )}
 
       <main className="p-6 max-w-7xl mx-auto">
         <p className="text-text-muted mb-6">
@@ -276,14 +278,17 @@ export default function CheckpointsPage() {
                                       data-content-label="checkpoint name"
                                       className="font-medium text-sm text-text-primary"
                                     >
-                                      {checkpoint.step_name || checkpoint.step_type}
+                                      {checkpoint.step_name ||
+                                        checkpoint.step_type}
                                     </span>
                                     <span
                                       data-content-role="metric"
                                       data-content-label="checkpoint time"
                                       className="text-xs text-text-muted"
                                     >
-                                      {checkpoint.started_at ? formatShortTime(checkpoint.started_at) : "-"}
+                                      {checkpoint.started_at
+                                        ? formatShortTime(checkpoint.started_at)
+                                        : "-"}
                                     </span>
                                   </div>
                                   <div className="flex items-center gap-2">
@@ -294,7 +299,13 @@ export default function CheckpointsPage() {
                                       {checkpoint.phase}
                                     </Badge>
                                     <Badge
-                                      variant={checkpoint.status === "success" ? "success" : checkpoint.status === "failed" ? "destructive" : "secondary"}
+                                      variant={
+                                        checkpoint.status === "success"
+                                          ? "success"
+                                          : checkpoint.status === "failed"
+                                            ? "destructive"
+                                            : "secondary"
+                                      }
                                       className="text-xs"
                                     >
                                       {checkpoint.status}

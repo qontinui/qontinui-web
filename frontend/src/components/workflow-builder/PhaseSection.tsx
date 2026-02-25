@@ -83,12 +83,12 @@ export function PhaseSection({
   const colors = PHASE_COLORS[phase];
   const info = PHASE_INFO[phase];
   const [selectedForDelete, setSelectedForDelete] = useState<Set<string>>(
-    new Set(),
+    new Set()
   );
   const [isSelectionMode, setIsSelectionMode] = useState(false);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
 
   const handleBatchDelete = () => {

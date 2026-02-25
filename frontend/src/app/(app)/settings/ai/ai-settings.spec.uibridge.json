@@ -1,0 +1,89 @@
+{
+  "version": "1.0.0",
+  "description": "Specs for the AI Settings page — configure AI provider selection, credentials, and model settings",
+  "groups": [
+    {
+      "id": "aisettings-page-purpose",
+      "name": "Page Purpose",
+      "description": "The AI Settings page lets users configure which AI provider powers workflow execution. Users choose between Claude CLI, Claude API, Gemini CLI, or Gemini API, then configure provider-specific settings including API keys, model selection, execution modes, and timeouts. A test connection feature validates the configuration.",
+      "category": "semantic",
+      "assertions": [
+        {
+          "id": "aisettings-purpose-provider",
+          "description": "Users can select an active AI provider from Claude CLI, Claude API, Gemini CLI, or Gemini API",
+          "category": "semantic",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Claude CLI" },
+            "label": "Claude CLI provider option"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "aisettings-purpose-configure",
+          "description": "Users can configure provider-specific settings like API keys, model selection, and execution parameters",
+          "category": "semantic",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "AI Providers" },
+            "label": "AI Providers heading"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "aisettings-purpose-test",
+          "description": "Users can test the configured AI connection to verify credentials and connectivity before running workflows",
+          "category": "semantic",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "button", "textContent": "Test Connection" },
+            "label": "Test Connection button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "aisettings-purpose-save",
+          "description": "Users can save their AI provider configuration for persistent use across sessions",
+          "category": "semantic",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "button", "textContent": "Save Settings" },
+            "label": "Save Settings button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    }
+  ],
+  "metadata": {
+    "component": "AiSettings",
+    "author": "Joshua Spinak",
+    "createdAt": "2026-02-24T00:00:00.000Z",
+    "pageUrl": "/settings/ai",
+    "elementSource": "sdk",
+    "tags": [
+      "settings",
+      "ai-providers",
+      "configuration",
+      "credentials",
+      "tier-1"
+    ]
+  }
+}

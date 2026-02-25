@@ -58,7 +58,8 @@ export function UIBridgeStateMachinePage() {
 
   // Determine what side panel to show
   const showStatePanel = sm.selectedState && !showNewTransition;
-  const showTransitionPanel = (sm.selectedTransition || showNewTransition) && !sm.selectedState;
+  const showTransitionPanel =
+    (sm.selectedTransition || showNewTransition) && !sm.selectedState;
 
   // Handle transition operations
   const handleCreateTransition = useCallback(
@@ -187,13 +188,19 @@ export function UIBridgeStateMachinePage() {
             }}
             disabled={sm.isLoading}
           >
-            <RefreshCw className={`size-3.5 ${sm.isLoading ? "animate-spin" : ""}`} />
+            <RefreshCw
+              className={`size-3.5 ${sm.isLoading ? "animate-spin" : ""}`}
+            />
           </Button>
         </div>
       </div>
 
       {/* Main Content */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        className="flex-1 flex flex-col"
+      >
         <div className="border-b border-border-primary bg-surface-primary px-6">
           <TabsList className="bg-transparent">
             <TabsTrigger value="discovery" className="gap-1.5">

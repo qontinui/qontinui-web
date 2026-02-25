@@ -8,4 +8,7 @@
  */
 
 export { WorkflowBrowser } from "./workflow-browser";
-export type { WorkflowBrowserProps, EnhancedWorkflowItem } from "./workflow-browser";
+export type {
+  WorkflowBrowserProps,
+  EnhancedWorkflowItem,
+} from "./workflow-browser";

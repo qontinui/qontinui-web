@@ -141,9 +141,13 @@ function useOrchestratorStatePush(runId: string | null): {
           ...prev,
           ...stateData,
           // Preserve top-level workflow fields from the event (not in state_data)
-          ...(eventData.workflow_stage ? { workflow_stage: eventData.workflow_stage } : {}),
+          ...(eventData.workflow_stage
+            ? { workflow_stage: eventData.workflow_stage }
+            : {}),
           ...(eventData.phase ? { phase: eventData.phase } : {}),
-          ...(eventData.iteration != null ? { iteration: eventData.iteration } : {}),
+          ...(eventData.iteration != null
+            ? { iteration: eventData.iteration }
+            : {}),
         }));
       },
       [runId, fetchState]
@@ -168,7 +172,7 @@ interface SharedRunnerDataProviderProps {
  * Must be rendered inside RunnerEventProvider.
  *
  * This eliminates duplicate useEventTriggeredFetch hooks across widgets:
- * - /current-execution/steps: was fetched by page + 3 widgets independently
+ * - /current-execution/batch: single endpoint for all step data + metadata
  * - /task-runs/{id}/orchestrator-state: was fetched by 4 components independently
  */
 export function SharedRunnerDataProvider({
@@ -181,7 +185,7 @@ export function SharedRunnerDataProvider({
     refetch: refetchSteps,
   } = useEventTriggeredFetch<CurrentExecutionStepsResponse>(
     "step-progress",
-    "/current-execution/steps"
+    "/current-execution/batch"
   );
 
   const { data: orchestratorState } = useOrchestratorStatePush(runId);

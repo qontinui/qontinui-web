@@ -190,9 +190,7 @@ class DevDebugLogger {
           source: "console",
           message: args
             .map((arg) =>
-              typeof arg === "object"
-                ? JSON.stringify(arg)
-                : String(arg)
+              typeof arg === "object" ? JSON.stringify(arg) : String(arg)
             )
             .join(" "),
           data: args.length > 1 ? { args: args.slice(1) } : undefined,

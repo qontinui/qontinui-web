@@ -86,6 +86,7 @@ function TreeNodeView({
     <div>
       <button
         onClick={handleClick}
+        data-ui-id={`page-tree-node-${node.fullPath.replace(/\//g, "-").replace(/^-/, "")}`}
         className={`w-full flex items-center gap-1.5 px-2 py-0.5 text-left text-xs rounded transition-colors text-text-primary ${
           link && onPageClick
             ? "hover:bg-purple-500/10 cursor-pointer"

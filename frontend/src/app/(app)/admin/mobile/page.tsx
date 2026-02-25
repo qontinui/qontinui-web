@@ -122,12 +122,12 @@ export default function MobileAdminDashboard() {
     healthOverview?.overall_status === "degraded" ||
     healthOverview?.overall_status === "down" ||
     securityWarnings?.some(
-      (w) => w.severity === "high" || w.severity === "critical",
+      (w) => w.severity === "high" || w.severity === "critical"
     );
 
   const criticalWarnings =
     securityWarnings?.filter(
-      (w) => w.severity === "critical" || w.severity === "high",
+      (w) => w.severity === "critical" || w.severity === "high"
     ) || [];
 
   return (

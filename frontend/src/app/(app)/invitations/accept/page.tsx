@@ -73,7 +73,7 @@ function getRoleDescription(role: MemberRole): string {
 }
 
 function getRoleBadgeVariant(
-  role: MemberRole,
+  role: MemberRole
 ): "default" | "secondary" | "outline" {
   switch (role) {
     case "owner":
@@ -97,7 +97,7 @@ function AcceptInvitationContent() {
 
   const [status, setStatus] = useState<InvitationStatus>("loading");
   const [invitationData, setInvitationData] = useState<InvitationData | null>(
-    null,
+    null
   );
   const [isAccepting, setIsAccepting] = useState(false);
   const [isDeclining, setIsDeclining] = useState(false);

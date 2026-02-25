@@ -2,12 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import {
-  Inbox,
-  CheckCircle2,
-  History,
-  Rocket,
-} from "lucide-react";
+import { Inbox, CheckCircle2, History, Rocket } from "lucide-react";
 
 export function IdleState() {
   const router = useRouter();

@@ -60,7 +60,9 @@ const ELEMENT_COLORS: Record<string, string> = {
   nav: "border-cyan-400 bg-cyan-500/10 text-cyan-300",
 };
 
-const ACTION_ICONS: Partial<Record<TransitionAction["type"], typeof MousePointer>> = {
+const ACTION_ICONS: Partial<
+  Record<TransitionAction["type"], typeof MousePointer>
+> = {
   click: MousePointer,
   type: TypeIcon,
   select: Target,
@@ -88,14 +90,46 @@ function getElementLabel(elementId: string): string {
 
 /** State colors for visual differentiation */
 const STATE_COLORS = [
-  { border: "#3b82f6", bg: "rgba(59, 130, 246, 0.12)", bgSolid: "rgba(59, 130, 246, 0.25)" },
-  { border: "#22c55e", bg: "rgba(34, 197, 94, 0.12)", bgSolid: "rgba(34, 197, 94, 0.25)" },
-  { border: "#f59e0b", bg: "rgba(245, 158, 11, 0.12)", bgSolid: "rgba(245, 158, 11, 0.25)" },
-  { border: "#ec4899", bg: "rgba(236, 72, 153, 0.12)", bgSolid: "rgba(236, 72, 153, 0.25)" },
-  { border: "#8b5cf6", bg: "rgba(139, 92, 246, 0.12)", bgSolid: "rgba(139, 92, 246, 0.25)" },
-  { border: "#ef4444", bg: "rgba(239, 68, 68, 0.12)", bgSolid: "rgba(239, 68, 68, 0.25)" },
-  { border: "#06b6d4", bg: "rgba(6, 182, 212, 0.12)", bgSolid: "rgba(6, 182, 212, 0.25)" },
-  { border: "#84cc16", bg: "rgba(132, 204, 22, 0.12)", bgSolid: "rgba(132, 204, 22, 0.25)" },
+  {
+    border: "#3b82f6",
+    bg: "rgba(59, 130, 246, 0.12)",
+    bgSolid: "rgba(59, 130, 246, 0.25)",
+  },
+  {
+    border: "#22c55e",
+    bg: "rgba(34, 197, 94, 0.12)",
+    bgSolid: "rgba(34, 197, 94, 0.25)",
+  },
+  {
+    border: "#f59e0b",
+    bg: "rgba(245, 158, 11, 0.12)",
+    bgSolid: "rgba(245, 158, 11, 0.25)",
+  },
+  {
+    border: "#ec4899",
+    bg: "rgba(236, 72, 153, 0.12)",
+    bgSolid: "rgba(236, 72, 153, 0.25)",
+  },
+  {
+    border: "#8b5cf6",
+    bg: "rgba(139, 92, 246, 0.12)",
+    bgSolid: "rgba(139, 92, 246, 0.25)",
+  },
+  {
+    border: "#ef4444",
+    bg: "rgba(239, 68, 68, 0.12)",
+    bgSolid: "rgba(239, 68, 68, 0.25)",
+  },
+  {
+    border: "#06b6d4",
+    bg: "rgba(6, 182, 212, 0.12)",
+    bgSolid: "rgba(6, 182, 212, 0.25)",
+  },
+  {
+    border: "#84cc16",
+    bg: "rgba(132, 204, 22, 0.12)",
+    bgSolid: "rgba(132, 204, 22, 0.25)",
+  },
 ];
 
 // =============================================================================
@@ -114,7 +148,7 @@ function computeSpatialLayout(
   states: SavedStateWithDetails[],
   transitions: UIBridgeTransition[],
   canvasWidth: number,
-  canvasHeight: number,
+  canvasHeight: number
 ): Map<string, { x: number; y: number; radius: number }> {
   const positions = new Map<string, { x: number; y: number; radius: number }>();
   if (states.length === 0) return positions;
@@ -126,7 +160,9 @@ function computeSpatialLayout(
     for (const s2 of states) {
       if (s1.state_id === s2.state_id) continue;
       const s2Set = new Set(s2.element_ids);
-      const intersection = s1.element_ids.filter((eid) => s2Set.has(eid)).length;
+      const intersection = s1.element_ids.filter((eid) =>
+        s2Set.has(eid)
+      ).length;
       const union = new Set([...s1.element_ids, ...s2.element_ids]).size;
       map.set(s2.state_id, union > 0 ? intersection / union : 0);
     }
@@ -138,11 +174,14 @@ function computeSpatialLayout(
   for (const t of transitions) {
     for (const from of t.from_states) {
       for (const to of t.activate_states) {
-        if (!connectionStrength.has(from)) connectionStrength.set(from, new Map());
+        if (!connectionStrength.has(from))
+          connectionStrength.set(from, new Map());
         const current = connectionStrength.get(from)!.get(to) ?? 0;
         connectionStrength.get(from)!.set(to, current + 1);
         if (!connectionStrength.has(to)) connectionStrength.set(to, new Map());
-        connectionStrength.get(to)!.set(from, (connectionStrength.get(to)!.get(from) ?? 0) + 1);
+        connectionStrength
+          .get(to)!
+          .set(from, (connectionStrength.get(to)!.get(from) ?? 0) + 1);
       }
     }
   }
@@ -154,7 +193,10 @@ function computeSpatialLayout(
 
   states.forEach((state, i) => {
     const angle = (i / states.length) * Math.PI * 2 - Math.PI / 2;
-    const radius = Math.max(20, Math.min(50, 15 + state.element_ids.length * 2));
+    const radius = Math.max(
+      20,
+      Math.min(50, 15 + state.element_ids.length * 2)
+    );
     positions.set(state.state_id, {
       x: cx + Math.cos(angle) * baseRadius,
       y: cy + Math.sin(angle) * baseRadius,
@@ -199,7 +241,8 @@ function computeSpatialLayout(
         const s1 = states[i]!;
         const s2 = states[j]!;
         const overlap = overlapMatrix.get(s1.state_id)?.get(s2.state_id) ?? 0;
-        const connection = (connectionStrength.get(s1.state_id)?.get(s2.state_id) ?? 0) * 0.3;
+        const connection =
+          (connectionStrength.get(s1.state_id)?.get(s2.state_id) ?? 0) * 0.3;
         const attraction = (overlap + connection) * attractionStrength;
         if (attraction > 0) {
           const p1 = positions.get(s1.state_id)!;
@@ -230,15 +273,26 @@ function computeSpatialLayout(
       const f = forces.get(s.state_id)!;
       const mag = Math.sqrt(f.fx * f.fx + f.fy * f.fy);
       const scale = mag > maxMove ? maxMove / mag : 1;
-      p.x = Math.max(p.radius + 10, Math.min(canvasWidth - p.radius - 10, p.x + f.fx * scale));
-      p.y = Math.max(p.radius + 30, Math.min(canvasHeight - p.radius - 10, p.y + f.fy * scale));
+      p.x = Math.max(
+        p.radius + 10,
+        Math.min(canvasWidth - p.radius - 10, p.x + f.fx * scale)
+      );
+      p.y = Math.max(
+        p.radius + 30,
+        Math.min(canvasHeight - p.radius - 10, p.y + f.fy * scale)
+      );
     }
   }
 
   return positions;
 }
 
-function SpatialCanvas({ states, transitions, selectedStateId, onSelectState }: SpatialCanvasProps) {
+function SpatialCanvas({
+  states,
+  transitions,
+  selectedStateId,
+  onSelectState,
+}: SpatialCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
@@ -246,7 +300,13 @@ function SpatialCanvas({ states, transitions, selectedStateId, onSelectState }: 
   const [hoveredStateId, setHoveredStateId] = useState<string | null>(null);
 
   const layout = useMemo(
-    () => computeSpatialLayout(states, transitions, canvasSize.width, canvasSize.height),
+    () =>
+      computeSpatialLayout(
+        states,
+        transitions,
+        canvasSize.width,
+        canvasSize.height
+      ),
     [states, transitions, canvasSize.width, canvasSize.height]
   );
 
@@ -324,11 +384,15 @@ function SpatialCanvas({ states, transitions, selectedStateId, onSelectState }: 
           if (!p1 || !p2) continue;
 
           const isHighlighted =
-            from === selectedStateId || to === selectedStateId ||
-            from === hoveredStateId || to === hoveredStateId;
+            from === selectedStateId ||
+            to === selectedStateId ||
+            from === hoveredStateId ||
+            to === hoveredStateId;
 
           ctx.beginPath();
-          ctx.strokeStyle = isHighlighted ? "#6366f1" : "rgba(128, 128, 128, 0.2)";
+          ctx.strokeStyle = isHighlighted
+            ? "#6366f1"
+            : "rgba(128, 128, 128, 0.2)";
           ctx.lineWidth = isHighlighted ? 2 : 1;
 
           const dx = p2.x - p1.x;
@@ -422,14 +486,18 @@ function SpatialCanvas({ states, transitions, selectedStateId, onSelectState }: 
       }
 
       // State name label
-      ctx.fillStyle = isSelected || isHovered ? "#fff" : "rgba(255, 255, 255, 0.85)";
+      ctx.fillStyle =
+        isSelected || isHovered ? "#fff" : "rgba(255, 255, 255, 0.85)";
       ctx.font = `${isSelected ? "bold " : ""}${Math.max(9, Math.min(12, pos.radius / 3))}px system-ui, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
 
       let displayName = state.name;
       const maxWidth = pos.radius * 1.6;
-      while (ctx.measureText(displayName).width > maxWidth && displayName.length > 3) {
+      while (
+        ctx.measureText(displayName).width > maxWidth &&
+        displayName.length > 3
+      ) {
         displayName = displayName.slice(0, -2) + "\u2026";
       }
       ctx.fillText(displayName, pos.x, pos.y);
@@ -437,9 +505,22 @@ function SpatialCanvas({ states, transitions, selectedStateId, onSelectState }: 
       // Element count below
       ctx.font = "9px system-ui, sans-serif";
       ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
-      ctx.fillText(`${state.element_ids.length} el`, pos.x, pos.y + pos.radius + 12);
+      ctx.fillText(
+        `${state.element_ids.length} el`,
+        pos.x,
+        pos.y + pos.radius + 12
+      );
     }
-  }, [canvasSize, states, transitions, layout, selectedStateId, hoveredStateId, sharedElements, zoom]);
+  }, [
+    canvasSize,
+    states,
+    transitions,
+    layout,
+    selectedStateId,
+    hoveredStateId,
+    sharedElements,
+    zoom,
+  ]);
 
   const getStateAtPoint = useCallback(
     (clientX: number, clientY: number) => {
@@ -480,10 +561,17 @@ function SpatialCanvas({ states, transitions, selectedStateId, onSelectState }: 
   );
 
   return (
-    <div ref={containerRef} className="relative w-full h-full bg-surface-secondary">
+    <div
+      ref={containerRef}
+      className="relative w-full h-full bg-surface-secondary"
+    >
       <canvas
         ref={canvasRef}
-        style={{ width: canvasSize.width, height: canvasSize.height, cursor: hoveredStateId ? "pointer" : "default" }}
+        style={{
+          width: canvasSize.width,
+          height: canvasSize.height,
+          cursor: hoveredStateId ? "pointer" : "default",
+        }}
         onMouseMove={handleMouseMove}
         onClick={handleClick}
         onMouseLeave={() => setHoveredStateId(null)}
@@ -536,7 +624,11 @@ function SpatialCanvas({ states, transitions, selectedStateId, onSelectState }: 
             {states.find((s) => s.state_id === hoveredStateId)?.name}
           </div>
           <div className="text-text-muted mt-0.5">
-            {states.find((s) => s.state_id === hoveredStateId)?.element_ids.length} elements
+            {
+              states.find((s) => s.state_id === hoveredStateId)?.element_ids
+                .length
+            }{" "}
+            elements
           </div>
         </div>
       )}
@@ -637,7 +729,9 @@ export function StateViewPanel({
           <div className="flex items-center gap-2 mb-2">
             <Layers className="size-4 text-brand-primary" />
             <h3 className="text-sm font-semibold text-text-primary">States</h3>
-            <span className="text-xs text-text-muted ml-auto">{states.length}</span>
+            <span className="text-xs text-text-muted ml-auto">
+              {states.length}
+            </span>
           </div>
 
           {/* View mode toggle + search */}
@@ -677,8 +771,10 @@ export function StateViewPanel({
             const color = STATE_COLORS[colorIdx % STATE_COLORS.length]!;
             const isSelected = state.state_id === selectedStateId;
             const isExpanded = expandedStates.has(state.state_id);
-            const stateOutgoing = transitionMap.outgoing.get(state.state_id) ?? [];
-            const stateIncoming = transitionMap.incoming.get(state.state_id) ?? [];
+            const stateOutgoing =
+              transitionMap.outgoing.get(state.state_id) ?? [];
+            const stateIncoming =
+              transitionMap.incoming.get(state.state_id) ?? [];
             const isInitial = state.extra_metadata?.initial === true;
             const isBlocking = state.extra_metadata?.blocking === true;
 
@@ -691,9 +787,10 @@ export function StateViewPanel({
                   }}
                   className={`
                     w-full text-left px-3 py-2 rounded-md transition-colors text-sm
-                    ${isSelected
-                      ? "bg-brand-primary/10 border border-brand-primary/30"
-                      : "hover:bg-surface-secondary border border-transparent"
+                    ${
+                      isSelected
+                        ? "bg-brand-primary/10 border border-brand-primary/30"
+                        : "hover:bg-surface-secondary border border-transparent"
                     }
                   `}
                 >
@@ -848,45 +945,48 @@ export function StateViewPanel({
                 Elements by Type
               </h3>
               <div className="space-y-3">
-                {Array.from(elementGroups.entries()).map(([prefix, elements]) => {
-                  const Icon = ELEMENT_ICONS[prefix] ?? Layers;
-                  const colorClass =
-                    ELEMENT_COLORS[prefix] ??
-                    "border-gray-400 bg-gray-500/10 text-gray-300";
+                {Array.from(elementGroups.entries()).map(
+                  ([prefix, elements]) => {
+                    const Icon = ELEMENT_ICONS[prefix] ?? Layers;
+                    const colorClass =
+                      ELEMENT_COLORS[prefix] ??
+                      "border-gray-400 bg-gray-500/10 text-gray-300";
 
-                  return (
-                    <div key={prefix}>
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <Icon className="size-3.5" />
-                        <span className="text-xs font-medium text-text-primary capitalize">
-                          {prefix}
-                        </span>
-                        <span className="text-xs text-text-muted">
-                          ({elements.length})
-                        </span>
+                    return (
+                      <div key={prefix}>
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <Icon className="size-3.5" />
+                          <span className="text-xs font-medium text-text-primary capitalize">
+                            {prefix}
+                          </span>
+                          <span className="text-xs text-text-muted">
+                            ({elements.length})
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {elements.map((eid) => {
+                            const stateCount =
+                              sharedElements.get(eid)?.length ?? 1;
+                            return (
+                              <div
+                                key={eid}
+                                className={`text-[11px] px-2 py-0.5 rounded border ${colorClass} inline-flex items-center gap-1`}
+                                title={`${eid}${stateCount > 1 ? ` (shared across ${stateCount} states)` : ""}`}
+                              >
+                                {getElementLabel(eid)}
+                                {stateCount > 1 && (
+                                  <span className="text-[8px] opacity-70 bg-white/10 px-0.5 rounded">
+                                    x{stateCount}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                      <div className="flex flex-wrap gap-1">
-                        {elements.map((eid) => {
-                          const stateCount = sharedElements.get(eid)?.length ?? 1;
-                          return (
-                            <div
-                              key={eid}
-                              className={`text-[11px] px-2 py-0.5 rounded border ${colorClass} inline-flex items-center gap-1`}
-                              title={`${eid}${stateCount > 1 ? ` (shared across ${stateCount} states)` : ""}`}
-                            >
-                              {getElementLabel(eid)}
-                              {stateCount > 1 && (
-                                <span className="text-[8px] opacity-70 bg-white/10 px-0.5 rounded">
-                                  x{stateCount}
-                                </span>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  }
+                )}
               </div>
             </div>
 
@@ -909,23 +1009,33 @@ export function StateViewPanel({
                       {/* Action type icons */}
                       {t.actions.length > 0 && (
                         <span className="flex items-center gap-0.5 shrink-0">
-                          {[...new Set(t.actions.map((a) => a.type))].slice(0, 3).map((actionType) => {
-                            const ActionIcon = ACTION_ICONS[actionType];
-                            return ActionIcon ? (
-                              <ActionIcon key={actionType} className={`size-2.5 ${ACTION_COLORS[actionType] ?? "text-gray-400"}`} />
-                            ) : null;
-                          })}
+                          {[...new Set(t.actions.map((a) => a.type))]
+                            .slice(0, 3)
+                            .map((actionType) => {
+                              const ActionIcon = ACTION_ICONS[actionType];
+                              return ActionIcon ? (
+                                <ActionIcon
+                                  key={actionType}
+                                  className={`size-2.5 ${ACTION_COLORS[actionType] ?? "text-gray-400"}`}
+                                />
+                              ) : null;
+                            })}
                         </span>
                       )}
                       <ArrowRight className="size-2.5 text-text-muted" />
                       <span className="text-text-muted truncate">
                         {t.activate_states
-                          .map((sid) => states.find((s) => s.state_id === sid)?.name ?? sid)
+                          .map(
+                            (sid) =>
+                              states.find((s) => s.state_id === sid)?.name ??
+                              sid
+                          )
                           .join(", ")}
                       </span>
                       {t.actions.length > 0 && (
                         <span className="text-text-muted ml-auto text-[10px] shrink-0">
-                          {t.actions.length} action{t.actions.length !== 1 ? "s" : ""}
+                          {t.actions.length} action
+                          {t.actions.length !== 1 ? "s" : ""}
                         </span>
                       )}
                       {t.stays_visible && (
@@ -947,26 +1057,39 @@ export function StateViewPanel({
                       {/* Action type icons */}
                       {t.actions.length > 0 && (
                         <span className="flex items-center gap-0.5 shrink-0">
-                          {[...new Set(t.actions.map((a) => a.type))].slice(0, 3).map((actionType) => {
-                            const ActionIcon = ACTION_ICONS[actionType];
-                            return ActionIcon ? (
-                              <ActionIcon key={actionType} className={`size-2.5 ${ACTION_COLORS[actionType] ?? "text-gray-400"}`} />
-                            ) : null;
-                          })}
+                          {[...new Set(t.actions.map((a) => a.type))]
+                            .slice(0, 3)
+                            .map((actionType) => {
+                              const ActionIcon = ACTION_ICONS[actionType];
+                              return ActionIcon ? (
+                                <ActionIcon
+                                  key={actionType}
+                                  className={`size-2.5 ${ACTION_COLORS[actionType] ?? "text-gray-400"}`}
+                                />
+                              ) : null;
+                            })}
                         </span>
                       )}
                       <span className="text-text-muted truncate">
                         from{" "}
                         {t.from_states
-                          .map((sid) => states.find((s) => s.state_id === sid)?.name ?? sid)
+                          .map(
+                            (sid) =>
+                              states.find((s) => s.state_id === sid)?.name ??
+                              sid
+                          )
                           .join(", ")}
                       </span>
                     </div>
                   )
                 )}
-                {(transitionMap.outgoing.get(selectedState.state_id) ?? []).length === 0 &&
-                  (transitionMap.incoming.get(selectedState.state_id) ?? []).length === 0 && (
-                    <p className="text-xs text-text-muted">No transitions connected.</p>
+                {(transitionMap.outgoing.get(selectedState.state_id) ?? [])
+                  .length === 0 &&
+                  (transitionMap.incoming.get(selectedState.state_id) ?? [])
+                    .length === 0 && (
+                    <p className="text-xs text-text-muted">
+                      No transitions connected.
+                    </p>
                   )}
               </div>
             </div>
@@ -979,7 +1102,10 @@ export function StateViewPanel({
                 </h3>
                 <ul className="space-y-1">
                   {selectedState.acceptance_criteria.map((criteria, i) => (
-                    <li key={i} className="text-xs text-text-muted flex items-start gap-1.5">
+                    <li
+                      key={i}
+                      className="text-xs text-text-muted flex items-start gap-1.5"
+                    >
                       <CheckCircle className="size-3 text-green-500 mt-0.5 shrink-0" />
                       {criteria}
                     </li>
@@ -1001,7 +1127,9 @@ export function StateViewPanel({
                       key={dk.id}
                       className="p-3 rounded-lg bg-surface-secondary border border-border-primary"
                     >
-                      <div className="text-xs font-medium text-text-primary">{dk.title}</div>
+                      <div className="text-xs font-medium text-text-primary">
+                        {dk.title}
+                      </div>
                       <div className="text-[10px] text-text-muted mt-1 line-clamp-3">
                         {dk.content}
                       </div>
@@ -1025,9 +1153,20 @@ export function StateViewPanel({
 
             {/* Metadata */}
             <div className="text-xs text-text-muted space-y-1 pt-3 border-t border-border-primary">
-              <div>State ID: <code className="bg-surface-secondary px-1 rounded">{selectedState.state_id}</code></div>
-              <div>Created: {new Date(selectedState.created_at).toLocaleDateString()}</div>
-              <div>Updated: {new Date(selectedState.updated_at).toLocaleDateString()}</div>
+              <div>
+                State ID:{" "}
+                <code className="bg-surface-secondary px-1 rounded">
+                  {selectedState.state_id}
+                </code>
+              </div>
+              <div>
+                Created:{" "}
+                {new Date(selectedState.created_at).toLocaleDateString()}
+              </div>
+              <div>
+                Updated:{" "}
+                {new Date(selectedState.updated_at).toLocaleDateString()}
+              </div>
             </div>
           </div>
         ) : (

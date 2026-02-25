@@ -144,7 +144,11 @@ export function useExtractionState() {
 
   // Derived: renders to analyze (priority: exploration > recording > session > uploaded)
   const rendersToAnalyze = useMemo(
-    () => explorationRenders || recordingRenders || sessionRenders || uploadedRenders,
+    () =>
+      explorationRenders ||
+      recordingRenders ||
+      sessionRenders ||
+      uploadedRenders,
     [explorationRenders, recordingRenders, sessionRenders, uploadedRenders]
   );
 
@@ -168,9 +172,7 @@ export function useExtractionState() {
     () =>
       domainKnowledgeList.filter(
         (k) =>
-          !selectedState?.domain_knowledge?.some(
-            (linked) => linked.id === k.id
-          )
+          !selectedState?.domain_knowledge?.some((linked) => linked.id === k.id)
       ),
     [domainKnowledgeList, selectedState]
   );

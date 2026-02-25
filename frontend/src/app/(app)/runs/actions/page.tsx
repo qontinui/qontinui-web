@@ -127,7 +127,9 @@ export default function ActionsPage() {
         </div>
       </header>
 
-      {isOffline && <RunnerPartialState message="Runner offline — live data unavailable" />}
+      {isOffline && (
+        <RunnerPartialState message="Runner offline — live data unavailable" />
+      )}
 
       <main className="flex h-[calc(100vh-65px)]">
         {/* Left panel: Run list */}

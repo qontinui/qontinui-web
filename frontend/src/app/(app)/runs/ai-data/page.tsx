@@ -508,7 +508,9 @@ export default function AiDataPage() {
         </div>
       </header>
 
-      {isOffline && <RunnerPartialState message="Runner offline — live data unavailable" />}
+      {isOffline && (
+        <RunnerPartialState message="Runner offline — live data unavailable" />
+      )}
 
       {/* Body - two panel layout */}
       <div className="flex h-[calc(100vh-65px)]">

@@ -23,7 +23,7 @@ export function useScheduledTasks() {
 export function useScheduledTask(id: string | null) {
   return useRunnerQuery<ScheduledTask>(
     id != null ? `/scheduler/tasks/${id}` : null,
-    { enabled: id != null },
+    { enabled: id != null }
   );
 }
 
@@ -43,7 +43,7 @@ export function useSchedulerStatus() {
 export function useTaskHistory(taskId: string | null) {
   return useRunnerQuery<TaskExecutionRecord[]>(
     taskId != null ? `/scheduler/tasks/${taskId}/history` : null,
-    { enabled: taskId != null },
+    { enabled: taskId != null }
   );
 }
 
@@ -54,7 +54,7 @@ export function useTaskHistory(taskId: string | null) {
 /** Create a new scheduled task */
 export function useCreateScheduledTask() {
   return useRunnerMutation<CreateScheduledTaskRequest, ScheduledTask>(
-    "/scheduler/tasks",
+    "/scheduler/tasks"
   );
 }
 
@@ -65,7 +65,7 @@ export function useCreateScheduledTask() {
 /** Update an existing scheduled task */
 export async function updateScheduledTask(
   id: string,
-  data: UpdateScheduledTaskRequest,
+  data: UpdateScheduledTaskRequest
 ): Promise<ScheduledTask> {
   return runnerFetch<ScheduledTask>(`/scheduler/tasks/${id}`, {
     method: "PUT",

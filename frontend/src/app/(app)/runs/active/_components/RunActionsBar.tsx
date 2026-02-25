@@ -13,7 +13,11 @@ interface RunActionsBarProps {
 /**
  * Renders the control/action bars (top control bar or bottom status bar).
  */
-export function RunActionsBar({ run, onRefresh, position }: RunActionsBarProps) {
+export function RunActionsBar({
+  run,
+  onRefresh,
+  position,
+}: RunActionsBarProps) {
   if (position === "top") {
     return <ControlBar run={run} onRefresh={onRefresh} />;
   }

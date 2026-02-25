@@ -23,10 +23,15 @@ interface UseElementDragOptions {
 }
 
 /** Derive a readable action name and action type from an element ID */
-function deriveAction(elementId: string): { name: string; action: TransitionAction } {
+function deriveAction(elementId: string): {
+  name: string;
+  action: TransitionAction;
+} {
   // URL/navigation elements → navigate action
   if (elementId.startsWith("url:") || elementId.startsWith("nav:")) {
-    const label = elementId.includes(":") ? elementId.split(":").slice(1).join(":") : elementId;
+    const label = elementId.includes(":")
+      ? elementId.split(":").slice(1).join(":")
+      : elementId;
     return {
       name: `Navigate to ${label}`,
       action: { type: "navigate", url: label },
@@ -35,7 +40,9 @@ function deriveAction(elementId: string): { name: string; action: TransitionActi
 
   // Text inputs → type action
   if (elementId.startsWith("text:")) {
-    const label = elementId.includes(":") ? elementId.split(":").slice(1).join(":") : elementId;
+    const label = elementId.includes(":")
+      ? elementId.split(":").slice(1).join(":")
+      : elementId;
     return {
       name: `Type in ${label}`,
       action: { type: "type", target: elementId, text: "" },
@@ -55,7 +62,9 @@ function deriveAction(elementId: string): { name: string; action: TransitionActi
   }
 
   // Default → click action
-  const label = elementId.includes(":") ? elementId.split(":").slice(1).join(":") : elementId;
+  const label = elementId.includes(":")
+    ? elementId.split(":").slice(1).join(":")
+    : elementId;
   return {
     name: `Click ${label}`,
     action: { type: "click", target: elementId },
@@ -66,7 +75,7 @@ function deriveAction(elementId: string): { name: string; action: TransitionActi
 function findExistingTransition(
   transitions: UIBridgeTransition[],
   sourceStateId: string,
-  targetStateId: string,
+  targetStateId: string
 ): UIBridgeTransition | undefined {
   return transitions.find(
     (t) =>
@@ -86,7 +95,9 @@ export function useElementDrag({
     elementId: string;
   } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [dropTargetStateId, setDropTargetStateId] = useState<string | null>(null);
+  const [dropTargetStateId, setDropTargetStateId] = useState<string | null>(
+    null
+  );
 
   // Clean up drag state when drag ends (e.g., dropped outside valid target)
   useEffect(() => {
@@ -108,10 +119,7 @@ export function useElementDrag({
   );
 
   const handleElementDropOnState = useCallback(
-    async (
-      targetStateId: string,
-      dragInfo: ElementDragData
-    ) => {
+    async (targetStateId: string, dragInfo: ElementDragData) => {
       const { sourceStateId, elementId, isMoveOperation } = dragInfo;
 
       if (targetStateId === sourceStateId) {
@@ -123,12 +131,8 @@ export function useElementDrag({
         return;
       }
 
-      const sourceState = states.find(
-        (s) => s.state_id === sourceStateId
-      );
-      const targetState = states.find(
-        (s) => s.state_id === targetStateId
-      );
+      const sourceState = states.find((s) => s.state_id === sourceStateId);
+      const targetState = states.find((s) => s.state_id === targetStateId);
 
       if (!sourceState || !targetState) {
         toast.error("Could not find states");
@@ -140,7 +144,9 @@ export function useElementDrag({
         const updatedSourceElements = sourceState.element_ids.filter(
           (eid) => eid !== elementId
         );
-        const updatedTargetElements = targetState.element_ids.includes(elementId)
+        const updatedTargetElements = targetState.element_ids.includes(
+          elementId
+        )
           ? targetState.element_ids
           : [...targetState.element_ids, elementId];
 
@@ -152,7 +158,11 @@ export function useElementDrag({
         );
       } else {
         // Check if transition already exists
-        const existing = findExistingTransition(transitions, sourceStateId, targetStateId);
+        const existing = findExistingTransition(
+          transitions,
+          sourceStateId,
+          targetStateId
+        );
 
         if (existing) {
           toast.error(
@@ -166,7 +176,8 @@ export function useElementDrag({
         const { name: transitionName, action } = deriveAction(elementId);
 
         // Auto-populate exit_states: source state exits when transitioning away
-        const exitStates = sourceStateId !== targetStateId ? [sourceStateId] : [];
+        const exitStates =
+          sourceStateId !== targetStateId ? [sourceStateId] : [];
 
         const transitionData: UIBridgeTransitionCreate = {
           name: transitionName,
@@ -189,28 +200,31 @@ export function useElementDrag({
     [states, transitions, onCreateTransition, onUpdateState]
   );
 
-  const handleDragOver = useCallback((event: React.DragEvent) => {
-    const hasData = event.dataTransfer.types.includes(
-      "application/ui-bridge-element-drag"
-    );
-    if (hasData) {
-      event.preventDefault();
-      event.dataTransfer.dropEffect = event.altKey ? "move" : "link";
+  const handleDragOver = useCallback(
+    (event: React.DragEvent) => {
+      const hasData = event.dataTransfer.types.includes(
+        "application/ui-bridge-element-drag"
+      );
+      if (hasData) {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = event.altKey ? "move" : "link";
 
-      // Track which state node is being hovered for visual feedback
-      let target = event.target as HTMLElement;
-      let hoveredStateId: string | null = null;
-      while (target && !hoveredStateId) {
-        const nodeId = target.getAttribute("data-id");
-        if (nodeId && states.some((s) => s.state_id === nodeId)) {
-          hoveredStateId = nodeId;
-          break;
+        // Track which state node is being hovered for visual feedback
+        let target = event.target as HTMLElement;
+        let hoveredStateId: string | null = null;
+        while (target && !hoveredStateId) {
+          const nodeId = target.getAttribute("data-id");
+          if (nodeId && states.some((s) => s.state_id === nodeId)) {
+            hoveredStateId = nodeId;
+            break;
+          }
+          target = target.parentElement as HTMLElement;
         }
-        target = target.parentElement as HTMLElement;
+        setDropTargetStateId(hoveredStateId);
       }
-      setDropTargetStateId(hoveredStateId);
-    }
-  }, [states]);
+    },
+    [states]
+  );
 
   const handleDrop = useCallback(
     (event: React.DragEvent) => {

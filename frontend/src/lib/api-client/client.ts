@@ -11,7 +11,13 @@ import { TokenValidator } from "@/services/auth/token-validator";
 import { csrfService } from "@/services/csrf-service";
 
 const logger = createLogger("ApiClient");
-import type { User, Project, UserUpdate, ProjectCreate, ProjectUpdate } from "./types";
+import type {
+  User,
+  Project,
+  UserUpdate,
+  ProjectCreate,
+  ProjectUpdate,
+} from "./types";
 import type {
   AutomationSession,
   Screenshot,
@@ -137,9 +143,13 @@ class ApiClient {
       const durationMs = Math.round(performance.now() - start);
       const method = options.method || "GET";
       if (durationMs > 1000) {
-        logger.warn(`[API] SLOW ${method} ${url} ${response.status} ${durationMs}ms [${requestId}]`);
+        logger.warn(
+          `[API] SLOW ${method} ${url} ${response.status} ${durationMs}ms [${requestId}]`
+        );
       } else if (process.env.NODE_ENV === "development") {
-        logger.debug(`[API] ${method} ${url} ${response.status} ${durationMs}ms [${requestId}]`);
+        logger.debug(
+          `[API] ${method} ${url} ${response.status} ${durationMs}ms [${requestId}]`
+        );
       }
 
       return response;
@@ -148,7 +158,10 @@ class ApiClient {
 
       const durationMs = Math.round(performance.now() - start);
       const method = options.method || "GET";
-      logger.error(`[API] FAIL ${method} ${url} ${durationMs}ms [${requestId}]`, error);
+      logger.error(
+        `[API] FAIL ${method} ${url} ${durationMs}ms [${requestId}]`,
+        error
+      );
 
       if (error instanceof Error && error.name === "AbortError") {
         throw new Error("Request timeout");
@@ -201,11 +214,7 @@ class ApiClient {
     const response = await this.fetchWithAuth("/projects/");
     if (!response.ok) {
       const errorText = await response.text();
-      logger.error(
-        "getProjects error:",
-        response.status,
-        errorText
-      );
+      logger.error("getProjects error:", response.status, errorText);
       throw new Error(
         `Failed to get projects: ${response.status} - ${errorText}`
       );
@@ -871,10 +880,7 @@ class ApiClient {
         credentials: "include",
       });
       if (!response.ok) {
-        logger.error(
-          "Failed to get WebSocket token:",
-          response.status
-        );
+        logger.error("Failed to get WebSocket token:", response.status);
         return null;
       }
       const data = await response.json();

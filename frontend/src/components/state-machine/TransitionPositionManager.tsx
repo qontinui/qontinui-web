@@ -9,11 +9,7 @@
 
 import React from "react";
 import { useReactFlow } from "@xyflow/react";
-import type {
-  State,
-  OutgoingTransition,
-  Transition,
-} from "@/hooks/automation";
+import type { State, OutgoingTransition, Transition } from "@/hooks/automation";
 
 interface TransitionPositionManagerProps {
   transitions: OutgoingTransition[];

@@ -136,9 +136,7 @@ interface UseTaskRunDetailResult {
 /**
  * Fetches a single task run from the backend, overlays live runner data if running.
  */
-export function useTaskRunDetail(
-  id: string | null
-): UseTaskRunDetailResult {
+export function useTaskRunDetail(id: string | null): UseTaskRunDetailResult {
   const backend = useQuery({
     queryKey: taskRunDataKeys.detail(id ?? ""),
     queryFn: () => fetchBackendTaskRunDetail(id!),
@@ -226,7 +224,7 @@ export function useFindingsSummary(): {
   return {
     data,
     isLoading: backend.isLoading && runner.isLoading,
-    error: (backend.error as Error | null),
+    error: backend.error as Error | null,
     isRunnerOffline: runner.isOffline,
     refetch: () => {
       backend.refetch();

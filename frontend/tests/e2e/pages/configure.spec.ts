@@ -75,8 +75,8 @@ test.describe("Configure - Finding Rules", () => {
 
     // If rules exist, they should show severity badges (CRITICAL, HIGH, MEDIUM, LOW)
     // and Active/Disabled status badges
-    const hasActiveBadge = (await page.locator("text=Active").count()) > 0;
-    const hasDisabledBadge = (await page.locator("text=Disabled").count()) > 0;
+    const _hasActiveBadge = (await page.locator("text=Active").count()) > 0;
+    const _hasDisabledBadge = (await page.locator("text=Disabled").count()) > 0;
     const hasConfiguredRules =
       (await page.locator("text=Configured Rules").count()) > 0;
     const hasOfflineState =
@@ -114,7 +114,7 @@ test.describe("Configure - Finding Rules", () => {
         (await page.locator("text=Severity").count()) > 0;
       const hasSaveButton =
         (await page.locator('button:has-text("Save Rule")').count()) > 0;
-      const hasEnableToggle =
+      const _hasEnableToggle =
         (await page.locator("text=Enable rule").count()) > 0;
 
       expect(hasNewFindingRule).toBeTruthy();
@@ -223,7 +223,7 @@ test.describe("Configure - Hooks", () => {
         (await page.locator("text=Action Type").count()) > 0;
       const hasSaveButton =
         (await page.locator('button:has-text("Save Hook")').count()) > 0;
-      const hasEnableToggle =
+      const _hasEnableToggle =
         (await page.locator("text=Enable hook").count()) > 0;
 
       expect(hasNewHook).toBeTruthy();
@@ -298,7 +298,7 @@ test.describe("Configure - Log Sources", () => {
     await page.waitForTimeout(2000);
 
     // If sources exist, they should show Active/Disabled badges
-    const hasActiveBadge = (await page.locator("text=Active").count()) > 0;
+    const _hasActiveBadge = (await page.locator("text=Active").count()) > 0;
     const hasConfiguredSources =
       (await page.locator("text=Configured Sources").count()) > 0;
     const hasOfflineState =
@@ -333,7 +333,7 @@ test.describe("Configure - Log Sources", () => {
       const hasFilePath = (await page.locator("text=File Path").count()) > 0;
       const hasSaveButton =
         (await page.locator('button:has-text("Save")').count()) > 0;
-      const hasEnableToggle =
+      const _hasEnableToggle =
         (await page.locator("text=Enable monitoring").count()) > 0;
 
       expect(hasNewLogSource).toBeTruthy();

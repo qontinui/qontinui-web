@@ -211,9 +211,7 @@ export function inferElementType(tagName: string, selector: string): string {
 /**
  * Extract class name from CSS selector
  */
-export function extractClassFromSelector(
-  selector: string
-): string | undefined {
+export function extractClassFromSelector(selector: string): string | undefined {
   const match = selector.match(/\.([a-zA-Z0-9_-]+)/);
   return match ? match[1] : undefined;
 }

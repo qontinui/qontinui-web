@@ -44,10 +44,7 @@ export function StringsTab({
     };
 
   return (
-    <TabsContent
-      value="strings"
-      className="flex-1 flex flex-col min-h-0 p-4"
-    >
+    <TabsContent value="strings" className="flex-1 flex flex-col min-h-0 p-4">
       <div className="flex items-center justify-between mb-2">
         <Label className="text-xs text-text-muted">State Strings</Label>
         <Button
@@ -74,18 +71,15 @@ export function StringsTab({
               },
               string.inputText && {
                 label: "Input Text",
-                color:
-                  "bg-green-500/20 text-green-400 border-green-500/50",
+                color: "bg-green-500/20 text-green-400 border-green-500/50",
               },
               string.expectedText && {
                 label: "Expected",
-                color:
-                  "bg-purple-500/20 text-purple-400 border-purple-500/50",
+                color: "bg-purple-500/20 text-purple-400 border-purple-500/50",
               },
               string.regexPattern && {
                 label: "Regex",
-                color:
-                  "bg-orange-500/20 text-orange-400 border-orange-500/50",
+                color: "bg-orange-500/20 text-orange-400 border-orange-500/50",
               },
             ].filter(Boolean) as Array<{ label: string; color: string }>;
 
@@ -184,11 +178,7 @@ export function StringsTab({
                               : true
                           }
                           onCheckedChange={(checked) =>
-                            updateString(
-                              index,
-                              "inputText",
-                              checked as boolean
-                            )
+                            updateString(index, "inputText", checked as boolean)
                           }
                           className="border-border-subtle data-[state=checked]:bg-green-500 data-[state=checked]:border-green-500"
                         />
@@ -264,8 +254,8 @@ export function StringsTab({
                           </div>
                           <div className="text-orange-400/80">
                             The value will be interpreted as a regular
-                            expression pattern. Special characters like .,
-                            *, +, ?, etc. have special meaning.
+                            expression pattern. Special characters like ., *, +,
+                            ?, etc. have special meaning.
                           </div>
                         </div>
                       </div>
@@ -275,9 +265,7 @@ export function StringsTab({
                   {/* String Value */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <Label className="text-xs text-text-muted">
-                        Value
-                      </Label>
+                      <Label className="text-xs text-text-muted">Value</Label>
                       <SpecialKeysSelector
                         onInsertKey={(newText) =>
                           updateString(index, "value", newText)
@@ -285,8 +273,7 @@ export function StringsTab({
                         textAreaRef={
                           stringTextAreaRefs.current[string.id]
                             ? {
-                                current:
-                                  stringTextAreaRefs.current[string.id]!,
+                                current: stringTextAreaRefs.current[string.id]!,
                               }
                             : undefined
                         }

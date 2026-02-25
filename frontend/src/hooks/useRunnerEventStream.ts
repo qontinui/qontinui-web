@@ -17,8 +17,12 @@ export function useRunnerEventStream(enabled: boolean = true) {
   const wsRef = useRef<WebSocket | null>(null);
   const subscribersRef = useRef<Map<string, Set<EventCallback>>>(new Map());
   const reconnectAttemptsRef = useRef(0);
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null
+  );
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
 
@@ -32,7 +36,10 @@ export function useRunnerEventStream(enabled: boolean = true) {
         try {
           cb(data);
         } catch (e) {
-          console.error(`[RunnerEventStream] Subscriber error on channel "${channel}":`, e);
+          console.error(
+            `[RunnerEventStream] Subscriber error on channel "${channel}":`,
+            e
+          );
         }
       });
     }
@@ -60,7 +67,10 @@ export function useRunnerEventStream(enabled: boolean = true) {
 
   const connect = useCallback(() => {
     if (!enabledRef.current) return;
-    if (wsRef.current?.readyState === WebSocket.OPEN || wsRef.current?.readyState === WebSocket.CONNECTING) {
+    if (
+      wsRef.current?.readyState === WebSocket.OPEN ||
+      wsRef.current?.readyState === WebSocket.CONNECTING
+    ) {
       return;
     }
 

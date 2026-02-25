@@ -50,13 +50,7 @@ export function ActivityTimelineChart({
         <ResponsiveContainer width="100%" height={250}>
           <AreaChart data={timelineData}>
             <defs>
-              <linearGradient
-                id="colorWorkflows"
-                x1="0"
-                y1="0"
-                x2="0"
-                y2="1"
-              >
+              <linearGradient id="colorWorkflows" x1="0" y1="0" x2="0" y2="1">
                 <stop
                   offset="5%"
                   stopColor="var(--brand-primary)"
@@ -68,13 +62,7 @@ export function ActivityTimelineChart({
                   stopOpacity={0}
                 />
               </linearGradient>
-              <linearGradient
-                id="colorStates"
-                x1="0"
-                y1="0"
-                x2="0"
-                y2="1"
-              >
+              <linearGradient id="colorStates" x1="0" y1="0" x2="0" y2="1">
                 <stop
                   offset="5%"
                   stopColor="var(--brand-secondary)"
@@ -86,13 +74,7 @@ export function ActivityTimelineChart({
                   stopOpacity={0}
                 />
               </linearGradient>
-              <linearGradient
-                id="colorImages"
-                x1="0"
-                y1="0"
-                x2="0"
-                y2="1"
-              >
+              <linearGradient id="colorImages" x1="0" y1="0" x2="0" y2="1">
                 <stop
                   offset="5%"
                   stopColor="var(--brand-success)"
@@ -104,31 +86,17 @@ export function ActivityTimelineChart({
                   stopOpacity={0}
                 />
               </linearGradient>
-              <linearGradient
-                id="colorTransitions"
-                x1="0"
-                y1="0"
-                x2="0"
-                y2="1"
-              >
+              <linearGradient id="colorTransitions" x1="0" y1="0" x2="0" y2="1">
                 <stop
                   offset="5%"
                   stopColor="var(--warning)"
                   stopOpacity={0.3}
                 />
-                <stop
-                  offset="95%"
-                  stopColor="var(--warning)"
-                  stopOpacity={0}
-                />
+                <stop offset="95%" stopColor="var(--warning)" stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-            <XAxis
-              dataKey="date"
-              stroke="#666"
-              style={{ fontSize: "10px" }}
-            />
+            <XAxis dataKey="date" stroke="#666" style={{ fontSize: "10px" }} />
             <YAxis stroke="#666" style={{ fontSize: "10px" }} />
             <Tooltip contentStyle={TOOLTIP_STYLE} />
             <Legend />
@@ -185,11 +153,7 @@ export function ActivityLineChart({ timelineData }: ActivityLineChartProps) {
         <ResponsiveContainer width="100%" height={350}>
           <LineChart data={timelineData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-            <XAxis
-              dataKey="date"
-              stroke="#666"
-              style={{ fontSize: "10px" }}
-            />
+            <XAxis dataKey="date" stroke="#666" style={{ fontSize: "10px" }} />
             <YAxis stroke="#666" style={{ fontSize: "10px" }} />
             <Tooltip contentStyle={TOOLTIP_STYLE} />
             <Legend />

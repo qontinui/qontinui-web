@@ -558,12 +558,11 @@ export class TransitionOrganizationService {
     }
 
     if (options.includeGroups) {
-      (exportData as { groups?: TransitionGroup[] }).groups =
-        this.groupManager
-          .getAllGroups()
-          .filter((g) =>
-            g.transitionIds.some((id) => transitionIds.includes(id))
-          );
+      (exportData as { groups?: TransitionGroup[] }).groups = this.groupManager
+        .getAllGroups()
+        .filter((g) =>
+          g.transitionIds.some((id) => transitionIds.includes(id))
+        );
     }
 
     if (options.includeMetadata) {

@@ -69,18 +69,31 @@ export function ExecutionPanel({
 
   if (isRunnerOffline) {
     return (
-      <div className={cn("flex items-center gap-2 p-3 rounded-lg border border-border-subtle/50 bg-surface-raised/20", className)}>
+      <div
+        className={cn(
+          "flex items-center gap-2 p-3 rounded-lg border border-border-subtle/50 bg-surface-raised/20",
+          className
+        )}
+      >
         <WifiOff className="size-4 text-text-muted" />
-        <span className="text-xs text-text-muted">Runner offline — connect to execute</span>
+        <span className="text-xs text-text-muted">
+          Runner offline — connect to execute
+        </span>
       </div>
     );
   }
 
-  const output = result?.output || result?.stdout || result?.response_body || "";
+  const output =
+    result?.output || result?.stdout || result?.response_body || "";
   const errorOutput = result?.error || result?.stderr || "";
 
   return (
-    <div className={cn("border border-border-subtle/50 rounded-lg bg-surface-raised/20", className)}>
+    <div
+      className={cn(
+        "border border-border-subtle/50 rounded-lg bg-surface-raised/20",
+        className
+      )}
+    >
       <div className="flex items-center gap-2 px-4 py-2.5">
         <Button
           size="sm"
@@ -134,7 +147,12 @@ export function ExecutionPanel({
               onClick={() => setExpanded(!expanded)}
               className="ml-auto text-text-muted hover:text-text-secondary"
             >
-              <ChevronDown className={cn("size-4 transition-transform", expanded && "rotate-180")} />
+              <ChevronDown
+                className={cn(
+                  "size-4 transition-transform",
+                  expanded && "rotate-180"
+                )}
+              />
             </button>
           </>
         )}
@@ -154,7 +172,9 @@ export function ExecutionPanel({
           )}
           {result.response_headers && (
             <details className="text-xs text-text-muted">
-              <summary className="cursor-pointer hover:text-text-secondary">Response Headers</summary>
+              <summary className="cursor-pointer hover:text-text-secondary">
+                Response Headers
+              </summary>
               <pre className="mt-1 font-mono whitespace-pre-wrap bg-surface-canvas/50 rounded p-2">
                 {Object.entries(result.response_headers)
                   .map(([k, v]) => `${k}: ${v}`)

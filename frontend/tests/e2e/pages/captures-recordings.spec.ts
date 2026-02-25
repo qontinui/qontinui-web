@@ -168,7 +168,7 @@ test.describe("Recordings - Detail (non-existent)", () => {
       (await page.locator('button:has-text("Overview")').count()) > 0;
     const hasProcessingTab =
       (await page.locator('button:has-text("Processing")').count()) > 0;
-    const hasReviewTab =
+    const _hasReviewTab =
       (await page.locator('button:has-text("Review Structure")').count()) > 0;
     const hasLoading =
       (await page.locator('[class*="animate-spin"]').count()) > 0;

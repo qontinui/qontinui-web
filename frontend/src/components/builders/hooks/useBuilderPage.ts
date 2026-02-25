@@ -14,7 +14,11 @@ import type { BuilderItem } from "../BuilderLayout";
 
 const AUTO_SAVE_DELAY = 2000;
 
-interface UseBuilderPageOptions<T extends BuilderItem, TForm, TPayload = Record<string, unknown>> {
+interface UseBuilderPageOptions<
+  T extends BuilderItem,
+  TForm,
+  TPayload = Record<string, unknown>,
+> {
   items: T[] | undefined | null;
   isLoading: boolean;
   error: unknown;
@@ -34,7 +38,11 @@ interface UseBuilderPageOptions<T extends BuilderItem, TForm, TPayload = Record<
   disableAutoSave?: boolean;
 }
 
-export function useBuilderPage<T extends BuilderItem, TForm, TPayload = Record<string, unknown>>({
+export function useBuilderPage<
+  T extends BuilderItem,
+  TForm,
+  TPayload = Record<string, unknown>,
+>({
   items,
   isLoading,
   error,
@@ -230,7 +238,9 @@ export function useBuilderPage<T extends BuilderItem, TForm, TPayload = Record<s
     onSelect: selectItem,
     onNew: startNew,
     onDelete: batchDelete,
-    refetch: async () => { await refetch(); },
+    refetch: async () => {
+      await refetch();
+    },
     initialSelectedId,
 
     // Editor state

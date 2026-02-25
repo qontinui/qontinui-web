@@ -349,9 +349,7 @@ export function getActionTimings(
 ): Record<string, number> {
   const timings: Record<string, number> = {};
 
-  for (const [actionId, state] of Object.entries(
-    executionData.actionStates
-  )) {
+  for (const [actionId, state] of Object.entries(executionData.actionStates)) {
     if (state.duration !== undefined) {
       timings[actionId] = state.duration;
     }

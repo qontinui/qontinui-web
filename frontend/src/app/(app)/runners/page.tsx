@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { usePageSpecs } from "@/hooks/usePageSpecs";
+import type { SpecConfig } from "@qontinui/ui-bridge/specs";
+import pageSpecJson from "./runners.spec.uibridge.json";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -11,7 +14,10 @@ import { ActiveConnectionsList } from "@/components/runners/ActiveConnectionsLis
 import { ConnectionHistoryTable } from "@/components/runners/ConnectionHistoryTable";
 import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
 
+const pageSpec = pageSpecJson as unknown as SpecConfig;
+
 export default function RunnersPage() {
+  usePageSpecs({ runners: pageSpec });
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("active");

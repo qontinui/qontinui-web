@@ -117,6 +117,6 @@ export function useCheckGroupChecks(groupId: string | null) {
     groupId ? `/check-groups/${groupId}/checks` : null,
     {
       enabled: !!groupId,
-    },
+    }
   );
 }

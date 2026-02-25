@@ -13,7 +13,6 @@ import {
   Camera,
   Box,
   GitBranch,
-  GitCompare,
   Scan,
   Target,
   Sliders,
@@ -88,22 +87,6 @@ export const navItems: NavItem[] = [
     description: "Browse and manage all created steps",
     icon: React.createElement(Library, { className: "size-5" }),
     route: "/library",
-    color: "var(--brand-secondary)",
-  },
-  {
-    id: "inspector",
-    label: "Inspector",
-    description: "UI Bridge element inspection",
-    icon: React.createElement(ScanSearch, { className: "size-5" }),
-    route: "/tools/inspector",
-    color: "var(--brand-secondary)",
-  },
-  {
-    id: "compare-apps",
-    label: "Compare Apps",
-    description: "Compare UI Bridge app snapshots",
-    icon: React.createElement(GitCompare, { className: "size-5" }),
-    route: "/tools/compare",
     color: "var(--brand-secondary)",
   },
   {
@@ -348,6 +331,15 @@ export const navItems: NavItem[] = [
   // ===========================================================================
   // Hidden items (dev-only)
   // ===========================================================================
+  {
+    id: "inspector",
+    label: "Inspector",
+    description: "UI Bridge element inspection (dev debugging tool)",
+    icon: React.createElement(ScanSearch, { className: "size-5" }),
+    route: "/tools/inspector",
+    color: "var(--brand-secondary)",
+    hidden: true,
+  },
   {
     id: "dashboard",
     label: "Dashboard",

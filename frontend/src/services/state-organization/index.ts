@@ -20,10 +20,7 @@
  */
 
 // Re-export all types
-export type {
-  ServiceState,
-  PersistenceCallbacks,
-} from "./types";
+export type { ServiceState, PersistenceCallbacks } from "./types";
 
 export type {
   StateTemplate,
@@ -82,10 +79,7 @@ export { ImportExport } from "./import-export";
 export { Persistence } from "./persistence";
 
 // Implementation imports
-import type {
-  State,
-  Transition,
-} from "@/contexts/automation-context/types";
+import type { State, Transition } from "@/contexts/automation-context/types";
 
 import type {
   StateTemplate,
@@ -151,8 +145,14 @@ export class StateOrganizationService {
     this.persistenceModule = new Persistence(this.serviceState);
     const persistenceCallbacks = { save: () => this.persistenceModule.save() };
 
-    this.templateManager = new TemplateManager(this.serviceState, persistenceCallbacks);
-    this.groupManager = new GroupManager(this.serviceState, persistenceCallbacks);
+    this.templateManager = new TemplateManager(
+      this.serviceState,
+      persistenceCallbacks
+    );
+    this.groupManager = new GroupManager(
+      this.serviceState,
+      persistenceCallbacks
+    );
     this.searchEngine = new SearchEngine(this.serviceState);
     this.analyzer = new Analyzer(this.serviceState);
     this.importExport = new ImportExport(
@@ -232,10 +232,7 @@ export class StateOrganizationService {
     return this.groupManager.addStateToGroup(stateId, groupId);
   }
 
-  removeStateFromGroup(
-    stateId: string,
-    groupId: string
-  ): GroupOperationResult {
+  removeStateFromGroup(stateId: string, groupId: string): GroupOperationResult {
     return this.groupManager.removeStateFromGroup(stateId, groupId);
   }
 
@@ -383,7 +380,11 @@ export class StateOrganizationService {
     includeGroups = false,
     includeImages = false
   ): ExportData {
-    return this.importExport.exportStates(stateIds, includeGroups, includeImages);
+    return this.importExport.exportStates(
+      stateIds,
+      includeGroups,
+      includeImages
+    );
   }
 
   importStates(data: ExportData, options?: ImportOptions): BulkOperationResult {

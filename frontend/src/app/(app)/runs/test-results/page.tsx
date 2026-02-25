@@ -316,7 +316,9 @@ export default function TestResultsPage() {
         </div>
       </header>
 
-      {isOffline && <RunnerPartialState message="Runner offline — live data unavailable" />}
+      {isOffline && (
+        <RunnerPartialState message="Runner offline — live data unavailable" />
+      )}
 
       <main className="p-6 max-w-7xl mx-auto">
         <p className="text-text-muted mb-6">

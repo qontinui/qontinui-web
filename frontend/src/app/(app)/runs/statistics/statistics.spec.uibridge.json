@@ -1,0 +1,68 @@
+{
+  "version": "1.0.0",
+  "description": "Specs for the Statistics page — execution performance analytics and metrics dashboard",
+  "groups": [
+    {
+      "id": "stats-page-purpose",
+      "name": "Page Purpose",
+      "description": "The Statistics page provides performance analytics for workflow executions. It displays summary metrics (total runs, average duration, success rate, total time), a status breakdown with visual distribution bars, and a recent runs table comparing each run's duration against the average. A performance view adds time-range filtering and detailed metric cards.",
+      "category": "semantic",
+      "assertions": [
+        {
+          "id": "stats-purpose-overview",
+          "description": "Users can see key execution metrics including total runs, average duration, and success rate at a glance",
+          "category": "semantic",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Statistics" },
+            "label": "Statistics heading"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "stats-purpose-breakdown",
+          "description": "Users can view the distribution of run statuses (completed, failed, running, stopped) with visual bar charts",
+          "category": "semantic",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Status Breakdown" },
+            "label": "Status Breakdown section"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "stats-purpose-recent",
+          "description": "Users can review recent runs with duration comparisons against the average to identify slow executions",
+          "category": "semantic",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Recent Runs" },
+            "label": "Recent Runs table"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    }
+  ],
+  "metadata": {
+    "component": "Statistics",
+    "author": "Joshua Spinak",
+    "createdAt": "2026-02-24T00:00:00.000Z",
+    "pageUrl": "/runs/statistics",
+    "elementSource": "sdk",
+    "tags": ["statistics", "analytics", "performance", "metrics", "tier-2"]
+  }
+}

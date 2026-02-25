@@ -435,7 +435,6 @@ export const BUILT_IN_TEMPLATES: StepTemplate[] = [
     color: "pink",
     tags: ["compare", "ui-bridge", "snapshot", "diff"],
     applicablePhases: ["verification", "completion"],
-    builderPageUrl: "/tools/compare",
     createStep: (phase) =>
       makeUiBridge(phase, {
         name: "Compare App State",

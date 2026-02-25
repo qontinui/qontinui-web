@@ -105,7 +105,7 @@ test.describe("Demo List Page (/demo)", () => {
     await page.goto("/demo");
 
     // The loading text might be very brief, so we check the initial content
-    const loadingText = page.getByText("Loading public projects...");
+    const _loadingText = page.getByText("Loading public projects...");
 
     // This might pass or miss depending on timing - that's OK
     // We just verify the page doesn't crash during loading

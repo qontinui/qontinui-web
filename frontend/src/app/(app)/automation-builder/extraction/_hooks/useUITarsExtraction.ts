@@ -141,7 +141,13 @@ export function useUITarsExtraction({
       throw new Error(data.error || "Failed to start extraction");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setters are stable
-  }, [getRunnerUrl, state.selectedConnectionId, uitarsConfig, configMethod, selectedMonitors]);
+  }, [
+    getRunnerUrl,
+    state.selectedConnectionId,
+    uitarsConfig,
+    configMethod,
+    selectedMonitors,
+  ]);
 
   return {
     pollExtractionStatus,

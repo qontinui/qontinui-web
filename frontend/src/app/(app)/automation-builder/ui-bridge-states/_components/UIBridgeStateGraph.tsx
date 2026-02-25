@@ -124,7 +124,15 @@ function UIBridgeStateGraphInner({
           onStartElementDrag,
         } satisfies StateNodeData,
       })),
-    [states, selectedStateId, effectiveInitialStateId, onStartElementDrag, transitionCounts, isDragging, dropTargetStateId]
+    [
+      states,
+      selectedStateId,
+      effectiveInitialStateId,
+      onStartElementDrag,
+      transitionCounts,
+      isDragging,
+      dropTargetStateId,
+    ]
   );
 
   // Build edges from transitions
@@ -147,7 +155,8 @@ function UIBridgeStateGraphInner({
               actionTypes: trans.actions.map((a) => a.type),
               isHighlighted: highlightedTransitionIds.has(trans.transition_id),
               staysVisible: trans.stays_visible,
-              firstActionTarget: trans.actions[0]?.target ?? trans.actions[0]?.url ?? undefined,
+              firstActionTarget:
+                trans.actions[0]?.target ?? trans.actions[0]?.url ?? undefined,
             } satisfies TransitionEdgeData,
           });
         }
@@ -188,7 +197,10 @@ function UIBridgeStateGraphInner({
 
   // Handle selection
   const onSelectionChange = useCallback(
-    ({ nodes: selectedNodes, edges: selectedEdges }: OnSelectionChangeParams) => {
+    ({
+      nodes: selectedNodes,
+      edges: selectedEdges,
+    }: OnSelectionChangeParams) => {
       const firstNode = selectedNodes[0];
       const firstEdge = selectedEdges[0];
       if (firstNode) {
@@ -228,7 +240,11 @@ function UIBridgeStateGraphInner({
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore when typing in inputs
       const target = e.target as HTMLElement;
-      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT") {
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT"
+      ) {
         return;
       }
 
@@ -258,7 +274,13 @@ function UIBridgeStateGraphInner({
         reactFlowInstance.zoomOut({ duration: 200 });
       }
       // I to jump to initial state
-      if (e.key === "i" && !e.ctrlKey && !e.metaKey && !e.altKey && effectiveInitialStateId) {
+      if (
+        e.key === "i" &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        effectiveInitialStateId
+      ) {
         onSelectState(effectiveInitialStateId);
         onSelectTransition(null);
         const node = reactFlowInstance.getNode(effectiveInitialStateId);
@@ -271,13 +293,19 @@ function UIBridgeStateGraphInner({
         }
       }
       // Delete/Backspace to delete selected transition
-      if ((e.key === "Delete" || e.key === "Backspace") && !e.ctrlKey && !e.metaKey) {
+      if (
+        (e.key === "Delete" || e.key === "Backspace") &&
+        !e.ctrlKey &&
+        !e.metaKey
+      ) {
         const selectedEdge = edges.find((edge) => edge.selected);
         if (selectedEdge && onDeleteTransition) {
           const edgeData = selectedEdge.data as unknown as TransitionEdgeData;
           if (edgeData?.transitionId) {
             // Find the full transition to get its DB id
-            const trans = transitions.find((t) => t.transition_id === edgeData.transitionId);
+            const trans = transitions.find(
+              (t) => t.transition_id === edgeData.transitionId
+            );
             if (trans) {
               e.preventDefault();
               onDeleteTransition(trans.id);
@@ -289,10 +317,12 @@ function UIBridgeStateGraphInner({
       if (e.key === "Tab" && !e.ctrlKey && !e.metaKey && states.length > 0) {
         e.preventDefault();
         const currentIndex = states.findIndex(
-          (s) => s.state_id === (nodes.find((n) => n.selected)?.id)
+          (s) => s.state_id === nodes.find((n) => n.selected)?.id
         );
         const nextIndex = e.shiftKey
-          ? (currentIndex <= 0 ? states.length - 1 : currentIndex - 1)
+          ? currentIndex <= 0
+            ? states.length - 1
+            : currentIndex - 1
           : (currentIndex + 1) % states.length;
         const nextState = states[nextIndex];
         if (nextState) {
@@ -312,29 +342,43 @@ function UIBridgeStateGraphInner({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onSelectState, onSelectTransition, reactFlowInstance, handleRelayout, states, nodes, edges, transitions, effectiveInitialStateId, onDeleteTransition]);
+  }, [
+    onSelectState,
+    onSelectTransition,
+    reactFlowInstance,
+    handleRelayout,
+    states,
+    nodes,
+    edges,
+    transitions,
+    effectiveInitialStateId,
+    onDeleteTransition,
+  ]);
 
   // Graph stats for the info panel
-  const graphStats = useMemo(() => ({
-    states: states.length,
-    transitions: transitions.length,
-    initialState: states.find((s) => s.state_id === effectiveInitialStateId)?.name ?? "None",
-  }), [states, transitions, effectiveInitialStateId]);
+  const graphStats = useMemo(
+    () => ({
+      states: states.length,
+      transitions: transitions.length,
+      initialState:
+        states.find((s) => s.state_id === effectiveInitialStateId)?.name ??
+        "None",
+    }),
+    [states, transitions, effectiveInitialStateId]
+  );
 
   if (states.length === 0) {
     return (
       <div className="flex items-center justify-center h-full text-text-muted">
-        <p>No states discovered yet. Use the Discovery tab to discover states.</p>
+        <p>
+          No states discovered yet. Use the Discovery tab to discover states.
+        </p>
       </div>
     );
   }
 
   return (
-    <div
-      className="h-full w-full"
-      onDragOver={onDragOver}
-      onDrop={onDrop}
-    >
+    <div className="h-full w-full" onDragOver={onDragOver} onDrop={onDrop}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -369,7 +413,9 @@ function UIBridgeStateGraphInner({
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => reactFlowInstance.fitView({ padding: 0.2, duration: 300 })}
+              onClick={() =>
+                reactFlowInstance.fitView({ padding: 0.2, duration: 300 })
+              }
               className="h-7 w-7 p-0"
               title="Fit to view (F)"
             >
@@ -384,7 +430,12 @@ function UIBridgeStateGraphInner({
             >
               <Keyboard className="size-3.5" />
             </Button>
-            <Button variant="outline" size="sm" onClick={handleRelayout} title="Re-layout (L)">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRelayout}
+              title="Re-layout (L)"
+            >
               <LayoutGrid className="size-3.5 mr-1.5" />
               Re-layout
             </Button>
@@ -413,42 +464,59 @@ function UIBridgeStateGraphInner({
         {showShortcuts && (
           <Panel position="bottom-right">
             <div className="bg-surface-primary/95 border border-border-primary rounded-lg p-4 text-xs shadow-lg backdrop-blur-sm min-w-[200px]">
-              <h4 className="font-semibold text-text-primary mb-2.5">Keyboard Shortcuts</h4>
+              <h4 className="font-semibold text-text-primary mb-2.5">
+                Keyboard Shortcuts
+              </h4>
               <div className="space-y-1.5 text-text-muted">
                 <div className="flex items-center justify-between gap-4">
                   <span>Deselect all</span>
-                  <kbd className="px-1.5 py-0.5 bg-surface-secondary rounded text-[10px] font-mono">Esc</kbd>
+                  <kbd className="px-1.5 py-0.5 bg-surface-secondary rounded text-[10px] font-mono">
+                    Esc
+                  </kbd>
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <span>Toggle shortcuts</span>
-                  <kbd className="px-1.5 py-0.5 bg-surface-secondary rounded text-[10px] font-mono">?</kbd>
+                  <kbd className="px-1.5 py-0.5 bg-surface-secondary rounded text-[10px] font-mono">
+                    ?
+                  </kbd>
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <span>Fit to view</span>
-                  <kbd className="px-1.5 py-0.5 bg-surface-secondary rounded text-[10px] font-mono">F</kbd>
+                  <kbd className="px-1.5 py-0.5 bg-surface-secondary rounded text-[10px] font-mono">
+                    F
+                  </kbd>
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <span>Re-layout</span>
-                  <kbd className="px-1.5 py-0.5 bg-surface-secondary rounded text-[10px] font-mono">L</kbd>
+                  <kbd className="px-1.5 py-0.5 bg-surface-secondary rounded text-[10px] font-mono">
+                    L
+                  </kbd>
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <span>Zoom in/out</span>
                   <span>
-                    <kbd className="px-1.5 py-0.5 bg-surface-secondary rounded text-[10px] font-mono">+</kbd>
-                    {" "}
-                    <kbd className="px-1.5 py-0.5 bg-surface-secondary rounded text-[10px] font-mono">-</kbd>
+                    <kbd className="px-1.5 py-0.5 bg-surface-secondary rounded text-[10px] font-mono">
+                      +
+                    </kbd>{" "}
+                    <kbd className="px-1.5 py-0.5 bg-surface-secondary rounded text-[10px] font-mono">
+                      -
+                    </kbd>
                   </span>
                 </div>
                 <div className="border-t border-border-primary pt-1.5 mt-1.5">
                   <div className="flex items-center justify-between gap-4">
                     <span>Cycle states</span>
                     <span>
-                      <kbd className="px-1.5 py-0.5 bg-surface-secondary rounded text-[10px] font-mono">Tab</kbd>
+                      <kbd className="px-1.5 py-0.5 bg-surface-secondary rounded text-[10px] font-mono">
+                        Tab
+                      </kbd>
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-4">
                     <span>Jump to initial</span>
-                    <kbd className="px-1.5 py-0.5 bg-surface-secondary rounded text-[10px] font-mono">I</kbd>
+                    <kbd className="px-1.5 py-0.5 bg-surface-secondary rounded text-[10px] font-mono">
+                      I
+                    </kbd>
                   </div>
                   <div className="flex items-center justify-between gap-4">
                     <span>Create transition</span>
@@ -460,7 +528,9 @@ function UIBridgeStateGraphInner({
                   </div>
                   <div className="flex items-center justify-between gap-4">
                     <span>Delete transition</span>
-                    <kbd className="px-1.5 py-0.5 bg-surface-secondary rounded text-[10px] font-mono">Del</kbd>
+                    <kbd className="px-1.5 py-0.5 bg-surface-secondary rounded text-[10px] font-mono">
+                      Del
+                    </kbd>
                   </div>
                 </div>
               </div>

@@ -61,10 +61,10 @@ export function AddToWorkflowDialog({
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(
-    null,
+    null
   );
   const [selectedPhase, setSelectedPhase] = useState<WorkflowPhase | null>(
-    null,
+    null
   );
   const [isAdding, setIsAdding] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -84,7 +84,7 @@ export function AddToWorkflowDialog({
 
   const validPhases = useMemo(
     () => PHASES.filter((p) => canStepExistInPhase(stepType, p)),
-    [stepType],
+    [stepType]
   );
 
   // Auto-select first valid phase
@@ -101,7 +101,7 @@ export function AddToWorkflowDialog({
     return workflows.filter(
       (w) =>
         w.name.toLowerCase().includes(q) ||
-        w.description?.toLowerCase().includes(q),
+        w.description?.toLowerCase().includes(q)
     );
   }, [workflows, searchQuery]);
 
@@ -123,7 +123,7 @@ export function AddToWorkflowDialog({
       toast.success(`Created "${workflow.name}"`);
     } catch (err) {
       toast.error(
-        `Failed to create workflow: ${err instanceof Error ? err.message : "Unknown error"}`,
+        `Failed to create workflow: ${err instanceof Error ? err.message : "Unknown error"}`
       );
     } finally {
       setIsCreating(false);
@@ -156,7 +156,7 @@ export function AddToWorkflowDialog({
       onOpenChange(false);
     } catch (err) {
       toast.error(
-        `Failed to add step: ${err instanceof Error ? err.message : "Unknown error"}`,
+        `Failed to add step: ${err instanceof Error ? err.message : "Unknown error"}`
       );
     } finally {
       setIsAdding(false);

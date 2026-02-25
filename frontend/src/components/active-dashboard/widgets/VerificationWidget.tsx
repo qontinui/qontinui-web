@@ -25,13 +25,19 @@ export function VerificationWidget({ runId }: { runId: string }) {
     {
       transform: (raw: unknown) => {
         const obj = raw as Record<string, unknown>;
-        if (obj && typeof obj === "object" && "results" in obj && Array.isArray(obj.results)) {
+        if (
+          obj &&
+          typeof obj === "object" &&
+          "results" in obj &&
+          Array.isArray(obj.results)
+        ) {
           return {
             results: obj.results as VerificationResult[],
             summary: (obj.summary as VerificationSummary) ?? null,
           };
         }
-        if (Array.isArray(raw)) return { results: raw as VerificationResult[], summary: null };
+        if (Array.isArray(raw))
+          return { results: raw as VerificationResult[], summary: null };
         return { results: [], summary: null };
       },
     }
@@ -42,10 +48,22 @@ export function VerificationWidget({ runId }: { runId: string }) {
   // Match all verification-related step types (aligned with runner's mapCheckType)
   const checkSteps = (stepsData?.executions || []).filter((e) => {
     const t = e.step_type.toLowerCase();
-    return [
-      "check", "check_group", "playwright", "verification", "test",
-      "error_check", "log_check", "shell", "gui_automation", "repo_test",
-    ].includes(t) || t.includes("check") || t.includes("verification");
+    return (
+      [
+        "check",
+        "check_group",
+        "playwright",
+        "verification",
+        "test",
+        "error_check",
+        "log_check",
+        "shell",
+        "gui_automation",
+        "repo_test",
+      ].includes(t) ||
+      t.includes("check") ||
+      t.includes("verification")
+    );
   });
 
   if (isLoading) {

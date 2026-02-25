@@ -27,7 +27,7 @@ const MetricCard = dynamicImport(
     loading: () => (
       <div className="h-32 bg-surface-raised/50 rounded-lg animate-pulse" />
     ),
-  },
+  }
 );
 
 const UsageChart = dynamicImport(
@@ -39,7 +39,7 @@ const UsageChart = dynamicImport(
     loading: () => (
       <div className="h-64 bg-surface-raised/50 rounded-lg animate-pulse" />
     ),
-  },
+  }
 );
 
 const StorageBreakdown = dynamicImport(
@@ -51,7 +51,7 @@ const StorageBreakdown = dynamicImport(
     loading: () => (
       <div className="h-64 bg-surface-raised/50 rounded-lg animate-pulse" />
     ),
-  },
+  }
 );
 
 const ActivityTimeline = dynamicImport(
@@ -63,7 +63,7 @@ const ActivityTimeline = dynamicImport(
     loading: () => (
       <div className="h-96 bg-surface-raised/50 rounded-lg animate-pulse" />
     ),
-  },
+  }
 );
 
 export default function AnalyticsPage() {
@@ -141,7 +141,7 @@ export default function AnalyticsPage() {
         // Use mock data for development
         const mockMetrics = Array.from({ length: 7 }, (_, i) => ({
           date: new Date(
-            Date.now() - (6 - i) * 24 * 60 * 60 * 1000,
+            Date.now() - (6 - i) * 24 * 60 * 60 * 1000
           ).toISOString(),
           api_calls: Math.floor(Math.random() * 200) + 50,
         }));
@@ -226,7 +226,7 @@ export default function AnalyticsPage() {
     const date = new Date(timestamp);
     const now = new Date();
     const diffInHours = Math.floor(
-      (now.getTime() - date.getTime()) / (1000 * 60 * 60),
+      (now.getTime() - date.getTime()) / (1000 * 60 * 60)
     );
 
     if (diffInHours < 1) return "Just now";

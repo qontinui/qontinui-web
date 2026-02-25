@@ -6,10 +6,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import type {
-  TestCase,
-  WorkflowCoverage,
-} from "@/services/workflow-testing";
+import type { TestCase, WorkflowCoverage } from "@/services/workflow-testing";
 import type { Workflow } from "@/lib/action-schema/action-types";
 
 interface WorkflowTestDetailsProps {

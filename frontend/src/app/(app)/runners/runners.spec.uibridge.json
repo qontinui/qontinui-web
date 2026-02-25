@@ -1,0 +1,53 @@
+{
+  "version": "1.0.0",
+  "description": "Specs for the Runners page — desktop runner connection management and monitoring",
+  "groups": [
+    {
+      "id": "runners-page-purpose",
+      "name": "Page Purpose",
+      "description": "The Runners page lets users monitor desktop runner connections and view connection history. It shows which runners are currently active with real-time status indicators, and provides a searchable history of all past connections.",
+      "category": "semantic",
+      "assertions": [
+        {
+          "id": "runners-purpose-active",
+          "description": "Users can see which desktop runners are currently connected with real-time active status",
+          "category": "semantic",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Active Connections" },
+            "label": "Active Connections tab"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "runners-purpose-history",
+          "description": "Users can browse the full history of runner connections in a searchable table",
+          "category": "semantic",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Connection History" },
+            "label": "Connection History tab"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    }
+  ],
+  "metadata": {
+    "component": "Runners",
+    "author": "Joshua Spinak",
+    "createdAt": "2026-02-24T00:00:00.000Z",
+    "pageUrl": "/runners",
+    "elementSource": "sdk",
+    "tags": ["runners", "connection-management", "monitoring", "tier-2"]
+  }
+}

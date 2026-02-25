@@ -32,7 +32,9 @@ interface TransitionsPanelProps {
   onSelectTransition: (id: string | null) => void;
 }
 
-const ACTION_ICONS: Partial<Record<TransitionAction["type"], typeof MousePointer>> = {
+const ACTION_ICONS: Partial<
+  Record<TransitionAction["type"], typeof MousePointer>
+> = {
   click: MousePointer,
   type: TypeIcon,
   select: ListFilter,
@@ -40,12 +42,34 @@ const ACTION_ICONS: Partial<Record<TransitionAction["type"], typeof MousePointer
   navigate: Globe,
 };
 
-const ACTION_COLORS: Partial<Record<TransitionAction["type"], { text: string; bg: string; border: string }>> = {
-  click: { text: "text-blue-400", bg: "bg-blue-500/15", border: "border-blue-500/30" },
-  type: { text: "text-amber-400", bg: "bg-amber-500/15", border: "border-amber-500/30" },
-  select: { text: "text-purple-400", bg: "bg-purple-500/15", border: "border-purple-500/30" },
-  wait: { text: "text-gray-400", bg: "bg-gray-500/15", border: "border-gray-500/30" },
-  navigate: { text: "text-cyan-400", bg: "bg-cyan-500/15", border: "border-cyan-500/30" },
+const ACTION_COLORS: Partial<
+  Record<TransitionAction["type"], { text: string; bg: string; border: string }>
+> = {
+  click: {
+    text: "text-blue-400",
+    bg: "bg-blue-500/15",
+    border: "border-blue-500/30",
+  },
+  type: {
+    text: "text-amber-400",
+    bg: "bg-amber-500/15",
+    border: "border-amber-500/30",
+  },
+  select: {
+    text: "text-purple-400",
+    bg: "bg-purple-500/15",
+    border: "border-purple-500/30",
+  },
+  wait: {
+    text: "text-gray-400",
+    bg: "bg-gray-500/15",
+    border: "border-gray-500/30",
+  },
+  navigate: {
+    text: "text-cyan-400",
+    bg: "bg-cyan-500/15",
+    border: "border-cyan-500/30",
+  },
 };
 
 const ACTION_LABELS: Partial<Record<TransitionAction["type"], string>> = {
@@ -56,13 +80,14 @@ const ACTION_LABELS: Partial<Record<TransitionAction["type"], string>> = {
   navigate: "Navigate",
 };
 
-const ACTION_ACTIVE_LABELS: Partial<Record<TransitionAction["type"], string>> = {
-  click: "Clicking...",
-  type: "Typing...",
-  select: "Selecting...",
-  wait: "Waiting...",
-  navigate: "Navigating...",
-};
+const ACTION_ACTIVE_LABELS: Partial<Record<TransitionAction["type"], string>> =
+  {
+    click: "Clicking...",
+    type: "Typing...",
+    select: "Selecting...",
+    wait: "Waiting...",
+    navigate: "Navigating...",
+  };
 
 interface AnimationState {
   isPlaying: boolean;
@@ -76,7 +101,9 @@ export function TransitionsPanel({
   transitions,
   onSelectTransition,
 }: TransitionsPanelProps) {
-  const [selectedTransitionId, setSelectedTransitionId] = useState<string | null>(null);
+  const [selectedTransitionId, setSelectedTransitionId] = useState<
+    string | null
+  >(null);
   const [filterFromState, setFilterFromState] = useState<string | null>(null);
   const [filterToState, setFilterToState] = useState<string | null>(null);
   const [searchFilter, setSearchFilter] = useState("");
@@ -98,8 +125,10 @@ export function TransitionsPanel({
   // Filter transitions
   const filteredTransitions = useMemo(() => {
     return transitions.filter((t) => {
-      if (filterFromState && !t.from_states.includes(filterFromState)) return false;
-      if (filterToState && !t.activate_states.includes(filterToState)) return false;
+      if (filterFromState && !t.from_states.includes(filterFromState))
+        return false;
+      if (filterToState && !t.activate_states.includes(filterToState))
+        return false;
       if (searchFilter) {
         const lower = searchFilter.toLowerCase();
         if (!t.name.toLowerCase().includes(lower)) return false;
@@ -119,12 +148,18 @@ export function TransitionsPanel({
   // Animation functions
   const actionDuration = useCallback((action: TransitionAction) => {
     switch (action.type) {
-      case "click": return 800;
-      case "type": return Math.max(800, (action.text?.length ?? 5) * 60 + 400);
-      case "navigate": return 1200;
-      case "wait": return Math.min(action.delay_ms ?? 1000, 2000);
-      case "select": return 1000;
-      default: return 1500;
+      case "click":
+        return 800;
+      case "type":
+        return Math.max(800, (action.text?.length ?? 5) * 60 + 400);
+      case "navigate":
+        return 1200;
+      case "wait":
+        return Math.min(action.delay_ms ?? 1000, 2000);
+      case "select":
+        return 1000;
+      default:
+        return 1500;
     }
   }, []);
 
@@ -144,7 +179,8 @@ export function TransitionsPanel({
         if (!prev.isPlaying) return prev;
 
         const elapsed = timestamp - startTimeRef.current;
-        const currentAction = selectedTransition.actions[prev.currentActionIndex];
+        const currentAction =
+          selectedTransition.actions[prev.currentActionIndex];
         if (!currentAction) {
           return { ...prev, isPlaying: false };
         }
@@ -174,11 +210,14 @@ export function TransitionsPanel({
 
   const playAnimation = useCallback(() => {
     setAnimation((prev) => {
-      const startIndex = prev.currentActionIndex < 0 ? 0 : prev.currentActionIndex;
+      const startIndex =
+        prev.currentActionIndex < 0 ? 0 : prev.currentActionIndex;
       // If completed, restart from beginning
-      const idx = prev.progress >= 1 && startIndex >= (selectedTransition?.actions.length ?? 0) - 1
-        ? 0
-        : startIndex;
+      const idx =
+        prev.progress >= 1 &&
+        startIndex >= (selectedTransition?.actions.length ?? 0) - 1
+          ? 0
+          : startIndex;
       return { ...prev, isPlaying: true, currentActionIndex: idx, progress: 0 };
     });
     setTimeout(animate, 0);
@@ -201,7 +240,8 @@ export function TransitionsPanel({
     stopAnimation();
     setAnimation((prev) => {
       const next = prev.currentActionIndex + 1;
-      if (!selectedTransition || next >= selectedTransition.actions.length) return prev;
+      if (!selectedTransition || next >= selectedTransition.actions.length)
+        return prev;
       return { ...prev, currentActionIndex: next, progress: 1 };
     });
   }, [stopAnimation, selectedTransition]);
@@ -239,11 +279,14 @@ export function TransitionsPanel({
 
   // Calculate overall progress for the progress bar
   const overallProgress = useMemo(() => {
-    if (!selectedTransition || selectedTransition.actions.length === 0) return 0;
+    if (!selectedTransition || selectedTransition.actions.length === 0)
+      return 0;
     if (animation.currentActionIndex < 0) return 0;
     const completedActions = animation.currentActionIndex;
     const currentProgress = animation.progress;
-    return (completedActions + currentProgress) / selectedTransition.actions.length;
+    return (
+      (completedActions + currentProgress) / selectedTransition.actions.length
+    );
   }, [selectedTransition, animation]);
 
   return (
@@ -253,7 +296,9 @@ export function TransitionsPanel({
         <div className="p-3 border-b border-border-primary">
           <div className="flex items-center gap-2 mb-3">
             <GitBranch className="size-4 text-brand-primary" />
-            <h3 className="text-sm font-semibold text-text-primary">Transitions</h3>
+            <h3 className="text-sm font-semibold text-text-primary">
+              Transitions
+            </h3>
             <span className="text-xs text-text-muted ml-auto">
               {filteredTransitions.length}
             </span>
@@ -309,22 +354,28 @@ export function TransitionsPanel({
                 onClick={() => handleSelectTransition(t.transition_id)}
                 className={`
                   w-full text-left px-3 py-2 rounded-md transition-colors text-sm
-                  ${isSelected
-                    ? "bg-brand-primary/10 border border-brand-primary/30"
-                    : "hover:bg-surface-secondary border border-transparent"
+                  ${
+                    isSelected
+                      ? "bg-brand-primary/10 border border-brand-primary/30"
+                      : "hover:bg-surface-secondary border border-transparent"
                   }
                 `}
               >
                 <div className="flex items-center gap-1.5">
                   {/* Action type icons */}
                   <span className="flex items-center gap-0.5">
-                    {[...new Set(t.actions.map((a) => a.type))].slice(0, 3).map((type) => {
-                      const Icon = ACTION_ICONS[type];
-                      const color = ACTION_COLORS[type];
-                      return Icon ? (
-                        <Icon key={type} className={`size-3 ${color?.text ?? "text-gray-400"}`} />
-                      ) : null;
-                    })}
+                    {[...new Set(t.actions.map((a) => a.type))]
+                      .slice(0, 3)
+                      .map((type) => {
+                        const Icon = ACTION_ICONS[type];
+                        const color = ACTION_COLORS[type];
+                        return Icon ? (
+                          <Icon
+                            key={type}
+                            className={`size-3 ${color?.text ?? "text-gray-400"}`}
+                          />
+                        ) : null;
+                      })}
                   </span>
                   <span className="font-medium text-text-primary truncate flex-1">
                     {t.name || "Unnamed"}
@@ -340,11 +391,15 @@ export function TransitionsPanel({
                 </div>
                 <div className="flex items-center gap-1 mt-0.5 ml-4 text-[10px] text-text-muted">
                   <span className="truncate">
-                    {t.from_states.map((s) => stateNameMap.get(s) ?? s).join(", ")}
+                    {t.from_states
+                      .map((s) => stateNameMap.get(s) ?? s)
+                      .join(", ")}
                   </span>
                   <ArrowRight className="size-2.5 shrink-0" />
                   <span className="truncate">
-                    {t.activate_states.map((s) => stateNameMap.get(s) ?? s).join(", ")}
+                    {t.activate_states
+                      .map((s) => stateNameMap.get(s) ?? s)
+                      .join(", ")}
                   </span>
                 </div>
               </button>
@@ -460,7 +515,9 @@ export function TransitionsPanel({
                   </Button>
                   <Button
                     size="sm"
-                    onClick={animation.isPlaying ? pauseAnimation : playAnimation}
+                    onClick={
+                      animation.isPlaying ? pauseAnimation : playAnimation
+                    }
                     className="h-9 w-9 p-0 rounded-full"
                     title={animation.isPlaying ? "Pause" : "Play"}
                   >
@@ -489,9 +546,16 @@ export function TransitionsPanel({
                 <div className="mt-3 flex items-center justify-center gap-1">
                   {selectedTransition.actions.map((action, idx) => {
                     const Icon = ACTION_ICONS[action.type] ?? ChevronRight;
-                    const isPastAction = animation.currentActionIndex >= 0 && idx < animation.currentActionIndex;
-                    const isCurrentAction = idx === animation.currentActionIndex;
-                    const color = ACTION_COLORS[action.type] ?? { text: "text-gray-400", bg: "bg-gray-500/15", border: "border-gray-500/30" };
+                    const isPastAction =
+                      animation.currentActionIndex >= 0 &&
+                      idx < animation.currentActionIndex;
+                    const isCurrentAction =
+                      idx === animation.currentActionIndex;
+                    const color = ACTION_COLORS[action.type] ?? {
+                      text: "text-gray-400",
+                      bg: "bg-gray-500/15",
+                      border: "border-gray-500/30",
+                    };
                     return (
                       <button
                         key={idx}
@@ -505,11 +569,12 @@ export function TransitionsPanel({
                         }}
                         className={`
                           flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] border transition-all
-                          ${isCurrentAction
-                            ? `${color.bg} ${color.border} ${color.text} shadow-sm`
-                            : isPastAction
-                              ? "bg-green-500/10 border-green-500/30 text-green-400"
-                              : "bg-surface-primary border-border-primary text-text-muted hover:border-brand-primary/30"
+                          ${
+                            isCurrentAction
+                              ? `${color.bg} ${color.border} ${color.text} shadow-sm`
+                              : isPastAction
+                                ? "bg-green-500/10 border-green-500/30 text-green-400"
+                                : "bg-surface-primary border-border-primary text-text-muted hover:border-brand-primary/30"
                           }
                         `}
                         title={`${ACTION_LABELS[action.type] ?? action.type}: ${action.target || action.url || action.text || ""}`}
@@ -542,7 +607,11 @@ export function TransitionsPanel({
                 <div className="space-y-2">
                   {selectedTransition.actions.map((action, idx) => {
                     const Icon = ACTION_ICONS[action.type] ?? ChevronRight;
-                    const color = ACTION_COLORS[action.type] ?? { text: "text-gray-400", bg: "bg-gray-500/15", border: "border-gray-500/30" };
+                    const color = ACTION_COLORS[action.type] ?? {
+                      text: "text-gray-400",
+                      bg: "bg-gray-500/15",
+                      border: "border-gray-500/30",
+                    };
                     const isCurrent = idx === animation.currentActionIndex;
                     const isPast =
                       animation.currentActionIndex >= 0 &&
@@ -553,11 +622,12 @@ export function TransitionsPanel({
                         key={idx}
                         className={`
                           flex items-start gap-3 p-3 rounded-lg border transition-all duration-200
-                          ${isCurrent
-                            ? `${color.border} ${color.bg} shadow-sm`
-                            : isPast
-                              ? "border-green-500/30 bg-green-500/5"
-                              : "border-border-primary bg-surface-secondary"
+                          ${
+                            isCurrent
+                              ? `${color.border} ${color.bg} shadow-sm`
+                              : isPast
+                                ? "border-green-500/30 bg-green-500/5"
+                                : "border-border-primary bg-surface-secondary"
                           }
                         `}
                       >
@@ -566,7 +636,9 @@ export function TransitionsPanel({
                           <span className="text-[10px] text-text-muted font-mono w-4 text-right">
                             {idx + 1}
                           </span>
-                          <div className={`p-1.5 rounded-md ${color.bg} ${color.text}`}>
+                          <div
+                            className={`p-1.5 rounded-md ${color.bg} ${color.text}`}
+                          >
                             <Icon className="size-3.5" />
                           </div>
                         </div>
@@ -574,9 +646,13 @@ export function TransitionsPanel({
                         {/* Action details */}
                         <div className="flex-1 min-w-0">
                           <div className="text-xs font-medium text-text-primary flex items-center gap-1.5">
-                            <span>{ACTION_LABELS[action.type] ?? action.type}</span>
+                            <span>
+                              {ACTION_LABELS[action.type] ?? action.type}
+                            </span>
                             {isCurrent && animation.isPlaying && (
-                              <span className={`animate-pulse ${color.text} text-[10px]`}>
+                              <span
+                                className={`animate-pulse ${color.text} text-[10px]`}
+                              >
                                 {ACTION_ACTIVE_LABELS[action.type]}
                               </span>
                             )}
@@ -594,12 +670,16 @@ export function TransitionsPanel({
                               {isCurrent && animation.isPlaying
                                 ? action.text.slice(
                                     0,
-                                    Math.floor(action.text.length * animation.progress)
+                                    Math.floor(
+                                      action.text.length * animation.progress
+                                    )
                                   )
                                 : action.text}
                               &rdquo;
                               {isCurrent && animation.isPlaying && (
-                                <span className="animate-pulse text-brand-primary">|</span>
+                                <span className="animate-pulse text-brand-primary">
+                                  |
+                                </span>
                               )}
                             </div>
                           )}
@@ -613,7 +693,11 @@ export function TransitionsPanel({
                               {action.delay_ms}ms
                               {isCurrent && animation.isPlaying && (
                                 <span className="ml-1 text-text-muted/70">
-                                  ({Math.round(animation.progress * (action.delay_ms ?? 0))}ms elapsed)
+                                  (
+                                  {Math.round(
+                                    animation.progress * (action.delay_ms ?? 0)
+                                  )}
+                                  ms elapsed)
                                 </span>
                               )}
                             </span>
@@ -623,7 +707,11 @@ export function TransitionsPanel({
                         {/* Status indicator with action-specific animation */}
                         {isPast && (
                           <div className="text-green-500 shrink-0 mt-0.5">
-                            <svg className="size-4" viewBox="0 0 16 16" fill="currentColor">
+                            <svg
+                              className="size-4"
+                              viewBox="0 0 16 16"
+                              fill="currentColor"
+                            >
                               <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z" />
                             </svg>
                           </div>
@@ -639,22 +727,37 @@ export function TransitionsPanel({
                             ) : action.type === "navigate" ? (
                               /* Navigation arrow animation */
                               <div className="relative w-5 h-5 flex items-center justify-center overflow-hidden">
-                                <ArrowRight className="size-4 text-cyan-400 animate-bounce" style={{ animationDuration: "0.6s" }} />
+                                <ArrowRight
+                                  className="size-4 text-cyan-400 animate-bounce"
+                                  style={{ animationDuration: "0.6s" }}
+                                />
                               </div>
                             ) : action.type === "type" ? (
                               /* Typing cursor blink animation */
                               <div className="relative w-5 h-5 flex items-center justify-center">
-                                <div className="w-0.5 h-3.5 bg-amber-400 animate-pulse" style={{ animationDuration: "0.5s" }} />
+                                <div
+                                  className="w-0.5 h-3.5 bg-amber-400 animate-pulse"
+                                  style={{ animationDuration: "0.5s" }}
+                                />
                               </div>
                             ) : action.type === "select" ? (
                               /* Select dropdown animation */
                               <div className="relative w-5 h-5 flex items-center justify-center">
-                                <ChevronRight className="size-3.5 text-purple-400 animate-bounce" style={{ animationDuration: "0.8s", transform: "rotate(90deg)" }} />
+                                <ChevronRight
+                                  className="size-3.5 text-purple-400 animate-bounce"
+                                  style={{
+                                    animationDuration: "0.8s",
+                                    transform: "rotate(90deg)",
+                                  }}
+                                />
                               </div>
                             ) : action.type === "wait" ? (
                               /* Wait timer animation */
                               <div className="relative w-5 h-5 flex items-center justify-center">
-                                <div className="w-4 h-4 rounded-full border-2 border-gray-400/40 border-t-gray-400 animate-spin" style={{ animationDuration: "1.5s" }} />
+                                <div
+                                  className="w-4 h-4 rounded-full border-2 border-gray-400/40 border-t-gray-400 animate-spin"
+                                  style={{ animationDuration: "1.5s" }}
+                                />
                               </div>
                             ) : (
                               /* Default spinner */
@@ -677,7 +780,12 @@ export function TransitionsPanel({
               <div>
                 Stays Visible: {selectedTransition.stays_visible ? "Yes" : "No"}
               </div>
-              <div>ID: <code className="bg-surface-secondary px-1 rounded">{selectedTransition.transition_id}</code></div>
+              <div>
+                ID:{" "}
+                <code className="bg-surface-secondary px-1 rounded">
+                  {selectedTransition.transition_id}
+                </code>
+              </div>
             </div>
           </div>
         ) : (
@@ -686,7 +794,8 @@ export function TransitionsPanel({
               <GitBranch className="size-12 mx-auto mb-3 opacity-30" />
               <p className="text-sm">Select a transition to view its details</p>
               <p className="text-xs mt-1 text-text-muted/70">
-                {transitions.length} transition{transitions.length !== 1 ? "s" : ""} available
+                {transitions.length} transition
+                {transitions.length !== 1 ? "s" : ""} available
               </p>
             </div>
           </div>

@@ -1,7 +1,10 @@
 "use client";
 
 import { useRunnerQuery, useRunnerMutation } from "../api-client";
-import type { ExplorationReport, ExplorationStrategy } from "../types/exploration";
+import type {
+  ExplorationReport,
+  ExplorationStrategy,
+} from "../types/exploration";
 
 export function useExplorationHistory(limit?: number) {
   const qs = limit ? `?limit=${limit}` : "";

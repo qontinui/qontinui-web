@@ -1,42 +1,71 @@
 "use client";
 
+import React from "react";
 import type {
   TaskRun,
   CurrentExecutionStepsResponse,
   VerificationData,
   TaskRunKnowledge,
-  Screenshot,
-  McpCall,
 } from "@/lib/runner";
 import { useEventTriggeredFetch } from "@/contexts/RunnerEventContext";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
-  Activity,
   MessageSquare,
-  Plug,
-  Camera,
   CheckCircle2,
   XCircle,
   Loader2,
   AlertTriangle,
-  Image as ImageIcon,
   ChevronRight,
   RotateCcw,
   Terminal,
-  Globe,
-  FileCode,
+  Monitor,
   GitBranch,
 } from "lucide-react";
 import type { WidgetId, WidgetConfig } from "../_lib";
-import {
-  transformScreenshots,
-  transformVerification,
-  transformKnowledge,
-  transformMcpCalls,
-} from "../_lib";
+import { transformVerification, transformKnowledge } from "../_lib";
 
-function TimelineSummary({ stepsData }: { runId: string; stepsData: CurrentExecutionStepsResponse | null }) {
+// ---------------------------------------------------------------------------
+// Step type sets for filtering
+// ---------------------------------------------------------------------------
+
+const COMMAND_STEP_TYPES = new Set([
+  "command",
+  "shell_command",
+  "shell",
+  "check",
+  "check_group",
+  "test",
+  "api_request",
+  "api_call",
+  "http_request",
+  "http",
+  "mcp_call",
+  "mcp",
+  "tool_call",
+  "script",
+  "python",
+  "node",
+  "script_execution",
+  "bash",
+  "cmd",
+  "powershell",
+]);
+
+const UI_BRIDGE_STEP_TYPES = new Set(["ui_bridge", "uibridge"]);
+
+const FLOW_STEP_TYPES = new Set(["flow", "flow_execution", "state_machine"]);
+
+// ---------------------------------------------------------------------------
+// Summary Components
+// ---------------------------------------------------------------------------
+
+function TimelineSummary({
+  stepsData,
+}: {
+  runId: string;
+  stepsData: CurrentExecutionStepsResponse | null;
+}) {
   const executions = stepsData?.executions || [];
   const total = executions.length;
   const completed = executions.filter(
@@ -94,10 +123,11 @@ function TimelineSummary({ stepsData }: { runId: string; stepsData: CurrentExecu
 }
 
 function AiConversationSummary({ runId }: { runId: string }) {
-  const { data: outputData } = useEventTriggeredFetch<{ output?: string; output_log?: string; sessions_count?: number }>(
-    "ai-output",
-    `/task-runs/${runId}/output`,
-  );
+  const { data: outputData, isLoading } = useEventTriggeredFetch<{
+    output?: string;
+    output_log?: string;
+    sessions_count?: number;
+  }>("ai-output", `/task-runs/${runId}/output`);
 
   const output = outputData?.output_log ?? outputData?.output ?? "";
   const sessionCount = outputData?.sessions_count ?? 0;
@@ -105,23 +135,77 @@ function AiConversationSummary({ runId }: { runId: string }) {
   const userMessages = (output.match(/\[USER_MESSAGE\]/g) || []).length;
   const hasContent = output.trim().length > 0;
 
+  // Count total message lines (non-empty, non-marker lines)
+  const messageCount = hasContent
+    ? output.split("\n").filter((l: string) => l.trim() && !l.startsWith("["))
+        .length
+    : 0;
+
+  // Track output length changes to detect "thinking" state
+  const prevLenRef = React.useRef(0);
+  const lastChangeRef = React.useRef(0);
+  const [isThinking, setIsThinking] = React.useState(false);
+
+  React.useEffect(() => {
+    const currentLen = output.length;
+    if (currentLen !== prevLenRef.current && currentLen > 0) {
+      prevLenRef.current = currentLen;
+      lastChangeRef.current = Date.now();
+      setIsThinking(true);
+    }
+    const timer = setInterval(() => {
+      if (
+        lastChangeRef.current > 0 &&
+        Date.now() - lastChangeRef.current > 5000
+      ) {
+        setIsThinking(false);
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [output]);
+
   const lastLine = (() => {
     if (!output) return "";
-    const lines = output.split("\n").filter((l) => l.trim() && !l.startsWith("["));
-    return lines.length > 0 ? (lines[lines.length - 1] ?? "").trim().slice(0, 120) : "";
+    const lines = output
+      .split("\n")
+      .filter((l: string) => l.trim() && !l.startsWith("["));
+    return lines.length > 0
+      ? (lines[lines.length - 1] ?? "").trim().slice(0, 120)
+      : "";
   })();
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <Badge variant="outline" className="text-[10px] gap-1">
           <MessageSquare className="size-2.5" />
-          {sessionCount > 0 ? `${sessionCount} session${sessionCount !== 1 ? "s" : ""}` : hasContent ? "Active" : "0 messages"}
+          {sessionCount > 0
+            ? `${sessionCount} session${sessionCount !== 1 ? "s" : ""}`
+            : hasContent
+              ? "Active"
+              : "0 messages"}
         </Badge>
-        {userMessages > 0 && (
-          <Badge variant="outline" className="text-[10px] gap-1 text-text-muted">
-            {userMessages} user msg{userMessages !== 1 ? "s" : ""}
+        {messageCount > 0 && (
+          <Badge
+            variant="outline"
+            className="text-[10px] gap-1 text-text-muted"
+          >
+            {messageCount} msg{messageCount !== 1 ? "s" : ""}
           </Badge>
+        )}
+        {userMessages > 0 && (
+          <Badge
+            variant="outline"
+            className="text-[10px] gap-1 text-text-muted"
+          >
+            {userMessages} user
+          </Badge>
+        )}
+        {isThinking && !isLoading && (
+          <div className="flex items-center gap-1 text-[10px] text-blue-400 animate-pulse">
+            <Loader2 className="size-2.5 animate-spin" />
+            Thinking...
+          </div>
         )}
       </div>
       {lastLine && (
@@ -129,38 +213,6 @@ function AiConversationSummary({ runId }: { runId: string }) {
       )}
       {!hasContent && (
         <p className="text-xs text-text-muted">No AI messages yet...</p>
-      )}
-    </div>
-  );
-}
-
-function ScreenshotsSummary({ runId }: { runId: string }) {
-  const { data: screenshots } = useEventTriggeredFetch<Screenshot[]>(
-    "step-progress",
-    `/task-runs/${runId}/screenshots`,
-    { transform: transformScreenshots }
-  );
-  const count = screenshots?.length || 0;
-  const latest = screenshots?.[0];
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <Badge variant="outline" className="text-[10px] gap-1">
-          <ImageIcon className="size-2.5" />
-          {count} screenshots
-        </Badge>
-      </div>
-      {latest && (
-        <div className="flex items-center gap-2 text-xs text-text-muted">
-          <Camera className="size-3 shrink-0" />
-          <span className="truncate">
-            {latest.filename || "Latest capture"}
-          </span>
-        </div>
-      )}
-      {count === 0 && (
-        <p className="text-xs text-text-muted">No screenshots yet...</p>
       )}
     </div>
   );
@@ -182,12 +234,9 @@ function VerificationSummary({ runId }: { runId: string }) {
       {total > 0 ? (
         <>
           <div className="flex items-center gap-3">
-            {passed > 0 && (
-              <div className="flex items-center gap-1 text-xs">
-                <CheckCircle2 className="size-3 text-green-500" />
-                <span className="text-green-400">{passed} passed</span>
-              </div>
-            )}
+            <span className="text-xs font-medium text-text-primary">
+              {passed}/{total} passed
+            </span>
             {failed > 0 && (
               <div className="flex items-center gap-1 text-xs">
                 <XCircle className="size-3 text-red-500" />
@@ -195,9 +244,12 @@ function VerificationSummary({ runId }: { runId: string }) {
               </div>
             )}
           </div>
-          <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+          <div className="h-1 rounded-full bg-white/5 overflow-hidden">
             <div
-              className="h-full bg-green-500 rounded-full transition-all"
+              className={cn(
+                "h-full rounded-full transition-all",
+                failed > 0 ? "bg-red-500" : "bg-green-500"
+              )}
               style={{ width: `${total > 0 ? (passed / total) * 100 : 0}%` }}
             />
           </div>
@@ -270,50 +322,92 @@ function FindingsSummary({ runId }: { runId: string }) {
   );
 }
 
-function McpCallsSummary({ runId }: { runId: string }) {
-  const { data: calls } = useEventTriggeredFetch<McpCall[]>(
-    "step-progress",
-    `/task-runs/${runId}/mcp-calls`,
-    { transform: transformMcpCalls }
+function CommandSummary({
+  stepsData,
+}: {
+  runId: string;
+  stepsData: CurrentExecutionStepsResponse | null;
+}) {
+  const commandSteps = (stepsData?.executions || []).filter((e) =>
+    COMMAND_STEP_TYPES.has(e.step_type.toLowerCase())
   );
-  const items = calls || [];
-  const total = items.length;
-  const latest = items[items.length - 1];
+  const total = commandSteps.length;
+  const failed = commandSteps.filter((e) => e.status === "failed").length;
+  const latest = commandSteps[commandSteps.length - 1];
+
+  // Count by mode
+  const shellCount = commandSteps.filter((e) => {
+    const mode = e.command_mode?.toLowerCase();
+    const t = e.step_type.toLowerCase();
+    return (
+      mode === "shell" ||
+      (!mode &&
+        (t === "shell_command" ||
+          t === "shell" ||
+          t === "bash" ||
+          t === "cmd" ||
+          t === "powershell"))
+    );
+  }).length;
+  const checkCount = commandSteps.filter((e) => {
+    const mode = e.command_mode?.toLowerCase();
+    const t = e.step_type.toLowerCase();
+    return (
+      mode === "check" ||
+      mode === "check_group" ||
+      (!mode && (t === "check" || t === "check_group"))
+    );
+  }).length;
+  const testCount = commandSteps.filter((e) => {
+    const mode = e.command_mode?.toLowerCase();
+    const t = e.step_type.toLowerCase();
+    return mode === "test" || (!mode && (t === "test" || t === "playwright"));
+  }).length;
 
   return (
     <div className="space-y-2">
-      <Badge variant="outline" className="text-[10px] gap-1">
-        <Plug className="size-2.5" />
-        {total} calls
-      </Badge>
-      {latest && (
-        <div className="flex items-center gap-2 text-xs text-text-muted">
-          <ChevronRight className="size-3 shrink-0" />
-          <span className="truncate font-mono">{latest.tool_name}</span>
+      <div className="flex items-center gap-2 flex-wrap">
+        <Badge variant="outline" className="text-[10px] gap-1">
+          <Terminal className="size-2.5" />
+          {total} command{total !== 1 ? "s" : ""}
+        </Badge>
+        {failed > 0 && (
+          <Badge
+            variant="outline"
+            className="text-[10px] text-red-400 border-red-500/30"
+          >
+            {failed} failed
+          </Badge>
+        )}
+      </div>
+      {(shellCount > 0 || checkCount > 0 || testCount > 0) && (
+        <div className="flex items-center gap-1.5">
+          {shellCount > 0 && (
+            <Badge
+              variant="outline"
+              className="text-[9px] text-slate-400 border-slate-500/30"
+            >
+              SH {shellCount}
+            </Badge>
+          )}
+          {checkCount > 0 && (
+            <Badge
+              variant="outline"
+              className="text-[9px] text-blue-400 border-blue-500/30"
+            >
+              CHK {checkCount}
+            </Badge>
+          )}
+          {testCount > 0 && (
+            <Badge
+              variant="outline"
+              className="text-[9px] text-indigo-400 border-indigo-500/30"
+            >
+              TST {testCount}
+            </Badge>
+          )}
         </div>
       )}
-      {total === 0 && (
-        <p className="text-xs text-text-muted">No MCP calls yet...</p>
-      )}
-    </div>
-  );
-}
-
-function ShellCommandSummary({ stepsData }: { runId: string; stepsData: CurrentExecutionStepsResponse | null }) {
-  const shellSteps = (stepsData?.executions || []).filter((e) =>
-    ["shell_command", "shell", "command", "bash"].includes(
-      e.step_type.toLowerCase()
-    )
-  );
-  const total = shellSteps.length;
-  const latest = shellSteps[shellSteps.length - 1];
-
-  return (
-    <div className="space-y-2">
-      <Badge variant="outline" className="text-[10px] gap-1">
-        <Terminal className="size-2.5" />
-        {total} commands
-      </Badge>
       {latest && (
         <div className="flex items-center gap-2 text-xs text-text-muted">
           <ChevronRight className="size-3 shrink-0" />
@@ -323,27 +417,56 @@ function ShellCommandSummary({ stepsData }: { runId: string; stepsData: CurrentE
         </div>
       )}
       {total === 0 && (
-        <p className="text-xs text-text-muted">No shell commands yet...</p>
+        <p className="text-xs text-text-muted">No commands yet...</p>
       )}
     </div>
   );
 }
 
-function ApiRequestSummary({ stepsData }: { runId: string; stepsData: CurrentExecutionStepsResponse | null }) {
-  const apiSteps = (stepsData?.executions || []).filter((e) =>
-    ["api_request", "api_call", "http_request", "http"].includes(
-      e.step_type.toLowerCase()
-    )
+function UiBridgeSummary({
+  stepsData,
+}: {
+  runId: string;
+  stepsData: CurrentExecutionStepsResponse | null;
+}) {
+  const uiBridgeSteps = (stepsData?.executions || []).filter((e) =>
+    UI_BRIDGE_STEP_TYPES.has(e.step_type.toLowerCase())
   );
-  const total = apiSteps.length;
-  const latest = apiSteps[apiSteps.length - 1];
+  const total = uiBridgeSteps.length;
+  const assertions = uiBridgeSteps.filter((e) => {
+    const name = e.step_name.toLowerCase();
+    return (
+      name.includes("assert") ||
+      name.includes("verify") ||
+      name.includes("check")
+    );
+  });
+  const assertionsPassed = assertions.filter(
+    (e) => e.status === "success"
+  ).length;
+  const latest = uiBridgeSteps[uiBridgeSteps.length - 1];
 
   return (
     <div className="space-y-2">
-      <Badge variant="outline" className="text-[10px] gap-1">
-        <Globe className="size-2.5" />
-        {total} requests
-      </Badge>
+      <div className="flex items-center gap-2">
+        <Badge variant="outline" className="text-[10px] gap-1">
+          <Monitor className="size-2.5" />
+          {total} action{total !== 1 ? "s" : ""}
+        </Badge>
+        {assertions.length > 0 && (
+          <Badge
+            variant="outline"
+            className={cn(
+              "text-[10px]",
+              assertionsPassed === assertions.length
+                ? "text-green-400 border-green-500/30"
+                : "text-amber-400 border-amber-500/30"
+            )}
+          >
+            {assertionsPassed}/{assertions.length} assertions
+          </Badge>
+        )}
+      </div>
       {latest && (
         <div className="flex items-center gap-2 text-xs text-text-muted">
           <ChevronRight className="size-3 shrink-0" />
@@ -351,66 +474,27 @@ function ApiRequestSummary({ stepsData }: { runId: string; stepsData: CurrentExe
         </div>
       )}
       {total === 0 && (
-        <p className="text-xs text-text-muted">No API requests yet...</p>
+        <p className="text-xs text-text-muted">No UI Bridge actions yet...</p>
       )}
     </div>
   );
 }
 
-function ScriptSummary({ stepsData }: { runId: string; stepsData: CurrentExecutionStepsResponse | null }) {
-  const scriptSteps = (stepsData?.executions || []).filter((e) =>
-    ["script", "python", "node", "script_execution"].includes(
-      e.step_type.toLowerCase()
-    )
-  );
-  const total = scriptSteps.length;
-
-  return (
-    <div className="space-y-2">
-      <Badge variant="outline" className="text-[10px] gap-1">
-        <FileCode className="size-2.5" />
-        {total} scripts
-      </Badge>
-      {total === 0 && (
-        <p className="text-xs text-text-muted">No scripts yet...</p>
-      )}
-    </div>
-  );
-}
-
-function WorkflowRefSummary({ stepsData }: { runId: string; stepsData: CurrentExecutionStepsResponse | null }) {
-  const wfSteps = (stepsData?.executions || []).filter((e) =>
-    ["workflow_ref", "sub_workflow", "workflow_call"].includes(
-      e.step_type.toLowerCase()
-    )
-  );
-  const total = wfSteps.length;
-
-  return (
-    <div className="space-y-2">
-      <Badge variant="outline" className="text-[10px] gap-1">
-        <GitBranch className="size-2.5" />
-        {total} sub-workflows
-      </Badge>
-      {total === 0 && (
-        <p className="text-xs text-text-muted">No sub-workflows yet...</p>
-      )}
-    </div>
-  );
-}
-
-function FlowExecutionSummary({ stepsData }: { runId: string; stepsData: CurrentExecutionStepsResponse | null }) {
+function FlowExecutionSummary({
+  stepsData,
+}: {
+  runId: string;
+  stepsData: CurrentExecutionStepsResponse | null;
+}) {
   const flowSteps = (stepsData?.executions || []).filter((e) =>
-    ["flow", "flow_execution", "state_machine"].includes(
-      e.step_type.toLowerCase()
-    )
+    FLOW_STEP_TYPES.has(e.step_type.toLowerCase())
   );
   const total = flowSteps.length;
 
   return (
     <div className="space-y-2">
       <Badge variant="outline" className="text-[10px] gap-1">
-        <Activity className="size-2.5" />
+        <GitBranch className="size-2.5" />
         {total} flow steps
       </Badge>
       {total === 0 && (
@@ -463,6 +547,10 @@ function StatusSummary({ run }: { run: TaskRun }) {
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Summary Card wrapper & dispatcher
+// ---------------------------------------------------------------------------
 
 export function SummaryCard({
   config,
@@ -529,26 +617,18 @@ export function SummaryContent({
       return <TimelineSummary runId={runId} stepsData={stepsData} />;
     case "ai-conversation":
       return <AiConversationSummary runId={runId} />;
-    case "screenshots":
-      return <ScreenshotsSummary runId={runId} />;
     case "verification":
       return <VerificationSummary runId={runId} />;
     case "findings":
       return <FindingsSummary runId={runId} />;
-    case "mcp-calls":
-      return <McpCallsSummary runId={runId} />;
-    case "status":
-      return <StatusSummary run={run} />;
-    case "shell-command":
-      return <ShellCommandSummary runId={runId} stepsData={stepsData} />;
-    case "api-request":
-      return <ApiRequestSummary runId={runId} stepsData={stepsData} />;
-    case "script":
-      return <ScriptSummary runId={runId} stepsData={stepsData} />;
-    case "workflow-ref":
-      return <WorkflowRefSummary runId={runId} stepsData={stepsData} />;
+    case "command":
+      return <CommandSummary runId={runId} stepsData={stepsData} />;
+    case "ui-bridge":
+      return <UiBridgeSummary runId={runId} stepsData={stepsData} />;
     case "flow-execution":
       return <FlowExecutionSummary runId={runId} stepsData={stepsData} />;
+    case "status":
+      return <StatusSummary run={run} />;
     default:
       return null;
   }

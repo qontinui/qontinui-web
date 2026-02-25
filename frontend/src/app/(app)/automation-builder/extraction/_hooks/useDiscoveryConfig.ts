@@ -175,7 +175,10 @@ export function useDiscoveryConfig({
     }
 
     const currentState = stateRef.current;
-    if (!currentState.rendersToAnalyze || currentState.rendersToAnalyze.length === 0) {
+    if (
+      !currentState.rendersToAnalyze ||
+      currentState.rendersToAnalyze.length === 0
+    ) {
       toast.error("No render logs to save");
       return;
     }
@@ -224,7 +227,8 @@ export function useDiscoveryConfig({
       currentState.setDiscoveryResult({
         states,
         elements: currentState.discoveryResult?.elements || [],
-        element_to_renders: currentState.discoveryResult?.element_to_renders || {},
+        element_to_renders:
+          currentState.discoveryResult?.element_to_renders || {},
         render_count: result.render_count,
         unique_element_count: result.unique_element_count,
       });
@@ -253,11 +257,7 @@ export function useDiscoveryConfig({
       }));
 
       const { currentSavedConfigId, stateUuidMap } = stateRef.current;
-      if (
-        currentSavedConfigId &&
-        projectId &&
-        stateUuidMap[stateId]
-      ) {
+      if (currentSavedConfigId && projectId && stateUuidMap[stateId]) {
         try {
           await fetch(
             `/api/v1/projects/${projectId}/ui-bridge-configs/${currentSavedConfigId}/states/${stateUuidMap[stateId]}`,

@@ -758,6 +758,18 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
   // --------------------------------------------------------------------------
 
   async getElements(): Promise<APIResponse<ControlSnapshot["elements"]>> {
+    // If the cache is empty, try to refresh from the browser
+    if (latestControlSnapshot.elements.length === 0) {
+      try {
+        const result = await queueCommand<ControlSnapshot>(
+          "getControlSnapshot",
+          {}
+        );
+        updateControlSnapshot(result);
+      } catch {
+        // Browser unavailable — return the (empty) cached data
+      }
+    }
     return success(latestControlSnapshot.elements);
   },
 
@@ -879,13 +891,11 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
       );
       updateControlSnapshot(result);
       return success(result);
-    } catch (e) {
-      const msg = (e as Error).message;
-      // If no browser is connected, return error instead of empty cached data
-      if (msg.includes("No browser connected")) {
-        return error(msg, "NO_BROWSER");
-      }
-      // For timeouts, fall back to cached snapshot
+    } catch {
+      // Fall back to cached snapshot when browser is unavailable (disconnected
+      // or timed out). Returning cached data is more useful for automation
+      // workflows than an error — the caller can check the timestamp to gauge
+      // freshness.
       return success(latestControlSnapshot);
     }
   },

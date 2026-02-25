@@ -110,9 +110,7 @@ export function ExplorationConfigPanel({
     progress.status === "completed"
       ? 100
       : progress.elementsDiscovered > 0
-        ? Math.round(
-            (progress.elementsClicked / config.maxTotalElements) * 100
-          )
+        ? Math.round((progress.elementsClicked / config.maxTotalElements) * 100)
         : 0;
 
   // Check if we can start exploration

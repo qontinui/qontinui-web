@@ -7,7 +7,7 @@ const OnboardingTour = nextDynamic(
     import("@/components/onboarding-tour").then((m) => ({
       default: m.OnboardingTour,
     })),
-  { ssr: false },
+  { ssr: false }
 );
 
 const ContextualTutorialEnhanced = nextDynamic(
@@ -15,9 +15,9 @@ const ContextualTutorialEnhanced = nextDynamic(
     import("@/components/tutorial/contextual/ContextualTutorialEnhanced").then(
       (m) => ({
         default: m.ContextualTutorialEnhanced,
-      }),
+      })
     ),
-  { ssr: false },
+  { ssr: false }
 );
 
 const RefreshTokenExpiryWarning = nextDynamic(
@@ -25,7 +25,7 @@ const RefreshTokenExpiryWarning = nextDynamic(
     import("@/components/refresh-token-expiry-warning").then((m) => ({
       default: m.RefreshTokenExpiryWarning,
     })),
-  { ssr: false },
+  { ssr: false }
 );
 
 const DBErrorHandler = nextDynamic(
@@ -33,7 +33,7 @@ const DBErrorHandler = nextDynamic(
     import("@/components/db-error-handler").then((m) => ({
       default: m.DBErrorHandler,
     })),
-  { ssr: false },
+  { ssr: false }
 );
 
 const OfflineIndicator = nextDynamic(
@@ -41,7 +41,7 @@ const OfflineIndicator = nextDynamic(
     import("@/components/offline-indicator").then((m) => ({
       default: m.OfflineIndicator,
     })),
-  { ssr: false },
+  { ssr: false }
 );
 
 export function ClientOverlays() {

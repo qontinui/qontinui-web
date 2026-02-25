@@ -192,7 +192,7 @@ test.describe("Automation Builder - Core Pages", () => {
       const imagesCard = page.getByText("Pattern Images", { exact: false });
 
       // At least some stat cards should be present if project is loaded
-      const statsVisible =
+      const _statsVisible =
         (await statesCard
           .first()
           .isVisible()

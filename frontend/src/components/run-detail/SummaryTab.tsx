@@ -727,7 +727,11 @@ export function SummaryTab({ run, onRefresh }: SummaryTabProps) {
 
   // Safely access runner-specific fields that don't exist on TaskRunView
   const runnerRun = run as Partial<TaskRun>;
-  const aiSummary = run.summary || runnerRun.ai_summary || ("output_summary" in run ? (run as TaskRunView).output_summary : null) || "";
+  const aiSummary =
+    run.summary ||
+    runnerRun.ai_summary ||
+    ("output_summary" in run ? (run as TaskRunView).output_summary : null) ||
+    "";
   const goalAchieved = run.goal_achieved;
   const remainingWork = run.remaining_work || null;
   const loopResult = runnerRun.loop_result || null;
@@ -1126,7 +1130,9 @@ export function SummaryTab({ run, onRefresh }: SummaryTabProps) {
               <p className="text-sm text-red-400 mt-1">
                 {run.summary ||
                   runnerRun.ai_summary ||
-                  ("error_message" in run ? (run as TaskRunView).error_message : null) ||
+                  ("error_message" in run
+                    ? (run as TaskRunView).error_message
+                    : null) ||
                   "Run failed. Check the output log for details."}
               </p>
             </div>
@@ -1153,7 +1159,14 @@ export function SummaryTab({ run, onRefresh }: SummaryTabProps) {
           </TabsTrigger>
         </TabsList>
         <TabsContent value="timeline" className="mt-4">
-          <Suspense fallback={<div className="text-center py-8 text-text-muted"><Loader2 className="size-4 animate-spin mx-auto mb-2" />Loading...</div>}>
+          <Suspense
+            fallback={
+              <div className="text-center py-8 text-text-muted">
+                <Loader2 className="size-4 animate-spin mx-auto mb-2" />
+                Loading...
+              </div>
+            }
+          >
             <TimelineTab runId={run.id} />
           </Suspense>
         </TabsContent>
@@ -1164,7 +1177,14 @@ export function SummaryTab({ run, onRefresh }: SummaryTabProps) {
           <KnowledgeSubTab runId={run.id} />
         </TabsContent>
         <TabsContent value="context" className="mt-4">
-          <Suspense fallback={<div className="text-center py-8 text-text-muted"><Loader2 className="size-4 animate-spin mx-auto mb-2" />Loading...</div>}>
+          <Suspense
+            fallback={
+              <div className="text-center py-8 text-text-muted">
+                <Loader2 className="size-4 animate-spin mx-auto mb-2" />
+                Loading...
+              </div>
+            }
+          >
             <ContextTab runId={run.id} />
           </Suspense>
         </TabsContent>

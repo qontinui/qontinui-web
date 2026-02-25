@@ -346,10 +346,10 @@ export default function RegionAnalysisPage() {
                     avg_confidence:
                       job.fused_regions.reduce(
                         (sum, r) => sum + r.confidence,
-                        0,
+                        0
                       ) / job.fused_regions.length,
                     multi_vote_regions: job.fused_regions.filter(
-                      (r) => r.votes > 1,
+                      (r) => r.votes > 1
                     ).length,
                     total_grid_cells: job.total_grid_cells,
                   },

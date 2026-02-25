@@ -67,7 +67,7 @@ export function AutomationProviderV2({ children }: AutomationProviderProps) {
       automationBridge.executionRecords,
       automationBridge.lastSaved,
       automationBridge.isLoadingFromBackend,
-    ],
+    ]
   );
   /* eslint-enable react-hooks/exhaustive-deps */
 

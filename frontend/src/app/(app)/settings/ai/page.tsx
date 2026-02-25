@@ -1,6 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { usePageSpecs } from "@/hooks/usePageSpecs";
+import type { SpecConfig } from "@qontinui/ui-bridge/specs";
+import pageSpecJson from "./ai-settings.spec.uibridge.json";
 import { useRunnerHealth, runnerApi } from "@/lib/runner-api";
 import type { AiSettings } from "@/lib/runner-api";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
@@ -37,6 +40,8 @@ import {
   KeyRound,
 } from "lucide-react";
 
+const pageSpec = pageSpecJson as unknown as SpecConfig;
+
 type AiProvider = AiSettings["provider"];
 
 const CLAUDE_MODELS = [
@@ -62,6 +67,7 @@ const EXECUTION_MODES = [
 ];
 
 export default function AiSettingsPage() {
+  usePageSpecs({ "ai-settings": pageSpec });
   const { isLoading: healthLoading, isOffline } = useRunnerHealth();
 
   const [loading, setLoading] = useState(true);

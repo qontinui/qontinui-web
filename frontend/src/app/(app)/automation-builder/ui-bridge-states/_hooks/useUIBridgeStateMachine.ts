@@ -19,18 +19,24 @@ export function useUIBridgeStateMachine() {
 
   const [configs, setConfigs] = useState<SavedConfig[]>([]);
   const [selectedConfigId, setSelectedConfigId] = useState<string | null>(null);
-  const [fullConfig, setFullConfig] = useState<ConfigWithStatesAndTransitions | null>(null);
+  const [fullConfig, setFullConfig] =
+    useState<ConfigWithStatesAndTransitions | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedStateId, setSelectedStateId] = useState<string | null>(null);
-  const [selectedTransitionId, setSelectedTransitionId] = useState<string | null>(null);
+  const [selectedTransitionId, setSelectedTransitionId] = useState<
+    string | null
+  >(null);
 
   // Load available configs
   const loadConfigs = useCallback(async () => {
     if (!projectId) return;
     try {
-      const res = await fetch(`/api/v1/projects/${projectId}/ui-bridge-configs`, {
-        credentials: "include",
-      });
+      const res = await fetch(
+        `/api/v1/projects/${projectId}/ui-bridge-configs`,
+        {
+          credentials: "include",
+        }
+      );
       if (res.ok) {
         const data = await res.json();
         setConfigs(data.items || []);
@@ -41,27 +47,30 @@ export function useUIBridgeStateMachine() {
   }, [projectId]);
 
   // Load full config (states + transitions)
-  const loadFullConfig = useCallback(async (configId: string) => {
-    if (!projectId) return;
-    setIsLoading(true);
-    try {
-      const res = await fetch(
-        `/api/v1/projects/${projectId}/ui-bridge-configs/${configId}/full`,
-        { credentials: "include" }
-      );
-      if (res.ok) {
-        const data: ConfigWithStatesAndTransitions = await res.json();
-        setFullConfig(data);
-      } else {
+  const loadFullConfig = useCallback(
+    async (configId: string) => {
+      if (!projectId) return;
+      setIsLoading(true);
+      try {
+        const res = await fetch(
+          `/api/v1/projects/${projectId}/ui-bridge-configs/${configId}/full`,
+          { credentials: "include" }
+        );
+        if (res.ok) {
+          const data: ConfigWithStatesAndTransitions = await res.json();
+          setFullConfig(data);
+        } else {
+          toast.error("Failed to load configuration");
+        }
+      } catch (err) {
+        console.error("Failed to load full config:", err);
         toast.error("Failed to load configuration");
+      } finally {
+        setIsLoading(false);
       }
-    } catch (err) {
-      console.error("Failed to load full config:", err);
-      toast.error("Failed to load configuration");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [projectId]);
+    },
+    [projectId]
+  );
 
   // Auto-load configs on mount
   useEffect(() => {
@@ -78,14 +87,18 @@ export function useUIBridgeStateMachine() {
   }, [selectedConfigId, loadFullConfig]);
 
   // Get selected state details
-  const selectedState = fullConfig?.states.find(
-    (s) => s.state_id === selectedStateId || s.id === selectedStateId
-  ) ?? null;
+  const selectedState =
+    fullConfig?.states.find(
+      (s) => s.state_id === selectedStateId || s.id === selectedStateId
+    ) ?? null;
 
   // Get selected transition details
-  const selectedTransition = fullConfig?.transitions.find(
-    (t) => t.transition_id === selectedTransitionId || t.id === selectedTransitionId
-  ) ?? null;
+  const selectedTransition =
+    fullConfig?.transitions.find(
+      (t) =>
+        t.transition_id === selectedTransitionId ||
+        t.id === selectedTransitionId
+    ) ?? null;
 
   return {
     projectId,

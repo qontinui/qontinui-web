@@ -15,7 +15,11 @@
  * - Optimization suggestions
  */
 
-import type { Workflow, Action, ActionType } from "@/lib/action-schema/action-types";
+import type {
+  Workflow,
+  Action,
+  ActionType,
+} from "@/lib/action-schema/action-types";
 import type {
   ExecutionData,
   PerformanceBottleneck,
@@ -508,8 +512,7 @@ export class WorkflowPerformanceAnalyzer {
         .map((s) => s.duration!);
 
       if (durations.length > 0) {
-        const avg =
-          durations.reduce((sum, d) => sum + d, 0) / durations.length;
+        const avg = durations.reduce((sum, d) => sum + d, 0) / durations.length;
         const variance =
           durations.reduce((sum, d) => sum + Math.pow(d - avg, 2), 0) /
           durations.length;
@@ -584,7 +587,10 @@ export class WorkflowPerformanceAnalyzer {
     workflow: Workflow,
     executionData?: ExecutionData
   ): OptimizationSuggestion[] {
-    return this.suggestionGenerator.generateSuggestions(workflow, executionData);
+    return this.suggestionGenerator.generateSuggestions(
+      workflow,
+      executionData
+    );
   }
 
   // ============================================================================
@@ -654,10 +660,7 @@ export class WorkflowPerformanceAnalyzer {
       version,
       performanceScore:
         100 -
-        this.getBottleneckScore(
-          { id: workflowId } as Workflow,
-          executionData
-        ),
+        this.getBottleneckScore({ id: workflowId } as Workflow, executionData),
       executionTime: executionData.totalDuration,
       bottleneckScore: this.getBottleneckScore(
         { id: workflowId } as Workflow,
@@ -859,10 +862,7 @@ export class WorkflowPerformanceAnalyzer {
       report += "## Parallelization Opportunities\n\n";
       report += `Found ${analysis.parallelizationOpportunities.length} opportunities to parallelize actions:\n\n`;
       for (const opp of analysis.parallelizationOpportunities.slice(0, 3)) {
-        const totalActions = opp.groups.reduce(
-          (sum, g) => sum + g.length,
-          0
-        );
+        const totalActions = opp.groups.reduce((sum, g) => sum + g.length, 0);
         report += `- ${totalActions} actions could run in parallel (estimated speedup: ${opp.estimatedSpeedup}ms)\n`;
       }
       report += "\n";
@@ -929,8 +929,7 @@ export class WorkflowPerformanceAnalyzer {
     const cached = this.cache.get(workflowId);
     if (
       cached &&
-      Date.now() - cached.timestamp <
-        WorkflowPerformanceAnalyzer.CACHE_DURATION
+      Date.now() - cached.timestamp < WorkflowPerformanceAnalyzer.CACHE_DURATION
     ) {
       return cached.data;
     }

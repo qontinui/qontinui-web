@@ -4,11 +4,7 @@
  * Merge operations with conflict detection and resolution.
  */
 
-import type {
-  MergeConflict,
-  MergeResult,
-  ConflictResolution,
-} from "./types";
+import type { MergeConflict, MergeResult, ConflictResolution } from "./types";
 import type { BranchManager } from "./branch-manager";
 import type { VersionManager } from "./version-manager";
 

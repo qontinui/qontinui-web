@@ -7,7 +7,11 @@
 import type { RunnerMonitor } from "@/lib/schemas/geometry";
 
 // Re-export geometry types for convenience
-export type { RunnerMonitor, Monitor, MonitorPosition } from "@/lib/schemas/geometry";
+export type {
+  RunnerMonitor,
+  Monitor,
+  MonitorPosition,
+} from "@/lib/schemas/geometry";
 
 // ============================================================================
 // Base / Error Types

@@ -3,13 +3,19 @@
 import { useCallback } from "react";
 import { toast } from "sonner";
 import { useAutomationStore } from "@/stores/automation";
-import type { UIBridgeTransitionCreate, UIBridgeTransitionUpdate, UIBridgeTransition } from "../_types";
+import type {
+  UIBridgeTransitionCreate,
+  UIBridgeTransitionUpdate,
+  UIBridgeTransition,
+} from "../_types";
 
 export function useUIBridgeTransitions(configId: string | null) {
   const projectId = useAutomationStore((s) => s.projectId);
 
   const createTransition = useCallback(
-    async (data: UIBridgeTransitionCreate): Promise<UIBridgeTransition | null> => {
+    async (
+      data: UIBridgeTransitionCreate
+    ): Promise<UIBridgeTransition | null> => {
       if (!projectId || !configId) return null;
       try {
         const res = await fetch(
@@ -39,7 +45,10 @@ export function useUIBridgeTransitions(configId: string | null) {
   );
 
   const updateTransition = useCallback(
-    async (transitionId: string, data: UIBridgeTransitionUpdate): Promise<UIBridgeTransition | null> => {
+    async (
+      transitionId: string,
+      data: UIBridgeTransitionUpdate
+    ): Promise<UIBridgeTransition | null> => {
       if (!projectId || !configId) return null;
       try {
         const res = await fetch(

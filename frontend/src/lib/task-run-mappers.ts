@@ -195,7 +195,9 @@ export function mapBackendTaskRun(run: BackendTaskRunResponse): TaskRunView {
 }
 
 /** Normalize a Backend finding to FindingView */
-export function mapBackendFinding(finding: BackendFindingResponse): FindingView {
+export function mapBackendFinding(
+  finding: BackendFindingResponse
+): FindingView {
   return {
     id: finding.id,
     task_run_id: finding.task_run_id,
@@ -244,6 +246,7 @@ export function mergeTaskRunSources(
 
   // Sort by created_at descending
   return Array.from(backendMap.values()).sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    (a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   );
 }

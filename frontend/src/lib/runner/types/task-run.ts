@@ -350,6 +350,8 @@ export interface CurrentExecutionStep {
   error?: string;
   output?: string;
   stdout?: string;
+  /** Command mode for unified command steps (shell/check/check_group/test) */
+  command_mode?: string;
 }
 
 export interface CurrentExecutionStepsResponse {
@@ -361,6 +363,11 @@ export interface CurrentExecutionStepsResponse {
   current_stage?: string;
   executions: CurrentExecutionStep[];
   count: number;
+  /** Batch endpoint fields — present when fetching from /current-execution/batch */
+  completed_iterations?: number[];
+  has_setup?: boolean;
+  has_verification?: boolean;
+  has_agentic?: boolean;
 }
 
 // GUI lock status - indicates whether a visual automation run holds the GUI

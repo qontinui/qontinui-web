@@ -61,10 +61,7 @@ export class ImportExport {
 
       // Import metadata
       for (const [stateId, metadata] of Object.entries(data.metadata)) {
-        if (
-          !this.state.metadata.has(stateId) ||
-          options?.overwriteExisting
-        ) {
+        if (!this.state.metadata.has(stateId) || options?.overwriteExisting) {
           this.state.metadata.set(stateId, metadata);
         }
       }

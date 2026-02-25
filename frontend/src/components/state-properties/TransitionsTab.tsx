@@ -11,12 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Trash2,
-  ChevronDown,
-  ChevronRight,
-  Sparkles,
-} from "lucide-react";
+import { Trash2, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { TabsContent } from "@/components/ui/tabs";
 import type {
   State,
@@ -98,9 +93,7 @@ export function TransitionsTab({
         <Label className="text-xs text-brand-success">
           Incoming Transition
         </Label>
-        <Badge className="bg-brand-success text-black text-xs px-2">
-          1
-        </Badge>
+        <Badge className="bg-brand-success text-black text-xs px-2">1</Badge>
       </div>
 
       <div className="flex-1 space-y-2 overflow-y-auto scrollbar-dark pr-2">
@@ -117,8 +110,7 @@ export function TransitionsTab({
 
           const isExpanded = expandedTransitionId === transition.id;
           const categoryFilter =
-            workflowCategoryFilters[transition.id] ||
-            "Incoming Transitions";
+            workflowCategoryFilters[transition.id] || "Incoming Transitions";
           const availableWorkflows = workflows.filter((w) => {
             const category = w.category || "Main";
             const matchesCategory =
@@ -138,9 +130,7 @@ export function TransitionsTab({
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() =>
-                      setExpandedTransitionId(
-                        isExpanded ? null : transition.id
-                      )
+                      setExpandedTransitionId(isExpanded ? null : transition.id)
                     }
                     className="hover:text-brand-success transition-colors"
                   >
@@ -162,74 +152,67 @@ export function TransitionsTab({
               {isExpanded && (
                 <div className="space-y-3 pt-2 border-t border-border-default">
                   {/* Workflows List */}
-                  {transition.workflows &&
-                    transition.workflows.length > 0 && (
-                      <div className="space-y-1.5">
-                        <Label className="text-xs text-text-muted">
-                          Workflows (execute in order):
-                        </Label>
-                        <div className="space-y-1">
-                          {transition.workflows.map((workflowId, idx) => {
-                            const workflow = workflows.find(
-                              (w) => w.id === workflowId
-                            );
-                            const workflowName =
-                              workflow?.name || "Unknown Workflow";
-                            const isHelper =
-                              workflowId.startsWith("wf-helper-");
+                  {transition.workflows && transition.workflows.length > 0 && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-text-muted">
+                        Workflows (execute in order):
+                      </Label>
+                      <div className="space-y-1">
+                        {transition.workflows.map((workflowId, idx) => {
+                          const workflow = workflows.find(
+                            (w) => w.id === workflowId
+                          );
+                          const workflowName =
+                            workflow?.name || "Unknown Workflow";
+                          const isHelper = workflowId.startsWith("wf-helper-");
 
-                            return (
-                              <div
-                                key={workflowId}
-                                className="flex items-center gap-2 text-xs text-text-secondary p-2 bg-surface-canvas/50 rounded"
-                              >
-                                <Badge className="bg-brand-primary text-black text-xs px-1.5">
-                                  {idx + 1}
+                          return (
+                            <div
+                              key={workflowId}
+                              className="flex items-center gap-2 text-xs text-text-secondary p-2 bg-surface-canvas/50 rounded"
+                            >
+                              <Badge className="bg-brand-primary text-black text-xs px-1.5">
+                                {idx + 1}
+                              </Badge>
+                              <span className="flex-1">{workflowName}</span>
+
+                              {/* Helper badge for auto-generated workflows */}
+                              {isHelper ? (
+                                <Badge className="bg-brand-success/20 text-brand-success border-brand-success/30 text-xs px-1.5">
+                                  Helper
                                 </Badge>
-                                <span className="flex-1">
-                                  {workflowName}
-                                </span>
-
-                                {/* Helper badge for auto-generated workflows */}
-                                {isHelper ? (
-                                  <Badge className="bg-brand-success/20 text-brand-success border-brand-success/30 text-xs px-1.5">
-                                    Helper
+                              ) : (
+                                workflow?.category && (
+                                  <Badge variant="outline" className="text-xs">
+                                    {workflow.category}
                                   </Badge>
-                                ) : (
-                                  workflow?.category && (
-                                    <Badge
-                                      variant="outline"
-                                      className="text-xs"
-                                    >
-                                      {workflow.category}
-                                    </Badge>
-                                  )
-                                )}
+                                )
+                              )}
 
-                                {/* Delete Button */}
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-5 w-5 p-0 text-red-400 hover:text-red-300"
-                                  onClick={() => {
-                                    const newWorkflows =
-                                      transition.workflows.filter(
-                                        (_, i) => i !== idx
-                                      );
-                                    updateTransition({
-                                      ...transition,
-                                      workflows: newWorkflows,
-                                    });
-                                  }}
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </Button>
-                              </div>
-                            );
-                          })}
-                        </div>
+                              {/* Delete Button */}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-5 w-5 p-0 text-red-400 hover:text-red-300"
+                                onClick={() => {
+                                  const newWorkflows =
+                                    transition.workflows.filter(
+                                      (_, i) => i !== idx
+                                    );
+                                  updateTransition({
+                                    ...transition,
+                                    workflows: newWorkflows,
+                                  });
+                                }}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          );
+                        })}
                       </div>
-                    )}
+                    </div>
+                  )}
 
                   {/* Quick Helper Button */}
                   <div className="space-y-2 pb-2 border-b border-border-default">
@@ -240,19 +223,15 @@ export function TransitionsTab({
                       variant="outline"
                       size="sm"
                       className="w-full h-8 text-xs bg-brand-success/10 border-brand-success/30 text-brand-success hover:bg-brand-success/20 hover:text-brand-success hover:border-brand-success/50 transition-colors"
-                      onClick={() =>
-                        handleAddFindAnyImageHelper(transition)
-                      }
+                      onClick={() => handleAddFindAnyImageHelper(transition)}
                       disabled={
-                        !state.stateImages ||
-                        state.stateImages.length === 0
+                        !state.stateImages || state.stateImages.length === 0
                       }
                     >
                       <Sparkles className="w-3 h-3 mr-2" />
                       Add &quot;Find Any State Image&quot;
                     </Button>
-                    {(!state.stateImages ||
-                      state.stateImages.length === 0) && (
+                    {(!state.stateImages || state.stateImages.length === 0) && (
                       <p className="text-xs text-text-muted italic">
                         Add state images first to use this helper
                       </p>
@@ -277,9 +256,7 @@ export function TransitionsTab({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent className="bg-surface-raised border-border-default">
-                        <SelectItem value="All">
-                          All Categories
-                        </SelectItem>
+                        <SelectItem value="All">All Categories</SelectItem>
                         <SelectItem value="Incoming Transitions">
                           Incoming Transitions
                         </SelectItem>
@@ -288,9 +265,7 @@ export function TransitionsTab({
                         </SelectItem>
                         <SelectItem value="Main">Main</SelectItem>
                         {Array.from(
-                          new Set(
-                            workflows.map((w) => w.category || "Main")
-                          )
+                          new Set(workflows.map((w) => w.category || "Main"))
                         )
                           .filter(
                             (c) =>
@@ -339,10 +314,7 @@ export function TransitionsTab({
                               <div className="flex items-center gap-2">
                                 <span>{workflow.name}</span>
                                 {workflow.category && (
-                                  <Badge
-                                    variant="outline"
-                                    className="text-xs"
-                                  >
+                                  <Badge variant="outline" className="text-xs">
                                     {workflow.category}
                                   </Badge>
                                 )}

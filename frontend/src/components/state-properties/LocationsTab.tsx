@@ -26,10 +26,7 @@ export function LocationsTab({
   removeLocation,
 }: LocationsTabProps) {
   return (
-    <TabsContent
-      value="locations"
-      className="flex-1 flex flex-col min-h-0 p-4"
-    >
+    <TabsContent value="locations" className="flex-1 flex flex-col min-h-0 p-4">
       <div className="flex items-center justify-between mb-2">
         <Label className="text-xs text-text-muted">State Locations</Label>
         <Info
@@ -90,11 +87,9 @@ export function LocationsTab({
                         Reference:{" "}
                         {(() => {
                           // First check if it's in the current state
-                          const imageInCurrentState =
-                            state.stateImages?.find(
-                              (img) =>
-                                img.id === location.referenceImageId
-                            );
+                          const imageInCurrentState = state.stateImages?.find(
+                            (img) => img.id === location.referenceImageId
+                          );
                           if (imageInCurrentState)
                             return imageInCurrentState.name;
 
@@ -102,16 +97,14 @@ export function LocationsTab({
                           if (location.referenceImageId) {
                             // First check current state
                             const imageInState = state.stateImages?.find(
-                              (img) =>
-                                img.id === location.referenceImageId
+                              (img) => img.id === location.referenceImageId
                             );
                             if (imageInState) return imageInState.name;
 
                             // Then check all states
                             for (const s of allStates) {
                               const img = s.stateImages?.find(
-                                (img) =>
-                                  img.id === location.referenceImageId
+                                (img) => img.id === location.referenceImageId
                               );
                               if (img) return img.name;
                             }
@@ -155,8 +148,7 @@ export function LocationsTab({
                         Defines:{" "}
                         {location.anchorType
                           ?.replace(/_/g, " ")
-                          .replace(/\b\w/g, (l) => l.toUpperCase()) ||
-                          "Center"}
+                          .replace(/\b\w/g, (l) => l.toUpperCase()) || "Center"}
                       </div>
                     </div>
                   </details>

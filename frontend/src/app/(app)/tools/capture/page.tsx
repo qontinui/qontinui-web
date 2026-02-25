@@ -128,7 +128,9 @@ export default function CapturePage() {
       </header>
 
       <main className="p-6 max-w-3xl mx-auto space-y-6">
-        {isOffline && <RunnerPartialState message="Runner offline — this tool requires the runner for execution" />}
+        {isOffline && (
+          <RunnerPartialState message="Runner offline — this tool requires the runner for execution" />
+        )}
 
         <p className="text-text-muted">
           Record user interactions for automation replay and state discovery.

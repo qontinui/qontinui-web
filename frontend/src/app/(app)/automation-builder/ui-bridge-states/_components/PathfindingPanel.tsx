@@ -101,7 +101,9 @@ export function PathfindingPanel({
       <div className="flex gap-2">
         <Button
           onClick={handleFind}
-          disabled={isLoading || fromStates.length === 0 || targetStates.length === 0}
+          disabled={
+            isLoading || fromStates.length === 0 || targetStates.length === 0
+          }
         >
           {isLoading ? (
             <Loader2 className="size-4 mr-1.5 animate-spin" />
@@ -123,7 +125,9 @@ export function PathfindingPanel({
           {result.found ? (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-green-600">Path found</span>
+                <span className="text-sm font-medium text-green-600">
+                  Path found
+                </span>
                 <span className="text-xs text-text-muted">
                   Total cost: {result.total_cost.toFixed(1)}
                 </span>

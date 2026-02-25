@@ -32,10 +32,7 @@ export async function POST(request: NextRequest) {
     try {
       body = JSON.parse(text);
     } catch {
-      return NextResponse.json(
-        { error: "Invalid JSON" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
 
     // Ensure .dev-logs directory exists
@@ -56,15 +53,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Append each event as a JSON line
-    const lines = events.map((e: unknown) => JSON.stringify(e)).join("\n") + "\n";
+    const lines =
+      events.map((e: unknown) => JSON.stringify(e)).join("\n") + "\n";
     appendFileSync(JSONL_PATH, lines);
 
     return NextResponse.json({ success: true, written: events.length });
   } catch (error) {
     console.error("[browser-events] Failed to write:", error);
-    return NextResponse.json(
-      { error: "Failed to write" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to write" }, { status: 500 });
   }
 }

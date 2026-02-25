@@ -21,7 +21,11 @@ import type {
   ExplorationSessionResponse,
 } from "./types";
 import { DEFAULT_EXPLORATION_CONFIG } from "./types";
-import { loadPersistedConfig, persistConfig, toExplorationSession } from "./utils";
+import {
+  loadPersistedConfig,
+  persistConfig,
+  toExplorationSession,
+} from "./utils";
 import { createLogger } from "@/lib/logger";
 const logger = createLogger("UseExplorationDiscovery");
 
