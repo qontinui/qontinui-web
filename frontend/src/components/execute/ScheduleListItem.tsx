@@ -14,10 +14,8 @@ import {
   Loader2,
   AlertCircle,
 } from "lucide-react";
-import type {
-  ScheduledTask,
-  ScheduleExpression,
-} from "@/lib/runner/types/scheduler";
+import type { ScheduledTask } from "@/lib/runner/types/scheduler";
+import { describeSchedule } from "@qontinui/workflow-utils";
 
 // =============================================================================
 // Props
@@ -29,26 +27,6 @@ interface ScheduleListItemProps {
   onDelete: (task: ScheduledTask) => void;
   onRunNow: (task: ScheduledTask) => void;
   onToggleEnabled: (task: ScheduledTask, enabled: boolean) => void;
-}
-
-// =============================================================================
-// Helpers
-// =============================================================================
-
-function describeSchedule(schedule: ScheduleExpression): string {
-  switch (schedule.type) {
-    case "Once":
-      return `Once on ${new Date(schedule.value).toLocaleString()}`;
-    case "Cron":
-      return `Cron: ${schedule.value}`;
-    case "Interval": {
-      const seconds = schedule.value;
-      if (seconds >= 86400)
-        return `Every ${Math.round(seconds / 86400)} day(s)`;
-      if (seconds >= 3600) return `Every ${Math.round(seconds / 3600)} hour(s)`;
-      return `Every ${Math.round(seconds / 60)} minute(s)`;
-    }
-  }
 }
 
 function relativeTime(iso: string): string {

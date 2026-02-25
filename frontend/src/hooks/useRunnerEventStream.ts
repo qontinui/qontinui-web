@@ -74,6 +74,10 @@ export function useRunnerEventStream(enabled: boolean = true) {
       return;
     }
 
+    // Reset reconnect counter so manual reconnects and visibility-triggered
+    // reconnects start fresh instead of permanently giving up after exhaustion.
+    reconnectAttemptsRef.current = 0;
+
     try {
       const ws = new WebSocket(RUNNER_WS_URL);
       wsRef.current = ws;

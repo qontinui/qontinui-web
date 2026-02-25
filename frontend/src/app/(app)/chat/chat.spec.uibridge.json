@@ -1,0 +1,101 @@
+{
+  "version": "1.0.0",
+  "description": "Semantic specs for the Chat page — conversational AI interface for planning features and generating workflows",
+  "groups": [
+    {
+      "id": "chat-page-purpose",
+      "name": "Page Purpose",
+      "category": "semantic",
+      "assertions": [
+        {
+          "id": "chat-can-create-session",
+          "description": "Users can create a new chat session with the AI",
+          "target": { "type": "uiId", "value": "chat-new-btn" },
+          "assertionType": "exists",
+          "severity": "critical"
+        },
+        {
+          "id": "chat-can-send-message",
+          "description": "Users can type and send messages to the AI",
+          "target": { "type": "uiId", "value": "chat-input-textarea" },
+          "assertionType": "exists",
+          "severity": "critical"
+        },
+        {
+          "id": "chat-can-generate-workflow",
+          "description": "Users can generate a workflow from the conversation",
+          "target": {
+            "type": "uiId",
+            "value": "chat-input-generate-workflow-btn"
+          },
+          "assertionType": "exists",
+          "severity": "critical"
+        },
+        {
+          "id": "chat-shows-messages",
+          "description": "Conversation messages are displayed in a scrollable area",
+          "target": { "type": "uiId", "value": "chat-messages" },
+          "assertionType": "exists",
+          "severity": "critical"
+        },
+        {
+          "id": "chat-shows-session-state",
+          "description": "Session state (Ready/Processing) is visible to the user",
+          "target": { "type": "uiId", "value": "chat-header-state" },
+          "assertionType": "exists",
+          "severity": "high"
+        }
+      ]
+    },
+    {
+      "id": "chat-workflow-generation",
+      "name": "Workflow Generation",
+      "category": "functional",
+      "assertions": [
+        {
+          "id": "chat-workflow-panel-appears",
+          "description": "Workflow preview panel appears after generation completes",
+          "target": { "type": "uiId", "value": "chat-workflow-preview" },
+          "assertionType": "exists",
+          "severity": "critical",
+          "precondition": "Generate Workflow button has been clicked and generation completed"
+        },
+        {
+          "id": "chat-workflow-can-execute",
+          "description": "Users can execute the generated workflow directly",
+          "target": { "type": "uiId", "value": "chat-workflow-execute-btn" },
+          "assertionType": "exists",
+          "severity": "high",
+          "precondition": "Workflow preview panel is visible"
+        }
+      ]
+    },
+    {
+      "id": "chat-session-management",
+      "name": "Session Management",
+      "category": "semantic",
+      "assertions": [
+        {
+          "id": "chat-session-list-visible",
+          "description": "Previous chat sessions are listed on the landing page",
+          "target": { "type": "uiId", "value": "chat-session-list" },
+          "assertionType": "exists",
+          "severity": "high"
+        },
+        {
+          "id": "chat-runner-status-visible",
+          "description": "Runner connection status is visible",
+          "target": { "type": "uiId", "value": "chat-runner-status" },
+          "assertionType": "exists",
+          "severity": "high"
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "component": "ChatPage",
+    "pageUrl": "/chat",
+    "elementSource": "sdk",
+    "tags": ["chat", "ai-planning", "workflow-generation", "tier-1"]
+  }
+}

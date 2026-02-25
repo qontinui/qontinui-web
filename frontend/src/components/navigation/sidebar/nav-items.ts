@@ -49,6 +49,7 @@ import {
   Layers,
   ListChecks,
   HelpCircle,
+  MessageSquare,
 } from "lucide-react";
 import type { NavItem } from "./types";
 
@@ -93,13 +94,21 @@ export const navItems: NavItem[] = [
   // Run — Execute workflows and view results
   // ===========================================================================
   {
+    id: "chat",
+    label: "Chat",
+    description: "Plan features with AI, generate workflows",
+    icon: React.createElement(MessageSquare, { className: "size-5" }),
+    route: "/chat",
+    color: "#9333EA",
+    group: "Run",
+  },
+  {
     id: "execute",
     label: "Execute",
     description: "Run and schedule workflows",
     icon: React.createElement(Play, { className: "size-5" }),
     route: "/execute",
     color: "#10B981",
-    group: "Run",
   },
   {
     id: "runs",

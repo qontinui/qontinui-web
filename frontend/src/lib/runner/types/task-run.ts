@@ -343,6 +343,8 @@ export interface CurrentExecutionStep {
   step_index?: number;
   phase?: string;
   iteration?: number;
+  /** Stage index for multi-stage workflows (0-based). Null/undefined for single-stage. */
+  stage_index?: number;
   status: string;
   start_time?: number;
   end_time?: number;
@@ -368,6 +370,10 @@ export interface CurrentExecutionStepsResponse {
   has_setup?: boolean;
   has_verification?: boolean;
   has_agentic?: boolean;
+  /** Multi-stage workflow fields */
+  current_stage_index?: number;
+  total_stages?: number;
+  stage_names?: string[];
 }
 
 // GUI lock status - indicates whether a visual automation run holds the GUI

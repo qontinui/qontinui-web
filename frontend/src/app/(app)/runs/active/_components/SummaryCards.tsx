@@ -110,11 +110,22 @@ function TimelineSummary({
           </span>
         </div>
       )}
-      {stepsData?.current_stage && (
-        <Badge variant="outline" className="text-[10px]">
-          {stepsData.current_stage}
-        </Badge>
-      )}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {stepsData?.current_stage && (
+          <Badge variant="outline" className="text-[10px]">
+            {stepsData.current_stage}
+          </Badge>
+        )}
+        {stepsData?.total_stages != null && stepsData.total_stages > 1 && (
+          <Badge
+            variant="outline"
+            className="text-[10px] text-amber-400 border-amber-500/30"
+          >
+            Stage {(stepsData.current_stage_index ?? 0) + 1}/
+            {stepsData.total_stages}
+          </Badge>
+        )}
+      </div>
       {total === 0 && (
         <p className="text-xs text-text-muted">Waiting for steps...</p>
       )}

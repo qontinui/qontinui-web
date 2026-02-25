@@ -6,9 +6,9 @@ and receive real-time chat responses.
 """
 
 import asyncio
-from datetime import datetime
 
 import structlog
+from qontinui_schemas.common import utc_now
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import select
@@ -63,6 +63,21 @@ async def websocket_runner_chat_endpoint(
 
         - chat_session_state: Request session state for a task run
           {"type": "chat_session_state", "params": {"task_run_id": "..."}}
+
+        - chat_interrupt: Interrupt a running chat session
+          {"type": "chat_interrupt", "task_run_id": "..."}
+
+        - chat_close: Close a chat session
+          {"type": "chat_close", "task_run_id": "..."}
+
+        - chat_generate_workflow: Generate a workflow from chat context
+          {"type": "chat_generate_workflow", "task_run_id": "...", "params": {"description": "..."}}
+
+        - chat_get_output: Request accumulated output for a task run
+          {"type": "chat_get_output", "task_run_id": "..."}
+
+        - chat_rename: Rename a chat session
+          {"type": "chat_rename", "task_run_id": "...", "params": {"name": "New Name"}}
 
         - ping: Keep connection alive
           {"type": "ping"}
@@ -178,7 +193,7 @@ async def websocket_runner_chat_endpoint(
                 "type": "connected",
                 "connection_id": connection_id,
                 "runner_connected": runner_connected,
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": utc_now().isoformat(),
             }
         )
 
@@ -191,7 +206,7 @@ async def websocket_runner_chat_endpoint(
             await websocket.send_json(
                 {
                     "type": "warning",
-                    "message": "Runner is not currently connected. Messages will be queued until runner reconnects.",
+                    "message": "Runner is not currently connected. Messages cannot be delivered until the runner reconnects.",
                 }
             )
 
@@ -218,7 +233,7 @@ async def websocket_runner_chat_endpoint(
                     await websocket.send_json(
                         {
                             "type": "pong",
-                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                            "timestamp": utc_now().isoformat(),
                         }
                     )
 
@@ -228,7 +243,7 @@ async def websocket_runner_chat_endpoint(
                         "type": "chat_message",
                         "task_run_id": message.task_run_id,
                         "content": message.content,
-                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                        "timestamp": utc_now().isoformat(),
                     }
 
                     sent = await manager.send_chat_to_runner(connection_id, chat_msg)
@@ -237,7 +252,7 @@ async def websocket_runner_chat_endpoint(
                         await websocket.send_json(
                             {
                                 "type": "chat_sent",
-                                "timestamp": datetime.utcnow().isoformat() + "Z",
+                                "timestamp": utc_now().isoformat(),
                             }
                         )
                         logger.info(
@@ -258,7 +273,7 @@ async def websocket_runner_chat_endpoint(
                     create_msg = {
                         "type": "chat_create",
                         "task_name": message.params.get("task_name", "Mobile Chat"),
-                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                        "timestamp": utc_now().isoformat(),
                     }
 
                     sent = await manager.send_chat_to_runner(connection_id, create_msg)
@@ -267,7 +282,7 @@ async def websocket_runner_chat_endpoint(
                         await websocket.send_json(
                             {
                                 "type": "chat_create_sent",
-                                "timestamp": datetime.utcnow().isoformat() + "Z",
+                                "timestamp": utc_now().isoformat(),
                             }
                         )
                         logger.info(
@@ -286,7 +301,7 @@ async def websocket_runner_chat_endpoint(
                     # Request list of running task runs from runner
                     list_msg = {
                         "type": "chat_list_running",
-                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                        "timestamp": utc_now().isoformat(),
                     }
 
                     sent = await manager.send_chat_to_runner(connection_id, list_msg)
@@ -309,7 +324,7 @@ async def websocket_runner_chat_endpoint(
                     state_msg = {
                         "type": "chat_session_state",
                         "task_run_id": message.params.get("task_run_id"),
-                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                        "timestamp": utc_now().isoformat(),
                     }
 
                     sent = await manager.send_chat_to_runner(connection_id, state_msg)
@@ -328,6 +343,125 @@ async def websocket_runner_chat_endpoint(
                             }
                         )
 
+                elif message.type == "chat_interrupt":
+                    interrupt_msg = {
+                        "type": "chat_interrupt",
+                        "task_run_id": message.params.get("task_run_id")
+                        or message.task_run_id,
+                        "timestamp": utc_now().isoformat(),
+                    }
+                    sent = await manager.send_chat_to_runner(
+                        connection_id, interrupt_msg
+                    )
+                    if sent:
+                        logger.info(
+                            "chat_interrupt_sent_to_runner", connection_id=connection_id
+                        )
+                    else:
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "message": "Runner is not connected. Cannot interrupt session.",
+                            }
+                        )
+
+                elif message.type == "chat_close":
+                    close_msg = {
+                        "type": "chat_close",
+                        "task_run_id": message.params.get("task_run_id")
+                        or message.task_run_id,
+                        "timestamp": utc_now().isoformat(),
+                    }
+                    sent = await manager.send_chat_to_runner(connection_id, close_msg)
+                    if sent:
+                        logger.info(
+                            "chat_close_sent_to_runner", connection_id=connection_id
+                        )
+                    else:
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "message": "Runner is not connected. Cannot close session.",
+                            }
+                        )
+
+                elif message.type == "chat_generate_workflow":
+                    gen_msg = {
+                        "type": "chat_generate_workflow",
+                        "task_run_id": message.params.get("task_run_id")
+                        or message.task_run_id,
+                        "params": {
+                            "description": message.params.get(
+                                "description", "Generate workflow from chat"
+                            ),
+                        },
+                        "timestamp": utc_now().isoformat(),
+                    }
+                    sent = await manager.send_chat_to_runner(connection_id, gen_msg)
+                    if sent:
+                        await websocket.send_json(
+                            {
+                                "type": "chat_workflow_generating",
+                                "task_run_id": gen_msg["task_run_id"],
+                                "timestamp": utc_now().isoformat(),
+                            }
+                        )
+                        logger.info(
+                            "chat_generate_workflow_sent_to_runner",
+                            connection_id=connection_id,
+                        )
+                    else:
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "message": "Runner is not connected. Cannot generate workflow.",
+                            }
+                        )
+
+                elif message.type == "chat_get_output":
+                    output_msg = {
+                        "type": "chat_get_output",
+                        "task_run_id": message.params.get("task_run_id")
+                        or message.task_run_id,
+                        "timestamp": utc_now().isoformat(),
+                    }
+                    sent = await manager.send_chat_to_runner(connection_id, output_msg)
+                    if sent:
+                        logger.info(
+                            "chat_get_output_sent_to_runner",
+                            connection_id=connection_id,
+                        )
+                    else:
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "message": "Runner is not connected. Cannot get output.",
+                            }
+                        )
+
+                elif message.type == "chat_rename":
+                    rename_msg = {
+                        "type": "chat_rename",
+                        "task_run_id": message.params.get("task_run_id")
+                        or message.task_run_id,
+                        "params": {
+                            "name": message.params.get("name", ""),
+                        },
+                        "timestamp": utc_now().isoformat(),
+                    }
+                    sent = await manager.send_chat_to_runner(connection_id, rename_msg)
+                    if sent:
+                        logger.info(
+                            "chat_rename_sent_to_runner", connection_id=connection_id
+                        )
+                    else:
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "message": "Runner is not connected. Cannot rename session.",
+                            }
+                        )
+
                 else:
                     await websocket.send_json(
                         {
@@ -342,7 +476,7 @@ async def websocket_runner_chat_endpoint(
                     await websocket.send_json(
                         {
                             "type": "ping",
-                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                            "timestamp": utc_now().isoformat(),
                         }
                     )
                 except Exception:

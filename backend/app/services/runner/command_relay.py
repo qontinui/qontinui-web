@@ -6,10 +6,11 @@ Handles command/response routing via Redis pub/sub channels.
 
 import asyncio
 import json
+from collections.abc import Callable, Coroutine
 from typing import Any
 
 import structlog
-from fastapi import WebSocket
+from fastapi import WebSocket, WebSocketDisconnect
 from redis import asyncio as aioredis
 
 from app.services.runner.connection_registry import WebSocketConnectionRegistry
@@ -88,15 +89,25 @@ class CommandRelayService:
             )
 
     async def start_runner_listener(
-        self, connection_id: int, runner_websocket: WebSocket
+        self,
+        connection_id: int,
+        runner_websocket: WebSocket,
+        send_fn: Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None = None,
     ) -> asyncio.Task:
         """
         Start listening for commands from frontend and forward to runner.
 
+        Args:
+            connection_id: Runner connection ID.
+            runner_websocket: Runner's WebSocket connection.
+            send_fn: Optional synchronized send function. If provided, used instead
+                of calling runner_websocket.send_json directly, to avoid concurrent
+                sends from multiple relay services on the same WebSocket.
+
         Returns the listener task.
         """
         listener_task = asyncio.create_task(
-            self._listen_for_commands(connection_id, runner_websocket)
+            self._listen_for_commands(connection_id, runner_websocket, send_fn=send_fn)
         )
         self._runner_listeners[connection_id] = listener_task
         return listener_task
@@ -151,11 +162,20 @@ class CommandRelayService:
             self._registry.unregister_frontend(connection_id, ws)
 
     async def _listen_for_commands(
-        self, connection_id: int, runner_websocket: WebSocket
+        self,
+        connection_id: int,
+        runner_websocket: WebSocket,
+        send_fn: Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None = None,
     ) -> None:
         """Listen for commands from frontend and forward to runner."""
         channel = f"runner:commands:{connection_id}"
         pubsub = self._redis.pubsub()
+
+        async def _send(data: dict[str, Any]) -> None:
+            if send_fn is not None:
+                await send_fn(data)
+            else:
+                await runner_websocket.send_json(data)
 
         try:
             await pubsub.subscribe(channel)
@@ -169,19 +189,26 @@ class CommandRelayService:
                 if message["type"] == "message":
                     try:
                         command = json.loads(message["data"])
-                        await runner_websocket.send_json(command)
+                        await _send(command)
                         logger.debug(
                             "command_forwarded_to_runner",
                             connection_id=connection_id,
                             command_type=command.get("type"),
                         )
+                    except WebSocketDisconnect:
+                        logger.info(
+                            "runner_ws_disconnected_during_command_forward",
+                            connection_id=connection_id,
+                        )
+                        break
                     except Exception as e:
                         logger.error(
                             "command_forward_failed",
                             connection_id=connection_id,
                             error=str(e),
                         )
-                        break
+                        # Continue processing — don't break on transient errors
+                        continue
 
         except asyncio.CancelledError:
             logger.info(

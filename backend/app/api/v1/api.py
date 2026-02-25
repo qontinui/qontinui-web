@@ -19,6 +19,7 @@ from app.api.v1.endpoints import (
     batch_import,
     billing,
     capture,
+    chat_sessions,
     code_execution,
     code_packages,
     collaboration,
@@ -178,6 +179,7 @@ api_router.include_router(
     runner_chat_ws.router, prefix="/automation", tags=["runner-chat-websockets"]
 )
 api_router.include_router(runner_chat.router, prefix="/runners", tags=["runner-chat"])
+api_router.include_router(chat_sessions.router, tags=["chat-sessions"])
 api_router.include_router(runner_status_ws.router, tags=["runner-status-websockets"])
 api_router.include_router(rag_builder.router, prefix="/rag", tags=["rag-builder"])
 api_router.include_router(

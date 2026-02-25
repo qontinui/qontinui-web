@@ -113,17 +113,19 @@ function getStageColors(
 function WorkflowStageIndicator({
   currentPhase,
   isRunning,
+  isFailed,
 }: {
   currentPhase: string | undefined;
   isRunning: boolean;
+  isFailed: boolean;
 }) {
   const normalizedPhase = currentPhase?.toLowerCase() || "";
   let currentIndex = STAGES.findIndex((s) => normalizedPhase.includes(s.key));
   // When running but no phase data yet, default to setup
   if (isRunning && currentIndex === -1) currentIndex = 0;
   // Only show all-completed when we have a definitive "not running" status
-  // AND the phase was at completion (or no phase = never started monitoring)
-  const allCompleted = !isRunning && currentIndex >= 0;
+  // AND the run actually succeeded (not failed/stopped)
+  const allCompleted = !isRunning && currentIndex >= 0 && !isFailed;
 
   return (
     <div className="flex items-center gap-0.5">
@@ -193,7 +195,7 @@ function IterationBadge({
   current: number;
   max: number | undefined;
 }) {
-  const displayMax = max || current;
+  const displayMax = max ?? current;
   const progress = displayMax > 0 ? (current / displayMax) * 100 : 0;
 
   return (
@@ -226,22 +228,46 @@ function IterationBadge({
 
 function PlanPhaseDisplay({
   planPhase,
+  planPhaseIndex,
   planTotalPhases,
+  stageIndex,
+  totalStages,
 }: {
   planPhase?: string;
+  planPhaseIndex?: number;
   planTotalPhases?: number;
+  stageIndex?: number;
+  totalStages?: number;
 }) {
-  if (!planPhase) return null;
+  // Show stage indicator for multi-stage workflows
+  const hasStages = totalStages != null && totalStages > 1;
+  const hasPhase = planPhase != null;
+
+  if (!hasStages && !hasPhase) return null;
 
   return (
-    <Badge
-      variant="outline"
-      className="text-[10px] gap-1 text-amber-400 border-amber-500/30"
-    >
-      <Timer className="size-2.5" />
-      Phase: {planPhase}
-      {planTotalPhases != null && `/${planTotalPhases}`}
-    </Badge>
+    <div className="flex items-center gap-1.5">
+      {hasStages && (
+        <Badge
+          variant="outline"
+          className="text-[10px] gap-1 text-amber-400 border-amber-500/30"
+        >
+          <Layers className="size-2.5" />
+          Stage {(stageIndex ?? 0) + 1}/{totalStages}
+        </Badge>
+      )}
+      {hasPhase && (
+        <Badge
+          variant="outline"
+          className="text-[10px] gap-1 text-amber-400 border-amber-500/30"
+        >
+          <Timer className="size-2.5" />
+          {planPhaseIndex != null ? `${planPhaseIndex + 1}: ` : ""}
+          {planPhase}
+          {!hasStages && planTotalPhases != null && `/${planTotalPhases}`}
+        </Badge>
+      )}
+    </div>
   );
 }
 
@@ -335,6 +361,7 @@ export function ControlBar({ run, onRefresh }: ControlBarProps) {
             orchState?.workflow_stage || orchState?.phase || run.phase
           }
           isRunning={run.status === "running"}
+          isFailed={run.status === "failed" || run.status === "stopped"}
         />
       </div>
 
@@ -347,8 +374,11 @@ export function ControlBar({ run, onRefresh }: ControlBarProps) {
           />
         )}
         <PlanPhaseDisplay
-          planPhase={orchState?.plan_phase}
+          planPhase={orchState?.plan_phase_name ?? orchState?.plan_phase}
+          planPhaseIndex={orchState?.plan_phase_index}
           planTotalPhases={orchState?.plan_total_phases}
+          stageIndex={orchState?.stage_index}
+          totalStages={orchState?.total_stages}
         />
         {run.auto_continue != null && (
           <AutoContinueToggle

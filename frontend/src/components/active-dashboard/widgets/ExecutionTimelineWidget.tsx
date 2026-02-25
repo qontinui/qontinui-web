@@ -78,6 +78,7 @@ interface TimelineStep {
   name: string;
   status: StepStatus;
   phase: WorkflowPhase;
+  stageIndex: number;
   stepIndex: number;
   iteration?: number;
   startTime?: number;
@@ -101,6 +102,10 @@ interface IterationGroup {
 
 interface PhaseGroup {
   phase: WorkflowPhase;
+  /** Stage index this phase belongs to (for multi-stage grouping) */
+  stageIndex: number;
+  /** Display label (includes stage prefix for multi-stage) */
+  displayLabel: string;
   steps: TimelineStep[];
   iterationGroups: IterationGroup[];
   hasIterations: boolean;
@@ -365,7 +370,7 @@ const STEP_COLORS: Record<
 };
 
 function formatDuration(ms: number | undefined): string {
-  if (!ms) return "";
+  if (ms == null) return "";
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
   const mins = Math.floor(ms / 60000);
@@ -405,6 +410,7 @@ function transformSteps(
       name: exec.step_name || `Step ${index + 1}`,
       status,
       phase: mapPhase(exec.phase, fallbackPhase),
+      stageIndex: exec.stage_index ?? 0,
       stepIndex: exec.step_index ?? index,
       iteration: exec.iteration,
       startTime: exec.start_time,
@@ -429,51 +435,75 @@ function sortSteps(steps: TimelineStep[]): TimelineStep[] {
 
 function buildPhaseGroups(
   allSteps: TimelineStep[],
-  currentPhase: WorkflowPhase | null
+  currentPhase: WorkflowPhase | null,
+  totalStages?: number,
+  currentStageIndex?: number
 ): PhaseGroup[] {
-  const groups = new Map<WorkflowPhase, TimelineStep[]>();
+  // Group by composite key (stageIndex:phase) to handle multi-stage workflows.
+  // For single-stage (all stageIndex=0), this behaves identically to the old phase-only grouping.
+  const groupKey = (step: TimelineStep) => `${step.stageIndex}:${step.phase}`;
+  const groups = new Map<string, TimelineStep[]>();
   for (const step of allSteps) {
-    const existing = groups.get(step.phase) || [];
+    const key = groupKey(step);
+    const existing = groups.get(key) || [];
     existing.push(step);
-    groups.set(step.phase, existing);
+    groups.set(key, existing);
   }
 
-  const phaseEarliestTime = new Map<WorkflowPhase, number>();
-  for (const [phase, steps] of groups) {
+  const groupEarliestTime = new Map<string, number>();
+  for (const [key, steps] of groups) {
     const times = steps
       .filter((s) => s.startTime !== undefined)
       .map((s) => s.startTime!);
-    if (times.length > 0) phaseEarliestTime.set(phase, Math.min(...times));
+    if (times.length > 0) groupEarliestTime.set(key, Math.min(...times));
   }
 
-  const phasesWithSteps = Array.from(groups.keys()).filter(
-    (p) => (groups.get(p)?.length ?? 0) > 0
+  const keysWithSteps = Array.from(groups.keys()).filter(
+    (k) => (groups.get(k)?.length ?? 0) > 0
   );
-  phasesWithSteps.sort((a, b) => {
-    const timeA = phaseEarliestTime.get(a);
-    const timeB = phaseEarliestTime.get(b);
+  keysWithSteps.sort((a, b) => {
+    const timeA = groupEarliestTime.get(a);
+    const timeB = groupEarliestTime.get(b);
     if (timeA !== undefined && timeB !== undefined) return timeA - timeB;
     if (timeA !== undefined) return -1;
     if (timeB !== undefined) return 1;
-    return PHASE_ORDER.indexOf(a) - PHASE_ORDER.indexOf(b);
+    // Fallback: sort by stage index first, then phase order
+    const [stageA, phaseA] = a.split(":") as [string, WorkflowPhase];
+    const [stageB, phaseB] = b.split(":") as [string, WorkflowPhase];
+    if (stageA !== stageB) return parseInt(stageA) - parseInt(stageB);
+    return PHASE_ORDER.indexOf(phaseA) - PHASE_ORDER.indexOf(phaseB);
   });
 
-  return phasesWithSteps.map((phase) => {
-    const steps = groups.get(phase) || [];
+  const isMultiStage = (totalStages ?? 0) > 1;
+
+  return keysWithSteps.map((key) => {
+    const steps = groups.get(key) || [];
+    const [stageIdxStr, phaseStr] = key.split(":") as [string, WorkflowPhase];
+    const stageIdx = parseInt(stageIdxStr);
+    const phase = phaseStr;
     const completed = steps.filter(
       (s) => s.status === "success" || s.status === "failed"
     ).length;
     const successful = steps.filter((s) => s.status === "success").length;
     const failed = steps.filter((s) => s.status === "failed").length;
-    const isActive = phase === currentPhase;
+    const isActive =
+      phase === currentPhase &&
+      (!isMultiStage || stageIdx === (currentStageIndex ?? 0));
     const isComplete = steps.length > 0 && completed === steps.length;
     const hasIterations = phase === "verification" || phase === "agentic";
     const iterationGroups = hasIterations
       ? buildIterationGroups(steps, isActive, phase)
       : [];
 
+    const config = PHASE_CONFIG[phase];
+    const displayLabel = isMultiStage
+      ? `Stage ${stageIdx + 1} — ${config?.label ?? phase}`
+      : (config?.label ?? phase);
+
     return {
       phase,
+      stageIndex: stageIdx,
+      displayLabel,
       steps: sortSteps(steps),
       iterationGroups,
       hasIterations,
@@ -533,8 +563,12 @@ function calculateStats(
   phaseGroups: PhaseGroup[],
   elapsedTime: number
 ): TimelineStats {
-  const verificationGroup = phaseGroups.find((g) => g.phase === "verification");
-  const agenticGroup = phaseGroups.find((g) => g.phase === "agentic");
+  const verificationGroup =
+    phaseGroups.find((g) => g.phase === "verification" && g.isActive) ??
+    phaseGroups.findLast((g) => g.phase === "verification");
+  const agenticGroup =
+    phaseGroups.find((g) => g.phase === "agentic" && g.isActive) ??
+    phaseGroups.findLast((g) => g.phase === "agentic");
   const verificationIterations = verificationGroup?.iterationGroups || [];
   const agenticIterations = agenticGroup?.iterationGroups || [];
 
@@ -812,7 +846,7 @@ function PhaseSection({
                 : "bg-white/5 text-text-muted border-border-subtle/50"
           )}
         >
-          {config.label}
+          {group.displayLabel}
         </Badge>
         {hasRunningStep && (
           <Loader2 className={cn("size-3.5 animate-spin", config.textColor)} />
@@ -1085,10 +1119,13 @@ export function ExecutionTimelineWidget({ runId: _runId }: { runId: string }) {
     return null;
   }, [allSteps, response]);
 
-  // Build phase groups
+  // Build phase groups (with multi-stage awareness)
+  const totalStages = response?.total_stages;
+  const currentStageIndex = response?.current_stage_index;
   const phaseGroups = useMemo(
-    () => buildPhaseGroups(allSteps, currentPhase),
-    [allSteps, currentPhase]
+    () =>
+      buildPhaseGroups(allSteps, currentPhase, totalStages, currentStageIndex),
+    [allSteps, currentPhase, totalStages, currentStageIndex]
   );
 
   // Calculate stats
@@ -1115,7 +1152,8 @@ export function ExecutionTimelineWidget({ runId: _runId }: { runId: string }) {
       for (const group of phaseGroups) {
         if (!group.hasIterations || group.iterationGroups.length === 0)
           continue;
-        const prevCount = prevIterationCounts.current.get(group.phase) ?? 0;
+        const compositeKey = `${group.stageIndex}:${group.phase}`;
+        const prevCount = prevIterationCounts.current.get(compositeKey) ?? 0;
         const currentCount = group.iterationGroups.length;
         const maxIter = Math.max(
           ...group.iterationGroups.map((g) => g.iteration)
@@ -1132,7 +1170,7 @@ export function ExecutionTimelineWidget({ runId: _runId }: { runId: string }) {
           );
           if (!phaseHasExpanded) newSet.add(`${group.phase}-${maxIter}`);
         }
-        prevIterationCounts.current.set(group.phase, currentCount);
+        prevIterationCounts.current.set(compositeKey, currentCount);
       }
       return newSet;
     });
@@ -1194,7 +1232,7 @@ export function ExecutionTimelineWidget({ runId: _runId }: { runId: string }) {
           <div className="flex flex-col">
             {phaseGroups.map((group) => (
               <PhaseSection
-                key={group.phase}
+                key={`${group.stageIndex}:${group.phase}`}
                 group={group}
                 defaultExpanded={group.isActive || group.steps.length < 10}
                 expandedIterations={expandedIterations}

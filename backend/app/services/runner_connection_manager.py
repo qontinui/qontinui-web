@@ -16,6 +16,7 @@ Services:
 - RunnerEventPublisher: Status event broadcasting
 """
 
+import asyncio
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -62,6 +63,8 @@ class RunnerConnectionManager:
         self._chat_relay = ChatRelayService(redis_client, self._registry)
         self._publisher = RunnerEventPublisher(redis_client)
         self._redis = redis_client
+        # Per-connection locks to synchronize WebSocket sends across relay services
+        self._ws_send_locks: dict[int, asyncio.Lock] = {}
 
         logger.info("runner_connection_manager_initialized_with_redis_state")
 
@@ -98,6 +101,9 @@ class RunnerConnectionManager:
         # Store in memory registry
         self._registry.register_runner(connection_id, websocket)
 
+        # Create per-connection lock for synchronized WebSocket sends
+        self._ws_send_locks[connection_id] = asyncio.Lock()
+
         # Store in Redis for persistence
         await self._state_repo.save_connection_state(
             connection_id=connection_id,
@@ -107,11 +113,22 @@ class RunnerConnectionManager:
             ip_address=ip_address,
         )
 
+        # Build a thread-safe send callback for relay services
+        send_lock = self._ws_send_locks[connection_id]
+
+        async def locked_send(data: dict[str, Any]) -> None:
+            async with send_lock:
+                await websocket.send_json(data)
+
         # Start command listener
-        await self._relay.start_runner_listener(connection_id, websocket)
+        await self._relay.start_runner_listener(
+            connection_id, websocket, send_fn=locked_send
+        )
 
         # Start chat listener
-        await self._chat_relay.start_runner_listener(connection_id, websocket)
+        await self._chat_relay.start_runner_listener(
+            connection_id, websocket, send_fn=locked_send
+        )
 
         # Publish connected event
         await self._publisher.publish_runner_connected(
@@ -160,7 +177,21 @@ class RunnerConnectionManager:
 
         # Stop listeners
         await self._relay.stop_runner_listener(connection_id)
+
+        # Notify mobile clients before stopping the chat relay listener
+        await self._chat_relay.notify_mobiles(
+            connection_id,
+            {
+                "type": "runner_disconnected",
+                "connection_id": connection_id,
+                "timestamp": utc_now().isoformat(),
+            },
+        )
+
         await self._chat_relay.stop_runner_listener(connection_id)
+
+        # Remove per-connection send lock
+        self._ws_send_locks.pop(connection_id, None)
 
         # Notify connected frontends
         await self._relay.notify_frontends(

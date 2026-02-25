@@ -26,7 +26,10 @@ function CompactRunCard({
     bridges_count?: number;
     gui_locked?: boolean;
     plan_phase?: string;
+    plan_phase_name?: string;
     plan_total_phases?: number;
+    stage_index?: number;
+    total_stages?: number;
   }>("orchestrator-state-change", `/task-runs/${run.id}/orchestrator-state`, {
     fallbackPollMs: 10000,
   });

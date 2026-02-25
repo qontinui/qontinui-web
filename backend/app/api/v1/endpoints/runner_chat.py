@@ -5,10 +5,10 @@ Provides REST fallback endpoints for sending chat messages to runners
 when WebSocket connections are not available.
 """
 
-from datetime import datetime
 from typing import Any
 
 import structlog
+from qontinui_schemas.common import utc_now
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -99,7 +99,7 @@ async def send_chat_message(
         "type": "chat_message",
         "task_run_id": body.task_run_id,
         "content": body.content,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": utc_now().isoformat(),
     }
 
     sent = await manager.send_chat_to_runner(connection_id, chat_msg)
@@ -118,8 +118,9 @@ async def send_chat_message(
     )
 
     return {
-        "status": "sent",
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "status": "forwarded",
+        "note": "Message forwarded to runner via relay. Delivery is not guaranteed if runner disconnects.",
+        "timestamp": utc_now().isoformat(),
     }
 
 
@@ -148,7 +149,7 @@ async def list_running_tasks(
 
     list_msg = {
         "type": "chat_list_running",
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": utc_now().isoformat(),
     }
 
     sent = await manager.send_chat_to_runner(connection_id, list_msg)
@@ -166,8 +167,9 @@ async def list_running_tasks(
     )
 
     return {
-        "status": "request_sent",
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "status": "request_forwarded",
+        "note": "Request forwarded to runner via relay. Delivery is not guaranteed if runner disconnects.",
+        "timestamp": utc_now().isoformat(),
     }
 
 
@@ -200,7 +202,7 @@ async def create_chat_session(
     create_msg = {
         "type": "chat_create",
         "task_name": body.task_name,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": utc_now().isoformat(),
     }
 
     sent = await manager.send_chat_to_runner(connection_id, create_msg)
@@ -219,7 +221,8 @@ async def create_chat_session(
     )
 
     return {
-        "status": "request_sent",
+        "status": "request_forwarded",
         "task_name": body.task_name,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "note": "Request forwarded to runner via relay. Delivery is not guaranteed if runner disconnects.",
+        "timestamp": utc_now().isoformat(),
     }

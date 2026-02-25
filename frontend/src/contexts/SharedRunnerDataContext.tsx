@@ -28,11 +28,17 @@ export interface OrchestratorState {
   bridges_count?: number;
   gui_locked?: boolean;
   plan_phase?: string;
+  plan_phase_name?: string;
+  plan_phase_index?: number;
   plan_total_phases?: number;
   workflow_stage?: string;
   phase?: string;
   iteration?: number;
   max_iterations?: number;
+  /** Multi-stage workflow fields */
+  stage_index?: number;
+  total_stages?: number;
+  stage_name?: string;
 }
 
 /**
@@ -65,6 +71,26 @@ const SharedRunnerDataCtx = createContext<SharedRunnerDataValue | null>(null);
 // =============================================================================
 
 /**
+ * Extract stage-related fields from the Rust state_data JSON.
+ * The state_data contains the serialized state enum, e.g.:
+ * { "VerificationRunning": { "iteration": 1, "stage_index": 2 } }
+ */
+function extractStateDataFields(
+  stateData: Record<string, unknown>
+): Partial<OrchestratorState> {
+  const result: Partial<OrchestratorState> = {};
+  if (typeof stateData.stage_index === "number")
+    result.stage_index = stateData.stage_index;
+  if (typeof stateData.total_stages === "number")
+    result.total_stages = stateData.total_stages;
+  if (typeof stateData.phase_name === "string")
+    result.plan_phase_name = stateData.phase_name;
+  if (typeof stateData.phase_index === "number")
+    result.plan_phase_index = stateData.phase_index;
+  return result;
+}
+
+/**
  * Hook that maintains orchestrator state via a combination of:
  * 1. Initial REST fetch on mount / runId change
  * 2. Pure push updates from WS "orchestrator-state-change" events
@@ -85,18 +111,37 @@ function useOrchestratorStatePush(runId: string | null): {
     };
   }, []);
 
-  // REST fetch helper
+  // REST fetch helper — the /orchestrator-state endpoint returns WorkflowStateResponse
+  // which includes plan_phase_name, plan_phase_index, plan_total_phases, stage_index, etc.
   const fetchState = useCallback(async () => {
     if (!runId) {
       setState(null);
       return;
     }
     try {
-      const data = await runnerFetch<OrchestratorState>(
+      const data = await runnerFetch<Record<string, unknown>>(
         `/task-runs/${runId}/orchestrator-state`
       );
-      if (mountedRef.current) {
-        setState(data ?? null);
+      if (mountedRef.current && data) {
+        // Map WorkflowStateResponse fields to OrchestratorState
+        const orchState: OrchestratorState = {
+          workflow_stage: data.workflow_stage as string | undefined,
+          phase: data.phase as string | undefined,
+          iteration: data.iteration as number | undefined,
+          max_iterations: data.max_iterations as number | undefined,
+          is_paused: data.is_paused as boolean | undefined,
+          plan_phase: data.plan_phase_name as string | undefined,
+          plan_phase_name: data.plan_phase_name as string | undefined,
+          plan_phase_index: data.plan_phase_index as number | undefined,
+          plan_total_phases: data.plan_total_phases as number | undefined,
+          stage_index: data.stage_index as number | undefined,
+          total_stages: data.total_stages as number | undefined,
+          // Extract from state_data if top-level fields aren't set
+          ...(data.state_data
+            ? extractStateDataFields(data.state_data as Record<string, unknown>)
+            : {}),
+        };
+        setState(orchState);
       }
     } catch {
       // Silently ignore fetch errors (runner may be offline)
@@ -126,6 +171,7 @@ function useOrchestratorStatePush(runId: string | null): {
 
         // The payload is the serialized AppEvent: { event_type: "OrchestratorStateChange", data: { ... } }
         const eventData = (msg.data ?? msg) as OrchestratorWsEventData;
+        if (eventData.task_run_id && eventData.task_run_id !== runId) return;
         if (!eventData.workflow_stage && !eventData.phase) return;
 
         // Build an OrchestratorState from the WS event data.
@@ -137,9 +183,12 @@ function useOrchestratorStatePush(runId: string | null): {
           unknown
         >;
 
+        // Extract stage-related fields from state_data
+        const stageFields = extractStateDataFields(stateData);
+
         setState((prev) => ({
           ...prev,
-          ...stateData,
+          ...stageFields,
           // Preserve top-level workflow fields from the event (not in state_data)
           ...(eventData.workflow_stage
             ? { workflow_stage: eventData.workflow_stage }
