@@ -16,15 +16,6 @@ import {
   SequenceBuilderPanel,
   type QueueItem,
 } from "@/components/execute/SequenceBuilderPanel";
-import { SavedSequenceSelector } from "@/components/execute/SavedSequenceSelector";
-import {
-  useWorkflowSequences,
-  getSequence,
-  createSequence,
-  updateSequence,
-  deleteSequence,
-} from "@/lib/api/workflow-sequences";
-import { useProject } from "@/hooks/automation";
 import {
   DndContext,
   closestCenter,
@@ -51,20 +42,10 @@ function QueueTabContent({
   workflows: UnifiedWorkflow[] | null;
   workflowsLoading: boolean;
 }) {
-  const { projectId } = useProject();
-  const {
-    data: savedSequences,
-    isLoading: sequencesLoading,
-    refetch: refetchSequences,
-  } = useWorkflowSequences(projectId);
-
   // Local queue state
   const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
-  const [sequenceName, setSequenceName] = useState("");
   const [stopOnFailure, setStopOnFailure] = useState(true);
-  const [activeSequenceId, setActiveSequenceId] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
 
   // DnD state
   const [dragActiveId, setDragActiveId] = useState<string | null>(null);
@@ -83,7 +64,7 @@ function QueueTabContent({
     return new Set(queueItems.map((item) => item.workflowId));
   }, [queueItems]);
 
-  // Workflow lookup for loading sequences
+  // Workflow lookup for drag overlay labels
   const workflowMap = useMemo(() => {
     const map = new Map<string, UnifiedWorkflow>();
     if (workflows) {
@@ -188,124 +169,19 @@ function QueueTabContent({
     setIsRunning(true);
     try {
       const workflowIds = queueItems.map((item) => item.workflowId);
-      const result = await runnerApi.runWorkflowSequence(
+      const result = await runnerApi.runComposedWorkflow(
         workflowIds,
         stopOnFailure
       );
-      toast.success(`Sequence started (task run: ${result.task_run_id})`);
+      toast.success(`Workflow started (task run: ${result.task_run_id})`);
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to run sequence"
+        err instanceof Error ? err.message : "Failed to run workflow"
       );
     } finally {
       setIsRunning(false);
     }
   }, [queueItems, stopOnFailure]);
-
-  const handleSave = useCallback(async () => {
-    if (!projectId || !sequenceName.trim() || queueItems.length === 0) return;
-    setIsSaving(true);
-    try {
-      const workflowIds = queueItems.map((item) => item.workflowId);
-      const itemSchedules = queueItems.map((item) => item.scheduledAt || null);
-      const hasAnySchedule = itemSchedules.some((s) => s !== null);
-      const scheduleData = hasAnySchedule
-        ? { item_schedules: itemSchedules }
-        : null;
-
-      if (activeSequenceId) {
-        await updateSequence(projectId, activeSequenceId, {
-          name: sequenceName,
-          workflow_ids: workflowIds,
-          stop_on_failure: stopOnFailure,
-          schedule: scheduleData,
-        });
-        toast.success("Sequence updated");
-      } else {
-        const created = await createSequence(projectId, {
-          name: sequenceName,
-          workflow_ids: workflowIds,
-          stop_on_failure: stopOnFailure,
-          schedule: scheduleData,
-        });
-        setActiveSequenceId(created.id);
-        toast.success("Sequence saved");
-      }
-      refetchSequences();
-    } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to save sequence"
-      );
-    } finally {
-      setIsSaving(false);
-    }
-  }, [
-    projectId,
-    sequenceName,
-    queueItems,
-    stopOnFailure,
-    activeSequenceId,
-    refetchSequences,
-  ]);
-
-  const handleLoadSequence = useCallback(
-    async (sequenceId: string) => {
-      if (!projectId) return;
-      try {
-        const seq = await getSequence(projectId, sequenceId);
-        setSequenceName(seq.name);
-        setStopOnFailure(seq.stop_on_failure);
-        setActiveSequenceId(seq.id);
-
-        // Rebuild queue items from workflow IDs with per-item schedules
-        const itemSchedules = seq.schedule?.item_schedules || [];
-        const items: QueueItem[] = seq.workflow_ids.map((wId, index) => {
-          const workflow = workflowMap.get(wId);
-          return {
-            queueId: `${wId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            workflowId: wId,
-            name: workflow?.name || wId,
-            description: workflow?.description || undefined,
-            category: workflow?.category || undefined,
-            stepCount: workflow ? getTotalStepCount(workflow) : 0,
-            scheduledAt: itemSchedules[index] || undefined,
-          };
-        });
-        setQueueItems(items);
-      } catch (err) {
-        toast.error(
-          err instanceof Error ? err.message : "Failed to load sequence"
-        );
-      }
-    },
-    [projectId, workflowMap]
-  );
-
-  const handleNewSequence = useCallback(() => {
-    setQueueItems([]);
-    setSequenceName("");
-    setStopOnFailure(true);
-    setActiveSequenceId(null);
-  }, []);
-
-  const handleDeleteSequence = useCallback(
-    async (sequenceId: string) => {
-      if (!projectId) return;
-      try {
-        await deleteSequence(projectId, sequenceId);
-        if (activeSequenceId === sequenceId) {
-          handleNewSequence();
-        }
-        refetchSequences();
-        toast.success("Sequence deleted");
-      } catch (err) {
-        toast.error(
-          err instanceof Error ? err.message : "Failed to delete sequence"
-        );
-      }
-    },
-    [projectId, activeSequenceId, handleNewSequence, refetchSequences]
-  );
 
   const handleClear = useCallback(() => {
     setQueueItems([]);
@@ -326,25 +202,13 @@ function QueueTabContent({
         onAddWorkflow={handleAddWorkflow}
       />
       <div className="flex-1 min-w-0">
-        <SavedSequenceSelector
-          sequences={savedSequences}
-          isLoading={sequencesLoading}
-          activeSequenceId={activeSequenceId}
-          onLoad={handleLoadSequence}
-          onNew={handleNewSequence}
-          onDelete={handleDeleteSequence}
-        />
         <SequenceBuilderPanel
           items={queueItems}
-          sequenceName={sequenceName}
           stopOnFailure={stopOnFailure}
           isRunning={isRunning}
-          isSaving={isSaving}
           onItemsChange={setQueueItems}
-          onSequenceNameChange={setSequenceName}
           onStopOnFailureChange={setStopOnFailure}
           onRun={handleRun}
-          onSave={handleSave}
           onClear={handleClear}
         />
       </div>

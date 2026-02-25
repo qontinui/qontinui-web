@@ -5,7 +5,6 @@ import {
   ShieldCheck,
   Trash2,
   Play,
-  ExternalLink,
   Scan,
   X,
   Tags,
@@ -27,8 +26,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useProject } from "@/hooks/automation";
-import { createSequence } from "@/lib/api/workflow-sequences";
 import { parseDiscoveredSpecs } from "@/lib/ui-bridge/spec-parser";
 import { useAutomatedDiscovery } from "@/hooks/use-automated-discovery";
 import { useAppBrowser } from "@/hooks/useAppBrowser";
@@ -66,8 +63,6 @@ export function SweepEditor({
   onSave,
   onDelete,
 }: SweepEditorProps) {
-  const { projectId } = useProject();
-
   // App browser hook for connection + page discovery
   const browser = useAppBrowser({ selfPathname: "/build/page-sweep" });
 
@@ -348,41 +343,23 @@ export function SweepEditor({
           throw new Error("No workflows were generated successfully");
         }
 
-        setGenerateStatus("Creating workflow sequence...");
-
-        let sequenceId: string | undefined;
-        if (projectId) {
-          try {
-            const sequence = await createSequence(projectId, {
-              name: `Page Sweep: ${form.name || "Untitled"}`,
-              description: `Generated from page sweep config with ${workflowIds.length} page${workflowIds.length !== 1 ? "s" : ""}`,
-              workflow_ids: workflowIds,
-              stop_on_failure: false,
-            });
-            sequenceId = sequence.id;
-          } catch {
-            console.warn("Failed to create workflow sequence in backend");
-          }
-        }
-
         setForm((prev) => ({
           ...prev,
-          last_sequence_id: sequenceId,
           last_generated_at: new Date().toISOString(),
         }));
 
-        const msg = `Generated ${workflowIds.length} workflow${workflowIds.length !== 1 ? "s" : ""}${sequenceId ? " and saved sequence" : ""}`;
+        const msg = `Generated ${workflowIds.length} workflow${workflowIds.length !== 1 ? "s" : ""}`;
         setGenerateStatus(msg);
         toast.success(msg);
 
         if (andRun && workflowIds.length > 0) {
-          setGenerateStatus("Starting sequence execution...");
-          const result = await runnerApi.runWorkflowSequence(
+          setGenerateStatus("Starting multi-stage execution...");
+          const result = await runnerApi.runComposedWorkflow(
             workflowIds,
             false
           );
-          setGenerateStatus(`Sequence running (task: ${result.task_run_id})`);
-          toast.success("Page sweep sequence started");
+          setGenerateStatus(`Running (task: ${result.task_run_id})`);
+          toast.success("Page sweep started");
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Generation failed";
@@ -392,7 +369,7 @@ export function SweepEditor({
         setIsGenerating(false);
       }
     },
-    [form, projectId, setForm]
+    [form, setForm]
   );
 
   // Summary counts (semantic groups only)
@@ -843,14 +820,6 @@ export function SweepEditor({
               Last generated:{" "}
               {new Date(form.last_generated_at).toLocaleString()}
             </span>
-            {form.last_sequence_id && (
-              <a
-                href="/execute"
-                className="flex items-center gap-1 text-cyan-400 hover:text-cyan-300 transition-colors"
-              >
-                View on Execute <ExternalLink className="size-3" />
-              </a>
-            )}
           </div>
         )}
       </div>

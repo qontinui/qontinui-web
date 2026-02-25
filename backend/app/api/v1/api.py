@@ -78,7 +78,6 @@ from app.api.v1.endpoints import (
     videos,
     visual_baselines,
     visual_comparison,
-    workflow_sequences,
     workflow_step_types,
 )
 
@@ -242,5 +241,3 @@ api_router.include_router(library.router, prefix="/library", tags=["library"])
 api_router.include_router(
     error_monitor.router, prefix="/error-monitor", tags=["error-monitor"]
 )
-# Workflow sequences (ordered workflow execution)
-api_router.include_router(workflow_sequences.router, tags=["workflow-sequences"])

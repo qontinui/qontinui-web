@@ -215,6 +215,22 @@ class UnifiedWorkflow(Base):
         default=5,
     )
 
+    # Multi-stage workflow configuration
+    stages: Mapped[list | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        default=None,
+        comment="JSON array of WorkflowStage objects for multi-stage execution",
+    )
+
+    stop_on_failure: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+        default=False,
+        comment="Whether to stop execution if a stage fails verification",
+    )
+
     # Provenance
     generated_by_task_run_id: Mapped[str | None] = mapped_column(
         String(255),

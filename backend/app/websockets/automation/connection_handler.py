@@ -68,17 +68,21 @@ class ConnectionHandler:
         Returns:
             True if connection is allowed, False if rate limited.
         """
+        # Use a higher limit for localhost connections (runners in development)
+        is_localhost = self.client_ip in ("127.0.0.1", "::1", "localhost")
+        limit = 120 if is_localhost else 30
+
         if not RateLimiter.check_connection_rate_limit(
-            self.client_ip, limit=30, window=60
+            self.client_ip, limit=limit, window=60
         ):
             await self.websocket.close(
                 code=status.WS_1008_POLICY_VIOLATION,
-                reason="Connection rate limit exceeded. Maximum 30 connections per minute.",
+                reason=f"Connection rate limit exceeded. Maximum {limit} connections per minute.",
             )
             logger.warning(
                 "websocket_connection_rate_limited",
                 client_ip=self.client_ip,
-                limit=30,
+                limit=limit,
                 window=60,
             )
             return False

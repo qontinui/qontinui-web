@@ -53,6 +53,8 @@ class UnifiedWorkflowCreate(BaseModel):
     enable_sweep: bool = False
     max_sweep_iterations: int = 5
     generated_by_task_run_id: str | None = None
+    stages: list[Any] | None = None
+    stop_on_failure: bool = False
     project_id: str | None = None
 
 
@@ -84,6 +86,8 @@ class UnifiedWorkflowUpdate(BaseModel):
     enable_sweep: bool | None = None
     max_sweep_iterations: int | None = None
     generated_by_task_run_id: str | None = None
+    stages: list[Any] | None = None
+    stop_on_failure: bool | None = None
     project_id: str | None = None
 
 
@@ -118,6 +122,8 @@ class UnifiedWorkflowResponse(BaseModel):
     enable_sweep: bool
     max_sweep_iterations: int
     generated_by_task_run_id: str | None
+    stages: list[Any] | None
+    stop_on_failure: bool
     created_at: datetime
     modified_at: datetime  # Exposed as modified_at for frontend compat
 
@@ -201,6 +207,10 @@ def _model_to_response(workflow: UnifiedWorkflow) -> UnifiedWorkflowResponse:
             else 5
         ),
         generated_by_task_run_id=workflow.generated_by_task_run_id,
+        stages=workflow.stages,
+        stop_on_failure=(
+            workflow.stop_on_failure if workflow.stop_on_failure is not None else False
+        ),
         created_at=workflow.created_at,
         modified_at=workflow.updated_at,
     )
@@ -254,6 +264,8 @@ class UnifiedWorkflowService:
             auto_include_contexts=data.auto_include_contexts,
             prompt_template=data.prompt_template,
             generated_by_task_run_id=data.generated_by_task_run_id,
+            stages=data.stages,
+            stop_on_failure=data.stop_on_failure,
         )
 
         try:
@@ -446,6 +458,11 @@ class UnifiedWorkflowService:
             ),
             auto_include_contexts=original.auto_include_contexts,
             prompt_template=original.prompt_template,
+            enable_sweep=original.enable_sweep,
+            max_sweep_iterations=original.max_sweep_iterations,
+            generated_by_task_run_id=original.generated_by_task_run_id,
+            stages=list(original.stages) if original.stages else original.stages,
+            stop_on_failure=original.stop_on_failure,
         )
 
         created = await self.repo.create(db, clone)
@@ -514,7 +531,21 @@ class UnifiedWorkflowService:
                 else True
             ),
             "prompt_template": workflow.prompt_template,
+            "enable_sweep": (
+                workflow.enable_sweep if workflow.enable_sweep is not None else False
+            ),
+            "max_sweep_iterations": (
+                workflow.max_sweep_iterations
+                if workflow.max_sweep_iterations is not None
+                else 5
+            ),
             "generated_by_task_run_id": workflow.generated_by_task_run_id,
+            "stages": workflow.stages,
+            "stop_on_failure": (
+                workflow.stop_on_failure
+                if workflow.stop_on_failure is not None
+                else False
+            ),
         }
 
     async def import_workflow(

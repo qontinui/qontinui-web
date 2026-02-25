@@ -54,4 +54,3 @@ from app.models.video_capture import (  # noqa
     InputEvent,
     VideoCaptureSession,
 )
-from app.models.workflow_sequence import WorkflowSequence  # noqa

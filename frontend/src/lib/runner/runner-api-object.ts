@@ -53,7 +53,7 @@ import type {
   GlobalLogSourceSettings,
   LogSourceAiSelectionMode,
 } from "./types/log-sources";
-import type { ExecutePlanRequest, ShellCommand } from "./types/execution";
+import type { ShellCommand } from "./types/execution";
 import type {
   GenerateWorkflowRequest,
   GenerateWorkflowResponse,
@@ -91,11 +91,6 @@ export const runnerApi = {
     runnerFetch<TaskRunOutput>(`/task-runs/${id}/output`),
   stopTaskRun: (id: string | number) =>
     runnerFetch<void>(`/task-runs/${id}/stop`, { method: "POST" }),
-  executePlan: (plan: ExecutePlanRequest) =>
-    runnerFetch<{ success: boolean; execution_id: string; message: string }>(
-      "/execute-plan",
-      { method: "POST", body: JSON.stringify(plan) }
-    ),
   runWorkflow: (workflowId: string, monitor?: string) =>
     runnerFetch<{ task_run_id: string }>(
       `/unified-workflows/${workflowId}/run`,
@@ -1110,9 +1105,9 @@ export const runnerApi = {
   uiBridgeScreenshot: () =>
     runnerFetch<Record<string, unknown>>("/ui-bridge/sdk/screenshot"),
 
-  // Run workflow sequence (ordered batch execution)
-  runWorkflowSequence: (workflowIds: string[], stopOnFailure: boolean) =>
-    runnerFetch<{ task_run_id: string }>("/unified-workflows/run-sequence", {
+  // Run composed multi-stage workflow (each workflow becomes a stage)
+  runComposedWorkflow: (workflowIds: string[], stopOnFailure: boolean) =>
+    runnerFetch<{ task_run_id: string }>("/unified-workflows/run-composed", {
       method: "POST",
       body: JSON.stringify({
         workflow_ids: workflowIds,

@@ -376,15 +376,6 @@ export const navItems: NavItem[] = [
     hidden: true,
   },
   {
-    id: "run-plan",
-    label: "Run Plan",
-    description: "Plan/schedule executions",
-    icon: React.createElement(Sliders, { className: "size-5" }),
-    route: "/tools/run-plan",
-    color: "var(--brand-secondary)",
-    hidden: true,
-  },
-  {
     id: "build-flow-designer",
     label: "Flow Designer",
     description: "AI-assisted workflow structure designer",

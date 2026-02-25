@@ -2,8 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Play, Save, Trash2, Loader2, ListChecks, Layers } from "lucide-react";
+import { Play, Trash2, Loader2, ListChecks, Layers } from "lucide-react";
 import { useDroppable } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -23,29 +22,21 @@ export interface QueueItem {
 
 interface SequenceBuilderPanelProps {
   items: QueueItem[];
-  sequenceName: string;
   stopOnFailure: boolean;
   isRunning: boolean;
-  isSaving: boolean;
   onItemsChange: (items: QueueItem[]) => void;
-  onSequenceNameChange: (name: string) => void;
   onStopOnFailureChange: (value: boolean) => void;
   onRun: () => void;
-  onSave: () => void;
   onClear: () => void;
 }
 
 export function SequenceBuilderPanel({
   items,
-  sequenceName,
   stopOnFailure,
   isRunning,
-  isSaving,
   onItemsChange,
-  onSequenceNameChange,
   onStopOnFailureChange,
   onRun,
-  onSave,
   onClear,
 }: SequenceBuilderPanelProps) {
   const { setNodeRef: setDropRef, isOver } = useDroppable({
@@ -86,14 +77,6 @@ export function SequenceBuilderPanel({
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          {/* Sequence Name */}
-          <Input
-            placeholder="Sequence name..."
-            value={sequenceName}
-            onChange={(e) => onSequenceNameChange(e.target.value)}
-            className="h-8 bg-surface-canvas/50 border-border-subtle/50 text-sm"
-          />
-
           {/* Sortable Queue with Drop Zone */}
           <div
             ref={setDropRef}
@@ -170,19 +153,6 @@ export function SequenceBuilderPanel({
                   Clear
                 </Button>
                 <div className="flex-1" />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={isSaving || !sequenceName.trim()}
-                  onClick={onSave}
-                >
-                  {isSaving ? (
-                    <Loader2 className="size-3.5 mr-1 animate-spin" />
-                  ) : (
-                    <Save className="size-3.5 mr-1" />
-                  )}
-                  Save
-                </Button>
                 <Button
                   variant="brand-primary"
                   size="sm"

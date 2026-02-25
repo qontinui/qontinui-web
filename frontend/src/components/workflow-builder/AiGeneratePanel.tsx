@@ -18,6 +18,7 @@ import {
   Activity,
   Monitor,
   Rocket,
+  ListOrdered,
   X,
   Save,
   type LucideIcon,
@@ -68,6 +69,7 @@ const TEMPLATE_ICONS: Record<string, LucideIcon> = {
   Activity,
   Monitor,
   Rocket,
+  ListOrdered,
 };
 
 // Provider and model constants (shared with settings page)

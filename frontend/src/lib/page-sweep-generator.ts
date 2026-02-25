@@ -3,7 +3,7 @@
  *
  * Pure logic for generating workflows from a Page Sweep config.
  * Builds per-page prompts and orchestrates calling generateWorkflowAsync
- * for each selected page, then creates a WorkflowSequence.
+ * for each selected page, then composes a multi-stage workflow.
  */
 
 import type { LocalStorageItem } from "@/hooks/useLocalStorageCrud";
@@ -54,7 +54,6 @@ export interface PageSweepItem extends LocalStorageItem, BuilderItem {
   app_url: string;
   pages: PageEntry[];
   sweep_options: SweepOptions;
-  last_sequence_id?: string;
   last_generated_at?: string;
 }
 
@@ -69,7 +68,6 @@ export interface PageSweepForm {
   app_url: string;
   pages: PageEntry[];
   sweep_options: SweepOptions;
-  last_sequence_id?: string;
   last_generated_at?: string;
 }
 
@@ -81,7 +79,6 @@ export function toForm(item: PageSweepItem): PageSweepForm {
     app_url: item.app_url || "",
     pages: item.pages || [],
     sweep_options: item.sweep_options || defaultSweepOptions(),
-    last_sequence_id: item.last_sequence_id,
     last_generated_at: item.last_generated_at,
   };
 }
@@ -111,7 +108,6 @@ export function toPayload(form: PageSweepForm): Record<string, unknown> {
     app_url: form.app_url,
     pages: form.pages,
     sweep_options: form.sweep_options,
-    last_sequence_id: form.last_sequence_id,
     last_generated_at: form.last_generated_at,
   };
 }

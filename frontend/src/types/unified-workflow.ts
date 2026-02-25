@@ -15,235 +15,50 @@
  *   ui_bridge - UI Bridge SDK interactions (navigate, execute, assert, snapshot)
  *   prompt    - AI provider calls (task instructions, evaluation)
  *
- * Ported from qontinui-runner/src/types/unified-workflow.ts
+ * Data types are imported from @qontinui/schemas (canonical source).
+ * Utility functions, constants, and UI-specific types are defined locally.
  */
 
 // =============================================================================
-// Phases
+// Canonical Data Types (from @qontinui/schemas)
 // =============================================================================
 
-export type WorkflowPhase = "setup" | "verification" | "agentic" | "completion";
+// Import types needed by local utility functions
+import type {
+  WorkflowPhase,
+  UnifiedWorkflow,
+  UnifiedStep,
+  PromptStep,
+} from "@qontinui/schemas/unified_workflow";
 
-// =============================================================================
-// Log Source Selection
-// =============================================================================
-
-export type LogSourceSelection =
-  | "default"
-  | "ai"
-  | "all"
-  | { profile_id: string };
-
-// =============================================================================
-// Health Check Configuration
-// =============================================================================
-
-export interface HealthCheckUrl {
-  name: string;
-  url: string;
-  expected_status?: number;
-  timeout_seconds?: number;
-  is_critical?: boolean;
-}
-
-// =============================================================================
-// Step Types
-// =============================================================================
-
-export interface BaseStep {
-  id: string;
-  name: string;
-  fail_on_console_errors?: boolean;
-  inputs?: Record<string, string>;
-  extract?: Record<string, string>;
-  depends_on?: string[];
-  required?: boolean;
-  retry?: { count: number; delay_ms: number };
-}
-
-// -----------------------------------------------------------------------------
-// API Request Builder Types (used by the API request builder tab, not workflow steps)
-// -----------------------------------------------------------------------------
-
-export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-
-export type ApiContentType =
-  | "application/json"
-  | "application/x-www-form-urlencoded"
-  | "text/plain"
-  | "none";
-
-export interface ApiVariableExtraction {
-  variable_name: string;
-  json_path: string;
-  default_value?: string;
-}
-
-export interface ApiAssertion {
-  type:
-    | "status_code"
-    | "json_path"
-    | "header"
-    | "body_contains"
-    | "response_time";
-  expected: string | number;
-  json_path?: string;
-  header_name?: string;
-  operator?: "equals" | "contains" | "matches" | "greater_than" | "less_than";
-}
-
-// -----------------------------------------------------------------------------
-// Test Types (used by command steps when test_type is set)
-// -----------------------------------------------------------------------------
-
-export type TestType =
-  | "playwright"
-  | "qontinui_vision"
-  | "python"
-  | "repository"
-  | "custom_command";
-
-export type PlaywrightExecutionMode = "independent" | "chained";
-
-// -----------------------------------------------------------------------------
-// Check Types (used by command steps)
-// -----------------------------------------------------------------------------
-
-export type CheckType =
-  | "lint"
-  | "format"
-  | "typecheck"
-  | "analyze"
-  | "security"
-  | "custom_command"
-  | "http_status"
-  | "ai_review"
-  | "ci_cd";
-
-// -----------------------------------------------------------------------------
-// Command Steps (unified: shell_command + check + check_group)
-// -----------------------------------------------------------------------------
-
-export interface CommandStep extends BaseStep {
-  type: "command";
-  phase: "setup" | "verification" | "completion";
-  command?: string;
-  working_directory?: string;
-  timeout_seconds?: number;
-  fail_on_error?: boolean;
-  run_on_subsequent_iterations?: boolean;
-  shell_command_id?: string;
-
-  // Check-specific fields (when check_type is set)
-  check_type?: CheckType;
-  tool?: string;
-  check_id?: string;
-  config_path?: string;
-  auto_fix?: boolean;
-  fail_on_warning?: boolean;
-  repository?: string;
-  workflow_name?: string;
-  branch?: string;
-  wait_for_completion?: boolean;
-
-  // Check group fields (when check_group_id is set)
-  check_group_id?: string;
-
-  // Test fields (when test_type is set, dispatches to test handler)
-  test_type?: TestType;
-  test_id?: string;
-  code?: string;
-  script_id?: string;
-  script_content?: string;
-  target_url?: string;
-  fused_script_id?: string;
-  execution_mode?: PlaywrightExecutionMode;
-}
-
-// -----------------------------------------------------------------------------
-// Prompt Steps
-// -----------------------------------------------------------------------------
-
-export interface PromptStep extends BaseStep {
-  type: "prompt";
-  phase: "setup" | "verification" | "agentic" | "completion";
-  content: string;
-  prompt_id?: string;
-  provider?: string;
-  model?: string;
-  is_summary_step?: boolean;
-}
-
-// -----------------------------------------------------------------------------
-// UI Bridge Steps
-// -----------------------------------------------------------------------------
-
-export interface UiBridgeStep extends BaseStep {
-  type: "ui_bridge";
-  phase: "setup" | "verification" | "completion";
-  action: "navigate" | "execute" | "assert" | "snapshot" | "compare";
-  url?: string;
-  instruction?: string;
-  target?: string;
-  assert_type?: "exists" | "text_equals" | "contains" | "visible" | "enabled";
-  expected?: string;
-  timeout_ms?: number;
-  // Comparison fields (when action === "compare")
-  comparison_mode?: "structural" | "visual" | "both";
-  reference_snapshot_id?: string;
-  severity_threshold?: "critical" | "major" | "minor" | "info";
-}
-
-// =============================================================================
-// Step Type Names
-// =============================================================================
-
-export type StepTypeName = "command" | "ui_bridge" | "prompt";
-
-// =============================================================================
-// Unified Step Type
-// =============================================================================
-
-export type UnifiedStep = CommandStep | PromptStep | UiBridgeStep;
-
-export type SetupStep = CommandStep | PromptStep | UiBridgeStep;
-
-export type VerificationStep = CommandStep | PromptStep | UiBridgeStep;
-
-export type AgenticStep = PromptStep;
-
-export type CompletionStep = CommandStep | PromptStep | UiBridgeStep;
-
-// =============================================================================
-// Workflow
-// =============================================================================
-
-export interface UnifiedWorkflow {
-  id: string;
-  name: string;
-  description: string;
-  setup_steps: SetupStep[];
-  verification_steps: VerificationStep[];
-  agentic_steps: AgenticStep[];
-  completion_steps: CompletionStep[];
-  max_iterations?: number;
-  timeout_seconds?: number | null;
-  provider?: string;
-  model?: string;
-  log_source_selection?: LogSourceSelection;
-  context_ids?: string[];
-  disabled_context_ids?: string[];
-  auto_include_contexts?: boolean;
-  skip_ai_summary?: boolean;
-  log_watch_enabled?: boolean;
-  health_check_enabled?: boolean;
-  health_check_urls?: HealthCheckUrl[];
-  prompt_template?: string | null;
-  category: string;
-  tags: string[];
-  created_at: string;
-  modified_at: string;
-}
+// Re-export all data types from the canonical schema package
+export type {
+  WorkflowPhase,
+  LogSourceSelection,
+  HealthCheckUrl,
+  BaseStep,
+  HttpMethod,
+  ApiContentType,
+  ApiVariableExtraction,
+  ApiAssertion,
+  TestType,
+  PlaywrightExecutionMode,
+  CheckType,
+  CommandStep,
+  PromptStep,
+  UiBridgeStep,
+  StepTypeName,
+  UnifiedStep,
+  SetupStep,
+  VerificationStep,
+  AgenticStep,
+  CompletionStep,
+  WorkflowStage,
+  UnifiedWorkflow,
+  WorkflowExportManifest,
+  WorkflowExport,
+  WorkflowImportResult,
+} from "@qontinui/schemas/unified_workflow";
 
 // =============================================================================
 // Feature Detection
@@ -267,12 +82,26 @@ export function detectWorkflowFeatures(
     ...workflow.verification_steps,
     ...workflow.agentic_steps,
     ...(workflow.completion_steps ?? []),
+    ...(workflow.stages ?? []).flatMap((s) => [
+      ...s.setup_steps,
+      ...s.verification_steps,
+      ...s.agentic_steps,
+      ...(s.completion_steps ?? []),
+    ]),
   ];
 
-  const hasSetup = workflow.setup_steps.length > 0;
-  const hasVerification = workflow.verification_steps.length > 0;
-  const hasAgentic = workflow.agentic_steps.length > 0;
-  const hasCompletion = (workflow.completion_steps ?? []).length > 0;
+  const hasSetup =
+    workflow.setup_steps.length > 0 ||
+    (workflow.stages ?? []).some((s) => s.setup_steps.length > 0);
+  const hasVerification =
+    workflow.verification_steps.length > 0 ||
+    (workflow.stages ?? []).some((s) => s.verification_steps.length > 0);
+  const hasAgentic =
+    workflow.agentic_steps.length > 0 ||
+    (workflow.stages ?? []).some((s) => s.agentic_steps.length > 0);
+  const hasCompletion =
+    (workflow.completion_steps ?? []).length > 0 ||
+    (workflow.stages ?? []).some((s) => (s.completion_steps ?? []).length > 0);
 
   const hasUiBridge = allSteps.some((s) => s.type === "ui_bridge");
   const hasAiPrompts = allSteps.some((s) => s.type === "prompt");
@@ -563,6 +392,10 @@ export function createDefaultWorkflow(
 }
 
 export function isWorkflowEmpty(workflow: UnifiedWorkflow): boolean {
+  if ((workflow.stages ?? []).length > 0) {
+    return false;
+  }
+
   const completionSteps = workflow.completion_steps ?? [];
   const firstStep = completionSteps[0];
   const hasOnlySummaryStep =
@@ -581,12 +414,23 @@ export function isWorkflowEmpty(workflow: UnifiedWorkflow): boolean {
 }
 
 export function getTotalStepCount(workflow: UnifiedWorkflow): number {
-  return (
+  const topLevelCount =
     workflow.setup_steps.length +
     workflow.verification_steps.length +
     workflow.agentic_steps.length +
-    (workflow.completion_steps ?? []).length
+    (workflow.completion_steps ?? []).length;
+
+  const stagesCount = (workflow.stages ?? []).reduce(
+    (sum, s) =>
+      sum +
+      s.setup_steps.length +
+      s.verification_steps.length +
+      s.agentic_steps.length +
+      (s.completion_steps ?? []).length,
+    0
   );
+
+  return topLevelCount + stagesCount;
 }
 
 export function getStepPhase(step: UnifiedStep): WorkflowPhase {
@@ -609,26 +453,4 @@ export function canStepExistInPhase(
     default:
       return false;
   }
-}
-
-// =============================================================================
-// Export/Import Types
-// =============================================================================
-
-export interface WorkflowExportManifest {
-  version: string;
-  exported_at: string;
-  app_version: string;
-  content_type: "unified_workflow";
-}
-
-export interface WorkflowExport {
-  manifest: WorkflowExportManifest;
-  workflow: UnifiedWorkflow;
-}
-
-export interface WorkflowImportResult {
-  workflow: UnifiedWorkflow;
-  overwritten: boolean;
-  original_id: string | null;
 }
