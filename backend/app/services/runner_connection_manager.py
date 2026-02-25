@@ -25,6 +25,7 @@ from fastapi import WebSocket
 from qontinui_schemas.common import utc_now
 from redis import asyncio as aioredis
 
+from app.services.runner.chat_relay import ChatRelayService
 from app.services.runner.command_relay import CommandRelayService
 from app.services.runner.connection_registry import WebSocketConnectionRegistry
 from app.services.runner.event_publisher import RunnerEventPublisher
@@ -58,6 +59,7 @@ class RunnerConnectionManager:
         self._registry = WebSocketConnectionRegistry()
         self._state_repo = RunnerStateRepository(redis_client)
         self._relay = CommandRelayService(redis_client, self._registry)
+        self._chat_relay = ChatRelayService(redis_client, self._registry)
         self._publisher = RunnerEventPublisher(redis_client)
         self._redis = redis_client
 
@@ -108,6 +110,9 @@ class RunnerConnectionManager:
         # Start command listener
         await self._relay.start_runner_listener(connection_id, websocket)
 
+        # Start chat listener
+        await self._chat_relay.start_runner_listener(connection_id, websocket)
+
         # Publish connected event
         await self._publisher.publish_runner_connected(
             user_id=user_id,
@@ -153,8 +158,9 @@ class RunnerConnectionManager:
         # Remove from memory
         self._registry.unregister_runner(connection_id)
 
-        # Stop listener
+        # Stop listeners
         await self._relay.stop_runner_listener(connection_id)
+        await self._chat_relay.stop_runner_listener(connection_id)
 
         # Notify connected frontends
         await self._relay.notify_frontends(
@@ -255,6 +261,85 @@ class RunnerConnectionManager:
             response: Response message to send
         """
         await self._relay.send_response_to_frontends(connection_id, response)
+
+    # ========================================================================
+    # Mobile Chat Connection
+    # ========================================================================
+
+    async def connect_mobile_chat(
+        self, connection_id: int, websocket: WebSocket, user_id: UUID
+    ) -> bool:
+        """
+        Connect a mobile WebSocket for chat relay.
+
+        Args:
+            connection_id: Runner connection ID to connect to
+            websocket: Mobile WebSocket connection
+            user_id: Requesting user ID
+
+        Returns:
+            True if connection successful, False if runner not connected
+        """
+        if not self._registry.is_runner_connected(connection_id):
+            logger.warning(
+                "mobile_chat_connect_runner_not_found",
+                connection_id=connection_id,
+                user_id=str(user_id),
+            )
+            return False
+
+        await self._chat_relay.start_mobile_listener(connection_id, websocket)
+
+        logger.info(
+            "mobile_chat_connected_to_runner",
+            connection_id=connection_id,
+            user_id=str(user_id),
+        )
+        return True
+
+    async def disconnect_mobile_chat(
+        self, connection_id: int, websocket: WebSocket
+    ) -> None:
+        """
+        Disconnect a mobile chat WebSocket.
+
+        Args:
+            connection_id: Runner connection ID
+            websocket: Mobile WebSocket connection
+        """
+        await self._chat_relay.stop_mobile_listener(connection_id, websocket)
+
+        logger.info(
+            "mobile_chat_disconnected_from_runner",
+            connection_id=connection_id,
+        )
+
+    async def send_chat_to_runner(
+        self, connection_id: int, message: dict[str, Any]
+    ) -> bool:
+        """
+        Send chat message from mobile to runner.
+
+        Args:
+            connection_id: Runner connection ID
+            message: Chat message to send
+
+        Returns:
+            True if sent successfully, False if runner not connected
+        """
+        return await self._chat_relay.send_chat_to_runner(connection_id, message)
+
+    async def send_chat_response_to_mobiles(
+        self, connection_id: int, response: dict[str, Any]
+    ) -> None:
+        """
+        Send chat response from runner to all connected mobiles.
+
+        Args:
+            connection_id: Runner connection ID
+            response: Chat response message to send
+        """
+        await self._chat_relay.send_response_to_mobiles(connection_id, response)
 
     # ========================================================================
     # Status Publishing

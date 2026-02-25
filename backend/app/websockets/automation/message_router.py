@@ -135,6 +135,11 @@ class MessageRouter:
             "issue_updated": self._handle_issue_updated,
             "issues_sync": self._handle_issues_sync,
             "pong": self._handle_pong,
+            "chat_response": self._handle_chat_response,
+            "chat_session_state": self._handle_chat_response,
+            "chat_message_ack": self._handle_chat_response,
+            "chat_running_tasks": self._handle_chat_response,
+            "chat_created": self._handle_chat_response,
         }
 
         # Check exact match first
@@ -479,6 +484,15 @@ class MessageRouter:
             user_id=self.user.id,
             session_id=self.session.session_id,
         )
+
+    async def _handle_chat_response(
+        self,
+        message: WSMessage,
+        raw_data: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Forward chat response to connected mobiles."""
+        await self.connection.send_chat_to_mobiles(raw_data)
+        return None
 
     async def _handle_pong(
         self,

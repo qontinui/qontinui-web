@@ -10,7 +10,6 @@ import type { DiscoveredSpec } from "./spec-prompt-builder";
 
 // Import all spec JSON files
 import inspectorSpec from "@/app/(app)/tools/inspector/inspector.spec.uibridge.json";
-import pageSweepSpec from "@/app/(app)/build/page-sweep/page-sweep.spec.uibridge.json";
 import workflowsSpec from "@/app/(app)/build/workflows/workflows.spec.uibridge.json";
 import templatesSpec from "@/app/(app)/build/templates/templates.spec.uibridge.json";
 import executeSpec from "@/app/(app)/execute/execute.spec.uibridge.json";
@@ -31,7 +30,6 @@ interface RawSpec {
 
 const ALL_SPECS: RawSpec[] = [
   { specId: "inspector", json: inspectorSpec },
-  { specId: "page-sweep", json: pageSweepSpec },
   { specId: "workflows", json: workflowsSpec },
   { specId: "templates", json: templatesSpec },
   { specId: "execute", json: executeSpec },

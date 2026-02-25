@@ -1,13 +1,10 @@
 /**
- * page-sweep-generator.ts
+ * page-discovery-types.ts
  *
- * Pure logic for generating workflows from a Page Sweep config.
- * Builds per-page prompts and orchestrates calling generateWorkflowAsync
- * for each selected page, then composes a multi-stage workflow.
+ * Shared types and helpers for multi-page discovery and crawling.
+ * Used by page-crawler.ts, use-automated-discovery.ts, and SpecSourceSection.
  */
 
-import type { LocalStorageItem } from "@/hooks/useLocalStorageCrud";
-import type { BuilderItem } from "@/components/builders/BuilderLayout";
 import type { DiscoveredSpec, SpecGroup } from "@/lib/spec-prompt-builder";
 
 // =============================================================================
@@ -40,76 +37,6 @@ export interface PageEntry {
   selected: boolean;
   has_specs: boolean;
   additional_instructions?: string;
-}
-
-export interface SweepOptions {
-  provider?: string;
-  model?: string;
-  discovery_mode: "auto" | "enabled" | "disabled";
-  additional_context?: string;
-}
-
-export interface PageSweepItem extends LocalStorageItem, BuilderItem {
-  tags: string[];
-  app_url: string;
-  pages: PageEntry[];
-  sweep_options: SweepOptions;
-  last_generated_at?: string;
-}
-
-// =============================================================================
-// Form State
-// =============================================================================
-
-export interface PageSweepForm {
-  name: string;
-  description: string;
-  tags: string[];
-  app_url: string;
-  pages: PageEntry[];
-  sweep_options: SweepOptions;
-  last_generated_at?: string;
-}
-
-export function toForm(item: PageSweepItem): PageSweepForm {
-  return {
-    name: item.name,
-    description: item.description || "",
-    tags: item.tags || [],
-    app_url: item.app_url || "",
-    pages: item.pages || [],
-    sweep_options: item.sweep_options || defaultSweepOptions(),
-    last_generated_at: item.last_generated_at,
-  };
-}
-
-export function defaultSweepOptions(): SweepOptions {
-  return {
-    discovery_mode: "auto",
-  };
-}
-
-export function defaultForm(): PageSweepForm {
-  return {
-    name: "",
-    description: "",
-    tags: [],
-    app_url: "http://localhost:3001",
-    pages: [],
-    sweep_options: defaultSweepOptions(),
-  };
-}
-
-export function toPayload(form: PageSweepForm): Record<string, unknown> {
-  return {
-    name: form.name,
-    description: form.description || undefined,
-    tags: form.tags,
-    app_url: form.app_url,
-    pages: form.pages,
-    sweep_options: form.sweep_options,
-    last_generated_at: form.last_generated_at,
-  };
 }
 
 // =============================================================================

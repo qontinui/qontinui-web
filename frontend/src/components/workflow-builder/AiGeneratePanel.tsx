@@ -54,6 +54,7 @@ import {
   useAiSettings,
 } from "@/lib/runner-api";
 import type { ContextItem } from "@/lib/runner-api";
+import type { GenerateWorkflowRequest } from "@/lib/runner/types/workflow";
 import { SpecSourceSection, type SpecSourceState } from "./SpecSourceSection";
 import { buildSemanticSpecPrompt } from "@/lib/spec-prompt-builder";
 import {
@@ -193,6 +194,8 @@ export function AiGeneratePanel({
   const [specState, setSpecState] = useState<SpecSourceState>({
     discoveredSpecs: [],
     selectedGroupIds: new Set(),
+    discoveredPages: [],
+    selectedPageUrls: new Set(),
   });
   const hasSpecs =
     specState.discoveredSpecs.length > 0 && specState.selectedGroupIds.size > 0;
@@ -318,35 +321,25 @@ export function AiGeneratePanel({
     }
   };
 
-  const buildGenerateRequest = useCallback(() => {
+  // Batch mode: multiple pages selected
+  const isBatchMode = specState.selectedPageUrls.size > 1;
+  const batchPageCount = specState.selectedPageUrls.size;
+
+  /** Build the base request (everything except description). */
+  const buildBaseRequest = useCallback((): Omit<
+    GenerateWorkflowRequest,
+    "description"
+  > => {
     const tags = tagsInput
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean);
 
-    // Build combined description: spec prompt + user description
-    let fullDescription = "";
-    if (
-      specState.discoveredSpecs.length > 0 &&
-      specState.selectedGroupIds.size > 0
-    ) {
-      const specResult = buildSemanticSpecPrompt({
-        discoveredSpecs: specState.discoveredSpecs,
-        selectedGroupIds: specState.selectedGroupIds,
-      });
-      fullDescription = specResult.prompt;
-      if (description.trim()) {
-        fullDescription += `\n\n## Additional Instructions\n${description.trim()}`;
-      }
-      if (!tags.includes("spec-generated")) {
-        tags.push("spec-generated");
-      }
-    } else {
-      fullDescription = description.trim();
+    if (hasSpecs && !tags.includes("spec-generated")) {
+      tags.push("spec-generated");
     }
 
     return {
-      description: fullDescription,
       category: category.trim() || undefined,
       tags: tags.length > 0 ? tags : undefined,
       context_ids:
@@ -362,7 +355,6 @@ export function AiGeneratePanel({
       discovery_mode: discoveryMode !== "auto" ? discoveryMode : undefined,
     };
   }, [
-    description,
     tagsInput,
     category,
     selectedContextIds,
@@ -373,8 +365,71 @@ export function AiGeneratePanel({
     maxFixIterations,
     autoIncludeContexts,
     discoveryMode,
-    specState,
+    hasSpecs,
   ]);
+
+  /** Build a single request (non-batch or fallback). */
+  const buildGenerateRequest = useCallback((): GenerateWorkflowRequest => {
+    const base = buildBaseRequest();
+
+    let fullDescription = "";
+    if (
+      specState.discoveredSpecs.length > 0 &&
+      specState.selectedGroupIds.size > 0
+    ) {
+      const specResult = buildSemanticSpecPrompt({
+        discoveredSpecs: specState.discoveredSpecs,
+        selectedGroupIds: specState.selectedGroupIds,
+      });
+      fullDescription = specResult.prompt;
+      if (description.trim()) {
+        fullDescription += `\n\n## Additional Instructions\n${description.trim()}`;
+      }
+    } else {
+      fullDescription = description.trim();
+    }
+
+    return { ...base, description: fullDescription };
+  }, [buildBaseRequest, description, specState]);
+
+  /** Build one request per selected page (batch mode). */
+  const buildBatchRequests = useCallback((): GenerateWorkflowRequest[] => {
+    const base = buildBaseRequest();
+    const requests: GenerateWorkflowRequest[] = [];
+
+    for (const pageUrl of specState.selectedPageUrls) {
+      // Filter specs belonging to this page
+      const pageSpecs = specState.discoveredSpecs.filter(
+        (s) => (s.config.metadata?.pageUrl || s.specId) === pageUrl
+      );
+      if (pageSpecs.length === 0) continue;
+
+      // Filter selectedGroupIds to only groups in this page's specs
+      const pageGroupIds = new Set<string>();
+      for (const spec of pageSpecs) {
+        for (const group of spec.config.groups) {
+          if (specState.selectedGroupIds.has(group.id)) {
+            pageGroupIds.add(group.id);
+          }
+        }
+      }
+      if (pageGroupIds.size === 0) continue;
+
+      const specResult = buildSemanticSpecPrompt({
+        discoveredSpecs: pageSpecs,
+        selectedGroupIds: pageGroupIds,
+      });
+
+      let fullDescription = specResult.prompt;
+      if (description.trim()) {
+        fullDescription += `\n\n## Additional Instructions\n${description.trim()}`;
+      }
+
+      requests.push({ ...base, description: fullDescription });
+    }
+
+    return requests;
+  }, [buildBaseRequest, description, specState]);
 
   const canGenerate = description.trim() || hasSpecs;
 
@@ -382,13 +437,24 @@ export function AiGeneratePanel({
     if (!canGenerate) return;
     setSubmittingAction("generate");
     try {
-      const response = await runnerApi.generateWorkflowAsync(
-        buildGenerateRequest()
-      );
+      let firstTaskRunId: string;
+      if (isBatchMode) {
+        const requests = buildBatchRequests();
+        const results = await Promise.all(
+          requests.map((r) => runnerApi.generateWorkflowAsync(r))
+        );
+        firstTaskRunId = results[0]?.task_run_id ?? "";
+        toast.success(`${results.length} workflows generated`);
+      } else {
+        const response = await runnerApi.generateWorkflowAsync(
+          buildGenerateRequest()
+        );
+        firstTaskRunId = response.task_run_id;
+      }
       if (description.trim()) {
         autoSaveGenerationPrompt(description); // fire-and-forget
       }
-      onNavigateToActiveRuns(response.task_run_id);
+      onNavigateToActiveRuns(firstTaskRunId);
     } catch (err) {
       toast.error(
         err instanceof Error
@@ -405,21 +471,44 @@ export function AiGeneratePanel({
     setSubmittingAction("generate-and-run");
     const toastId = toast.loading("Starting workflow generation...");
     try {
-      const response = await runnerApi.generateWorkflowAsync(
-        buildGenerateRequest()
-      );
+      let firstTaskRunId: string;
+      if (isBatchMode) {
+        const requests = buildBatchRequests();
+        const results = await Promise.all(
+          requests.map((r) => runnerApi.generateWorkflowAsync(r))
+        );
+        firstTaskRunId = results[0]?.task_run_id ?? "";
+        // Signal auto-run for the first workflow
+        if (firstTaskRunId) {
+          localStorage.setItem(
+            AUTO_RUN_AFTER_GENERATE_KEY,
+            JSON.stringify({
+              taskRunId: firstTaskRunId,
+              timestamp: Date.now(),
+            } satisfies AutoRunAfterGenerate)
+          );
+        }
+        toast.success(`${results.length} workflows generated`, {
+          id: toastId,
+        });
+      } else {
+        const response = await runnerApi.generateWorkflowAsync(
+          buildGenerateRequest()
+        );
+        firstTaskRunId = response.task_run_id;
+        localStorage.setItem(
+          AUTO_RUN_AFTER_GENERATE_KEY,
+          JSON.stringify({
+            taskRunId: firstTaskRunId,
+            timestamp: Date.now(),
+          } satisfies AutoRunAfterGenerate)
+        );
+        toast.dismiss(toastId);
+      }
       if (description.trim()) {
         autoSaveGenerationPrompt(description); // fire-and-forget
       }
-      localStorage.setItem(
-        AUTO_RUN_AFTER_GENERATE_KEY,
-        JSON.stringify({
-          taskRunId: response.task_run_id,
-          timestamp: Date.now(),
-        } satisfies AutoRunAfterGenerate)
-      );
-      toast.dismiss(toastId);
-      onNavigateToActiveRuns(response.task_run_id);
+      onNavigateToActiveRuns(firstTaskRunId);
     } catch (err) {
       toast.error(
         err instanceof Error
@@ -913,7 +1002,11 @@ export function AiGeneratePanel({
             ) : (
               <Sparkles className="w-4 h-4 mr-2" />
             )}
-            {submittingAction === "generate" ? "Starting..." : "Generate"}
+            {submittingAction === "generate"
+              ? "Starting..."
+              : isBatchMode
+                ? `Generate (${batchPageCount} pages)`
+                : "Generate"}
           </Button>
           <Button
             variant="outline"
@@ -928,7 +1021,9 @@ export function AiGeneratePanel({
             )}
             {submittingAction === "generate-and-run"
               ? "Starting..."
-              : "Generate & Run"}
+              : isBatchMode
+                ? `Generate & Run (${batchPageCount} pages)`
+                : "Generate & Run"}
           </Button>
         </div>
       </div>

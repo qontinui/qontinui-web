@@ -7,11 +7,11 @@
 
 import { runnerApi } from "@/lib/runner/runner-api-object";
 import type { DiscoveredSpec } from "@/lib/spec-prompt-builder";
-import type { PageEntry } from "@/lib/page-sweep-generator";
+import type { PageEntry } from "@/lib/page-discovery-types";
 import {
   mergeDiscoveredPages,
   noSpecPageEntry,
-} from "@/lib/page-sweep-generator";
+} from "@/lib/page-discovery-types";
 import { parseDiscoveredSpecs, unwrapSpecResponse } from "./spec-parser";
 import {
   transformSdkElements,

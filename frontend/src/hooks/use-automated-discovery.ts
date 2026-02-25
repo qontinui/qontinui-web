@@ -7,11 +7,11 @@
  */
 
 import { useState, useCallback, useRef } from "react";
-import type { PageEntry } from "@/lib/page-sweep-generator";
+import type { PageEntry } from "@/lib/page-discovery-types";
 import {
   mergeDiscoveredPages,
   noSpecPageEntry,
-} from "@/lib/page-sweep-generator";
+} from "@/lib/page-discovery-types";
 import type { CrawlProgress } from "@/lib/ui-bridge/page-crawler";
 import { discoverAndCrawlAllPages } from "@/lib/ui-bridge/page-crawler";
 import {

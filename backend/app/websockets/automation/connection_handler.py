@@ -481,6 +481,18 @@ class ConnectionHandler:
                 message,
             )
 
+    async def send_chat_to_mobiles(self, message: dict[str, Any]) -> None:
+        """Relay chat response to connected mobiles via Redis pub/sub.
+
+        Args:
+            message: Chat response message to relay.
+        """
+        if self.connection_record and self.runner_manager:
+            await self.runner_manager.send_chat_response_to_mobiles(
+                self.connection_record.id,
+                message,
+            )
+
     async def broadcast_status_event(self, event: dict[str, Any]) -> None:
         """Broadcast event to status channel for frontend monitoring.
 

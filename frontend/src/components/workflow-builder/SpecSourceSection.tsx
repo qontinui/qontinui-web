@@ -18,6 +18,7 @@ import {
   Eye,
   EyeOff,
   RefreshCw,
+  Globe,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -45,9 +46,16 @@ import { getAllSemanticSpecs } from "@/lib/semantic-spec-registry";
 // Types
 // =============================================================================
 
+export interface DiscoveredPage {
+  url: string;
+  title: string;
+}
+
 export interface SpecSourceState {
   discoveredSpecs: DiscoveredSpec[];
   selectedGroupIds: Set<string>;
+  discoveredPages: DiscoveredPage[];
+  selectedPageUrls: Set<string>;
 }
 
 export interface SpecSourceSectionProps {
@@ -64,6 +72,8 @@ interface PersistedSpecState {
   discoveredSpecs: DiscoveredSpec[];
   selectedGroupIds: string[];
   bundledSpecVersion?: number;
+  discoveredPages?: DiscoveredPage[];
+  selectedPageUrls?: string[];
 }
 
 // =============================================================================
@@ -93,6 +103,11 @@ function filterSemanticGroups(specs: DiscoveredSpec[]): DiscoveredSpec[] {
   return filtered;
 }
 
+/** Get the page URL for a spec */
+function getSpecPageUrl(spec: DiscoveredSpec): string {
+  return spec.config?.metadata?.pageUrl || spec.specId;
+}
+
 // =============================================================================
 // Component
 // =============================================================================
@@ -113,9 +128,36 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
   );
   const [isDiscovering, setIsDiscovering] = useState(false);
 
+  // Multi-page discovery state
+  const [discoveredPages, setDiscoveredPages] = useState<DiscoveredPage[]>([]);
+  const [selectedPageUrls, setSelectedPageUrls] = useState<Set<string>>(
+    new Set()
+  );
+  const [isCrawling, setIsCrawling] = useState(false);
+  const [crawlProgress, setCrawlProgress] = useState<string | null>(null);
+
+  // Collapsed page URLs for hierarchical display
+  const [collapsedPages, setCollapsedPages] = useState<Set<string>>(new Set());
+
   // Manual URL connection
   const [manualUrl, setManualUrl] = useState("");
   const [showManualConnect, setShowManualConnect] = useState(false);
+
+  // Build full state for parent notifications
+  const buildState = useCallback(
+    (
+      specs: DiscoveredSpec[],
+      groupIds: Set<string>,
+      pages: DiscoveredPage[],
+      pageUrls: Set<string>
+    ): SpecSourceState => ({
+      discoveredSpecs: specs,
+      selectedGroupIds: groupIds,
+      discoveredPages: pages,
+      selectedPageUrls: pageUrls,
+    }),
+    []
+  );
 
   // Load bundled semantic specs on mount, overlay persisted selection state
   useEffect(() => {
@@ -125,11 +167,15 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
 
     // Merge any additional specs from localStorage (e.g. from external apps)
     let persistedSelectedIds: string[] | null = null;
+    let persistedPages: DiscoveredPage[] = [];
+    let persistedPageUrls: string[] = [];
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const parsed: PersistedSpecState = JSON.parse(stored);
         persistedSelectedIds = parsed.selectedGroupIds ?? null;
+        persistedPages = parsed.discoveredPages ?? [];
+        persistedPageUrls = parsed.selectedPageUrls ?? [];
         if (parsed.discoveredSpecs?.length > 0) {
           const filtered = filterSemanticGroups(parsed.discoveredSpecs);
           for (const spec of filtered) {
@@ -148,7 +194,7 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
     // Build selected IDs
     const selectedIds = new Set<string>();
 
-    // Check if bundled specs version changed — if so, select all (fresh start)
+    // Check if bundled specs version changed
     let storedVersion = 0;
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
@@ -162,14 +208,12 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
     const versionChanged = storedVersion !== BUNDLED_SPEC_VERSION;
 
     if (versionChanged || persistedSelectedIds === null) {
-      // New version or first time: select all groups
       for (const spec of allSpecs) {
         for (const group of spec.config?.groups ?? []) {
           selectedIds.add(group.id);
         }
       }
     } else {
-      // Same version: respect persisted selection
       const persistedSet = new Set(persistedSelectedIds);
       for (const spec of allSpecs) {
         for (const group of spec.config?.groups ?? []) {
@@ -180,16 +224,20 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
       }
     }
 
+    const pages = persistedPages;
+    const pageUrls = new Set(persistedPageUrls);
+
     setDiscoveredSpecs(allSpecs);
     setSelectedGroupIds(selectedIds);
+    setDiscoveredPages(pages);
+    setSelectedPageUrls(pageUrls);
     if (allSpecs.length > 0) {
       setIsOpen(true);
     }
-    onSpecsChangedRef.current({
-      discoveredSpecs: allSpecs,
-      selectedGroupIds: selectedIds,
-    });
-  }, []);
+    onSpecsChangedRef.current(
+      buildState(allSpecs, selectedIds, pages, pageUrls)
+    );
+  }, [buildState]);
 
   // Persist state changes
   useEffect(() => {
@@ -198,18 +246,36 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
       discoveredSpecs,
       selectedGroupIds: Array.from(selectedGroupIds),
       bundledSpecVersion: BUNDLED_SPEC_VERSION,
+      discoveredPages,
+      selectedPageUrls: Array.from(selectedPageUrls),
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
-  }, [browser.activeConnection?.url, discoveredSpecs, selectedGroupIds]);
+  }, [
+    browser.activeConnection?.url,
+    discoveredSpecs,
+    selectedGroupIds,
+    discoveredPages,
+    selectedPageUrls,
+  ]);
 
   // Notify parent when selection changes
-  const updateSelection = useCallback(
-    (specs: DiscoveredSpec[], ids: Set<string>) => {
-      setDiscoveredSpecs(specs);
-      setSelectedGroupIds(ids);
-      onSpecsChanged({ discoveredSpecs: specs, selectedGroupIds: ids });
+  const notifyParent = useCallback(
+    (
+      specs: DiscoveredSpec[],
+      groupIds: Set<string>,
+      pages?: DiscoveredPage[],
+      pageUrls?: Set<string>
+    ) => {
+      onSpecsChanged(
+        buildState(
+          specs,
+          groupIds,
+          pages ?? discoveredPages,
+          pageUrls ?? selectedPageUrls
+        )
+      );
     },
-    [onSpecsChanged]
+    [onSpecsChanged, buildState, discoveredPages, selectedPageUrls]
   );
 
   // Merge new specs helper
@@ -228,9 +294,11 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
         }
       }
 
-      updateSelection(merged, newIds);
+      setDiscoveredSpecs(merged);
+      setSelectedGroupIds(newIds);
+      notifyParent(merged, newIds);
     },
-    [discoveredSpecs, selectedGroupIds, updateSelection]
+    [discoveredSpecs, selectedGroupIds, notifyParent]
   );
 
   // Discover semantic specs from the connected page
@@ -251,6 +319,123 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
     }
   }, [browser.isConnected, mergeSpecs]);
 
+  // Discover all pages via crawl, then get specs for each
+  const handleDiscoverAllPages = useCallback(async () => {
+    if (!browser.isConnected) return;
+    setIsCrawling(true);
+    setCrawlProgress("Discovering links...");
+    try {
+      // Step 1: Discover navigable links from the current page
+      const linkRes = await runnerApi.uiBridgeDiscover({
+        interactive_only: false,
+      });
+      const rawElements =
+        (linkRes as Record<string, unknown>)?.elements ??
+        ((linkRes as Record<string, unknown>)?.data as Record<string, unknown>)
+          ?.elements ??
+        [];
+
+      // Extract link URLs
+      const links: string[] = [];
+      const seen = new Set<string>();
+      const connUrl = browser.activeConnection?.url ?? "";
+      const origin = connUrl ? new URL(connUrl).origin : "";
+
+      for (const el of rawElements as Array<Record<string, unknown>>) {
+        const attrs = el.attributes as Record<string, unknown> | undefined;
+        const href = (attrs?.href as string) || (el.href as string);
+        if (
+          typeof href === "string" &&
+          href.startsWith("/") &&
+          !seen.has(href)
+        ) {
+          seen.add(href);
+          links.push(origin ? `${origin}${href}` : href);
+        }
+      }
+
+      if (links.length === 0) {
+        setCrawlProgress("No links found on current page.");
+        setTimeout(() => setCrawlProgress(null), 2000);
+        return;
+      }
+
+      // Step 2: Crawl each page for specs
+      const pages: DiscoveredPage[] = [];
+      const newSpecs: DiscoveredSpec[] = [];
+      const newPageUrls = new Set<string>();
+
+      for (let i = 0; i < links.length; i++) {
+        const url = links[i]!;
+        const pathname = new URL(url).pathname;
+        setCrawlProgress(`Crawling ${pathname} (${i + 1}/${links.length})...`);
+
+        try {
+          await runnerApi.uiBridgePageNavigate(url);
+          await new Promise((resolve) => setTimeout(resolve, 2500));
+
+          const specRes = await runnerApi.uiBridgeDiscover({
+            action: "getSpecs",
+          });
+          const rawSpecs = unwrapSpecResponse(specRes);
+          const specs = parseDiscoveredSpecs(rawSpecs);
+          const semanticSpecs = filterSemanticGroups(specs);
+
+          pages.push({ url: pathname, title: pathname });
+          newPageUrls.add(pathname);
+
+          if (semanticSpecs.length > 0) {
+            newSpecs.push(...semanticSpecs);
+          }
+        } catch {
+          pages.push({ url: pathname, title: pathname });
+          newPageUrls.add(pathname);
+        }
+      }
+
+      setDiscoveredPages(pages);
+      setSelectedPageUrls(newPageUrls);
+
+      if (newSpecs.length > 0) {
+        const existingMap = new Map(discoveredSpecs.map((s) => [s.specId, s]));
+        for (const spec of newSpecs) {
+          existingMap.set(spec.specId, spec);
+        }
+        const merged = Array.from(existingMap.values());
+
+        const newIds = new Set(selectedGroupIds);
+        for (const spec of newSpecs) {
+          for (const group of spec.config?.groups ?? []) {
+            newIds.add(group.id);
+          }
+        }
+
+        setDiscoveredSpecs(merged);
+        setSelectedGroupIds(newIds);
+        notifyParent(merged, newIds, pages, newPageUrls);
+      } else {
+        notifyParent(discoveredSpecs, selectedGroupIds, pages, newPageUrls);
+      }
+
+      setIsOpen(true);
+      setCrawlProgress(
+        `Done! Found specs on ${newSpecs.length > 0 ? pages.length : 0} pages.`
+      );
+      setTimeout(() => setCrawlProgress(null), 3000);
+    } catch {
+      setCrawlProgress("Crawl failed.");
+      setTimeout(() => setCrawlProgress(null), 2000);
+    } finally {
+      setIsCrawling(false);
+    }
+  }, [
+    browser.isConnected,
+    browser.activeConnection?.url,
+    discoveredSpecs,
+    selectedGroupIds,
+    notifyParent,
+  ]);
+
   // Manual connect
   const handleManualConnect = useCallback(async () => {
     const url = manualUrl.trim();
@@ -262,8 +447,12 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
 
   // Clear all accumulated specs
   const handleClearAll = useCallback(() => {
-    updateSelection([], new Set());
-  }, [updateSelection]);
+    setDiscoveredSpecs([]);
+    setSelectedGroupIds(new Set());
+    setDiscoveredPages([]);
+    setSelectedPageUrls(new Set());
+    notifyParent([], new Set(), [], new Set());
+  }, [notifyParent]);
 
   // Toggle a spec group
   const toggleGroup = useCallback(
@@ -275,28 +464,86 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
         next.add(groupId);
       }
       setSelectedGroupIds(next);
-      onSpecsChanged({ discoveredSpecs, selectedGroupIds: next });
+      notifyParent(discoveredSpecs, next);
     },
-    [selectedGroupIds, discoveredSpecs, onSpecsChanged]
+    [selectedGroupIds, discoveredSpecs, notifyParent]
   );
+
+  // Toggle all groups for a page
+  const togglePage = useCallback(
+    (pageUrl: string) => {
+      const pageGroupIds: string[] = [];
+      for (const spec of discoveredSpecs) {
+        if (getSpecPageUrl(spec) === pageUrl) {
+          for (const group of spec.config?.groups ?? []) {
+            pageGroupIds.push(group.id);
+          }
+        }
+      }
+
+      const next = new Set(selectedGroupIds);
+      const allSelected = pageGroupIds.every((id) => next.has(id));
+
+      if (allSelected) {
+        for (const id of pageGroupIds) next.delete(id);
+      } else {
+        for (const id of pageGroupIds) next.add(id);
+      }
+
+      const nextPageUrls = new Set(selectedPageUrls);
+      if (allSelected) {
+        nextPageUrls.delete(pageUrl);
+      } else {
+        nextPageUrls.add(pageUrl);
+      }
+
+      setSelectedGroupIds(next);
+      setSelectedPageUrls(nextPageUrls);
+      notifyParent(discoveredSpecs, next, discoveredPages, nextPageUrls);
+    },
+    [
+      discoveredSpecs,
+      selectedGroupIds,
+      selectedPageUrls,
+      discoveredPages,
+      notifyParent,
+    ]
+  );
+
+  // Toggle page collapse
+  const togglePageCollapse = useCallback((pageUrl: string) => {
+    setCollapsedPages((prev) => {
+      const next = new Set(prev);
+      if (next.has(pageUrl)) {
+        next.delete(pageUrl);
+      } else {
+        next.add(pageUrl);
+      }
+      return next;
+    });
+  }, []);
 
   // Select all / none
   const handleSelectAll = useCallback(() => {
     const allIds = new Set<string>();
+    const allPageUrls = new Set<string>();
     for (const spec of discoveredSpecs) {
+      allPageUrls.add(getSpecPageUrl(spec));
       for (const group of spec.config?.groups ?? []) {
         allIds.add(group.id);
       }
     }
     setSelectedGroupIds(allIds);
-    onSpecsChanged({ discoveredSpecs, selectedGroupIds: allIds });
-  }, [discoveredSpecs, onSpecsChanged]);
+    setSelectedPageUrls(allPageUrls);
+    notifyParent(discoveredSpecs, allIds, discoveredPages, allPageUrls);
+  }, [discoveredSpecs, discoveredPages, notifyParent]);
 
   const handleSelectNone = useCallback(() => {
     const empty = new Set<string>();
     setSelectedGroupIds(empty);
-    onSpecsChanged({ discoveredSpecs, selectedGroupIds: empty });
-  }, [discoveredSpecs, onSpecsChanged]);
+    setSelectedPageUrls(new Set());
+    notifyParent(discoveredSpecs, empty, discoveredPages, new Set());
+  }, [discoveredSpecs, discoveredPages, notifyParent]);
 
   // Compute summary badge
   const totalGroups = discoveredSpecs.reduce(
@@ -305,21 +552,40 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
   );
   const selectedCount = selectedGroupIds.size;
 
-  // Group specs by page URL for display
-  const specsByPage = new Map<
-    string,
-    { spec: DiscoveredSpec; groups: SpecGroup[] }
-  >();
-  for (const spec of discoveredSpecs) {
-    const pageUrl = spec.config?.metadata?.pageUrl || spec.specId;
-    if (!specsByPage.has(pageUrl)) {
-      specsByPage.set(pageUrl, { spec, groups: [] });
+  // Group specs by page URL for hierarchical display
+  const specsByPage = useMemo(() => {
+    const map = new Map<
+      string,
+      { spec: DiscoveredSpec; groups: SpecGroup[] }
+    >();
+    for (const spec of discoveredSpecs) {
+      const pageUrl = getSpecPageUrl(spec);
+      if (!map.has(pageUrl)) {
+        map.set(pageUrl, { spec, groups: [] });
+      }
+      const entry = map.get(pageUrl)!;
+      for (const group of spec.config?.groups ?? []) {
+        entry.groups.push(group);
+      }
     }
-    const entry = specsByPage.get(pageUrl)!;
-    for (const group of spec.config?.groups ?? []) {
-      entry.groups.push(group);
-    }
-  }
+    return map;
+  }, [discoveredSpecs]);
+
+  // Compute page checkbox states
+  const getPageCheckState = useCallback(
+    (pageUrl: string): "checked" | "unchecked" | "indeterminate" => {
+      const entry = specsByPage.get(pageUrl);
+      if (!entry || entry.groups.length === 0) return "unchecked";
+
+      const selectedInPage = entry.groups.filter((g) =>
+        selectedGroupIds.has(g.id)
+      ).length;
+      if (selectedInPage === 0) return "unchecked";
+      if (selectedInPage === entry.groups.length) return "checked";
+      return "indeterminate";
+    },
+    [specsByPage, selectedGroupIds]
+  );
 
   // Prompt preview
   const [showPromptPreview, setShowPromptPreview] = useState(false);
@@ -352,15 +618,23 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
       </CollapsibleTrigger>
 
       <CollapsibleContent className="mt-3 space-y-3">
-        {/* Minimal Connection Bar */}
+        {/* Connection Bar */}
         <div className="rounded-lg border border-zinc-700 bg-zinc-800/50 p-3">
           {browser.isConnected ? (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-green-400" />
-                <span className="text-sm text-zinc-300">
-                  {browser.connectedAppName}
-                </span>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-green-400" />
+                  <span className="text-sm text-zinc-300">
+                    {browser.connectedAppName}
+                  </span>
+                </div>
+                <button
+                  onClick={() => browser.disconnect()}
+                  className="text-xs text-zinc-500 hover:text-zinc-300"
+                >
+                  Disconnect
+                </button>
               </div>
               <div className="flex items-center gap-2">
                 <Button
@@ -368,7 +642,7 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
                   size="sm"
                   className="h-7 text-xs"
                   onClick={handleDiscoverSpecs}
-                  disabled={isDiscovering}
+                  disabled={isDiscovering || isCrawling}
                 >
                   {isDiscovering ? (
                     <Loader2 className="w-3 h-3 mr-1 animate-spin" />
@@ -377,13 +651,24 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
                   )}
                   {isDiscovering ? "Discovering..." : "Discover Page Specs"}
                 </Button>
-                <button
-                  onClick={() => browser.disconnect()}
-                  className="text-xs text-zinc-500 hover:text-zinc-300"
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={handleDiscoverAllPages}
+                  disabled={isDiscovering || isCrawling}
                 >
-                  Disconnect
-                </button>
+                  {isCrawling ? (
+                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                  ) : (
+                    <Globe className="w-3 h-3 mr-1" />
+                  )}
+                  {isCrawling ? "Crawling..." : "Discover All Pages"}
+                </Button>
               </div>
+              {crawlProgress && (
+                <p className="text-[11px] text-zinc-500">{crawlProgress}</p>
+              )}
             </div>
           ) : (
             <div className="space-y-2">
@@ -484,7 +769,7 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
           )}
         </div>
 
-        {/* Semantic Spec Group List */}
+        {/* Semantic Spec Group List — Hierarchical by Page */}
         {discoveredSpecs.length > 0 && (
           <div className="rounded-lg border border-zinc-700 bg-zinc-800/50 p-3 space-y-2">
             {/* Header with select all/none/clear */}
@@ -517,42 +802,75 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
               </div>
             </div>
 
-            {/* Groups grouped by page URL */}
-            <div className="max-h-[240px] overflow-y-auto space-y-2 pr-1">
+            {/* Hierarchical page -> groups display */}
+            <div className="max-h-[320px] overflow-y-auto space-y-1 pr-1">
               {Array.from(specsByPage.entries()).map(
-                ([pageUrl, { groups }]) => (
-                  <div key={pageUrl}>
-                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">
-                      {pageUrl}
-                    </p>
-                    {groups.map((group) => {
-                      const slugId = pageUrl
-                        .replace(/^\//, "")
-                        .replace(/\//g, "-");
-                      return (
-                        <label
-                          key={group.id}
-                          data-ui-id={`spec-group-${slugId}`}
-                          data-ui-label={`${pageUrl}: ${(group.description || group.name).slice(0, 60)}`}
-                          className="flex items-start gap-2 p-1.5 rounded hover:bg-zinc-700/30 cursor-pointer"
+                ([pageUrl, { groups }]) => {
+                  const checkState = getPageCheckState(pageUrl);
+                  const isCollapsed = collapsedPages.has(pageUrl);
+                  const slugId = pageUrl.replace(/^\//, "").replace(/\//g, "-");
+                  return (
+                    <div
+                      key={pageUrl}
+                      className="rounded border border-zinc-700/50"
+                    >
+                      {/* Page row */}
+                      <div className="flex items-center gap-2 p-1.5 hover:bg-zinc-700/20">
+                        <button
+                          onClick={() => togglePageCollapse(pageUrl)}
+                          className="text-zinc-500 hover:text-zinc-300"
                         >
-                          <Checkbox
-                            data-ui-id={`spec-checkbox-${slugId}`}
-                            data-ui-label={`Select ${pageUrl} spec`}
-                            checked={selectedGroupIds.has(group.id)}
-                            onCheckedChange={() => toggleGroup(group.id)}
-                            className="mt-0.5"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <span className="text-sm text-zinc-300 block">
-                              {group.description || group.name}
-                            </span>
-                          </div>
-                        </label>
-                      );
-                    })}
-                  </div>
-                )
+                          {isCollapsed ? (
+                            <ChevronRight className="w-3 h-3" />
+                          ) : (
+                            <ChevronDown className="w-3 h-3" />
+                          )}
+                        </button>
+                        <Checkbox
+                          data-ui-id={`page-checkbox-${slugId}`}
+                          checked={
+                            checkState === "indeterminate"
+                              ? "indeterminate"
+                              : checkState === "checked"
+                          }
+                          onCheckedChange={() => togglePage(pageUrl)}
+                          className="mt-0"
+                        />
+                        <span className="text-xs text-zinc-300 font-medium flex-1 truncate">
+                          {pageUrl}
+                        </span>
+                        <span className="text-[10px] text-zinc-500">
+                          {groups.length} group
+                          {groups.length !== 1 ? "s" : ""}
+                        </span>
+                      </div>
+
+                      {/* Nested groups */}
+                      {!isCollapsed && (
+                        <div className="pl-9 pb-1">
+                          {groups.map((group) => (
+                            <label
+                              key={group.id}
+                              data-ui-id={`spec-group-${slugId}`}
+                              data-ui-label={`${pageUrl}: ${(group.description || group.name).slice(0, 60)}`}
+                              className="flex items-start gap-2 p-1 rounded hover:bg-zinc-700/30 cursor-pointer"
+                            >
+                              <Checkbox
+                                data-ui-id={`spec-checkbox-${slugId}`}
+                                checked={selectedGroupIds.has(group.id)}
+                                onCheckedChange={() => toggleGroup(group.id)}
+                                className="mt-0.5"
+                              />
+                              <span className="text-xs text-zinc-400">
+                                {group.description || group.name}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
               )}
             </div>
 

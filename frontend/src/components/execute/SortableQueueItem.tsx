@@ -13,6 +13,7 @@ interface SortableQueueItemProps {
   name: string;
   description?: string;
   stepCount: number;
+  phaseCount: number;
   scheduledAt?: string;
   onRemove: () => void;
   onScheduleChange: (scheduledAt: string | null) => void;
@@ -23,6 +24,7 @@ export function SortableQueueItem({
   position,
   name,
   stepCount,
+  phaseCount,
   scheduledAt,
   onRemove,
   onScheduleChange,
@@ -71,6 +73,7 @@ export function SortableQueueItem({
             {name}
           </h4>
           <span className="text-[10px] text-text-muted">
+            {phaseCount > 1 && <>{phaseCount} phases &bull; </>}
             {stepCount} step{stepCount !== 1 ? "s" : ""}
           </span>
         </div>

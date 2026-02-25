@@ -6,7 +6,11 @@ import type { SpecConfig } from "@qontinui/ui-bridge/specs";
 import pageSpecJson from "./execute.spec.uibridge.json";
 import { runnerApi } from "@/lib/runner-api";
 import { useUnifiedWorkflows } from "@/lib/api/unified-workflows";
-import { getTotalStepCount } from "@/types/unified-workflow";
+import {
+  getTotalStepCount,
+  getPhaseCount,
+  normalizeToPhases,
+} from "@/types/unified-workflow";
 import type { UnifiedWorkflow } from "@/types/unified-workflow";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
 import { Play, Plus, GripVertical } from "lucide-react";
@@ -84,6 +88,7 @@ function QueueTabContent({
         description: workflow.description || undefined,
         category: workflow.category || undefined,
         stepCount: getTotalStepCount(workflow),
+        phaseCount: getPhaseCount(workflow),
       },
     ]);
   }, []);
@@ -115,6 +120,7 @@ function QueueTabContent({
         description: workflow.description || undefined,
         category: workflow.category || undefined,
         stepCount: getTotalStepCount(workflow),
+        phaseCount: getPhaseCount(workflow),
       };
 
       const overId = over.id as string;
@@ -187,6 +193,72 @@ function QueueTabContent({
     setQueueItems([]);
   }, []);
 
+  // Save composed workflow
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+
+  const handleSaveAsWorkflow = useCallback(
+    async (name: string, description: string, category: string) => {
+      if (queueItems.length === 0) return;
+      try {
+        // Get full workflow objects for all queue items
+        const workflowObjects = queueItems
+          .map((item) => workflowMap.get(item.workflowId))
+          .filter((w): w is UnifiedWorkflow => w != null);
+
+        if (workflowObjects.length === 0) {
+          toast.error("No valid workflows found in queue");
+          return;
+        }
+
+        // Normalize each workflow to phases and concatenate
+        const allPhases = workflowObjects.flatMap((w, wIdx) => {
+          const phases = normalizeToPhases(w);
+          return phases.map((phase, pIdx) => ({
+            ...phase,
+            id: crypto.randomUUID(),
+            name:
+              workflowObjects.length > 1
+                ? `Phase ${wIdx * phases.length + pIdx + 1}: ${w.name}${phases.length > 1 ? ` (${phase.name})` : ""}`
+                : phase.name,
+          }));
+        });
+
+        // Create the composed workflow via runner API
+        const response = await fetch(
+          "http://localhost:9876/unified-workflows",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name,
+              description,
+              category,
+              setup_steps: [],
+              verification_steps: [],
+              agentic_steps: [],
+              completion_steps: [],
+              stages: allPhases,
+              stop_on_failure: stopOnFailure,
+            }),
+          }
+        );
+
+        const data = await response.json();
+        if (data.success) {
+          toast.success(`Saved composed workflow "${name}"`);
+          setShowSaveDialog(false);
+        } else {
+          toast.error(data.error || "Failed to save workflow");
+        }
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Failed to save workflow"
+        );
+      }
+    },
+    [queueItems, workflowMap, stopOnFailure]
+  );
+
   return (
     <DndContext
       sensors={sensors}
@@ -210,6 +282,10 @@ function QueueTabContent({
           onStopOnFailureChange={setStopOnFailure}
           onRun={handleRun}
           onClear={handleClear}
+          onSaveAsWorkflow={() => setShowSaveDialog(true)}
+          showSaveDialog={showSaveDialog}
+          onCloseSaveDialog={() => setShowSaveDialog(false)}
+          onConfirmSave={handleSaveAsWorkflow}
         />
       </div>
       <DragOverlay>
