@@ -128,6 +128,10 @@ class Settings(BaseSettings):
     SMTP_USER: str | None = None
     SMTP_PASSWORD: str | None = None
     SMTP_FROM_EMAIL: str = "noreply@qontinui.com"
+    SUPPORT_EMAIL: str = Field(
+        default="support@qontinui.com",
+        description="Email address for receiving feedback and support messages",
+    )
 
     # AWS Settings (for SES)
     AWS_REGION: str = Field(default="eu-central-1", description="AWS region for SES")

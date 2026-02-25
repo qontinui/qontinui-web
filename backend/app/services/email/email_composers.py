@@ -218,7 +218,7 @@ This feedback was submitted through the Qontinui Beta feedback form.
 """
 
         return await self.transport_service.send_email(
-            to_email="jspinak@hotmail.com",
+            to_email=settings.SUPPORT_EMAIL,
             subject=f"Qontinui Beta Feedback from {name}",
             text_body=text_body,
             html_body=html_body,

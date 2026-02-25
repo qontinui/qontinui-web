@@ -92,21 +92,7 @@ if settings.ENVIRONMENT == "production":
     )
 
 # Set up CORS
-# TEMPORARY FIX: Hardcode for production while debugging env var parsing
-if settings.ENVIRONMENT == "production":
-    origins = [
-        "https://qontinui.io",
-        "https://www.qontinui.io",
-        "https://qontinui.com",
-        "https://app.qontinui.com",
-        "https://www.qontinui.com",
-    ]
-    logger.info(
-        "Using hardcoded production CORS origins",
-        origins=origins,
-        environment=settings.ENVIRONMENT,
-    )
-elif settings.BACKEND_CORS_ORIGINS:
+if settings.BACKEND_CORS_ORIGINS:
     # Convert AnyHttpUrl objects to strings and strip trailing slashes
     origins = [str(origin).rstrip("/") for origin in settings.BACKEND_CORS_ORIGINS]
     logger.info("Using CORS origins from settings", origins=origins)
