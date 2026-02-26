@@ -1,7 +1,7 @@
 /**
- * semantic-spec-registry.ts
+ * spec-registry.ts
  *
- * Static registry of all semantic page specs.
+ * Static registry of all bundled page specs.
  * Imports spec JSON files directly so they're available without
  * runtime UI Bridge discovery or SPA navigation.
  */
@@ -9,6 +9,7 @@
 import type { DiscoveredSpec } from "./spec-prompt-builder";
 
 // Import all spec JSON files
+import chatSpec from "@/app/(app)/chat/chat.spec.uibridge.json";
 import inspectorSpec from "@/app/(app)/tools/inspector/inspector.spec.uibridge.json";
 import workflowsSpec from "@/app/(app)/build/workflows/workflows.spec.uibridge.json";
 import templatesSpec from "@/app/(app)/build/templates/templates.spec.uibridge.json";
@@ -29,6 +30,7 @@ interface RawSpec {
 }
 
 const ALL_SPECS: RawSpec[] = [
+  { specId: "chat", json: chatSpec },
   { specId: "inspector", json: inspectorSpec },
   { specId: "workflows", json: workflowsSpec },
   { specId: "templates", json: templatesSpec },
@@ -44,17 +46,14 @@ const ALL_SPECS: RawSpec[] = [
 ];
 
 /**
- * Get all semantic page specs as DiscoveredSpec[].
- * Filters to only include groups with category "semantic".
+ * Get all page specs as DiscoveredSpec[].
+ * Returns all groups from all spec files — no category filtering.
  */
-export function getAllSemanticSpecs(): DiscoveredSpec[] {
+export function getAllSpecs(): DiscoveredSpec[] {
   const result: DiscoveredSpec[] = [];
 
   for (const { specId, json } of ALL_SPECS) {
-    const groups = (json.groups ?? []).filter(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (g: any) => g.category === "semantic"
-    );
+    const groups = json.groups ?? [];
     if (groups.length === 0) continue;
 
     result.push({
@@ -70,3 +69,6 @@ export function getAllSemanticSpecs(): DiscoveredSpec[] {
 
   return result;
 }
+
+/** @deprecated Use `getAllSpecs` instead. */
+export const getAllSemanticSpecs = getAllSpecs;

@@ -80,4 +80,6 @@ if __name__ == "__main__":
         port=settings.PORT,
         reload=settings.RELOAD,
         reload_excludes=reload_excludes if settings.RELOAD else None,
+        ws_ping_interval=20,
+        ws_ping_timeout=20,
     )

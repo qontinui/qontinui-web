@@ -382,7 +382,7 @@ test.describe("Build - Library", () => {
       (await page.locator("text=Runner Not Connected").count()) > 0;
 
     expect(
-      hasItemCount || hasNoAssets || hasNoMatching || hasOfflineState,
+      hasItemCount || hasNoAssets || hasNoMatching || hasOfflineState
     ).toBeTruthy();
   });
 

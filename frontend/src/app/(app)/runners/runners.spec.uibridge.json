@@ -3,6 +3,101 @@
   "description": "Specs for the Runners page — desktop runner connection management and monitoring",
   "groups": [
     {
+      "id": "runners-page-structure",
+      "name": "Page Structure",
+      "description": "Core structural elements required for the Runners page: heading and tab navigation for Active Connections and Connection History.",
+      "category": "element-presence",
+      "assertions": [
+        {
+          "id": "runners-struct-heading",
+          "description": "The Runners page heading is rendered at the top of the page",
+          "category": "element-presence",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "heading", "textContent": "Runners" },
+            "label": "Runners page heading"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "runners-struct-active-tab",
+          "description": "The 'Active Connections' tab button exists for viewing currently connected runners",
+          "category": "element-presence",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "tab", "textContent": "Active Connections" },
+            "label": "Active Connections tab"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "runners-struct-history-tab",
+          "description": "The 'Connection History' tab button exists for viewing past runner connections",
+          "category": "element-presence",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "tab", "textContent": "Connection History" },
+            "label": "Connection History tab"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "runners-tab-state",
+      "name": "Tab State",
+      "description": "The tab navigation should default to showing Active Connections as the primary view on page load.",
+      "category": "state-consistency",
+      "assertions": [
+        {
+          "id": "runners-active-tab-default",
+          "description": "The 'Active Connections' tab is selected by default when the page loads",
+          "category": "state-consistency",
+          "severity": "critical",
+          "precondition": "Page has just loaded with no tab query parameter",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "tab", "textContent": "Active Connections" },
+            "label": "Active Connections tab"
+          },
+          "assertionType": "containsText",
+          "expectedValue": "Active Connections",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "runners-history-tab-enabled",
+          "description": "The 'Connection History' tab is enabled and clickable for switching views",
+          "category": "state-consistency",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "tab", "textContent": "Connection History" },
+            "label": "Connection History tab"
+          },
+          "assertionType": "enabled",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
       "id": "runners-page-purpose",
       "name": "Page Purpose",
       "description": "The Runners page lets users monitor desktop runner connections and view connection history. It shows which runners are currently active with real-time status indicators, and provides a searchable history of all past connections.",
@@ -46,6 +141,7 @@
     "component": "Runners",
     "author": "Joshua Spinak",
     "createdAt": "2026-02-24T00:00:00.000Z",
+    "updatedAt": "2026-02-26T00:00:00.000Z",
     "pageUrl": "/runners",
     "elementSource": "sdk",
     "tags": ["runners", "connection-management", "monitoring", "tier-2"]

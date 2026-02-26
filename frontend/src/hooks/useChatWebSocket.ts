@@ -32,11 +32,14 @@ interface ChatWebSocketReturn {
   sessionState: ChatSessionState;
   messages: ChatMessage[];
   streamingContent: string;
-  createSession: (taskName?: string) => void;
+  createSession: (taskName?: string) => boolean;
   sendMessage: (content: string) => void;
   interruptSession: (taskRunId: string) => void;
   closeSession: (taskRunId: string) => void;
-  generateWorkflow: (taskRunId: string, description?: string) => void;
+  generateWorkflow: (
+    taskRunId: string,
+    options?: { description?: string; includeUIBridge?: boolean }
+  ) => void;
   getOutput: (taskRunId: string) => void;
   renameSession: (taskRunId: string, name: string) => void;
   loadSession: (taskRunId: string) => void;
@@ -102,6 +105,8 @@ export function useChatWebSocket({
       wsRef.current = ws;
 
       ws.onopen = () => {
+        // Guard: only update state if this is still the active WebSocket
+        if (wsRef.current !== ws) return;
         setIsConnected(true);
         reconnectAttemptsRef.current = 0;
 
@@ -114,6 +119,9 @@ export function useChatWebSocket({
       };
 
       ws.onclose = () => {
+        // Guard: ignore close events from stale WebSockets (e.g., after
+        // React StrictMode double-mount or connectionId change)
+        if (wsRef.current !== ws) return;
         setIsConnected(false);
         wsRef.current = null;
 
@@ -148,10 +156,12 @@ export function useChatWebSocket({
       };
 
       ws.onerror = () => {
+        if (wsRef.current !== ws) return;
         setIsConnected(false);
       };
 
       ws.onmessage = (event) => {
+        if (wsRef.current !== ws) return;
         try {
           const msg = JSON.parse(event.data);
           handleMessage(msg);
@@ -312,16 +322,18 @@ export function useChatWebSocket({
     [onSessionCreated, onWorkflowGenerated]
   );
 
-  const sendWs = useCallback((data: Record<string, unknown>) => {
+  const sendWs = useCallback((data: Record<string, unknown>): boolean => {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(data));
+      return true;
     }
+    return false;
   }, []);
 
   const createSession = useCallback(
-    (taskName?: string) => {
-      sendWs({
+    (taskName?: string): boolean => {
+      return sendWs({
         type: "chat_create",
         params: { task_name: taskName || "New Chat" },
       });
@@ -373,14 +385,18 @@ export function useChatWebSocket({
   );
 
   const generateWorkflow = useCallback(
-    (taskRunId: string, description?: string) => {
+    (
+      taskRunId: string,
+      options?: { description?: string; includeUIBridge?: boolean }
+    ) => {
       setIsGeneratingWorkflow(true);
       sendWs({
         type: "chat_generate_workflow",
         params: {
           task_run_id: taskRunId,
           description:
-            description || "Generate workflow from chat conversation",
+            options?.description || "Generate workflow from chat conversation",
+          include_ui_bridge_instructions: options?.includeUIBridge ?? true,
         },
       });
     },

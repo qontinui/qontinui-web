@@ -218,7 +218,9 @@ test.describe("UI Bridge Graph Editor - State View Tab", () => {
     await page.waitForTimeout(500);
 
     // Should show config prompt or the State View panel
-    const configPrompt = page.getByText("Select a configuration to view states.");
+    const configPrompt = page.getByText(
+      "Select a configuration to view states."
+    );
     const statesHeader = page.getByText("States");
 
     const hasPrompt = await configPrompt.isVisible().catch(() => false);
@@ -253,7 +255,9 @@ test.describe("UI Bridge Graph Editor - Transitions Tab", () => {
     const transitionsHeader = page.getByText("Transitions");
 
     const hasPrompt = await configPrompt.isVisible().catch(() => false);
-    const hasTransitions = await transitionsHeader.isVisible().catch(() => false);
+    const hasTransitions = await transitionsHeader
+      .isVisible()
+      .catch(() => false);
 
     expect(hasPrompt || hasTransitions).toBe(true);
 

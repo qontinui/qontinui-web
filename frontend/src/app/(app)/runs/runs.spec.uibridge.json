@@ -3,6 +3,102 @@
   "description": "Specs for the Run History page — browse, search, and filter all task run executions",
   "groups": [
     {
+      "id": "runs-page-structure",
+      "name": "Page Structure",
+      "description": "Core structural elements required for the Run History page: heading, search input, and status filter controls.",
+      "category": "element-presence",
+      "assertions": [
+        {
+          "id": "runs-struct-heading",
+          "description": "The 'Run History' heading is rendered at the top of the page",
+          "category": "element-presence",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "heading", "textContent": "Run History" },
+            "label": "Run History heading"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "runs-struct-search",
+          "description": "A search input is present for filtering runs by name or keyword",
+          "category": "element-presence",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "placeholder": "Search runs..." },
+            "label": "Search runs input"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "runs-struct-status-filter",
+          "description": "Status filter buttons are present for narrowing runs by execution outcome",
+          "category": "element-presence",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "button", "textContent": "All" },
+            "label": "All status filter button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "runs-table-state",
+      "name": "Table State",
+      "description": "The runs table and its controls should be in a consistent default state when the page first loads.",
+      "category": "state-consistency",
+      "assertions": [
+        {
+          "id": "runs-search-empty",
+          "description": "The search input is initially empty so all runs are shown by default",
+          "category": "state-consistency",
+          "severity": "warning",
+          "precondition": "Page has just loaded with no query parameters",
+          "target": {
+            "type": "search",
+            "criteria": { "placeholder": "Search runs..." },
+            "label": "Search runs input"
+          },
+          "assertionType": "hasValue",
+          "expectedValue": "",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "runs-status-column",
+          "description": "The table contains a 'Status' column header for displaying run outcomes",
+          "category": "state-consistency",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Status" },
+            "label": "Status column header"
+          },
+          "assertionType": "containsText",
+          "expectedValue": "Status",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
       "id": "runs-page-purpose",
       "name": "Page Purpose",
       "description": "The Run History page provides a comprehensive view of all task run executions. Users can search runs by name, filter by status (running, completed, failed, stopped) and type (GUI, AI), view summary statistics, and click into any run for full details. It supports bulk selection and deletion of runs.",
@@ -76,6 +172,7 @@
     "component": "RunHistory",
     "author": "Joshua Spinak",
     "createdAt": "2026-02-24T00:00:00.000Z",
+    "updatedAt": "2026-02-26T00:00:00.000Z",
     "pageUrl": "/runs",
     "elementSource": "sdk",
     "tags": ["run-history", "task-runs", "filtering", "tier-1"]

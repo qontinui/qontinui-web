@@ -29,6 +29,8 @@ export interface GenerateWorkflowRequest {
   max_fix_iterations?: number;
   /** Discovery mode: "auto" (default), "enabled" (always), "disabled" (never) */
   discovery_mode?: "auto" | "enabled" | "disabled";
+  /** Whether to include UI Bridge SDK integration instructions in the builder prompt (default: true) */
+  include_ui_bridge_instructions?: boolean;
 }
 
 /** One pass of the verification->fix loop during workflow generation. */

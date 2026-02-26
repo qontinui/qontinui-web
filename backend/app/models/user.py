@@ -53,7 +53,7 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     # Automation streaming control
     automation_streaming_enabled: Mapped[bool] = mapped_column(
         Boolean,
-        default=False,  # Disabled by default for all users
+        default=True,
         nullable=False,
         index=True,
     )
@@ -61,7 +61,7 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     automation_sessions_limit: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True,
-        default=None,  # NULL = unlimited (for paid users)
+        default=1000,
     )
 
     automation_sessions_used: Mapped[int] = mapped_column(

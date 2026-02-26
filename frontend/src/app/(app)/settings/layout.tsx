@@ -3,124 +3,29 @@
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
-  User,
-  Bot,
-  Brain,
-  ShieldCheck,
-  FlaskConical,
-  Monitor,
-  Wifi,
-  FolderOpen,
-  Wrench,
-  HardDrive,
-  Archive,
-  Download,
-  type LucideIcon,
-} from "lucide-react";
+  SETTINGS_ITEMS,
+  isItemAvailable,
+  type NavigationItem,
+} from "qontinui-navigation";
+import { resolveIcon } from "@/components/navigation/sidebar/icon-resolver";
 
-interface SettingsNavItem {
+function getSettingsNavItems(): {
   id: string;
   label: string;
-  icon: LucideIcon;
+  icon: React.ReactNode;
   href: string;
   description: string;
-  hidden?: boolean;
+}[] {
+  return SETTINGS_ITEMS.filter((item) => isItemAvailable(item, "web")).map(
+    (item: NavigationItem) => ({
+      id: item.id,
+      label: item.label,
+      icon: resolveIcon(item.icon, "size-4"),
+      href: item.route ?? `/settings/${item.id.replace("settings-", "")}`,
+      description: item.description ?? "",
+    })
+  );
 }
-
-const SETTINGS_NAV: SettingsNavItem[] = [
-  {
-    id: "account",
-    label: "Account",
-    icon: User,
-    href: "/settings/account",
-    description: "Connection and identity",
-  },
-  {
-    id: "ai",
-    label: "AI Providers",
-    icon: Bot,
-    href: "/settings/ai",
-    description: "AI provider configuration",
-  },
-  {
-    id: "agentic",
-    label: "Advanced AI",
-    icon: Brain,
-    href: "/settings/agentic",
-    description: "Memory, retry, routing",
-  },
-  {
-    id: "self-healing",
-    label: "Self-Healing",
-    icon: ShieldCheck,
-    href: "/settings/self-healing",
-    description: "Automation recovery",
-  },
-  {
-    id: "playwright",
-    label: "Playwright",
-    icon: FlaskConical,
-    href: "/settings/playwright",
-    description: "Test configuration",
-  },
-  {
-    id: "mobile",
-    label: "Mobile",
-    icon: Monitor,
-    href: "/settings/mobile",
-    description: "ADB device settings",
-    hidden: true,
-  },
-  {
-    id: "mcp",
-    label: "MCP Servers",
-    icon: Wifi,
-    href: "/settings/mcp",
-    description: "External tool servers",
-  },
-  {
-    id: "log-sources",
-    label: "Log Sources",
-    icon: FolderOpen,
-    href: "/settings/log-sources",
-    description: "Global log configuration",
-  },
-  {
-    id: "general",
-    label: "General",
-    icon: Wrench,
-    href: "/settings/general",
-    description: "Application preferences",
-  },
-  {
-    id: "storage",
-    label: "Storage",
-    icon: HardDrive,
-    href: "/settings/storage",
-    description: "Local file management",
-  },
-  {
-    id: "backup",
-    label: "Backup",
-    icon: Archive,
-    href: "/settings/backup",
-    description: "Export and restore data",
-  },
-  {
-    id: "updates",
-    label: "Updates",
-    icon: Download,
-    href: "/settings/updates",
-    description: "Version and updates",
-  },
-  {
-    id: "debug",
-    label: "Debug",
-    icon: FlaskConical,
-    href: "/settings/debug",
-    description: "Diagnostics and debug",
-  },
-];
 
 export default function SettingsLayout({
   children,
@@ -130,7 +35,7 @@ export default function SettingsLayout({
   const pathname = usePathname();
   const router = useRouter();
 
-  const visibleItems = SETTINGS_NAV.filter((item) => !item.hidden);
+  const visibleItems = getSettingsNavItems();
 
   return (
     <div className="flex h-full">
@@ -142,7 +47,6 @@ export default function SettingsLayout({
           </h2>
           <div className="space-y-0.5">
             {visibleItems.map((item) => {
-              const Icon = item.icon;
               const isActive =
                 pathname === item.href || pathname?.startsWith(item.href + "/");
               return (
@@ -156,7 +60,7 @@ export default function SettingsLayout({
                       : "text-text-muted hover:text-text-primary hover:bg-surface-raised/50"
                   )}
                 >
-                  <Icon className="size-4 shrink-0" />
+                  <span className="shrink-0">{item.icon}</span>
                   <span className="truncate">{item.label}</span>
                 </button>
               );

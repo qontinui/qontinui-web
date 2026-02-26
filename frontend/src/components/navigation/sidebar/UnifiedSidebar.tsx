@@ -20,6 +20,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { useAutomation } from "@/contexts/automation-context";
 import { useAutomationStore } from "@/stores/automation";
 import { useProjects, useCreateProject } from "@/hooks/use-projects";
+import { STORAGE_KEYS } from "qontinui-navigation";
 import { toast } from "sonner";
 import { ConfigImporter } from "@/lib/config-importer";
 import { getProjectLoader } from "@/lib/project";
@@ -42,7 +43,8 @@ const ProjectExportDialog = nextDynamic(
   { ssr: false }
 );
 import type { NavItem } from "./types";
-import { navItems } from "./nav-items";
+import { getWebNavItems } from "./shared-nav-adapter";
+import { devNavItems } from "./nav-items";
 import { ProjectSwitcher } from "./ProjectSwitcher";
 import { NavItemButton } from "./NavItemButton";
 import { CollapsibleNavItem } from "./CollapsibleNavItem";
@@ -268,14 +270,19 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
     [mounted, isDevelopment, authLoading, user]
   );
 
+  const allItems = useMemo(() => {
+    const shared = getWebNavItems();
+    return isDevelopment ? [...shared, ...devNavItems] : shared;
+  }, [isDevelopment]);
+
   const visibleNavItems = useMemo(() => {
-    return filterNavItems(navItems);
-  }, [filterNavItems]);
+    return filterNavItems(allItems);
+  }, [filterNavItems, allItems]);
 
   const toggleCollapse = useCallback(() => {
     const newState = !isCollapsed;
     setIsCollapsed(newState);
-    localStorage.setItem("unified-sidebar-collapsed", JSON.stringify(newState));
+    localStorage.setItem(STORAGE_KEYS.collapsed, JSON.stringify(newState));
   }, [isCollapsed, setIsCollapsed]);
 
   const isRouteActive = useCallback(

@@ -6,7 +6,6 @@ This module provides the WebSocket route definitions and delegates business logi
 to specialized handler modules in app.websockets.automation.
 """
 
-import asyncio
 from uuid import UUID
 
 import structlog
@@ -110,13 +109,11 @@ async def websocket_runner_endpoint(
         router_handler = MessageRouter(connection, connection.session_manager)
 
         # Main message loop
+        # Connection health is managed by protocol-level WebSocket pings
+        # (uvicorn ws_ping_interval/ws_ping_timeout), not application-level timeouts.
         while True:
             try:
-                # Receive message with timeout
-                data = await asyncio.wait_for(
-                    websocket.receive_json(),
-                    timeout=120.0,
-                )
+                data = await websocket.receive_json()
 
                 # Check message rate limit
                 if not RateLimiter.check_message_rate_limit(
@@ -147,18 +144,6 @@ async def websocket_runner_endpoint(
                 # Send response if one was returned
                 if response is not None:
                     await websocket.send_json(response)
-
-            except TimeoutError:
-                # Send ping to keep connection alive
-                try:
-                    await websocket.send_json(
-                        {
-                            "type": "ping",
-                            "timestamp": make_timestamp(),
-                        }
-                    )
-                except Exception:
-                    break
 
             except WebSocketDisconnect:
                 logger.info(
@@ -382,10 +367,7 @@ async def websocket_monitor_endpoint(
         # Main message loop
         while True:
             try:
-                data = await asyncio.wait_for(
-                    websocket.receive_json(),
-                    timeout=120.0,
-                )
+                data = await websocket.receive_json()
 
                 # Check message rate limit
                 if not RateLimiter.check_message_rate_limit(
@@ -441,17 +423,6 @@ async def websocket_monitor_endpoint(
                             "message": f"Unknown message type: {message_type}",
                         }
                     )
-
-            except TimeoutError:
-                try:
-                    await websocket.send_json(
-                        {
-                            "type": "ping",
-                            "timestamp": make_timestamp(),
-                        }
-                    )
-                except Exception:
-                    break
 
             except WebSocketDisconnect:
                 logger.info(

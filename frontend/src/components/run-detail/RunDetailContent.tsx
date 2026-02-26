@@ -19,6 +19,7 @@ import {
   Info,
   Pencil,
   Loader2,
+  AlertTriangle,
 } from "lucide-react";
 
 // Lazy-load tab components to prevent main thread blocking during initial load
@@ -45,6 +46,11 @@ const AiConversationTab = lazy(() =>
 const DataLogsTab = lazy(() =>
   import("@/components/run-detail/DataLogsTab").then((m) => ({
     default: m.DataLogsTab,
+  }))
+);
+const ErrorMonitorTab = lazy(() =>
+  import("@/components/run-detail/ErrorMonitorTab").then((m) => ({
+    default: m.ErrorMonitorTab,
   }))
 );
 
@@ -78,6 +84,7 @@ const VALID_TABS = [
   "tests",
   "ai-conversation",
   "data-logs",
+  "errors",
 ];
 
 export function RunDetailContent({ runId }: { runId: string }) {
@@ -230,6 +237,10 @@ export function RunDetailContent({ runId }: { runId: string }) {
               <Database className="size-3.5" />
               Data & Logs
             </TabsTrigger>
+            <TabsTrigger value="errors" className="gap-1.5">
+              <AlertTriangle className="size-3.5" />
+              Errors
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="summary">
@@ -258,6 +269,11 @@ export function RunDetailContent({ runId }: { runId: string }) {
           <TabsContent value="data-logs">
             <Suspense fallback={<TabFallback />}>
               <DataLogsTab runId={run.id} />
+            </Suspense>
+          </TabsContent>
+          <TabsContent value="errors">
+            <Suspense fallback={<TabFallback />}>
+              <ErrorMonitorTab taskRunId={run.id} />
             </Suspense>
           </TabsContent>
         </Tabs>

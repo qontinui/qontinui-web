@@ -5,8 +5,6 @@ Allows mobile clients to send chat messages to connected desktop runners
 and receive real-time chat responses.
 """
 
-import asyncio
-
 import structlog
 from qontinui_schemas.common import utc_now
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
@@ -219,7 +217,7 @@ async def websocket_runner_chat_endpoint(
         )
         while True:
             try:
-                data = await asyncio.wait_for(websocket.receive_json(), timeout=120.0)
+                data = await websocket.receive_json()
 
                 try:
                     message = ChatMessage(**data)
@@ -386,15 +384,20 @@ async def websocket_runner_chat_endpoint(
                         )
 
                 elif message.type == "chat_generate_workflow":
+                    gen_params: dict = {
+                        "description": message.params.get(
+                            "description", "Generate workflow from chat"
+                        ),
+                    }
+                    if "include_ui_bridge_instructions" in message.params:
+                        gen_params["include_ui_bridge_instructions"] = message.params[
+                            "include_ui_bridge_instructions"
+                        ]
                     gen_msg = {
                         "type": "chat_generate_workflow",
                         "task_run_id": message.params.get("task_run_id")
                         or message.task_run_id,
-                        "params": {
-                            "description": message.params.get(
-                                "description", "Generate workflow from chat"
-                            ),
-                        },
+                        "params": gen_params,
                         "timestamp": utc_now().isoformat(),
                     }
                     sent = await manager.send_chat_to_runner(connection_id, gen_msg)
@@ -469,18 +472,6 @@ async def websocket_runner_chat_endpoint(
                             "message": f"Unknown message type: {message.type}",
                         }
                     )
-
-            except TimeoutError:
-                # Send ping to keep connection alive
-                try:
-                    await websocket.send_json(
-                        {
-                            "type": "ping",
-                            "timestamp": utc_now().isoformat(),
-                        }
-                    )
-                except Exception:
-                    break
 
             except WebSocketDisconnect:
                 logger.info(

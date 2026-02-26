@@ -9,7 +9,7 @@ interface ChatInputProps {
   sessionState: ChatSessionState;
   onSendMessage: (content: string) => void;
   onInterrupt: () => void;
-  onGenerateWorkflow: () => void;
+  onGenerateWorkflow: (includeUIBridge: boolean) => void;
   isGeneratingWorkflow: boolean;
   messageCount: number;
   disabled?: boolean;
@@ -25,6 +25,11 @@ export function ChatInput({
   disabled,
 }: ChatInputProps) {
   const [message, setMessage] = useState("");
+  const [includeUIBridge, setIncludeUIBridge] = useState(() => {
+    if (typeof window === "undefined") return true;
+    const saved = localStorage.getItem("chat-include-ui-bridge");
+    return saved !== null ? saved === "true" : true;
+  });
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const canSend =
@@ -56,6 +61,11 @@ export function ChatInput({
     },
     [canSend, handleSend]
   );
+
+  // Persist UI Bridge toggle
+  useEffect(() => {
+    localStorage.setItem("chat-include-ui-bridge", String(includeUIBridge));
+  }, [includeUIBridge]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -98,21 +108,37 @@ export function ChatInput({
         </span>
         <div className="flex items-center gap-2">
           {showGenerateWorkflow && (
-            <Button
-              data-ui-id="chat-input-generate-workflow-btn"
-              variant="outline"
-              size="sm"
-              onClick={onGenerateWorkflow}
-              disabled={isGeneratingWorkflow || disabled}
-              className="text-xs h-7 px-2.5 gap-1.5 border-purple-800/50 text-purple-300 hover:bg-purple-900/30 hover:text-purple-200"
-            >
-              {isGeneratingWorkflow ? (
-                <Loader2 className="size-3 animate-spin" />
-              ) : (
-                <Sparkles className="size-3" />
-              )}
-              {isGeneratingWorkflow ? "Generating..." : "Generate Workflow"}
-            </Button>
+            <>
+              <label
+                data-ui-id="chat-input-ui-bridge-toggle"
+                className="flex items-center gap-1.5 text-xs text-text-muted cursor-pointer select-none"
+                title="Include UI Bridge SDK integration instructions in the generated workflow"
+              >
+                <input
+                  type="checkbox"
+                  checked={includeUIBridge}
+                  onChange={(e) => setIncludeUIBridge(e.target.checked)}
+                  disabled={isGeneratingWorkflow || disabled}
+                  className="rounded border-border-subtle accent-purple-500"
+                />
+                UI Bridge
+              </label>
+              <Button
+                data-ui-id="chat-input-generate-workflow-btn"
+                variant="outline"
+                size="sm"
+                onClick={() => onGenerateWorkflow(includeUIBridge)}
+                disabled={isGeneratingWorkflow || disabled}
+                className="text-xs h-7 px-2.5 gap-1.5 border-purple-800/50 text-purple-300 hover:bg-purple-900/30 hover:text-purple-200"
+              >
+                {isGeneratingWorkflow ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : (
+                  <Sparkles className="size-3" />
+                )}
+                {isGeneratingWorkflow ? "Generating..." : "Generate Workflow"}
+              </Button>
+            </>
           )}
         </div>
       </div>

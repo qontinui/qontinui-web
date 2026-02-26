@@ -20,314 +20,26 @@ import {
   Play,
   Video,
   Monitor,
-  Server,
   Store,
   CreditCard,
   TestTube2,
-  Download,
   Database,
   BarChart3,
   AlertCircle,
   BookOpen,
-  History,
-  Activity,
-  Bug,
-  TrendingUp,
-  Brain,
-  Wrench,
   Eye,
-  Webhook,
-  Library,
   ScanSearch,
-  Bot,
-  ShieldCheck,
-  FlaskConical,
-  Wifi,
-  FolderOpen,
-  HardDrive,
-  Archive,
-  Layers,
-  ListChecks,
-  HelpCircle,
-  MessageSquare,
 } from "lucide-react";
 import type { NavItem } from "./types";
 
 // =============================================================================
-// Navigation Items
+// Dev-only and admin-only navigation items.
 //
-// Items with `hidden: true` only appear in development mode.
-// Items with `adminOnly: true` only appear for superusers.
-// Items with `group: "Label"` render a section separator above them.
+// Production items come from qontinui-navigation shared package
+// via shared-nav-adapter.ts. Only dev/hidden and admin items remain here.
 // =============================================================================
 
-export const navItems: NavItem[] = [
-  // ===========================================================================
-  // Build — Create and design workflows and steps
-  // ===========================================================================
-  {
-    id: "workflows",
-    label: "Workflows",
-    description: "Workflow editor and AI generator",
-    icon: React.createElement(Workflow, { className: "size-5" }),
-    route: "/build/workflows",
-    color: "var(--brand-secondary)",
-    group: "Build",
-  },
-  {
-    id: "step-builders",
-    label: "Step Builders",
-    description: "Build individual workflow steps",
-    icon: React.createElement(Layers, { className: "size-5" }),
-    route: "/build/templates",
-    color: "var(--brand-secondary)",
-  },
-  {
-    id: "step-library",
-    label: "Step Library",
-    description: "Browse and manage all created steps",
-    icon: React.createElement(Library, { className: "size-5" }),
-    route: "/library",
-    color: "var(--brand-secondary)",
-  },
-  // ===========================================================================
-  // Run — Execute workflows and view results
-  // ===========================================================================
-  {
-    id: "chat",
-    label: "Chat",
-    description: "Plan features with AI, generate workflows",
-    icon: React.createElement(MessageSquare, { className: "size-5" }),
-    route: "/chat",
-    color: "#9333EA",
-    group: "Run",
-  },
-  {
-    id: "execute",
-    label: "Execute",
-    description: "Run and schedule workflows",
-    icon: React.createElement(Play, { className: "size-5" }),
-    route: "/execute",
-    color: "#10B981",
-  },
-  {
-    id: "runs",
-    label: "Runs",
-    icon: React.createElement(History, { className: "size-5" }),
-    route: "/runs",
-    color: "#4A90D9",
-    children: [
-      {
-        id: "runs-active",
-        label: "Active",
-        description: "Live monitoring dashboard",
-        icon: React.createElement(Activity, { className: "size-4" }),
-        route: "/runs/active",
-        color: "#4A90D9",
-      },
-      {
-        id: "runs-history",
-        label: "History",
-        description: "Run history browser",
-        icon: React.createElement(History, { className: "size-4" }),
-        route: "/runs",
-        color: "#4A90D9",
-      },
-      {
-        id: "runs-errors",
-        label: "Errors",
-        description: "Error monitoring and resolution",
-        icon: React.createElement(AlertCircle, { className: "size-4" }),
-        route: "/tools/error-monitor",
-        color: "#4A90D9",
-      },
-      {
-        id: "runs-findings",
-        label: "Findings",
-        description: "Cross-run findings",
-        icon: React.createElement(Bug, { className: "size-4" }),
-        route: "/runs/findings",
-        color: "#4A90D9",
-      },
-      {
-        id: "runs-statistics",
-        label: "Statistics",
-        description: "Performance analytics",
-        icon: React.createElement(TrendingUp, { className: "size-4" }),
-        route: "/runs/statistics",
-        color: "#4A90D9",
-      },
-      {
-        id: "runs-learning",
-        label: "Learning",
-        description: "ML insights dashboard",
-        icon: React.createElement(Brain, { className: "size-4" }),
-        route: "/runs/learning",
-        color: "#4A90D9",
-        hidden: true,
-      },
-      {
-        id: "runs-checkpoints",
-        label: "Checkpoints",
-        description: "Execution checkpoint browser",
-        icon: React.createElement(ListChecks, { className: "size-4" }),
-        route: "/runs/checkpoints",
-        color: "#4A90D9",
-        hidden: true,
-      },
-      {
-        id: "runs-discoveries",
-        label: "Discoveries",
-        description: "GUI state exploration results",
-        icon: React.createElement(Search, { className: "size-4" }),
-        route: "/runs/discoveries",
-        color: "#4A90D9",
-        hidden: true,
-      },
-    ],
-  },
-
-  // ===========================================================================
-  // Manage — Infrastructure and configuration
-  // ===========================================================================
-  {
-    id: "runners",
-    label: "Runners",
-    description: "Connected desktop runners",
-    icon: React.createElement(Server, { className: "size-5" }),
-    route: "/runners",
-    color: "#10B981",
-    group: "Manage",
-  },
-  {
-    id: "settings",
-    label: "Settings",
-    icon: React.createElement(Settings, { className: "size-5" }),
-    route: "/settings",
-    color: "#FFD700",
-    children: [
-      {
-        id: "settings-account",
-        label: "Account",
-        description: "Connection and identity",
-        icon: React.createElement(Settings, { className: "size-4" }),
-        route: "/settings/account",
-        color: "#FFD700",
-      },
-      {
-        id: "settings-ai",
-        label: "AI Providers",
-        description: "AI provider configuration",
-        icon: React.createElement(Bot, { className: "size-4" }),
-        route: "/settings/ai",
-        color: "#FFD700",
-      },
-      {
-        id: "settings-general",
-        label: "General",
-        description: "Application preferences",
-        icon: React.createElement(Wrench, { className: "size-4" }),
-        route: "/settings/general",
-        color: "#FFD700",
-      },
-      {
-        id: "settings-agentic",
-        label: "Advanced AI",
-        description: "Memory, retry, routing",
-        icon: React.createElement(Brain, { className: "size-4" }),
-        route: "/settings/agentic",
-        color: "#FFD700",
-      },
-      {
-        id: "settings-self-healing",
-        label: "Self-Healing",
-        description: "Automation recovery",
-        icon: React.createElement(ShieldCheck, { className: "size-4" }),
-        route: "/settings/self-healing",
-        color: "#FFD700",
-      },
-      {
-        id: "settings-playwright",
-        label: "Playwright",
-        description: "Test configuration",
-        icon: React.createElement(FlaskConical, { className: "size-4" }),
-        route: "/settings/playwright",
-        color: "#FFD700",
-      },
-      {
-        id: "settings-mcp",
-        label: "MCP Servers",
-        description: "External tool servers",
-        icon: React.createElement(Wifi, { className: "size-4" }),
-        route: "/settings/mcp",
-        color: "#FFD700",
-      },
-      {
-        id: "settings-log-sources",
-        label: "Log Sources",
-        description: "Log file monitoring config",
-        icon: React.createElement(FolderOpen, { className: "size-4" }),
-        route: "/settings/log-sources",
-        color: "#FFD700",
-      },
-      {
-        id: "settings-finding-rules",
-        label: "Finding Rules",
-        description: "Finding categories and rules",
-        icon: React.createElement(ListChecks, { className: "size-4" }),
-        route: "/configure/finding-rules",
-        color: "#FFD700",
-      },
-      {
-        id: "settings-hooks",
-        label: "Hooks",
-        description: "Workflow lifecycle hooks",
-        icon: React.createElement(Webhook, { className: "size-4" }),
-        route: "/configure/hooks",
-        color: "#FFD700",
-      },
-      {
-        id: "settings-storage",
-        label: "Storage",
-        description: "Local file management",
-        icon: React.createElement(HardDrive, { className: "size-4" }),
-        route: "/settings/storage",
-        color: "#FFD700",
-      },
-      {
-        id: "settings-backup",
-        label: "Backup",
-        description: "Export and restore data",
-        icon: React.createElement(Archive, { className: "size-4" }),
-        route: "/settings/backup",
-        color: "#FFD700",
-      },
-      {
-        id: "settings-updates",
-        label: "Updates",
-        description: "Version and updates",
-        icon: React.createElement(Download, { className: "size-4" }),
-        route: "/settings/updates",
-        color: "#FFD700",
-      },
-      {
-        id: "settings-debug",
-        label: "Debug",
-        description: "Diagnostics and debug",
-        icon: React.createElement(FlaskConical, { className: "size-4" }),
-        route: "/settings/debug",
-        color: "#FFD700",
-      },
-    ],
-  },
-  {
-    id: "help",
-    label: "Help",
-    icon: React.createElement(HelpCircle, { className: "size-5" }),
-    route: "/help",
-    color: "#9CA3AF",
-  },
-
+export const devNavItems: NavItem[] = [
   // ===========================================================================
   // Hidden items (dev-only)
   // ===========================================================================
@@ -339,14 +51,7 @@ export const navItems: NavItem[] = [
     route: "/tools/inspector",
     color: "var(--brand-secondary)",
     hidden: true,
-  },
-  {
-    id: "dashboard",
-    label: "Dashboard",
-    icon: React.createElement(LayoutDashboard, { className: "size-5" }),
-    route: "/build/workflows",
-    color: "var(--brand-primary)",
-    hidden: true,
+    group: "Dev",
   },
   {
     id: "discover",
@@ -387,7 +92,6 @@ export const navItems: NavItem[] = [
 
   // ===========================================================================
   // Visual Automation (hidden in production, visible in dev mode)
-  // Preserves the pre-refactor sidebar structure for GUI automation pages.
   // ===========================================================================
   {
     id: "visual-automation",
@@ -693,7 +397,9 @@ export const navItems: NavItem[] = [
             id: "va-qa-dashboard",
             label: "Dashboard",
             description: "QA testing overview and metrics",
-            icon: React.createElement(LayoutDashboard, { className: "size-4" }),
+            icon: React.createElement(LayoutDashboard, {
+              className: "size-4",
+            }),
             route: "/qa-dashboard",
             color: "#F59E0B",
             hidden: true,
@@ -785,7 +491,9 @@ export const navItems: NavItem[] = [
             id: "va-overview",
             label: "Overview",
             description: "Project summary and quick access",
-            icon: React.createElement(LayoutDashboard, { className: "size-4" }),
+            icon: React.createElement(LayoutDashboard, {
+              className: "size-4",
+            }),
             route: "/automation-builder/overview",
             color: "var(--brand-primary)",
             hidden: true,
@@ -878,6 +586,7 @@ export const navItems: NavItem[] = [
     route: "/admin",
     color: "#FF6B6B",
     adminOnly: true,
+    group: "Admin",
     children: [
       {
         id: "admin-dashboard",

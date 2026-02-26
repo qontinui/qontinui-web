@@ -399,7 +399,9 @@ test.describe("Annotation Editor", () => {
       const _historyButton = page.locator(
         'button:has-text("History"), button:has-text("Versions"), button:has([data-lucide="history"])'
       );
-      const _saveVersionButton = page.locator('button:has-text("Save Version")');
+      const _saveVersionButton = page.locator(
+        'button:has-text("Save Version")'
+      );
 
       await page.screenshot({
         path: "test-results/annotation-version-history.png",

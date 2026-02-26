@@ -35,6 +35,7 @@ async def list_errors(
     severity: str | None = Query(None),
     error_status: str | None = Query(None, alias="status"),
     search: str | None = Query(None),
+    task_run_id: UUID | None = Query(None, description="Filter errors by task run ID"),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
 ):
@@ -43,6 +44,8 @@ async def list_errors(
         ErrorMonitorEntry.created_by_user_id == current_user.id
     )
 
+    if task_run_id:
+        query = query.where(ErrorMonitorEntry.task_run_id == task_run_id)
     if severity:
         query = query.where(ErrorMonitorEntry.severity == severity)
     if error_status:

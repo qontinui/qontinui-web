@@ -59,6 +59,7 @@ from app.api.v1.endpoints import (
     runner_devices,
     runner_status_ws,
     runners,
+    screenshots,
     security_endpoints,
     semantic_search,
     settings,
@@ -248,4 +249,8 @@ api_router.include_router(library.router, prefix="/library", tags=["library"])
 # Error monitor entries
 api_router.include_router(
     error_monitor.router, prefix="/error-monitor", tags=["error-monitor"]
+)
+# Screenshot proxy (serves verification screenshots from runner's .dev-logs)
+api_router.include_router(
+    screenshots.router, prefix="/screenshots", tags=["screenshots"]
 )

@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/collapsible";
 import { runnerApi } from "@/lib/runner-api";
 import {
-  buildSemanticSpecPrompt,
+  buildSpecPrompt,
   type DiscoveredSpec,
   type SpecGroup,
 } from "@/lib/spec-prompt-builder";
@@ -40,7 +40,7 @@ import {
   unwrapSpecResponse,
 } from "@/lib/ui-bridge/spec-parser";
 import { useAppBrowser } from "@/hooks/useAppBrowser";
-import { getAllSemanticSpecs } from "@/lib/semantic-spec-registry";
+import { getAllSpecs } from "@/lib/spec-registry";
 
 // =============================================================================
 // Types
@@ -65,7 +65,7 @@ export interface SpecSourceSectionProps {
 // localStorage key
 const STORAGE_KEY = "ai-generate-spec-source";
 // Bump this when bundled specs change to auto-select new groups
-const BUNDLED_SPEC_VERSION = 2;
+const BUNDLED_SPEC_VERSION = 3;
 
 interface PersistedSpecState {
   sdkUrl: string;
@@ -81,26 +81,11 @@ interface PersistedSpecState {
 // =============================================================================
 
 /**
- * Filter specs to only keep groups where category === "semantic".
- * Removes specs that end up with no semantic groups.
+ * Pass through all specs that have at least one group.
+ * No longer filters by category — the UI selection handles filtering.
  */
-function filterSemanticGroups(specs: DiscoveredSpec[]): DiscoveredSpec[] {
-  const filtered: DiscoveredSpec[] = [];
-  for (const spec of specs) {
-    const semanticGroups = (spec.config?.groups ?? []).filter(
-      (g) => g.category === "semantic"
-    );
-    if (semanticGroups.length > 0) {
-      filtered.push({
-        ...spec,
-        config: {
-          ...spec.config,
-          groups: semanticGroups,
-        },
-      });
-    }
-  }
-  return filtered;
+function filterSelectedGroups(specs: DiscoveredSpec[]): DiscoveredSpec[] {
+  return specs.filter((spec) => (spec.config?.groups ?? []).length > 0);
 }
 
 /** Get the page URL for a spec */
@@ -162,7 +147,7 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
   // Load bundled semantic specs on mount, overlay persisted selection state
   useEffect(() => {
     // Start with all bundled semantic specs
-    const bundled = getAllSemanticSpecs();
+    const bundled = getAllSpecs();
     const specMap = new Map(bundled.map((s) => [s.specId, s]));
 
     // Merge any additional specs from localStorage (e.g. from external apps)
@@ -177,7 +162,7 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
         persistedPages = parsed.discoveredPages ?? [];
         persistedPageUrls = parsed.selectedPageUrls ?? [];
         if (parsed.discoveredSpecs?.length > 0) {
-          const filtered = filterSemanticGroups(parsed.discoveredSpecs);
+          const filtered = filterSelectedGroups(parsed.discoveredSpecs);
           for (const spec of filtered) {
             if (!specMap.has(spec.specId)) {
               specMap.set(spec.specId, spec);
@@ -309,7 +294,7 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
       const res = await runnerApi.uiBridgeDiscover({ action: "getSpecs" });
       const rawSpecs = unwrapSpecResponse(res);
       const allSpecs = parseDiscoveredSpecs(rawSpecs);
-      const semanticSpecs = filterSemanticGroups(allSpecs);
+      const semanticSpecs = filterSelectedGroups(allSpecs);
       if (semanticSpecs.length === 0) return;
       mergeSpecs(semanticSpecs);
     } catch {
@@ -379,7 +364,7 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
           });
           const rawSpecs = unwrapSpecResponse(specRes);
           const specs = parseDiscoveredSpecs(rawSpecs);
-          const semanticSpecs = filterSemanticGroups(specs);
+          const semanticSpecs = filterSelectedGroups(specs);
 
           pages.push({ url: pathname, title: pathname });
           newPageUrls.add(pathname);
@@ -591,7 +576,7 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
   const [showPromptPreview, setShowPromptPreview] = useState(false);
   const promptPreview = useMemo(() => {
     if (selectedCount === 0) return null;
-    return buildSemanticSpecPrompt({ discoveredSpecs, selectedGroupIds });
+    return buildSpecPrompt({ discoveredSpecs, selectedGroupIds });
   }, [discoveredSpecs, selectedGroupIds, selectedCount]);
 
   return (
@@ -775,7 +760,7 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
             {/* Header with select all/none/clear */}
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
-                Semantic Specs ({selectedCount}/{totalGroups})
+                Page Specs ({selectedCount}/{totalGroups})
               </span>
               <div className="flex items-center gap-2 text-xs">
                 <button

@@ -108,9 +108,12 @@ export default function ChatSessionPage() {
     [renameSession, taskRunId]
   );
 
-  const handleGenerateWorkflow = useCallback(() => {
-    generateWorkflow(taskRunId);
-  }, [generateWorkflow, taskRunId]);
+  const handleGenerateWorkflow = useCallback(
+    (includeUIBridge: boolean) => {
+      generateWorkflow(taskRunId, { includeUIBridge });
+    },
+    [generateWorkflow, taskRunId]
+  );
 
   const handleExecute = useCallback(() => {
     if (!generatedWorkflow) return;

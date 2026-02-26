@@ -3,6 +3,148 @@
   "description": "Specs for the Statistics page — execution performance analytics and metrics dashboard",
   "groups": [
     {
+      "id": "stats-page-structure",
+      "name": "Page Structure",
+      "description": "Core structural elements of the Statistics page including heading, summary metric cards, and status breakdown section.",
+      "category": "element-presence",
+      "assertions": [
+        {
+          "id": "stats-struct-heading",
+          "description": "Statistics heading is present at the top of the page",
+          "category": "element-presence",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "heading", "textContent": "Statistics" },
+            "label": "Statistics heading"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "stats-struct-total-runs",
+          "description": "Total Runs summary metric card is present on the dashboard",
+          "category": "element-presence",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Total Runs" },
+            "label": "Total Runs metric card"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "stats-struct-avg-duration",
+          "description": "Avg Duration summary metric card is present on the dashboard",
+          "category": "element-presence",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Avg Duration" },
+            "label": "Avg Duration metric card"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "stats-struct-success-rate",
+          "description": "Success Rate summary metric card is present on the dashboard",
+          "category": "element-presence",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Success Rate" },
+            "label": "Success Rate metric card"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "stats-struct-status-breakdown",
+          "description": "Status Breakdown section is present showing run status distribution",
+          "category": "element-presence",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Status Breakdown" },
+            "label": "Status Breakdown section"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "stats-metrics-state",
+      "name": "Metrics State",
+      "description": "State consistency of metric values and table structure on the statistics dashboard.",
+      "category": "state-consistency",
+      "assertions": [
+        {
+          "id": "stats-state-total-runs-numeric",
+          "description": "Total Runs metric card displays a numeric value",
+          "category": "state-consistency",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Total Runs" },
+            "label": "Total Runs metric card"
+          },
+          "assertionType": "containsText",
+          "expectedText": "\\d",
+          "precondition": "Page has loaded with statistics data available",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "stats-state-success-rate-numeric",
+          "description": "Success Rate metric card displays a numeric percentage value",
+          "category": "state-consistency",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Success Rate" },
+            "label": "Success Rate metric card"
+          },
+          "assertionType": "containsText",
+          "expectedText": "%",
+          "precondition": "Page has loaded with statistics data available",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "stats-state-recent-runs-header",
+          "description": "Recent Runs table header exists indicating the table is rendered",
+          "category": "state-consistency",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Recent Runs" },
+            "label": "Recent Runs table header"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
       "id": "stats-page-purpose",
       "name": "Page Purpose",
       "description": "The Statistics page provides performance analytics for workflow executions. It displays summary metrics (total runs, average duration, success rate, total time), a status breakdown with visual distribution bars, and a recent runs table comparing each run's duration against the average. A performance view adds time-range filtering and detailed metric cards.",
@@ -61,6 +203,7 @@
     "component": "Statistics",
     "author": "Joshua Spinak",
     "createdAt": "2026-02-24T00:00:00.000Z",
+    "updatedAt": "2026-02-26T00:00:00.000Z",
     "pageUrl": "/runs/statistics",
     "elementSource": "sdk",
     "tags": ["statistics", "analytics", "performance", "metrics", "tier-2"]

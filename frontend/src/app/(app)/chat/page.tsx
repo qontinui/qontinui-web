@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { MessageSquare, Plus, Wifi, WifiOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -17,14 +17,28 @@ export default function ChatPage() {
   const router = useRouter();
   const { connections } = useRealtimeConnections();
   const [isCreating, setIsCreating] = useState(false);
+  const createTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const activeConnection = connections[0] || null;
   const isRunnerConnected = !!activeConnection;
 
-  const { createSession } = useChatWebSocket({
+  // Clear timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (createTimeoutRef.current) {
+        clearTimeout(createTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const { createSession, isConnected: isChatWsConnected } = useChatWebSocket({
     connectionId: activeConnection?.id ?? null,
     onSessionCreated: useCallback(
       (id: string) => {
+        if (createTimeoutRef.current) {
+          clearTimeout(createTimeoutRef.current);
+          createTimeoutRef.current = null;
+        }
         setIsCreating(false);
         router.push(`/chat/${id}`);
       },
@@ -35,7 +49,19 @@ export default function ChatPage() {
   const handleNewChat = useCallback(() => {
     if (!isRunnerConnected) return;
     setIsCreating(true);
-    createSession();
+
+    const sent = createSession();
+    if (!sent) {
+      // WebSocket not connected — reset immediately
+      setIsCreating(false);
+      return;
+    }
+
+    // Safety timeout: reset isCreating if no response within 15 seconds
+    createTimeoutRef.current = setTimeout(() => {
+      setIsCreating(false);
+      createTimeoutRef.current = null;
+    }, 15000);
   }, [isRunnerConnected, createSession]);
 
   return (
@@ -78,7 +104,7 @@ export default function ChatPage() {
               data-ui-id="chat-new-btn"
               size="sm"
               onClick={handleNewChat}
-              disabled={!isRunnerConnected || isCreating}
+              disabled={!isRunnerConnected || !isChatWsConnected || isCreating}
               className="gap-1.5 bg-brand-primary hover:bg-brand-primary/90"
             >
               {isCreating ? (
@@ -123,7 +149,7 @@ export default function ChatPage() {
               </p>
               <Button
                 onClick={handleNewChat}
-                disabled={isCreating}
+                disabled={!isChatWsConnected || isCreating}
                 className="gap-2 bg-brand-primary hover:bg-brand-primary/90"
               >
                 {isCreating ? (

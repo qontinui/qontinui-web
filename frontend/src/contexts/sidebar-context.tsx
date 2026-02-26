@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
+import { STORAGE_KEYS } from "qontinui-navigation";
 
 interface SidebarContextType {
   isCollapsed: boolean;
@@ -14,7 +15,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
 
   // Load initial state from localStorage
   useEffect(() => {
-    const saved = localStorage.getItem("unified-sidebar-collapsed");
+    const saved = localStorage.getItem(STORAGE_KEYS.collapsed);
     if (saved !== null) {
       setIsCollapsed(JSON.parse(saved));
     }

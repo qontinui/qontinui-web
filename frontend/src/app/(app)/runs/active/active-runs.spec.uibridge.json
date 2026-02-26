@@ -3,6 +3,94 @@
   "description": "Specs for the Active Runs page — real-time monitoring of currently executing workflows",
   "groups": [
     {
+      "id": "active-page-structure",
+      "name": "Page Structure",
+      "description": "Core structural elements required for the Active Runs page: heading and refresh control.",
+      "category": "element-presence",
+      "assertions": [
+        {
+          "id": "active-struct-heading",
+          "description": "The Active Runs page heading is rendered at the top of the page",
+          "category": "element-presence",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "heading", "textContent": "Active" },
+            "label": "Active Runs heading"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "active-struct-refresh",
+          "description": "A refresh button is present for manually triggering a status update",
+          "category": "element-presence",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "button", "textContent": "Refresh" },
+            "label": "Refresh button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "active-empty-state",
+      "name": "Empty State",
+      "description": "When no workflows are currently running, the page should display an informative empty state message.",
+      "category": "state-consistency",
+      "assertions": [
+        {
+          "id": "active-empty-message",
+          "description": "An empty state message is shown when there are no active workflow runs",
+          "category": "state-consistency",
+          "severity": "warning",
+          "precondition": "No workflows are currently running on any connected runner",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "No active" },
+            "label": "Empty state message"
+          },
+          "assertionType": "containsText",
+          "expectedValue": "No active",
+          "condition": {
+            "type": "notExists",
+            "target": {
+              "type": "search",
+              "criteria": { "textContent": "running" },
+              "label": "Running status indicator"
+            }
+          },
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "active-refresh-enabled",
+          "description": "The refresh button remains enabled even when there are no active runs, allowing users to check for new runs",
+          "category": "state-consistency",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "button", "textContent": "Refresh" },
+            "label": "Refresh button"
+          },
+          "assertionType": "enabled",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
       "id": "active-page-purpose",
       "name": "Page Purpose",
       "description": "The Active Runs page provides real-time monitoring of currently executing workflows. It displays live status updates, execution progress, and output for all running task runs using event-driven updates.",
@@ -46,6 +134,7 @@
     "component": "ActiveRuns",
     "author": "Joshua Spinak",
     "createdAt": "2026-02-24T00:00:00.000Z",
+    "updatedAt": "2026-02-26T00:00:00.000Z",
     "pageUrl": "/runs/active",
     "elementSource": "sdk",
     "tags": ["active-runs", "monitoring", "real-time", "tier-1"]

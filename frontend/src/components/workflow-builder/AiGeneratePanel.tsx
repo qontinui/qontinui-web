@@ -19,6 +19,7 @@ import {
   Monitor,
   Rocket,
   ListOrdered,
+  Plug,
   X,
   Save,
   type LucideIcon,
@@ -56,7 +57,7 @@ import {
 import type { ContextItem } from "@/lib/runner-api";
 import type { GenerateWorkflowRequest } from "@/lib/runner/types/workflow";
 import { SpecSourceSection, type SpecSourceState } from "./SpecSourceSection";
-import { buildSemanticSpecPrompt } from "@/lib/spec-prompt-builder";
+import { buildSpecPrompt } from "@/lib/spec-prompt-builder";
 import {
   GENERATION_TEMPLATES,
   type WorkflowGenerationTemplate,
@@ -71,6 +72,7 @@ const TEMPLATE_ICONS: Record<string, LucideIcon> = {
   Monitor,
   Rocket,
   ListOrdered,
+  Plug,
 };
 
 // Provider and model constants (shared with settings page)
@@ -183,6 +185,14 @@ export function AiGeneratePanel({
   const [model, setModel] = useState("");
   const [maxFixIterations, setMaxFixIterations] = useState("");
   const [autoIncludeContexts, setAutoIncludeContexts] = useState(true);
+  const [includeUIBridge, setIncludeUIBridge] = useState(() => {
+    if (typeof window === "undefined") return true;
+    const saved = localStorage.getItem("generate-include-ui-bridge");
+    return saved !== null ? saved === "true" : true;
+  });
+  useEffect(() => {
+    localStorage.setItem("generate-include-ui-bridge", String(includeUIBridge));
+  }, [includeUIBridge]);
   const [discoveryMode, setDiscoveryMode] = useState<
     "auto" | "enabled" | "disabled"
   >("auto");
@@ -353,6 +363,7 @@ export function AiGeneratePanel({
         : undefined,
       auto_include_contexts: autoIncludeContexts,
       discovery_mode: discoveryMode !== "auto" ? discoveryMode : undefined,
+      include_ui_bridge_instructions: includeUIBridge,
     };
   }, [
     tagsInput,
@@ -366,6 +377,7 @@ export function AiGeneratePanel({
     autoIncludeContexts,
     discoveryMode,
     hasSpecs,
+    includeUIBridge,
   ]);
 
   /** Build a single request (non-batch or fallback). */
@@ -377,7 +389,7 @@ export function AiGeneratePanel({
       specState.discoveredSpecs.length > 0 &&
       specState.selectedGroupIds.size > 0
     ) {
-      const specResult = buildSemanticSpecPrompt({
+      const specResult = buildSpecPrompt({
         discoveredSpecs: specState.discoveredSpecs,
         selectedGroupIds: specState.selectedGroupIds,
       });
@@ -415,7 +427,7 @@ export function AiGeneratePanel({
       }
       if (pageGroupIds.size === 0) continue;
 
-      const specResult = buildSemanticSpecPrompt({
+      const specResult = buildSpecPrompt({
         discoveredSpecs: pageSpecs,
         selectedGroupIds: pageGroupIds,
       });
@@ -977,6 +989,30 @@ export function AiGeneratePanel({
                             Automatically matches and includes relevant
                             knowledge base documents based on keywords in your
                             description.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </label>
+                </div>
+                <div className="flex items-end pb-1">
+                  <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+                    <Checkbox
+                      checked={includeUIBridge}
+                      onCheckedChange={(v) => setIncludeUIBridge(v === true)}
+                    />
+                    UI Bridge instructions
+                    <TooltipProvider delayDuration={200}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="w-3 h-3 text-zinc-500 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs p-3">
+                          <p className="text-xs text-muted-foreground">
+                            Includes UI Bridge SDK integration instructions
+                            (data-ui-id attributes, useUIElement hooks, page
+                            spec files) in the builder prompt. Disable for
+                            projects that don&apos;t use the UI Bridge SDK.
                           </p>
                         </TooltipContent>
                       </Tooltip>

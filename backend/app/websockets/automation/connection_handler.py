@@ -191,6 +191,11 @@ class ConnectionHandler:
             return False
 
         if not self.user.automation_streaming_enabled:
+            logger.warning(
+                "automation_ws_streaming_not_enabled",
+                user_id=str(self.user.id),
+                user_email=self.user.email,
+            )
             await self.websocket.close(
                 code=status.WS_1008_POLICY_VIOLATION,
                 reason=(

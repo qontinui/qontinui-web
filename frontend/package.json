@@ -38,6 +38,7 @@
     "@next/third-parties": "^15.5.8",
     "@qontinui/design-tokens": "^1.0.0",
     "@qontinui/shared-types": "file:../../qontinui-schemas/ts",
+    "qontinui-navigation": "file:../../qontinui-navigation",
     "@qontinui/workflow-ui": "file:../../qontinui-workflow-ui",
     "@qontinui/workflow-utils": "file:../../qontinui-workflow-utils",
     "@qontinui/ui-bridge": "^0.3.1",
