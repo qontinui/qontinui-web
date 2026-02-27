@@ -8,9 +8,9 @@ when WebSocket connections are not available.
 from typing import Any
 
 import structlog
-from qontinui_schemas.common import utc_now
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from qontinui_schemas.common import utc_now
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

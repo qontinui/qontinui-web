@@ -6,9 +6,9 @@ and receive real-time chat responses.
 """
 
 import structlog
-from qontinui_schemas.common import utc_now
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, ValidationError
+from qontinui_schemas.common import utc_now
 from sqlalchemy import select
 
 from app.api.deps import get_current_user_from_ws
