@@ -55,6 +55,7 @@ class UnifiedWorkflowCreate(BaseModel):
     generated_by_task_run_id: str | None = None
     stages: list[Any] | None = None
     stop_on_failure: bool = False
+    reflection_mode: bool = True
     project_id: str | None = None
 
 
@@ -88,6 +89,7 @@ class UnifiedWorkflowUpdate(BaseModel):
     generated_by_task_run_id: str | None = None
     stages: list[Any] | None = None
     stop_on_failure: bool | None = None
+    reflection_mode: bool | None = None
     project_id: str | None = None
 
 
@@ -124,6 +126,7 @@ class UnifiedWorkflowResponse(BaseModel):
     generated_by_task_run_id: str | None
     stages: list[Any] | None
     stop_on_failure: bool
+    reflection_mode: bool
     created_at: datetime
     modified_at: datetime  # Exposed as modified_at for frontend compat
 
@@ -207,9 +210,12 @@ def _model_to_response(workflow: UnifiedWorkflow) -> UnifiedWorkflowResponse:
             else 5
         ),
         generated_by_task_run_id=workflow.generated_by_task_run_id,
-        stages=workflow.stages,
+        stages=workflow.stages or [],
         stop_on_failure=(
             workflow.stop_on_failure if workflow.stop_on_failure is not None else False
+        ),
+        reflection_mode=(
+            workflow.reflection_mode if workflow.reflection_mode is not None else True
         ),
         created_at=workflow.created_at,
         modified_at=workflow.updated_at,
@@ -266,6 +272,7 @@ class UnifiedWorkflowService:
             generated_by_task_run_id=data.generated_by_task_run_id,
             stages=data.stages,
             stop_on_failure=data.stop_on_failure,
+            reflection_mode=data.reflection_mode,
         )
 
         try:
@@ -463,6 +470,7 @@ class UnifiedWorkflowService:
             generated_by_task_run_id=original.generated_by_task_run_id,
             stages=list(original.stages) if original.stages else original.stages,
             stop_on_failure=original.stop_on_failure,
+            reflection_mode=original.reflection_mode,
         )
 
         created = await self.repo.create(db, clone)
@@ -545,6 +553,11 @@ class UnifiedWorkflowService:
                 workflow.stop_on_failure
                 if workflow.stop_on_failure is not None
                 else False
+            ),
+            "reflection_mode": (
+                workflow.reflection_mode
+                if workflow.reflection_mode is not None
+                else True
             ),
         }
 

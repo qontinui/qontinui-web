@@ -231,6 +231,14 @@ class UnifiedWorkflow(Base):
         comment="Whether to stop execution if a stage fails verification",
     )
 
+    reflection_mode: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("true"),
+        default=True,
+        comment="Whether to enable reflection mode during AI iterations",
+    )
+
     # Provenance
     generated_by_task_run_id: Mapped[str | None] = mapped_column(
         String(255),

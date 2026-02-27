@@ -4,9 +4,15 @@ Logging Middleware
 Automatically logs all HTTP requests with performance metrics and context.
 Integrates with structlog for structured JSON logging.
 Writes velocity JSONL entries for response time analysis.
+
+Velocity entries are buffered in memory and flushed periodically (every 10s
+or when the buffer reaches 100 entries) to avoid synchronous disk I/O on
+every request, which was a contributor to dev mode slowness.
 """
 
+import atexit
 import json
+import threading
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -21,9 +27,14 @@ from app.core.logging_helpers import log_error, log_request
 
 logger = structlog.get_logger(__name__)
 
-# Velocity JSONL output path
+# Velocity JSONL buffered writer
 _VELOCITY_JSONL_PATH: Path | None = None
 _VELOCITY_FILE = None
+_VELOCITY_BUFFER: list[str] = []
+_VELOCITY_LOCK = threading.Lock()
+_VELOCITY_FLUSH_INTERVAL = 10  # seconds
+_VELOCITY_BUFFER_MAX = 100  # max entries before forced flush
+_VELOCITY_TIMER: threading.Timer | None = None
 
 
 def _get_velocity_file():
@@ -44,16 +55,52 @@ def _get_velocity_file():
     return _VELOCITY_FILE
 
 
+def _flush_velocity_buffer() -> None:
+    """Flush all buffered velocity entries to disk."""
+    global _VELOCITY_TIMER
+    with _VELOCITY_LOCK:
+        if not _VELOCITY_BUFFER:
+            _VELOCITY_TIMER = None
+            return
+        f = _get_velocity_file()
+        if f is None:
+            _VELOCITY_BUFFER.clear()
+            _VELOCITY_TIMER = None
+            return
+        try:
+            f.write("".join(_VELOCITY_BUFFER))
+            f.flush()
+        except OSError:
+            pass
+        _VELOCITY_BUFFER.clear()
+        _VELOCITY_TIMER = None
+
+
+def _schedule_flush() -> None:
+    """Schedule a periodic flush if not already scheduled."""
+    global _VELOCITY_TIMER
+    if _VELOCITY_TIMER is None:
+        _VELOCITY_TIMER = threading.Timer(
+            _VELOCITY_FLUSH_INTERVAL, _flush_velocity_buffer
+        )
+        _VELOCITY_TIMER.daemon = True
+        _VELOCITY_TIMER.start()
+
+
 def _write_velocity_entry(entry: dict) -> None:
-    """Write a velocity entry to the JSONL file."""
-    f = _get_velocity_file()
-    if f is None:
-        return
-    try:
-        f.write(json.dumps(entry, default=str) + "\n")
-        f.flush()
-    except OSError:
-        pass
+    """Buffer a velocity entry for periodic flush (non-blocking)."""
+    line = json.dumps(entry, default=str) + "\n"
+    with _VELOCITY_LOCK:
+        _VELOCITY_BUFFER.append(line)
+        if len(_VELOCITY_BUFFER) >= _VELOCITY_BUFFER_MAX:
+            # Buffer full — flush in a background thread to avoid blocking
+            threading.Thread(target=_flush_velocity_buffer, daemon=True).start()
+        else:
+            _schedule_flush()
+
+
+# Flush remaining entries on process shutdown
+atexit.register(_flush_velocity_buffer)
 
 
 class LoggingMiddleware(BaseHTTPMiddleware):
