@@ -7,12 +7,22 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { appendFileSync, mkdirSync, writeFileSync } from "fs";
+import { appendFile, mkdir, writeFile } from "fs/promises";
 import { join } from "path";
 
 /** Path to .dev-logs directory (frontend runs from qontinui-web/frontend) */
 const DEV_LOGS_DIR = join(process.cwd(), "..", "..", ".dev-logs");
 const JSONL_PATH = join(DEV_LOGS_DIR, "browser-events.jsonl");
+
+/** Cache whether directory exists to avoid repeated mkdir calls */
+let dirEnsured = false;
+
+async function ensureDir() {
+  if (!dirEnsured) {
+    await mkdir(DEV_LOGS_DIR, { recursive: true });
+    dirEnsured = true;
+  }
+}
 
 export async function POST(request: NextRequest) {
   if (process.env.NODE_ENV !== "development") {
@@ -35,12 +45,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
 
-    // Ensure .dev-logs directory exists
-    mkdirSync(DEV_LOGS_DIR, { recursive: true });
+    // Ensure .dev-logs directory exists (async, cached after first call)
+    await ensureDir();
 
     // Clear mode: truncate file on session start
     if (body.clear === true) {
-      writeFileSync(JSONL_PATH, "");
+      await writeFile(JSONL_PATH, "");
       return NextResponse.json({ success: true, cleared: true });
     }
 
@@ -52,10 +62,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Append each event as a JSON line
+    // Append each event as a JSON line (async to avoid blocking event loop)
     const lines =
       events.map((e: unknown) => JSON.stringify(e)).join("\n") + "\n";
-    appendFileSync(JSONL_PATH, lines);
+    await appendFile(JSONL_PATH, lines);
 
     return NextResponse.json({ success: true, written: events.length });
   } catch (error) {

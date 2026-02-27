@@ -21,7 +21,8 @@ const COMMANDS_RESPONSE_ENDPOINT = "/api/ui-bridge/commands";
 const COMMANDS_STREAM_ENDPOINT = "/api/ui-bridge/commands/stream";
 
 // SSE reconnection delay in milliseconds
-const SSE_RECONNECT_DELAY_MS = 3000;
+// 10s to avoid triggering Next.js route recompilation cascades in dev mode
+const SSE_RECONNECT_DELAY_MS = 10000;
 
 /**
  * Get recovery suggestions based on error code

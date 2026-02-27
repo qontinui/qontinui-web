@@ -49,7 +49,7 @@ const config: UIBridgeConfig = {
   maxLogEntries: 10, // Reduced from 1000 - each entry is a full DOM snapshot (several MB)
 };
 
-const FLUSH_INTERVAL_MS = 500;
+const FLUSH_INTERVAL_MS = 5000;
 const EVENTS_ENDPOINT = "/api/dev-debug/browser-events";
 
 interface UIBridgeWrapperProps {

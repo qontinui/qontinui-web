@@ -32,7 +32,8 @@ const MAX_RECONNECT_DELAY_MS = 30000;
 const JITTER_FACTOR = 0.1; // +/- 10%
 
 // SSE reconnection delay (fallback transport)
-const SSE_RECONNECT_DELAY_MS = 3000;
+// 10s to avoid triggering Next.js route recompilation cascades in dev mode
+const SSE_RECONNECT_DELAY_MS = 10000;
 
 // API endpoints
 const COMMANDS_ENDPOINT = "/api/ui-bridge/commands";

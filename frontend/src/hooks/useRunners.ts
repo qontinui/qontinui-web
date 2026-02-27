@@ -22,7 +22,7 @@ export const runnerKeys = {
 /**
  * Fetch active connections with auto-refresh
  */
-export function useActiveConnections(refetchInterval: number = 5000) {
+export function useActiveConnections(refetchInterval: number = 30000) {
   return useQuery<RunnerConnection[], Error>({
     queryKey: runnerKeys.activeConnections(),
     queryFn: () => runnerService.getActiveConnections(),

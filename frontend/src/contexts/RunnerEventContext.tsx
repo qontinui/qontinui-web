@@ -72,14 +72,14 @@ export function useRunnerEvent(channel: string, callback: EventCallback) {
 // =============================================================================
 
 /** Default fallback polling interval when no WS events arrive */
-const FALLBACK_POLL_MS = 5000;
+const FALLBACK_POLL_MS = 30000;
 
 interface UseEventTriggeredFetchOptions<T> {
   enabled?: boolean;
   transform?: (raw: unknown) => T;
   /** Debounce delay in ms before refetching on event (default 200) */
   debounceMs?: number;
-  /** Fallback polling interval in ms when WS events don't arrive (default 5000, 0 to disable) */
+  /** Fallback polling interval in ms when WS events don't arrive (default 30000, 0 to disable) */
   fallbackPollMs?: number;
 }
 
