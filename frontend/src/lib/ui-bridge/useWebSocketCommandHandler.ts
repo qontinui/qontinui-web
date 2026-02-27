@@ -156,8 +156,14 @@ export function useWebSocketCommandHandler() {
             timestamp: Date.now(),
             elements: bridge.elements.map((e) => {
               const state = e.getState();
+              // Prefer the developer-assigned data-ui-id over auto-generated IDs.
+              // The AutoRegister may assign semantic IDs if it scans before React
+              // fully applies data-ui-id attributes (timing edge case).
+              const domUiId =
+                e.element?.getAttribute?.("data-ui-id") ?? undefined;
+              const id = domUiId && domUiId !== e.id ? domUiId : e.id;
               return {
-                id: e.id,
+                id,
                 type: e.type,
                 label: e.label,
                 actions: e.actions,

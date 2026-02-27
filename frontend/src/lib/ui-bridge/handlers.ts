@@ -103,15 +103,6 @@ function error(message: string, code?: string): APIResponse<never> {
 let renderLogEntries: RenderLogEntry[] = [];
 const MAX_ENTRIES = 5; // Each entry is a full DOM snapshot (several MB each)
 
-// Latest control snapshot from browser (synchronized via WebSocket)
-let latestControlSnapshot: ControlSnapshot = {
-  timestamp: Date.now(),
-  elements: [],
-  components: [],
-  workflows: [],
-  activeRuns: [],
-};
-
 // Latest semantic snapshot from browser
 let latestSemanticSnapshot: SemanticSnapshot | null = null;
 
@@ -152,10 +143,23 @@ if (!g.__uiBridgePendingCommands) {
 if (!g.__uiBridgeTabListeners) {
   g.__uiBridgeTabListeners = new Map<string, TabListener>();
 }
+// Cached control snapshot survives HMR module reloads so the fallback in
+// getControlSnapshot() returns the last-known elements while the browser
+// tab reconnects after a hot reload.
+if (!g.__uiBridgeLatestControlSnapshot) {
+  g.__uiBridgeLatestControlSnapshot = {
+    timestamp: Date.now(),
+    elements: [],
+    components: [],
+    workflows: [],
+    activeRuns: [],
+  } as ControlSnapshot;
+}
 
 const pendingCommands: Map<string, PendingCommand> =
   g.__uiBridgePendingCommands;
 const tabListeners: Map<string, TabListener> = g.__uiBridgeTabListeners;
+let latestControlSnapshot: ControlSnapshot = g.__uiBridgeLatestControlSnapshot;
 
 const MAX_PENDING_COMMANDS = 200;
 
@@ -178,7 +182,45 @@ export function subscribeToCommands(
   console.log(
     `[ui-bridge] SSE listener connected: ${id} (total: ${tabListeners.size})`
   );
+
+  // Proactively capture a snapshot when a browser tab connects.
+  // This populates the cache so that even after the tab disconnects,
+  // the cached snapshot still has elements for external callers.
+  // Delay 500ms to allow auto-registration to discover DOM elements,
+  // with a retry at 2s if the first attempt returns zero elements.
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  const captureSnapshot = async () => {
+    if (!tabListeners.has(id)) return false;
+    try {
+      const result = await queueCommand<ControlSnapshot>(
+        "getControlSnapshot",
+        {},
+        { targetTabId: id }
+      );
+      if (result.elements && result.elements.length > 0) {
+        updateControlSnapshot(result);
+        console.log(
+          `[ui-bridge] Proactive snapshot captured: ${result.elements.length} elements`
+        );
+        return true;
+      }
+    } catch {
+      // Tab may have disconnected; ignore
+    }
+    return false;
+  };
+
+  const proactiveTimer = setTimeout(async () => {
+    const captured = await captureSnapshot();
+    if (!captured && tabListeners.has(id)) {
+      // Retry after a longer delay in case auto-registration is slow
+      retryTimer = setTimeout(() => captureSnapshot(), 1500);
+    }
+  }, 500);
+
   return () => {
+    clearTimeout(proactiveTimer);
+    if (retryTimer) clearTimeout(retryTimer);
     tabListeners.delete(id);
     console.log(
       `[ui-bridge] SSE listener disconnected: ${id} (total: ${tabListeners.size})`
@@ -292,6 +334,27 @@ export function registerWebSocketClient(client: WebSocketClient): void {
     lastActivity: now,
   });
   console.log(`[UIBridge] WebSocket client registered: ${client.clientId}`);
+
+  // Proactively capture a snapshot when a WebSocket client connects.
+  // Same pattern as SSE listener — populates the cache for later use.
+  setTimeout(async () => {
+    if (!wsClients.has(client.clientId)) return;
+    try {
+      const result = await queueCommand<ControlSnapshot>(
+        "getControlSnapshot",
+        {},
+        { targetTabId: client.clientId }
+      );
+      if (result.elements && result.elements.length > 0) {
+        updateControlSnapshot(result);
+        console.log(
+          `[ui-bridge] Proactive WS snapshot captured: ${result.elements.length} elements`
+        );
+      }
+    } catch {
+      // Client may have disconnected; ignore
+    }
+  }, 500);
 }
 
 /**
@@ -673,6 +736,8 @@ export function getPendingCommands(): QueuedCommand[] {
  */
 export function updateControlSnapshot(snapshot: ControlSnapshot): void {
   latestControlSnapshot = snapshot;
+  // Persist to globalThis so the cache survives HMR module reloads
+  g.__uiBridgeLatestControlSnapshot = snapshot;
 }
 
 /**
@@ -680,6 +745,343 @@ export function updateControlSnapshot(snapshot: ControlSnapshot): void {
  */
 export function updateSemanticSnapshot(snapshot: SemanticSnapshot): void {
   latestSemanticSnapshot = snapshot;
+}
+
+// ============================================================================
+// Server-Side Snapshot Fallback
+// ============================================================================
+
+/**
+ * When no browser tab is connected, fetch the page HTML from localhost
+ * and extract basic interactive elements. This provides a degraded but
+ * non-empty snapshot for automation tools that query the snapshot API
+ * without a browser tab open.
+ */
+/**
+ * Fetch a single page's HTML and parse it into elements.
+ */
+async function fetchPageElements(
+  url: string
+): Promise<ControlSnapshot["elements"]> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { Accept: "text/html" },
+    });
+    clearTimeout(timeout);
+    if (!res.ok) return [];
+    const html = await res.text();
+    return parseHtmlToSnapshot(html).elements;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Common app page paths to scan for SSR element discovery.
+ * These are tried in parallel when no specific URL is provided.
+ */
+const APP_PAGE_PATHS = ["/chat", "/execute", "/runs", "/runners"];
+
+async function fetchServerSideSnapshot(
+  pagePath?: string
+): Promise<ControlSnapshot | null> {
+  const port = process.env.PORT || 3001;
+  const baseUrl = `http://localhost:${port}`;
+
+  if (pagePath) {
+    // Specific page requested — fetch only that page (and base as fallback)
+    const elements = await fetchPageElements(`${baseUrl}${pagePath}`);
+    if (elements.length > 0) {
+      return {
+        timestamp: Date.now(),
+        elements,
+        components: [],
+        workflows: [],
+        activeRuns: [],
+      };
+    }
+    // Fall back to base URL
+    const baseElements = await fetchPageElements(baseUrl);
+    if (baseElements.length > 0) {
+      return {
+        timestamp: Date.now(),
+        elements: baseElements,
+        components: [],
+        workflows: [],
+        activeRuns: [],
+      };
+    }
+    return null;
+  }
+
+  // No specific page — fetch base URL + common app pages in parallel
+  // and merge elements for comprehensive coverage.
+  const urls = [baseUrl, ...APP_PAGE_PATHS.map((p) => `${baseUrl}${p}`)];
+  const results = await Promise.allSettled(urls.map(fetchPageElements));
+
+  const seenIds = new Set<string>();
+  const merged: ControlSnapshot["elements"] = [];
+
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      for (const el of result.value) {
+        if (!seenIds.has(el.id)) {
+          seenIds.add(el.id);
+          merged.push(el);
+        }
+      }
+    }
+  }
+
+  if (merged.length > 0) {
+    return {
+      timestamp: Date.now(),
+      elements: merged,
+      components: [],
+      workflows: [],
+      activeRuns: [],
+    };
+  }
+  return null;
+}
+
+/**
+ * Infer element type and category from HTML tag name.
+ * Headings and text-like elements are categorized as "content",
+ * while containers and interactive elements are "interactive".
+ */
+function inferTypeAndCategory(tag: string): {
+  type: string;
+  category: "interactive" | "content";
+} {
+  const headingTags = ["h1", "h2", "h3", "h4", "h5", "h6"];
+  const contentTags = [
+    "p",
+    "li",
+    "td",
+    "th",
+    "label",
+    "figcaption",
+    "caption",
+    "blockquote",
+    "pre",
+    "code",
+    "dd",
+    "dt",
+    "legend",
+    "summary",
+  ];
+  if (headingTags.includes(tag)) {
+    return { type: "heading", category: "content" };
+  }
+  if (tag === "span") {
+    return { type: "text", category: "content" };
+  }
+  if (contentTags.includes(tag)) {
+    return { type: tag, category: "content" };
+  }
+  if (
+    tag === "section" ||
+    tag === "article" ||
+    tag === "main" ||
+    tag === "nav"
+  ) {
+    return { type: tag, category: "interactive" };
+  }
+  return { type: "container", category: "interactive" };
+}
+
+/**
+ * Parse raw HTML into a basic ControlSnapshot by extracting interactive
+ * elements (buttons, links, inputs) via regex. This is intentionally
+ * simple — no dependency on a full HTML parser.
+ */
+function parseHtmlToSnapshot(html: string): ControlSnapshot {
+  const elements: ControlSnapshot["elements"] = [];
+  const nullRect = {
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+  };
+  const defaultState = {
+    visible: true,
+    enabled: true,
+    focused: false,
+    rect: nullRect,
+  };
+
+  // Track seen IDs to avoid duplicates
+  const seenIds = new Set<string>();
+
+  // Match <a>, <button>, <input>, <select>, <textarea> tags
+  const tagRe =
+    /<(a|button|input|select|textarea)\b([^>]*)(?:\/>|>([\s\S]*?)<\/\1>)/gi;
+  let match: RegExpExecArray | null;
+  let idx = 0;
+
+  while ((match = tagRe.exec(html)) !== null && idx < 200) {
+    const tag = (match[1] ?? "").toLowerCase();
+    const attrs = match[2] || "";
+    const innerText = (match[3] || "")
+      .replace(/<[^>]*>/g, "")
+      .trim()
+      .slice(0, 100);
+
+    // Extract id attribute (prefer data-ui-id over id)
+    const uiIdMatch = attrs.match(/\bdata-ui-id\s*=\s*["']([^"']+)["']/i);
+    const idMatch = attrs.match(/\bid\s*=\s*["']([^"']+)["']/i);
+    const id: string = uiIdMatch?.[1] ?? idMatch?.[1] ?? `ssr-${tag}-${idx}`;
+
+    if (seenIds.has(id)) {
+      idx++;
+      continue;
+    }
+    seenIds.add(id);
+
+    // Extract aria-label or title
+    const labelMatch = attrs.match(
+      /\b(?:aria-label|title)\s*=\s*["']([^"']+)["']/i
+    );
+    const label =
+      labelMatch?.[1] ||
+      innerText ||
+      (uiIdMatch ? uiIdMatch[1] : idMatch ? idMatch[1] : tag);
+
+    // Determine type and actions
+    let type = tag;
+    const actions: string[] = [];
+    if (tag === "a") {
+      type = "link";
+      actions.push("click");
+    } else if (tag === "button") {
+      type = "button";
+      actions.push("click");
+    } else if (tag === "input") {
+      const inputType = attrs.match(/\btype\s*=\s*["']([^"']+)["']/i);
+      type = `input-${inputType?.[1] || "text"}`;
+      if (inputType?.[1] === "submit" || inputType?.[1] === "button") {
+        actions.push("click");
+      } else {
+        actions.push("type", "clear");
+      }
+    } else if (tag === "select") {
+      type = "select";
+      actions.push("select");
+    } else if (tag === "textarea") {
+      type = "textarea";
+      actions.push("type", "clear");
+    }
+
+    elements.push({
+      id,
+      type,
+      label,
+      actions,
+      state: defaultState,
+      category: "interactive" as const,
+    });
+    idx++;
+  }
+
+  // Also match any element with data-ui-id or id attribute (covers div, span,
+  // section, header, etc.) that wasn't already captured above.
+  const uiIdRe =
+    /<(\w+)\b([^>]*?\bdata-ui-id\s*=\s*["']([^"']+)["'][^>]*)(?:\/>|>([\s\S]*?)<\/\1>)/gi;
+  let uiMatch: RegExpExecArray | null;
+
+  while ((uiMatch = uiIdRe.exec(html)) !== null && idx < 300) {
+    const tag = (uiMatch[1] ?? "").toLowerCase();
+    const attrs = uiMatch[2] || "";
+    const uiId = uiMatch[3] || "";
+    const innerText = (uiMatch[4] || "")
+      .replace(/<[^>]*>/g, "")
+      .trim()
+      .slice(0, 100);
+
+    if (!uiId || seenIds.has(uiId)) continue;
+    seenIds.add(uiId);
+
+    const labelMatch = attrs.match(
+      /\b(?:aria-label|title)\s*=\s*["']([^"']+)["']/i
+    );
+    const label = labelMatch?.[1] || innerText || uiId;
+
+    // Infer type and category from tag
+    const { type: uiType, category: uiCategory } = inferTypeAndCategory(tag);
+
+    elements.push({
+      id: uiId,
+      type: uiType,
+      label,
+      actions: [],
+      state: { ...defaultState, textContent: innerText || undefined },
+      category: uiCategory,
+    });
+    idx++;
+  }
+
+  // Third pass: catch data-ui-id elements that were consumed inside the content
+  // of a parent match above (regex non-overlapping matches skip nested elements).
+  // This uses an opening-tag-only regex that doesn't capture content.
+  const openTagRe =
+    /<(\w+)\b([^>]*?)\bdata-ui-id\s*=\s*["']([^"']+)["']([^>]*)>/gi;
+  let openMatch: RegExpExecArray | null;
+
+  while ((openMatch = openTagRe.exec(html)) !== null && idx < 400) {
+    const tag = (openMatch[1] ?? "").toLowerCase();
+    const attrsBefore = openMatch[2] || "";
+    const uiId = openMatch[3] || "";
+    const attrsAfter = openMatch[4] || "";
+    const allAttrs = attrsBefore + 'data-ui-id="' + uiId + '"' + attrsAfter;
+
+    if (!uiId || seenIds.has(uiId)) continue;
+    seenIds.add(uiId);
+
+    // Try to extract text content after the opening tag
+    const afterTag = html.slice((openMatch.index ?? 0) + openMatch[0].length);
+    const closeIdx = afterTag.indexOf(`</${tag}>`);
+    const innerText =
+      closeIdx >= 0
+        ? afterTag
+            .slice(0, closeIdx)
+            .replace(/<[^>]*>/g, "")
+            .trim()
+            .slice(0, 100)
+        : "";
+
+    const labelMatch = allAttrs.match(
+      /\b(?:aria-label|title)\s*=\s*["']([^"']+)["']/i
+    );
+    const label = labelMatch?.[1] || innerText || uiId;
+
+    const { type: uiType, category: uiCategory } = inferTypeAndCategory(tag);
+
+    elements.push({
+      id: uiId,
+      type: uiType,
+      label,
+      actions: [],
+      state: { ...defaultState, textContent: innerText || undefined },
+      category: uiCategory,
+    });
+    idx++;
+  }
+
+  return {
+    timestamp: Date.now(),
+    elements,
+    components: [],
+    workflows: [],
+    activeRuns: [],
+  };
 }
 
 // ============================================================================
@@ -881,6 +1283,7 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
 
   async getControlSnapshot(request?: {
     targetTabId?: string;
+    url?: string;
   }): Promise<APIResponse<ControlSnapshot>> {
     // Request fresh snapshot from browser
     try {
@@ -889,6 +1292,37 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
         {},
         { targetTabId: request?.targetTabId }
       );
+
+      // The browser AutoRegister may use auto-generated semantic IDs instead
+      // of developer-assigned data-ui-id values due to timing edge cases.
+      // Supplement the browser snapshot with SSR-parsed data-ui-id elements
+      // so that automation tools can reliably find elements by their data-ui-id.
+      try {
+        const ssrSnapshot = await fetchServerSideSnapshot(request?.url);
+        if (ssrSnapshot && ssrSnapshot.elements.length > 0) {
+          const browserIds = new Set(result.elements.map((e) => e.id));
+          for (const ssrEl of ssrSnapshot.elements) {
+            if (!browserIds.has(ssrEl.id)) {
+              // Find a matching browser element by label or type to copy state
+              const matchByLabel = result.elements.find(
+                (e) =>
+                  e.label &&
+                  ssrEl.label &&
+                  e.label.trim().toLowerCase() ===
+                    ssrEl.label.trim().toLowerCase() &&
+                  e.type === ssrEl.type
+              );
+              result.elements.push({
+                ...ssrEl,
+                state: matchByLabel?.state ?? ssrEl.state,
+              });
+            }
+          }
+        }
+      } catch {
+        // SSR supplement failed — return browser snapshot as-is
+      }
+
       updateControlSnapshot(result);
       return success(result);
     } catch {
@@ -896,6 +1330,45 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
       // or timed out). Returning cached data is more useful for automation
       // workflows than an error — the caller can check the timestamp to gauge
       // freshness.
+
+      // When a specific URL is requested, always try SSR fallback for that page
+      // (the cache may contain elements from a different page).
+      if (request?.url) {
+        try {
+          const ssrSnapshot = await fetchServerSideSnapshot(request.url);
+          if (ssrSnapshot && ssrSnapshot.elements.length > 0) {
+            console.log(
+              `[ui-bridge] Server-side fallback snapshot for ${request.url}: ${ssrSnapshot.elements.length} elements`
+            );
+            updateControlSnapshot(ssrSnapshot);
+            return success(ssrSnapshot);
+          }
+        } catch {
+          // SSR fallback for specific URL failed
+        }
+      }
+
+      // If cached snapshot has elements, return it
+      if (latestControlSnapshot.elements.length > 0) {
+        return success(latestControlSnapshot);
+      }
+
+      // No browser connected and cache is empty — try server-side HTML
+      // fallback to provide at least basic page elements for automation
+      // tools that query the snapshot without a browser tab open.
+      try {
+        const ssrSnapshot = await fetchServerSideSnapshot();
+        if (ssrSnapshot && ssrSnapshot.elements.length > 0) {
+          console.log(
+            `[ui-bridge] Server-side fallback snapshot: ${ssrSnapshot.elements.length} elements`
+          );
+          updateControlSnapshot(ssrSnapshot);
+          return success(ssrSnapshot);
+        }
+      } catch {
+        // SSR fallback failed — return whatever cache has
+      }
+
       return success(latestControlSnapshot);
     }
   },
