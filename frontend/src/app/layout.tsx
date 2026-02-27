@@ -8,6 +8,7 @@ import { UIBridgeWrapper, RenderLogWrapper } from "@/lib/ui-bridge";
 import { QueryProvider } from "@/lib/providers/query-provider";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { ClientOverlays } from "@/components/ClientOverlays";
+import { WorkflowUIProvider } from "@/lib/providers/workflow-ui-provider";
 import "./globals.css";
 import "@/styles/tutorial.css";
 
@@ -50,16 +51,18 @@ export default function RootLayout({
           <QueryProvider>
             <AuthProvider>
               <TutorialProvider>
-                <UIBridgeWrapper>
-                  <RenderLogWrapper
-                    enableOnMount={true}
-                    enableMutationObserver={false}
-                    mutationDebounceMs={500}
-                  >
-                    {children}
-                    <ClientOverlays />
-                  </RenderLogWrapper>
-                </UIBridgeWrapper>
+                <WorkflowUIProvider>
+                  <UIBridgeWrapper>
+                    <RenderLogWrapper
+                      enableOnMount={true}
+                      enableMutationObserver={false}
+                      mutationDebounceMs={500}
+                    >
+                      {children}
+                      <ClientOverlays />
+                    </RenderLogWrapper>
+                  </UIBridgeWrapper>
+                </WorkflowUIProvider>
               </TutorialProvider>
             </AuthProvider>
           </QueryProvider>

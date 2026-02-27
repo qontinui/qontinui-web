@@ -1,20 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import type { ChatSessionState, ChatMessage } from "@qontinui/shared-types";
+import { parseOutputLog } from "@qontinui/workflow-utils";
 
-export type ChatSessionState =
-  | "connecting"
-  | "ready"
-  | "processing"
-  | "interrupting"
-  | "closed"
-  | "disconnected"
-  | "error"
-  | "not_found";
-
-export interface ChatMessage {
-  role: "user" | "ai" | "system";
-  content: string;
-  timestamp?: string;
-}
+export type { ChatSessionState, ChatMessage };
 
 interface ChatWebSocketOptions {
   connectionId: number | null;
@@ -474,47 +462,4 @@ export function useChatWebSocket({
     loadSession,
     isGeneratingWorkflow,
   };
-}
-
-/**
- * Parse an output_log string into ChatMessage array.
- * Handles [USER_MESSAGE]...[/USER_MESSAGE] tags and [SESSION_START:N] markers.
- */
-function parseOutputLog(outputLog: string): ChatMessage[] {
-  const messages: ChatMessage[] = [];
-  const userMsgRegex = /\[USER_MESSAGE\]\n?([\s\S]*?)\n?\[\/USER_MESSAGE\]/g;
-
-  // Split by user messages to get alternating AI/user segments
-  let lastIndex = 0;
-  let match;
-
-  while ((match = userMsgRegex.exec(outputLog)) !== null) {
-    // AI content before this user message
-    const aiContent = outputLog
-      .slice(lastIndex, match.index)
-      .replace(/\[SESSION_START:\d+\]/g, "")
-      .trim();
-    if (aiContent) {
-      messages.push({ role: "ai", content: aiContent });
-    }
-
-    // User message
-    const userContent = (match[1] ?? "").trim();
-    if (userContent) {
-      messages.push({ role: "user", content: userContent });
-    }
-
-    lastIndex = match.index + match[0].length;
-  }
-
-  // Remaining AI content after last user message
-  const remaining = outputLog
-    .slice(lastIndex)
-    .replace(/\[SESSION_START:\d+\]/g, "")
-    .trim();
-  if (remaining) {
-    messages.push({ role: "ai", content: remaining });
-  }
-
-  return messages;
 }
