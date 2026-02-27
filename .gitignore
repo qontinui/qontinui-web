@@ -25,6 +25,7 @@ node_modules/
 out/
 build/
 dist/
+tsconfig.tsbuildinfo
 .env.local
 .env.production
 npm-debug.log*
