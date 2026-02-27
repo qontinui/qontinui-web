@@ -67,9 +67,9 @@ async def test_helper_functions():
         "automation_input_events", datetime(2025, 11, 17), "weekly"
     )
     print(f"  Weekly: {name}")
-    assert name.startswith(
-        "automation_input_events_y2025_w"
-    ), "Invalid weekly partition name"
+    assert name.startswith("automation_input_events_y2025_w"), (
+        "Invalid weekly partition name"
+    )
 
     print("\n✓ All helper functions passed")
 
