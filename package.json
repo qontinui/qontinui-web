@@ -1,0 +1,11 @@
+{
+  "name": "qontinui-web",
+  "private": true,
+  "description": "Qontinui web application (monorepo root)",
+  "scripts": {
+    "type-check": "cd frontend && npx tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

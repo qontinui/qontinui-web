@@ -1,0 +1,28 @@
+{
+  "extends": "./frontend/tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "./frontend",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@qontinui/schemas/*": ["../../qontinui-schemas/generated/typescript/*"]
+    }
+  },
+  "include": [
+    "frontend/next-env.d.ts",
+    "frontend/**/*.ts",
+    "frontend/**/*.tsx",
+    "frontend/.next/types/**/*.ts"
+  ],
+  "exclude": [
+    "frontend/node_modules",
+    "frontend/tests",
+    "frontend/vitest.config.ts",
+    "frontend/**/*.test.ts",
+    "frontend/**/*.test.tsx",
+    "frontend/**/*.spec.ts",
+    "frontend/**/*.spec.tsx",
+    "frontend/src/test/**",
+    "node_modules",
+    "backend"
+  ]
+}
