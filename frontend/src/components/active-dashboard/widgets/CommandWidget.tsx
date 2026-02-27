@@ -233,9 +233,15 @@ export function CommandWidget({ runId: _runId }: { runId: string }) {
               );
             })}
             {filtered.length === 0 && (
-              <p className="text-xs text-text-muted py-4 text-center">
-                No commands yet...
-              </p>
+              <div className="flex flex-col items-center justify-center py-8 text-text-muted">
+                <div className="rounded-full bg-white/5 p-2.5 mb-2">
+                  <Terminal className="size-5 opacity-50" />
+                </div>
+                <p className="text-xs font-medium">No commands yet</p>
+                <p className="text-[10px] opacity-70 mt-0.5">
+                  Commands will appear here as they execute
+                </p>
+              </div>
             )}
           </div>
         </ScrollArea>

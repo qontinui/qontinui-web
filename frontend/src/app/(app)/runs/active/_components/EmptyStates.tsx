@@ -2,9 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Inbox, CheckCircle2, History, Rocket } from "lucide-react";
+import { Inbox, CheckCircle2, History, Rocket, WifiOff } from "lucide-react";
 
-export function IdleState() {
+export function IdleState({ isOffline = false }: { isOffline?: boolean }) {
   const router = useRouter();
 
   return (
@@ -21,10 +21,17 @@ export function IdleState() {
             No Active Runs
           </h3>
           <p className="text-sm text-text-muted">
-            Start a workflow to see the live dashboard, or view your run
-            history.
+            {isOffline
+              ? "Connect a runner and start a workflow to see the live dashboard."
+              : "Start a workflow to see the live dashboard, or view your run history."}
           </p>
         </div>
+        {isOffline && (
+          <div className="flex items-center justify-center gap-2 text-xs text-amber-400/80">
+            <WifiOff className="size-3.5" />
+            <span>Runner not connected</span>
+          </div>
+        )}
         <div className="flex items-center justify-center gap-3">
           <Button
             variant="outline"

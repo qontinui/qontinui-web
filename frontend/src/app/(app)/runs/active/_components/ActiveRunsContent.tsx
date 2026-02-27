@@ -10,7 +10,6 @@ import {
   SharedRunnerDataProvider,
   useSharedStepsData,
 } from "@/contexts/SharedRunnerDataContext";
-import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ControlBar } from "@/components/active-dashboard/ControlBar";
@@ -142,10 +141,8 @@ export function ActiveRunsContent() {
   }, [activeRuns, refetchRuns]);
 
   const isOffline = runsOffline;
-  if (isOffline) return <RunnerOfflineState />;
-
   const runs = activeRuns || [];
-  const isLoading = runsLoading;
+  const isLoading = runsLoading && !isOffline;
   const selectedRun =
     runs.find((r) => r.id === selectedRunId) || runs[0] || null;
   const currentRunId = selectedRun?.id || null;
@@ -189,10 +186,10 @@ export function ActiveRunsContent() {
           <RefreshCw className="size-6 animate-spin" />
         </div>
       ) : runs.length === 0 ? (
-        lastKnownRunIds.current.size > 0 ? (
+        lastKnownRunIds.current.size > 0 && !isOffline ? (
           <CompletedState lastRunId={[...lastKnownRunIds.current][0]!} />
         ) : (
-          <IdleState />
+          <IdleState isOffline={isOffline} />
         )
       ) : selectedRun ? (
         <SharedRunnerDataProvider runId={currentRunId}>

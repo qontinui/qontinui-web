@@ -80,6 +80,7 @@ export const CATEGORY_LABELS: Record<SpecCategory, string> = {
   "modal-dialog": "Modal / Dialog",
   navigation: "Navigation",
   "cross-page-consistency": "Cross-Page Consistency",
+  semantic: "Semantic",
   custom: "Custom",
 };
 

@@ -31,6 +31,8 @@ export interface GenerateWorkflowRequest {
   discovery_mode?: "auto" | "enabled" | "disabled";
   /** Whether to include UI Bridge SDK integration instructions in the builder prompt (default: true) */
   include_ui_bridge_instructions?: boolean;
+  /** Whether to enable reflection mode for agentic iterations (default: true) */
+  reflection_mode?: boolean;
 }
 
 /** One pass of the verification->fix loop during workflow generation. */

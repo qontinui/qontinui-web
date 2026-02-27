@@ -266,9 +266,10 @@ function VerificationSummary({ runId }: { runId: string }) {
           </div>
         </>
       ) : (
-        <p className="text-xs text-text-muted">
-          No verification results yet...
-        </p>
+        <div className="flex items-center gap-2 text-xs text-text-muted py-1">
+          <CheckCircle2 className="size-3.5 opacity-50" />
+          <span>No verification results yet</span>
+        </div>
       )}
     </div>
   );
@@ -428,7 +429,10 @@ function CommandSummary({
         </div>
       )}
       {total === 0 && (
-        <p className="text-xs text-text-muted">No commands yet...</p>
+        <div className="flex items-center gap-2 text-xs text-text-muted py-1">
+          <Terminal className="size-3.5 opacity-50" />
+          <span>No commands yet</span>
+        </div>
       )}
     </div>
   );

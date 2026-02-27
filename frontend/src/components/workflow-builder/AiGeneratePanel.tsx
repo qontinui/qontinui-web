@@ -62,6 +62,10 @@ import {
   GENERATION_TEMPLATES,
   type WorkflowGenerationTemplate,
 } from "@/lib/workflow-generation-templates";
+import {
+  GENERATE_PROVIDER_OPTIONS as PROVIDERS,
+  getGenerateModels,
+} from "@qontinui/workflow-utils";
 
 // Icon lookup map for template icons
 const TEMPLATE_ICONS: Record<string, LucideIcon> = {
@@ -74,29 +78,6 @@ const TEMPLATE_ICONS: Record<string, LucideIcon> = {
   ListOrdered,
   Plug,
 };
-
-// Provider and model constants (shared with settings page)
-const PROVIDERS = [
-  { value: "claude_cli", label: "Claude CLI" },
-  { value: "claude_api", label: "Claude API" },
-  { value: "gemini_cli", label: "Gemini CLI" },
-  { value: "gemini_api", label: "Gemini API" },
-] as const;
-
-const CLAUDE_MODELS = [
-  { value: "claude-sonnet-4", label: "Claude Sonnet 4" },
-  { value: "claude-opus-4", label: "Claude Opus 4" },
-  { value: "claude-3-5-sonnet", label: "Claude 3.5 Sonnet" },
-  { value: "claude-3-opus", label: "Claude 3 Opus" },
-];
-
-const GEMINI_MODELS = [
-  { value: "gemini-3-flash", label: "Gemini 3 Flash" },
-  { value: "gemini-3-pro", label: "Gemini 3 Pro" },
-  { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-  { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-  { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
-];
 
 // =============================================================================
 // Auto-run localStorage signal
@@ -193,6 +174,7 @@ export function AiGeneratePanel({
   useEffect(() => {
     localStorage.setItem("generate-include-ui-bridge", String(includeUIBridge));
   }, [includeUIBridge]);
+  const [reflectionMode, setReflectionMode] = useState(true);
   const [discoveryMode, setDiscoveryMode] = useState<
     "auto" | "enabled" | "disabled"
   >("auto");
@@ -243,8 +225,7 @@ export function AiGeneratePanel({
 
   // Models list changes based on selected provider
   const modelsForProvider = useMemo(() => {
-    if (provider.startsWith("gemini")) return GEMINI_MODELS;
-    return CLAUDE_MODELS;
+    return getGenerateModels(provider);
   }, [provider]);
 
   // Saved contexts
@@ -364,6 +345,7 @@ export function AiGeneratePanel({
       auto_include_contexts: autoIncludeContexts,
       discovery_mode: discoveryMode !== "auto" ? discoveryMode : undefined,
       include_ui_bridge_instructions: includeUIBridge,
+      reflection_mode: reflectionMode,
     };
   }, [
     tagsInput,
@@ -378,6 +360,7 @@ export function AiGeneratePanel({
     discoveryMode,
     hasSpecs,
     includeUIBridge,
+    reflectionMode,
   ]);
 
   /** Build a single request (non-batch or fallback). */
@@ -1013,6 +996,31 @@ export function AiGeneratePanel({
                             (data-ui-id attributes, useUIElement hooks, page
                             spec files) in the builder prompt. Disable for
                             projects that don&apos;t use the UI Bridge SDK.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </label>
+                </div>
+                <div className="flex items-end pb-1">
+                  <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+                    <Checkbox
+                      checked={reflectionMode}
+                      onCheckedChange={(v) => setReflectionMode(v === true)}
+                    />
+                    Reflection mode
+                    <TooltipProvider delayDuration={200}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="w-3 h-3 text-zinc-500 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs p-3">
+                          <p className="text-xs text-muted-foreground">
+                            Investigates root causes before fixing failures. The
+                            AI will research related code, use subagents for
+                            exploration, and document findings before
+                            implementing changes. Uses more tokens but produces
+                            better fixes for complex issues.
                           </p>
                         </TooltipContent>
                       </Tooltip>

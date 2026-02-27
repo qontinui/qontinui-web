@@ -17,8 +17,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-function getSeverityColor(severity: string): string {
-  switch (severity.toLowerCase()) {
+function getSeverityColor(severity: string | undefined): string {
+  switch (severity?.toLowerCase()) {
     case "critical":
       return "bg-red-500/20 text-red-400 border-red-500/30";
     case "high":
@@ -246,7 +246,8 @@ export function FindingsWidget({ runId }: { runId: string }) {
   // Severity summary
   const severityCounts = findings.reduce(
     (acc: Record<string, number>, f: Finding) => {
-      acc[f.severity.toLowerCase()] = (acc[f.severity.toLowerCase()] || 0) + 1;
+      const key = (f.severity ?? "unknown").toLowerCase();
+      acc[key] = (acc[key] || 0) + 1;
       return acc;
     },
     {}

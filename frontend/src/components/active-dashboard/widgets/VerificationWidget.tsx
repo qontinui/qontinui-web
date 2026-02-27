@@ -327,9 +327,17 @@ export function VerificationWidget({ runId }: { runId: string }) {
             )}
 
             {results.length === 0 && checkSteps.length === 0 && (
-              <p className="text-xs text-text-muted">
-                No verification results yet...
-              </p>
+              <div className="flex flex-col items-center justify-center py-8 text-text-muted">
+                <div className="rounded-full bg-white/5 p-2.5 mb-2">
+                  <ShieldCheck className="size-5 opacity-50" />
+                </div>
+                <p className="text-xs font-medium">
+                  No verification results yet
+                </p>
+                <p className="text-[10px] opacity-70 mt-0.5">
+                  Results will appear when verification steps run
+                </p>
+              </div>
             )}
           </div>
         </ScrollArea>

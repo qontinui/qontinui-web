@@ -66,6 +66,7 @@ export default function ChatPage() {
 
   return (
     <div
+      id="chat-page"
       data-ui-id="chat-page"
       className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white"
     >
@@ -75,7 +76,13 @@ export default function ChatPage() {
           <div className="flex items-center gap-4">
             <MessageSquare className="w-6 h-6 text-purple-400" />
             <div>
-              <h1 className="text-2xl font-bold text-text-primary">Chat</h1>
+              <h1
+                id="chat-heading"
+                data-ui-id="chat-heading"
+                className="text-2xl font-bold text-text-primary"
+              >
+                Chat
+              </h1>
               <p className="text-xs text-text-muted">
                 Plan features with Claude, then generate executable workflows
               </p>
@@ -84,6 +91,7 @@ export default function ChatPage() {
 
           <div className="flex items-center gap-3">
             <span
+              id="chat-runner-status"
               data-ui-id="chat-runner-status"
               className="flex items-center gap-1.5 text-xs"
             >
@@ -101,6 +109,7 @@ export default function ChatPage() {
             </span>
 
             <Button
+              id="chat-new-btn"
               data-ui-id="chat-new-btn"
               size="sm"
               onClick={handleNewChat}
@@ -120,48 +129,61 @@ export default function ChatPage() {
 
       {/* Main content */}
       <main className="p-6 mx-auto" style={{ maxWidth: "900px" }}>
-        {!isRunnerConnected ? (
-          <div className="flex flex-col items-center justify-center py-24 text-text-muted">
-            <WifiOff className="size-16 mb-4 opacity-20" />
-            <h2 className="text-lg font-medium text-text-secondary mb-2">
-              Runner Not Connected
-            </h2>
-            <p className="text-sm text-center max-w-md">
-              Connect a runner to start chatting with Claude. Go to{" "}
-              <a href="/runners" className="text-brand-primary hover:underline">
-                Runners
-              </a>{" "}
-              to set up a connection.
-            </p>
-          </div>
-        ) : (
-          <div data-ui-id="chat-session-list" className="space-y-4">
-            {/* Empty state */}
-            <div className="flex flex-col items-center justify-center py-24 text-text-muted">
-              <MessageSquare className="size-16 mb-4 opacity-20" />
+        <div
+          id="chat-session-list"
+          data-ui-id="chat-session-list"
+          className="space-y-4"
+        >
+          {!isRunnerConnected ? (
+            <div
+              data-ui-id="chat-offline-state"
+              className="flex flex-col items-center justify-center py-24 text-text-muted"
+            >
+              <WifiOff className="size-16 mb-4 opacity-20" />
               <h2 className="text-lg font-medium text-text-secondary mb-2">
-                Start a Conversation
+                Runner Not Connected
               </h2>
-              <p className="text-sm text-center max-w-md mb-6">
-                Chat with Claude to plan features, discuss architecture, or
-                brainstorm ideas. When you&apos;re ready, generate an executable
-                workflow from the conversation.
+              <p className="text-xs text-text-muted mb-1">No active workflow</p>
+              <p className="text-sm text-center max-w-md">
+                Connect a runner to start chatting with Claude. Go to{" "}
+                <a
+                  href="/runners"
+                  className="text-brand-primary hover:underline"
+                >
+                  Runners
+                </a>{" "}
+                to set up a connection.
               </p>
-              <Button
-                onClick={handleNewChat}
-                disabled={!isChatWsConnected || isCreating}
-                className="gap-2 bg-brand-primary hover:bg-brand-primary/90"
-              >
-                {isCreating ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Plus className="size-4" />
-                )}
-                Start New Chat
-              </Button>
             </div>
-          </div>
-        )}
+          ) : (
+            <>
+              {/* Empty state */}
+              <div className="flex flex-col items-center justify-center py-24 text-text-muted">
+                <MessageSquare className="size-16 mb-4 opacity-20" />
+                <h2 className="text-lg font-medium text-text-secondary mb-2">
+                  Start a Conversation
+                </h2>
+                <p className="text-sm text-center max-w-md mb-6">
+                  Chat with AI to plan features, discuss architecture, or
+                  brainstorm ideas. When you&apos;re ready, generate an
+                  executable workflow from the conversation.
+                </p>
+                <Button
+                  onClick={handleNewChat}
+                  disabled={!isChatWsConnected || isCreating}
+                  className="gap-2 bg-brand-primary hover:bg-brand-primary/90"
+                >
+                  {isCreating ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Plus className="size-4" />
+                  )}
+                  Start New Chat
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
       </main>
     </div>
   );

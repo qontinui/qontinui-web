@@ -82,8 +82,10 @@ export default function ChatSessionPage() {
       sendMessage(content);
       // Auto-name after first message
       if (messages.length === 0 && sessionName === "New Chat") {
+        const trimmed = content.trim().replace(/\n/g, " ");
         const autoName =
-          content.length > 40 ? content.slice(0, 37) + "..." : content;
+          "Chat: " +
+          (trimmed.length > 34 ? trimmed.slice(0, 33) + "…" : trimmed);
         setSessionName(autoName);
         renameSession(taskRunId, autoName);
       }

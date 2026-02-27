@@ -296,13 +296,15 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
       const allSpecs = parseDiscoveredSpecs(rawSpecs);
       const semanticSpecs = filterSelectedGroups(allSpecs);
       if (semanticSpecs.length === 0) return;
-      mergeSpecs(semanticSpecs);
+      const appName = browser.connectedAppName || undefined;
+      const tagged = semanticSpecs.map((s) => ({ ...s, appName }));
+      mergeSpecs(tagged);
     } catch {
       // Discovery failed
     } finally {
       setIsDiscovering(false);
     }
-  }, [browser.isConnected, mergeSpecs]);
+  }, [browser.isConnected, browser.connectedAppName, mergeSpecs]);
 
   // Discover all pages via crawl, then get specs for each
   const handleDiscoverAllPages = useCallback(async () => {
@@ -370,7 +372,8 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
           newPageUrls.add(pathname);
 
           if (semanticSpecs.length > 0) {
-            newSpecs.push(...semanticSpecs);
+            const appName = browser.connectedAppName || undefined;
+            newSpecs.push(...semanticSpecs.map((s) => ({ ...s, appName })));
           }
         } catch {
           pages.push({ url: pathname, title: pathname });
@@ -416,6 +419,7 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
   }, [
     browser.isConnected,
     browser.activeConnection?.url,
+    browser.connectedAppName,
     discoveredSpecs,
     selectedGroupIds,
     notifyParent,
@@ -541,14 +545,18 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
   const specsByPage = useMemo(() => {
     const map = new Map<
       string,
-      { spec: DiscoveredSpec; groups: SpecGroup[] }
+      { spec: DiscoveredSpec; groups: SpecGroup[]; appName?: string }
     >();
     for (const spec of discoveredSpecs) {
       const pageUrl = getSpecPageUrl(spec);
       if (!map.has(pageUrl)) {
-        map.set(pageUrl, { spec, groups: [] });
+        map.set(pageUrl, { spec, groups: [], appName: spec.appName });
       }
       const entry = map.get(pageUrl)!;
+      // Use the first non-empty appName found for this page
+      if (!entry.appName && spec.appName) {
+        entry.appName = spec.appName;
+      }
       for (const group of spec.config?.groups ?? []) {
         entry.groups.push(group);
       }
@@ -790,7 +798,7 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
             {/* Hierarchical page -> groups display */}
             <div className="max-h-[320px] overflow-y-auto space-y-1 pr-1">
               {Array.from(specsByPage.entries()).map(
-                ([pageUrl, { groups }]) => {
+                ([pageUrl, { groups, appName }]) => {
                   const checkState = getPageCheckState(pageUrl);
                   const isCollapsed = collapsedPages.has(pageUrl);
                   const slugId = pageUrl.replace(/^\//, "").replace(/\//g, "-");
@@ -824,7 +832,15 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
                         <span className="text-xs text-zinc-300 font-medium flex-1 truncate">
                           {pageUrl}
                         </span>
-                        <span className="text-[10px] text-zinc-500">
+                        {appName && (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] px-1.5 py-0 text-zinc-500 border-zinc-600 shrink-0"
+                          >
+                            {appName}
+                          </Badge>
+                        )}
+                        <span className="text-[10px] text-zinc-500 shrink-0">
                           {groups.length} group
                           {groups.length !== 1 ? "s" : ""}
                         </span>
