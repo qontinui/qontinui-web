@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import nextDynamic from "next/dynamic";
 import { AutomationProvider } from "@/contexts/automation-context/AutomationProviderV2";
 import { OrganizationProvider } from "@/contexts/organization-context";
+import { RealtimeConnectionsProvider } from "@/contexts/realtime-connections-context";
 import { SidebarProvider, useSidebar } from "@/contexts/sidebar-context";
 import { TabStateProvider } from "@/contexts/tab-state-context";
 import { AppInitializer } from "@/components/offline/AppInitializer";
@@ -63,8 +64,12 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
         <BetaBanner />
         <main className="flex-1 min-h-0 overflow-hidden">{children}</main>
       </div>
-      <SyncQueueViewer />
-      <SessionTimeoutWarning />
+      <Suspense fallback={null}>
+        <SyncQueueViewer />
+      </Suspense>
+      <Suspense fallback={null}>
+        <SessionTimeoutWarning />
+      </Suspense>
     </div>
   );
 }
@@ -76,15 +81,17 @@ export default function AppLayout({
 }>) {
   return (
     <OrganizationProvider>
-      <SidebarProvider>
-        <AutomationProvider>
-          <TabStateProvider>
-            <AppInitializer>
-              <AppLayoutContent>{children}</AppLayoutContent>
-            </AppInitializer>
-          </TabStateProvider>
-        </AutomationProvider>
-      </SidebarProvider>
+      <RealtimeConnectionsProvider>
+        <SidebarProvider>
+          <AutomationProvider>
+            <TabStateProvider>
+              <AppInitializer>
+                <AppLayoutContent>{children}</AppLayoutContent>
+              </AppInitializer>
+            </TabStateProvider>
+          </AutomationProvider>
+        </SidebarProvider>
+      </RealtimeConnectionsProvider>
     </OrganizationProvider>
   );
 }
