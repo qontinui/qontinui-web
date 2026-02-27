@@ -255,29 +255,29 @@ def verify_execution_result(
     assert isinstance(result["final_states"], list), "final_states must be list"
     assert isinstance(result["actions"], list), "actions must be list"
     assert isinstance(result["success"], bool), "success must be boolean"
-    assert isinstance(result["success_rate"], int | float), (
-        "success_rate must be numeric"
-    )
+    assert isinstance(
+        result["success_rate"], int | float
+    ), "success_rate must be numeric"
     assert isinstance(result["total_actions"], int), "total_actions must be integer"
-    assert isinstance(result["successful_actions"], int), (
-        "successful_actions must be integer"
-    )
+    assert isinstance(
+        result["successful_actions"], int
+    ), "successful_actions must be integer"
 
     # Verify counts
-    assert result["total_actions"] == expected_action_count, (
-        f"Expected {expected_action_count} actions, got {result['total_actions']}"
-    )
-    assert len(result["actions"]) == expected_action_count, (
-        f"Expected {expected_action_count} action details, got {len(result['actions'])}"
-    )
+    assert (
+        result["total_actions"] == expected_action_count
+    ), f"Expected {expected_action_count} actions, got {result['total_actions']}"
+    assert (
+        len(result["actions"]) == expected_action_count
+    ), f"Expected {expected_action_count} action details, got {len(result['actions'])}"
 
     # Verify success metrics
-    assert result["success"] == expected_success, (
-        f"Expected success={expected_success}, got {result['success']}"
-    )
-    assert result["success_rate"] >= min_success_rate, (
-        f"Success rate {result['success_rate']} below minimum {min_success_rate}"
-    )
+    assert (
+        result["success"] == expected_success
+    ), f"Expected success={expected_success}, got {result['success']}"
+    assert (
+        result["success_rate"] >= min_success_rate
+    ), f"Success rate {result['success_rate']} below minimum {min_success_rate}"
 
     # Verify action structure
     for i, action in enumerate(result["actions"]):
@@ -293,18 +293,18 @@ def verify_execution_result(
             assert field in action, f"Action {i} missing field: {field}"
 
         assert isinstance(action["action_type"], str), f"Action {i} type must be string"
-        assert isinstance(action["screenshot_path"], str), (
-            f"Action {i} screenshot_path must be string"
-        )
-        assert isinstance(action["success"], bool), (
-            f"Action {i} success must be boolean"
-        )
-        assert isinstance(action["active_states"], list), (
-            f"Action {i} active_states must be list"
-        )
-        assert isinstance(action["duration_ms"], int | float), (
-            f"Action {i} duration_ms must be numeric"
-        )
+        assert isinstance(
+            action["screenshot_path"], str
+        ), f"Action {i} screenshot_path must be string"
+        assert isinstance(
+            action["success"], bool
+        ), f"Action {i} success must be boolean"
+        assert isinstance(
+            action["active_states"], list
+        ), f"Action {i} active_states must be list"
+        assert isinstance(
+            action["duration_ms"], int | float
+        ), f"Action {i} duration_ms must be numeric"
 
     # Verify timestamps
     start_time = datetime.fromisoformat(result["start_time"])

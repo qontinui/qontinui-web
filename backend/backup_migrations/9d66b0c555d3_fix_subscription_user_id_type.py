@@ -22,14 +22,12 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     # Check if subscriptions table exists and if user_id is INTEGER
     conn = op.get_bind()
-    result = conn.execute(
-        sa.text("""
+    result = conn.execute(sa.text("""
         SELECT data_type
         FROM information_schema.columns
         WHERE table_name = 'subscriptions'
         AND column_name = 'user_id'
-    """)
-    )
+    """))
     row = result.fetchone()
 
     if row and row[0] == "integer":

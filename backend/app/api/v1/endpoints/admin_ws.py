@@ -274,29 +274,29 @@ async def websocket_specific_metrics(
                         metrics_data["redis"] = await health_service.get_redis_status()
 
                     if "database" in requested_metrics:
-                        metrics_data[
-                            "database"
-                        ] = await health_service.get_database_health(db)
+                        metrics_data["database"] = (
+                            await health_service.get_database_health(db)
+                        )
 
                     if "security" in requested_metrics:
-                        metrics_data[
-                            "security"
-                        ] = await health_service.get_security_warnings(db)
+                        metrics_data["security"] = (
+                            await health_service.get_security_warnings(db)
+                        )
 
                     if "sessions" in requested_metrics:
-                        metrics_data[
-                            "sessions"
-                        ] = await health_service.get_session_stats(db)
+                        metrics_data["sessions"] = (
+                            await health_service.get_session_stats(db)
+                        )
 
                     if "blacklist" in requested_metrics:
-                        metrics_data[
-                            "blacklist"
-                        ] = await health_service.get_token_blacklist_stats(db)
+                        metrics_data["blacklist"] = (
+                            await health_service.get_token_blacklist_stats(db)
+                        )
 
                     if "system" in requested_metrics:
-                        metrics_data[
-                            "system"
-                        ] = await health_service.get_system_metrics()
+                        metrics_data["system"] = (
+                            await health_service.get_system_metrics()
+                        )
 
                     # Send update
                     from datetime import datetime

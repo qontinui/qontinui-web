@@ -265,9 +265,9 @@ class TestFileBasedExecution:
             # Should either return valid=False or 400/403 error
             if response.status_code == 200:
                 data = response.json()
-                assert data["valid"] is False, (
-                    f"Path traversal not blocked: {malicious_path}"
-                )
+                assert (
+                    data["valid"] is False
+                ), f"Path traversal not blocked: {malicious_path}"
             else:
                 assert response.status_code in [
                     400,

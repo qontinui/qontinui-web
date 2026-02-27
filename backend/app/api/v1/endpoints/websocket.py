@@ -33,9 +33,9 @@ logger = structlog.get_logger(__name__)
 
 # UI Bridge command response correlation
 # Maps command_id -> (runner_websocket, asyncio.Event, result)
-_pending_ui_bridge_commands: dict[
-    str, tuple[WebSocket, asyncio.Event, dict | None]
-] = {}
+_pending_ui_bridge_commands: dict[str, tuple[WebSocket, asyncio.Event, dict | None]] = (
+    {}
+)
 
 # Command timeout in seconds
 UI_BRIDGE_COMMAND_TIMEOUT = 30.0
