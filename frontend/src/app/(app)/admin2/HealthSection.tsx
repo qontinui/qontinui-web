@@ -240,19 +240,19 @@ export default function HealthSection() {
           />
           <Cell
             label="Memory"
-            value={`${redis.memory_percent.toFixed(1)}%`}
-            sub={`${redis.memory_usage_mb.toFixed(0)} / ${redis.memory_limit_mb.toFixed(0)} MB`}
-            bar={redis.memory_percent}
+            value={`${(redis.memory_percent ?? 0).toFixed(1)}%`}
+            sub={`${(redis.memory_usage_mb ?? 0).toFixed(0)} / ${(redis.memory_limit_mb ?? 0).toFixed(0)} MB`}
+            bar={redis.memory_percent ?? 0}
           />
           <Cell
             label="Keys"
-            value={redis.total_keys}
-            sub={`Hit rate: ${redis.hit_rate.toFixed(1)}%`}
+            value={redis.total_keys ?? 0}
+            sub={`Hit rate: ${(redis.hit_rate ?? 0).toFixed(1)}%`}
           />
           <Cell
             label="Clients"
-            value={redis.connected_clients}
-            sub={`Uptime: ${formatUptime(redis.uptime_seconds / 3600)}`}
+            value={redis.connected_clients ?? 0}
+            sub={`Uptime: ${formatUptime((redis.uptime_seconds ?? 0) / 3600)}`}
           />
         </div>
       ) : (
@@ -266,20 +266,20 @@ export default function HealthSection() {
           <div className="grid grid-cols-3 gap-px bg-border">
             <Cell
               label="CPU"
-              value={`${metrics.cpu_usage.toFixed(1)}%`}
-              bar={metrics.cpu_usage}
+              value={`${(metrics.cpu_usage ?? 0).toFixed(1)}%`}
+              bar={metrics.cpu_usage ?? 0}
             />
             <Cell
               label="Memory"
-              value={`${metrics.memory.usage_percent.toFixed(1)}%`}
-              sub={`${metrics.memory.used_mb.toFixed(0)} / ${metrics.memory.total_mb.toFixed(0)} MB`}
-              bar={metrics.memory.usage_percent}
+              value={`${(metrics.memory?.usage_percent ?? 0).toFixed(1)}%`}
+              sub={`${(metrics.memory?.used_mb ?? 0).toFixed(0)} / ${(metrics.memory?.total_mb ?? 0).toFixed(0)} MB`}
+              bar={metrics.memory?.usage_percent ?? 0}
             />
             <Cell
               label="Storage"
-              value={`${metrics.storage.usage_percent.toFixed(1)}%`}
-              sub={`${metrics.storage.used_gb.toFixed(1)} / ${metrics.storage.total_gb.toFixed(1)} GB`}
-              bar={metrics.storage.usage_percent}
+              value={`${(metrics.storage?.usage_percent ?? 0).toFixed(1)}%`}
+              sub={`${(metrics.storage?.used_gb ?? 0).toFixed(1)} / ${(metrics.storage?.total_gb ?? 0).toFixed(1)} GB`}
+              bar={metrics.storage?.usage_percent ?? 0}
             />
           </div>
           <div className="bg-background px-6 py-3 border-b border-border">
@@ -287,19 +287,19 @@ export default function HealthSection() {
               <div>
                 <span className="text-xs text-muted-foreground">DB Active</span>
                 <div className="font-semibold tabular-nums">
-                  {metrics.database_connections.active}
+                  {metrics.database_connections?.active ?? 0}
                 </div>
               </div>
               <div>
                 <span className="text-xs text-muted-foreground">DB Idle</span>
                 <div className="font-semibold tabular-nums">
-                  {metrics.database_connections.idle}
+                  {metrics.database_connections?.idle ?? 0}
                 </div>
               </div>
               <div>
                 <span className="text-xs text-muted-foreground">DB Max</span>
                 <div className="font-semibold tabular-nums">
-                  {metrics.database_connections.max}
+                  {metrics.database_connections?.max ?? 0}
                 </div>
               </div>
               <div>
@@ -329,18 +329,18 @@ export default function HealthSection() {
           />
           <Cell
             label="Standard"
-            value={sessions.standard_sessions}
-            sub={`${(100 - sessions.remember_me_percentage).toFixed(0)}%`}
+            value={sessions.standard_sessions ?? 0}
+            sub={`${(100 - (sessions.remember_me_percentage ?? 0)).toFixed(0)}%`}
           />
           <Cell
             label="Remember Me"
-            value={sessions.remember_me_sessions}
-            sub={`${sessions.remember_me_percentage.toFixed(0)}%`}
+            value={sessions.remember_me_sessions ?? 0}
+            sub={`${(sessions.remember_me_percentage ?? 0).toFixed(0)}%`}
           />
           <Cell
             label="Today"
-            value={sessions.sessions_today}
-            sub={`Avg ${sessions.average_session_duration_minutes.toFixed(0)}m`}
+            value={sessions.sessions_today ?? 0}
+            sub={`Avg ${(sessions.average_session_duration_minutes ?? 0).toFixed(0)}m`}
           />
         </div>
       ) : (
