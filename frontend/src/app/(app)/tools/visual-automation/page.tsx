@@ -109,54 +109,47 @@ export default function ExecuteVisualAutomationPage() {
 
   if (healthLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-text-muted" />
+      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-      {/* Header */}
-      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <Zap className="w-6 h-6 text-brand-primary" />
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
-              Execute
-            </h1>
-          </div>
-          <div className="flex items-center gap-3">
-            {isGuiLocked && (
-              <Badge variant="warning" className="gap-1.5">
-                <Activity className="w-3 h-3 animate-pulse" />
-                GUI In Use
-              </Badge>
-            )}
-            <Badge variant="success" className="gap-1.5">
-              <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
-              Runner Connected
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden text-white">
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <div className="flex items-center gap-3">
+          <Zap className="w-5 h-5 text-primary" />
+          <h1 className="text-lg font-semibold text-foreground">
+            Visual Automation
+          </h1>
+        </div>
+        <div className="flex items-center gap-3">
+          {isGuiLocked && (
+            <Badge variant="warning" className="gap-1.5">
+              <Activity className="w-3 h-3 animate-pulse" />
+              GUI In Use
             </Badge>
-            <Button
-              variant={showToolkit ? "default" : "outline"}
-              size="sm"
-              onClick={() => setShowToolkit(!showToolkit)}
-              className={
-                showToolkit
-                  ? "bg-brand-primary text-black"
-                  : "border-border-default"
-              }
-            >
-              <Wrench className="size-4 mr-1" />
-              Toolkit
-            </Button>
-          </div>
+          )}
+          <Badge variant="success" className="gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
+            Runner Connected
+          </Badge>
+          <Button
+            variant={showToolkit ? "default" : "outline"}
+            size="sm"
+            onClick={() => setShowToolkit(!showToolkit)}
+            className={showToolkit ? "bg-primary text-black" : "border-border"}
+          >
+            <Wrench className="size-4 mr-1" />
+            Toolkit
+          </Button>
         </div>
       </header>
 
       {/* Main Content */}
       <main
-        className="p-6 mx-auto flex gap-6"
+        className="flex-1 overflow-y-auto p-6 mx-auto flex gap-6 w-full"
         style={{ maxWidth: showToolkit ? "1200px" : "896px" }}
       >
         <div className="flex-1 space-y-6">
@@ -165,18 +158,18 @@ export default function ExecuteVisualAutomationPage() {
           )}
 
           {/* Config Status */}
-          <Card className="bg-surface-raised/50 border-border-subtle/50">
+          <Card className="bg-muted border-border">
             <CardContent className="py-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <Settings className="size-4 text-text-muted" />
+                  <Settings className="size-4 text-muted-foreground" />
                   <div>
-                    <p className="text-sm font-medium text-text-primary">
+                    <p className="text-sm font-medium text-foreground">
                       {selectedWorkflow
                         ? selectedWorkflow.name
                         : "No config loaded"}
                     </p>
-                    <p className="text-xs text-text-muted">
+                    <p className="text-xs text-muted-foreground">
                       {selectedWorkflow
                         ? "Active configuration"
                         : "Select a workflow to begin"}
@@ -194,7 +187,7 @@ export default function ExecuteVisualAutomationPage() {
                         variant="ghost"
                         size="sm"
                         onClick={() => setSelectedWorkflowId(null)}
-                        className="text-text-muted text-xs"
+                        className="text-muted-foreground text-xs"
                       >
                         Unload
                       </Button>
@@ -210,12 +203,12 @@ export default function ExecuteVisualAutomationPage() {
           </Card>
 
           {/* Monitor Selector */}
-          <Card className="bg-surface-raised/50 border-border-subtle/50">
+          <Card className="bg-muted border-border">
             <CardContent className="py-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Monitor className="size-4 text-text-muted" />
-                  <Label className="text-sm text-text-primary">
+                  <Monitor className="size-4 text-muted-foreground" />
+                  <Label className="text-sm text-foreground">
                     Target Monitor
                   </Label>
                 </div>
@@ -223,7 +216,7 @@ export default function ExecuteVisualAutomationPage() {
                   value={selectedMonitor}
                   onValueChange={setSelectedMonitor}
                 >
-                  <SelectTrigger className="w-[180px] bg-surface-raised/50 border-border-default">
+                  <SelectTrigger className="w-[180px] bg-muted border-border">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -238,16 +231,16 @@ export default function ExecuteVisualAutomationPage() {
 
           {/* GUI Lock Status Card */}
           {guiLock && (
-            <Card className="bg-surface-raised/50 border-border-subtle/50">
+            <Card className="bg-muted border-border">
               <CardContent className="py-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <Activity className="w-5 h-5 text-text-muted" />
+                    <Activity className="w-5 h-5 text-muted-foreground" />
                     <div>
-                      <p className="text-sm font-medium text-text-primary">
+                      <p className="text-sm font-medium text-foreground">
                         GUI Status
                       </p>
-                      <p className="text-xs text-text-muted">
+                      <p className="text-xs text-muted-foreground">
                         {isGuiLocked
                           ? "A visual automation workflow is using the GUI"
                           : "Ready to execute workflows"}
@@ -263,25 +256,25 @@ export default function ExecuteVisualAutomationPage() {
           )}
 
           {/* Workflow Selection */}
-          <Card className="bg-surface-raised/50 border-border-subtle/50">
+          <Card className="bg-muted border-border">
             <CardHeader>
               <CardTitle className="text-lg text-white flex items-center gap-2">
                 <Play className="w-5 h-5" />
                 Select Workflow
               </CardTitle>
-              <CardDescription className="text-text-muted">
+              <CardDescription className="text-muted-foreground">
                 Choose a workflow to execute on the connected runner
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Search */}
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   placeholder="Search workflows..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 bg-surface-raised/50 border-border-subtle/50 text-white placeholder:text-text-muted"
+                  className="pl-10 bg-muted border-border text-white placeholder:text-muted-foreground"
                 />
               </div>
 
@@ -291,7 +284,7 @@ export default function ExecuteVisualAutomationPage() {
                   {[1, 2, 3].map((i) => (
                     <div
                       key={i}
-                      className="h-16 bg-surface-raised/30 rounded-lg animate-pulse"
+                      className="h-16 bg-muted/50 rounded-lg animate-pulse"
                     />
                   ))}
                 </div>
@@ -302,8 +295,8 @@ export default function ExecuteVisualAutomationPage() {
                 </div>
               ) : filteredWorkflows.length === 0 ? (
                 <div className="text-center py-8">
-                  <Play className="w-12 h-12 mx-auto mb-3 text-text-muted" />
-                  <p className="text-sm text-text-muted">
+                  <Play className="w-12 h-12 mx-auto mb-3 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">
                     {searchQuery
                       ? "No workflows match your search"
                       : "No workflows available. Create one in the automation builder."}
@@ -323,23 +316,23 @@ export default function ExecuteVisualAutomationPage() {
                       }
                       className={`w-full text-left p-4 rounded-lg border transition-all ${
                         selectedWorkflowId === workflow.id
-                          ? "border-brand-primary bg-brand-primary/10"
-                          : "border-border-subtle/50 bg-surface-canvas/50 hover:bg-surface-hover"
+                          ? "border-primary bg-primary/10"
+                          : "border-border bg-background hover:bg-muted"
                       }`}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-text-primary truncate">
+                          <p className="font-medium text-foreground truncate">
                             {workflow.name}
                           </p>
                           {workflow.description && (
-                            <p className="text-sm text-text-muted mt-1 truncate">
+                            <p className="text-sm text-muted-foreground mt-1 truncate">
                               {workflow.description}
                             </p>
                           )}
                         </div>
                         {selectedWorkflowId === workflow.id && (
-                          <CheckCircle2 className="w-5 h-5 text-brand-primary flex-shrink-0 ml-3" />
+                          <CheckCircle2 className="w-5 h-5 text-primary flex-shrink-0 ml-3" />
                         )}
                       </div>
                     </button>
@@ -350,7 +343,7 @@ export default function ExecuteVisualAutomationPage() {
           </Card>
 
           {/* Advanced Settings */}
-          <Card className="bg-surface-raised/50 border-border-subtle/50">
+          <Card className="bg-muted border-border">
             <CardHeader
               className="cursor-pointer py-3"
               onClick={() => setShowAdvanced(!showAdvanced)}
@@ -375,16 +368,16 @@ export default function ExecuteVisualAutomationPage() {
                     placeholder="Comma-separated state names (optional)"
                     value={initialStates}
                     onChange={(e) => setInitialStates(e.target.value)}
-                    className="bg-surface-canvas/50 border-border-subtle/50"
+                    className="bg-background border-border"
                   />
-                  <p className="text-xs text-text-muted">
+                  <p className="text-xs text-muted-foreground">
                     Override the starting states for execution
                   </p>
                 </div>
                 <div className="flex items-center justify-between">
                   <div>
                     <Label className="text-sm">Auto-Minimize</Label>
-                    <p className="text-xs text-text-muted mt-0.5">
+                    <p className="text-xs text-muted-foreground mt-0.5">
                       Minimize the runner window during execution
                     </p>
                   </div>
@@ -399,21 +392,21 @@ export default function ExecuteVisualAutomationPage() {
 
           {/* Run Action */}
           {selectedWorkflow && (
-            <Card className="bg-surface-raised/50 border-border-subtle/50">
+            <Card className="bg-muted border-border">
               <CardContent className="py-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="font-medium text-text-primary">
+                    <p className="font-medium text-foreground">
                       {selectedWorkflow.name}
                     </p>
-                    <p className="text-sm text-text-muted mt-1">
+                    <p className="text-sm text-muted-foreground mt-1">
                       {selectedWorkflow.description ?? "Ready to execute"}
                     </p>
                   </div>
                   <Button
                     onClick={handleRun}
                     disabled={isRunning || isGuiLocked}
-                    className="bg-brand-primary hover:bg-brand-primary/90 text-black font-semibold px-6"
+                    className="bg-primary hover:bg-primary/90 text-black font-semibold px-6"
                   >
                     {isRunning ? (
                       <>
@@ -450,13 +443,13 @@ export default function ExecuteVisualAutomationPage() {
                       <XCircle className="w-6 h-6 text-red-400" />
                     )}
                     <div>
-                      <p className="font-medium text-text-primary">
+                      <p className="font-medium text-foreground">
                         {runResult.success
                           ? "Workflow started successfully"
                           : "Failed to start workflow"}
                       </p>
                       {runResult.success && runResult.taskRunId && (
-                        <p className="text-sm text-text-muted mt-1">
+                        <p className="text-sm text-muted-foreground mt-1">
                           Task Run #{runResult.taskRunId}
                         </p>
                       )}
@@ -485,14 +478,14 @@ export default function ExecuteVisualAutomationPage() {
 
           {/* Info */}
           {!selectedWorkflow && !runResult && (
-            <Card className="bg-surface-raised/50 border-border-subtle/50">
+            <Card className="bg-muted border-border">
               <CardContent className="py-12">
                 <div className="text-center">
-                  <Clock className="w-12 h-12 mx-auto mb-4 text-text-muted" />
-                  <h3 className="text-lg font-medium text-text-secondary mb-2">
+                  <Clock className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                  <h3 className="text-lg font-medium text-muted-foreground mb-2">
                     Select a Workflow to Execute
                   </h3>
-                  <p className="text-sm text-text-muted max-w-md mx-auto">
+                  <p className="text-sm text-muted-foreground max-w-md mx-auto">
                     Choose a workflow from the list above, then click Run to
                     start execution on the connected runner. You can monitor
                     progress in the live dashboard.
@@ -506,7 +499,7 @@ export default function ExecuteVisualAutomationPage() {
         {/* Toolkit Panel */}
         {showToolkit && (
           <div className="w-80 shrink-0 space-y-4">
-            <Card className="bg-surface-raised/50 border-border-subtle/50 sticky top-24">
+            <Card className="bg-muted border-border sticky top-24">
               <CardHeader className="py-3">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <Wrench className="size-4" />
@@ -519,7 +512,7 @@ export default function ExecuteVisualAutomationPage() {
                     variant={toolkitTab === "actions" ? "default" : "outline"}
                     size="sm"
                     onClick={() => setToolkitTab("actions")}
-                    className={`flex-1 text-xs ${toolkitTab === "actions" ? "bg-brand-primary text-black" : ""}`}
+                    className={`flex-1 text-xs ${toolkitTab === "actions" ? "bg-primary text-black" : ""}`}
                   >
                     Quick Actions
                   </Button>
@@ -527,7 +520,7 @@ export default function ExecuteVisualAutomationPage() {
                     variant={toolkitTab === "macros" ? "default" : "outline"}
                     size="sm"
                     onClick={() => setToolkitTab("macros")}
-                    className={`flex-1 text-xs ${toolkitTab === "macros" ? "bg-brand-primary text-black" : ""}`}
+                    className={`flex-1 text-xs ${toolkitTab === "macros" ? "bg-primary text-black" : ""}`}
                   >
                     Macros
                   </Button>
@@ -545,7 +538,7 @@ export default function ExecuteVisualAutomationPage() {
                             variant={clickType === type ? "default" : "outline"}
                             size="sm"
                             onClick={() => setClickType(type)}
-                            className={`text-xs capitalize ${clickType === type ? "bg-brand-primary text-black" : ""}`}
+                            className={`text-xs capitalize ${clickType === type ? "bg-primary text-black" : ""}`}
                           >
                             {type}
                           </Button>
@@ -580,7 +573,7 @@ export default function ExecuteVisualAutomationPage() {
                           placeholder="Text to type..."
                           value={typeText}
                           onChange={(e) => setTypeText(e.target.value)}
-                          className="bg-surface-canvas/50 border-border-subtle/50 text-xs"
+                          className="bg-background border-border text-xs"
                         />
                         <Button
                           variant="outline"
@@ -619,7 +612,7 @@ export default function ExecuteVisualAutomationPage() {
                           placeholder="e.g. ctrl+s"
                           value={hotkeyInput}
                           onChange={(e) => setHotkeyInput(e.target.value)}
-                          className="bg-surface-canvas/50 border-border-subtle/50 text-xs font-mono"
+                          className="bg-background border-border text-xs font-mono"
                         />
                         <Button
                           variant="outline"
@@ -654,11 +647,11 @@ export default function ExecuteVisualAutomationPage() {
 
                 {toolkitTab === "macros" && (
                   <div className="text-center py-6">
-                    <Zap className="size-8 mx-auto mb-2 text-text-muted" />
-                    <p className="text-xs text-text-muted">
+                    <Zap className="size-8 mx-auto mb-2 text-muted-foreground" />
+                    <p className="text-xs text-muted-foreground">
                       No macros available.
                     </p>
-                    <p className="text-xs text-text-muted mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       Create macros in the Build section.
                     </p>
                   </div>

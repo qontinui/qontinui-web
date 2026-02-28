@@ -48,8 +48,6 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import {
-  LayoutDashboard,
-  Shield,
   Play,
   Pause,
   SkipForward,
@@ -492,431 +490,397 @@ export default function WorkflowVisualizationPage() {
     <Suspense
       fallback={
         <div className="flex items-center justify-center min-h-[400px]">
-          <Loader2 className="h-8 w-8 animate-spin text-brand-primary" />
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       }
     >
       <RequireProject pageName="Workflow Visualization">
-        <div className="container mx-auto py-8 h-screen flex flex-col">
-          {/* Navigation Links */}
-          <div className="mb-6 flex items-center gap-4">
-            <Button
-              variant="ghost"
-              onClick={() => router.push("/build/workflows")}
-              className="hover:bg-primary/10"
-            >
-              <LayoutDashboard className="mr-2 h-4 w-4" />
-              Dashboard
-            </Button>
-            {user.is_superuser && (
-              <Button
-                variant="ghost"
-                onClick={() => router.push("/admin")}
-                className="hover:bg-secondary/10"
-              >
-                <Shield className="mr-2 h-4 w-4" />
-                Admin
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              onClick={() => router.push("/states")}
-              className="hover:bg-secondary/10"
-            >
-              <Layers className="mr-2 h-4 w-4" />
-              States
-            </Button>
-          </div>
-
-          {/* Header */}
-          <div className="mb-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-3xl font-bold mb-2 flex items-center gap-2">
-                  <Activity className="h-8 w-8" />
-                  Workflow Visualization
-                </h1>
-                <p className="text-muted-foreground">
-                  Visualize workflow execution with dynamic state changes
-                </p>
-              </div>
-
-              {/* Workflow Selection */}
-              <div className="flex gap-4 items-end">
-                {projects.length > 0 && (
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Project</label>
-                    <Select
-                      value={selectedProject}
-                      onValueChange={setSelectedProject}
-                    >
-                      <SelectTrigger className="w-[200px]">
-                        <SelectValue placeholder="Select project" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Projects</SelectItem>
-                        {projects.map((project) => (
-                          <SelectItem key={project} value={project}>
-                            {project}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-
+        <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+          <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+            <div className="flex items-center gap-3">
+              <Activity className="h-5 w-5 text-primary" />
+              <h1 className="text-lg font-semibold text-foreground">
+                Workflow Visualization
+              </h1>
+            </div>
+            <div className="flex gap-4 items-end">
+              {projects.length > 0 && (
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Workflow</label>
+                  <label className="text-sm font-medium">Project</label>
                   <Select
-                    value={selectedWorkflowId || ""}
-                    onValueChange={setSelectedWorkflowId}
+                    value={selectedProject}
+                    onValueChange={setSelectedProject}
                   >
-                    <SelectTrigger className="w-[300px]">
-                      <SelectValue placeholder="Select workflow" />
+                    <SelectTrigger className="w-[200px]">
+                      <SelectValue placeholder="Select project" />
                     </SelectTrigger>
                     <SelectContent>
-                      {filteredWorkflows.map((workflow) => (
-                        <SelectItem key={workflow.id} value={workflow.id}>
-                          {workflow.name}
+                      <SelectItem value="all">All Projects</SelectItem>
+                      {projects.map((project) => (
+                        <SelectItem key={project} value={project}>
+                          {project}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
+              )}
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Workflow</label>
+                <Select
+                  value={selectedWorkflowId || ""}
+                  onValueChange={setSelectedWorkflowId}
+                >
+                  <SelectTrigger className="w-[300px]">
+                    <SelectValue placeholder="Select workflow" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {filteredWorkflows.map((workflow) => (
+                      <SelectItem key={workflow.id} value={workflow.id}>
+                        {workflow.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
-          </div>
+          </header>
 
-          {/* Main Content */}
-          {selectedWorkflow ? (
-            <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 min-h-0">
-              {/* Left Panel - Workflow */}
-              <Card className="lg:col-span-1 flex flex-col">
-                <CardHeader>
-                  <CardTitle className="flex items-center justify-between">
-                    <span className="flex items-center gap-2">
-                      <span className="bg-muted px-2 py-0.5 rounded text-sm font-medium">
-                        Workflow
+          <main className="flex-1 overflow-y-auto p-6">
+            {selectedWorkflow ? (
+              <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 min-h-0">
+                {/* Left Panel - Workflow */}
+                <Card className="lg:col-span-1 flex flex-col">
+                  <CardHeader>
+                    <CardTitle className="flex items-center justify-between">
+                      <span className="flex items-center gap-2">
+                        <span className="bg-muted px-2 py-0.5 rounded text-sm font-medium">
+                          Workflow
+                        </span>
+                        {selectedWorkflow.name}
                       </span>
-                      {selectedWorkflow.name}
-                    </span>
-                    <Badge
-                      variant={
-                        selectedWorkflow.metadata?.viewMode === "graph"
-                          ? "default"
-                          : "secondary"
-                      }
-                    >
-                      {selectedWorkflow.metadata?.viewMode || "graph"}
-                    </Badge>
-                  </CardTitle>
-                  <CardDescription>
-                    {selectedWorkflow.actions.length} action(s)
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="flex-1 min-h-0">
-                  <WorkflowStructurePanel
-                    workflow={selectedWorkflow}
-                    currentActionIndex={currentActionIndex}
-                    onActionSelect={handleActionSelect}
-                  />
-                </CardContent>
-              </Card>
-
-              {/* Right Panel - Active States Canvas */}
-              <Card className="lg:col-span-2 flex flex-col">
-                <CardHeader>
-                  <CardTitle className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span>Active States</span>
-                      {/* Live Mode Toggle */}
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          id="live-mode"
-                          checked={isLiveMode}
-                          onCheckedChange={(checked) => {
-                            setIsLiveMode(checked);
-                            if (checked) {
-                              clearExecutionState();
-                              setIsPlaying(false);
-                            }
-                          }}
-                        />
-                        <Label
-                          htmlFor="live-mode"
-                          className="text-sm font-normal cursor-pointer"
-                        >
-                          {isLiveMode ? (
-                            <span className="flex items-center gap-1 text-green-600">
-                              <Radio className="h-3 w-3 animate-pulse" />
-                              Live
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">
-                              Playback
-                            </span>
-                          )}
-                        </Label>
-                      </div>
-                      {/* Canvas Mode Toggle */}
-                      <div className="flex items-center gap-2 ml-4 pl-4 border-l">
-                        <Switch
-                          id="canvas-mode"
-                          checked={canvasMode === "config"}
-                          onCheckedChange={(checked) => {
-                            setCanvasMode(checked ? "config" : "perception");
-                          }}
-                        />
-                        <Label
-                          htmlFor="canvas-mode"
-                          className="text-sm font-normal cursor-pointer"
-                        >
-                          {canvasMode === "perception" ? (
-                            <span className="flex items-center gap-1 text-muted-foreground">
-                              <Eye className="h-3 w-3" />
-                              Perception
-                            </span>
-                          ) : (
-                            <span className="flex items-center gap-1 text-blue-600">
-                              <Layers className="h-3 w-3" />
-                              Config
-                            </span>
-                          )}
-                        </Label>
-                      </div>
-                    </div>
-                    <Badge variant="outline">
-                      {isLiveMode
-                        ? `${liveActiveStateIdsArray.length} active`
-                        : `${activeStateIds.length} active`}
-                    </Badge>
-                  </CardTitle>
-                  <CardDescription>
-                    {canvasMode === "config" ? (
-                      <span className="text-blue-600 flex items-center gap-1">
-                        <Layers className="h-3 w-3" />
-                        Showing configured positions
-                      </span>
-                    ) : isLiveMode ? (
-                      isConnected ? (
-                        <span className="text-green-600">
-                          Connected - watching for execution events
-                        </span>
-                      ) : connectionState === "connecting" ||
-                        connectionState === "reconnecting" ? (
-                        <span className="text-yellow-600">
-                          Connecting to runner...
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground flex items-center gap-1">
-                          <WifiOff className="h-3 w-3" />
-                          Disconnected - start runner to enable live perception
-                        </span>
-                      )
-                    ) : (
-                      <div className="flex items-center gap-3">
-                        <History className="h-3 w-3 text-purple-600" />
-                        <span className="text-purple-600">
-                          Historical Playback
-                        </span>
-                        {loadingTestRuns ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : (
-                          <Select
-                            value={selectedTestRunId || ""}
-                            onValueChange={(value) =>
-                              setSelectedTestRunId(value || null)
-                            }
-                          >
-                            <SelectTrigger className="h-7 w-[250px] text-xs">
-                              <SelectValue placeholder="Select a test run..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {testRuns.length === 0 ? (
-                                <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                                  No test runs available
-                                </div>
-                              ) : (
-                                testRuns.map((run) => (
-                                  <SelectItem key={run.id} value={run.id}>
-                                    <span className="flex items-center gap-2">
-                                      <Badge
-                                        variant={
-                                          run.status === "completed"
-                                            ? "default"
-                                            : run.status === "failed"
-                                              ? "destructive"
-                                              : "secondary"
-                                        }
-                                        className="text-[10px] px-1 py-0"
-                                      >
-                                        {run.status}
-                                      </Badge>
-                                      <span className="truncate">
-                                        {new Date(
-                                          run.started_at
-                                        ).toLocaleDateString()}{" "}
-                                        {run.workflow_name || run.run_name}
-                                      </span>
-                                    </span>
-                                  </SelectItem>
-                                ))
-                              )}
-                            </SelectContent>
-                          </Select>
-                        )}
-                        {loadingHistoricalData && (
-                          <Loader2 className="h-3 w-3 animate-spin text-purple-600" />
-                        )}
-                        {historicalResults.length > 0 && (
-                          <Badge variant="outline" className="text-xs">
-                            {historicalResults.length} results
-                          </Badge>
-                        )}
-                      </div>
-                    )}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="flex-1 min-h-0 flex flex-col">
-                  <ActiveStatesCanvas
-                    states={states}
-                    images={images}
-                    monitors={monitors}
-                    mode={canvasMode}
-                    activeStateIds={
-                      isLiveMode
-                        ? liveActiveStateIds
-                        : canvasMode === "perception" && selectedTestRunId
-                          ? historicalActiveStateIds
-                          : activeStateIds
-                    }
-                    foundImages={
-                      isLiveMode
-                        ? imageRecognitions
-                        : canvasMode === "perception" && selectedTestRunId
-                          ? historicalFoundImages
-                          : undefined
-                    }
-                    connectionState={isLiveMode ? connectionState : undefined}
-                  />
-                </CardContent>
-              </Card>
-            </div>
-          ) : (
-            <Card>
-              <CardContent className="p-12 text-center">
-                <Activity className="mx-auto h-16 w-16 text-muted-foreground mb-4" />
-                <p className="text-lg text-muted-foreground">
-                  {loading
-                    ? "Loading workflows..."
-                    : "Select a workflow to visualize"}
-                </p>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Playback Controls */}
-          {selectedWorkflow && (
-            <Card className="mt-6">
-              <CardContent className="py-4">
-                <div className="flex items-center gap-4">
-                  {/* Control Buttons */}
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleReset}
-                      title="Reset to Start"
-                    >
-                      <RotateCcw className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleStepBack}
-                      disabled={currentActionIndex === 0}
-                      title="Step Back"
-                    >
-                      <SkipBack className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={isPlaying ? "default" : "outline"}
-                      onClick={handlePlayPause}
-                      title={isPlaying ? "Pause" : "Play"}
-                    >
-                      {isPlaying ? (
-                        <Pause className="h-4 w-4" />
-                      ) : (
-                        <Play className="h-4 w-4" />
-                      )}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleStepForward}
-                      disabled={
-                        currentActionIndex >=
-                        selectedWorkflow.actions.length - 1
-                      }
-                      title="Step Forward"
-                    >
-                      <SkipForward className="h-4 w-4" />
-                    </Button>
-                  </div>
-
-                  {/* Progress Bar */}
-                  <div className="flex-1">
-                    <Slider
-                      value={[currentActionIndex]}
-                      max={selectedWorkflow.actions.length - 1}
-                      step={1}
-                      onValueChange={([value]) => {
-                        setCurrentActionIndex(value ?? 0);
-                        updateActiveStates(value ?? 0, assumeSuccess);
-                      }}
-                      className="w-full"
+                      <Badge
+                        variant={
+                          selectedWorkflow.metadata?.viewMode === "graph"
+                            ? "default"
+                            : "secondary"
+                        }
+                      >
+                        {selectedWorkflow.metadata?.viewMode || "graph"}
+                      </Badge>
+                    </CardTitle>
+                    <CardDescription>
+                      {selectedWorkflow.actions.length} action(s)
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex-1 min-h-0">
+                    <WorkflowStructurePanel
+                      workflow={selectedWorkflow}
+                      currentActionIndex={currentActionIndex}
+                      onActionSelect={handleActionSelect}
                     />
-                  </div>
+                  </CardContent>
+                </Card>
 
-                  {/* Speed Control */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">
-                      Speed:
-                    </span>
-                    <Select
-                      value={playbackSpeed.toString()}
-                      onValueChange={(value) =>
-                        setPlaybackSpeed(parseInt(value))
+                {/* Right Panel - Active States Canvas */}
+                <Card className="lg:col-span-2 flex flex-col">
+                  <CardHeader>
+                    <CardTitle className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span>Active States</span>
+                        {/* Live Mode Toggle */}
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            id="live-mode"
+                            checked={isLiveMode}
+                            onCheckedChange={(checked) => {
+                              setIsLiveMode(checked);
+                              if (checked) {
+                                clearExecutionState();
+                                setIsPlaying(false);
+                              }
+                            }}
+                          />
+                          <Label
+                            htmlFor="live-mode"
+                            className="text-sm font-normal cursor-pointer"
+                          >
+                            {isLiveMode ? (
+                              <span className="flex items-center gap-1 text-green-600">
+                                <Radio className="h-3 w-3 animate-pulse" />
+                                Live
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">
+                                Playback
+                              </span>
+                            )}
+                          </Label>
+                        </div>
+                        {/* Canvas Mode Toggle */}
+                        <div className="flex items-center gap-2 ml-4 pl-4 border-l">
+                          <Switch
+                            id="canvas-mode"
+                            checked={canvasMode === "config"}
+                            onCheckedChange={(checked) => {
+                              setCanvasMode(checked ? "config" : "perception");
+                            }}
+                          />
+                          <Label
+                            htmlFor="canvas-mode"
+                            className="text-sm font-normal cursor-pointer"
+                          >
+                            {canvasMode === "perception" ? (
+                              <span className="flex items-center gap-1 text-muted-foreground">
+                                <Eye className="h-3 w-3" />
+                                Perception
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1 text-blue-600">
+                                <Layers className="h-3 w-3" />
+                                Config
+                              </span>
+                            )}
+                          </Label>
+                        </div>
+                      </div>
+                      <Badge variant="outline">
+                        {isLiveMode
+                          ? `${liveActiveStateIdsArray.length} active`
+                          : `${activeStateIds.length} active`}
+                      </Badge>
+                    </CardTitle>
+                    <CardDescription>
+                      {canvasMode === "config" ? (
+                        <span className="text-blue-600 flex items-center gap-1">
+                          <Layers className="h-3 w-3" />
+                          Showing configured positions
+                        </span>
+                      ) : isLiveMode ? (
+                        isConnected ? (
+                          <span className="text-green-600">
+                            Connected - watching for execution events
+                          </span>
+                        ) : connectionState === "connecting" ||
+                          connectionState === "reconnecting" ? (
+                          <span className="text-yellow-600">
+                            Connecting to runner...
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground flex items-center gap-1">
+                            <WifiOff className="h-3 w-3" />
+                            Disconnected - start runner to enable live
+                            perception
+                          </span>
+                        )
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <History className="h-3 w-3 text-purple-600" />
+                          <span className="text-purple-600">
+                            Historical Playback
+                          </span>
+                          {loadingTestRuns ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Select
+                              value={selectedTestRunId || ""}
+                              onValueChange={(value) =>
+                                setSelectedTestRunId(value || null)
+                              }
+                            >
+                              <SelectTrigger className="h-7 w-[250px] text-xs">
+                                <SelectValue placeholder="Select a test run..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {testRuns.length === 0 ? (
+                                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                                    No test runs available
+                                  </div>
+                                ) : (
+                                  testRuns.map((run) => (
+                                    <SelectItem key={run.id} value={run.id}>
+                                      <span className="flex items-center gap-2">
+                                        <Badge
+                                          variant={
+                                            run.status === "completed"
+                                              ? "default"
+                                              : run.status === "failed"
+                                                ? "destructive"
+                                                : "secondary"
+                                          }
+                                          className="text-[10px] px-1 py-0"
+                                        >
+                                          {run.status}
+                                        </Badge>
+                                        <span className="truncate">
+                                          {new Date(
+                                            run.started_at
+                                          ).toLocaleDateString()}{" "}
+                                          {run.workflow_name || run.run_name}
+                                        </span>
+                                      </span>
+                                    </SelectItem>
+                                  ))
+                                )}
+                              </SelectContent>
+                            </Select>
+                          )}
+                          {loadingHistoricalData && (
+                            <Loader2 className="h-3 w-3 animate-spin text-purple-600" />
+                          )}
+                          {historicalResults.length > 0 && (
+                            <Badge variant="outline" className="text-xs">
+                              {historicalResults.length} results
+                            </Badge>
+                          )}
+                        </div>
+                      )}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex-1 min-h-0 flex flex-col">
+                    <ActiveStatesCanvas
+                      states={states}
+                      images={images}
+                      monitors={monitors}
+                      mode={canvasMode}
+                      activeStateIds={
+                        isLiveMode
+                          ? liveActiveStateIds
+                          : canvasMode === "perception" && selectedTestRunId
+                            ? historicalActiveStateIds
+                            : activeStateIds
                       }
-                    >
-                      <SelectTrigger className="w-[100px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="2000">0.5x</SelectItem>
-                        <SelectItem value="1000">1x</SelectItem>
-                        <SelectItem value="500">2x</SelectItem>
-                        <SelectItem value="250">4x</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                      foundImages={
+                        isLiveMode
+                          ? imageRecognitions
+                          : canvasMode === "perception" && selectedTestRunId
+                            ? historicalFoundImages
+                            : undefined
+                      }
+                      connectionState={isLiveMode ? connectionState : undefined}
+                    />
+                  </CardContent>
+                </Card>
+              </div>
+            ) : (
+              <Card>
+                <CardContent className="p-12 text-center">
+                  <Activity className="mx-auto h-16 w-16 text-muted-foreground mb-4" />
+                  <p className="text-lg text-muted-foreground">
+                    {loading
+                      ? "Loading workflows..."
+                      : "Select a workflow to visualize"}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
 
-                  {/* Assume Success Toggle */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">Mode:</span>
-                    <Badge
-                      variant={assumeSuccess ? "default" : "destructive"}
-                      className="cursor-pointer"
-                      onClick={() => setAssumeSuccess(!assumeSuccess)}
-                    >
-                      {assumeSuccess ? "Success" : "Failure"}
-                    </Badge>
+            {/* Playback Controls */}
+            {selectedWorkflow && (
+              <Card className="mt-6">
+                <CardContent className="py-4">
+                  <div className="flex items-center gap-4">
+                    {/* Control Buttons */}
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleReset}
+                        title="Reset to Start"
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleStepBack}
+                        disabled={currentActionIndex === 0}
+                        title="Step Back"
+                      >
+                        <SkipBack className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={isPlaying ? "default" : "outline"}
+                        onClick={handlePlayPause}
+                        title={isPlaying ? "Pause" : "Play"}
+                      >
+                        {isPlaying ? (
+                          <Pause className="h-4 w-4" />
+                        ) : (
+                          <Play className="h-4 w-4" />
+                        )}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleStepForward}
+                        disabled={
+                          currentActionIndex >=
+                          selectedWorkflow.actions.length - 1
+                        }
+                        title="Step Forward"
+                      >
+                        <SkipForward className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className="flex-1">
+                      <Slider
+                        value={[currentActionIndex]}
+                        max={selectedWorkflow.actions.length - 1}
+                        step={1}
+                        onValueChange={([value]) => {
+                          setCurrentActionIndex(value ?? 0);
+                          updateActiveStates(value ?? 0, assumeSuccess);
+                        }}
+                        className="w-full"
+                      />
+                    </div>
+
+                    {/* Speed Control */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">
+                        Speed:
+                      </span>
+                      <Select
+                        value={playbackSpeed.toString()}
+                        onValueChange={(value) =>
+                          setPlaybackSpeed(parseInt(value))
+                        }
+                      >
+                        <SelectTrigger className="w-[100px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="2000">0.5x</SelectItem>
+                          <SelectItem value="1000">1x</SelectItem>
+                          <SelectItem value="500">2x</SelectItem>
+                          <SelectItem value="250">4x</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Assume Success Toggle */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">
+                        Mode:
+                      </span>
+                      <Badge
+                        variant={assumeSuccess ? "default" : "destructive"}
+                        className="cursor-pointer"
+                        onClick={() => setAssumeSuccess(!assumeSuccess)}
+                      >
+                        {assumeSuccess ? "Success" : "Failure"}
+                      </Badge>
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+                </CardContent>
+              </Card>
+            )}
+          </main>
         </div>
       </RequireProject>
     </Suspense>

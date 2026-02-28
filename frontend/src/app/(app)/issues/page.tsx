@@ -71,7 +71,7 @@ function IssueCard({
   };
 
   return (
-    <Card className="bg-surface-raised/50 border-border-default/50 hover:border-border-default transition-colors">
+    <Card className="bg-muted border-border hover:border-primary/30 transition-colors">
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
@@ -93,17 +93,17 @@ function IssueCard({
               </Badge>
             </div>
 
-            <h3 className="font-semibold text-white mb-1 truncate">
+            <h3 className="font-semibold text-foreground mb-1 truncate">
               {issue.title}
             </h3>
 
             {issue.description && (
-              <p className="text-sm text-text-muted mb-2 line-clamp-2">
+              <p className="text-sm text-muted-foreground mb-2 line-clamp-2">
                 {issue.description}
               </p>
             )}
 
-            <div className="flex items-center gap-4 text-xs text-text-muted">
+            <div className="flex items-center gap-4 text-xs text-muted-foreground">
               {issue.file && (
                 <span className="truncate max-w-[200px]" title={issue.file}>
                   {issue.file}
@@ -144,7 +144,7 @@ function IssueCard({
                 size="sm"
                 variant="ghost"
                 onClick={() => onStatusChange(issue.id, "skipped")}
-                className="text-text-muted hover:text-text-secondary"
+                className="text-muted-foreground hover:text-foreground"
               >
                 <XCircle className="w-3 h-3" />
               </Button>
@@ -169,12 +169,9 @@ function StatsCards({ projectId }: { projectId?: string }) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         {[...Array(4)].map((_, i) => (
-          <Card
-            key={i}
-            className="bg-surface-raised/50 border-border-default/50"
-          >
+          <Card key={i} className="bg-muted border-border">
             <CardContent className="p-4">
-              <div className="h-16 animate-pulse bg-border-default/50 rounded" />
+              <div className="h-16 animate-pulse bg-border rounded" />
             </CardContent>
           </Card>
         ))}
@@ -188,23 +185,25 @@ function StatsCards({ projectId }: { projectId?: string }) {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-      <Card className="bg-surface-raised/50 border-border-default/50">
+      <Card className="bg-muted border-border">
         <CardContent className="p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-text-muted">Total Issues</p>
-              <p className="text-2xl font-bold text-white">{stats.total}</p>
+              <p className="text-sm text-muted-foreground">Total Issues</p>
+              <p className="text-2xl font-bold text-foreground">
+                {stats.total}
+              </p>
             </div>
             <Bug className="w-8 h-8 text-blue-400" />
           </div>
         </CardContent>
       </Card>
 
-      <Card className="bg-surface-raised/50 border-border-default/50">
+      <Card className="bg-muted border-border">
         <CardContent className="p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-text-muted">Unresolved</p>
+              <p className="text-sm text-muted-foreground">Unresolved</p>
               <p className="text-2xl font-bold text-yellow-400">{unresolved}</p>
             </div>
             <AlertTriangle className="w-8 h-8 text-yellow-400" />
@@ -212,11 +211,11 @@ function StatsCards({ projectId }: { projectId?: string }) {
         </CardContent>
       </Card>
 
-      <Card className="bg-surface-raised/50 border-border-default/50">
+      <Card className="bg-muted border-border">
         <CardContent className="p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-text-muted">Critical</p>
+              <p className="text-sm text-muted-foreground">Critical</p>
               <p className="text-2xl font-bold text-red-400">{critical}</p>
             </div>
             <AlertTriangle className="w-8 h-8 text-red-400" />
@@ -224,11 +223,11 @@ function StatsCards({ projectId }: { projectId?: string }) {
         </CardContent>
       </Card>
 
-      <Card className="bg-surface-raised/50 border-border-default/50">
+      <Card className="bg-muted border-border">
         <CardContent className="p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-text-muted">Resolved Today</p>
+              <p className="text-sm text-muted-foreground">Resolved Today</p>
               <p className="text-2xl font-bold text-green-400">
                 {stats.resolved_today}
               </p>
@@ -279,10 +278,8 @@ export default function IssuesPage() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-lg text-muted-foreground">Loading...</div>
-        </div>
+      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
+        <div className="text-lg text-muted-foreground">Loading...</div>
       </div>
     );
   }
@@ -293,152 +290,125 @@ export default function IssuesPage() {
 
   const issues = issuesData?.issues || [];
   const sortedIssues = [...issues].sort((a, b) => {
-    // Sort by severity first
     const severityDiff =
       severityOrder.indexOf(a.severity) - severityOrder.indexOf(b.severity);
     if (severityDiff !== 0) return severityDiff;
 
-    // Then by status (unresolved first)
     if (a.status === "resolved" && b.status !== "resolved") return 1;
     if (a.status !== "resolved" && b.status === "resolved") return -1;
 
-    // Then by date
     return (
       new Date(b.detected_at).getTime() - new Date(a.detected_at).getTime()
     );
   });
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-      {/* Header */}
-      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
-              Detected Issues
-            </h1>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refetch()}
-            className="border-border-default"
-          >
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Refresh
-          </Button>
-        </div>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <h1 className="text-lg font-semibold text-foreground">
+          Detected Issues
+        </h1>
+        <Button variant="outline" size="sm" onClick={() => refetch()}>
+          <RefreshCw className="w-4 h-4 mr-2" />
+          Refresh
+        </Button>
       </header>
 
-      {/* Main Content */}
-      <main className="p-6 max-w-7xl mx-auto">
-        {/* Stats */}
+      <main className="flex-1 overflow-y-auto p-6">
         <StatsCards projectId={filters.project_id} />
 
-        {/* Filters */}
-        <Card className="bg-surface-raised/50 border-border-default/50 mb-6">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-4 flex-wrap">
-              <div className="flex items-center gap-2">
-                <Filter className="w-4 h-4 text-text-muted" />
-                <span className="text-sm text-text-muted">Filters:</span>
-              </div>
+        <div className="flex items-center gap-4 flex-wrap mb-6 p-4 rounded-lg bg-muted border border-border">
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Filters:</span>
+          </div>
 
-              <Select
-                value={filters.project_id || "all"}
-                onValueChange={(value) =>
-                  setFilters((f) => ({
-                    ...f,
-                    project_id: value === "all" ? undefined : value,
-                  }))
-                }
-              >
-                <SelectTrigger className="w-[200px] bg-surface-canvas border-border-default">
-                  <SelectValue placeholder="All Projects" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Projects</SelectItem>
-                  {projects?.map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
-                      {project.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <Select
+            value={filters.project_id || "all"}
+            onValueChange={(value) =>
+              setFilters((f) => ({
+                ...f,
+                project_id: value === "all" ? undefined : value,
+              }))
+            }
+          >
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="All Projects" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Projects</SelectItem>
+              {projects?.map((project) => (
+                <SelectItem key={project.id} value={project.id}>
+                  {project.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-              <Select
-                value={filters.status || "all"}
-                onValueChange={(value) =>
-                  setFilters((f) => ({
-                    ...f,
-                    status:
-                      value === "all" ? undefined : (value as IssueStatus),
-                  }))
-                }
-              >
-                <SelectTrigger className="w-[150px] bg-surface-canvas border-border-default">
-                  <SelectValue placeholder="All Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="detected">Detected</SelectItem>
-                  <SelectItem value="in_progress">In Progress</SelectItem>
-                  <SelectItem value="resolved">Resolved</SelectItem>
-                  <SelectItem value="skipped">Skipped</SelectItem>
-                </SelectContent>
-              </Select>
+          <Select
+            value={filters.status || "all"}
+            onValueChange={(value) =>
+              setFilters((f) => ({
+                ...f,
+                status: value === "all" ? undefined : (value as IssueStatus),
+              }))
+            }
+          >
+            <SelectTrigger className="w-[150px]">
+              <SelectValue placeholder="All Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="detected">Detected</SelectItem>
+              <SelectItem value="in_progress">In Progress</SelectItem>
+              <SelectItem value="resolved">Resolved</SelectItem>
+              <SelectItem value="skipped">Skipped</SelectItem>
+            </SelectContent>
+          </Select>
 
-              <Select
-                value={filters.severity || "all"}
-                onValueChange={(value) =>
-                  setFilters((f) => ({
-                    ...f,
-                    severity:
-                      value === "all" ? undefined : (value as IssueSeverity),
-                  }))
-                }
-              >
-                <SelectTrigger className="w-[150px] bg-surface-canvas border-border-default">
-                  <SelectValue placeholder="All Severity" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Severity</SelectItem>
-                  <SelectItem value="critical">Critical</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="low">Low</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
+          <Select
+            value={filters.severity || "all"}
+            onValueChange={(value) =>
+              setFilters((f) => ({
+                ...f,
+                severity:
+                  value === "all" ? undefined : (value as IssueSeverity),
+              }))
+            }
+          >
+            <SelectTrigger className="w-[150px]">
+              <SelectValue placeholder="All Severity" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Severity</SelectItem>
+              <SelectItem value="critical">Critical</SelectItem>
+              <SelectItem value="high">High</SelectItem>
+              <SelectItem value="medium">Medium</SelectItem>
+              <SelectItem value="low">Low</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
 
-        {/* Issues List */}
         {isLoading ? (
           <div className="space-y-4">
             {[...Array(5)].map((_, i) => (
-              <Card
-                key={i}
-                className="bg-surface-raised/50 border-border-default/50"
-              >
+              <Card key={i} className="bg-muted border-border">
                 <CardContent className="p-4">
-                  <div className="h-20 animate-pulse bg-border-default/50 rounded" />
+                  <div className="h-20 animate-pulse bg-border rounded" />
                 </CardContent>
               </Card>
             ))}
           </div>
         ) : sortedIssues.length === 0 ? (
-          <Card className="bg-surface-raised/50 border-border-default/50">
-            <CardContent className="p-8 text-center">
-              <Bug className="w-12 h-12 mx-auto text-text-muted mb-4" />
-              <h3 className="text-lg font-semibold text-text-muted mb-2">
-                No Issues Found
-              </h3>
-              <p className="text-sm text-text-muted">
-                Issues detected during AI-assisted automation will appear here.
-              </p>
-            </CardContent>
-          </Card>
+          <div className="p-8 text-center">
+            <Bug className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+            <h3 className="text-lg font-semibold text-muted-foreground mb-2">
+              No Issues Found
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              Issues detected during AI-assisted automation will appear here.
+            </p>
+          </div>
         ) : (
           <div className="space-y-3">
             {sortedIssues.map((issue) => (
@@ -451,9 +421,8 @@ export default function IssuesPage() {
           </div>
         )}
 
-        {/* Total count */}
         {issuesData && issuesData.total > 0 && (
-          <p className="text-sm text-text-muted mt-4 text-center">
+          <p className="text-sm text-muted-foreground mt-4 text-center">
             Showing {sortedIssues.length} of {issuesData.total} issues
           </p>
         )}

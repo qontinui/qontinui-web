@@ -429,16 +429,16 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-surface-raised border border-border-subtle/50 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div className="bg-muted border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle/50">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <h2 className="text-lg font-semibold text-white">
             {isEditing ? "Edit Hook" : "Create Hook"}
           </h2>
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 text-text-muted hover:text-white"
+            className="h-8 w-8 text-muted-foreground hover:text-white"
             onClick={onClose}
           >
             <X className="w-4 h-4" />
@@ -449,18 +449,18 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
           {/* Basic Information */}
           <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium text-text-muted mb-1.5 block">
+              <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
                 Name <span className="text-red-400">*</span>
               </label>
               <Input
                 placeholder="e.g., Slack Error Notification"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="bg-surface-raised/50 border-border-subtle/50 text-white"
+                className="bg-muted border-border text-white"
               />
             </div>
             <div>
-              <label className="text-sm font-medium text-text-muted mb-1.5 block">
+              <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
                 Description
               </label>
               <Textarea
@@ -468,14 +468,14 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={2}
-                className="bg-surface-raised/50 border-border-subtle/50 text-white resize-none"
+                className="bg-muted border-border text-white resize-none"
               />
             </div>
           </div>
 
           {/* Trigger Selection */}
           <div>
-            <label className="text-sm font-medium text-text-muted mb-2 block">
+            <label className="text-sm font-medium text-muted-foreground mb-2 block">
               Trigger
             </label>
             <div className="grid grid-cols-2 gap-2">
@@ -485,16 +485,16 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                   onClick={() => setTrigger(t.value)}
                   className={`p-3 rounded-lg border text-left transition-all ${
                     trigger === t.value
-                      ? "border-brand-primary/50 bg-brand-primary/5 ring-1 ring-brand-primary/30"
-                      : "border-border-subtle/30 bg-surface-canvas/20 hover:border-border-subtle/50"
+                      ? "border-primary/50 bg-primary/5 ring-1 ring-primary/30"
+                      : "border-border bg-background/20 hover:border-border"
                   }`}
                 >
                   <p
-                    className={`text-sm font-medium ${trigger === t.value ? "text-brand-primary" : "text-text-primary"}`}
+                    className={`text-sm font-medium ${trigger === t.value ? "text-primary" : "text-foreground"}`}
                   >
                     {t.label}
                   </p>
-                  <p className="text-xs text-text-muted mt-0.5">
+                  <p className="text-xs text-muted-foreground mt-0.5">
                     {t.description}
                   </p>
                 </button>
@@ -504,7 +504,7 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
 
           {/* Action Type Selection */}
           <div>
-            <label className="text-sm font-medium text-text-muted mb-2 block">
+            <label className="text-sm font-medium text-muted-foreground mb-2 block">
               Action Type
             </label>
             <div className="grid grid-cols-2 gap-2">
@@ -516,18 +516,18 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                     onClick={() => setActionType(a.value)}
                     className={`p-3 rounded-lg border text-left transition-all flex items-start gap-3 ${
                       actionType === a.value
-                        ? "border-brand-primary/50 bg-brand-primary/5 ring-1 ring-brand-primary/30"
-                        : "border-border-subtle/30 bg-surface-canvas/20 hover:border-border-subtle/50"
+                        ? "border-primary/50 bg-primary/5 ring-1 ring-primary/30"
+                        : "border-border bg-background/20 hover:border-border"
                     }`}
                   >
                     <Icon className={`w-5 h-5 mt-0.5 ${a.color}`} />
                     <div>
                       <p
-                        className={`text-sm font-medium ${actionType === a.value ? "text-brand-primary" : "text-text-primary"}`}
+                        className={`text-sm font-medium ${actionType === a.value ? "text-primary" : "text-foreground"}`}
                       >
                         {a.label}
                       </p>
-                      <p className="text-xs text-text-muted mt-0.5">
+                      <p className="text-xs text-muted-foreground mt-0.5">
                         {a.description}
                       </p>
                     </div>
@@ -539,14 +539,14 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
 
           {/* Action Configuration */}
           <div className="space-y-4">
-            <label className="text-sm font-medium text-text-muted block">
+            <label className="text-sm font-medium text-muted-foreground block">
               Action Configuration
             </label>
 
             {actionType === "command" && (
               <div className="space-y-3">
                 <div>
-                  <label className="text-xs text-text-muted mb-1 block">
+                  <label className="text-xs text-muted-foreground mb-1 block">
                     Command <span className="text-red-400">*</span>
                   </label>
                   <Textarea
@@ -554,26 +554,26 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                     value={cmdCommand}
                     onChange={(e) => setCmdCommand(e.target.value)}
                     rows={3}
-                    className="bg-surface-raised/50 border-border-subtle/50 text-white font-mono text-sm resize-none"
+                    className="bg-muted border-border text-white font-mono text-sm resize-none"
                   />
-                  <p className="text-xs text-text-muted mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     Supports variables: {"{{task_name}}"}, {"{{iteration}}"},
                     {"{{status}}"}, {"{{error}}"}
                   </p>
                 </div>
                 <div>
-                  <label className="text-xs text-text-muted mb-1 block">
+                  <label className="text-xs text-muted-foreground mb-1 block">
                     Working Directory
                   </label>
                   <Input
                     placeholder="e.g., C:\path\to\directory"
                     value={cmdWorkingDir}
                     onChange={(e) => setCmdWorkingDir(e.target.value)}
-                    className="bg-surface-raised/50 border-border-subtle/50 text-white text-sm"
+                    className="bg-muted border-border text-white text-sm"
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-text-muted mb-1 block">
+                  <label className="text-xs text-muted-foreground mb-1 block">
                     Timeout (seconds)
                   </label>
                   <Input
@@ -582,11 +582,11 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                     max={600}
                     value={cmdTimeout}
                     onChange={(e) => setCmdTimeout(Number(e.target.value))}
-                    className="bg-surface-raised/50 border-border-subtle/50 text-white text-sm w-32"
+                    className="bg-muted border-border text-white text-sm w-32"
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-text-muted mb-1 block">
+                  <label className="text-xs text-muted-foreground mb-1 block">
                     Environment Variables
                   </label>
                   {cmdEnvVars.map(([key, val], i) => (
@@ -599,9 +599,9 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                           updated[i] = [e.target.value, val];
                           setCmdEnvVars(updated);
                         }}
-                        className="bg-surface-raised/50 border-border-subtle/50 text-white text-sm flex-1 font-mono"
+                        className="bg-muted border-border text-white text-sm flex-1 font-mono"
                       />
-                      <span className="text-text-muted">=</span>
+                      <span className="text-muted-foreground">=</span>
                       <Input
                         placeholder="value"
                         value={val}
@@ -610,12 +610,12 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                           updated[i] = [key, e.target.value];
                           setCmdEnvVars(updated);
                         }}
-                        className="bg-surface-raised/50 border-border-subtle/50 text-white text-sm flex-1"
+                        className="bg-muted border-border text-white text-sm flex-1"
                       />
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 text-text-muted hover:text-red-400"
+                        className="h-8 w-8 text-muted-foreground hover:text-red-400"
                         onClick={() =>
                           setCmdEnvVars(cmdEnvVars.filter((_, j) => j !== i))
                         }
@@ -627,7 +627,7 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-brand-primary hover:text-brand-primary/80"
+                    className="text-primary hover:text-primary/80"
                     onClick={() => setCmdEnvVars([...cmdEnvVars, ["", ""]])}
                   >
                     <Plus className="w-3.5 h-3.5 mr-1" />
@@ -641,17 +641,17 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
               <div className="space-y-3">
                 <div className="grid grid-cols-4 gap-2">
                   <div>
-                    <label className="text-xs text-text-muted mb-1 block">
+                    <label className="text-xs text-muted-foreground mb-1 block">
                       Method
                     </label>
                     <Select
                       value={webhookMethod}
                       onValueChange={setWebhookMethod}
                     >
-                      <SelectTrigger className="bg-surface-raised/50 border-border-subtle/50 text-sm">
+                      <SelectTrigger className="bg-muted border-border text-sm">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="bg-surface-raised border-border-subtle">
+                      <SelectContent className="bg-muted border-border">
                         {["GET", "POST", "PUT", "PATCH", "DELETE"].map((m) => (
                           <SelectItem key={m} value={m}>
                             {m}
@@ -661,19 +661,19 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                     </Select>
                   </div>
                   <div className="col-span-3">
-                    <label className="text-xs text-text-muted mb-1 block">
+                    <label className="text-xs text-muted-foreground mb-1 block">
                       URL <span className="text-red-400">*</span>
                     </label>
                     <Input
                       placeholder="https://hooks.slack.com/services/..."
                       value={webhookUrl}
                       onChange={(e) => setWebhookUrl(e.target.value)}
-                      className="bg-surface-raised/50 border-border-subtle/50 text-white text-sm"
+                      className="bg-muted border-border text-white text-sm"
                     />
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs text-text-muted mb-1 block">
+                  <label className="text-xs text-muted-foreground mb-1 block">
                     Headers
                   </label>
                   {webhookHeaders.map(([key, val], i) => (
@@ -686,9 +686,9 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                           updated[i] = [e.target.value, val];
                           setWebhookHeaders(updated);
                         }}
-                        className="bg-surface-raised/50 border-border-subtle/50 text-white text-sm flex-1 font-mono"
+                        className="bg-muted border-border text-white text-sm flex-1 font-mono"
                       />
-                      <span className="text-text-muted">:</span>
+                      <span className="text-muted-foreground">:</span>
                       <Input
                         placeholder="value"
                         value={val}
@@ -697,12 +697,12 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                           updated[i] = [key, e.target.value];
                           setWebhookHeaders(updated);
                         }}
-                        className="bg-surface-raised/50 border-border-subtle/50 text-white text-sm flex-1"
+                        className="bg-muted border-border text-white text-sm flex-1"
                       />
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 text-text-muted hover:text-red-400"
+                        className="h-8 w-8 text-muted-foreground hover:text-red-400"
                         onClick={() =>
                           setWebhookHeaders(
                             webhookHeaders.filter((_, j) => j !== i)
@@ -716,7 +716,7 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-brand-primary hover:text-brand-primary/80"
+                    className="text-primary hover:text-primary/80"
                     onClick={() =>
                       setWebhookHeaders([...webhookHeaders, ["", ""]])
                     }
@@ -726,7 +726,7 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                   </Button>
                 </div>
                 <div>
-                  <label className="text-xs text-text-muted mb-1 block">
+                  <label className="text-xs text-muted-foreground mb-1 block">
                     Request Body
                   </label>
                   <Textarea
@@ -734,14 +734,14 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                     value={webhookBody}
                     onChange={(e) => setWebhookBody(e.target.value)}
                     rows={4}
-                    className="bg-surface-raised/50 border-border-subtle/50 text-white font-mono text-sm resize-none"
+                    className="bg-muted border-border text-white font-mono text-sm resize-none"
                   />
-                  <p className="text-xs text-text-muted mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     Supports variable substitution like {"{{task_name}}"}
                   </p>
                 </div>
                 <div>
-                  <label className="text-xs text-text-muted mb-1 block">
+                  <label className="text-xs text-muted-foreground mb-1 block">
                     Timeout (seconds)
                   </label>
                   <Input
@@ -750,7 +750,7 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                     max={300}
                     value={webhookTimeout}
                     onChange={(e) => setWebhookTimeout(Number(e.target.value))}
-                    className="bg-surface-raised/50 border-border-subtle/50 text-white text-sm w-32"
+                    className="bg-muted border-border text-white text-sm w-32"
                   />
                 </div>
               </div>
@@ -759,14 +759,14 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
             {actionType === "log" && (
               <div className="space-y-3">
                 <div>
-                  <label className="text-xs text-text-muted mb-1 block">
+                  <label className="text-xs text-muted-foreground mb-1 block">
                     Log Level
                   </label>
                   <Select value={logLevel} onValueChange={setLogLevel}>
-                    <SelectTrigger className="bg-surface-raised/50 border-border-subtle/50 text-sm w-40">
+                    <SelectTrigger className="bg-muted border-border text-sm w-40">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-surface-raised border-border-subtle">
+                    <SelectContent className="bg-muted border-border">
                       {["debug", "info", "warn", "error"].map((l) => (
                         <SelectItem key={l} value={l}>
                           {l}
@@ -776,7 +776,7 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                   </Select>
                 </div>
                 <div>
-                  <label className="text-xs text-text-muted mb-1 block">
+                  <label className="text-xs text-muted-foreground mb-1 block">
                     Message <span className="text-red-400">*</span>
                   </label>
                   <Textarea
@@ -784,9 +784,9 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                     value={logMessage}
                     onChange={(e) => setLogMessage(e.target.value)}
                     rows={3}
-                    className="bg-surface-raised/50 border-border-subtle/50 text-white text-sm resize-none"
+                    className="bg-muted border-border text-white text-sm resize-none"
                   />
-                  <p className="text-xs text-text-muted mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     Variables: {"{{task_run_id}}"}, {"{{task_name}}"},
                     {"{{iteration}}"}, {"{{status}}"}, {"{{error}}"}
                   </p>
@@ -797,18 +797,18 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
             {actionType === "notification" && (
               <div className="space-y-3">
                 <div>
-                  <label className="text-xs text-text-muted mb-1 block">
+                  <label className="text-xs text-muted-foreground mb-1 block">
                     Title <span className="text-red-400">*</span>
                   </label>
                   <Input
                     placeholder="Task {{task_name}} Complete"
                     value={notifTitle}
                     onChange={(e) => setNotifTitle(e.target.value)}
-                    className="bg-surface-raised/50 border-border-subtle/50 text-white text-sm"
+                    className="bg-muted border-border text-white text-sm"
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-text-muted mb-1 block">
+                  <label className="text-xs text-muted-foreground mb-1 block">
                     Body <span className="text-red-400">*</span>
                   </label>
                   <Textarea
@@ -816,9 +816,9 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                     value={notifBody}
                     onChange={(e) => setNotifBody(e.target.value)}
                     rows={3}
-                    className="bg-surface-raised/50 border-border-subtle/50 text-white text-sm resize-none"
+                    className="bg-muted border-border text-white text-sm resize-none"
                   />
-                  <p className="text-xs text-text-muted mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     Supports variable substitution.
                   </p>
                 </div>
@@ -830,17 +830,17 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
           <div>
             <div className="flex items-center justify-between mb-2">
               <div>
-                <label className="text-sm font-medium text-text-muted block">
+                <label className="text-sm font-medium text-muted-foreground block">
                   Conditions
                 </label>
-                <p className="text-xs text-text-muted">
+                <p className="text-xs text-muted-foreground">
                   Hook will only execute if all conditions are met
                 </p>
               </div>
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-brand-primary hover:text-brand-primary/80"
+                className="text-primary hover:text-primary/80"
                 onClick={() =>
                   setConditions([
                     ...conditions,
@@ -853,7 +853,7 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
               </Button>
             </div>
             {conditions.length === 0 ? (
-              <p className="text-xs text-text-muted italic py-2">
+              <p className="text-xs text-muted-foreground italic py-2">
                 No conditions. Hook will always execute on trigger.
               </p>
             ) : (
@@ -868,10 +868,10 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                         setConditions(updated);
                       }}
                     >
-                      <SelectTrigger className="bg-surface-raised/50 border-border-subtle/50 text-sm w-36">
+                      <SelectTrigger className="bg-muted border-border text-sm w-36">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="bg-surface-raised border-border-subtle">
+                      <SelectContent className="bg-muted border-border">
                         {CONDITION_VARIABLES.map((v) => (
                           <SelectItem key={v.value} value={v.value}>
                             {v.label}
@@ -887,10 +887,10 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                         setConditions(updated);
                       }}
                     >
-                      <SelectTrigger className="bg-surface-raised/50 border-border-subtle/50 text-sm w-40">
+                      <SelectTrigger className="bg-muted border-border text-sm w-40">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="bg-surface-raised border-border-subtle">
+                      <SelectContent className="bg-muted border-border">
                         {CONDITION_OPERATORS.map((op) => (
                           <SelectItem key={op.value} value={op.value}>
                             {op.label}
@@ -911,12 +911,12 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                         updated[i] = { ...cond, value: parsed };
                         setConditions(updated);
                       }}
-                      className="bg-surface-raised/50 border-border-subtle/50 text-white text-sm flex-1"
+                      className="bg-muted border-border text-white text-sm flex-1"
                     />
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 text-text-muted hover:text-red-400"
+                      className="h-8 w-8 text-muted-foreground hover:text-red-400"
                       onClick={() =>
                         setConditions(conditions.filter((_, j) => j !== i))
                       }
@@ -931,26 +931,26 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
 
           {/* Execution Settings */}
           <div className="space-y-3">
-            <label className="text-sm font-medium text-text-muted block">
+            <label className="text-sm font-medium text-muted-foreground block">
               Execution Settings
             </label>
             <div>
-              <label className="text-xs text-text-muted mb-1 block">
+              <label className="text-xs text-muted-foreground mb-1 block">
                 Execution Order
               </label>
               <Input
                 type="number"
                 value={executionOrder}
                 onChange={(e) => setExecutionOrder(Number(e.target.value))}
-                className="bg-surface-raised/50 border-border-subtle/50 text-white text-sm w-32"
+                className="bg-muted border-border text-white text-sm w-32"
               />
-              <p className="text-xs text-text-muted mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Lower values execute first
               </p>
             </div>
             <div className="flex items-center gap-3">
               <Switch checked={enabled} onCheckedChange={setEnabled} />
-              <label className="text-sm text-text-muted">Enabled</label>
+              <label className="text-sm text-muted-foreground">Enabled</label>
             </div>
             <div className="flex items-center gap-3">
               <Switch
@@ -958,10 +958,10 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                 onCheckedChange={setContinueOnFailure}
               />
               <div>
-                <label className="text-sm text-text-muted">
+                <label className="text-sm text-muted-foreground">
                   Continue on failure
                 </label>
-                <p className="text-xs text-text-muted">
+                <p className="text-xs text-muted-foreground">
                   Uncheck to stop execution if this hook fails
                 </p>
               </div>
@@ -981,14 +981,14 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
             <Button
               variant="ghost"
               onClick={onClose}
-              className="text-text-muted hover:text-white"
+              className="text-muted-foreground hover:text-white"
             >
               Cancel
             </Button>
             <Button
               onClick={handleSave}
               disabled={saving}
-              className="bg-brand-primary hover:bg-brand-primary/90 text-black font-semibold"
+              className="bg-primary hover:bg-primary/90 text-black font-semibold"
             >
               {saving ? (
                 <>
@@ -1043,19 +1043,19 @@ function HookCard({
     <div
       className={`rounded-lg border transition-all ${
         hook.enabled
-          ? "border-border-subtle/50 bg-surface-canvas/30"
-          : "border-border-subtle/30 bg-surface-canvas/10 opacity-60"
+          ? "border-border bg-background/30"
+          : "border-border bg-background/10 opacity-60"
       }`}
     >
       <div className="p-4">
         <div className="flex items-start gap-3">
           {/* Drag handle */}
-          <GripVertical className="w-4 h-4 text-text-muted/40 mt-1 flex-shrink-0 cursor-grab" />
+          <GripVertical className="w-4 h-4 text-muted-foreground/40 mt-1 flex-shrink-0 cursor-grab" />
 
           {/* Content */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <p className="text-sm font-semibold text-text-primary">
+              <p className="text-sm font-semibold text-foreground">
                 {hook.name}
               </p>
               <Badge
@@ -1092,11 +1092,11 @@ function HookCard({
               )}
             </div>
             {hook.description && (
-              <p className="text-xs text-text-muted italic truncate mb-1">
+              <p className="text-xs text-muted-foreground italic truncate mb-1">
                 {hook.description}
               </p>
             )}
-            <p className="text-xs text-text-muted font-mono truncate">
+            <p className="text-xs text-muted-foreground font-mono truncate">
               {getActionSummary(hook.action_type, hook.action_config)}
             </p>
           </div>
@@ -1106,7 +1106,7 @@ function HookCard({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-text-muted hover:text-white"
+              className="h-7 w-7 text-muted-foreground hover:text-white"
               onClick={() => onToggleEnabled(hook.id, !hook.enabled)}
               title={hook.enabled ? "Disable" : "Enable"}
             >
@@ -1119,7 +1119,7 @@ function HookCard({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-brand-primary hover:text-brand-primary/80"
+              className="h-7 w-7 text-primary hover:text-primary/80"
               onClick={() => onTest(hook.id)}
               disabled={testing}
               title="Test Hook"
@@ -1133,7 +1133,7 @@ function HookCard({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-text-muted hover:text-white"
+              className="h-7 w-7 text-muted-foreground hover:text-white"
               onClick={() => onEdit(hook)}
               title="Edit"
             >
@@ -1142,7 +1142,7 @@ function HookCard({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-text-muted hover:text-red-400"
+              className="h-7 w-7 text-muted-foreground hover:text-red-400"
               onClick={() => onDelete(hook.id)}
               disabled={deleting}
               title="Delete"
@@ -1156,7 +1156,7 @@ function HookCard({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-text-muted hover:text-white"
+              className="h-7 w-7 text-muted-foreground hover:text-white"
               onClick={() => setExpanded(!expanded)}
               title={expanded ? "Collapse" : "Expand"}
             >
@@ -1189,12 +1189,12 @@ function HookCard({
               >
                 {testResult.success ? "Test Passed" : "Test Failed"}
               </span>
-              <span className="text-xs text-text-muted">
+              <span className="text-xs text-muted-foreground">
                 ({testResult.duration_ms}ms)
               </span>
             </div>
             {testResult.output && (
-              <pre className="text-xs text-text-muted font-mono mt-1 overflow-x-auto max-h-24 overflow-y-auto">
+              <pre className="text-xs text-muted-foreground font-mono mt-1 overflow-x-auto max-h-24 overflow-y-auto">
                 {testResult.output}
               </pre>
             )}
@@ -1207,30 +1207,33 @@ function HookCard({
 
       {/* Expanded Details */}
       {expanded && (
-        <div className="border-t border-border-subtle/30 px-4 py-3 space-y-3 bg-surface-canvas/10">
+        <div className="border-t border-border px-4 py-3 space-y-3 bg-background/10">
           <div>
-            <p className="text-xs font-medium text-text-muted mb-1">
+            <p className="text-xs font-medium text-muted-foreground mb-1">
               Action Configuration
             </p>
-            <pre className="text-xs text-text-muted font-mono bg-surface-canvas/30 rounded p-2 overflow-x-auto max-h-40 overflow-y-auto">
+            <pre className="text-xs text-muted-foreground font-mono bg-background/30 rounded p-2 overflow-x-auto max-h-40 overflow-y-auto">
               {JSON.stringify(hook.action_config, null, 2)}
             </pre>
           </div>
           {hook.conditions.length > 0 && (
             <div>
-              <p className="text-xs font-medium text-text-muted mb-1">
+              <p className="text-xs font-medium text-muted-foreground mb-1">
                 Conditions
               </p>
               <div className="space-y-1">
                 {hook.conditions.map((c, i) => (
-                  <p key={i} className="text-xs text-text-muted font-mono">
+                  <p
+                    key={i}
+                    className="text-xs text-muted-foreground font-mono"
+                  >
                     {c.variable} {c.operator} {JSON.stringify(c.value)}
                   </p>
                 ))}
               </div>
             </div>
           )}
-          <div className="flex gap-6 text-xs text-text-muted">
+          <div className="flex gap-6 text-xs text-muted-foreground">
             <span>Order: {hook.execution_order}</span>
             <span>
               Created: {new Date(hook.created_at).toLocaleDateString()}
@@ -1346,24 +1349,24 @@ export default function HooksPage() {
 
   if (healthLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-text-muted" />
+      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   if (isOffline) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-        <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-          <div className="flex items-center px-6 py-4">
-            <Webhook className="w-6 h-6 text-sky-400 mr-3" />
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-sky-400 to-blue-400 bg-clip-text text-transparent">
+      <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden text-white">
+        <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+          <div className="flex items-center gap-3">
+            <Webhook className="w-5 h-5 text-sky-400" />
+            <h1 className="text-lg font-semibold text-foreground">
               Lifecycle Hooks
             </h1>
           </div>
         </header>
-        <main className="p-6 max-w-4xl mx-auto">
+        <main className="flex-1 overflow-y-auto p-6 max-w-4xl mx-auto w-full">
           <RunnerOfflineState message="Start the Qontinui Runner desktop app to configure lifecycle hooks." />
         </main>
       </div>
@@ -1371,43 +1374,35 @@ export default function HooksPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-      {/* Header */}
-      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div>
-            <div className="flex items-center gap-3">
-              <Webhook className="w-6 h-6 text-sky-400" />
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-sky-400 to-blue-400 bg-clip-text text-transparent">
-                Lifecycle Hooks
-              </h1>
-            </div>
-            <p className="text-sm text-text-muted mt-1 ml-9">
-              Configure actions to run at specific execution events
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => refetch()}
-              className="text-text-muted hover:text-white"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </Button>
-            <Button
-              onClick={handleCreate}
-              className="bg-brand-primary hover:bg-brand-primary/90 text-black font-semibold"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              New Hook
-            </Button>
-          </div>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden text-white">
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <div className="flex items-center gap-3">
+          <Webhook className="w-5 h-5 text-sky-400" />
+          <h1 className="text-lg font-semibold text-foreground">
+            Lifecycle Hooks
+          </h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => refetch()}
+            className="text-muted-foreground hover:text-white"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </Button>
+          <Button
+            onClick={handleCreate}
+            className="bg-primary hover:bg-primary/90 text-black font-semibold"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            New Hook
+          </Button>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="p-6 max-w-4xl mx-auto space-y-6">
+      <main className="flex-1 overflow-y-auto p-6 max-w-4xl mx-auto space-y-6 w-full">
         {/* Error banner */}
         {error && (
           <div className="flex items-center justify-between gap-2 text-red-400 bg-red-950/20 border border-red-500/30 rounded-lg p-3">
@@ -1427,7 +1422,7 @@ export default function HooksPage() {
         )}
 
         {/* Hooks List */}
-        <Card className="bg-surface-raised/50 border-border-subtle/50">
+        <Card className="bg-muted border-border">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
@@ -1435,7 +1430,7 @@ export default function HooksPage() {
                   <Zap className="w-5 h-5" />
                   Configured Hooks
                 </CardTitle>
-                <CardDescription className="text-text-muted mt-1">
+                <CardDescription className="text-muted-foreground mt-1">
                   Actions triggered by runner lifecycle events
                 </CardDescription>
               </div>
@@ -1448,12 +1443,12 @@ export default function HooksPage() {
             {/* Search */}
             {hooks && hooks.length > 3 && (
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   placeholder="Search hooks..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 bg-surface-raised/50 border-border-subtle/50 text-white placeholder:text-text-muted"
+                  className="pl-10 bg-muted border-border text-white placeholder:text-muted-foreground"
                 />
               </div>
             )}
@@ -1463,7 +1458,7 @@ export default function HooksPage() {
                 {[1, 2, 3].map((i) => (
                   <div
                     key={i}
-                    className="h-20 bg-surface-raised/30 rounded-lg animate-pulse"
+                    className="h-20 bg-muted/50 rounded-lg animate-pulse"
                   />
                 ))}
               </div>
@@ -1474,8 +1469,8 @@ export default function HooksPage() {
               </div>
             ) : !filteredHooks || filteredHooks.length === 0 ? (
               <div className="text-center py-12">
-                <Webhook className="w-10 h-10 mx-auto mb-3 text-text-muted" />
-                <p className="text-sm text-text-muted mb-4">
+                <Webhook className="w-10 h-10 mx-auto mb-3 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground mb-4">
                   {hooks && hooks.length > 0
                     ? "No hooks match your search"
                     : "No lifecycle hooks configured"}
@@ -1483,7 +1478,7 @@ export default function HooksPage() {
                 {(!hooks || hooks.length === 0) && (
                   <Button
                     onClick={handleCreate}
-                    className="bg-brand-primary hover:bg-brand-primary/90 text-black font-semibold"
+                    className="bg-primary hover:bg-primary/90 text-black font-semibold"
                   >
                     <Plus className="w-4 h-4 mr-2" />
                     Create Your First Hook
@@ -1511,7 +1506,7 @@ export default function HooksPage() {
         </Card>
 
         {/* Info Card */}
-        <Card className="bg-surface-raised/50 border-border-subtle/50">
+        <Card className="bg-muted border-border">
           <CardContent className="py-6">
             <div className="grid grid-cols-4 gap-4">
               {ACTION_TYPES.map((a) => {
@@ -1519,10 +1514,10 @@ export default function HooksPage() {
                 return (
                   <div key={a.value} className="text-center">
                     <Icon className={`w-8 h-8 mx-auto mb-2 ${a.color}`} />
-                    <p className="text-sm font-medium text-text-primary">
+                    <p className="text-sm font-medium text-foreground">
                       {a.label}
                     </p>
-                    <p className="text-xs text-text-muted mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       {a.description}
                     </p>
                   </div>

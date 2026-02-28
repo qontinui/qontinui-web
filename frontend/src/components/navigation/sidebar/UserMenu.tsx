@@ -94,11 +94,11 @@ export function UserMenu({
       <DropdownMenuTrigger asChild>
         <button
           data-tutorial-id="sidebar-user-menu"
-          className="flex w-full items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-surface-hover"
+          className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-surface-hover"
         >
-          <Avatar className="size-8">
+          <Avatar className="size-7">
             <AvatarFallback
-              className="text-xs"
+              className="text-[10px]"
               style={{
                 backgroundColor: "var(--brand-primary)",
                 color: "white",
@@ -108,14 +108,14 @@ export function UserMenu({
             </AvatarFallback>
           </Avatar>
           <div className="flex flex-1 flex-col items-start text-left">
-            <span className="text-sm font-medium text-text-primary">
+            <span className="text-xs font-medium text-text-primary">
               {user.username || user.email.split("@")[0]}
             </span>
-            <span className="truncate text-xs text-text-muted">
+            <span className="truncate text-[11px] text-text-muted">
               {user.email}
             </span>
           </div>
-          <ChevronDown className="size-4 shrink-0 text-text-muted" />
+          <ChevronDown className="size-3.5 shrink-0 text-text-muted" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56">

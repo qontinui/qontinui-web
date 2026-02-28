@@ -7,7 +7,7 @@ import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { DeficiencyList } from "@/components/testing/DeficiencyList";
-import { ArrowLeft, TrendingUp, BarChart3 } from "lucide-react";
+import { TrendingUp, BarChart3 } from "lucide-react";
 
 export default function ProjectDeficienciesPage() {
   const { user, loading: authLoading } = useAuth();
@@ -25,10 +25,8 @@ export default function ProjectDeficienciesPage() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-lg text-muted-foreground">Loading...</div>
-        </div>
+      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
+        <div className="text-lg text-muted-foreground">Loading...</div>
       </div>
     );
   }
@@ -38,53 +36,36 @@ export default function ProjectDeficienciesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-      {/* Header */}
-      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              onClick={() => router.push(`/projects/${projectId}/testing`)}
-              className="text-text-muted hover:text-white"
-            >
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back
-            </Button>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-[#F59E0B] to-[#EF4444] bg-clip-text text-transparent">
-              Deficiency Management
-            </h1>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.push(`/projects/${projectId}/testing`)}
-              className="border-border-default hover:border-[#F59E0B] hover:text-[#F59E0B]"
-            >
-              <BarChart3 className="w-4 h-4 mr-2" />
-              Test Runs
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                router.push(`/projects/${projectId}/testing/coverage`)
-              }
-              className="border-border-default hover:border-[#F59E0B] hover:text-[#F59E0B]"
-            >
-              <TrendingUp className="w-4 h-4 mr-2" />
-              Coverage
-            </Button>
-          </div>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <h1 className="text-lg font-semibold text-foreground">
+          Deficiency Management
+        </h1>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push(`/projects/${projectId}/testing`)}
+          >
+            <BarChart3 className="w-4 h-4 mr-2" />
+            Test Runs
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              router.push(`/projects/${projectId}/testing/coverage`)
+            }
+          >
+            <TrendingUp className="w-4 h-4 mr-2" />
+            Coverage
+          </Button>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="p-6 max-w-7xl mx-auto">
+      <main className="flex-1 overflow-y-auto p-6">
         <div className="mb-6">
-          <h2 className="text-2xl font-bold mb-2">Deficiencies</h2>
-          <p className="text-text-muted">
+          <p className="text-sm text-muted-foreground">
             Track and manage deficiencies found during testing
           </p>
         </div>

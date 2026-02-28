@@ -6,13 +6,12 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { profileService } from "@/services/service-factory";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ProfileForm } from "@/components/profile/profile-form";
 import { AvatarUpload } from "@/components/profile/avatar-upload";
 import { StorageUsageCard } from "@/components/profile/storage-usage-card";
 import { ActivityFeed } from "@/components/profile/activity-feed";
-import { ArrowLeft, Crown, Shield, Cable } from "lucide-react";
+import { Crown, Shield } from "lucide-react";
 import { toast } from "sonner";
 import type {
   StorageUsage,
@@ -76,10 +75,6 @@ export default function ProfilePage() {
     await profileService.deleteAvatar();
   };
 
-  const handleBackToDashboard = () => {
-    router.push("/build/workflows");
-  };
-
   // Show loading while auth is checking
   if (authLoading) {
     return (
@@ -97,43 +92,14 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
       {/* Header */}
-      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleBackToDashboard}
-              className="text-text-muted hover:text-white"
-              data-ui-id="profile-back-btn"
-            >
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Dashboard
-            </Button>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.push("/connect-runner")}
-              className="border-border-default hover:border-brand-primary hover:text-brand-primary bg-transparent"
-              title="Connect Desktop Runner"
-              data-ui-id="profile-connect-runner-btn"
-            >
-              <Cable className="w-4 h-4 mr-2" />
-              Connect Runner
-            </Button>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
-              My Profile
-            </h1>
-          </div>
-        </div>
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <h1 className="text-lg font-semibold">Profile</h1>
       </header>
 
       {/* Main Content */}
-      <main className="p-6 max-w-7xl mx-auto">
+      <main className="flex-1 overflow-y-auto p-6">
         {/* User Header Section */}
         <div
           className="mb-8"
@@ -142,27 +108,27 @@ export default function ProfilePage() {
         >
           <div className="flex items-center justify-between mb-2">
             <div>
-              <h2 className="text-3xl font-bold mb-2">
+              <h2 className="text-xl font-semibold mb-1">
                 {user.full_name || user.username}
               </h2>
-              <p className="text-text-muted">@{user.username}</p>
+              <p className="text-muted-foreground">@{user.username}</p>
             </div>
             <div className="flex items-center gap-2">
               {user.is_superuser && (
-                <Badge className="bg-gradient-to-r from-yellow-500/20 to-orange-500/20 text-yellow-400 border-yellow-500/30">
+                <Badge className="bg-yellow-500/10 text-yellow-500">
                   <Crown className="w-3 h-3 mr-1" />
                   Admin
                 </Badge>
               )}
               {user.is_beta && (
-                <Badge className="bg-brand-secondary/20 text-brand-secondary border-brand-secondary/30">
+                <Badge className="bg-primary/10 text-primary">
                   <Shield className="w-3 h-3 mr-1" />
                   Beta User
                 </Badge>
               )}
             </div>
           </div>
-          <p className="text-sm text-text-muted">
+          <p className="text-sm text-muted-foreground">
             Member since{" "}
             {new Date(user.created_at).toLocaleDateString("en-US", {
               month: "long",
@@ -174,7 +140,7 @@ export default function ProfilePage() {
 
         {loading ? (
           <div className="text-center py-12">
-            <div className="text-lg text-text-muted">
+            <div className="text-lg text-muted-foreground">
               Loading profile data...
             </div>
           </div>

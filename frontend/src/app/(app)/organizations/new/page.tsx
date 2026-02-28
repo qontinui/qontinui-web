@@ -5,17 +5,10 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { useOrganization } from "@/hooks/useOrganization";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, Building2, Loader2, Sparkles } from "lucide-react";
+import { Building2, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 export default function NewOrganizationPage() {
@@ -34,7 +27,6 @@ export default function NewOrganizationPage() {
     }
   }, [user, authLoading, router]);
 
-  // Auto-generate slug from name
   useEffect(() => {
     if (name) {
       const generatedSlug = name
@@ -78,7 +70,7 @@ export default function NewOrganizationPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-brand-primary" />
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
           <div className="text-lg text-muted-foreground">Loading...</div>
         </div>
       </div>
@@ -86,42 +78,14 @@ export default function NewOrganizationPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-      <div className="p-6 max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <Button
-            variant="ghost"
-            onClick={handleCancel}
-            className="mb-4 text-text-muted hover:text-white"
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Organizations
-          </Button>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+      <div className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <h1 className="text-lg font-semibold">Create New Organization</h1>
+      </div>
 
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-12 h-12 bg-gradient-to-br from-brand-primary to-brand-secondary rounded-lg flex items-center justify-center">
-              <Building2 className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold">Create New Organization</h1>
-              <p className="text-text-muted">
-                Set up a new organization for your team
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Form */}
-        <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm mb-6">
-          <CardHeader>
-            <CardTitle>Organization Details</CardTitle>
-            <CardDescription>
-              Enter the basic information for your new organization
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Name */}
+      <div className="flex-1 overflow-auto">
+        <div className="max-w-2xl mx-auto px-6 py-6 space-y-6">
+          <div className="space-y-4">
             <div>
               <Label htmlFor="name">
                 Organization Name <span className="text-red-400">*</span>
@@ -131,35 +95,33 @@ export default function NewOrganizationPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., Acme Corporation"
-                className="bg-surface-canvas border-border-subtle text-white"
+                className="bg-background border-border mt-1.5"
                 autoFocus
               />
-              <p className="text-xs text-text-muted mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 This will be the display name for your organization
               </p>
             </div>
 
-            {/* Slug (Auto-generated, read-only display) */}
             <div>
               <Label htmlFor="slug">Organization Slug</Label>
-              <div className="relative">
+              <div className="relative mt-1.5">
                 <Input
                   id="slug"
                   value={slug}
                   readOnly
                   placeholder="auto-generated-from-name"
-                  className="bg-surface-canvas/50 border-border-subtle text-text-muted cursor-not-allowed"
+                  className="bg-muted/50 border-border text-muted-foreground cursor-not-allowed"
                 />
                 <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                  <Sparkles className="w-4 h-4 text-brand-secondary" />
+                  <Sparkles className="w-4 h-4 text-primary" />
                 </div>
               </div>
-              <p className="text-xs text-text-muted mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Automatically generated from the organization name
               </p>
             </div>
 
-            {/* Description */}
             <div>
               <Label htmlFor="description">Description</Label>
               <Textarea
@@ -168,98 +130,79 @@ export default function NewOrganizationPage() {
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Describe what your organization does..."
                 rows={4}
-                className="bg-surface-canvas border-border-subtle text-white resize-none"
+                className="bg-background border-border resize-none mt-1.5"
               />
-              <p className="text-xs text-text-muted mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Help team members understand the purpose of this organization
               </p>
             </div>
-          </CardContent>
-        </Card>
+          </div>
 
-        {/* Info Card */}
-        <Card className="bg-surface-raised/50 border-brand-primary/30 backdrop-blur-sm mb-6">
-          <CardContent className="p-6">
-            <div className="flex gap-3">
-              <div className="w-10 h-10 bg-brand-primary/20 rounded-lg flex items-center justify-center flex-shrink-0">
-                <Sparkles className="w-5 h-5 text-brand-primary" />
-              </div>
-              <div>
-                <h4 className="font-semibold mb-1 text-brand-primary">
-                  What happens next?
-                </h4>
-                <ul className="text-sm text-text-muted space-y-1">
-                  <li>• You&apos;ll be set as the organization owner</li>
-                  <li>• You can invite team members to collaborate</li>
-                  <li>• All projects can be shared with your organization</li>
-                  <li>• You can manage roles and permissions for members</li>
-                </ul>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+          <div className="border border-border rounded-lg p-4 bg-muted/50">
+            <h4 className="text-sm font-medium mb-2 text-primary">
+              What happens next?
+            </h4>
+            <ul className="text-sm text-muted-foreground space-y-1">
+              <li>You&apos;ll be set as the organization owner</li>
+              <li>You can invite team members to collaborate</li>
+              <li>All projects can be shared with your organization</li>
+              <li>You can manage roles and permissions for members</li>
+            </ul>
+          </div>
 
-        {/* Actions */}
-        <div className="flex justify-end gap-3">
-          <Button
-            variant="outline"
-            onClick={handleCancel}
-            disabled={creating}
-            className="border-border-default"
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleCreate}
-            disabled={!name.trim() || creating}
-            className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium min-w-[150px]"
-          >
-            {creating ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Creating...
-              </>
-            ) : (
-              <>
-                <Building2 className="w-4 h-4 mr-2" />
-                Create Organization
-              </>
-            )}
-          </Button>
-        </div>
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="outline"
+              onClick={handleCancel}
+              disabled={creating}
+              className="border-border"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreate}
+              disabled={!name.trim() || creating}
+              className="bg-primary text-primary-foreground min-w-[150px]"
+            >
+              {creating ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <Building2 className="w-4 h-4 mr-2" />
+                  Create Organization
+                </>
+              )}
+            </Button>
+          </div>
 
-        {/* Preview */}
-        {name && (
-          <Card className="bg-surface-raised/30 border-border-subtle/30 backdrop-blur-sm mt-8">
-            <CardHeader>
-              <CardTitle className="text-lg text-text-muted">Preview</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="p-4 border border-border-subtle/50 rounded-lg bg-surface-canvas/50">
-                <div className="flex items-start gap-3 mb-3">
-                  <div className="w-12 h-12 bg-gradient-to-br from-brand-primary to-brand-secondary rounded-lg flex items-center justify-center text-xl font-bold">
-                    {name.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-xl font-bold mb-1">{name}</h3>
-                    {description && (
-                      <p className="text-text-muted text-sm">{description}</p>
-                    )}
-                  </div>
+          {name && (
+            <div className="border border-border rounded-lg p-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-3">
+                Preview
+              </p>
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center text-lg font-bold text-primary">
+                  {name.charAt(0).toUpperCase()}
                 </div>
-                <div className="flex gap-4 text-sm text-text-muted">
-                  <div className="flex items-center gap-1">
-                    <Building2 className="w-4 h-4" />
+                <div className="flex-1">
+                  <h3 className="text-sm font-semibold">{name}</h3>
+                  {description && (
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      {description}
+                    </p>
+                  )}
+                  <div className="flex gap-4 text-xs text-muted-foreground mt-2">
                     <span>0 projects</span>
-                  </div>
-                  <div className="flex items-center gap-1">
                     <span>1 member (you)</span>
                   </div>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

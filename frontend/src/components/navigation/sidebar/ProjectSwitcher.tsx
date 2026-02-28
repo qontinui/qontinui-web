@@ -31,14 +31,14 @@ export function ProjectSwitcher({
     return (
       <div
         className={cn(
-          "flex items-center gap-3 rounded-md px-2 py-2",
+          "flex items-center gap-2.5 rounded-md px-2 py-1.5",
           isCollapsed && "justify-center px-0"
         )}
       >
-        <div className="flex size-8 shrink-0 animate-pulse items-center justify-center rounded-md bg-surface-hover" />
+        <div className="flex size-7 shrink-0 animate-pulse items-center justify-center rounded-md bg-surface-hover" />
         {!isCollapsed && (
-          <div className="flex flex-1 flex-col gap-1.5">
-            <div className="h-4 w-24 animate-pulse rounded bg-surface-hover" />
+          <div className="flex flex-1 flex-col gap-1">
+            <div className="h-3.5 w-24 animate-pulse rounded bg-surface-hover" />
             <div className="h-3 w-16 animate-pulse rounded bg-surface-hover" />
           </div>
         )}
@@ -52,30 +52,30 @@ export function ProjectSwitcher({
         <button
           data-tutorial-id="sidebar-project-switcher"
           className={cn(
-            "flex w-full items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-colors hover:bg-surface-hover",
+            "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors hover:bg-surface-hover",
             isCollapsed && "justify-center px-0"
           )}
         >
           <div
-            className="flex size-8 shrink-0 items-center justify-center rounded-md"
+            className="flex size-7 shrink-0 items-center justify-center rounded-md"
             style={{
               backgroundColor: "var(--brand-secondary)",
               color: "white",
             }}
           >
-            <Workflow className="size-4" />
+            <Workflow className="size-3.5" />
           </div>
           {!isCollapsed && (
             <>
               <div className="flex flex-1 flex-col items-start text-left">
-                <span className="font-semibold text-text-primary">
+                <span className="text-xs font-semibold text-text-primary">
                   {currentProject?.name || "Select Project"}
                 </span>
-                <span className="text-xs text-text-muted">
+                <span className="text-[11px] text-text-muted">
                   {projects.length} project{projects.length !== 1 ? "s" : ""}
                 </span>
               </div>
-              <ChevronsUpDown className="size-4 shrink-0 text-text-muted" />
+              <ChevronsUpDown className="size-3.5 shrink-0 text-text-muted" />
             </>
           )}
         </button>

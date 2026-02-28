@@ -4,13 +4,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useRunnerHealth, runnerApi, type StorageInfo } from "@/lib/runner-api";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
 import { toast } from "sonner";
 import { Loader2, HardDrive, Trash2, Trash, Info } from "lucide-react";
 
@@ -33,22 +26,22 @@ function StorageProgressBar({
         <span
           data-content-role="label"
           data-content-label="storage category"
-          className="text-text-primary font-medium"
+          className="text-foreground font-medium"
         >
           {label}
         </span>
         <span
           data-content-role="metric"
           data-content-label="storage usage"
-          className="text-text-muted"
+          className="text-muted-foreground"
         >
           {usageMb.toFixed(1)} MB / {maxMb.toFixed(0)} MB
           <span className="ml-2 text-xs">({fileCount} files)</span>
         </span>
       </div>
-      <div className="h-2 rounded-full bg-surface-raised overflow-hidden">
+      <div className="h-2 rounded-full bg-muted overflow-hidden">
         <div
-          className="h-full rounded-full bg-brand-primary transition-all duration-300"
+          className="h-full rounded-full bg-primary transition-all duration-300"
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -137,7 +130,7 @@ export default function StorageSettingsPage() {
   if (healthLoading || loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="size-8 animate-spin text-text-muted" />
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -147,32 +140,32 @@ export default function StorageSettingsPage() {
   }
 
   return (
-    <div className="p-6 max-w-4xl space-y-6">
+    <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
             <HardDrive className="size-5" />
             Storage
           </h2>
-          <p className="text-sm text-text-muted mt-1">
+          <p className="text-sm text-muted-foreground mt-1">
             Local file management and cleanup
           </p>
         </div>
       </div>
 
       {/* Storage Usage */}
-      <Card className="bg-surface-raised/30 border-border-subtle/50">
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
+      <div className="rounded-lg border border-border">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
+          <h3 className="text-sm font-medium flex items-center gap-2">
             <HardDrive className="size-4" />
             Storage Usage
-          </CardTitle>
-          <CardDescription>
+          </h3>
+          <p className="text-xs text-muted-foreground">
             Current disk usage for screenshots and videos
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
+          </p>
+        </div>
+        <div className="p-4 space-y-5">
           {storageInfo && (
             <>
               <StorageProgressBar
@@ -189,30 +182,32 @@ export default function StorageSettingsPage() {
               />
             </>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Storage Locations */}
-      <Card className="bg-surface-raised/30 border-border-subtle/50">
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
+      <div className="rounded-lg border border-border">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
+          <h3 className="text-sm font-medium flex items-center gap-2">
             <HardDrive className="size-4" />
             Storage Locations
-          </CardTitle>
-          <CardDescription>Where files are stored on disk</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Where files are stored on disk
+          </p>
+        </div>
+        <div className="p-4 space-y-3">
           {storageInfo && (
             <>
               <div className="space-y-1">
                 <span
                   data-content-role="label"
                   data-content-label="screenshot path label"
-                  className="text-xs text-text-muted"
+                  className="text-xs text-muted-foreground"
                 >
                   Screenshot path
                 </span>
-                <p className="text-sm font-mono text-text-primary bg-surface-raised/50 px-3 py-2 rounded-md border border-border-subtle/30 break-all">
+                <p className="text-sm font-mono text-foreground bg-muted px-3 py-2 rounded-md border border-border break-all">
                   {storageInfo.screenshot_path}
                 </p>
               </div>
@@ -220,31 +215,31 @@ export default function StorageSettingsPage() {
                 <span
                   data-content-role="label"
                   data-content-label="video path label"
-                  className="text-xs text-text-muted"
+                  className="text-xs text-muted-foreground"
                 >
                   Video path
                 </span>
-                <p className="text-sm font-mono text-text-primary bg-surface-raised/50 px-3 py-2 rounded-md border border-border-subtle/30 break-all">
+                <p className="text-sm font-mono text-foreground bg-muted px-3 py-2 rounded-md border border-border break-all">
                   {storageInfo.video_path}
                 </p>
               </div>
             </>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Storage Cleanup */}
-      <Card className="bg-surface-raised/30 border-border-subtle/50">
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
+      <div className="rounded-lg border border-border">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
+          <h3 className="text-sm font-medium flex items-center gap-2">
             <Trash2 className="size-4" />
             Storage Cleanup
-          </CardTitle>
-          <CardDescription>
+          </h3>
+          <p className="text-xs text-muted-foreground">
             Remove old files to free up disk space
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          </p>
+        </div>
+        <div className="p-4 space-y-4">
           <div className="flex flex-wrap gap-3">
             <Button
               onClick={handleCleanupScreenshots}
@@ -274,7 +269,7 @@ export default function StorageSettingsPage() {
             </Button>
           </div>
 
-          <div className="border-t border-border-subtle/30 pt-4">
+          <div className="border-t border-border pt-4">
             <Button
               onClick={handleClearAll}
               disabled={clearingAll || cleaningScreenshots || cleaningVideos}
@@ -292,14 +287,14 @@ export default function StorageSettingsPage() {
 
           <div className="flex items-start gap-2 p-3 rounded-md bg-blue-500/5 border border-blue-500/10">
             <Info className="size-4 text-blue-400 mt-0.5 shrink-0" />
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-muted-foreground">
               Screenshots and videos are organized by session. Cleanup
               operations only affect files older than the specified number of
               days.
             </p>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

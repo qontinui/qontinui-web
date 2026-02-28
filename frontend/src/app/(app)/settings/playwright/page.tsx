@@ -11,13 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
 import { toast } from "sonner";
 import { Loader2, Save, FlaskConical, Eye, EyeOff, Info } from "lucide-react";
 
@@ -78,7 +71,7 @@ export default function PlaywrightSettingsPage() {
   if (healthLoading || loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="size-8 animate-spin text-text-muted" />
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -88,15 +81,15 @@ export default function PlaywrightSettingsPage() {
   }
 
   return (
-    <div className="p-6 max-w-4xl space-y-6">
+    <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
             <FlaskConical className="size-5" />
             Playwright
           </h2>
-          <p className="text-sm text-text-muted mt-1">
+          <p className="text-sm text-muted-foreground mt-1">
             Test configuration and environment settings
           </p>
         </div>
@@ -116,23 +109,20 @@ export default function PlaywrightSettingsPage() {
       </div>
 
       {/* Test Authentication */}
-      <Card className="bg-surface-raised/30 border-border-subtle/50">
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
+      <div className="rounded-lg border border-border">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
+          <h3 className="text-sm font-medium flex items-center gap-2">
             <FlaskConical className="size-4" />
             Test Authentication
-          </CardTitle>
-          <CardDescription>
+          </h3>
+          <p className="text-xs text-muted-foreground">
             Credentials passed as PLAYWRIGHT_TEST_USERNAME and
             PLAYWRIGHT_TEST_PASSWORD environment variables to test scripts
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          </p>
+        </div>
+        <div className="p-4 space-y-4">
           <div className="space-y-2">
-            <Label
-              htmlFor="test-username"
-              className="text-sm text-text-primary"
-            >
+            <Label htmlFor="test-username" className="text-sm text-foreground">
               Username or Email
             </Label>
             <Input
@@ -145,10 +135,7 @@ export default function PlaywrightSettingsPage() {
           </div>
 
           <div className="space-y-2">
-            <Label
-              htmlFor="test-password"
-              className="text-sm text-text-primary"
-            >
+            <Label htmlFor="test-password" className="text-sm text-foreground">
               Password
             </Label>
             <div className="relative">
@@ -163,7 +150,7 @@ export default function PlaywrightSettingsPage() {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-text-muted hover:text-text-primary transition-colors"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
               >
                 {showPassword ? (
                   <EyeOff className="size-4" />
@@ -173,23 +160,23 @@ export default function PlaywrightSettingsPage() {
               </button>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Environment */}
-      <Card className="bg-surface-raised/30 border-border-subtle/50">
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
+      <div className="rounded-lg border border-border">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
+          <h3 className="text-sm font-medium flex items-center gap-2">
             <FlaskConical className="size-4" />
             Environment
-          </CardTitle>
-          <CardDescription>
+          </h3>
+          <p className="text-xs text-muted-foreground">
             Test execution environment configuration
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          </p>
+        </div>
+        <div className="p-4 space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="base-url" className="text-sm text-text-primary">
+            <Label htmlFor="base-url" className="text-sm text-foreground">
               Base URL
             </Label>
             <Input
@@ -199,7 +186,7 @@ export default function PlaywrightSettingsPage() {
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
             />
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-muted-foreground">
               Optional. Sets the PLAYWRIGHT_BASE_URL environment variable for
               tests.
             </p>
@@ -209,11 +196,11 @@ export default function PlaywrightSettingsPage() {
             <div className="space-y-0.5">
               <Label
                 htmlFor="skip-web-server"
-                className="text-sm text-text-primary"
+                className="text-sm text-foreground"
               >
                 Skip Web Server Startup
               </Label>
-              <p className="text-xs text-text-muted">
+              <p className="text-xs text-muted-foreground">
                 Sets SKIP_WEB_SERVER=1. Enable when your dev server is already
                 running.
               </p>
@@ -227,15 +214,15 @@ export default function PlaywrightSettingsPage() {
 
           <div className="flex items-start gap-2 p-3 rounded-md bg-blue-500/5 border border-blue-500/10">
             <Info className="size-4 text-blue-400 mt-0.5 shrink-0" />
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-muted-foreground">
               These settings are injected as environment variables when running
               Playwright tests. The base URL determines where tests navigate,
               and the web server skip flag prevents Playwright from starting its
               own server when one is already running.
             </p>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

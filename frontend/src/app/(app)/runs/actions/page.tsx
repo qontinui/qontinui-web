@@ -111,44 +111,39 @@ export default function ActionsPage() {
   }, [events]);
 
   return (
-    <div className="h-full overflow-y-auto bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <Zap className="size-6 text-amber-400" />
-            <h1 className="text-2xl font-bold text-text-primary">Actions</h1>
-          </div>
-          {actionEvents.length > 0 && (
-            <Badge variant="secondary" className="text-xs">
-              {actionEvents.length} action
-              {actionEvents.length !== 1 ? "s" : ""}
-            </Badge>
-          )}
-        </div>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <h1 className="text-lg font-semibold">Actions</h1>
+        {actionEvents.length > 0 && (
+          <Badge variant="secondary" className="text-xs">
+            {actionEvents.length} action
+            {actionEvents.length !== 1 ? "s" : ""}
+          </Badge>
+        )}
       </header>
 
       {isOffline && (
         <RunnerPartialState message="Runner offline — live data unavailable" />
       )}
 
-      <main className="flex h-[calc(100vh-65px)]">
+      <main className="flex flex-1 min-h-0">
         {/* Left panel: Run list */}
-        <div className="w-[250px] shrink-0 border-r border-border-subtle/50 bg-surface-canvas/40">
-          <div className="px-3 py-3 border-b border-border-subtle/30">
-            <h2 className="text-xs font-medium text-text-muted uppercase tracking-wider">
+        <div className="w-[250px] shrink-0 border-r border-border bg-background">
+          <div className="px-3 py-3 border-b border-border">
+            <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
               Active Runs
             </h2>
           </div>
           <ScrollArea className="h-[calc(100%-41px)]">
             {runsLoading ? (
-              <div className="flex items-center justify-center py-8 text-text-muted">
+              <div className="flex items-center justify-center py-8 text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" />
               </div>
             ) : runList.length === 0 ? (
               <div
                 data-content-role="status"
                 data-content-label="empty state"
-                className="px-3 py-6 text-center text-text-muted text-xs"
+                className="px-3 py-6 text-center text-muted-foreground text-xs"
               >
                 No active runs
               </div>
@@ -160,8 +155,8 @@ export default function ActionsPage() {
                     onClick={() => setSelectedRunId(run.id)}
                     className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all ${
                       activeRunId === run.id
-                        ? "bg-brand-primary/10 border border-brand-primary/30 text-text-primary"
-                        : "hover:bg-surface-raised/50 text-text-muted border border-transparent"
+                        ? "bg-primary/10 border border-primary/30 text-foreground"
+                        : "hover:bg-muted text-muted-foreground border border-transparent"
                     }`}
                   >
                     <div className="font-medium truncate text-xs">
@@ -175,7 +170,7 @@ export default function ActionsPage() {
                             ? "text-blue-400 border-blue-500/30"
                             : run.status === "completed"
                               ? "text-green-400 border-green-500/30"
-                              : "text-text-muted border-border-subtle/50"
+                              : "text-muted-foreground border-border"
                         }`}
                       >
                         {run.status}
@@ -184,7 +179,7 @@ export default function ActionsPage() {
                         <span
                           data-content-role="badge"
                           data-content-label="run phase"
-                          className="text-[10px] text-text-muted"
+                          className="text-[10px] text-muted-foreground"
                         >
                           {run.phase}
                         </span>
@@ -201,12 +196,12 @@ export default function ActionsPage() {
         <div className="flex-1 min-w-0">
           {!activeRunId ? (
             <div className="flex items-center justify-center h-full">
-              <div className="text-center text-text-muted">
+              <div className="text-center text-muted-foreground">
                 <Inbox className="size-16 mx-auto mb-4" />
                 <h3
                   data-content-role="heading"
                   data-content-label="empty state title"
-                  className="text-lg font-medium text-text-secondary mb-2"
+                  className="text-lg font-medium text-muted-foreground mb-2"
                 >
                   No Run Selected
                 </h3>
@@ -216,17 +211,17 @@ export default function ActionsPage() {
               </div>
             </div>
           ) : eventsLoading ? (
-            <div className="flex items-center justify-center h-full text-text-muted">
+            <div className="flex items-center justify-center h-full text-muted-foreground">
               <Loader2 className="size-6 animate-spin" />
             </div>
           ) : actionEvents.length === 0 ? (
             <div className="flex items-center justify-center h-full">
-              <div className="text-center text-text-muted">
+              <div className="text-center text-muted-foreground">
                 <Zap className="size-16 mx-auto mb-4 opacity-30" />
                 <h3
                   data-content-role="heading"
                   data-content-label="empty state title"
-                  className="text-lg font-medium text-text-secondary mb-2"
+                  className="text-lg font-medium text-muted-foreground mb-2"
                 >
                   No Actions Yet
                 </h3>
@@ -239,10 +234,10 @@ export default function ActionsPage() {
           ) : (
             <ScrollArea className="h-full">
               <div className="p-4">
-                <Card className="bg-surface-raised/30 border-border-subtle/50">
+                <Card className="bg-muted/50 border-border">
                   <CardHeader className="pb-3">
                     <CardTitle className="text-sm flex items-center gap-2">
-                      <Clock className="size-4 text-text-muted" />
+                      <Clock className="size-4 text-muted-foreground" />
                       Action Log
                     </CardTitle>
                   </CardHeader>
@@ -250,20 +245,20 @@ export default function ActionsPage() {
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
-                          <tr className="border-b border-border-subtle/50">
-                            <th className="text-left py-2 px-3 text-xs font-medium text-text-muted">
+                          <tr className="border-b border-border">
+                            <th className="text-left py-2 px-3 text-xs font-medium text-muted-foreground">
                               Time
                             </th>
-                            <th className="text-left py-2 px-3 text-xs font-medium text-text-muted">
+                            <th className="text-left py-2 px-3 text-xs font-medium text-muted-foreground">
                               Type
                             </th>
-                            <th className="text-left py-2 px-3 text-xs font-medium text-text-muted">
+                            <th className="text-left py-2 px-3 text-xs font-medium text-muted-foreground">
                               Target
                             </th>
-                            <th className="text-left py-2 px-3 text-xs font-medium text-text-muted">
+                            <th className="text-left py-2 px-3 text-xs font-medium text-muted-foreground">
                               Result
                             </th>
-                            <th className="text-right py-2 px-3 text-xs font-medium text-text-muted">
+                            <th className="text-right py-2 px-3 text-xs font-medium text-muted-foreground">
                               Duration
                             </th>
                           </tr>
@@ -275,9 +270,9 @@ export default function ActionsPage() {
                             return (
                               <tr
                                 key={event.id}
-                                className="border-b border-border-subtle/30 hover:bg-surface-raised/20 transition-colors"
+                                className="border-b border-border hover:bg-muted/50 transition-colors"
                               >
-                                <td className="py-2.5 px-3 text-xs text-text-muted font-mono whitespace-nowrap">
+                                <td className="py-2.5 px-3 text-xs text-muted-foreground font-mono whitespace-nowrap">
                                   {formatTime(event.timestamp)}
                                 </td>
                                 <td className="py-2.5 px-3">
@@ -288,7 +283,7 @@ export default function ActionsPage() {
                                     {actionType}
                                   </Badge>
                                 </td>
-                                <td className="py-2.5 px-3 text-xs text-text-secondary max-w-[200px] truncate">
+                                <td className="py-2.5 px-3 text-xs text-muted-foreground max-w-[200px] truncate">
                                   <span
                                     data-content-role="label"
                                     data-content-label="action target"
@@ -299,7 +294,7 @@ export default function ActionsPage() {
                                 <td className="py-2.5 px-3">
                                   {getResultBadge(result)}
                                 </td>
-                                <td className="py-2.5 px-3 text-xs text-text-muted text-right font-mono">
+                                <td className="py-2.5 px-3 text-xs text-muted-foreground text-right font-mono">
                                   <span
                                     data-content-role="metric"
                                     data-content-label="action duration"

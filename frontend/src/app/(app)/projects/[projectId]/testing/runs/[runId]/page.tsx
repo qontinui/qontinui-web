@@ -23,7 +23,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  ArrowLeft,
   CheckCircle2,
   XCircle,
   AlertTriangle,
@@ -70,20 +69,17 @@ export default function TestRunDetailPage() {
   const router = useRouter();
   const params = useParams();
   const runId = params.runId as string;
-  const projectId = params.projectId as string;
 
   const { data: run, isLoading, refetch } = useTestRun(runId);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set());
   const [liveStatus, setLiveStatus] = useState<string | null>(null);
 
-  // WebSocket connection for real-time updates
   useEffect(() => {
     if (!run || run.status === "completed" || run.status === "failed") {
       return;
     }
 
-    // Connect to WebSocket for live updates
     const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
     const wsHost = ApiConfig.getBaseUrl().replace(/^https?:\/\//, "");
     const wsUrl = `${wsProtocol}://${wsHost}/api/v1/testing/runs/${runId}/ws`;
@@ -108,7 +104,6 @@ export default function TestRunDetailPage() {
           case "transition_complete":
           case "deficiency_found":
           case "coverage_update":
-            // Refetch the full run data to get updated information
             refetch();
             break;
 
@@ -156,17 +151,14 @@ export default function TestRunDetailPage() {
 
   const handleExport = () => {
     if (!run) return;
-    // Trigger export download
     const url = `${ApiConfig.getBaseUrl()}/api/v1/testing/runs/${runId}/export?format=json`;
     window.open(url, "_blank");
   };
 
   if (authLoading || isLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-lg text-muted-foreground">Loading...</div>
-        </div>
+      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
+        <div className="text-lg text-muted-foreground">Loading...</div>
       </div>
     );
   }
@@ -178,12 +170,8 @@ export default function TestRunDetailPage() {
   if (!run) {
     return (
       <RequireProject pageName="Test Run Details">
-        <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white flex items-center justify-center">
-          <Card className="bg-surface-raised/50 border-border-subtle/50">
-            <CardContent className="p-12 text-center">
-              <div className="text-red-400">Test run not found</div>
-            </CardContent>
-          </Card>
+        <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
+          <div className="text-red-400">Test run not found</div>
         </div>
       </RequireProject>
     );
@@ -198,49 +186,28 @@ export default function TestRunDetailPage() {
 
   return (
     <RequireProject pageName="Test Run Details">
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-        {/* Header */}
-        <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-          <div className="flex items-center justify-between px-6 py-4">
-            <div className="flex items-center gap-4">
-              <Button
-                variant="ghost"
-                onClick={() =>
-                  router.push(`/projects/${projectId}/testing/runs`)
-                }
-                className="text-text-muted hover:text-white"
-              >
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                All Runs
-              </Button>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
-                Test Run Details
-              </h1>
-            </div>
-            <Button
-              onClick={handleExport}
-              variant="outline"
-              className="border-border-default hover:bg-surface-raised"
-            >
-              <Download className="w-4 h-4 mr-2" />
-              Export
-            </Button>
-          </div>
+      <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+        <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+          <h1 className="text-lg font-semibold text-foreground">
+            Test Run Details
+          </h1>
+          <Button onClick={handleExport} variant="outline" size="sm">
+            <Download className="w-4 h-4 mr-2" />
+            Export
+          </Button>
         </header>
 
-        {/* Main Content */}
-        <main className="p-6 max-w-7xl mx-auto">
+        <main className="flex-1 overflow-y-auto p-6">
           <div className="space-y-6">
-            {/* Header Card with Run Metadata */}
-            <Card className="bg-surface-raised/50 border-border-subtle/50">
+            <Card className="bg-muted border-border">
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div>
                     <CardTitle className="text-2xl mb-2">
                       {run.workflow_name}
                     </CardTitle>
-                    <CardDescription className="text-text-muted">
-                      Run ID: {run.id} • Started{" "}
+                    <CardDescription className="text-muted-foreground">
+                      Run ID: {run.id} &bull; Started{" "}
                       {format(
                         new Date(run.start_time),
                         "MMM dd, yyyy HH:mm:ss"
@@ -271,7 +238,7 @@ export default function TestRunDetailPage() {
               <CardContent>
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
                   <div className="space-y-2">
-                    <div className="text-sm text-text-muted flex items-center gap-2">
+                    <div className="text-sm text-muted-foreground flex items-center gap-2">
                       <Clock className="w-4 h-4" />
                       Duration
                     </div>
@@ -282,32 +249,38 @@ export default function TestRunDetailPage() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <div className="text-sm text-text-muted">Coverage</div>
-                    <div className="text-2xl font-bold text-brand-primary">
+                    <div className="text-sm text-muted-foreground">
+                      Coverage
+                    </div>
+                    <div className="text-2xl font-bold text-primary">
                       {run.coverage_percentage.toFixed(1)}%
                     </div>
-                    <div className="text-xs text-text-muted">
+                    <div className="text-xs text-muted-foreground">
                       {run.states_covered} / {run.total_states} states
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <div className="text-sm text-text-muted">Success Rate</div>
+                    <div className="text-sm text-muted-foreground">
+                      Success Rate
+                    </div>
                     <div className="text-2xl font-bold text-green-500">
                       {successRate}%
                     </div>
-                    <div className="text-xs text-text-muted">
+                    <div className="text-xs text-muted-foreground">
                       {run.successful_transitions} / {run.total_transitions}{" "}
                       transitions
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <div className="text-sm text-text-muted">Deficiencies</div>
+                    <div className="text-sm text-muted-foreground">
+                      Deficiencies
+                    </div>
                     <div className="text-2xl font-bold text-red-400">
                       {run.deficiencies_found}
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <div className="text-sm text-text-muted">Runner</div>
+                    <div className="text-sm text-muted-foreground">Runner</div>
                     <div className="text-sm font-mono truncate">
                       {run.runner_id.slice(0, 8)}...
                     </div>
@@ -316,9 +289,8 @@ export default function TestRunDetailPage() {
               </CardContent>
             </Card>
 
-            {/* Tabbed Content */}
             <Tabs defaultValue="timeline" className="w-full">
-              <TabsList className="bg-surface-raised/50 border border-border-subtle/50">
+              <TabsList>
                 <TabsTrigger value="timeline">Step Timeline</TabsTrigger>
                 <TabsTrigger value="coverage">Coverage</TabsTrigger>
                 <TabsTrigger value="deficiencies">
@@ -326,9 +298,8 @@ export default function TestRunDetailPage() {
                 </TabsTrigger>
               </TabsList>
 
-              {/* Timeline Tab */}
               <TabsContent value="timeline">
-                <Card className="bg-surface-raised/50 border-border-subtle/50">
+                <Card className="bg-muted border-border">
                   <CardHeader>
                     <CardTitle>Execution Timeline</CardTitle>
                     <CardDescription>
@@ -353,7 +324,7 @@ export default function TestRunDetailPage() {
                                 className="flex items-center gap-4 p-4 cursor-pointer hover:bg-white/5"
                                 onClick={() => toggleStep(transition.id)}
                               >
-                                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-surface-canvas/50 flex items-center justify-center text-xs font-bold">
+                                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-background/50 flex items-center justify-center text-xs font-bold">
                                   {index + 1}
                                 </div>
                                 <div className="flex-shrink-0">
@@ -368,12 +339,14 @@ export default function TestRunDetailPage() {
                                     <span className="font-medium text-sm">
                                       {transition.from_state}
                                     </span>
-                                    <span className="text-text-muted">→</span>
+                                    <span className="text-muted-foreground">
+                                      &rarr;
+                                    </span>
                                     <span className="font-medium text-sm">
                                       {transition.to_state}
                                     </span>
                                   </div>
-                                  <div className="flex items-center gap-4 text-xs text-text-muted">
+                                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
                                     <Badge
                                       variant="outline"
                                       className="text-xs"
@@ -397,7 +370,7 @@ export default function TestRunDetailPage() {
                                         alt="Transition screenshot"
                                         width={60}
                                         height={45}
-                                        className="rounded border border-border-default cursor-pointer hover:border-brand-primary"
+                                        className="rounded border border-border cursor-pointer hover:border-primary"
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           setSelectedImage(
@@ -408,19 +381,18 @@ export default function TestRunDetailPage() {
                                     </div>
                                   )}
                                   {isExpanded ? (
-                                    <ChevronUp className="w-4 h-4 text-text-muted" />
+                                    <ChevronUp className="w-4 h-4 text-muted-foreground" />
                                   ) : (
-                                    <ChevronDown className="w-4 h-4 text-text-muted" />
+                                    <ChevronDown className="w-4 h-4 text-muted-foreground" />
                                   )}
                                 </div>
                               </div>
 
-                              {/* Expanded Details */}
                               {isExpanded && (
-                                <div className="px-4 pb-4 space-y-3 border-t border-border-subtle/50">
+                                <div className="px-4 pb-4 space-y-3 border-t border-border">
                                   <div className="grid grid-cols-2 gap-4 pt-3">
                                     <div>
-                                      <div className="text-xs text-text-muted mb-1">
+                                      <div className="text-xs text-muted-foreground mb-1">
                                         From State
                                       </div>
                                       <div className="text-sm font-mono">
@@ -428,7 +400,7 @@ export default function TestRunDetailPage() {
                                       </div>
                                     </div>
                                     <div>
-                                      <div className="text-xs text-text-muted mb-1">
+                                      <div className="text-xs text-muted-foreground mb-1">
                                         To State
                                       </div>
                                       <div className="text-sm font-mono">
@@ -436,7 +408,7 @@ export default function TestRunDetailPage() {
                                       </div>
                                     </div>
                                     <div>
-                                      <div className="text-xs text-text-muted mb-1">
+                                      <div className="text-xs text-muted-foreground mb-1">
                                         Action Type
                                       </div>
                                       <div className="text-sm">
@@ -444,7 +416,7 @@ export default function TestRunDetailPage() {
                                       </div>
                                     </div>
                                     <div>
-                                      <div className="text-xs text-text-muted mb-1">
+                                      <div className="text-xs text-muted-foreground mb-1">
                                         Duration
                                       </div>
                                       <div className="text-sm">
@@ -466,7 +438,7 @@ export default function TestRunDetailPage() {
 
                                   {transition.screenshot_url && (
                                     <div>
-                                      <div className="text-xs text-text-muted mb-2">
+                                      <div className="text-xs text-muted-foreground mb-2">
                                         Screenshot
                                       </div>
                                       <div className="relative">
@@ -475,7 +447,7 @@ export default function TestRunDetailPage() {
                                           alt="Transition screenshot"
                                           width={400}
                                           height={300}
-                                          className="rounded border border-border-default cursor-pointer hover:border-brand-primary"
+                                          className="rounded border border-border cursor-pointer hover:border-primary"
                                           onClick={() =>
                                             setSelectedImage(
                                               transition.screenshot_url
@@ -504,7 +476,7 @@ export default function TestRunDetailPage() {
                         })}
 
                         {run.transitions.length === 0 && (
-                          <div className="text-center py-12 text-text-muted">
+                          <div className="text-center py-12 text-muted-foreground">
                             No transitions recorded yet
                           </div>
                         )}
@@ -514,9 +486,8 @@ export default function TestRunDetailPage() {
                 </Card>
               </TabsContent>
 
-              {/* Coverage Tab */}
               <TabsContent value="coverage">
-                <Card className="bg-surface-raised/50 border-border-subtle/50">
+                <Card className="bg-muted border-border">
                   <CardHeader>
                     <CardTitle>State Coverage Summary</CardTitle>
                     <CardDescription>
@@ -539,13 +510,13 @@ export default function TestRunDetailPage() {
                           return (
                             <div
                               key={state.state_name}
-                              className="flex items-center justify-between p-4 rounded-lg bg-surface-canvas/50 border border-border-subtle/30"
+                              className="flex items-center justify-between p-4 rounded-lg bg-background/50 border border-border"
                             >
                               <div className="flex-1">
                                 <div className="font-medium mb-2">
                                   {state.state_name}
                                 </div>
-                                <div className="flex items-center gap-4 text-sm text-text-muted">
+                                <div className="flex items-center gap-4 text-sm text-muted-foreground">
                                   <span>
                                     Visited: {state.times_visited} times
                                   </span>
@@ -562,7 +533,7 @@ export default function TestRunDetailPage() {
                                 </div>
                               </div>
                               <div className="flex items-center gap-3">
-                                <div className="w-24 h-2 bg-border-default rounded-full overflow-hidden">
+                                <div className="w-24 h-2 bg-border rounded-full overflow-hidden">
                                   <div
                                     className="h-full bg-green-500"
                                     style={{
@@ -579,7 +550,7 @@ export default function TestRunDetailPage() {
                         })}
 
                         {run.state_coverage.length === 0 && (
-                          <div className="text-center py-12 text-text-muted">
+                          <div className="text-center py-12 text-muted-foreground">
                             No state coverage data yet
                           </div>
                         )}
@@ -589,9 +560,8 @@ export default function TestRunDetailPage() {
                 </Card>
               </TabsContent>
 
-              {/* Deficiencies Tab */}
               <TabsContent value="deficiencies">
-                <Card className="bg-surface-raised/50 border-border-subtle/50">
+                <Card className="bg-muted border-border">
                   <CardHeader>
                     <CardTitle>Deficiencies Found</CardTitle>
                     <CardDescription>
@@ -601,7 +571,7 @@ export default function TestRunDetailPage() {
                   <CardContent>
                     <ScrollArea className="h-[600px] pr-4">
                       {run.deficiencies.length === 0 ? (
-                        <div className="text-center py-12 text-text-muted">
+                        <div className="text-center py-12 text-muted-foreground">
                           <CheckCircle2 className="w-12 h-12 mx-auto mb-3 text-green-500" />
                           No deficiencies found in this test run
                         </div>
@@ -610,7 +580,7 @@ export default function TestRunDetailPage() {
                           {run.deficiencies.map((deficiency) => (
                             <div
                               key={deficiency.id}
-                              className="p-4 rounded-lg bg-surface-canvas/50 border border-red-500/30"
+                              className="p-4 rounded-lg bg-background/50 border border-red-500/30"
                             >
                               <div className="flex items-start justify-between mb-3">
                                 <div className="flex items-center gap-2">
@@ -637,16 +607,16 @@ export default function TestRunDetailPage() {
                                   {deficiency.severity}
                                 </Badge>
                               </div>
-                              <p className="text-sm text-text-muted mb-3">
+                              <p className="text-sm text-muted-foreground mb-3">
                                 {deficiency.description}
                               </p>
-                              <div className="text-xs text-text-muted space-y-1">
+                              <div className="text-xs text-muted-foreground space-y-1">
                                 <div>State: {deficiency.state_name}</div>
                                 {deficiency.transition_from &&
                                   deficiency.transition_to && (
                                     <div>
-                                      Transition: {deficiency.transition_from} →{" "}
-                                      {deficiency.transition_to}
+                                      Transition: {deficiency.transition_from}{" "}
+                                      &rarr; {deficiency.transition_to}
                                     </div>
                                   )}
                               </div>
@@ -662,7 +632,7 @@ export default function TestRunDetailPage() {
                               )}
                               {deficiency.screenshot_url && (
                                 <div className="mt-3">
-                                  <div className="text-xs text-text-muted mb-2">
+                                  <div className="text-xs text-muted-foreground mb-2">
                                     Screenshot
                                   </div>
                                   <Image
@@ -670,7 +640,7 @@ export default function TestRunDetailPage() {
                                     alt="Deficiency screenshot"
                                     width={200}
                                     height={150}
-                                    className="rounded border border-border-default cursor-pointer hover:border-brand-primary"
+                                    className="rounded border border-border cursor-pointer hover:border-primary"
                                     onClick={() =>
                                       setSelectedImage(
                                         deficiency.screenshot_url
@@ -691,12 +661,11 @@ export default function TestRunDetailPage() {
           </div>
         </main>
 
-        {/* Image Zoom Dialog */}
         <Dialog
           open={selectedImage !== null}
           onOpenChange={() => setSelectedImage(null)}
         >
-          <DialogContent className="max-w-4xl bg-surface-raised border-border-subtle">
+          <DialogContent className="max-w-4xl">
             <DialogHeader>
               <DialogTitle>Screenshot</DialogTitle>
             </DialogHeader>
@@ -707,7 +676,7 @@ export default function TestRunDetailPage() {
                   alt="Full size screenshot"
                   width={1200}
                   height={800}
-                  className="rounded border border-border-default w-full h-auto"
+                  className="rounded border border-border w-full h-auto"
                 />
               </div>
             )}

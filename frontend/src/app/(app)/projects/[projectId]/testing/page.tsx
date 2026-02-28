@@ -15,7 +15,6 @@ import {
   TrendingUp,
   PlayCircle,
   Activity,
-  ArrowLeft,
   FlaskConical,
 } from "lucide-react";
 
@@ -37,10 +36,8 @@ export default function ProjectTestingDashboard() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-lg text-muted-foreground">Loading...</div>
-        </div>
+      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
+        <div className="text-lg text-muted-foreground">Loading...</div>
       </div>
     );
   }
@@ -50,125 +47,77 @@ export default function ProjectTestingDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-      {/* Header */}
-      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              onClick={() => router.push("/build/workflows")}
-              className="text-text-muted hover:text-white"
-            >
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Dashboard
-            </Button>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-[#F59E0B] to-[#EF4444] bg-clip-text text-transparent">
-              Testing Dashboard
-            </h1>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                router.push(`/projects/${projectId}/testing/coverage`)
-              }
-              className="border-border-default hover:border-[#F59E0B] hover:text-[#F59E0B]"
-            >
-              <TrendingUp className="w-4 h-4 mr-2" />
-              Coverage
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                router.push(`/projects/${projectId}/testing/deficiencies`)
-              }
-              className="border-border-default hover:border-[#EF4444] hover:text-[#EF4444]"
-            >
-              <BarChart3 className="w-4 h-4 mr-2" />
-              Deficiencies
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                router.push(`/projects/${projectId}/testing/integration`)
-              }
-              className="border-border-default hover:border-brand-primary hover:text-brand-primary"
-            >
-              <FlaskConical className="w-4 h-4 mr-2" />
-              Integration Tests
-            </Button>
-          </div>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <h1 className="text-lg font-semibold text-foreground">
+          Testing Dashboard
+        </h1>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              router.push(`/projects/${projectId}/testing/coverage`)
+            }
+          >
+            <TrendingUp className="w-4 h-4 mr-2" />
+            Coverage
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              router.push(`/projects/${projectId}/testing/deficiencies`)
+            }
+          >
+            <BarChart3 className="w-4 h-4 mr-2" />
+            Deficiencies
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              router.push(`/projects/${projectId}/testing/integration`)
+            }
+          >
+            <FlaskConical className="w-4 h-4 mr-2" />
+            Integration Tests
+          </Button>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="p-6 max-w-7xl mx-auto">
-        {/* Welcome Section */}
-        <div className="mb-8">
-          <h2 className="text-3xl font-bold mb-2">Test Results Overview</h2>
-          <p className="text-text-muted">
+      <main className="flex-1 overflow-y-auto p-6">
+        <div className="mb-6">
+          <p className="text-sm text-muted-foreground">
             View historical test results, coverage trends, and deficiency
             reports
           </p>
         </div>
 
-        {/* View Selector */}
         <div className="flex items-center gap-2 mb-6">
-          <Button
-            variant={selectedView === "overview" ? "default" : "outline"}
-            onClick={() => setSelectedView("overview")}
-            className={
-              selectedView === "overview"
-                ? "bg-[#F59E0B] hover:bg-[#F59E0B]/80 text-black"
-                : "border-border-default hover:border-[#F59E0B] hover:text-[#F59E0B]"
-            }
-          >
-            <PlayCircle className="w-4 h-4 mr-2" />
-            Test Runs
-          </Button>
-          <Button
-            variant={selectedView === "live" ? "default" : "outline"}
-            onClick={() => setSelectedView("live")}
-            className={
-              selectedView === "live"
-                ? "bg-[#F59E0B] hover:bg-[#F59E0B]/80 text-black"
-                : "border-border-default hover:border-[#F59E0B] hover:text-[#F59E0B]"
-            }
-          >
-            <Activity className="w-4 h-4 mr-2" />
-            Live Execution
-          </Button>
-          <Button
-            variant={selectedView === "trends" ? "default" : "outline"}
-            onClick={() => setSelectedView("trends")}
-            className={
-              selectedView === "trends"
-                ? "bg-[#F59E0B] hover:bg-[#F59E0B]/80 text-black"
-                : "border-border-default hover:border-[#F59E0B] hover:text-[#F59E0B]"
-            }
-          >
-            <TrendingUp className="w-4 h-4 mr-2" />
-            Coverage Trends
-          </Button>
-          <Button
-            variant={selectedView === "reliability" ? "default" : "outline"}
-            onClick={() => setSelectedView("reliability")}
-            className={
-              selectedView === "reliability"
-                ? "bg-[#F59E0B] hover:bg-[#F59E0B]/80 text-black"
-                : "border-border-default hover:border-[#F59E0B] hover:text-[#F59E0B]"
-            }
-          >
-            <BarChart3 className="w-4 h-4 mr-2" />
-            Reliability
-          </Button>
+          {(
+            [
+              { key: "overview", label: "Test Runs", icon: PlayCircle },
+              { key: "live", label: "Live Execution", icon: Activity },
+              { key: "trends", label: "Coverage Trends", icon: TrendingUp },
+              { key: "reliability", label: "Reliability", icon: BarChart3 },
+            ] as const
+          ).map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => setSelectedView(key)}
+              className={`px-3 py-1.5 text-sm rounded-md flex items-center gap-2 ${
+                selectedView === key
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              {label}
+            </button>
+          ))}
         </div>
 
-        {/* Content based on selected view */}
         {selectedView === "overview" && <TestRunsList projectId={projectId} />}
 
         {selectedView === "live" && (

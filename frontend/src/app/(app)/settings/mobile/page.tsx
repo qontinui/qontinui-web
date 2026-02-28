@@ -12,13 +12,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -113,7 +106,7 @@ export default function MobileSettingsPage() {
   if (healthLoading || loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="size-8 animate-spin text-text-muted" />
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -123,15 +116,15 @@ export default function MobileSettingsPage() {
   }
 
   return (
-    <div className="p-6 max-w-4xl space-y-6">
+    <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
             <Smartphone className="size-5" />
             Mobile
           </h2>
-          <p className="text-sm text-text-muted mt-1">
+          <p className="text-sm text-muted-foreground mt-1">
             ADB device and mobile automation settings
           </p>
         </div>
@@ -151,19 +144,19 @@ export default function MobileSettingsPage() {
       </div>
 
       {/* ADB Configuration */}
-      <Card className="bg-surface-raised/30 border-border-subtle/50">
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
+      <div className="rounded-lg border border-border">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
+          <h3 className="text-sm font-medium flex items-center gap-2">
             <Smartphone className="size-4" />
             ADB Configuration
-          </CardTitle>
-          <CardDescription>
+          </h3>
+          <p className="text-xs text-muted-foreground">
             Path to the Android Debug Bridge executable
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          </p>
+        </div>
+        <div className="p-4 space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="adb-path" className="text-sm text-text-primary">
+            <Label htmlFor="adb-path" className="text-sm text-foreground">
               ADB Path
             </Label>
             <Input
@@ -173,27 +166,27 @@ export default function MobileSettingsPage() {
               value={adbPath}
               onChange={(e) => setAdbPath(e.target.value)}
             />
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-muted-foreground">
               Leave empty to auto-detect from ANDROID_HOME or system PATH.
             </p>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Default Device */}
-      <Card className="bg-surface-raised/30 border-border-subtle/50">
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
+      <div className="rounded-lg border border-border">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
+          <h3 className="text-sm font-medium flex items-center gap-2">
             <Smartphone className="size-4" />
             Default Device
-          </CardTitle>
-          <CardDescription>
+          </h3>
+          <p className="text-xs text-muted-foreground">
             Device to use when multiple are connected
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          </p>
+        </div>
+        <div className="p-4 space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="device-id" className="text-sm text-text-primary">
+            <Label htmlFor="device-id" className="text-sm text-foreground">
               Device ID
             </Label>
             <div className="flex gap-2">
@@ -230,31 +223,31 @@ export default function MobileSettingsPage() {
                 />
               </Button>
             </div>
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-muted-foreground">
               The serial number or emulator ID shown by{" "}
-              <code className="text-xs font-mono bg-surface-raised px-1 py-0.5 rounded">
+              <code className="text-xs font-mono bg-muted px-1 py-0.5 rounded">
                 adb devices
               </code>
               . Click refresh to scan for connected devices.
             </p>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* App Package */}
-      <Card className="bg-surface-raised/30 border-border-subtle/50">
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
+      <div className="rounded-lg border border-border">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
+          <h3 className="text-sm font-medium flex items-center gap-2">
             <Smartphone className="size-4" />
             App Package
-          </CardTitle>
-          <CardDescription>
+          </h3>
+          <p className="text-xs text-muted-foreground">
             Default application package for automation
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          </p>
+        </div>
+        <div className="p-4 space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="app-package" className="text-sm text-text-primary">
+            <Label htmlFor="app-package" className="text-sm text-foreground">
               Package Name
             </Label>
             <Input
@@ -265,23 +258,23 @@ export default function MobileSettingsPage() {
               onChange={(e) => setAppPackage(e.target.value)}
             />
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Logcat Capture */}
-      <Card className="bg-surface-raised/30 border-border-subtle/50">
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
+      <div className="rounded-lg border border-border">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
+          <h3 className="text-sm font-medium flex items-center gap-2">
             <FolderOpen className="size-4" />
             Logcat Capture
-          </CardTitle>
-          <CardDescription>
+          </h3>
+          <p className="text-xs text-muted-foreground">
             Configure how device logs are captured
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          </p>
+        </div>
+        <div className="p-4 space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="logcat-lines" className="text-sm text-text-primary">
+            <Label htmlFor="logcat-lines" className="text-sm text-foreground">
               Lines to Capture
             </Label>
             <Input
@@ -297,7 +290,7 @@ export default function MobileSettingsPage() {
                 }
               }}
             />
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-muted-foreground">
               Number of logcat lines to capture per session (100-10000).
             </p>
           </div>
@@ -306,11 +299,11 @@ export default function MobileSettingsPage() {
             <div className="space-y-0.5">
               <Label
                 htmlFor="filter-react-native"
-                className="text-sm text-text-primary"
+                className="text-sm text-foreground"
               >
                 Filter React Native Logs
               </Label>
-              <p className="text-xs text-text-muted">
+              <p className="text-xs text-muted-foreground">
                 Only capture logs from ReactNative and ReactNativeJS tags
               </p>
             </div>
@@ -320,23 +313,23 @@ export default function MobileSettingsPage() {
               onCheckedChange={setFilterReactNative}
             />
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Output Directory */}
-      <Card className="bg-surface-raised/30 border-border-subtle/50">
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
+      <div className="rounded-lg border border-border">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
+          <h3 className="text-sm font-medium flex items-center gap-2">
             <FolderOpen className="size-4" />
             Output Directory
-          </CardTitle>
-          <CardDescription>
+          </h3>
+          <p className="text-xs text-muted-foreground">
             Where mobile automation artifacts are saved
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          </p>
+        </div>
+        <div className="p-4 space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="output-dir" className="text-sm text-text-primary">
+            <Label htmlFor="output-dir" className="text-sm text-foreground">
               Custom Output Path
             </Label>
             <Input
@@ -346,20 +339,20 @@ export default function MobileSettingsPage() {
               value={outputDir}
               onChange={(e) => setOutputDir(e.target.value)}
             />
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-muted-foreground">
               Leave empty to use the default output directory.
             </p>
           </div>
 
           <div className="flex items-start gap-2 p-3 rounded-md bg-blue-500/5 border border-blue-500/10">
             <Info className="size-4 text-blue-400 mt-0.5 shrink-0" />
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-muted-foreground">
               Screenshots, logcat output, and other mobile artifacts are stored
               in the output directory, organized by session.
             </p>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

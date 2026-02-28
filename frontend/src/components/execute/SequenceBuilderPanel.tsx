@@ -143,9 +143,9 @@ export function SequenceBuilderPanel({
             )}
           </div>
 
-          {/* Bottom bar */}
-          {items.length > 0 && (
-            <div className="pt-3 border-t border-border-subtle/30 space-y-3">
+          {/* Bottom bar — always visible so Run/Save buttons satisfy UI Bridge specs */}
+          <div className="pt-3 border-t border-border-subtle/30 space-y-3">
+            {items.length > 0 && (
               <div className="flex items-center justify-between text-xs text-text-muted">
                 <span>
                   {totalPhases} phase{totalPhases !== 1 ? "s" : ""} &bull;{" "}
@@ -161,44 +161,46 @@ export function SequenceBuilderPanel({
                   <span>Stop on failure</span>
                 </label>
               </div>
+            )}
 
-              <div className="flex gap-2">
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-red-400 border-red-500/30 hover:bg-red-950/30"
+                disabled={items.length === 0}
+                onClick={onClear}
+              >
+                <Trash2 className="size-3.5 mr-1" />
+                Clear
+              </Button>
+              <div className="flex-1" />
+              {onSaveAsWorkflow && (
                 <Button
                   variant="outline"
                   size="sm"
-                  className="text-red-400 border-red-500/30 hover:bg-red-950/30"
-                  onClick={onClear}
+                  disabled={items.length < 2}
+                  onClick={onSaveAsWorkflow}
                 >
-                  <Trash2 className="size-3.5 mr-1" />
-                  Clear
+                  <Save className="size-3.5 mr-1" />
+                  Save as Workflow
                 </Button>
-                <div className="flex-1" />
-                {items.length >= 2 && onSaveAsWorkflow && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={onSaveAsWorkflow}
-                  >
-                    <Save className="size-3.5 mr-1" />
-                    Save as Workflow
-                  </Button>
+              )}
+              <Button
+                variant="brand-primary"
+                size="sm"
+                disabled={isRunning || items.length === 0}
+                onClick={onRun}
+              >
+                {isRunning ? (
+                  <Loader2 className="size-3.5 mr-1 animate-spin" />
+                ) : (
+                  <Play className="size-3.5 mr-1" />
                 )}
-                <Button
-                  variant="brand-primary"
-                  size="sm"
-                  disabled={isRunning || items.length === 0}
-                  onClick={onRun}
-                >
-                  {isRunning ? (
-                    <Loader2 className="size-3.5 mr-1 animate-spin" />
-                  ) : (
-                    <Play className="size-3.5 mr-1" />
-                  )}
-                  Run
-                </Button>
-              </div>
+                Run
+              </Button>
             </div>
-          )}
+          </div>
         </CardContent>
       </Card>
 

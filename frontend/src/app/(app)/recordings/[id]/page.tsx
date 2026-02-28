@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { ArrowLeft, Play, Trash2 } from "lucide-react";
+import { Play, Trash2 } from "lucide-react";
 import { recordingService } from "@/services/service-factory";
 import { ProcessingMonitor } from "@/components/recordings/ProcessingMonitor";
 import { StateStructureReview } from "@/components/recordings/StateStructureReview";
@@ -34,7 +34,6 @@ export default function RecordingDetailPage() {
       const data = await recordingService.getRecording(recordingId);
       setRecording(data);
 
-      // Auto-select appropriate tab based on status
       if (data.status === "processing" || data.status === "validating") {
         setActiveTab("processing");
       } else if (data.status === "completed") {
@@ -94,175 +93,108 @@ export default function RecordingDetailPage() {
 
   if (loading || !recording) {
     return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="flex justify-center items-center py-12">
-          <div className="h-8 w-8 animate-spin border-4 border-primary border-t-transparent rounded-full" />
-        </div>
+      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
+        <div className="h-8 w-8 animate-spin border-4 border-primary border-t-transparent rounded-full" />
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      {/* Header */}
-      <div className="mb-8">
-        <Button
-          variant="ghost"
-          onClick={() => router.push("/recordings")}
-          className="mb-4"
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Recordings
-        </Button>
-
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <div className="flex items-center gap-3 mb-2">
-              <h1 className="text-3xl font-bold">{recording.name}</h1>
-              <Badge
-                className={
-                  recording.status === "completed"
-                    ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
-                    : recording.status === "failed"
-                      ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100"
-                      : recording.status === "processing" ||
-                          recording.status === "validating"
-                        ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100"
-                        : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100"
-                }
-              >
-                {RecordingStatusLabels[recording.status]}
-              </Badge>
-              {recording.confidence && (
-                <Badge
-                  className={getConfidenceColor(
-                    getConfidenceLevel(recording.confidence)
-                  )}
-                >
-                  {Math.round(recording.confidence * 100)}% Confidence
-                </Badge>
-              )}
-            </div>
-            {recording.description && (
-              <p className="text-muted-foreground">{recording.description}</p>
-            )}
-            <p className="text-sm text-muted-foreground mt-2">
-              Created{" "}
-              {formatDistanceToNow(new Date(recording.created_at), {
-                addSuffix: true,
-              })}
-            </p>
-          </div>
-
-          <div className="flex gap-2">
-            {recording.status === "uploaded" && (
-              <Button onClick={handleStartProcessing}>
-                <Play className="mr-2 h-4 w-4" />
-                Start Processing
-              </Button>
-            )}
-            <Button
-              variant="outline"
-              onClick={handleDelete}
-              className="text-red-600"
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger
-            value="processing"
-            disabled={
-              recording.status !== "processing" &&
-              recording.status !== "validating" &&
-              recording.status !== "completed" &&
-              recording.status !== "failed"
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <h1 className="text-lg font-semibold text-foreground truncate">
+            {recording.name}
+          </h1>
+          <Badge
+            className={
+              recording.status === "completed"
+                ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
+                : recording.status === "failed"
+                  ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100"
+                  : recording.status === "processing" ||
+                      recording.status === "validating"
+                    ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100"
+                    : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100"
             }
           >
-            Processing
-          </TabsTrigger>
-          <TabsTrigger
-            value="review"
-            disabled={recording.status !== "completed"}
+            {RecordingStatusLabels[recording.status]}
+          </Badge>
+          {recording.confidence && (
+            <Badge
+              className={getConfidenceColor(
+                getConfidenceLevel(recording.confidence)
+              )}
+            >
+              {Math.round(recording.confidence * 100)}% Confidence
+            </Badge>
+          )}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-sm text-muted-foreground mr-2">
+            Created{" "}
+            {formatDistanceToNow(new Date(recording.created_at), {
+              addSuffix: true,
+            })}
+          </span>
+          {recording.status === "uploaded" && (
+            <Button size="sm" onClick={handleStartProcessing}>
+              <Play className="mr-2 h-4 w-4" />
+              Start Processing
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDelete}
+            className="text-red-600"
           >
-            Review Structure
-          </TabsTrigger>
-        </TabsList>
+            <Trash2 className="mr-2 h-4 w-4" />
+            Delete
+          </Button>
+        </div>
+      </header>
 
-        {/* Overview Tab */}
-        <TabsContent value="overview" className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Total Frames
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-bold">
-                  {recording.stats.total_frames}
-                </p>
-              </CardContent>
-            </Card>
+      <main className="flex-1 overflow-y-auto p-6">
+        {recording.description && (
+          <p className="text-sm text-muted-foreground mb-4">
+            {recording.description}
+          </p>
+        )}
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Interactions
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-bold">
-                  {recording.stats.total_interactions}
-                </p>
-              </CardContent>
-            </Card>
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList>
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger
+              value="processing"
+              disabled={
+                recording.status !== "processing" &&
+                recording.status !== "validating" &&
+                recording.status !== "completed" &&
+                recording.status !== "failed"
+              }
+            >
+              Processing
+            </TabsTrigger>
+            <TabsTrigger
+              value="review"
+              disabled={recording.status !== "completed"}
+            >
+              Review Structure
+            </TabsTrigger>
+          </TabsList>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Duration
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-bold">
-                  {recording.stats.duration_seconds}s
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Frame Rate
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-bold">
-                  {recording.stats.frame_rate} fps
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-
-          {recording.status === "completed" && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <TabsContent value="overview" className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <Card>
                 <CardHeader>
                   <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Discovered States
+                    Total Frames
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-3xl font-bold text-green-600">
-                    {recording.stats.discovered_states}
+                  <p className="text-3xl font-bold">
+                    {recording.stats.total_frames}
                   </p>
                 </CardContent>
               </Card>
@@ -270,12 +202,12 @@ export default function RecordingDetailPage() {
               <Card>
                 <CardHeader>
                   <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Discovered Transitions
+                    Interactions
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-3xl font-bold text-blue-600">
-                    {recording.stats.discovered_transitions}
+                  <p className="text-3xl font-bold">
+                    {recording.stats.total_interactions}
                   </p>
                 </CardContent>
               </Card>
@@ -283,91 +215,143 @@ export default function RecordingDetailPage() {
               <Card>
                 <CardHeader>
                   <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Workflows Generated
+                    Duration
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-3xl font-bold text-purple-600">
-                    {recording.stats.discovered_workflows}
+                  <p className="text-3xl font-bold">
+                    {recording.stats.duration_seconds}s
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Frame Rate
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-3xl font-bold">
+                    {recording.stats.frame_rate} fps
                   </p>
                 </CardContent>
               </Card>
             </div>
-          )}
 
-          {/* Tags */}
-          {recording.tags.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Tags</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex gap-2 flex-wrap">
-                  {recording.tags.map((tag) => (
-                    <Badge key={tag} variant="outline">
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+            {recording.status === "completed" && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                      Discovered States
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-3xl font-bold text-green-600">
+                      {recording.stats.discovered_states}
+                    </p>
+                  </CardContent>
+                </Card>
 
-          {/* Validation Issues */}
-          {(recording.validation_errors.length > 0 ||
-            recording.validation_warnings.length > 0) && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Validation Issues</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {recording.validation_errors.length > 0 && (
-                  <div>
-                    <h4 className="font-medium text-red-600 mb-2">Errors</h4>
-                    <ul className="space-y-1">
-                      {recording.validation_errors.map((error, idx) => (
-                        <li key={idx} className="text-sm text-red-600">
-                          • {error}
-                        </li>
-                      ))}
-                    </ul>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                      Discovered Transitions
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-3xl font-bold text-blue-600">
+                      {recording.stats.discovered_transitions}
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                      Workflows Generated
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-3xl font-bold text-purple-600">
+                      {recording.stats.discovered_workflows}
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {recording.tags.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Tags</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex gap-2 flex-wrap">
+                    {recording.tags.map((tag) => (
+                      <Badge key={tag} variant="outline">
+                        {tag}
+                      </Badge>
+                    ))}
                   </div>
-                )}
-                {recording.validation_warnings.length > 0 && (
-                  <div>
-                    <h4 className="font-medium text-yellow-600 mb-2">
-                      Warnings
-                    </h4>
-                    <ul className="space-y-1">
-                      {recording.validation_warnings.map((warning, idx) => (
-                        <li key={idx} className="text-sm text-yellow-600">
-                          • {warning}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
+                </CardContent>
+              </Card>
+            )}
 
-        {/* Processing Tab */}
-        <TabsContent value="processing" className="pt-6">
-          <ProcessingMonitor
-            recordingId={recordingId}
-            onComplete={handleProcessingComplete}
-            onError={handleProcessingError}
-          />
-        </TabsContent>
+            {(recording.validation_errors.length > 0 ||
+              recording.validation_warnings.length > 0) && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Validation Issues</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {recording.validation_errors.length > 0 && (
+                    <div>
+                      <h4 className="font-medium text-red-600 mb-2">Errors</h4>
+                      <ul className="space-y-1">
+                        {recording.validation_errors.map((error, idx) => (
+                          <li key={idx} className="text-sm text-red-600">
+                            &bull; {error}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {recording.validation_warnings.length > 0 && (
+                    <div>
+                      <h4 className="font-medium text-yellow-600 mb-2">
+                        Warnings
+                      </h4>
+                      <ul className="space-y-1">
+                        {recording.validation_warnings.map((warning, idx) => (
+                          <li key={idx} className="text-sm text-yellow-600">
+                            &bull; {warning}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
 
-        {/* Review Tab */}
-        <TabsContent value="review" className="pt-6">
-          <div className="min-h-[600px]">
-            <StateStructureReview recordingId={recordingId} />
-          </div>
-        </TabsContent>
-      </Tabs>
+          <TabsContent value="processing" className="pt-6">
+            <ProcessingMonitor
+              recordingId={recordingId}
+              onComplete={handleProcessingComplete}
+              onError={handleProcessingError}
+            />
+          </TabsContent>
+
+          <TabsContent value="review" className="pt-6">
+            <div className="min-h-[600px]">
+              <StateStructureReview recordingId={recordingId} />
+            </div>
+          </TabsContent>
+        </Tabs>
+      </main>
     </div>
   );
 }

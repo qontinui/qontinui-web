@@ -434,8 +434,8 @@ function DocumentationNavigator({
           }}
           className={cn(
             "w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors",
-            isSelected && "bg-brand-primary/20 text-brand-primary font-medium",
-            !isSelected && "hover:bg-surface-raised/50 text-text-muted"
+            isSelected && "bg-primary/20 text-primary font-medium",
+            !isSelected && "hover:bg-muted text-muted-foreground"
           )}
           style={{ paddingLeft: `${depth * 12 + 8}px` }}
         >
@@ -469,24 +469,24 @@ function DocumentationNavigator({
   };
 
   return (
-    <div className="flex flex-col h-full border-r border-border-subtle/50 bg-surface-raised/30">
+    <div className="flex flex-col h-full border-r border-border bg-muted/50">
       {/* Header */}
-      <div className="p-4 border-b border-border-subtle/50 space-y-3">
+      <div className="p-4 border-b border-border space-y-3">
         <div className="flex items-center gap-2">
-          <BookOpen className="size-5 text-brand-primary" />
+          <BookOpen className="size-5 text-primary" />
           <h3 className="font-semibold">Documentation</h3>
         </div>
 
         {/* Search */}
         <div className="relative">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-4 text-text-muted" />
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             placeholder="Search docs..."
             value={filter.searchQuery}
             onChange={(e) =>
               onFilterChange({ ...filter, searchQuery: e.target.value })
             }
-            className="pl-8 h-9 bg-surface-canvas/50 border-border-default"
+            className="pl-8 h-9 bg-background border-border"
           />
         </div>
 
@@ -501,7 +501,7 @@ function DocumentationNavigator({
               })
             }
           >
-            <SelectTrigger className="h-9 bg-surface-canvas/50 border-border-default">
+            <SelectTrigger className="h-9 bg-background border-border">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -521,11 +521,11 @@ function DocumentationNavigator({
       </ScrollArea>
 
       {/* Footer */}
-      <div className="p-2 border-t border-border-subtle/50">
+      <div className="p-2 border-t border-border">
         <Button
           variant="outline"
           size="sm"
-          className="w-full border-border-default hover:border-brand-primary hover:text-brand-primary bg-transparent"
+          className="w-full border-border hover:border-primary hover:text-primary bg-transparent"
           onClick={() => tree[0] && onSelectNode(tree[0])}
         >
           <Plus className="size-4 mr-2" />
@@ -551,28 +551,26 @@ function DocumentationDashboard({
   });
 
   return (
-    <div className="p-8 max-w-5xl mx-auto space-y-6">
+    <div className="flex-1 overflow-auto p-6 space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
-          Documentation Dashboard
-        </h1>
-        <p className="text-text-muted mt-2">
+        <h2 className="text-lg font-semibold">Documentation Dashboard</h2>
+        <p className="text-muted-foreground mt-1">
           Manage and maintain your workflow documentation
         </p>
       </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="bg-surface-raised/50 border-border-subtle/50">
+        <Card className="bg-muted border-border">
           <CardContent className="p-6">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-lg bg-brand-primary/20 flex items-center justify-center">
-                <FileText className="size-6 text-brand-primary" />
+              <div className="w-12 h-12 rounded-lg bg-primary/20 flex items-center justify-center">
+                <FileText className="size-6 text-primary" />
               </div>
               <div>
-                <p className="text-sm text-text-muted">Total Documents</p>
-                <p className="text-2xl font-bold text-brand-primary">
+                <p className="text-sm text-muted-foreground">Total Documents</p>
+                <p className="text-2xl font-bold text-primary">
                   {stats.documented}
                 </p>
               </div>
@@ -580,15 +578,15 @@ function DocumentationDashboard({
           </CardContent>
         </Card>
 
-        <Card className="bg-surface-raised/50 border-border-subtle/50">
+        <Card className="bg-muted border-border">
           <CardContent className="p-6">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-lg bg-brand-success/20 flex items-center justify-center">
-                <BarChart3 className="size-6 text-brand-success" />
+              <div className="w-12 h-12 rounded-lg bg-green-500/20 flex items-center justify-center">
+                <BarChart3 className="size-6 text-green-500" />
               </div>
               <div>
-                <p className="text-sm text-text-muted">Coverage</p>
-                <p className="text-2xl font-bold text-brand-success">
+                <p className="text-sm text-muted-foreground">Coverage</p>
+                <p className="text-2xl font-bold text-green-500">
                   {stats.coverage.toFixed(1)}%
                 </p>
               </div>
@@ -596,15 +594,17 @@ function DocumentationDashboard({
           </CardContent>
         </Card>
 
-        <Card className="bg-surface-raised/50 border-border-subtle/50">
+        <Card className="bg-muted border-border">
           <CardContent className="p-6">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-lg bg-brand-secondary/20 flex items-center justify-center">
-                <Clock className="size-6 text-brand-secondary" />
+              <div className="w-12 h-12 rounded-lg bg-primary/20 flex items-center justify-center">
+                <Clock className="size-6 text-primary" />
               </div>
               <div>
-                <p className="text-sm text-text-muted">Recently Updated</p>
-                <p className="text-2xl font-bold text-brand-secondary">
+                <p className="text-sm text-muted-foreground">
+                  Recently Updated
+                </p>
+                <p className="text-2xl font-bold text-primary">
                   {stats.recentlyUpdated}
                 </p>
               </div>
@@ -612,15 +612,15 @@ function DocumentationDashboard({
           </CardContent>
         </Card>
 
-        <Card className="bg-surface-raised/50 border-border-subtle/50">
+        <Card className="bg-muted border-border">
           <CardContent className="p-6">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-lg bg-brand-warning/20 flex items-center justify-center">
-                <TrendingUp className="size-6 text-brand-warning" />
+              <div className="w-12 h-12 rounded-lg bg-yellow-500/20 flex items-center justify-center">
+                <TrendingUp className="size-6 text-yellow-500" />
               </div>
               <div>
-                <p className="text-sm text-text-muted">Health Score</p>
-                <p className="text-2xl font-bold text-brand-warning">
+                <p className="text-sm text-muted-foreground">Health Score</p>
+                <p className="text-2xl font-bold text-yellow-500">
                   {stats.healthScore}
                 </p>
               </div>
@@ -630,7 +630,7 @@ function DocumentationDashboard({
       </div>
 
       {/* Coverage Progress */}
-      <Card className="bg-surface-raised/50 border-border-subtle/50">
+      <Card className="bg-muted border-border">
         <CardHeader>
           <CardTitle>Documentation Coverage</CardTitle>
           <CardDescription>
@@ -645,7 +645,7 @@ function DocumentationDashboard({
       {/* Two Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Undocumented Workflows */}
-        <Card className="bg-surface-raised/50 border-border-subtle/50">
+        <Card className="bg-muted border-border">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
@@ -661,7 +661,7 @@ function DocumentationDashboard({
                 <Button
                   size="sm"
                   variant="outline"
-                  className="border-brand-primary text-brand-primary hover:bg-brand-primary/20"
+                  className="border-primary text-primary hover:bg-primary/20"
                 >
                   <Sparkles className="size-4 mr-2" />
                   Generate All
@@ -675,14 +675,14 @@ function DocumentationDashboard({
                 {undocumentedWorkflows.slice(0, 10).map((workflow) => (
                   <div
                     key={workflow.id}
-                    className="flex items-center justify-between p-3 rounded-lg border border-border-subtle/50 hover:border-border-default transition-colors cursor-pointer"
+                    className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-border transition-colors cursor-pointer"
                     onClick={() => onSelectWorkflow(workflow)}
                   >
                     <div className="flex items-center gap-3">
-                      <FileCode className="size-4 text-text-muted" />
+                      <FileCode className="size-4 text-muted-foreground" />
                       <div>
                         <p className="text-sm font-medium">{workflow.name}</p>
-                        <p className="text-xs text-text-muted">
+                        <p className="text-xs text-muted-foreground">
                           {workflow.category}
                         </p>
                       </div>
@@ -698,10 +698,10 @@ function DocumentationDashboard({
         </Card>
 
         {/* Most Viewed */}
-        <Card className="bg-surface-raised/50 border-border-subtle/50">
+        <Card className="bg-muted border-border">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Eye className="size-5 text-brand-primary" />
+              <Eye className="size-5 text-primary" />
               Most Viewed
             </CardTitle>
             <CardDescription>Popular documentation pages</CardDescription>
@@ -711,20 +711,20 @@ function DocumentationDashboard({
               {stats.mostViewed.map((name, idx) => (
                 <div
                   key={name}
-                  className="flex items-center justify-between p-3 rounded-lg border border-border-subtle/50 hover:border-border-default transition-colors cursor-pointer"
+                  className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-border transition-colors cursor-pointer"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-brand-primary/20 text-brand-primary font-bold text-sm">
+                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/20 text-primary font-bold text-sm">
                       {idx + 1}
                     </div>
                     <div>
                       <p className="text-sm font-medium">{name}</p>
-                      <p className="text-xs text-text-muted">
+                      <p className="text-xs text-muted-foreground">
                         {[329, 552, 418, 267, 385][idx] || 200} views
                       </p>
                     </div>
                   </div>
-                  <ExternalLink className="size-4 text-text-muted" />
+                  <ExternalLink className="size-4 text-muted-foreground" />
                 </div>
               ))}
             </div>
@@ -733,7 +733,7 @@ function DocumentationDashboard({
       </div>
 
       {/* Quick Links */}
-      <Card className="bg-surface-raised/50 border-border-subtle/50">
+      <Card className="bg-muted border-border">
         <CardHeader>
           <CardTitle>Quick Actions</CardTitle>
           <CardDescription>Common documentation tasks</CardDescription>
@@ -742,28 +742,28 @@ function DocumentationDashboard({
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Button
               variant="outline"
-              className="h-auto flex-col gap-2 p-4 border-border-default hover:border-brand-primary hover:text-brand-primary bg-transparent"
+              className="h-auto flex-col gap-2 p-4 border-border hover:border-primary hover:text-primary bg-transparent"
             >
               <Sparkles className="size-6" />
               <span className="text-xs">Auto-Generate</span>
             </Button>
             <Button
               variant="outline"
-              className="h-auto flex-col gap-2 p-4 border-border-default hover:border-brand-secondary hover:text-brand-secondary bg-transparent"
+              className="h-auto flex-col gap-2 p-4 border-border hover:border-primary hover:text-primary bg-transparent"
             >
               <Download className="size-6" />
               <span className="text-xs">Export All</span>
             </Button>
             <Button
               variant="outline"
-              className="h-auto flex-col gap-2 p-4 border-border-default hover:border-brand-success hover:text-brand-success bg-transparent"
+              className="h-auto flex-col gap-2 p-4 border-border hover:border-green-500 hover:text-green-500 bg-transparent"
             >
               <Upload className="size-6" />
               <span className="text-xs">Import Docs</span>
             </Button>
             <Button
               variant="outline"
-              className="h-auto flex-col gap-2 p-4 border-border-default hover:border-brand-warning hover:text-brand-warning bg-transparent"
+              className="h-auto flex-col gap-2 p-4 border-border hover:border-yellow-500 hover:text-yellow-500 bg-transparent"
             >
               <Settings className="size-6" />
               <span className="text-xs">Templates</span>
@@ -793,11 +793,11 @@ function WorkflowInfoPanel({
   const documentation = docService.getDocumentation(workflow.id);
 
   return (
-    <div className="flex flex-col h-full border-l border-border-subtle/50 bg-surface-raised/30">
+    <div className="flex flex-col h-full border-l border-border bg-muted/50">
       {/* Header */}
-      <div className="p-4 border-b border-border-subtle/50">
+      <div className="p-4 border-b border-border">
         <h3 className="font-semibold flex items-center gap-2">
-          <Info className="size-5 text-brand-secondary" />
+          <Info className="size-5 text-primary" />
           Workflow Info
         </h3>
       </div>
@@ -806,31 +806,31 @@ function WorkflowInfoPanel({
         <div className="p-4 space-y-6">
           {/* Quick Stats */}
           <div className="space-y-3">
-            <h4 className="text-sm font-semibold text-text-muted uppercase">
+            <h4 className="text-sm font-semibold text-muted-foreground uppercase">
               Quick Stats
             </h4>
             <div className="grid grid-cols-2 gap-3">
-              <div className="p-3 rounded-lg bg-surface-canvas/50 border border-border-subtle/50">
-                <p className="text-xs text-text-muted">Actions</p>
-                <p className="text-lg font-bold text-brand-primary">
+              <div className="p-3 rounded-lg bg-background border border-border">
+                <p className="text-xs text-muted-foreground">Actions</p>
+                <p className="text-lg font-bold text-primary">
                   {stats.actionCount}
                 </p>
               </div>
-              <div className="p-3 rounded-lg bg-surface-canvas/50 border border-border-subtle/50">
-                <p className="text-xs text-text-muted">Complexity</p>
-                <p className="text-lg font-bold text-brand-secondary">
+              <div className="p-3 rounded-lg bg-background border border-border">
+                <p className="text-xs text-muted-foreground">Complexity</p>
+                <p className="text-lg font-bold text-primary">
                   {stats.complexity}
                 </p>
               </div>
-              <div className="p-3 rounded-lg bg-surface-canvas/50 border border-border-subtle/50">
-                <p className="text-xs text-text-muted">Dependencies</p>
-                <p className="text-lg font-bold text-brand-warning">
+              <div className="p-3 rounded-lg bg-background border border-border">
+                <p className="text-xs text-muted-foreground">Dependencies</p>
+                <p className="text-lg font-bold text-yellow-500">
                   {stats.dependencies}
                 </p>
               </div>
-              <div className="p-3 rounded-lg bg-surface-canvas/50 border border-border-subtle/50">
-                <p className="text-xs text-text-muted">Test Coverage</p>
-                <p className="text-lg font-bold text-brand-success">
+              <div className="p-3 rounded-lg bg-background border border-border">
+                <p className="text-xs text-muted-foreground">Test Coverage</p>
+                <p className="text-lg font-bold text-green-500">
                   {stats.testCoverage}%
                 </p>
               </div>
@@ -839,14 +839,16 @@ function WorkflowInfoPanel({
 
           {/* Metrics */}
           <div className="space-y-3">
-            <h4 className="text-sm font-semibold text-text-muted uppercase">
+            <h4 className="text-sm font-semibold text-muted-foreground uppercase">
               Performance
             </h4>
             {stats.lastRun && (
-              <div className="p-3 rounded-lg bg-surface-canvas/50 border border-border-subtle/50">
+              <div className="p-3 rounded-lg bg-background border border-border">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs text-text-muted">Last Run</span>
-                  <Clock className="size-3 text-text-muted" />
+                  <span className="text-xs text-muted-foreground">
+                    Last Run
+                  </span>
+                  <Clock className="size-3 text-muted-foreground" />
                 </div>
                 <p className="text-sm font-medium">
                   {new Date(stats.lastRun).toLocaleDateString()}
@@ -854,17 +856,19 @@ function WorkflowInfoPanel({
               </div>
             )}
             {stats.successRate && (
-              <div className="p-3 rounded-lg bg-surface-canvas/50 border border-border-subtle/50">
+              <div className="p-3 rounded-lg bg-background border border-border">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs text-text-muted">Success Rate</span>
+                  <span className="text-xs text-muted-foreground">
+                    Success Rate
+                  </span>
                   <span
                     className={cn(
                       "text-sm font-bold",
                       stats.successRate >= 95
-                        ? "text-brand-success"
+                        ? "text-green-500"
                         : stats.successRate >= 85
-                          ? "text-brand-warning"
-                          : "text-status-error"
+                          ? "text-yellow-500"
+                          : "text-destructive"
                     )}
                   >
                     {stats.successRate.toFixed(1)}%
@@ -878,7 +882,7 @@ function WorkflowInfoPanel({
           {/* Tags */}
           {workflow.tags && workflow.tags.length > 0 && (
             <div className="space-y-3">
-              <h4 className="text-sm font-semibold text-text-muted uppercase">
+              <h4 className="text-sm font-semibold text-muted-foreground uppercase">
                 Tags
               </h4>
               <div className="flex flex-wrap gap-2">
@@ -886,7 +890,7 @@ function WorkflowInfoPanel({
                   <Badge
                     key={tag}
                     variant="outline"
-                    className="bg-surface-canvas/50 border-border-default text-text-muted"
+                    className="bg-background border-border text-muted-foreground"
                   >
                     <Tags className="size-3 mr-1" />
                     {tag}
@@ -899,19 +903,19 @@ function WorkflowInfoPanel({
           {/* Recent Changes */}
           {documentation && (
             <div className="space-y-3">
-              <h4 className="text-sm font-semibold text-text-muted uppercase">
+              <h4 className="text-sm font-semibold text-muted-foreground uppercase">
                 Documentation
               </h4>
-              <div className="p-3 rounded-lg bg-surface-canvas/50 border border-border-subtle/50">
+              <div className="p-3 rounded-lg bg-background border border-border">
                 <div className="flex items-center gap-2 mb-1">
-                  <CheckCircle2 className="size-4 text-brand-success" />
+                  <CheckCircle2 className="size-4 text-green-500" />
                   <span className="text-sm font-medium">Documented</span>
                 </div>
-                <p className="text-xs text-text-muted">
+                <p className="text-xs text-muted-foreground">
                   Last updated:{" "}
                   {new Date(documentation.updated).toLocaleDateString()}
                 </p>
-                <p className="text-xs text-text-muted">
+                <p className="text-xs text-muted-foreground">
                   Version: {documentation.version}
                 </p>
               </div>
@@ -920,14 +924,14 @@ function WorkflowInfoPanel({
 
           {/* Quick Actions */}
           <div className="space-y-3">
-            <h4 className="text-sm font-semibold text-text-muted uppercase">
+            <h4 className="text-sm font-semibold text-muted-foreground uppercase">
               Quick Actions
             </h4>
             <div className="space-y-2">
               <Button
                 size="sm"
                 variant="outline"
-                className="w-full justify-start border-border-default hover:border-brand-primary hover:text-brand-primary bg-transparent"
+                className="w-full justify-start border-border hover:border-primary hover:text-primary bg-transparent"
                 onClick={onEdit}
               >
                 <Edit className="size-4 mr-2" />
@@ -936,7 +940,7 @@ function WorkflowInfoPanel({
               <Button
                 size="sm"
                 variant="outline"
-                className="w-full justify-start border-border-default hover:border-brand-success hover:text-brand-success bg-transparent"
+                className="w-full justify-start border-border hover:border-green-500 hover:text-green-500 bg-transparent"
                 onClick={onRun}
               >
                 <PlayCircle className="size-4 mr-2" />
@@ -945,7 +949,7 @@ function WorkflowInfoPanel({
               <Button
                 size="sm"
                 variant="outline"
-                className="w-full justify-start border-border-default hover:border-brand-secondary hover:text-brand-secondary bg-transparent"
+                className="w-full justify-start border-border hover:border-primary hover:text-primary bg-transparent"
                 onClick={onViewTests}
               >
                 <TestTube className="size-4 mr-2" />
@@ -954,7 +958,7 @@ function WorkflowInfoPanel({
               <Button
                 size="sm"
                 variant="outline"
-                className="w-full justify-start border-border-default hover:border-brand-warning hover:text-brand-warning bg-transparent"
+                className="w-full justify-start border-border hover:border-yellow-500 hover:text-yellow-500 bg-transparent"
                 onClick={onViewMetrics}
               >
                 <BarChart3 className="size-4 mr-2" />
@@ -965,25 +969,25 @@ function WorkflowInfoPanel({
 
           {/* Related Documentation */}
           <div className="space-y-3">
-            <h4 className="text-sm font-semibold text-text-muted uppercase">
+            <h4 className="text-sm font-semibold text-muted-foreground uppercase">
               Related Docs
             </h4>
             <div className="space-y-2">
-              <button className="w-full text-left p-2 rounded hover:bg-surface-raised/50 transition-colors">
-                <p className="text-sm text-brand-primary">
-                  Getting Started Guide
-                </p>
-                <p className="text-xs text-text-muted">
+              <button className="w-full text-left p-2 rounded hover:bg-muted transition-colors">
+                <p className="text-sm text-primary">Getting Started Guide</p>
+                <p className="text-xs text-muted-foreground">
                   Introduction to this workflow
                 </p>
               </button>
-              <button className="w-full text-left p-2 rounded hover:bg-surface-raised/50 transition-colors">
-                <p className="text-sm text-brand-primary">API Documentation</p>
-                <p className="text-xs text-text-muted">Related endpoints</p>
+              <button className="w-full text-left p-2 rounded hover:bg-muted transition-colors">
+                <p className="text-sm text-primary">API Documentation</p>
+                <p className="text-xs text-muted-foreground">
+                  Related endpoints
+                </p>
               </button>
-              <button className="w-full text-left p-2 rounded hover:bg-surface-raised/50 transition-colors">
-                <p className="text-sm text-brand-primary">Troubleshooting</p>
-                <p className="text-xs text-text-muted">
+              <button className="w-full text-left p-2 rounded hover:bg-muted transition-colors">
+                <p className="text-sm text-primary">Troubleshooting</p>
+                <p className="text-xs text-muted-foreground">
                   Common issues and fixes
                 </p>
               </button>
@@ -1178,23 +1182,16 @@ export default function DocumentationPage() {
 
   return (
     <RequireProject pageName="Documentation">
-      <div className="flex flex-col h-screen bg-surface-canvas text-white">
+      <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border-subtle/50 bg-surface-raised/50 backdrop-blur-sm">
-          <div>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
-              Project Documentation
-            </h1>
-            <p className="text-sm text-text-muted mt-1">
-              Document your workflows and automation project
-            </p>
-          </div>
+        <div className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+          <h1 className="text-lg font-semibold">Project Documentation</h1>
 
           <div className="flex items-center gap-2">
             <Button
               size="sm"
               variant="outline"
-              className="border-border-default hover:border-brand-primary hover:text-brand-primary bg-transparent"
+              className="border-border hover:border-primary hover:text-primary bg-transparent"
               onClick={() => setMode("edit")}
             >
               <Plus className="size-4 mr-2" />
@@ -1203,7 +1200,7 @@ export default function DocumentationPage() {
             <Button
               size="sm"
               variant="outline"
-              className="border-border-default hover:border-brand-secondary hover:text-brand-secondary bg-transparent"
+              className="border-border hover:border-primary hover:text-primary bg-transparent"
               onClick={handleGenerateAll}
             >
               <Sparkles className="size-4 mr-2" />
@@ -1212,7 +1209,7 @@ export default function DocumentationPage() {
             <Button
               size="sm"
               variant="outline"
-              className="border-border-default hover:border-brand-success hover:text-brand-success bg-transparent"
+              className="border-border hover:border-green-500 hover:text-green-500 bg-transparent"
               onClick={handleExportAll}
             >
               <Download className="size-4 mr-2" />
@@ -1221,7 +1218,7 @@ export default function DocumentationPage() {
             <Button
               size="sm"
               variant="outline"
-              className="border-border-default hover:border-brand-warning hover:text-brand-warning bg-transparent"
+              className="border-border hover:border-yellow-500 hover:text-yellow-500 bg-transparent"
               onClick={handleImport}
             >
               <Upload className="size-4 mr-2" />
@@ -1266,7 +1263,7 @@ export default function DocumentationPage() {
             {selectedWorkflow && (
               <>
                 {/* Tabs */}
-                <div className="flex items-center gap-4 px-4 py-3 border-b border-border-subtle/50 bg-surface-raised/30">
+                <div className="flex items-center gap-4 px-4 py-3 border-b border-border bg-muted/50">
                   <Button
                     size="sm"
                     variant={mode === "view" ? "default" : "ghost"}
@@ -1348,11 +1345,11 @@ export default function DocumentationPage() {
                   {mode === "view" && !selectedDocumentation && (
                     <div className="flex items-center justify-center h-full">
                       <div className="text-center p-8 max-w-md">
-                        <FileText className="size-16 mx-auto mb-4 text-text-muted" />
+                        <FileText className="size-16 mx-auto mb-4 text-muted-foreground" />
                         <h3 className="text-xl font-semibold mb-2">
                           No Documentation Yet
                         </h3>
-                        <p className="text-text-muted mb-6">
+                        <p className="text-muted-foreground mb-6">
                           This workflow doesn&apos;t have documentation yet.
                           Create documentation to help others understand how it
                           works.
@@ -1360,7 +1357,7 @@ export default function DocumentationPage() {
                         <div className="flex gap-3 justify-center">
                           <Button
                             onClick={() => setMode("edit")}
-                            className="bg-brand-primary hover:bg-brand-primary/80 text-black"
+                            className="bg-primary hover:bg-primary/80 text-primary-foreground"
                           >
                             <Edit className="size-4 mr-2" />
                             Create Documentation
@@ -1368,7 +1365,7 @@ export default function DocumentationPage() {
                           <Button
                             variant="outline"
                             onClick={handleGenerateAuto}
-                            className="border-brand-secondary text-brand-secondary hover:bg-brand-secondary/20"
+                            className="border-primary text-primary hover:bg-primary/20"
                           >
                             <Sparkles className="size-4 mr-2" />
                             Auto-Generate
@@ -1415,7 +1412,7 @@ export default function DocumentationPage() {
 
         {/* Delete Confirmation Dialog */}
         <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-          <AlertDialogContent className="bg-surface-raised border-border-subtle">
+          <AlertDialogContent className="bg-muted border-border">
             <AlertDialogHeader>
               <AlertDialogTitle>Delete Documentation</AlertDialogTitle>
               <AlertDialogDescription>
@@ -1424,7 +1421,7 @@ export default function DocumentationPage() {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel className="bg-transparent border-border-default">
+              <AlertDialogCancel className="bg-transparent border-border">
                 Cancel
               </AlertDialogCancel>
               <AlertDialogAction

@@ -132,27 +132,17 @@ export default function StatisticsPage() {
   }, [runs]);
 
   return (
-    <div className="h-full overflow-y-auto bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <BarChart3 className="size-6 text-green-500" />
-            <h1 className="text-2xl font-bold text-text-primary">Statistics</h1>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refetch()}
-            className="border-border-default"
-          >
-            <RefreshCw className="size-4 mr-2" />
-            Refresh
-          </Button>
-        </div>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <h1 className="text-lg font-semibold">Statistics</h1>
+        <Button variant="outline" size="sm" onClick={() => refetch()}>
+          <RefreshCw className="size-4 mr-2" />
+          Refresh
+        </Button>
       </header>
 
-      <main className="p-6 max-w-7xl mx-auto space-y-6">
-        <p className="text-text-muted">
+      <main className="flex-1 overflow-y-auto p-6 space-y-6">
+        <p className="text-muted-foreground text-sm">
           Performance analytics computed from recent task runs.
         </p>
 
@@ -164,7 +154,9 @@ export default function StatisticsPage() {
             size="sm"
             onClick={() => setViewMode("overview")}
             className={
-              viewMode === "overview" ? "bg-brand-primary text-black" : ""
+              viewMode === "overview"
+                ? "bg-primary text-primary-foreground"
+                : ""
             }
           >
             Overview
@@ -174,7 +166,9 @@ export default function StatisticsPage() {
             size="sm"
             onClick={() => setViewMode("performance")}
             className={
-              viewMode === "performance" ? "bg-brand-primary text-black" : ""
+              viewMode === "performance"
+                ? "bg-primary text-primary-foreground"
+                : ""
             }
           >
             Performance
@@ -182,7 +176,7 @@ export default function StatisticsPage() {
         </div>
 
         {isLoading ? (
-          <div className="text-center py-16 text-text-muted">
+          <div className="text-center py-16 text-muted-foreground">
             <RefreshCw className="size-6 animate-spin mx-auto mb-3" />
             Computing statistics...
           </div>
@@ -191,11 +185,11 @@ export default function StatisticsPage() {
             Error loading data: {error?.message ?? "Unknown error"}
           </div>
         ) : !stats ? (
-          <Card className="bg-surface-raised/50 border-border-subtle/50">
+          <Card className="bg-muted border-border">
             <CardContent className="py-16">
-              <div className="text-center text-text-muted">
+              <div className="text-center text-muted-foreground">
                 <BarChart3 className="size-16 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-text-secondary mb-2">
+                <h3 className="text-lg font-medium text-muted-foreground mb-2">
                   No Data Available
                 </h3>
                 <p className="text-sm">
@@ -210,19 +204,19 @@ export default function StatisticsPage() {
               <>
                 {/* Summary Cards */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <Card className="bg-surface-raised/50 border-border-subtle/50">
+                  <Card className="bg-muted border-border">
                     <CardContent className="pt-6">
                       <div className="flex items-center gap-2 mb-2">
-                        <Hash className="size-4 text-text-muted" />
+                        <Hash className="size-4 text-muted-foreground" />
                         <span
-                          className="text-xs text-text-muted"
+                          className="text-xs text-muted-foreground"
                           data-content-role="label"
                         >
                           Total Runs
                         </span>
                       </div>
                       <div
-                        className="text-3xl font-bold text-text-primary"
+                        className="text-3xl font-bold text-foreground"
                         data-content-role="metric"
                         data-content-label="total-runs"
                       >
@@ -231,19 +225,19 @@ export default function StatisticsPage() {
                     </CardContent>
                   </Card>
 
-                  <Card className="bg-surface-raised/50 border-border-subtle/50">
+                  <Card className="bg-muted border-border">
                     <CardContent className="pt-6">
                       <div className="flex items-center gap-2 mb-2">
-                        <Timer className="size-4 text-text-muted" />
+                        <Timer className="size-4 text-muted-foreground" />
                         <span
-                          className="text-xs text-text-muted"
+                          className="text-xs text-muted-foreground"
                           data-content-role="label"
                         >
                           Avg Duration
                         </span>
                       </div>
                       <div
-                        className="text-3xl font-bold text-text-primary"
+                        className="text-3xl font-bold text-foreground"
                         data-content-role="metric"
                         data-content-label="avg-duration"
                       >
@@ -252,12 +246,12 @@ export default function StatisticsPage() {
                     </CardContent>
                   </Card>
 
-                  <Card className="bg-surface-raised/50 border-border-subtle/50">
+                  <Card className="bg-muted border-border">
                     <CardContent className="pt-6">
                       <div className="flex items-center gap-2 mb-2">
-                        <TrendingUp className="size-4 text-text-muted" />
+                        <TrendingUp className="size-4 text-muted-foreground" />
                         <span
-                          className="text-xs text-text-muted"
+                          className="text-xs text-muted-foreground"
                           data-content-role="label"
                         >
                           Success Rate
@@ -279,19 +273,19 @@ export default function StatisticsPage() {
                     </CardContent>
                   </Card>
 
-                  <Card className="bg-surface-raised/50 border-border-subtle/50">
+                  <Card className="bg-muted border-border">
                     <CardContent className="pt-6">
                       <div className="flex items-center gap-2 mb-2">
-                        <Clock className="size-4 text-text-muted" />
+                        <Clock className="size-4 text-muted-foreground" />
                         <span
-                          className="text-xs text-text-muted"
+                          className="text-xs text-muted-foreground"
                           data-content-role="label"
                         >
                           Total Time
                         </span>
                       </div>
                       <div
-                        className="text-3xl font-bold text-text-primary"
+                        className="text-3xl font-bold text-foreground"
                         data-content-role="metric"
                         data-content-label="total-time"
                       >
@@ -302,7 +296,7 @@ export default function StatisticsPage() {
                 </div>
 
                 {/* Status Breakdown */}
-                <Card className="bg-surface-raised/50 border-border-subtle/50">
+                <Card className="bg-muted border-border">
                   <CardHeader>
                     <CardTitle className="text-base flex items-center gap-2">
                       <Activity className="size-4" />
@@ -311,7 +305,7 @@ export default function StatisticsPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div className="flex items-center gap-3 p-3 rounded-lg bg-surface-canvas/50">
+                      <div className="flex items-center gap-3 p-3 rounded-lg bg-background">
                         <CheckCircle2 className="size-5 text-green-500" />
                         <div>
                           <div
@@ -322,14 +316,14 @@ export default function StatisticsPage() {
                             {stats.completedRuns}
                           </div>
                           <div
-                            className="text-xs text-text-muted"
+                            className="text-xs text-muted-foreground"
                             data-content-role="label"
                           >
                             Completed
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3 p-3 rounded-lg bg-surface-canvas/50">
+                      <div className="flex items-center gap-3 p-3 rounded-lg bg-background">
                         <XCircle className="size-5 text-red-500" />
                         <div>
                           <div
@@ -340,14 +334,14 @@ export default function StatisticsPage() {
                             {stats.failedRuns}
                           </div>
                           <div
-                            className="text-xs text-text-muted"
+                            className="text-xs text-muted-foreground"
                             data-content-role="label"
                           >
                             Failed
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3 p-3 rounded-lg bg-surface-canvas/50">
+                      <div className="flex items-center gap-3 p-3 rounded-lg bg-background">
                         <PlayCircle className="size-5 text-blue-500" />
                         <div>
                           <div
@@ -358,25 +352,25 @@ export default function StatisticsPage() {
                             {stats.runningRuns}
                           </div>
                           <div
-                            className="text-xs text-text-muted"
+                            className="text-xs text-muted-foreground"
                             data-content-role="label"
                           >
                             Running
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3 p-3 rounded-lg bg-surface-canvas/50">
-                        <Clock className="size-5 text-text-muted" />
+                      <div className="flex items-center gap-3 p-3 rounded-lg bg-background">
+                        <Clock className="size-5 text-muted-foreground" />
                         <div>
                           <div
-                            className="text-xl font-bold text-text-secondary"
+                            className="text-xl font-bold text-muted-foreground"
                             data-content-role="metric"
                             data-content-label="stopped-runs"
                           >
                             {stats.stoppedRuns}
                           </div>
                           <div
-                            className="text-xs text-text-muted"
+                            className="text-xs text-muted-foreground"
                             data-content-role="label"
                           >
                             Stopped
@@ -388,7 +382,7 @@ export default function StatisticsPage() {
                     {/* Visual bar */}
                     {stats.totalRuns > 0 && (
                       <div className="mt-4">
-                        <div className="flex h-3 rounded-full overflow-hidden bg-surface-canvas/50">
+                        <div className="flex h-3 rounded-full overflow-hidden bg-background">
                           {stats.completedRuns > 0 && (
                             <div
                               className="bg-green-500 transition-all"
@@ -431,34 +425,34 @@ export default function StatisticsPage() {
                 {(stats.longestRun || stats.shortestRun) && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {stats.longestRun && (
-                      <Card className="bg-surface-raised/50 border-border-subtle/50">
+                      <Card className="bg-muted border-border">
                         <CardHeader>
-                          <CardTitle className="text-base text-text-secondary">
+                          <CardTitle className="text-base text-muted-foreground">
                             Longest Run
                           </CardTitle>
                         </CardHeader>
                         <CardContent>
-                          <div className="font-medium text-text-primary">
+                          <div className="font-medium text-foreground">
                             {stats.longestRun.task_name}
                           </div>
-                          <div className="text-2xl font-bold text-text-primary mt-1">
+                          <div className="text-2xl font-bold text-foreground mt-1">
                             {formatDuration(stats.longestRun.duration_seconds)}
                           </div>
                         </CardContent>
                       </Card>
                     )}
                     {stats.shortestRun && (
-                      <Card className="bg-surface-raised/50 border-border-subtle/50">
+                      <Card className="bg-muted border-border">
                         <CardHeader>
-                          <CardTitle className="text-base text-text-secondary">
+                          <CardTitle className="text-base text-muted-foreground">
                             Shortest Run
                           </CardTitle>
                         </CardHeader>
                         <CardContent>
-                          <div className="font-medium text-text-primary">
+                          <div className="font-medium text-foreground">
                             {stats.shortestRun.task_name}
                           </div>
-                          <div className="text-2xl font-bold text-text-primary mt-1">
+                          <div className="text-2xl font-bold text-foreground mt-1">
                             {formatDuration(stats.shortestRun.duration_seconds)}
                           </div>
                         </CardContent>
@@ -468,7 +462,7 @@ export default function StatisticsPage() {
                 )}
 
                 {/* Recent Runs with Duration */}
-                <Card className="bg-surface-raised/50 border-border-subtle/50">
+                <Card className="bg-muted border-border">
                   <CardHeader>
                     <CardTitle className="text-base flex items-center gap-2">
                       <Clock className="size-4" />
@@ -479,7 +473,7 @@ export default function StatisticsPage() {
                     <div className="overflow-x-auto">
                       <Table>
                         <TableHeader>
-                          <TableRow className="border-border-subtle/50">
+                          <TableRow className="border-border">
                             <TableHead>Name</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead>Duration</TableHead>
@@ -496,10 +490,10 @@ export default function StatisticsPage() {
                             return (
                               <TableRow
                                 key={run.id}
-                                className="border-border-subtle/50 hover:bg-surface-raised/30 cursor-pointer"
+                                className="border-border hover:bg-muted/50 cursor-pointer"
                                 onClick={() => router.push(`/runs/${run.id}`)}
                               >
-                                <TableCell className="font-medium text-text-primary">
+                                <TableCell className="font-medium text-foreground">
                                   {run.task_name}
                                 </TableCell>
                                 <TableCell>
@@ -531,13 +525,13 @@ export default function StatisticsPage() {
                                       {formatDuration(diff)}
                                     </span>
                                   ) : (
-                                    <span className="text-text-muted text-xs">
+                                    <span className="text-muted-foreground text-xs">
                                       -
                                     </span>
                                   )}
                                 </TableCell>
                                 <TableCell>
-                                  <ArrowRight className="size-4 text-text-muted" />
+                                  <ArrowRight className="size-4 text-muted-foreground" />
                                 </TableCell>
                               </TableRow>
                             );
@@ -561,8 +555,8 @@ export default function StatisticsPage() {
                       onClick={() => setTimeRange(range)}
                       className={`text-xs ${
                         timeRange === range
-                          ? "bg-brand-primary text-black"
-                          : "border-border-default text-text-muted"
+                          ? "bg-primary text-primary-foreground"
+                          : "border-border text-muted-foreground"
                       }`}
                     >
                       {range}
@@ -570,24 +564,24 @@ export default function StatisticsPage() {
                   ))}
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  <Card className="bg-surface-raised/50 border-border-subtle/50">
+                  <Card className="bg-muted border-border">
                     <CardContent className="pt-6 text-center">
                       <div
-                        className="text-3xl font-bold text-text-primary"
+                        className="text-3xl font-bold text-foreground"
                         data-content-role="metric"
                         data-content-label="perf-total-executions"
                       >
                         {stats.totalRuns}
                       </div>
                       <div
-                        className="text-xs text-text-muted mt-1"
+                        className="text-xs text-muted-foreground mt-1"
                         data-content-role="label"
                       >
                         Total Executions
                       </div>
                     </CardContent>
                   </Card>
-                  <Card className="bg-surface-raised/50 border-border-subtle/50">
+                  <Card className="bg-muted border-border">
                     <CardContent className="pt-6 text-center">
                       <div
                         className="text-3xl font-bold text-green-500"
@@ -597,48 +591,48 @@ export default function StatisticsPage() {
                         {stats.successRate.toFixed(0)}%
                       </div>
                       <div
-                        className="text-xs text-text-muted mt-1"
+                        className="text-xs text-muted-foreground mt-1"
                         data-content-role="label"
                       >
                         Success Rate
                       </div>
                     </CardContent>
                   </Card>
-                  <Card className="bg-surface-raised/50 border-border-subtle/50">
+                  <Card className="bg-muted border-border">
                     <CardContent className="pt-6 text-center">
                       <div
-                        className="text-3xl font-bold text-text-primary"
+                        className="text-3xl font-bold text-foreground"
                         data-content-role="metric"
                         data-content-label="perf-avg-duration"
                       >
                         {formatDuration(stats.avgDuration)}
                       </div>
                       <div
-                        className="text-xs text-text-muted mt-1"
+                        className="text-xs text-muted-foreground mt-1"
                         data-content-role="label"
                       >
                         Avg Duration
                       </div>
                     </CardContent>
                   </Card>
-                  <Card className="bg-surface-raised/50 border-border-subtle/50">
+                  <Card className="bg-muted border-border">
                     <CardContent className="pt-6 text-center">
                       <div
-                        className="text-3xl font-bold text-text-primary"
+                        className="text-3xl font-bold text-foreground"
                         data-content-role="metric"
                         data-content-label="perf-total-time"
                       >
                         {formatDuration(stats.totalDuration)}
                       </div>
                       <div
-                        className="text-xs text-text-muted mt-1"
+                        className="text-xs text-muted-foreground mt-1"
                         data-content-role="label"
                       >
                         Total Time
                       </div>
                     </CardContent>
                   </Card>
-                  <Card className="bg-surface-raised/50 border-border-subtle/50">
+                  <Card className="bg-muted border-border">
                     <CardContent className="pt-6 text-center">
                       <div
                         className="text-3xl font-bold text-blue-500"
@@ -648,14 +642,14 @@ export default function StatisticsPage() {
                         {stats.runningRuns}
                       </div>
                       <div
-                        className="text-xs text-text-muted mt-1"
+                        className="text-xs text-muted-foreground mt-1"
                         data-content-role="label"
                       >
                         Currently Running
                       </div>
                     </CardContent>
                   </Card>
-                  <Card className="bg-surface-raised/50 border-border-subtle/50">
+                  <Card className="bg-muted border-border">
                     <CardContent className="pt-6 text-center">
                       <div
                         className="text-3xl font-bold text-red-500"
@@ -665,7 +659,7 @@ export default function StatisticsPage() {
                         {stats.failedRuns}
                       </div>
                       <div
-                        className="text-xs text-text-muted mt-1"
+                        className="text-xs text-muted-foreground mt-1"
                         data-content-role="label"
                       >
                         Failed Runs

@@ -103,41 +103,39 @@ export default function CapturePage() {
   if (healthLoading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="size-8 animate-spin text-text-muted" />
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <Video className="size-6 text-red-500" />
-            <h1 className="text-2xl font-bold text-text-primary">Capture</h1>
-            {isRecording && (
-              <div className="flex items-center gap-2">
-                <div className="size-2.5 rounded-full bg-red-500 animate-pulse" />
-                <Badge variant="destructive" className="text-xs">
-                  Recording
-                </Badge>
-              </div>
-            )}
-          </div>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden text-white">
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <div className="flex items-center gap-3">
+          <Video className="size-5 text-red-500" />
+          <h1 className="text-lg font-semibold text-foreground">Capture</h1>
+          {isRecording && (
+            <div className="flex items-center gap-2">
+              <div className="size-2.5 rounded-full bg-red-500 animate-pulse" />
+              <Badge variant="destructive" className="text-xs">
+                Recording
+              </Badge>
+            </div>
+          )}
         </div>
       </header>
 
-      <main className="p-6 max-w-3xl mx-auto space-y-6">
+      <main className="flex-1 overflow-y-auto p-6 max-w-3xl mx-auto space-y-6 w-full">
         {isOffline && (
           <RunnerPartialState message="Runner offline — this tool requires the runner for execution" />
         )}
 
-        <p className="text-text-muted">
+        <p className="text-muted-foreground">
           Record user interactions for automation replay and state discovery.
         </p>
 
         {/* FPS Settings */}
-        <Card className="bg-surface-raised/50 border-border-subtle/50">
+        <Card className="bg-muted border-border">
           <CardHeader
             className="cursor-pointer"
             onClick={() => setShowSettings(!showSettings)}
@@ -156,7 +154,7 @@ export default function CapturePage() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>Capture Rate</Label>
-                  <span className="text-sm font-mono text-text-primary">
+                  <span className="text-sm font-mono text-foreground">
                     {fps} FPS
                   </span>
                 </div>
@@ -167,10 +165,10 @@ export default function CapturePage() {
                   step={5}
                   value={fps}
                   onChange={(e) => setFps(parseInt(e.target.value))}
-                  className="w-full h-2 bg-surface-canvas/50 rounded-lg appearance-none cursor-pointer accent-brand-primary"
+                  className="w-full h-2 bg-background rounded-lg appearance-none cursor-pointer accent-brand-primary"
                   disabled={isRecording}
                 />
-                <div className="flex justify-between text-xs text-text-muted">
+                <div className="flex justify-between text-xs text-muted-foreground">
                   <span>10 FPS</span>
                   <span>60 FPS</span>
                 </div>
@@ -180,21 +178,21 @@ export default function CapturePage() {
         </Card>
 
         {/* Recording Controls */}
-        <Card className="bg-surface-raised/50 border-border-subtle/50">
+        <Card className="bg-muted border-border">
           <CardContent className="py-8">
             <div className="flex flex-col items-center gap-6">
               {/* Timer */}
               {isRecording && (
                 <div className="text-center">
-                  <div className="text-5xl font-mono font-bold text-text-primary">
+                  <div className="text-5xl font-mono font-bold text-foreground">
                     {formatTimer(elapsedSeconds)}
                   </div>
                   <div className="flex items-center gap-4 mt-3">
-                    <div className="flex items-center gap-1.5 text-sm text-text-muted">
+                    <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                       <Activity className="size-4" />
                       {eventCount} events
                     </div>
-                    <div className="flex items-center gap-1.5 text-sm text-text-muted">
+                    <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                       <Zap className="size-4" />
                       {fps} FPS
                     </div>
@@ -229,7 +227,7 @@ export default function CapturePage() {
 
         {/* Last Recording */}
         {lastRecording && (
-          <Card className="bg-surface-raised/50 border-border-subtle/50">
+          <Card className="bg-muted border-border">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <Clock className="size-4" />
@@ -239,20 +237,20 @@ export default function CapturePage() {
             <CardContent>
               <div className="grid grid-cols-3 gap-4 text-sm">
                 <div>
-                  <span className="text-text-muted">Duration</span>
-                  <div className="font-medium text-text-primary">
+                  <span className="text-muted-foreground">Duration</span>
+                  <div className="font-medium text-foreground">
                     {formatTimer(lastRecording.duration)}
                   </div>
                 </div>
                 <div>
-                  <span className="text-text-muted">Events</span>
-                  <div className="font-medium text-text-primary">
+                  <span className="text-muted-foreground">Events</span>
+                  <div className="font-medium text-foreground">
                     {lastRecording.events}
                   </div>
                 </div>
                 <div>
-                  <span className="text-text-muted">Session ID</span>
-                  <div className="font-mono text-xs text-text-primary truncate">
+                  <span className="text-muted-foreground">Session ID</span>
+                  <div className="font-mono text-xs text-foreground truncate">
                     {lastRecording.sessionId}
                   </div>
                 </div>
@@ -262,22 +260,22 @@ export default function CapturePage() {
         )}
 
         {/* Info */}
-        <Card className="bg-surface-raised/50 border-border-subtle/50">
+        <Card className="bg-muted border-border">
           <CardContent className="py-4">
             <div className="flex items-start gap-3">
               <Info className="size-5 text-blue-400 mt-0.5 shrink-0" />
-              <div className="text-sm text-text-muted space-y-2">
+              <div className="text-sm text-muted-foreground space-y-2">
                 <p>
-                  <strong className="text-text-secondary">Purpose:</strong>{" "}
+                  <strong className="text-muted-foreground">Purpose:</strong>{" "}
                   Record mouse, keyboard, and screen interactions for automation
                   replay.
                 </p>
                 <p>
-                  <strong className="text-text-secondary">Output:</strong>{" "}
+                  <strong className="text-muted-foreground">Output:</strong>{" "}
                   Recordings are saved to the runner&apos;s data directory.
                 </p>
                 <p>
-                  <strong className="text-text-secondary">Use cases:</strong>{" "}
+                  <strong className="text-muted-foreground">Use cases:</strong>{" "}
                   Generate automation workflows from real interactions, discover
                   UI states, create test fixtures.
                 </p>

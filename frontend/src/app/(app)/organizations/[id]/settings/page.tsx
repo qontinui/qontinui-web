@@ -6,13 +6,6 @@ import { useAuth } from "@/contexts/auth-context";
 import { useOrganization } from "@/hooks/useOrganization";
 import { organizationService } from "@/services/service-factory";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -26,7 +19,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Save, Trash2, Loader2, AlertTriangle } from "lucide-react";
+import { Save, Trash2, Loader2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import type { Organization } from "@/types/collaboration";
 
@@ -89,7 +82,6 @@ export default function OrganizationSettingsPage() {
       await updateOrg(orgId, name, description);
       toast.success("Organization updated successfully");
 
-      // Reload organization data
       const org = await organizationService.getOrganization(orgId);
       setOrganization(org);
     } catch (err: unknown) {
@@ -145,7 +137,7 @@ export default function OrganizationSettingsPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-brand-primary" />
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
           <div className="text-lg text-muted-foreground">Loading...</div>
         </div>
       </div>
@@ -154,11 +146,11 @@ export default function OrganizationSettingsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-        <div className="p-6 max-w-7xl mx-auto">
-          <div className="text-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-brand-primary" />
-            <p className="text-text-muted">Loading settings...</p>
+      <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
+            <p className="text-muted-foreground">Loading settings...</p>
           </div>
         </div>
       </div>
@@ -167,20 +159,18 @@ export default function OrganizationSettingsPage() {
 
   if (!organization) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-        <div className="p-6 max-w-7xl mx-auto">
-          <Card className="bg-surface-raised/50 border-red-500/50 backdrop-blur-sm">
-            <CardContent className="p-8 text-center">
-              <p className="text-red-400 mb-4">Organization not found</p>
-              <Button
-                onClick={() => router.push("/organizations")}
-                variant="outline"
-                className="border-border-default hover:border-brand-primary"
-              >
-                Back to Organizations
-              </Button>
-            </CardContent>
-          </Card>
+      <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <p className="text-red-400 mb-4">Organization not found</p>
+            <Button
+              onClick={() => router.push("/organizations")}
+              variant="outline"
+              className="border-border hover:border-primary"
+            >
+              Back to Organizations
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -188,290 +178,273 @@ export default function OrganizationSettingsPage() {
 
   if (!isOwner) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-        <div className="p-6 max-w-7xl mx-auto">
-          <Button
-            variant="ghost"
-            onClick={() => router.push(`/organizations/${orgId}`)}
-            className="mb-4 text-text-muted hover:text-white"
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Organization
-          </Button>
-
-          <Card className="bg-surface-raised/50 border-yellow-500/50 backdrop-blur-sm">
-            <CardContent className="p-8 text-center">
-              <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-yellow-500" />
-              <p className="text-yellow-400 mb-4">
-                Only organization owners can access settings
-              </p>
-              <Button
-                onClick={() => router.push(`/organizations/${orgId}`)}
-                variant="outline"
-                className="border-border-default hover:border-brand-primary"
-              >
-                Back to Organization
-              </Button>
-            </CardContent>
-          </Card>
+      <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <AlertTriangle className="w-8 h-8 mx-auto mb-3 text-yellow-500" />
+            <p className="text-yellow-400 mb-4">
+              Only organization owners can access settings
+            </p>
+            <Button
+              onClick={() => router.push(`/organizations/${orgId}`)}
+              variant="outline"
+              className="border-border hover:border-primary"
+            >
+              Back to Organization
+            </Button>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-      <div className="p-6 max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <Button
-            variant="ghost"
-            onClick={() => router.push(`/organizations/${orgId}`)}
-            className="mb-4 text-text-muted hover:text-white"
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Organization
-          </Button>
-
-          <h1 className="text-3xl font-bold mb-2">Organization Settings</h1>
-          <p className="text-text-muted">{organization.name}</p>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+      <div className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <div>
+          <h1 className="text-lg font-semibold">Organization Settings</h1>
+          <p className="text-xs text-muted-foreground">{organization.name}</p>
         </div>
+      </div>
 
-        {/* General Settings */}
-        <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm mb-6">
-          <CardHeader>
-            <CardTitle>General Information</CardTitle>
-            <CardDescription>
-              Update your organization&apos;s basic information
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+      <div className="flex-1 overflow-auto">
+        <div className="max-w-2xl mx-auto px-6 py-6 space-y-8">
+          <section className="space-y-4">
             <div>
-              <Label htmlFor="name">Organization Name</Label>
-              <Input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Enter organization name"
-                className="bg-surface-canvas border-border-subtle text-white"
-              />
+              <h2 className="text-sm font-medium">General Information</h2>
+              <p className="text-xs text-muted-foreground">
+                Update your organization&apos;s basic information
+              </p>
             </div>
-
-            <div>
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Enter organization description"
-                rows={4}
-                className="bg-surface-canvas border-border-subtle text-white resize-none"
-              />
-            </div>
-
-            <div className="flex justify-end gap-3 pt-4">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setName(organization.name);
-                  setDescription(organization.description || "");
-                }}
-                disabled={!hasChanges || saving}
-                className="border-border-default"
-              >
-                Reset
-              </Button>
-              <Button
-                onClick={handleSave}
-                disabled={!hasChanges || !name.trim() || saving}
-                className="bg-brand-primary hover:bg-brand-primary/80 text-black"
-              >
-                {saving ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-4 h-4 mr-2" />
-                    Save Changes
-                  </>
-                )}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Organization Info */}
-        <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm mb-6">
-          <CardHeader>
-            <CardTitle>Organization Information</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex justify-between py-2 border-b border-border-subtle">
-              <span className="text-text-muted">Organization ID</span>
-              <span className="font-mono text-sm">{organization.id}</span>
-            </div>
-            <div className="flex justify-between py-2 border-b border-border-subtle">
-              <span className="text-text-muted">Created</span>
-              <span>
-                {new Date(organization.created_at).toLocaleDateString("en-US", {
-                  year: "numeric",
-                  month: "long",
-                  day: "numeric",
-                })}
-              </span>
-            </div>
-            <div className="flex justify-between py-2 border-b border-border-subtle">
-              <span className="text-text-muted">Last Updated</span>
-              <span>
-                {new Date(organization.updated_at).toLocaleDateString("en-US", {
-                  year: "numeric",
-                  month: "long",
-                  day: "numeric",
-                })}
-              </span>
-            </div>
-            <div className="flex justify-between py-2">
-              <span className="text-text-muted">Total Members</span>
-              <span>{organization.member_count}</span>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Danger Zone */}
-        <Card className="bg-surface-raised/50 border-red-500/50 backdrop-blur-sm">
-          <CardHeader>
-            <CardTitle className="text-red-400">Danger Zone</CardTitle>
-            <CardDescription>
-              Irreversible actions - proceed with caution
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="p-4 border border-red-500/30 rounded-lg bg-red-500/5">
-              <div className="flex items-start justify-between mb-2">
-                <div className="flex-1">
-                  <h4 className="font-semibold text-red-400 mb-1">
-                    Delete Organization
-                  </h4>
-                  <p className="text-sm text-text-muted">
-                    Permanently delete this organization and all associated
-                    data. This action cannot be undone.
-                  </p>
-                </div>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="name">Organization Name</Label>
+                <Input
+                  id="name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Enter organization name"
+                  className="bg-background border-border mt-1.5"
+                />
               </div>
+
+              <div>
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Enter organization description"
+                  rows={4}
+                  className="bg-background border-border resize-none mt-1.5"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setName(organization.name);
+                    setDescription(organization.description || "");
+                  }}
+                  disabled={!hasChanges || saving}
+                  className="border-border"
+                >
+                  Reset
+                </Button>
+                <Button
+                  onClick={handleSave}
+                  disabled={!hasChanges || !name.trim() || saving}
+                  className="bg-primary text-primary-foreground"
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4 mr-2" />
+                      Save Changes
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </section>
+
+          <div className="border-t border-border" />
+
+          <section className="space-y-3">
+            <h2 className="text-sm font-medium">Organization Information</h2>
+            <div className="space-y-0 divide-y divide-border border border-border rounded-lg">
+              <div className="flex justify-between px-4 py-3">
+                <span className="text-sm text-muted-foreground">
+                  Organization ID
+                </span>
+                <span className="font-mono text-xs">{organization.id}</span>
+              </div>
+              <div className="flex justify-between px-4 py-3">
+                <span className="text-sm text-muted-foreground">Created</span>
+                <span className="text-sm">
+                  {new Date(organization.created_at).toLocaleDateString(
+                    "en-US",
+                    {
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                    }
+                  )}
+                </span>
+              </div>
+              <div className="flex justify-between px-4 py-3">
+                <span className="text-sm text-muted-foreground">
+                  Last Updated
+                </span>
+                <span className="text-sm">
+                  {new Date(organization.updated_at).toLocaleDateString(
+                    "en-US",
+                    {
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                    }
+                  )}
+                </span>
+              </div>
+              <div className="flex justify-between px-4 py-3">
+                <span className="text-sm text-muted-foreground">
+                  Total Members
+                </span>
+                <span className="text-sm">{organization.member_count}</span>
+              </div>
+            </div>
+          </section>
+
+          <div className="border-t border-border" />
+
+          <section className="space-y-4">
+            <div>
+              <h2 className="text-sm font-medium text-red-400">Danger Zone</h2>
+              <p className="text-xs text-muted-foreground">
+                Irreversible actions - proceed with caution
+              </p>
+            </div>
+            <div className="border border-red-500/30 rounded-lg p-4">
+              <h4 className="text-sm font-medium text-red-400 mb-1">
+                Delete Organization
+              </h4>
+              <p className="text-xs text-muted-foreground mb-3">
+                Permanently delete this organization and all associated data.
+                This action cannot be undone.
+              </p>
               <Button
                 onClick={() => setDeleteDialogOpen(true)}
                 variant="outline"
-                className="border-red-500 text-red-400 hover:bg-red-500 hover:text-white mt-3"
+                size="sm"
+                className="border-red-500 text-red-400 hover:bg-red-500 hover:text-white"
               >
                 <Trash2 className="w-4 h-4 mr-2" />
                 Delete Organization
               </Button>
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Delete Confirmation Dialog */}
-        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-          <AlertDialogContent className="bg-surface-raised border-red-500/50 text-white">
-            <AlertDialogHeader>
-              <AlertDialogTitle className="text-red-400">
-                Delete Organization
-              </AlertDialogTitle>
-              <AlertDialogDescription className="text-text-muted">
-                This action cannot be undone. This will permanently delete the
-                organization
-                <span className="font-semibold text-white">
-                  {" "}
-                  {organization.name}
-                </span>
-                , remove all members, and delete all associated projects and
-                data.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-
-            <div className="my-4">
-              <Label htmlFor="delete-confirm" className="text-text-muted">
-                Type{" "}
-                <span className="font-semibold text-white">
-                  {organization.name}
-                </span>{" "}
-                to confirm
-              </Label>
-              <Input
-                id="delete-confirm"
-                value={deleteConfirmation}
-                onChange={(e) => setDeleteConfirmation(e.target.value)}
-                placeholder="Enter organization name"
-                className="bg-surface-canvas border-border-subtle text-white mt-2"
-              />
-            </div>
-
-            <AlertDialogFooter>
-              <AlertDialogCancel
-                className="border-border-default"
-                disabled={deleting}
-                onClick={() => setDeleteConfirmation("")}
-              >
-                Cancel
-              </AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleDelete}
-                disabled={deleteConfirmation !== organization.name || deleting}
-                className="bg-red-500 hover:bg-red-600 text-white"
-              >
-                {deleting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Deleting...
-                  </>
-                ) : (
-                  <>
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Delete Organization
-                  </>
-                )}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-
-        {/* Leave Organization Dialog */}
-        <AlertDialog open={leaveDialogOpen} onOpenChange={setLeaveDialogOpen}>
-          <AlertDialogContent className="bg-surface-raised border-border-subtle text-white">
-            <AlertDialogHeader>
-              <AlertDialogTitle>Leave Organization</AlertDialogTitle>
-              <AlertDialogDescription className="text-text-muted">
-                Are you sure you want to leave this organization? You will lose
-                access to all organization resources.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel
-                className="border-border-default"
-                disabled={leaving}
-              >
-                Cancel
-              </AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleLeave}
-                disabled={leaving}
-                className="bg-yellow-500 hover:bg-yellow-600 text-black"
-              >
-                {leaving ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Leaving...
-                  </>
-                ) : (
-                  "Leave Organization"
-                )}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+          </section>
+        </div>
       </div>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent className="bg-background border-red-500/50">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-red-400">
+              Delete Organization
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-muted-foreground">
+              This action cannot be undone. This will permanently delete the
+              organization
+              <span className="font-semibold text-foreground">
+                {" "}
+                {organization.name}
+              </span>
+              , remove all members, and delete all associated projects and data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="my-4">
+            <Label htmlFor="delete-confirm" className="text-muted-foreground">
+              Type{" "}
+              <span className="font-semibold text-foreground">
+                {organization.name}
+              </span>{" "}
+              to confirm
+            </Label>
+            <Input
+              id="delete-confirm"
+              value={deleteConfirmation}
+              onChange={(e) => setDeleteConfirmation(e.target.value)}
+              placeholder="Enter organization name"
+              className="bg-background border-border mt-2"
+            />
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              className="border-border"
+              disabled={deleting}
+              onClick={() => setDeleteConfirmation("")}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={deleteConfirmation !== organization.name || deleting}
+              className="bg-red-500 hover:bg-red-600 text-white"
+            >
+              {deleting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete Organization
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={leaveDialogOpen} onOpenChange={setLeaveDialogOpen}>
+        <AlertDialogContent className="bg-background border-border">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Leave Organization</AlertDialogTitle>
+            <AlertDialogDescription className="text-muted-foreground">
+              Are you sure you want to leave this organization? You will lose
+              access to all organization resources.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-border" disabled={leaving}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleLeave}
+              disabled={leaving}
+              className="bg-yellow-500 hover:bg-yellow-600 text-black"
+            >
+              {leaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Leaving...
+                </>
+              ) : (
+                "Leave Organization"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

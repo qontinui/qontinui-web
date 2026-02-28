@@ -5,9 +5,7 @@ export const dynamic = "force-dynamic";
 import { useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
-import { Button } from "@/components/ui/button";
 import { DeficiencyList } from "@/components/testing/DeficiencyList";
-import { ArrowLeft } from "lucide-react";
 import { RequireProject } from "@/components/require-project";
 
 export default function DeficienciesPage() {
@@ -25,15 +23,13 @@ export default function DeficienciesPage() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div
-            data-content-role="status"
-            data-content-label="loading state"
-            className="text-lg text-muted-foreground"
-          >
-            Loading...
-          </div>
+      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
+        <div
+          data-content-role="status"
+          data-content-label="loading state"
+          className="text-lg text-muted-foreground"
+        >
+          Loading...
         </div>
       </div>
     );
@@ -46,34 +42,18 @@ export default function DeficienciesPage() {
   return (
     <RequireProject pageName="Deficiencies">
       <div
-        className="min-h-screen bg-gradient-to-br from-surface-canvas via-surface-sunken to-surface-canvas text-white"
+        className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden"
         data-ui-id="testing-page-deficiencies"
       >
-        {/* Header */}
-        <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-          <div className="flex items-center justify-between px-6 py-4">
-            <div className="flex items-center gap-4">
-              <Button
-                variant="ghost"
-                onClick={() => router.push("/testing")}
-                className="text-text-muted hover:text-white"
-                data-ui-id="testing-page-deficiencies-back-btn"
-              >
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back
-              </Button>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
-                Deficiency Management
-              </h1>
-            </div>
-          </div>
+        <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+          <h1 className="text-lg font-semibold text-foreground">
+            Deficiency Management
+          </h1>
         </header>
 
-        {/* Main Content */}
-        <main className="p-6 max-w-7xl mx-auto">
+        <main className="flex-1 overflow-y-auto p-6">
           <div className="mb-6">
-            <h2 className="text-2xl font-bold mb-2">Deficiencies</h2>
-            <p className="text-text-muted">
+            <p className="text-sm text-muted-foreground">
               Track and manage deficiencies found during testing across all
               projects
             </p>

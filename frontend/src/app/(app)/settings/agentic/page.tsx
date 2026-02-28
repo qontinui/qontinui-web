@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -149,31 +148,29 @@ export default function AgenticSettingsPage() {
   if (healthLoading || loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="size-6 animate-spin text-text-muted" />
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   return (
-    <div className="p-6 max-w-3xl space-y-6">
+    <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-text-primary">
-          Advanced AI (Agentic)
-        </h1>
-        <p className="text-sm text-text-muted mt-1">
+        <h1 className="text-lg font-semibold">Advanced AI (Agentic)</h1>
+        <p className="text-sm text-muted-foreground mt-1">
           Configure memory compression, retry behavior, and intelligent task
           routing
         </p>
       </div>
 
       {/* Memory Compression */}
-      <Card>
-        <CardHeader
-          className="cursor-pointer select-none"
+      <div className="rounded-lg border border-border">
+        <div
+          className="px-4 py-3 border-b border-border bg-muted/50 cursor-pointer select-none"
           onClick={() => setCompressionOpen(!compressionOpen)}
         >
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
+            <h3 className="text-sm font-medium flex items-center gap-2">
               {compressionOpen ? (
                 <ChevronDown className="size-4" />
               ) : (
@@ -181,7 +178,7 @@ export default function AgenticSettingsPage() {
               )}
               <Brain className="size-4" />
               Memory Compression
-            </CardTitle>
+            </h3>
             <Switch
               checked={compression.enabled}
               onCheckedChange={(checked) => {
@@ -190,9 +187,9 @@ export default function AgenticSettingsPage() {
               onClick={(e) => e.stopPropagation()}
             />
           </div>
-        </CardHeader>
+        </div>
         {compressionOpen && (
-          <CardContent className="space-y-4">
+          <div className="p-4 space-y-4">
             <div className="flex items-start gap-2 rounded-lg border border-blue-500/20 bg-blue-500/5 p-3">
               <Info className="size-4 mt-0.5 text-blue-500 shrink-0" />
               <p className="text-xs text-muted-foreground">
@@ -283,18 +280,18 @@ export default function AgenticSettingsPage() {
                 Number of items to summarize in each batch
               </p>
             </div>
-          </CardContent>
+          </div>
         )}
-      </Card>
+      </div>
 
       {/* Retry with Feedback */}
-      <Card>
-        <CardHeader
-          className="cursor-pointer select-none"
+      <div className="rounded-lg border border-border">
+        <div
+          className="px-4 py-3 border-b border-border bg-muted/50 cursor-pointer select-none"
           onClick={() => setRetryOpen(!retryOpen)}
         >
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
+            <h3 className="text-sm font-medium flex items-center gap-2">
               {retryOpen ? (
                 <ChevronDown className="size-4" />
               ) : (
@@ -302,7 +299,7 @@ export default function AgenticSettingsPage() {
               )}
               <RefreshCw className="size-4" />
               Retry with Feedback
-            </CardTitle>
+            </h3>
             <Switch
               checked={retry.enabled}
               onCheckedChange={(checked) => {
@@ -311,9 +308,9 @@ export default function AgenticSettingsPage() {
               onClick={(e) => e.stopPropagation()}
             />
           </div>
-        </CardHeader>
+        </div>
         {retryOpen && (
-          <CardContent className="space-y-4">
+          <div className="p-4 space-y-4">
             <div className="space-y-2">
               <Label>Max Retries</Label>
               <Input
@@ -416,18 +413,18 @@ export default function AgenticSettingsPage() {
                 disabled={!retry.enabled}
               />
             </div>
-          </CardContent>
+          </div>
         )}
-      </Card>
+      </div>
 
       {/* Intelligent Task Routing */}
-      <Card>
-        <CardHeader
-          className="cursor-pointer select-none"
+      <div className="rounded-lg border border-border">
+        <div
+          className="px-4 py-3 border-b border-border bg-muted/50 cursor-pointer select-none"
           onClick={() => setRoutingOpen(!routingOpen)}
         >
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
+            <h3 className="text-sm font-medium flex items-center gap-2">
               {routingOpen ? (
                 <ChevronDown className="size-4" />
               ) : (
@@ -435,7 +432,7 @@ export default function AgenticSettingsPage() {
               )}
               <Route className="size-4" />
               Intelligent Task Routing
-            </CardTitle>
+            </h3>
             <Switch
               checked={routing.enabled}
               onCheckedChange={(checked) => {
@@ -444,9 +441,9 @@ export default function AgenticSettingsPage() {
               onClick={(e) => e.stopPropagation()}
             />
           </div>
-        </CardHeader>
+        </div>
         {routingOpen && (
-          <CardContent className="space-y-4">
+          <div className="p-4 space-y-4">
             <div className="space-y-2">
               <Label>Simple Tasks Model</Label>
               <Select
@@ -553,16 +550,16 @@ export default function AgenticSettingsPage() {
                 more uses the complex model
               </p>
             </div>
-          </CardContent>
+          </div>
         )}
-      </Card>
+      </div>
 
       {/* Actions */}
       <div className="flex justify-between">
         <Button
           variant="outline"
           onClick={handleResetDefaults}
-          className="text-text-muted"
+          className="text-muted-foreground"
         >
           <RotateCcw className="size-4 mr-2" />
           Reset to Defaults

@@ -105,7 +105,7 @@ function KnowledgeTab({ runId }: { runId: string }) {
 
   if (isLoading) {
     return (
-      <div className="text-center py-12 text-text-muted">
+      <div className="text-center py-12 text-muted-foreground">
         Loading knowledge...
       </div>
     );
@@ -129,7 +129,7 @@ function KnowledgeTab({ runId }: { runId: string }) {
     hypotheses.length === 0
   ) {
     return (
-      <div className="text-center py-12 text-text-muted">
+      <div className="text-center py-12 text-muted-foreground">
         <Brain className="size-10 mx-auto mb-3 opacity-40" />
         <p className="text-sm">No knowledge entries for this run.</p>
       </div>
@@ -141,26 +141,26 @@ function KnowledgeTab({ runId }: { runId: string }) {
       {/* Findings Table */}
       {findings.length > 0 && (
         <div>
-          <h3 className="text-sm font-medium text-text-secondary mb-3">
+          <h3 className="text-sm font-medium text-muted-foreground mb-3">
             Findings ({findings.length})
           </h3>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border-subtle/50">
-                  <th className="text-left py-2 px-3 text-text-muted font-medium">
+                <tr className="border-b border-border">
+                  <th className="text-left py-2 px-3 text-muted-foreground font-medium">
                     Severity
                   </th>
-                  <th className="text-left py-2 px-3 text-text-muted font-medium">
+                  <th className="text-left py-2 px-3 text-muted-foreground font-medium">
                     Category
                   </th>
-                  <th className="text-left py-2 px-3 text-text-muted font-medium">
+                  <th className="text-left py-2 px-3 text-muted-foreground font-medium">
                     Title
                   </th>
-                  <th className="text-left py-2 px-3 text-text-muted font-medium">
+                  <th className="text-left py-2 px-3 text-muted-foreground font-medium">
                     File
                   </th>
-                  <th className="text-left py-2 px-3 text-text-muted font-medium">
+                  <th className="text-left py-2 px-3 text-muted-foreground font-medium">
                     Status
                   </th>
                 </tr>
@@ -169,12 +169,12 @@ function KnowledgeTab({ runId }: { runId: string }) {
                 {findings.map((finding: Finding) => (
                   <tr
                     key={finding.id}
-                    className="border-b border-border-subtle/30 hover:bg-surface-raised/30"
+                    className="border-b border-border hover:bg-muted/50"
                   >
                     <td className="py-2.5 px-3">
                       {getSeverityBadge(finding.severity)}
                     </td>
-                    <td className="py-2.5 px-3 text-text-secondary">
+                    <td className="py-2.5 px-3 text-muted-foreground">
                       <Badge variant="outline" className="text-xs">
                         {finding.category}
                       </Badge>
@@ -183,19 +183,19 @@ function KnowledgeTab({ runId }: { runId: string }) {
                       <div
                         data-content-role="label"
                         data-content-label="finding title"
-                        className="text-text-primary font-medium"
+                        className="text-foreground font-medium"
                       >
                         {finding.title}
                       </div>
                       <div
                         data-content-role="description"
                         data-content-label="finding description"
-                        className="text-text-muted text-xs mt-0.5 line-clamp-2"
+                        className="text-muted-foreground text-xs mt-0.5 line-clamp-2"
                       >
                         {finding.description}
                       </div>
                     </td>
-                    <td className="py-2.5 px-3 font-mono text-xs text-text-muted max-w-[200px] truncate">
+                    <td className="py-2.5 px-3 font-mono text-xs text-muted-foreground max-w-[200px] truncate">
                       {finding.file_path
                         ? `${finding.file_path}${finding.line_number ? `:${finding.line_number}` : ""}`
                         : "-"}
@@ -216,14 +216,14 @@ function KnowledgeTab({ runId }: { runId: string }) {
       {/* Observations */}
       {observations.length > 0 && (
         <div>
-          <h3 className="text-sm font-medium text-text-secondary mb-3">
+          <h3 className="text-sm font-medium text-muted-foreground mb-3">
             Observations ({observations.length})
           </h3>
           <div className="space-y-2">
             {observations.map((obs, idx) => (
               <div
                 key={idx}
-                className="bg-surface-raised/30 border border-border-subtle/30 rounded-lg px-4 py-3 text-sm text-text-secondary"
+                className="bg-muted/50 border border-border rounded-lg px-4 py-3 text-sm text-muted-foreground"
               >
                 {obs}
               </div>
@@ -235,14 +235,14 @@ function KnowledgeTab({ runId }: { runId: string }) {
       {/* Hypotheses */}
       {hypotheses.length > 0 && (
         <div>
-          <h3 className="text-sm font-medium text-text-secondary mb-3">
+          <h3 className="text-sm font-medium text-muted-foreground mb-3">
             Hypotheses ({hypotheses.length})
           </h3>
           <div className="space-y-2">
             {hypotheses.map((hyp, idx) => (
               <div
                 key={idx}
-                className="bg-surface-raised/30 border border-border-subtle/30 rounded-lg px-4 py-3 text-sm text-text-secondary italic"
+                className="bg-muted/50 border border-border rounded-lg px-4 py-3 text-sm text-muted-foreground italic"
               >
                 {hyp}
               </div>
@@ -259,7 +259,7 @@ function VerificationTab({ runId }: { runId: string }) {
 
   if (isLoading) {
     return (
-      <div className="text-center py-12 text-text-muted">
+      <div className="text-center py-12 text-muted-foreground">
         Loading verification results...
       </div>
     );
@@ -277,7 +277,7 @@ function VerificationTab({ runId }: { runId: string }) {
 
   if (results.length === 0) {
     return (
-      <div className="text-center py-12 text-text-muted">
+      <div className="text-center py-12 text-muted-foreground">
         <ShieldCheck className="size-10 mx-auto mb-3 opacity-40" />
         <p className="text-sm">No verification results for this run.</p>
       </div>
@@ -287,10 +287,7 @@ function VerificationTab({ runId }: { runId: string }) {
   return (
     <div className="space-y-3">
       {results.map((result: VerificationResult) => (
-        <Card
-          key={result.id}
-          className="bg-surface-raised/30 border-border-subtle/50"
-        >
+        <Card key={result.id} className="bg-muted/50 border-border">
           <CardContent className="py-3.5 px-4">
             <div className="flex items-start gap-3">
               <div className="pt-0.5">
@@ -305,7 +302,7 @@ function VerificationTab({ runId }: { runId: string }) {
                   <span
                     data-content-role="label"
                     data-content-label="verification criterion"
-                    className="text-sm font-medium text-text-primary"
+                    className="text-sm font-medium text-foreground"
                   >
                     {result.criterion}
                   </span>
@@ -319,21 +316,21 @@ function VerificationTab({ runId }: { runId: string }) {
                     <span
                       data-content-role="metric"
                       data-content-label="verification confidence"
-                      className="text-xs text-text-muted"
+                      className="text-xs text-muted-foreground"
                     >
                       {Math.round(result.confidence * 100)}% confidence
                     </span>
                   )}
                 </div>
                 {result.observation && (
-                  <p className="text-sm text-text-muted mt-1.5">
+                  <p className="text-sm text-muted-foreground mt-1.5">
                     {result.observation}
                   </p>
                 )}
                 <div
                   data-content-role="metric"
                   data-content-label="verification timestamp"
-                  className="text-xs text-text-muted mt-1.5"
+                  className="text-xs text-muted-foreground mt-1.5"
                 >
                   Checked at {formatDate(result.verified_at)}
                 </div>
@@ -352,7 +349,7 @@ function McpCallsTab({ runId }: { runId: string }) {
 
   if (isLoading) {
     return (
-      <div className="text-center py-12 text-text-muted">
+      <div className="text-center py-12 text-muted-foreground">
         Loading MCP calls...
       </div>
     );
@@ -370,7 +367,7 @@ function McpCallsTab({ runId }: { runId: string }) {
 
   if (calls.length === 0) {
     return (
-      <div className="text-center py-12 text-text-muted">
+      <div className="text-center py-12 text-muted-foreground">
         <Wrench className="size-10 mx-auto mb-3 opacity-40" />
         <p className="text-sm">No MCP tool calls for this run.</p>
       </div>
@@ -381,18 +378,18 @@ function McpCallsTab({ runId }: { runId: string }) {
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-border-subtle/50">
+          <tr className="border-b border-border">
             <th className="w-8" />
-            <th className="text-left py-2 px-3 text-text-muted font-medium">
+            <th className="text-left py-2 px-3 text-muted-foreground font-medium">
               Tool Name
             </th>
-            <th className="text-left py-2 px-3 text-text-muted font-medium">
+            <th className="text-left py-2 px-3 text-muted-foreground font-medium">
               Status
             </th>
-            <th className="text-right py-2 px-3 text-text-muted font-medium">
+            <th className="text-right py-2 px-3 text-muted-foreground font-medium">
               Duration
             </th>
-            <th className="text-left py-2 px-3 text-text-muted font-medium">
+            <th className="text-left py-2 px-3 text-muted-foreground font-medium">
               Created At
             </th>
           </tr>
@@ -403,17 +400,17 @@ function McpCallsTab({ runId }: { runId: string }) {
             return (
               <Fragment key={call.id}>
                 <tr
-                  className="border-b border-border-subtle/30 hover:bg-surface-raised/30 cursor-pointer"
+                  className="border-b border-border hover:bg-muted/50 cursor-pointer"
                   onClick={() => setExpandedRow(isExpanded ? null : call.id)}
                 >
-                  <td className="py-2.5 px-2 text-text-muted">
+                  <td className="py-2.5 px-2 text-muted-foreground">
                     {isExpanded ? (
                       <ChevronDown className="size-4" />
                     ) : (
                       <ChevronRight className="size-4" />
                     )}
                   </td>
-                  <td className="py-2.5 px-3 font-mono text-text-primary text-xs">
+                  <td className="py-2.5 px-3 font-mono text-foreground text-xs">
                     {call.tool_name}
                   </td>
                   <td className="py-2.5 px-3">
@@ -430,27 +427,27 @@ function McpCallsTab({ runId }: { runId: string }) {
                       {call.status}
                     </Badge>
                   </td>
-                  <td className="py-2.5 px-3 text-right text-text-secondary">
+                  <td className="py-2.5 px-3 text-right text-muted-foreground">
                     {formatDuration(call.duration_ms)}
                   </td>
-                  <td className="py-2.5 px-3 text-text-muted text-xs">
+                  <td className="py-2.5 px-3 text-muted-foreground text-xs">
                     {formatDate(call.timestamp)}
                   </td>
                 </tr>
                 {isExpanded && (
-                  <tr className="border-b border-border-subtle/30">
+                  <tr className="border-b border-border">
                     <td colSpan={5} className="p-0">
-                      <div className="bg-surface-canvas/60 px-6 py-4 space-y-3">
+                      <div className="bg-background px-6 py-4 space-y-3">
                         {call.input && Object.keys(call.input).length > 0 && (
                           <div>
                             <div
                               data-content-role="label"
                               data-content-label="mcp call arguments label"
-                              className="text-xs font-medium text-text-muted mb-1"
+                              className="text-xs font-medium text-muted-foreground mb-1"
                             >
                               Arguments
                             </div>
-                            <pre className="text-xs font-mono text-text-secondary bg-surface-raised/30 rounded-md p-3 overflow-x-auto max-h-48 whitespace-pre-wrap">
+                            <pre className="text-xs font-mono text-muted-foreground bg-muted/50 rounded-md p-3 overflow-x-auto max-h-48 whitespace-pre-wrap">
                               {tryFormatJson(call.input)}
                             </pre>
                           </div>
@@ -460,11 +457,11 @@ function McpCallsTab({ runId }: { runId: string }) {
                             <div
                               data-content-role="label"
                               data-content-label="mcp call result label"
-                              className="text-xs font-medium text-text-muted mb-1"
+                              className="text-xs font-medium text-muted-foreground mb-1"
                             >
                               Result
                             </div>
-                            <pre className="text-xs font-mono text-text-secondary bg-surface-raised/30 rounded-md p-3 overflow-x-auto max-h-48 whitespace-pre-wrap">
+                            <pre className="text-xs font-mono text-muted-foreground bg-muted/50 rounded-md p-3 overflow-x-auto max-h-48 whitespace-pre-wrap">
                               {tryFormatJson(call.output)}
                             </pre>
                           </div>
@@ -495,17 +492,9 @@ export default function AiDataPage() {
     selectedRunId ?? (runs && runs.length > 0 ? String(runs[0]!.id) : null);
 
   return (
-    <div className="h-full overflow-y-auto bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-      {/* Header */}
-      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <Database className="size-6 text-cyan-500" />
-            <h1 className="text-2xl font-bold text-text-primary">
-              AI Data View
-            </h1>
-          </div>
-        </div>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <h1 className="text-lg font-semibold">AI Data View</h1>
       </header>
 
       {isOffline && (
@@ -513,21 +502,21 @@ export default function AiDataPage() {
       )}
 
       {/* Body - two panel layout */}
-      <div className="flex h-[calc(100vh-65px)]">
+      <div className="flex flex-1 min-h-0">
         {/* Left Panel - Run List */}
-        <div className="w-[250px] min-w-[250px] border-r border-border-subtle/50 bg-surface-canvas/40">
-          <div className="px-4 py-3 border-b border-border-subtle/30">
-            <h2 className="text-xs font-medium text-text-muted uppercase tracking-wider">
+        <div className="w-[250px] min-w-[250px] border-r border-border bg-background">
+          <div className="px-4 py-3 border-b border-border">
+            <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
               Recent Runs
             </h2>
           </div>
-          <ScrollArea className="h-[calc(100vh-65px-45px)]">
+          <ScrollArea className="flex-1">
             {isLoading ? (
-              <div className="text-center py-8 text-text-muted text-sm">
+              <div className="text-center py-8 text-muted-foreground text-sm">
                 Loading runs...
               </div>
             ) : !runs || runs.length === 0 ? (
-              <div className="text-center py-8 text-text-muted text-sm px-4">
+              <div className="text-center py-8 text-muted-foreground text-sm px-4">
                 No recent runs found. Start a task in the runner to see data
                 here.
               </div>
@@ -540,13 +529,13 @@ export default function AiDataPage() {
                     <button
                       key={run.id}
                       onClick={() => setSelectedRunId(runId)}
-                      className={`w-full text-left px-4 py-3 border-b border-border-subtle/20 transition-colors ${
+                      className={`w-full text-left px-4 py-3 border-b border-border transition-colors ${
                         isSelected
-                          ? "bg-surface-raised/50 border-l-2 border-l-cyan-500"
-                          : "hover:bg-surface-raised/20 border-l-2 border-l-transparent"
+                          ? "bg-muted border-l-2 border-l-cyan-500"
+                          : "hover:bg-muted/50 border-l-2 border-l-transparent"
                       }`}
                     >
-                      <div className="text-sm font-medium text-text-primary truncate">
+                      <div className="text-sm font-medium text-foreground truncate">
                         {run.task_name || `Run #${run.id}`}
                       </div>
                       <div className="flex items-center gap-2 mt-1.5">
@@ -554,7 +543,7 @@ export default function AiDataPage() {
                         <span
                           data-content-role="label"
                           data-content-label="run id"
-                          className="text-xs text-text-muted"
+                          className="text-xs text-muted-foreground"
                         >
                           #{run.id}
                         </span>
@@ -570,7 +559,7 @@ export default function AiDataPage() {
         {/* Right Panel - Tabbed Data View */}
         <div className="flex-1 min-w-0">
           {effectiveRunId == null ? (
-            <div className="flex items-center justify-center h-full text-text-muted">
+            <div className="flex items-center justify-center h-full text-muted-foreground">
               <div className="text-center">
                 <Database className="size-12 mx-auto mb-4 opacity-30" />
                 <p className="text-sm">
@@ -580,25 +569,25 @@ export default function AiDataPage() {
             </div>
           ) : (
             <Tabs defaultValue="knowledge" className="h-full flex flex-col">
-              <div className="border-b border-border-subtle/50 px-6">
+              <div className="border-b border-border px-6">
                 <TabsList className="bg-transparent h-12">
                   <TabsTrigger
                     value="knowledge"
-                    className="data-[state=active]:bg-surface-raised/50 data-[state=active]:text-text-primary gap-1.5"
+                    className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground gap-1.5"
                   >
                     <Brain className="size-4" />
                     Knowledge
                   </TabsTrigger>
                   <TabsTrigger
                     value="verification"
-                    className="data-[state=active]:bg-surface-raised/50 data-[state=active]:text-text-primary gap-1.5"
+                    className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground gap-1.5"
                   >
                     <ShieldCheck className="size-4" />
                     Verification
                   </TabsTrigger>
                   <TabsTrigger
                     value="mcp-calls"
-                    className="data-[state=active]:bg-surface-raised/50 data-[state=active]:text-text-primary gap-1.5"
+                    className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground gap-1.5"
                   >
                     <Wrench className="size-4" />
                     MCP Calls

@@ -40,9 +40,9 @@ export default function SettingsLayout({
   return (
     <div className="flex h-full">
       {/* Settings Sidebar */}
-      <nav className="w-56 shrink-0 border-r border-border-subtle/50 bg-surface-canvas/50 overflow-y-auto">
+      <nav className="w-56 shrink-0 border-r border-border bg-background overflow-y-auto">
         <div className="p-3">
-          <h2 className="px-3 py-2 text-xs font-semibold text-text-muted uppercase tracking-wider">
+          <h2 className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
             Settings
           </h2>
           <div className="space-y-0.5">
@@ -56,8 +56,8 @@ export default function SettingsLayout({
                   className={cn(
                     "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors",
                     isActive
-                      ? "bg-brand-primary/10 text-brand-primary font-medium"
-                      : "text-text-muted hover:text-text-primary hover:bg-surface-raised/50"
+                      ? "bg-primary/10 text-primary font-medium"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
                   )}
                 >
                   <span className="shrink-0">{item.icon}</span>

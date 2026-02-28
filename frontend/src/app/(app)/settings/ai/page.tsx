@@ -12,13 +12,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -227,7 +220,7 @@ export default function AiSettingsPage() {
   if (healthLoading || loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="size-6 animate-spin text-text-muted" />
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -265,28 +258,26 @@ export default function AiSettingsPage() {
   ];
 
   return (
-    <div className="p-6 max-w-3xl space-y-6">
+    <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-text-primary">
-          AI Providers
-        </h1>
-        <p className="text-sm text-text-muted mt-1">
+        <h1 className="text-lg font-semibold">AI Providers</h1>
+        <p className="text-sm text-muted-foreground mt-1">
           Configure your AI provider for automation and analysis
         </p>
       </div>
 
       {/* Provider Selection */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+      <div className="rounded-lg border border-border">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
+          <h3 className="text-sm font-medium flex items-center gap-2">
             <Bot className="size-4" />
             Provider Selection
-          </CardTitle>
-          <CardDescription>
+          </h3>
+          <p className="text-xs text-muted-foreground">
             Choose which AI provider to use for automation tasks
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+          </p>
+        </div>
+        <div className="p-4">
           <div className="grid grid-cols-2 gap-3">
             {providerOptions.map((opt) => (
               <button
@@ -324,19 +315,19 @@ export default function AiSettingsPage() {
               </button>
             ))}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Claude CLI Settings */}
       {provider === "claude_cli" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+        <div className="rounded-lg border border-border">
+          <div className="px-4 py-3 border-b border-border bg-muted/50">
+            <h3 className="text-sm font-medium flex items-center gap-2">
               <Terminal className="size-4" />
               Claude CLI Settings
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+            </h3>
+          </div>
+          <div className="p-4 space-y-4">
             <div className="space-y-2">
               <Label>Execution Mode</Label>
               <Select
@@ -401,20 +392,20 @@ export default function AiSettingsPage() {
                 }
               />
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {/* Claude API Settings */}
       {provider === "claude_api" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+        <div className="rounded-lg border border-border">
+          <div className="px-4 py-3 border-b border-border bg-muted/50">
+            <h3 className="text-sm font-medium flex items-center gap-2">
               <Bot className="size-4" />
               Claude API Settings
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+            </h3>
+          </div>
+          <div className="p-4 space-y-4">
             {/* API Key Management */}
             <div className="space-y-2">
               <Label className="flex items-center gap-2">
@@ -503,20 +494,20 @@ export default function AiSettingsPage() {
                 }
               />
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {/* Gemini CLI Settings */}
       {provider === "gemini_cli" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+        <div className="rounded-lg border border-border">
+          <div className="px-4 py-3 border-b border-border bg-muted/50">
+            <h3 className="text-sm font-medium flex items-center gap-2">
               <Sparkles className="size-4" />
               Gemini CLI Settings
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+            </h3>
+          </div>
+          <div className="p-4 space-y-4">
             <div className="space-y-2">
               <Label>Auth Method</Label>
               <div className="flex gap-3">
@@ -594,20 +585,20 @@ export default function AiSettingsPage() {
                 }
               />
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {/* Gemini API Settings */}
       {provider === "gemini_api" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+        <div className="rounded-lg border border-border">
+          <div className="px-4 py-3 border-b border-border bg-muted/50">
+            <h3 className="text-sm font-medium flex items-center gap-2">
               <Zap className="size-4" />
               Gemini API Settings
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+            </h3>
+          </div>
+          <div className="p-4 space-y-4">
             {/* API Key Management */}
             <div className="space-y-2">
               <Label className="flex items-center gap-2">
@@ -713,19 +704,19 @@ export default function AiSettingsPage() {
                 }
               />
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {/* Auto-Refine Defaults */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+      <div className="rounded-lg border border-border">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
+          <h3 className="text-sm font-medium flex items-center gap-2">
             <Video className="size-4" />
             Auto-Refine Defaults
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+          </h3>
+        </div>
+        <div className="p-4">
           <div className="space-y-2">
             <Label>Include Video After Iterations</Label>
             <Input
@@ -742,18 +733,18 @@ export default function AiSettingsPage() {
               auto-refinement. Set to 0 to always include video.
             </p>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Session Mode */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+      <div className="rounded-lg border border-border">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
+          <h3 className="text-sm font-medium flex items-center gap-2">
             <MessageSquare className="size-4" />
             Session Mode
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+          </h3>
+        </div>
+        <div className="p-4">
           <div className="flex items-center justify-between">
             <div>
               <Label>Interactive Sessions</Label>
@@ -766,21 +757,21 @@ export default function AiSettingsPage() {
               onCheckedChange={setInteractiveSessionsEnabled}
             />
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Test Connection */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+      <div className="rounded-lg border border-border">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
+          <h3 className="text-sm font-medium flex items-center gap-2">
             <Play className="size-4" />
             Test Connection
-          </CardTitle>
-          <CardDescription>
+          </h3>
+          <p className="text-xs text-muted-foreground">
             Verify your AI provider is properly configured
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+          </p>
+        </div>
+        <div className="p-4">
           <Button
             variant="outline"
             onClick={handleTestConnection}
@@ -793,8 +784,8 @@ export default function AiSettingsPage() {
             )}
             {testing ? "Testing..." : "Test Connection"}
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Save Button */}
       <div className="flex justify-end">

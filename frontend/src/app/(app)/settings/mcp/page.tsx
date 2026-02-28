@@ -14,13 +14,6 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -171,47 +164,47 @@ function ServerForm({
   };
 
   return (
-    <Card className="bg-surface-raised/30 border-brand-primary/30">
-      <CardHeader>
-        <CardTitle className="text-sm">
+    <div className="rounded-lg border border-primary/30">
+      <div className="px-4 py-3 border-b border-border bg-muted/50">
+        <h3 className="text-sm font-medium">
           {isEditing ? "Edit Server" : "Add Server"}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+        </h3>
+      </div>
+      <div className="p-4 space-y-4">
         {/* Name */}
         <div className="space-y-1.5">
-          <Label className="text-sm text-text-primary">
+          <Label className="text-sm text-foreground">
             Name <span className="text-red-400">*</span>
           </Label>
           <Input
             placeholder="e.g., filesystem-mcp"
             value={form.name}
             onChange={(e) => update({ name: e.target.value })}
-            className="bg-surface-raised/50 border-border-subtle/50"
+            className="bg-muted border-border"
           />
         </div>
 
         {/* Description */}
         <div className="space-y-1.5">
-          <Label className="text-sm text-text-primary">Description</Label>
+          <Label className="text-sm text-foreground">Description</Label>
           <Input
             placeholder="Optional description"
             value={form.description}
             onChange={(e) => update({ description: e.target.value })}
-            className="bg-surface-raised/50 border-border-subtle/50"
+            className="bg-muted border-border"
           />
         </div>
 
         {/* Transport */}
         <div className="space-y-1.5">
-          <Label className="text-sm text-text-primary">Transport</Label>
+          <Label className="text-sm text-foreground">Transport</Label>
           <div className="flex gap-2">
             <button
               onClick={() => update({ transport: "stdio" })}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm transition-colors ${
                 form.transport === "stdio"
-                  ? "bg-brand-primary/10 border-brand-primary/30 text-brand-primary"
-                  : "bg-surface-canvas/30 border-border-subtle/30 text-text-muted hover:text-text-primary"
+                  ? "bg-primary/10 border-primary/30 text-primary"
+                  : "bg-background border-border text-muted-foreground hover:text-foreground"
               }`}
             >
               <Terminal className="size-4" />
@@ -221,8 +214,8 @@ function ServerForm({
               onClick={() => update({ transport: "http" })}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm transition-colors ${
                 form.transport === "http"
-                  ? "bg-brand-primary/10 border-brand-primary/30 text-brand-primary"
-                  : "bg-surface-canvas/30 border-border-subtle/30 text-text-muted hover:text-text-primary"
+                  ? "bg-primary/10 border-primary/30 text-primary"
+                  : "bg-background border-border text-muted-foreground hover:text-foreground"
               }`}
             >
               <Globe className="size-4" />
@@ -235,18 +228,18 @@ function ServerForm({
         {form.transport === "stdio" && (
           <>
             <div className="space-y-1.5">
-              <Label className="text-sm text-text-primary">
+              <Label className="text-sm text-foreground">
                 Command <span className="text-red-400">*</span>
               </Label>
               <Input
                 placeholder="e.g., npx -y @modelcontextprotocol/server-filesystem"
                 value={form.command}
                 onChange={(e) => update({ command: e.target.value })}
-                className="bg-surface-raised/50 border-border-subtle/50 font-mono text-sm"
+                className="bg-muted border-border font-mono text-sm"
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-sm text-text-primary">
+              <Label className="text-sm text-foreground">
                 Arguments (one per line)
               </Label>
               <Textarea
@@ -254,18 +247,18 @@ function ServerForm({
                 value={form.args}
                 onChange={(e) => update({ args: e.target.value })}
                 rows={3}
-                className="bg-surface-raised/50 border-border-subtle/50 font-mono text-sm resize-none"
+                className="bg-muted border-border font-mono text-sm resize-none"
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-sm text-text-primary">
+              <Label className="text-sm text-foreground">
                 Working Directory
               </Label>
               <Input
                 placeholder="e.g., C:\projects\my-app"
                 value={form.cwd}
                 onChange={(e) => update({ cwd: e.target.value })}
-                className="bg-surface-raised/50 border-border-subtle/50 text-sm"
+                className="bg-muted border-border text-sm"
               />
             </div>
           </>
@@ -275,18 +268,18 @@ function ServerForm({
         {form.transport === "http" && (
           <>
             <div className="space-y-1.5">
-              <Label className="text-sm text-text-primary">
+              <Label className="text-sm text-foreground">
                 Server URL <span className="text-red-400">*</span>
               </Label>
               <Input
                 placeholder="http://localhost:3001/mcp"
                 value={form.url}
                 onChange={(e) => update({ url: e.target.value })}
-                className="bg-surface-raised/50 border-border-subtle/50 font-mono text-sm"
+                className="bg-muted border-border font-mono text-sm"
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-sm text-text-primary">
+              <Label className="text-sm text-foreground">
                 Headers (JSON or key:value per line)
               </Label>
               <Textarea
@@ -294,7 +287,7 @@ function ServerForm({
                 value={form.headers}
                 onChange={(e) => update({ headers: e.target.value })}
                 rows={3}
-                className="bg-surface-raised/50 border-border-subtle/50 font-mono text-sm resize-none"
+                className="bg-muted border-border font-mono text-sm resize-none"
               />
             </div>
           </>
@@ -302,7 +295,7 @@ function ServerForm({
 
         {/* Timeout */}
         <div className="space-y-1.5">
-          <Label className="text-sm text-text-primary">Timeout (seconds)</Label>
+          <Label className="text-sm text-foreground">Timeout (seconds)</Label>
           <Input
             type="number"
             min={1}
@@ -311,7 +304,7 @@ function ServerForm({
             onChange={(e) =>
               update({ timeout_seconds: Number(e.target.value) || 30 })
             }
-            className="bg-surface-raised/50 border-border-subtle/50 text-sm w-32"
+            className="bg-muted border-border text-sm w-32"
           />
         </div>
 
@@ -322,14 +315,14 @@ function ServerForm({
               checked={form.enabled}
               onCheckedChange={(v) => update({ enabled: v })}
             />
-            <Label className="text-sm text-text-primary">Enabled</Label>
+            <Label className="text-sm text-foreground">Enabled</Label>
           </div>
           <div className="flex items-center gap-2">
             <Switch
               checked={form.auto_start}
               onCheckedChange={(v) => update({ auto_start: v })}
             />
-            <Label className="text-sm text-text-primary">Auto-start</Label>
+            <Label className="text-sm text-foreground">Auto-start</Label>
           </div>
         </div>
 
@@ -339,7 +332,7 @@ function ServerForm({
             variant="ghost"
             size="sm"
             onClick={onCancel}
-            className="text-text-muted hover:text-text-primary"
+            className="text-muted-foreground hover:text-foreground"
           >
             Cancel
           </Button>
@@ -357,8 +350,8 @@ function ServerForm({
             {isEditing ? "Update" : "Create"}
           </Button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -419,8 +412,8 @@ function ServerCard({
     <div
       className={`rounded-lg border transition-all ${
         server.enabled
-          ? "border-border-subtle/50 bg-surface-canvas/30"
-          : "border-border-subtle/30 bg-surface-canvas/10 opacity-60"
+          ? "border-border bg-background"
+          : "border-border bg-background opacity-60"
       }`}
     >
       <div className="p-4">
@@ -437,7 +430,7 @@ function ServerCard({
           {/* Content */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <p className="text-sm font-semibold text-text-primary">
+              <p className="text-sm font-semibold text-foreground">
                 {server.name}
               </p>
               {!server.enabled && (
@@ -470,7 +463,7 @@ function ServerCard({
                 }
               />
             </div>
-            <p className="text-xs text-text-muted font-mono truncate">
+            <p className="text-xs text-muted-foreground font-mono truncate">
               {server.transport === "stdio" ? server.command : server.url}
             </p>
             {hasError && (
@@ -485,7 +478,7 @@ function ServerCard({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-text-muted hover:text-text-primary"
+              className="h-7 w-7 text-muted-foreground hover:text-foreground"
               onClick={handleConnect}
               disabled={connecting}
               title={isConnected ? "Disconnect" : "Connect"}
@@ -501,7 +494,7 @@ function ServerCard({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-text-muted hover:text-text-primary"
+              className="h-7 w-7 text-muted-foreground hover:text-foreground"
               onClick={onEdit}
               title="Edit"
             >
@@ -510,7 +503,7 @@ function ServerCard({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-text-muted hover:text-red-400"
+              className="h-7 w-7 text-muted-foreground hover:text-red-400"
               onClick={handleDelete}
               disabled={deleting}
               title="Delete"
@@ -524,7 +517,7 @@ function ServerCard({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-text-muted hover:text-text-primary"
+              className="h-7 w-7 text-muted-foreground hover:text-foreground"
               onClick={onToggleExpand}
               title={expanded ? "Collapse" : "Expand"}
             >
@@ -540,32 +533,32 @@ function ServerCard({
 
       {/* Expanded: Tools */}
       {expanded && (
-        <div className="border-t border-border-subtle/30 px-4 py-3 bg-surface-canvas/10">
+        <div className="border-t border-border px-4 py-3 bg-background">
           {tools.length === 0 ? (
-            <p className="text-xs text-text-muted italic">
+            <p className="text-xs text-muted-foreground italic">
               {isConnected
                 ? "No tools available from this server"
                 : "Connect to see available tools"}
             </p>
           ) : (
             <div className="space-y-1.5">
-              <p className="text-xs font-medium text-text-muted mb-2 flex items-center gap-1.5">
+              <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
                 <Wrench className="size-3.5" />
                 Available Tools ({tools.length})
               </p>
               {tools.map((tool) => (
                 <div
                   key={tool.name}
-                  className="flex items-start gap-2 px-2 py-1.5 rounded bg-surface-canvas/20"
+                  className="flex items-start gap-2 px-2 py-1.5 rounded bg-background"
                 >
-                  <code className="text-xs text-brand-primary font-mono whitespace-nowrap">
+                  <code className="text-xs text-primary font-mono whitespace-nowrap">
                     {tool.name}
                   </code>
                   {tool.description && (
                     <span
                       data-content-role="description"
                       data-content-label="tool description"
-                      className="text-xs text-text-muted truncate"
+                      className="text-xs text-muted-foreground truncate"
                     >
                       {tool.description}
                     </span>
@@ -707,7 +700,7 @@ export default function McpServersSettingsPage() {
   if (healthLoading || loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="size-8 animate-spin text-text-muted" />
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -720,15 +713,15 @@ export default function McpServersSettingsPage() {
   const showForm = isAdding || editingServer !== null;
 
   return (
-    <div className="p-6 max-w-4xl space-y-6">
+    <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
             <Wifi className="size-5" />
             MCP Servers
           </h2>
-          <p className="text-sm text-text-muted mt-1">
+          <p className="text-sm text-muted-foreground mt-1">
             Configure Model Context Protocol server connections
           </p>
         </div>
@@ -737,7 +730,7 @@ export default function McpServersSettingsPage() {
             variant="ghost"
             size="sm"
             onClick={loadAll}
-            className="text-text-muted hover:text-text-primary"
+            className="text-muted-foreground hover:text-foreground"
           >
             <RefreshCw className="size-4" />
           </Button>
@@ -776,28 +769,28 @@ export default function McpServersSettingsPage() {
       )}
 
       {/* Server List */}
-      <Card className="bg-surface-raised/30 border-border-subtle/50">
-        <CardHeader>
+      <div className="rounded-lg border border-border">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="text-sm flex items-center gap-2">
+              <h3 className="text-sm font-medium flex items-center gap-2">
                 <Server className="size-4" />
                 Configured Servers
-              </CardTitle>
-              <CardDescription>
+              </h3>
+              <p className="text-xs text-muted-foreground">
                 MCP servers available for tool use
-              </CardDescription>
+              </p>
             </div>
             {servers.length > 0 && (
               <Badge variant="secondary">{servers.length} servers</Badge>
             )}
           </div>
-        </CardHeader>
-        <CardContent>
+        </div>
+        <div className="p-4">
           {servers.length === 0 ? (
             <div className="text-center py-12">
-              <Server className="size-10 mx-auto mb-3 text-text-muted" />
-              <p className="text-sm text-text-muted mb-4">
+              <Server className="size-10 mx-auto mb-3 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground mb-4">
                 No MCP servers configured
               </p>
               {!showForm && (
@@ -835,8 +828,8 @@ export default function McpServersSettingsPage() {
               ))}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

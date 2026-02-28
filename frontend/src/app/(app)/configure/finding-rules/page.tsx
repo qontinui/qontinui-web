@@ -161,9 +161,9 @@ function getColorClasses(color: string) {
   };
   return (
     map[color] || {
-      bg: "bg-surface-raised/50",
-      text: "text-text-muted",
-      border: "border-border-subtle",
+      bg: "bg-muted",
+      text: "text-muted-foreground",
+      border: "border-border",
     }
   );
 }
@@ -439,58 +439,55 @@ export default function FindingRulesPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-text-muted" />
+      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-      {/* Header */}
-      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <Settings2 className="w-6 h-6 text-orange-400" />
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-orange-400 to-amber-400 bg-clip-text text-transparent">
-              Finding Categories
-            </h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowResetDialog(true)}
-              className="text-text-muted hover:text-white"
-              title="Reset to defaults"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setIsLoading(true);
-                fetchCategories();
-              }}
-              className="text-text-muted hover:text-white"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </Button>
-            <Button
-              onClick={() => setShowForm(true)}
-              disabled={showForm}
-              className="bg-brand-primary hover:bg-brand-primary/90 text-black font-semibold"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Add Category
-            </Button>
-          </div>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden text-white">
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <div className="flex items-center gap-3">
+          <Settings2 className="w-5 h-5 text-orange-400" />
+          <h1 className="text-lg font-semibold text-foreground">
+            Finding Categories
+          </h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowResetDialog(true)}
+            className="text-muted-foreground hover:text-white"
+            title="Reset to defaults"
+          >
+            <RotateCcw className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setIsLoading(true);
+              fetchCategories();
+            }}
+            className="text-muted-foreground hover:text-white"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </Button>
+          <Button
+            onClick={() => setShowForm(true)}
+            disabled={showForm}
+            className="bg-primary hover:bg-primary/90 text-black font-semibold"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Category
+          </Button>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="p-6 max-w-4xl mx-auto space-y-6">
+      <main className="flex-1 overflow-y-auto p-6 max-w-4xl mx-auto space-y-6 w-full">
         {/* Error Banner */}
         {error && (
           <div className="flex items-center gap-2 text-red-400 bg-red-950/20 border border-red-500/30 rounded-lg p-3">
@@ -501,7 +498,7 @@ export default function FindingRulesPage() {
 
         {/* Create Form */}
         {showForm && (
-          <Card className="bg-surface-raised/50 border-brand-primary/30">
+          <Card className="bg-muted border-primary/30">
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle className="text-lg text-white flex items-center gap-2">
@@ -511,7 +508,7 @@ export default function FindingRulesPage() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 text-text-muted hover:text-white"
+                  className="h-8 w-8 text-muted-foreground hover:text-white"
                   onClick={resetForm}
                 >
                   <X className="w-4 h-4" />
@@ -521,44 +518,44 @@ export default function FindingRulesPage() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-sm font-medium text-text-muted mb-1.5 block">
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
                     Name
                   </label>
                   <Input
                     placeholder="e.g., Accessibility Issue"
                     value={formName}
                     onChange={(e) => setFormName(e.target.value)}
-                    className="bg-surface-raised/50 border-border-subtle/50 text-white placeholder:text-text-muted"
+                    className="bg-muted border-border text-white placeholder:text-muted-foreground"
                   />
                   {formName.trim() && (
-                    <p className="text-xs text-text-muted mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       Slug: {slugify(formName)}
                     </p>
                   )}
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-text-muted mb-1.5 block">
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
                     Description
                   </label>
                   <Input
                     placeholder="Short description"
                     value={formDescription}
                     onChange={(e) => setFormDescription(e.target.value)}
-                    className="bg-surface-raised/50 border-border-subtle/50 text-white placeholder:text-text-muted"
+                    className="bg-muted border-border text-white placeholder:text-muted-foreground"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="text-sm font-medium text-text-muted mb-1.5 block">
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
                     Icon
                   </label>
                   <Select value={formIcon} onValueChange={setFormIcon}>
-                    <SelectTrigger className="bg-surface-raised/50 border-border-subtle/50">
+                    <SelectTrigger className="bg-muted border-border">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-surface-raised border-border-subtle">
+                    <SelectContent className="bg-muted border-border">
                       {ICON_OPTIONS.map((icon) => (
                         <SelectItem key={icon} value={icon}>
                           <div className="flex items-center gap-2">
@@ -571,14 +568,14 @@ export default function FindingRulesPage() {
                   </Select>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-text-muted mb-1.5 block">
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
                     Color
                   </label>
                   <Select value={formColor} onValueChange={setFormColor}>
-                    <SelectTrigger className="bg-surface-raised/50 border-border-subtle/50">
+                    <SelectTrigger className="bg-muted border-border">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-surface-raised border-border-subtle">
+                    <SelectContent className="bg-muted border-border">
                       {COLOR_OPTIONS.map((color) => {
                         const cc = getColorClasses(color);
                         return (
@@ -596,7 +593,7 @@ export default function FindingRulesPage() {
                   </Select>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-text-muted mb-1.5 block">
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
                     Default Action
                   </label>
                   <Select
@@ -605,15 +602,15 @@ export default function FindingRulesPage() {
                       setFormActionType(v as FindingCategoryActionType)
                     }
                   >
-                    <SelectTrigger className="bg-surface-raised/50 border-border-subtle/50">
+                    <SelectTrigger className="bg-muted border-border">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-surface-raised border-border-subtle">
+                    <SelectContent className="bg-muted border-border">
                       {ACTION_TYPE_OPTIONS.map((opt) => (
                         <SelectItem key={opt.value} value={opt.value}>
                           <div>
                             <span>{opt.label}</span>
-                            <span className="text-text-muted text-[11px] ml-2">
+                            <span className="text-muted-foreground text-[11px] ml-2">
                               {opt.description}
                             </span>
                           </div>
@@ -629,7 +626,7 @@ export default function FindingRulesPage() {
                   checked={formEnabled}
                   onCheckedChange={setFormEnabled}
                 />
-                <label className="text-sm text-text-muted">
+                <label className="text-sm text-muted-foreground">
                   Enable category
                 </label>
               </div>
@@ -645,14 +642,14 @@ export default function FindingRulesPage() {
                 <Button
                   variant="ghost"
                   onClick={resetForm}
-                  className="text-text-muted hover:text-white"
+                  className="text-muted-foreground hover:text-white"
                 >
                   Cancel
                 </Button>
                 <Button
                   onClick={handleCreate}
                   disabled={isSaving}
-                  className="bg-brand-primary hover:bg-brand-primary/90 text-black font-semibold"
+                  className="bg-primary hover:bg-primary/90 text-black font-semibold"
                 >
                   {isSaving ? (
                     <>
@@ -672,7 +669,7 @@ export default function FindingRulesPage() {
         )}
 
         {/* Categories List */}
-        <Card className="bg-surface-raised/50 border-border-subtle/50">
+        <Card className="bg-muted border-border">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
@@ -680,7 +677,7 @@ export default function FindingRulesPage() {
                   <Settings2 className="w-5 h-5" />
                   Categories
                 </CardTitle>
-                <CardDescription className="text-text-muted mt-1">
+                <CardDescription className="text-muted-foreground mt-1">
                   Configure how AI-detected findings are classified
                 </CardDescription>
               </div>
@@ -695,20 +692,20 @@ export default function FindingRulesPage() {
             {/* Search */}
             {categories.length > 3 && (
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   placeholder="Search categories..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 bg-surface-raised/50 border-border-subtle/50 text-white placeholder:text-text-muted"
+                  className="pl-10 bg-muted border-border text-white placeholder:text-muted-foreground"
                 />
               </div>
             )}
 
             {!filteredCategories.length ? (
               <div className="text-center py-12">
-                <Settings2 className="w-10 h-10 mx-auto mb-3 text-text-muted" />
-                <p className="text-sm text-text-muted">
+                <Settings2 className="w-10 h-10 mx-auto mb-3 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">
                   {categories.length > 0
                     ? "No categories match your search"
                     : "No categories configured."}
@@ -727,28 +724,28 @@ export default function FindingRulesPage() {
                     return (
                       <div
                         key={cat.id}
-                        className="p-4 rounded-lg border border-brand-primary/30 bg-surface-canvas/30 space-y-3"
+                        className="p-4 rounded-lg border border-primary/30 bg-background/30 space-y-3"
                       >
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           <Input
                             value={editName}
                             onChange={(e) => setEditName(e.target.value)}
                             placeholder="Category name"
-                            className="bg-surface-raised/50 border-border-subtle/50 text-white"
+                            className="bg-muted border-border text-white"
                           />
                           <Input
                             value={editDescription}
                             onChange={(e) => setEditDescription(e.target.value)}
                             placeholder="Description"
-                            className="bg-surface-raised/50 border-border-subtle/50 text-white"
+                            className="bg-muted border-border text-white"
                           />
                         </div>
                         <div className="grid grid-cols-3 gap-3">
                           <Select value={editIcon} onValueChange={setEditIcon}>
-                            <SelectTrigger className="bg-surface-raised/50 border-border-subtle/50">
+                            <SelectTrigger className="bg-muted border-border">
                               <SelectValue />
                             </SelectTrigger>
-                            <SelectContent className="bg-surface-raised border-border-subtle">
+                            <SelectContent className="bg-muted border-border">
                               {ICON_OPTIONS.map((icon) => (
                                 <SelectItem key={icon} value={icon}>
                                   <div className="flex items-center gap-2">
@@ -766,10 +763,10 @@ export default function FindingRulesPage() {
                             value={editColor}
                             onValueChange={setEditColor}
                           >
-                            <SelectTrigger className="bg-surface-raised/50 border-border-subtle/50">
+                            <SelectTrigger className="bg-muted border-border">
                               <SelectValue />
                             </SelectTrigger>
-                            <SelectContent className="bg-surface-raised border-border-subtle">
+                            <SelectContent className="bg-muted border-border">
                               {COLOR_OPTIONS.map((color) => {
                                 const colCc = getColorClasses(color);
                                 return (
@@ -792,15 +789,15 @@ export default function FindingRulesPage() {
                               setEditActionType(v as FindingCategoryActionType)
                             }
                           >
-                            <SelectTrigger className="bg-surface-raised/50 border-border-subtle/50">
+                            <SelectTrigger className="bg-muted border-border">
                               <SelectValue />
                             </SelectTrigger>
-                            <SelectContent className="bg-surface-raised border-border-subtle">
+                            <SelectContent className="bg-muted border-border">
                               {ACTION_TYPE_OPTIONS.map((opt) => (
                                 <SelectItem key={opt.value} value={opt.value}>
                                   <div>
                                     <span>{opt.label}</span>
-                                    <span className="text-text-muted text-[11px] ml-2">
+                                    <span className="text-muted-foreground text-[11px] ml-2">
                                       {opt.description}
                                     </span>
                                   </div>
@@ -814,14 +811,14 @@ export default function FindingRulesPage() {
                             variant="ghost"
                             size="sm"
                             onClick={cancelEdit}
-                            className="text-text-muted hover:text-white"
+                            className="text-muted-foreground hover:text-white"
                           >
                             Cancel
                           </Button>
                           <Button
                             size="sm"
                             onClick={() => handleSaveEdit(cat)}
-                            className="bg-brand-primary hover:bg-brand-primary/90 text-black"
+                            className="bg-primary hover:bg-primary/90 text-black"
                           >
                             <Save className="w-3.5 h-3.5 mr-1.5" />
                             Save
@@ -836,8 +833,8 @@ export default function FindingRulesPage() {
                       key={cat.id}
                       className={`p-4 rounded-lg border transition-all ${
                         cat.enabled
-                          ? "border-border-subtle/50 bg-surface-canvas/30"
-                          : "border-border-subtle/30 bg-surface-canvas/10 opacity-60"
+                          ? "border-border bg-background/30"
+                          : "border-border bg-background/10 opacity-60"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-4">
@@ -852,11 +849,11 @@ export default function FindingRulesPage() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
-                              <p className="text-sm font-medium text-text-primary">
+                              <p className="text-sm font-medium text-foreground">
                                 {cat.name}
                               </p>
                               {cat.is_built_in && (
-                                <Lock className="w-3 h-3 text-text-muted" />
+                                <Lock className="w-3 h-3 text-muted-foreground" />
                               )}
                               <Badge
                                 variant={actionBadge.variant}
@@ -865,11 +862,11 @@ export default function FindingRulesPage() {
                                 {actionBadge.label}
                               </Badge>
                             </div>
-                            <p className="text-[11px] text-text-muted/60 font-mono">
+                            <p className="text-[11px] text-muted-foreground/60 font-mono">
                               {cat.slug}
                             </p>
                             {cat.description && (
-                              <p className="text-xs text-text-muted truncate mt-0.5">
+                              <p className="text-xs text-muted-foreground truncate mt-0.5">
                                 {cat.description}
                               </p>
                             )}
@@ -882,7 +879,7 @@ export default function FindingRulesPage() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-5 w-5 text-text-muted hover:text-white"
+                                className="h-5 w-5 text-muted-foreground hover:text-white"
                                 onClick={() => handleReorder(cat, "up")}
                                 disabled={filteredCategories.indexOf(cat) === 0}
                                 title="Move up"
@@ -892,7 +889,7 @@ export default function FindingRulesPage() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-5 w-5 text-text-muted hover:text-white"
+                                className="h-5 w-5 text-muted-foreground hover:text-white"
                                 onClick={() => handleReorder(cat, "down")}
                                 disabled={
                                   filteredCategories.indexOf(cat) ===
@@ -914,7 +911,7 @@ export default function FindingRulesPage() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-8 w-8 text-text-muted hover:text-white"
+                                className="h-8 w-8 text-muted-foreground hover:text-white"
                                 onClick={() => startEdit(cat)}
                                 title="Edit"
                               >
@@ -923,7 +920,7 @@ export default function FindingRulesPage() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-8 w-8 text-text-muted hover:text-red-400"
+                                className="h-8 w-8 text-muted-foreground hover:text-red-400"
                                 onClick={() => setDeletingId(cat.id)}
                                 title="Delete"
                               >
@@ -949,10 +946,10 @@ export default function FindingRulesPage() {
           if (!open) setDeletingId(null);
         }}
       >
-        <DialogContent className="bg-surface-raised border-border-subtle">
+        <DialogContent className="bg-muted border-border">
           <DialogHeader>
             <DialogTitle className="text-white">Delete Category</DialogTitle>
-            <DialogDescription className="text-text-muted">
+            <DialogDescription className="text-muted-foreground">
               Are you sure you want to delete this custom category? This action
               cannot be undone.
             </DialogDescription>
@@ -961,7 +958,7 @@ export default function FindingRulesPage() {
             <Button
               variant="ghost"
               onClick={() => setDeletingId(null)}
-              className="text-text-muted hover:text-white"
+              className="text-muted-foreground hover:text-white"
             >
               Cancel
             </Button>
@@ -983,10 +980,10 @@ export default function FindingRulesPage() {
 
       {/* Reset Confirmation Dialog */}
       <Dialog open={showResetDialog} onOpenChange={setShowResetDialog}>
-        <DialogContent className="bg-surface-raised border-border-subtle">
+        <DialogContent className="bg-muted border-border">
           <DialogHeader>
             <DialogTitle className="text-white">Reset to Defaults</DialogTitle>
-            <DialogDescription className="text-text-muted">
+            <DialogDescription className="text-muted-foreground">
               This will delete all custom categories and restore the 13 built-in
               defaults. This action cannot be undone.
             </DialogDescription>
@@ -995,7 +992,7 @@ export default function FindingRulesPage() {
             <Button
               variant="ghost"
               onClick={() => setShowResetDialog(false)}
-              className="text-text-muted hover:text-white"
+              className="text-muted-foreground hover:text-white"
             >
               Cancel
             </Button>

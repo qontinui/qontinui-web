@@ -4,7 +4,6 @@ import { useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { ComparisonSelector } from "@/components/testing/ComparisonSelector";
 import { TestRunComparison } from "@/components/testing/TestRunComparison";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 
@@ -24,7 +23,6 @@ function ComparePageContent() {
     setRun1Id(newRun1Id);
     setRun2Id(newRun2Id);
 
-    // Update URL params
     const params = new URLSearchParams(searchParams.toString());
     params.set("run1", newRun1Id);
     params.set("run2", newRun2Id);
@@ -33,70 +31,61 @@ function ComparePageContent() {
 
   if (!projectIdParam) {
     return (
-      <div className="container mx-auto p-8">
-        <Card className="bg-surface-raised/50 border-border-subtle/50">
-          <CardContent className="p-12 text-center">
-            <div className="text-red-400 mb-4">
-              No project specified. Please select a project first.
-            </div>
-            <Button
-              onClick={() => router.push("/qa-dashboard")}
-              variant="outline"
-              className="border-border-default hover:border-brand-primary hover:text-brand-primary"
-            >
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to QA Dashboard
-            </Button>
-          </CardContent>
-        </Card>
+      <div className="p-12 text-center">
+        <div className="text-red-400 mb-4">
+          No project specified. Please select a project first.
+        </div>
+        <Button onClick={() => router.push("/qa-dashboard")} variant="outline">
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Back to QA Dashboard
+        </Button>
       </div>
     );
   }
 
   return (
     <div
-      className="container mx-auto p-8 space-y-6"
+      className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden"
       data-ui-id="qa-compare-page"
     >
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-bold mb-2">Compare Test Runs</h1>
-          <p className="text-text-muted">
-            Analyze differences between two test runs to identify improvements
-            or regressions
-          </p>
-        </div>
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <h1 className="text-lg font-semibold text-foreground">
+          Compare Test Runs
+        </h1>
         <Button
           onClick={() =>
             router.push(`/qa-dashboard/runs?project_id=${projectIdParam}`)
           }
           variant="outline"
-          className="border-border-default hover:border-brand-primary hover:text-brand-primary"
+          size="sm"
           data-ui-id="qa-compare-back-btn"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Runs
         </Button>
-      </div>
+      </header>
 
-      <ComparisonSelector
-        projectId={projectIdParam}
-        onCompare={handleCompare}
-      />
+      <main className="flex-1 overflow-y-auto p-6 space-y-6">
+        <p className="text-sm text-muted-foreground">
+          Analyze differences between two test runs to identify improvements or
+          regressions
+        </p>
 
-      {run1Id && run2Id && (
-        <TestRunComparison run1Id={run1Id} run2Id={run2Id} />
-      )}
+        <ComparisonSelector
+          projectId={projectIdParam}
+          onCompare={handleCompare}
+        />
 
-      {!run1Id || !run2Id ? (
-        <Card className="bg-surface-raised/50 border-border-subtle/50">
-          <CardContent className="p-12 text-center">
-            <div className="text-text-muted">
-              Select two test runs above to see a detailed comparison
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
+        {run1Id && run2Id && (
+          <TestRunComparison run1Id={run1Id} run2Id={run2Id} />
+        )}
+
+        {!run1Id || !run2Id ? (
+          <div className="p-12 text-center text-muted-foreground">
+            Select two test runs above to see a detailed comparison
+          </div>
+        ) : null}
+      </main>
     </div>
   );
 }
@@ -105,12 +94,8 @@ export default function ComparePage() {
   return (
     <Suspense
       fallback={
-        <div className="container mx-auto p-8">
-          <Card className="bg-surface-raised/50 border-border-subtle/50">
-            <CardContent className="p-12 text-center">
-              <div className="text-text-muted">Loading...</div>
-            </CardContent>
-          </Card>
+        <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
+          <div className="text-muted-foreground">Loading...</div>
         </div>
       }
     >

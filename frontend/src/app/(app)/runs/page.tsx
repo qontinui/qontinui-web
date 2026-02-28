@@ -8,7 +8,6 @@ import { useRouter } from "next/navigation";
 import { useTaskRunList } from "@/hooks/useTaskRunData";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { runnerApi } from "@/lib/runner";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,14 +19,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   History,
   Search,
@@ -70,7 +61,7 @@ function getStatusIcon(status: string) {
     case "running":
       return <PlayCircle className="size-4 text-blue-500 animate-pulse" />;
     default:
-      return <Clock className="size-4 text-text-muted" />;
+      return <Clock className="size-4 text-muted-foreground" />;
   }
 }
 
@@ -154,29 +145,17 @@ export default function RunHistoryPage() {
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <History className="size-6 text-brand-primary" />
-            <h1 className="text-2xl font-bold text-text-primary">
-              Run History
-            </h1>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refetch()}
-            className="border-border-default"
-          >
-            <RefreshCw className="size-4 mr-2" />
-            Refresh
-          </Button>
-        </div>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <h1 className="text-lg font-semibold">Run History</h1>
+        <Button variant="outline" size="sm" onClick={() => refetch()}>
+          <RefreshCw className="size-4 mr-2" />
+          Refresh
+        </Button>
       </header>
 
-      <main className="p-6 max-w-7xl mx-auto space-y-6">
-        <p className="text-text-muted">
+      <main className="flex-1 overflow-y-auto p-6 space-y-6">
+        <p className="text-muted-foreground text-sm">
           Browse and filter all task runs from the Qontinui Runner.
         </p>
 
@@ -185,16 +164,16 @@ export default function RunHistoryPage() {
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-text-muted" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <Input
               placeholder="Search by run name or workflow..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 bg-surface-raised/50 border-border-default"
+              className="pl-10"
             />
           </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[160px] bg-surface-raised/50 border-border-default">
+            <SelectTrigger className="w-[160px]">
               <SelectValue placeholder="Filter status" />
             </SelectTrigger>
             <SelectContent>
@@ -214,8 +193,8 @@ export default function RunHistoryPage() {
                 onClick={() => setTypeFilter(type)}
                 className={
                   typeFilter === type
-                    ? "bg-brand-primary text-black"
-                    : "border-border-default text-text-muted"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground"
                 }
               >
                 {type === "all" ? "All" : type.toUpperCase()}
@@ -267,175 +246,175 @@ export default function RunHistoryPage() {
         )}
 
         {/* Results */}
-        <Card className="bg-surface-raised/50 border-border-subtle/50">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <History className="size-5 text-brand-primary" />
-                Task Runs
-                {filteredRuns.length > 0 && (
-                  <Badge variant="secondary" className="ml-2">
-                    {filteredRuns.length}
-                  </Badge>
-                )}
-              </CardTitle>
-              {selectedRuns.size > 0 && (
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  disabled={isDeleting}
-                  onClick={handleBulkDelete}
-                >
-                  {isDeleting ? (
-                    <Loader2 className="size-4 animate-spin mr-1" />
-                  ) : (
-                    <Trash2 className="size-4 mr-1" />
-                  )}
-                  Delete {selectedRuns.size}
-                </Button>
+        {selectedRuns.size > 0 && (
+          <div className="flex items-center justify-end">
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={isDeleting}
+              onClick={handleBulkDelete}
+            >
+              {isDeleting ? (
+                <Loader2 className="size-4 animate-spin mr-1" />
+              ) : (
+                <Trash2 className="size-4 mr-1" />
               )}
-            </div>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="text-center py-12 text-text-muted">
-                <RefreshCw className="size-5 animate-spin mx-auto mb-2" />
-                Loading runs...
-              </div>
-            ) : error ? (
-              <div className="text-center py-12 text-red-400">
-                Error loading runs: {error?.message ?? String(error)}
-              </div>
-            ) : filteredRuns.length === 0 ? (
-              <div className="text-center py-12 text-text-muted">
-                <History className="size-12 mx-auto mb-4 text-text-muted" />
-                <p className="font-medium">No runs found</p>
-                <p className="text-sm mt-1">
-                  {runs && runs.length > 0
-                    ? "Try adjusting your filters."
-                    : "Runs will appear here when you execute tasks in the Runner."}
-                </p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-border-subtle/50">
-                      <TableHead className="w-10">
-                        <Checkbox
-                          checked={
-                            filteredRuns.length > 0 &&
-                            filteredRuns.every((r) => selectedRuns.has(r.id))
+              Delete {selectedRuns.size}
+            </Button>
+          </div>
+        )}
+
+        {isLoading ? (
+          <div className="text-center py-12 text-muted-foreground">
+            <RefreshCw className="size-5 animate-spin mx-auto mb-2" />
+            Loading runs...
+          </div>
+        ) : error ? (
+          <div className="text-center py-12 text-red-400">
+            Error loading runs: {error?.message ?? String(error)}
+          </div>
+        ) : filteredRuns.length === 0 ? (
+          <div className="text-center py-12 text-muted-foreground">
+            <History className="size-12 mx-auto mb-4 text-muted-foreground" />
+            <p className="font-medium">No runs found</p>
+            <p className="text-sm mt-1">
+              {runs && runs.length > 0
+                ? "Try adjusting your filters."
+                : "Runs will appear here when you execute tasks in the Runner."}
+            </p>
+          </div>
+        ) : (
+          <div className="border border-border rounded-lg overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/80 backdrop-blur-sm sticky top-0">
+                  <tr>
+                    <th className="w-10 px-3 py-2">
+                      <Checkbox
+                        checked={
+                          filteredRuns.length > 0 &&
+                          filteredRuns.every((r) => selectedRuns.has(r.id))
+                        }
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedRuns(
+                              new Set(filteredRuns.map((r) => r.id))
+                            );
+                          } else {
+                            setSelectedRuns(new Set());
                           }
+                        }}
+                      />
+                    </th>
+                    <th className="text-left px-3 py-2 text-xs text-muted-foreground uppercase tracking-wider font-medium">
+                      Status
+                    </th>
+                    <th className="text-left px-3 py-2 text-xs text-muted-foreground uppercase tracking-wider font-medium">
+                      Name
+                    </th>
+                    <th className="text-left px-3 py-2 text-xs text-muted-foreground uppercase tracking-wider font-medium">
+                      Phase
+                    </th>
+                    <th className="text-left px-3 py-2 text-xs text-muted-foreground uppercase tracking-wider font-medium">
+                      Started
+                    </th>
+                    <th className="text-left px-3 py-2 text-xs text-muted-foreground uppercase tracking-wider font-medium">
+                      Duration
+                    </th>
+                    <th className="text-left px-3 py-2 text-xs text-muted-foreground uppercase tracking-wider font-medium">
+                      Error
+                    </th>
+                    <th className="w-10 px-3 py-2" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {filteredRuns.map((run) => (
+                    <tr
+                      key={run.id}
+                      className="hover:bg-muted/50 cursor-pointer"
+                      onClick={() => router.push(`/runs/${run.id}`)}
+                    >
+                      <td className="px-3 py-2.5">
+                        <Checkbox
+                          checked={selectedRuns.has(run.id)}
                           onCheckedChange={(checked) => {
+                            const next = new Set(selectedRuns);
                             if (checked) {
-                              setSelectedRuns(
-                                new Set(filteredRuns.map((r) => r.id))
-                              );
+                              next.add(run.id);
                             } else {
-                              setSelectedRuns(new Set());
+                              next.delete(run.id);
                             }
+                            setSelectedRuns(next);
                           }}
+                          onClick={(e) => e.stopPropagation()}
                         />
-                      </TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Phase</TableHead>
-                      <TableHead>Started</TableHead>
-                      <TableHead>Duration</TableHead>
-                      <TableHead>Error</TableHead>
-                      <TableHead className="w-10" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredRuns.map((run) => (
-                      <TableRow
-                        key={run.id}
-                        className="border-border-subtle/50 hover:bg-surface-raised/30 cursor-pointer"
-                        onClick={() => router.push(`/runs/${run.id}`)}
-                      >
-                        <TableCell>
-                          <Checkbox
-                            checked={selectedRuns.has(run.id)}
-                            onCheckedChange={(checked) => {
-                              const next = new Set(selectedRuns);
-                              if (checked) {
-                                next.add(run.id);
-                              } else {
-                                next.delete(run.id);
-                              }
-                              setSelectedRuns(next);
-                            }}
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            {getStatusIcon(run.status)}
-                            {getStatusBadge(run.status)}
-                          </div>
-                        </TableCell>
-                        <TableCell>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-2">
+                          {getStatusIcon(run.status)}
+                          {getStatusBadge(run.status)}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div
+                          className="font-medium text-foreground"
+                          data-content-role="label"
+                          data-content-label="task-name"
+                        >
+                          {run.task_name}
+                        </div>
+                        {run.workflow_name && (
                           <div
-                            className="font-medium text-text-primary"
-                            data-content-role="label"
-                            data-content-label="task-name"
+                            className="text-xs text-muted-foreground mt-0.5"
+                            data-content-role="body-text"
+                            data-content-label="workflow-name"
                           >
-                            {run.task_name}
+                            {run.workflow_name}
                           </div>
-                          {run.workflow_name && (
-                            <div
-                              className="text-xs text-text-muted mt-0.5"
-                              data-content-role="body-text"
-                              data-content-label="workflow-name"
-                            >
-                              {run.workflow_name}
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {run.phase ? (
-                            <Badge variant="outline" className="text-xs">
-                              {run.phase}
-                            </Badge>
-                          ) : (
-                            <span className="text-text-muted">-</span>
-                          )}
-                        </TableCell>
-                        <TableCell
-                          className="text-sm text-text-muted"
-                          data-content-role="body-text"
-                          data-content-label="started-at"
-                        >
-                          {formatDateTime(run.created_at)}
-                        </TableCell>
-                        <TableCell
-                          className="text-sm"
-                          data-content-role="metric"
-                          data-content-label="duration"
-                        >
-                          {formatDuration(run.duration_seconds)}
-                        </TableCell>
-                        <TableCell className="text-xs text-red-400 max-w-[200px] truncate">
-                          {run.status === "failed"
-                            ? (
-                                run.summary ||
-                                run.output_summary ||
-                                "Failed"
-                              ).substring(0, 80)
-                            : "-"}
-                        </TableCell>
-                        <TableCell>
-                          <ArrowRight className="size-4 text-text-muted" />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {run.phase ? (
+                          <Badge variant="outline" className="text-xs">
+                            {run.phase}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </td>
+                      <td
+                        className="px-3 py-2.5 text-sm text-muted-foreground tabular-nums"
+                        data-content-role="body-text"
+                        data-content-label="started-at"
+                      >
+                        {formatDateTime(run.created_at)}
+                      </td>
+                      <td
+                        className="px-3 py-2.5 text-sm tabular-nums"
+                        data-content-role="metric"
+                        data-content-label="duration"
+                      >
+                        {formatDuration(run.duration_seconds)}
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-red-400 max-w-[200px] truncate">
+                        {run.status === "failed"
+                          ? (
+                              run.summary ||
+                              run.output_summary ||
+                              "Failed"
+                            ).substring(0, 80)
+                          : "-"}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <ArrowRight className="size-4 text-muted-foreground" />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

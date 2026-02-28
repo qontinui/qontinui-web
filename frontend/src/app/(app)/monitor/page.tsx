@@ -4,9 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
 import { RunnerMonitor, SessionHistory } from "@/components/runner";
-import { Activity, History, LayoutDashboard, Shield } from "lucide-react";
+import { Activity, History } from "lucide-react";
 
 export default function RunnerPage() {
   const { user, loading: authLoading } = useAuth();
@@ -24,42 +23,12 @@ export default function RunnerPage() {
   }
 
   return (
-    <div className="container mx-auto py-8 h-screen flex flex-col">
-      {/* Navigation Links */}
-      <div className="mb-6 flex items-center gap-4">
-        <Button
-          variant="ghost"
-          onClick={() => router.push("/build/workflows")}
-          className="hover:bg-primary/10"
-        >
-          <LayoutDashboard className="mr-2 h-4 w-4" />
-          Dashboard
-        </Button>
-        {user.is_superuser && (
-          <Button
-            variant="ghost"
-            onClick={() => router.push("/admin")}
-            className="hover:bg-secondary/10"
-          >
-            <Shield className="mr-2 h-4 w-4" />
-            Admin
-          </Button>
-        )}
-      </div>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <h1 className="text-lg font-semibold">Monitor</h1>
+      </header>
 
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2 flex items-center gap-2">
-          <Activity className="h-8 w-8" />
-          Automation Runner
-        </h1>
-        <p className="text-muted-foreground">
-          Monitor real-time automation sessions and review session history
-        </p>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0 px-6 py-4">
         <Tabs
           value={activeTab}
           onValueChange={setActiveTab}
@@ -76,7 +45,7 @@ export default function RunnerPage() {
             </TabsTrigger>
           </TabsList>
 
-          <div className="flex-1 min-h-0 mt-6">
+          <div className="flex-1 min-h-0 mt-4">
             <TabsContent value="monitor" className="h-full mt-0">
               <RunnerMonitor />
             </TabsContent>

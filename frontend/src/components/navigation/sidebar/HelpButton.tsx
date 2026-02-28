@@ -45,10 +45,10 @@ export function HelpButton({ isCollapsed }: HelpButtonProps) {
     <button
       onClick={handleStartTutorial}
       data-tutorial-id="sidebar-help"
-      className="flex h-9 w-full items-center justify-center gap-2 rounded-md text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
+      className="flex h-8 w-full items-center justify-center gap-2 rounded-md text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
     >
-      <BookOpen className="size-4" />
-      <span className="text-sm">Help &amp; Tutorials</span>
+      <BookOpen className="size-3.5" />
+      <span className="text-xs">Help &amp; Tutorials</span>
     </button>
   );
 }

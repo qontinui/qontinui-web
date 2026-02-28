@@ -166,15 +166,13 @@ export function BuilderLayout<T extends BuilderItem>({
   return (
     <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden">
       {/* Left Panel - List */}
-      <div className="w-80 shrink-0 border-r border-border-subtle/50 flex flex-col bg-surface-canvas/50">
+      <div className="w-80 shrink-0 border-r border-border flex flex-col bg-background">
         {/* Header */}
-        <div className="p-4 border-b border-border-subtle/50">
+        <div className="p-4 border-b border-border">
           <div className="flex items-center justify-between mb-1.5">
             <div className="flex items-center gap-2">
               <Icon className={`size-5 ${iconColor}`} />
-              <h1 className="font-semibold text-text-primary text-sm">
-                {title}
-              </h1>
+              <h1 className="font-semibold text-foreground text-sm">{title}</h1>
               <Badge variant="secondary" className="text-[10px] px-1.5">
                 {itemCount}
               </Badge>
@@ -225,15 +223,17 @@ export function BuilderLayout<T extends BuilderItem>({
             </div>
           </div>
           {pageDescription && (
-            <p className="text-xs text-text-muted mb-2">{pageDescription}</p>
+            <p className="text-xs text-muted-foreground mb-2">
+              {pageDescription}
+            </p>
           )}
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-text-muted" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
             <Input
               placeholder={searchPlaceholder ?? `Search ${itemLabel}s...`}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-8 h-8 text-sm bg-surface-raised/50 border-border-subtle"
+              className="pl-8 h-8 text-sm bg-muted border-border"
             />
           </div>
         </div>
@@ -243,10 +243,7 @@ export function BuilderLayout<T extends BuilderItem>({
           {isLoading ? (
             <div className="p-3 space-y-2">
               {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton
-                  key={i}
-                  className="h-14 w-full bg-surface-raised/50 rounded-lg"
-                />
+                <Skeleton key={i} className="h-14 w-full bg-muted rounded-lg" />
               ))}
             </div>
           ) : error ? (
@@ -258,13 +255,13 @@ export function BuilderLayout<T extends BuilderItem>({
             </div>
           ) : filteredItems.length === 0 ? (
             <div className="p-6 text-center">
-              <EmptyIcon className="size-10 mx-auto mb-2 text-text-muted" />
-              <p className="text-sm text-text-secondary mb-1">
+              <EmptyIcon className="size-10 mx-auto mb-2 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground mb-1">
                 {searchQuery
                   ? `No ${itemLabel}s match your search`
                   : emptyTitle}
               </p>
-              <p className="text-xs text-text-muted">
+              <p className="text-xs text-muted-foreground">
                 {searchQuery ? "Try a different search term" : emptyDescription}
               </p>
             </div>
@@ -276,7 +273,7 @@ export function BuilderLayout<T extends BuilderItem>({
                   <div
                     key={item.id}
                     className={`group/item relative flex items-center gap-2 rounded-lg px-2 py-2 cursor-pointer transition-colors
-                      ${isSelected ? `${ACCENT_CLASSES[accentColor]?.bg ?? "bg-cyan-500/10"} border ${ACCENT_CLASSES[accentColor]?.border ?? "border-cyan-500/30"}` : "border border-transparent hover:bg-surface-raised/60"}
+                      ${isSelected ? `${ACCENT_CLASSES[accentColor]?.bg ?? "bg-cyan-500/10"} border ${ACCENT_CLASSES[accentColor]?.border ?? "border-cyan-500/30"}` : "border border-transparent hover:bg-muted"}
                     `}
                     onClick={() => {
                       if (selectionMode) {
@@ -297,8 +294,8 @@ export function BuilderLayout<T extends BuilderItem>({
                       {renderListItem(item, isSelected)}
                       {item.updated_at && (
                         <div className="flex items-center gap-1 pl-6 mt-0.5">
-                          <Clock className="size-2.5 text-text-muted/50" />
-                          <span className="text-[9px] text-text-muted/50">
+                          <Clock className="size-2.5 text-muted-foreground/50" />
+                          <span className="text-[9px] text-muted-foreground/50">
                             {formatRelativeTime(item.updated_at)}
                           </span>
                         </div>
@@ -320,7 +317,7 @@ export function BuilderLayout<T extends BuilderItem>({
         </div>
 
         {/* Footer */}
-        <div className="p-2 border-t border-border-subtle/50 text-xs text-text-muted text-center">
+        <div className="p-2 border-t border-border text-xs text-muted-foreground text-center">
           {selectionMode
             ? `${selectedIds.size} selected`
             : `${filteredItems.length} ${itemLabel}${filteredItems.length !== 1 ? "s" : ""}`}
@@ -328,7 +325,7 @@ export function BuilderLayout<T extends BuilderItem>({
       </div>
 
       {/* Right Panel - Editor */}
-      <div className="flex-1 overflow-y-auto bg-surface-canvas">
+      <div className="flex-1 overflow-y-auto bg-background">
         {selectedItem ? (
           renderEditor(selectedItem)
         ) : (
@@ -337,7 +334,7 @@ export function BuilderLayout<T extends BuilderItem>({
               <Icon
                 className={`size-12 mx-auto mb-3 ${iconColor} opacity-30`}
               />
-              <p className="text-sm text-text-muted">
+              <p className="text-sm text-muted-foreground">
                 Select a {itemLabel} to edit, or create a new one
               </p>
             </div>

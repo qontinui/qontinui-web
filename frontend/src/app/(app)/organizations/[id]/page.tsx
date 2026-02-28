@@ -6,19 +6,8 @@ import { useAuth } from "@/contexts/auth-context";
 import { useOrganization } from "@/hooks/useOrganization";
 import { organizationService } from "@/services/service-factory";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  ArrowLeft,
-  Users,
-  Building2,
-  Settings,
-  Activity,
-  Loader2,
-  UserPlus,
-  FolderOpen,
-} from "lucide-react";
+import { Users, Settings, Activity, Loader2, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import type {
   Organization,
@@ -41,6 +30,9 @@ export default function OrganizationDetailsPage() {
   const [_activities, _setActivities] = useState<ActivityType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [activeTab, setActiveTab] = useState<
+    "overview" | "members" | "activity"
+  >("overview");
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -56,12 +48,10 @@ export default function OrganizationDetailsPage() {
       setError(null);
 
       try {
-        // Load organization details
         await switchOrg(orgId);
         const org = await organizationService.getOrganization(orgId);
         setOrganization(org);
 
-        // Load statistics
         try {
           const stats = await organizationService.getStatistics(orgId);
           setStatistics(stats);
@@ -69,7 +59,6 @@ export default function OrganizationDetailsPage() {
           console.error("Failed to load statistics:", err);
         }
 
-        // Load members
         await getMembers(orgId);
       } catch (err) {
         console.error("Failed to load organization:", err);
@@ -90,33 +79,18 @@ export default function OrganizationDetailsPage() {
   };
 
   const getRoleBadgeColor = (org: Organization | null, userId: string) => {
-    if (!org)
-      return "bg-brand-primary/20 text-brand-primary border-brand-primary/30";
+    if (!org) return "bg-primary/10 text-primary";
     if (org.owner_id === userId) {
-      return "bg-brand-secondary/20 text-brand-secondary border-brand-secondary/30";
+      return "bg-primary/10 text-primary";
     }
-    return "bg-brand-primary/20 text-brand-primary border-brand-primary/30";
-  };
-
-  const getRelativeTime = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInHours = Math.floor(
-      (now.getTime() - date.getTime()) / (1000 * 60 * 60)
-    );
-
-    if (diffInHours < 1) return "Just now";
-    if (diffInHours < 24) return `${diffInHours} hours ago`;
-    const diffInDays = Math.floor(diffInHours / 24);
-    if (diffInDays === 1) return "1 day ago";
-    return `${diffInDays} days ago`;
+    return "bg-primary/10 text-primary";
   };
 
   if (authLoading || !user) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-brand-primary" />
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
           <div className="text-lg text-muted-foreground">Loading...</div>
         </div>
       </div>
@@ -125,11 +99,11 @@ export default function OrganizationDetailsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-        <div className="p-6 max-w-7xl mx-auto">
-          <div className="text-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-brand-primary" />
-            <p className="text-text-muted">Loading organization...</p>
+      <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
+            <p className="text-muted-foreground">Loading organization...</p>
           </div>
         </div>
       </div>
@@ -138,332 +112,285 @@ export default function OrganizationDetailsPage() {
 
   if (error || !organization) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-        <div className="p-6 max-w-7xl mx-auto">
-          <Card className="bg-surface-raised/50 border-red-500/50 backdrop-blur-sm">
-            <CardContent className="p-8 text-center">
-              <p className="text-red-400 mb-4">Failed to load organization</p>
-              <Button
-                onClick={() => router.push("/organizations")}
-                variant="outline"
-                className="border-border-default hover:border-brand-primary"
-              >
-                Back to Organizations
-              </Button>
-            </CardContent>
-          </Card>
+      <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <p className="text-red-400 mb-4">Failed to load organization</p>
+            <Button
+              onClick={() => router.push("/organizations")}
+              variant="outline"
+              className="border-border hover:border-primary"
+            >
+              Back to Organizations
+            </Button>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-      <div className="p-6 max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+      <div className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <div className="flex items-center gap-3">
+          <h1 className="text-lg font-semibold">{organization.name}</h1>
+          <Badge className={getRoleBadgeColor(organization, user.id)}>
+            {getUserRole(organization, user.id)}
+          </Badge>
+        </div>
+        <div className="flex gap-2">
           <Button
-            variant="ghost"
-            onClick={() => router.push("/organizations")}
-            className="mb-4 text-text-muted hover:text-white"
+            onClick={() => router.push(`/organizations/${orgId}/members`)}
+            variant="outline"
+            size="sm"
+            className="border-border"
           >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Organizations
+            <UserPlus className="w-4 h-4 mr-2" />
+            Manage Members
           </Button>
+          {organization.owner_id === user.id && (
+            <Button
+              onClick={() => router.push(`/organizations/${orgId}/settings`)}
+              variant="outline"
+              size="sm"
+              className="border-border"
+            >
+              <Settings className="w-4 h-4 mr-2" />
+              Settings
+            </Button>
+          )}
+        </div>
+      </div>
 
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <div className="flex items-center gap-3 mb-2">
-                <h1 className="text-3xl font-bold">{organization.name}</h1>
-                <Badge className={getRoleBadgeColor(organization, user.id)}>
-                  {getUserRole(organization, user.id)}
-                </Badge>
+      <div className="grid grid-cols-4 gap-px bg-border shrink-0">
+        <div className="bg-background px-4 py-3">
+          <p className="text-xs text-muted-foreground uppercase tracking-wider">
+            Members
+          </p>
+          <p className="text-xl font-semibold tabular-nums mt-1">
+            {statistics?.member_count ?? organization.member_count}
+          </p>
+        </div>
+        <div className="bg-background px-4 py-3">
+          <p className="text-xs text-muted-foreground uppercase tracking-wider">
+            Projects
+          </p>
+          <p className="text-xl font-semibold tabular-nums mt-1">
+            {statistics?.project_count ?? organization.project_count}
+          </p>
+        </div>
+        <div className="bg-background px-4 py-3">
+          <p className="text-xs text-muted-foreground uppercase tracking-wider">
+            Active Today
+          </p>
+          <p className="text-xl font-semibold tabular-nums mt-1">
+            {statistics?.active_users_today ?? 0}
+          </p>
+        </div>
+        <div className="bg-background px-4 py-3">
+          <p className="text-xs text-muted-foreground uppercase tracking-wider">
+            Workflows
+          </p>
+          <p className="text-xl font-semibold tabular-nums mt-1">
+            {statistics?.total_workflows ?? 0}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1 px-6 py-2 border-b border-border shrink-0">
+        {(["overview", "members", "activity"] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-3 py-1.5 text-sm rounded-md capitalize ${
+              activeTab === tab
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1 overflow-auto">
+        {activeTab === "overview" && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                Organization Details
+              </h3>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs text-muted-foreground mb-0.5">Name</p>
+                  <p className="text-sm font-medium">{organization.name}</p>
+                </div>
+                {organization.description && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-0.5">
+                      Description
+                    </p>
+                    <p className="text-sm text-foreground">
+                      {organization.description}
+                    </p>
+                  </div>
+                )}
+                <div>
+                  <p className="text-xs text-muted-foreground mb-0.5">
+                    Created
+                  </p>
+                  <p className="text-sm text-foreground">
+                    {new Date(organization.created_at).toLocaleDateString(
+                      "en-US",
+                      {
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric",
+                      }
+                    )}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-0.5">
+                    Last Updated
+                  </p>
+                  <p className="text-sm text-foreground">
+                    {new Date(organization.updated_at).toLocaleDateString(
+                      "en-US",
+                      {
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric",
+                      }
+                    )}
+                  </p>
+                </div>
               </div>
-              {organization.description && (
-                <p className="text-text-muted mb-2">
-                  {organization.description}
-                </p>
-              )}
-              <p className="text-sm text-text-muted">
-                Created {getRelativeTime(organization.created_at)} • Updated{" "}
-                {getRelativeTime(organization.updated_at)}
-              </p>
             </div>
 
-            <div className="flex gap-2">
-              <Button
-                onClick={() => router.push(`/organizations/${orgId}/members`)}
-                className="bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary border border-brand-primary/30"
-              >
-                <UserPlus className="w-4 h-4 mr-2" />
-                Manage Members
-              </Button>
-              {organization.owner_id === user.id && (
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                Quick Actions
+              </h3>
+              <div className="space-y-2">
                 <Button
-                  onClick={() =>
-                    router.push(`/organizations/${orgId}/settings`)
-                  }
+                  onClick={() => router.push(`/organizations/${orgId}/members`)}
                   variant="outline"
-                  className="border-border-default hover:border-brand-secondary hover:text-brand-secondary"
+                  className="w-full justify-start border-border"
                 >
-                  <Settings className="w-4 h-4 mr-2" />
-                  Settings
+                  <Users className="w-4 h-4 mr-2" />
+                  View All Members
                 </Button>
-              )}
+                {organization.owner_id === user.id && (
+                  <Button
+                    onClick={() =>
+                      router.push(`/organizations/${orgId}/settings`)
+                    }
+                    variant="outline"
+                    className="w-full justify-start border-border"
+                  >
+                    <Settings className="w-4 h-4 mr-2" />
+                    Organization Settings
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-brand-primary/20 rounded-lg flex items-center justify-center">
-                  <Users className="w-6 h-6 text-brand-primary" />
-                </div>
-                <div>
-                  <p className="text-sm text-text-muted">Members</p>
-                  <p className="text-2xl font-bold text-brand-primary">
-                    {statistics?.member_count ?? organization.member_count}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-brand-secondary/20 rounded-lg flex items-center justify-center">
-                  <FolderOpen className="w-6 h-6 text-brand-secondary" />
-                </div>
-                <div>
-                  <p className="text-sm text-text-muted">Projects</p>
-                  <p className="text-2xl font-bold text-brand-secondary">
-                    {statistics?.project_count ?? organization.project_count}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-brand-success/20 rounded-lg flex items-center justify-center">
-                  <Activity className="w-6 h-6 text-brand-success" />
-                </div>
-                <div>
-                  <p className="text-sm text-text-muted">Active Today</p>
-                  <p className="text-2xl font-bold text-brand-success">
-                    {statistics?.active_users_today ?? 0}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-text-muted/20 rounded-lg flex items-center justify-center">
-                  <Building2 className="w-6 h-6 text-text-muted" />
-                </div>
-                <div>
-                  <p className="text-sm text-text-muted">Workflows</p>
-                  <p className="text-2xl font-bold text-text-secondary">
-                    {statistics?.total_workflows ?? 0}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Content Tabs */}
-        <Tabs defaultValue="overview" className="space-y-4">
-          <TabsList className="bg-surface-raised/50 border border-border-subtle/50">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="members">Members</TabsTrigger>
-            <TabsTrigger value="activity">Activity</TabsTrigger>
-          </TabsList>
-
-          {/* Overview Tab */}
-          <TabsContent value="overview" className="space-y-4">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Organization Info */}
-              <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
-                <CardHeader>
-                  <CardTitle>Organization Details</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <p className="text-sm text-text-muted mb-1">Name</p>
-                    <p className="text-lg font-medium">{organization.name}</p>
-                  </div>
-                  {organization.description && (
-                    <div>
-                      <p className="text-sm text-text-muted mb-1">
-                        Description
-                      </p>
-                      <p className="text-text-secondary">
-                        {organization.description}
-                      </p>
-                    </div>
-                  )}
-                  <div>
-                    <p className="text-sm text-text-muted mb-1">Created</p>
-                    <p className="text-text-secondary">
-                      {new Date(organization.created_at).toLocaleDateString(
-                        "en-US",
-                        {
-                          year: "numeric",
-                          month: "long",
-                          day: "numeric",
-                        }
-                      )}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-text-muted mb-1">Last Updated</p>
-                    <p className="text-text-secondary">
-                      {new Date(organization.updated_at).toLocaleDateString(
-                        "en-US",
-                        {
-                          year: "numeric",
-                          month: "long",
-                          day: "numeric",
-                        }
-                      )}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Quick Actions */}
-              <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
-                <CardHeader>
-                  <CardTitle>Quick Actions</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <Button
-                    onClick={() =>
-                      router.push(`/organizations/${orgId}/members`)
-                    }
-                    className="w-full justify-start bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary border border-brand-primary/30"
-                  >
-                    <Users className="w-4 h-4 mr-2" />
-                    View All Members
-                  </Button>
-                  {organization.owner_id === user.id && (
-                    <>
-                      <Button
-                        onClick={() =>
-                          router.push(`/organizations/${orgId}/settings`)
-                        }
-                        className="w-full justify-start bg-brand-secondary/10 hover:bg-brand-secondary/20 text-brand-secondary border border-brand-secondary/30"
-                      >
-                        <Settings className="w-4 h-4 mr-2" />
-                        Organization Settings
-                      </Button>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
+        {activeTab === "members" && (
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                Team Members ({members.length})
+              </h3>
+              <Button
+                onClick={() => router.push(`/organizations/${orgId}/members`)}
+                size="sm"
+                className="bg-primary text-primary-foreground"
+              >
+                <UserPlus className="w-4 h-4 mr-2" />
+                Invite Members
+              </Button>
             </div>
-          </TabsContent>
-
-          {/* Members Tab */}
-          <TabsContent value="members">
-            <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>Team Members ({members.length})</CardTitle>
-                  <Button
-                    onClick={() =>
-                      router.push(`/organizations/${orgId}/members`)
-                    }
-                    size="sm"
-                    className="bg-brand-primary hover:bg-brand-primary/80 text-black"
-                  >
-                    <UserPlus className="w-4 h-4 mr-2" />
-                    Invite Members
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {members.length === 0 ? (
-                  <div className="text-center py-8 text-text-muted">
-                    <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <p>No members found</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {members.slice(0, 5).map((member) => (
-                      <div
-                        key={member.id}
-                        className="flex items-center justify-between p-3 rounded-lg bg-surface-canvas/50 hover:bg-surface-canvas/80 transition-colors"
-                      >
+            {members.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Users className="w-8 h-8 mx-auto mb-3 opacity-50" />
+                <p className="text-sm">No members found</p>
+              </div>
+            ) : (
+              <table className="w-full">
+                <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm z-10">
+                  <tr>
+                    <th className="text-left text-xs text-muted-foreground uppercase tracking-wider font-medium px-4 py-2">
+                      Member
+                    </th>
+                    <th className="text-left text-xs text-muted-foreground uppercase tracking-wider font-medium px-4 py-2">
+                      Email
+                    </th>
+                    <th className="text-left text-xs text-muted-foreground uppercase tracking-wider font-medium px-4 py-2">
+                      Role
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {members.slice(0, 5).map((member) => (
+                    <tr key={member.id} className="hover:bg-muted/50">
+                      <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-gradient-to-br from-brand-primary to-brand-secondary rounded-full flex items-center justify-center text-sm font-bold">
+                          <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center text-xs font-bold text-primary">
                             {(member.name || member.email)
                               .charAt(0)
                               .toUpperCase()}
                           </div>
-                          <div>
-                            <p className="font-medium">
-                              {member.name || "Unknown"}
-                            </p>
-                            <p className="text-sm text-text-muted">
-                              {member.email}
-                            </p>
-                          </div>
+                          <span className="font-medium text-sm">
+                            {member.name || "Unknown"}
+                          </span>
                         </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">
+                        {member.email}
+                      </td>
+                      <td className="px-4 py-3">
                         <Badge
-                          className={`
-                          ${member.role === "owner" ? "bg-brand-secondary/20 text-brand-secondary border-brand-secondary/30" : ""}
-                          ${member.role === "admin" ? "bg-brand-primary/20 text-brand-primary border-brand-primary/30" : ""}
-                          ${member.role === "member" ? "bg-text-muted/20 text-text-muted border-text-muted/30" : ""}
-                          ${member.role === "viewer" ? "bg-text-muted/20 text-text-muted border-text-muted/30" : ""}
-                        `}
+                          className={`text-xs ${
+                            member.role === "owner"
+                              ? "bg-primary/10 text-primary"
+                              : member.role === "admin"
+                                ? "bg-blue-500/10 text-blue-500"
+                                : "bg-muted text-muted-foreground"
+                          }`}
                         >
                           {member.role}
                         </Badge>
-                      </div>
-                    ))}
-                    {members.length > 5 && (
-                      <Button
-                        variant="ghost"
-                        onClick={() =>
-                          router.push(`/organizations/${orgId}/members`)
-                        }
-                        className="w-full text-brand-primary hover:text-brand-primary/80"
-                      >
-                        View all {members.length} members
-                      </Button>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {members.length > 5 && (
+              <div className="mt-3">
+                <Button
+                  variant="ghost"
+                  onClick={() => router.push(`/organizations/${orgId}/members`)}
+                  className="w-full text-sm text-primary hover:text-primary/80"
+                >
+                  View all {members.length} members
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
 
-          {/* Activity Tab */}
-          <TabsContent value="activity">
-            <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
-              <CardHeader>
-                <CardTitle>Recent Activity</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-8 text-text-muted">
-                  <Activity className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>No recent activity</p>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+        {activeTab === "activity" && (
+          <div className="p-6">
+            <div className="text-center py-8 text-muted-foreground">
+              <Activity className="w-8 h-8 mx-auto mb-3 opacity-50" />
+              <p className="text-sm">No recent activity</p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

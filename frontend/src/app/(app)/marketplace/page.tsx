@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useCallback } from "react";
-import { Store, TrendingUp, Package, Sparkles } from "lucide-react";
+import { TrendingUp, Package, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { PackageCard } from "@/components/marketplace/PackageCard";
 import { PackageSearchBar } from "@/components/marketplace/PackageSearchBar";
@@ -116,48 +116,36 @@ export default function MarketplacePage() {
 
   return (
     <RequireProject pageName="Marketplace">
-      <div className="min-h-screen bg-background">
-        {/* Header */}
-        <div className="border-b border-border-subtle bg-gradient-to-b from-brand-primary/5 via-brand-secondary/5 to-transparent">
-          <div className="container mx-auto px-6 py-8">
-            <div className="flex items-start justify-between mb-6">
-              <div>
-                <div className="flex items-center gap-3 mb-2">
-                  <Store className="w-8 h-8 text-brand-primary" />
-                  <h1 className="text-3xl font-bold bg-gradient-to-r from-brand-primary via-brand-secondary to-brand-success bg-clip-text text-transparent">
-                    Community Code Marketplace
-                  </h1>
-                </div>
-                <p className="text-text-muted text-lg">
-                  Discover and share automation packages created by the
-                  community
-                </p>
-              </div>
-              <Button
-                onClick={handlePublishClick}
-                className="bg-gradient-to-r from-brand-primary to-brand-secondary hover:from-brand-primary/90 hover:to-brand-secondary/90"
-              >
-                <Package className="w-4 h-4 mr-2" />
-                Publish Package
-              </Button>
-            </div>
-
-            {/* Search Bar */}
-            <PackageSearchBar
-              onSearch={handleSearch}
-              initialFilters={searchFilters}
-            />
+      <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+          <div className="flex items-center gap-3">
+            <h1 className="text-lg font-semibold text-foreground">
+              Marketplace
+            </h1>
+            <span className="text-sm text-muted-foreground">
+              Discover and share automation packages
+            </span>
           </div>
+          <Button onClick={handlePublishClick} className="bg-primary">
+            <Package className="w-4 h-4 mr-2" />
+            Publish Package
+          </Button>
         </div>
 
-        {/* Content */}
-        <div className="container mx-auto px-6 py-8">
+        <div className="px-6 py-3 border-b border-border shrink-0">
+          <PackageSearchBar
+            onSearch={handleSearch}
+            initialFilters={searchFilters}
+          />
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6">
           <Tabs
             value={selectedTab}
             onValueChange={(v) => setSelectedTab(v as typeof selectedTab)}
           >
             <div className="flex items-center justify-between mb-6">
-              <TabsList className="bg-surface-canvas">
+              <TabsList className="bg-muted">
                 <TabsTrigger value="all" className="gap-2">
                   <Package className="w-4 h-4" />
                   All Packages
@@ -219,7 +207,6 @@ export default function MarketplacePage() {
             </TabsContent>
           </Tabs>
 
-          {/* Pagination */}
           {selectedTab === "all" &&
             searchResult &&
             searchResult.total_pages > 1 && (
@@ -236,7 +223,7 @@ export default function MarketplacePage() {
                 >
                   Previous
                 </Button>
-                <div className="text-sm text-text-muted">
+                <div className="text-sm text-muted-foreground">
                   Page {searchResult.page} of {searchResult.total_pages}
                 </div>
                 <Button
@@ -255,7 +242,6 @@ export default function MarketplacePage() {
             )}
         </div>
 
-        {/* Install Dialog */}
         {selectedPackage && (
           <InstallDialog
             open={installDialogOpen}
@@ -299,7 +285,7 @@ function PackageGrid({
         {[...Array(6)].map((_, i) => (
           <div
             key={i}
-            className="h-64 bg-surface-raised/30 rounded-lg border border-border-subtle animate-pulse"
+            className="h-64 bg-muted/50 rounded-lg border border-border animate-pulse"
           />
         ))}
       </div>
@@ -309,11 +295,11 @@ function PackageGrid({
   if (packages.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
-        <Package className="w-16 h-16 text-text-muted mb-4" />
-        <h3 className="text-xl font-semibold text-text-muted mb-2">
+        <Package className="w-16 h-16 text-muted-foreground mb-4" />
+        <h3 className="text-xl font-semibold text-muted-foreground mb-2">
           No packages found
         </h3>
-        <p className="text-text-muted">
+        <p className="text-muted-foreground">
           Try adjusting your search filters or check back later for new
           packages.
         </p>

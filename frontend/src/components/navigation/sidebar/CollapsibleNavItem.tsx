@@ -180,7 +180,7 @@ export function CollapsibleNavItem({
           data-tutorial-id={`nav-${item.id}`}
           data-route={item.route}
           className={cn(
-            "flex w-full items-center gap-3 rounded-md px-2 py-2 text-sm transition-colors",
+            "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors",
             isParentActive
               ? "bg-surface-hover/50 text-text-primary"
               : "text-text-muted hover:bg-surface-hover hover:text-text-primary"

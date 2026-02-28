@@ -47,29 +47,23 @@ export default function IntegrationTestingPage() {
   const transitions = useAutomationStore((s) => s.transitions);
   const images = useAutomationStore((s) => s.images);
 
-  // Load project data on mount (handles refresh case)
   const { isLoading: projectLoading } = useProjectLoader();
 
-  // Build a nameMap for displaying names instead of IDs
   const nameMap = useMemo(() => {
     const map = new Map<string, string>();
-    // Add states
     states.forEach((s) => {
       if (s.name) map.set(s.id, s.name);
     });
-    // Add transitions
     transitions.forEach((t) => {
       const name = (t as { name?: string }).name;
       if (name) map.set(t.id, name);
     });
-    // Add images (patterns)
     images.forEach((img) => {
       if (img.name) map.set(img.id, img.name);
     });
     return map;
   }, [states, transitions, images]);
 
-  // Workflow selection state
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(
     null
   );
@@ -77,7 +71,6 @@ export default function IntegrationTestingPage() {
     string[] | null
   >(null);
 
-  // Test runs state
   const [runs, setRuns] = useState<IntegrationTestRunSummary[]>([]);
   const [selectedRun, setSelectedRun] =
     useState<IntegrationTestResponse | null>(null);
@@ -87,7 +80,6 @@ export default function IntegrationTestingPage() {
   const [error, setError] = useState<string | null>(null);
   const [apiHealthy, setApiHealthy] = useState<boolean | null>(null);
 
-  // Check API health on mount
   useEffect(() => {
     const checkHealth = async () => {
       const healthy = await integrationTestingService.checkApiHealth();
@@ -96,7 +88,6 @@ export default function IntegrationTestingPage() {
     checkHealth();
   }, []);
 
-  // Fetch integration test runs
   const fetchRuns = useCallback(async () => {
     if (!projectId) return;
 
@@ -124,7 +115,6 @@ export default function IntegrationTestingPage() {
     }
   }, [user, authLoading, router, fetchRuns, projectId]);
 
-  // Auto-select first runnable workflow
   useEffect(() => {
     if (workflows.length > 0 && selectedWorkflowId === null && !loading) {
       const mainWorkflows = workflows.filter((w) => w.category === "Main");
@@ -135,16 +125,13 @@ export default function IntegrationTestingPage() {
     }
   }, [workflows, selectedWorkflowId, loading]);
 
-  // Build WorkflowConfig from selected workflow
   const buildWorkflowConfig = useCallback((): WorkflowConfig | null => {
     const workflow = workflows.find((w) => w.id === selectedWorkflowId);
     if (!workflow) return null;
 
-    // Get effective initial states
     const effectiveInitialStates =
       initialStatesOverride ?? workflow.initialStateIds ?? [];
 
-    // Build state configs from the project states
     const stateConfigs = states.map((s) => ({
       id: s.id,
       name: s.name,
@@ -152,7 +139,6 @@ export default function IntegrationTestingPage() {
       is_initial: effectiveInitialStates.includes(s.id),
     }));
 
-    // Build transition configs from the automation store
     const transitions = useAutomationStore.getState().transitions;
     const transitionConfigs = transitions
       .filter((t) => t.type === "OutgoingTransition")
@@ -186,7 +172,6 @@ export default function IntegrationTestingPage() {
     };
   }, [selectedWorkflowId, workflows, states, initialStatesOverride]);
 
-  // Load run details
   const loadRunDetails = async (runId: string) => {
     try {
       setLoading(true);
@@ -205,7 +190,6 @@ export default function IntegrationTestingPage() {
     }
   };
 
-  // Run integration test
   const runIntegrationTest = async () => {
     if (!projectId) {
       setError("No project selected. Please select a project first.");
@@ -243,7 +227,6 @@ export default function IntegrationTestingPage() {
       console.log("Integration test result:", result);
       setSelectedRun(result);
       setViewMode("detail");
-      // Refresh the runs list
       fetchRuns();
     } catch (err) {
       console.error("Failed to run integration test:", err);
@@ -266,11 +249,9 @@ export default function IntegrationTestingPage() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-brand-primary" />
-          <div className="text-lg text-muted-foreground">Loading...</div>
-        </div>
+      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
+        <div className="text-lg text-muted-foreground">Loading...</div>
       </div>
     );
   }
@@ -281,104 +262,84 @@ export default function IntegrationTestingPage() {
 
   return (
     <RequireProject pageName="Integration Testing">
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-surface-sunken to-surface-canvas text-white">
-        {/* Header */}
-        <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-          <div className="flex items-center justify-between px-6 py-4">
-            <div className="flex items-center gap-4">
-              {viewMode !== "list" && selectedRun && (
-                <Button
-                  variant="ghost"
-                  onClick={goBackToList}
-                  className="text-text-muted hover:text-white"
-                >
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  Back to List
-                </Button>
+      <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+        <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+          <div className="flex items-center gap-3">
+            {viewMode !== "list" && selectedRun && (
+              <Button variant="ghost" size="sm" onClick={goBackToList}>
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Back to List
+              </Button>
+            )}
+            <h1 className="text-lg font-semibold text-foreground">
+              Integration Testing
+            </h1>
+            <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">
+              Mock Mode
+            </Badge>
+          </div>
+          <div className="flex items-center gap-3">
+            <Badge
+              className={
+                apiHealthy === null
+                  ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
+                  : apiHealthy
+                    ? "bg-green-500/20 text-green-400 border-green-500/30"
+                    : "bg-red-500/20 text-red-400 border-red-500/30"
+              }
+            >
+              {apiHealthy === null ? (
+                <>
+                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                  Checking API...
+                </>
+              ) : apiHealthy ? (
+                <>
+                  <CheckCircle2 className="w-3 h-3 mr-1" />
+                  API Connected
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="w-3 h-3 mr-1" />
+                  API Offline
+                </>
               )}
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-[#FF6B6B] to-[#FF4444] bg-clip-text text-transparent">
-                Integration Testing
-              </h1>
-              <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">
-                Mock Mode
-              </Badge>
-            </div>
-            <div className="flex items-center gap-3">
-              {/* API Health Indicator */}
-              <Badge
-                className={
-                  apiHealthy === null
-                    ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
-                    : apiHealthy
-                      ? "bg-green-500/20 text-green-400 border-green-500/30"
-                      : "bg-red-500/20 text-red-400 border-red-500/30"
-                }
-              >
-                {apiHealthy === null ? (
+            </Badge>
+
+            {selectedRun && (
+              <Button variant="outline" size="sm" onClick={toggleViewMode}>
+                {viewMode === "visual" ? (
                   <>
-                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                    Checking API...
-                  </>
-                ) : apiHealthy ? (
-                  <>
-                    <CheckCircle2 className="w-3 h-3 mr-1" />
-                    API Connected
+                    <FileText className="w-4 h-4 mr-2" />
+                    Details View
                   </>
                 ) : (
                   <>
-                    <AlertCircle className="w-3 h-3 mr-1" />
-                    API Offline
+                    <Eye className="w-4 h-4 mr-2" />
+                    Visual View
                   </>
                 )}
-              </Badge>
+              </Button>
+            )}
 
-              {/* View Mode Toggle (when viewing details) */}
-              {selectedRun && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={toggleViewMode}
-                  className="border-border-default hover:border-[#FF6B6B] hover:text-[#FF6B6B]"
-                >
-                  {viewMode === "visual" ? (
-                    <>
-                      <FileText className="w-4 h-4 mr-2" />
-                      Details View
-                    </>
-                  ) : (
-                    <>
-                      <Eye className="w-4 h-4 mr-2" />
-                      Visual View
-                    </>
-                  )}
-                </Button>
-              )}
-
-              {/* Refresh Button */}
-              {viewMode === "list" && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={fetchRuns}
-                  disabled={loading || !projectId}
-                  className="border-border-default hover:border-border-subtle"
-                  title={
-                    !projectId ? "Select a project to view runs" : undefined
-                  }
-                >
-                  <RefreshCw
-                    className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`}
-                  />
-                  Refresh
-                </Button>
-              )}
-            </div>
+            {viewMode === "list" && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={fetchRuns}
+                disabled={loading || !projectId}
+                title={!projectId ? "Select a project to view runs" : undefined}
+              >
+                <RefreshCw
+                  className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`}
+                />
+                Refresh
+              </Button>
+            )}
           </div>
         </header>
 
-        {/* Main Content */}
-        <main className="p-6 max-w-7xl mx-auto">
-          {/* Error Display */}
+        <main className="flex-1 overflow-y-auto p-6">
           {error && (
             <Card className="bg-red-500/10 border-red-500/30 mb-6">
               <CardContent className="py-4">
@@ -398,7 +359,6 @@ export default function IntegrationTestingPage() {
             </Card>
           )}
 
-          {/* API Offline Warning */}
           {apiHealthy === false && viewMode === "list" && (
             <Card className="bg-yellow-500/10 border-yellow-500/30 mb-6">
               <CardContent className="py-4">
@@ -415,10 +375,8 @@ export default function IntegrationTestingPage() {
             </Card>
           )}
 
-          {/* Content based on view mode */}
           {viewMode === "list" && (
             <div className="grid grid-cols-1 lg:grid-cols-[350px_1fr] gap-6">
-              {/* Left Column - Control Panel */}
               <div className="space-y-6">
                 <IntegrationTestControlPanel
                   workflows={workflows}
@@ -436,11 +394,10 @@ export default function IntegrationTestingPage() {
                 />
               </div>
 
-              {/* Right Column - Test Runs List */}
               <div>
                 <div className="mb-6">
                   <h2 className="text-xl font-bold mb-2">Test Run History</h2>
-                  <p className="text-text-muted text-sm">
+                  <p className="text-sm text-muted-foreground">
                     Previous integration test results using historical execution
                     data.
                   </p>
@@ -448,7 +405,7 @@ export default function IntegrationTestingPage() {
 
                 {loading && runs.length === 0 ? (
                   <div className="flex items-center justify-center py-12">
-                    <Loader2 className="w-8 h-8 animate-spin text-brand-primary" />
+                    <Loader2 className="w-8 h-8 animate-spin text-primary" />
                   </div>
                 ) : runs.length === 0 ? (
                   <EmptyState />
@@ -484,30 +441,20 @@ export default function IntegrationTestingPage() {
   );
 }
 
-// =============================================================================
-// Empty State Component
-// =============================================================================
-
 function EmptyState() {
   return (
-    <Card className="bg-surface-raised/50 border-border-subtle/50">
-      <CardContent className="py-12 text-center">
-        <Activity className="w-16 h-16 mx-auto mb-4 text-text-muted" />
-        <h3 className="text-xl font-medium text-white mb-2">
-          No Integration Tests Yet
-        </h3>
-        <p className="text-text-muted mb-4 max-w-md mx-auto">
-          Select a workflow from the configuration panel and run your first
-          integration test. Tests run in mock mode using historical data.
-        </p>
-      </CardContent>
-    </Card>
+    <div className="py-12 text-center">
+      <Activity className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
+      <h3 className="text-xl font-medium text-foreground mb-2">
+        No Integration Tests Yet
+      </h3>
+      <p className="text-muted-foreground mb-4 max-w-md mx-auto">
+        Select a workflow from the configuration panel and run your first
+        integration test. Tests run in mock mode using historical data.
+      </p>
+    </div>
   );
 }
-
-// =============================================================================
-// Runs List Component
-// =============================================================================
 
 interface IntegrationTestRunsListProps {
   runs: IntegrationTestRunSummary[];
@@ -550,7 +497,7 @@ function IntegrationTestRunsList({
         );
       default:
         return (
-          <Badge className="bg-surface-raised/20 text-text-muted border-border-subtle/30">
+          <Badge className="bg-muted text-muted-foreground border-border">
             {status}
           </Badge>
         );
@@ -573,7 +520,7 @@ function IntegrationTestRunsList({
       {runs.map((run) => (
         <Card
           key={run.id}
-          className="bg-surface-raised/50 border-border-subtle/50 hover:border-[#FF6B6B]/50 transition-colors cursor-pointer"
+          className="bg-muted border-border hover:border-primary/50 transition-colors cursor-pointer"
           onClick={() => onSelectRun(run.id)}
         >
           <CardContent className="py-4">
@@ -581,12 +528,12 @@ function IntegrationTestRunsList({
               <div className="flex items-center gap-4">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="font-medium text-white">
+                    <span className="font-medium text-foreground">
                       {run.workflow_name}
                     </span>
                     {getStatusBadge(run.status)}
                   </div>
-                  <div className="text-sm text-text-muted">
+                  <div className="text-sm text-muted-foreground">
                     {formatDate(run.started_at)}
                   </div>
                 </div>
@@ -594,7 +541,7 @@ function IntegrationTestRunsList({
 
               <div className="flex items-center gap-6 text-sm">
                 <div className="text-center">
-                  <div className="text-text-muted">Coverage</div>
+                  <div className="text-muted-foreground">Coverage</div>
                   <div
                     className={`font-bold ${
                       run.coverage_percentage >= 80
@@ -608,7 +555,7 @@ function IntegrationTestRunsList({
                   </div>
                 </div>
                 <div className="text-center">
-                  <div className="text-text-muted">Success</div>
+                  <div className="text-muted-foreground">Success</div>
                   <div
                     className={`font-bold ${
                       run.success_rate >= 90
@@ -622,14 +569,14 @@ function IntegrationTestRunsList({
                   </div>
                 </div>
                 <div className="text-center">
-                  <div className="text-text-muted">Actions</div>
-                  <div className="font-bold text-white">
+                  <div className="text-muted-foreground">Actions</div>
+                  <div className="font-bold text-foreground">
                     {run.total_actions}
                   </div>
                 </div>
                 <div className="text-center">
-                  <div className="text-text-muted">Duration</div>
-                  <div className="font-bold text-white">
+                  <div className="text-muted-foreground">Duration</div>
+                  <div className="font-bold text-foreground">
                     {formatDuration(run.duration_ms)}
                   </div>
                 </div>

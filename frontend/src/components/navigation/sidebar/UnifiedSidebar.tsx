@@ -4,6 +4,7 @@ import * as React from "react";
 import { useState, useCallback, useMemo } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import nextDynamic from "next/dynamic";
+import Image from "next/image";
 import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -75,10 +76,10 @@ function SearchTrigger({ isCollapsed }: { isCollapsed: boolean }) {
   return (
     <button
       data-tutorial-id="sidebar-search"
-      className="flex h-9 w-full items-center gap-2 rounded-md border border-border-subtle bg-surface-canvas px-3 text-sm text-text-muted transition-colors hover:border-border-default hover:bg-surface-hover"
+      className="flex h-8 w-full items-center gap-2 rounded-md border border-border-subtle bg-surface-canvas px-2.5 text-sm text-text-muted transition-colors hover:border-border-default hover:bg-surface-hover"
     >
-      <Search className="size-4" />
-      <span>Search...</span>
+      <Search className="size-3.5" />
+      <span className="text-xs">Search...</span>
       <kbd className="pointer-events-none ml-auto hidden h-5 select-none items-center gap-1 rounded border border-border-subtle bg-surface-canvas px-1.5 font-mono text-[10px] font-medium text-text-muted sm:flex">
         <span className="text-xs">&#8984;</span>K
       </kbd>
@@ -95,7 +96,19 @@ interface UnifiedSidebarProps {
   projectId?: string | null;
 }
 
-export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
+export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = (props) => {
+  return (
+    <React.Suspense
+      fallback={
+        <aside className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-border-subtle bg-surface-canvas" />
+      }
+    >
+      <UnifiedSidebarContent {...props} />
+    </React.Suspense>
+  );
+};
+
+const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
   className,
   projectId: propProjectId,
 }) => {
@@ -401,24 +414,31 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
           className
         )}
       >
-        {/* Top Gradient */}
-        <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-brand-primary/5 via-brand-secondary/5 to-transparent pointer-events-none" />
-
         {/* Header - Logo */}
         <div
           className={cn(
-            "relative flex flex-col gap-3 p-3 border-b border-border-subtle",
+            "relative flex flex-col p-2 border-b border-border-subtle",
             isCollapsed && "items-center"
           )}
         >
           {isCollapsed ? (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img src="/q-logo.png" alt="Qontinui" className="h-10 w-auto" />
+            <Image
+              src="/q-logo.png"
+              alt="Qontinui"
+              width={32}
+              height={32}
+              className="h-8 w-auto"
+            />
           ) : (
             <div className="flex items-center gap-1">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/q-logo.png" alt="Qontinui" className="h-9 w-auto" />
-              <span className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
+              <Image
+                src="/q-logo.png"
+                alt="Qontinui"
+                width={28}
+                height={28}
+                className="h-7 w-auto"
+              />
+              <span className="text-xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
                 ontinui
               </span>
             </div>
@@ -427,7 +447,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
 
         {/* Organization Switcher */}
         {!isCollapsed && (
-          <div className="px-3 pt-3 pb-2 border-b border-border-subtle">
+          <div className="px-2 py-1.5 border-b border-border-subtle">
             {mounted ? (
               <OrganizationSwitcher
                 organizations={switcherOrganizations}
@@ -438,7 +458,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                 className="bg-surface-raised/50 border-border-default hover:bg-surface-raised hover:border-border-default"
               />
             ) : (
-              <div className="h-10 w-full rounded-md bg-surface-raised/50 border border-border-default animate-pulse" />
+              <div className="h-8 w-full rounded-md bg-surface-raised/50 border border-border-default animate-pulse" />
             )}
           </div>
         )}
@@ -446,7 +466,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
         {/* Project Switcher + Search */}
         <div
           className={cn(
-            "flex flex-col gap-3 p-3 border-b border-border-subtle",
+            "flex flex-col gap-2 p-2 border-b border-border-subtle",
             isCollapsed && "items-center"
           )}
         >
@@ -462,8 +482,8 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
           ) : (
             <div
               className={cn(
-                "h-10 rounded-md bg-surface-raised/50 animate-pulse",
-                isCollapsed ? "w-10" : "w-full"
+                "h-8 rounded-md bg-surface-raised/50 animate-pulse",
+                isCollapsed ? "w-8" : "w-full"
               )}
             />
           )}
@@ -471,11 +491,11 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
         </div>
 
         {/* Navigation Area */}
-        <ScrollArea className="flex-1 px-3">
+        <ScrollArea className="flex-1 px-2">
           <nav
             data-tutorial-id="sidebar-nav"
             className={cn(
-              "flex flex-col gap-1 py-3",
+              "flex flex-col gap-0.5 py-2",
               isCollapsed && "items-center"
             )}
           >
@@ -485,7 +505,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                   (isCollapsed ? (
                     <div className="my-1.5 h-px w-6 bg-border-subtle" />
                   ) : (
-                    <div className="flex items-center gap-2 px-2 pt-4 pb-1 first:pt-0">
+                    <div className="flex items-center gap-2 px-2 pt-3 pb-0.5 first:pt-0">
                       <span className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">
                         {item.group}
                       </span>
@@ -514,13 +534,10 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
           </nav>
         </ScrollArea>
 
-        {/* Bottom Gradient */}
-        <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-brand-secondary/5 to-transparent pointer-events-none" />
-
         {/* Footer */}
         <div
           className={cn(
-            "relative flex flex-col gap-2 border-t border-border-subtle p-3",
+            "relative flex flex-col gap-1 border-t border-border-subtle p-2",
             isCollapsed && "items-center"
           )}
         >

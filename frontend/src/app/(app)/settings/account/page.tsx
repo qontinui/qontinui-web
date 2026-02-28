@@ -4,13 +4,6 @@ import { useEffect, useState } from "react";
 import { useRunnerHealth, runnerApi, type DeviceInfo } from "@/lib/runner-api";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
 import { useAuth } from "@/contexts/auth-context";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, User, Wifi, Tag, ExternalLink } from "lucide-react";
@@ -51,7 +44,7 @@ export default function AccountSettingsPage() {
   if (healthLoading || loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="size-8 animate-spin text-text-muted" />
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -63,40 +56,40 @@ export default function AccountSettingsPage() {
   const isConnected = !!health;
 
   return (
-    <div className="p-6 max-w-4xl space-y-6">
+    <div className="p-6 space-y-6">
       {/* Header */}
       <div>
-        <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
           <User className="size-5" />
           Account
         </h2>
-        <p className="text-sm text-text-muted mt-1">
+        <p className="text-sm text-muted-foreground mt-1">
           Connection status and identity information
         </p>
       </div>
 
       {/* User Info */}
       {user && (
-        <Card className="bg-surface-raised/30 border-border-subtle/50">
-          <CardHeader>
-            <CardTitle className="text-sm">User Account</CardTitle>
-            <CardDescription>
+        <div className="rounded-lg border border-border">
+          <div className="px-4 py-3 border-b border-border bg-muted/50">
+            <h3 className="text-sm font-medium">User Account</h3>
+            <p className="text-xs text-muted-foreground">
               Your qontinui.io account information
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
+            </p>
+          </div>
+          <div className="p-4 space-y-3">
             <div className="grid grid-cols-[120px_1fr] gap-y-2 text-sm">
               <span
                 data-content-role="label"
                 data-content-label="email label"
-                className="text-text-muted"
+                className="text-muted-foreground"
               >
                 Email
               </span>
               <span
                 data-content-role="body-text"
                 data-content-label="user email"
-                className="text-text-primary"
+                className="text-foreground"
               >
                 {user.email}
               </span>
@@ -104,14 +97,14 @@ export default function AccountSettingsPage() {
               <span
                 data-content-role="label"
                 data-content-label="username label"
-                className="text-text-muted"
+                className="text-muted-foreground"
               >
                 Username
               </span>
               <span
                 data-content-role="body-text"
                 data-content-label="username value"
-                className="text-text-primary"
+                className="text-foreground"
               >
                 {user.username}
               </span>
@@ -121,14 +114,14 @@ export default function AccountSettingsPage() {
                   <span
                     data-content-role="label"
                     data-content-label="name label"
-                    className="text-text-muted"
+                    className="text-muted-foreground"
                   >
                     Name
                   </span>
                   <span
                     data-content-role="body-text"
                     data-content-label="user full name"
-                    className="text-text-primary"
+                    className="text-foreground"
                   >
                     {user.full_name}
                   </span>
@@ -136,29 +129,31 @@ export default function AccountSettingsPage() {
               )}
             </div>
 
-            <div className="pt-2 border-t border-border-subtle/30">
+            <div className="pt-2 border-t border-border">
               <Link
                 href="/profile"
-                className="inline-flex items-center gap-1.5 text-sm text-brand-primary hover:text-brand-primary/80 transition-colors"
+                className="inline-flex items-center gap-1.5 text-sm text-primary hover:text-primary/80 transition-colors"
               >
                 <ExternalLink className="size-3.5" />
                 Manage account in Profile
               </Link>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {/* Connected Runner */}
-      <Card className="bg-surface-raised/30 border-border-subtle/50">
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
+      <div className="rounded-lg border border-border">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
+          <h3 className="text-sm font-medium flex items-center gap-2">
             <Wifi className="size-4" />
             Connected Runner
-          </CardTitle>
-          <CardDescription>Desktop runner connection status</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Desktop runner connection status
+          </p>
+        </div>
+        <div className="p-4 space-y-3">
           <div className="flex items-center gap-3">
             <div
               className={`size-2.5 rounded-full ${
@@ -168,7 +163,7 @@ export default function AccountSettingsPage() {
             <span
               data-content-role="status"
               data-content-label="connection status"
-              className="text-sm text-text-primary"
+              className="text-sm text-foreground"
             >
               {isConnected ? "Connected" : "Disconnected"}
             </span>
@@ -176,7 +171,7 @@ export default function AccountSettingsPage() {
               <span
                 data-content-role="label"
                 data-content-label="runner version"
-                className="text-xs text-text-muted"
+                className="text-xs text-muted-foreground"
               >
                 v{health.version}
               </span>
@@ -184,11 +179,11 @@ export default function AccountSettingsPage() {
           </div>
 
           {deviceInfo && (
-            <div className="grid grid-cols-[120px_1fr] gap-y-2 text-sm pt-2 border-t border-border-subtle/30">
+            <div className="grid grid-cols-[120px_1fr] gap-y-2 text-sm pt-2 border-t border-border">
               <span
                 data-content-role="label"
                 data-content-label="device name label"
-                className="text-text-muted flex items-center gap-1.5"
+                className="text-muted-foreground flex items-center gap-1.5"
               >
                 <Tag className="size-3.5" />
                 Device Name
@@ -196,7 +191,7 @@ export default function AccountSettingsPage() {
               <span
                 data-content-role="body-text"
                 data-content-label="device name value"
-                className="text-text-primary font-mono text-xs"
+                className="text-foreground font-mono text-xs"
               >
                 {deviceInfo.device_name}
               </span>
@@ -204,14 +199,14 @@ export default function AccountSettingsPage() {
               <span
                 data-content-role="label"
                 data-content-label="platform label"
-                className="text-text-muted"
+                className="text-muted-foreground"
               >
                 Platform
               </span>
               <span
                 data-content-role="body-text"
                 data-content-label="platform value"
-                className="text-text-primary font-mono text-xs"
+                className="text-foreground font-mono text-xs"
               >
                 {deviceInfo.platform}
               </span>
@@ -219,14 +214,14 @@ export default function AccountSettingsPage() {
               <span
                 data-content-role="label"
                 data-content-label="device id label"
-                className="text-text-muted"
+                className="text-muted-foreground"
               >
                 Device ID
               </span>
               <span
                 data-content-role="body-text"
                 data-content-label="device id value"
-                className="text-text-primary font-mono text-xs truncate"
+                className="text-foreground font-mono text-xs truncate"
               >
                 {deviceInfo.device_id}
               </span>
@@ -234,16 +229,16 @@ export default function AccountSettingsPage() {
           )}
 
           {/* Runner Name */}
-          <div className="space-y-2 pt-2 border-t border-border-subtle/30">
-            <Label className="text-sm text-text-muted">Runner Name</Label>
+          <div className="space-y-2 pt-2 border-t border-border">
+            <Label className="text-sm text-muted-foreground">Runner Name</Label>
             <Input
               type="text"
               placeholder="My Runner"
               value={runnerName}
               onChange={(e) => setRunnerName(e.target.value)}
-              className="bg-surface-canvas/50 border-border-subtle/50"
+              className="bg-background border-border"
             />
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-muted-foreground">
               Display name for this runner instance
             </p>
           </div>
@@ -252,13 +247,13 @@ export default function AccountSettingsPage() {
             <div
               data-content-role="metric"
               data-content-label="runner uptime"
-              className="text-xs text-text-muted pt-2 border-t border-border-subtle/30"
+              className="text-xs text-muted-foreground pt-2 border-t border-border"
             >
               Uptime: {formatUptime(health.uptime_seconds)}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

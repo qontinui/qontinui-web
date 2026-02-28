@@ -6,7 +6,6 @@ import {
   Terminal,
   BookOpen,
   Code2,
-  Library,
   FileCode,
   TestTube2,
   ArrowRight,
@@ -114,63 +113,57 @@ export default function LibraryPage() {
   const totalItems = Object.values(counts).reduce((a, b) => a + b, 0);
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <Library className="size-8 text-text-primary" />
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold tracking-tight text-text-primary">
-            Step Library
-          </h1>
-          <p className="text-sm text-text-muted">
-            Browse and manage reusable workflow steps
-          </p>
-        </div>
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <h1 className="text-lg font-semibold">Step Library</h1>
         <Badge variant="outline" className="text-sm tabular-nums">
           {totalItems} total items
         </Badge>
-      </div>
+      </header>
 
-      {/* Category Grid */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {libraryTypes.map((item) => {
-          const Icon = item.icon;
-          const count = counts[item.countKey] ?? 0;
+      <main className="flex-1 overflow-y-auto p-6">
+        {/* Category Grid */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {libraryTypes.map((item) => {
+            const Icon = item.icon;
+            const count = counts[item.countKey] ?? 0;
 
-          return (
-            <Link key={item.name} href={item.href}>
-              <Card className="h-full transition-all hover:border-border-subtle hover:bg-surface-raised/40 cursor-pointer border-border-subtle/50 bg-surface-raised/20">
-                <CardContent className="p-4">
-                  <div className="flex items-start gap-3">
-                    <div
-                      className={`flex size-10 items-center justify-center rounded-lg ${item.bgColor} shrink-0`}
-                    >
-                      <Icon className={`size-5 ${item.color}`} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-semibold text-text-primary">
-                          {item.name}
-                        </h3>
-                        <Badge
-                          variant="secondary"
-                          className="text-[10px] px-1.5 tabular-nums"
-                        >
-                          {count}
-                        </Badge>
+            return (
+              <Link key={item.name} href={item.href}>
+                <Card className="h-full transition-all hover:bg-muted cursor-pointer border-border bg-background">
+                  <CardContent className="p-4">
+                    <div className="flex items-start gap-3">
+                      <div
+                        className={`flex size-10 items-center justify-center rounded-lg ${item.bgColor} shrink-0`}
+                      >
+                        <Icon className={`size-5 ${item.color}`} />
                       </div>
-                      <p className="text-xs text-text-muted mt-1 line-clamp-2">
-                        {item.description}
-                      </p>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-semibold text-foreground">
+                            {item.name}
+                          </h3>
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] px-1.5 tabular-nums"
+                          >
+                            {count}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                          {item.description}
+                        </p>
+                      </div>
+                      <ArrowRight className="size-4 text-muted-foreground shrink-0 mt-1" />
                     </div>
-                    <ArrowRight className="size-4 text-text-muted shrink-0 mt-1" />
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          );
-        })}
-      </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            );
+          })}
+        </div>
+      </main>
     </div>
   );
 }

@@ -7,14 +7,7 @@ import dynamicImport from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { analyticsService } from "@/services/service-factory";
-import { Button } from "@/components/ui/button";
-import {
-  ArrowLeft,
-  Activity,
-  FolderOpen,
-  HardDrive,
-  Clock,
-} from "lucide-react";
+import { Activity, FolderOpen, HardDrive, Clock } from "lucide-react";
 import { toast } from "sonner";
 
 // Dynamic imports for analytics components (charts/visualizations)
@@ -24,9 +17,7 @@ const MetricCard = dynamicImport(
       default: mod.MetricCard,
     })),
   {
-    loading: () => (
-      <div className="h-32 bg-surface-raised/50 rounded-lg animate-pulse" />
-    ),
+    loading: () => <div className="h-32 bg-muted rounded-lg animate-pulse" />,
   }
 );
 
@@ -36,9 +27,7 @@ const UsageChart = dynamicImport(
       default: mod.UsageChart,
     })),
   {
-    loading: () => (
-      <div className="h-64 bg-surface-raised/50 rounded-lg animate-pulse" />
-    ),
+    loading: () => <div className="h-64 bg-muted rounded-lg animate-pulse" />,
   }
 );
 
@@ -48,9 +37,7 @@ const StorageBreakdown = dynamicImport(
       default: mod.StorageBreakdown,
     })),
   {
-    loading: () => (
-      <div className="h-64 bg-surface-raised/50 rounded-lg animate-pulse" />
-    ),
+    loading: () => <div className="h-64 bg-muted rounded-lg animate-pulse" />,
   }
 );
 
@@ -60,9 +47,7 @@ const ActivityTimeline = dynamicImport(
       default: mod.ActivityTimeline,
     })),
   {
-    loading: () => (
-      <div className="h-96 bg-surface-raised/50 rounded-lg animate-pulse" />
-    ),
+    loading: () => <div className="h-96 bg-muted rounded-lg animate-pulse" />,
   }
 );
 
@@ -251,93 +236,79 @@ export default function AnalyticsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-      {/* Header */}
-      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.push("/build/workflows")}
-              className="border-border-default hover:border-brand-primary hover:text-brand-primary bg-transparent"
-            >
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Dashboard
-            </Button>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
-              Analytics Dashboard
-            </h1>
-          </div>
-          <div className="text-right">
-            <p className="text-sm font-medium">
-              {user.full_name || user.username}
-            </p>
-            <p className="text-xs text-text-muted">{user.email}</p>
-          </div>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <h1 className="text-lg font-semibold">Analytics</h1>
+        <div className="text-right">
+          <p className="text-sm font-medium">
+            {user.full_name || user.username}
+          </p>
+          <p className="text-xs text-muted-foreground">{user.email}</p>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="p-6 max-w-7xl mx-auto">
+      <div className="flex-1 overflow-y-auto">
         {loading ? (
-          <div className="text-center py-12 text-text-muted">
+          <div className="text-center py-12 text-muted-foreground">
             Loading analytics...
           </div>
         ) : (
-          <>
-            {/* Metric Cards Row */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-              <MetricCard
-                title="API Calls Today"
-                value={usageSummary.api_calls_today}
-                icon={Activity}
-                trend="up"
-                trendValue="+12%"
-                gradientFrom="var(--color-brand-primary)"
-                gradientTo="#0099FF"
-              />
-              <MetricCard
-                title="Total Projects"
-                value={usageSummary.total_projects}
-                icon={FolderOpen}
-                gradientFrom="var(--color-brand-secondary)"
-                gradientTo="#8B00CC"
-              />
-              <MetricCard
-                title="Storage Used"
-                value={formatBytes(usageSummary.storage_used)}
-                icon={HardDrive}
-                trend="up"
-                trendValue="+5%"
-                gradientFrom="var(--color-brand-success)"
-                gradientTo="#00CC6A"
-              />
-              <MetricCard
-                title="Last Active"
-                value={getRelativeTime(usageSummary.last_active)}
-                icon={Clock}
-                gradientFrom="#FFB800"
-                gradientTo="#CC9300"
-              />
+          <div className="p-6 space-y-6">
+            <div className="grid grid-cols-4 gap-px bg-border rounded-lg overflow-hidden">
+              <div className="bg-background px-4 py-3">
+                <MetricCard
+                  title="API Calls Today"
+                  value={usageSummary.api_calls_today}
+                  icon={Activity}
+                  trend="up"
+                  trendValue="+12%"
+                  gradientFrom="var(--color-brand-primary)"
+                  gradientTo="#0099FF"
+                />
+              </div>
+              <div className="bg-background px-4 py-3">
+                <MetricCard
+                  title="Total Projects"
+                  value={usageSummary.total_projects}
+                  icon={FolderOpen}
+                  gradientFrom="var(--color-brand-secondary)"
+                  gradientTo="#8B00CC"
+                />
+              </div>
+              <div className="bg-background px-4 py-3">
+                <MetricCard
+                  title="Storage Used"
+                  value={formatBytes(usageSummary.storage_used)}
+                  icon={HardDrive}
+                  trend="up"
+                  trendValue="+5%"
+                  gradientFrom="var(--color-brand-success)"
+                  gradientTo="#00CC6A"
+                />
+              </div>
+              <div className="bg-background px-4 py-3">
+                <MetricCard
+                  title="Last Active"
+                  value={getRelativeTime(usageSummary.last_active)}
+                  icon={Clock}
+                  gradientFrom="#FFB800"
+                  gradientTo="#CC9300"
+                />
+              </div>
             </div>
 
-            {/* Main Content Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Left Column - 2/3 width */}
               <div className="lg:col-span-2 space-y-6">
                 <UsageChart data={metrics} />
                 <StorageBreakdown data={storageBreakdown} />
               </div>
-
-              {/* Right Column - 1/3 width */}
               <div className="lg:col-span-1">
                 <ActivityTimeline activities={activities} />
               </div>
             </div>
-          </>
+          </div>
         )}
-      </main>
+      </div>
     </div>
   );
 }

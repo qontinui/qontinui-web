@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CoverageTrendChart } from "@/components/testing/CoverageTrendChart";
 import {
-  ArrowLeft,
   TrendingUp,
   BarChart3,
   CheckCircle2,
@@ -30,10 +29,8 @@ export default function ProjectCoveragePage() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-lg text-muted-foreground">Loading...</div>
-        </div>
+      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
+        <div className="text-lg text-muted-foreground">Loading...</div>
       </div>
     );
   }
@@ -43,82 +40,62 @@ export default function ProjectCoveragePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-      {/* Header */}
-      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              onClick={() => router.push(`/projects/${projectId}/testing`)}
-              className="text-text-muted hover:text-white"
-            >
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back
-            </Button>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-[#F59E0B] to-[#EF4444] bg-clip-text text-transparent">
-              Test Coverage
-            </h1>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.push(`/projects/${projectId}/testing`)}
-              className="border-border-default hover:border-[#F59E0B] hover:text-[#F59E0B]"
-            >
-              <BarChart3 className="w-4 h-4 mr-2" />
-              Test Runs
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                router.push(`/projects/${projectId}/testing/deficiencies`)
-              }
-              className="border-border-default hover:border-[#EF4444] hover:text-[#EF4444]"
-            >
-              <AlertTriangle className="w-4 h-4 mr-2" />
-              Deficiencies
-            </Button>
-          </div>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <h1 className="text-lg font-semibold text-foreground">Test Coverage</h1>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push(`/projects/${projectId}/testing`)}
+          >
+            <BarChart3 className="w-4 h-4 mr-2" />
+            Test Runs
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              router.push(`/projects/${projectId}/testing/deficiencies`)
+            }
+          >
+            <AlertTriangle className="w-4 h-4 mr-2" />
+            Deficiencies
+          </Button>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="p-6 max-w-7xl mx-auto">
-        <div className="mb-8">
-          <h2 className="text-3xl font-bold mb-2">Coverage Analysis</h2>
-          <p className="text-text-muted">
+      <main className="flex-1 overflow-y-auto p-6">
+        <div className="mb-6">
+          <p className="text-sm text-muted-foreground">
             Track test coverage trends and identify gaps in your testing
             strategy
           </p>
         </div>
 
-        {/* Coverage Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <Card className="bg-surface-raised/50 border-border-subtle/50">
+          <Card className="bg-muted border-border">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-text-muted">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
                 Overall Coverage
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-3">
                 <div className="flex-1">
-                  <div className="text-3xl font-bold text-[#F59E0B]">--</div>
-                  <div className="text-xs text-text-muted mt-1">
+                  <div className="text-3xl font-bold text-foreground">--</div>
+                  <div className="text-xs text-muted-foreground mt-1">
                     No data available
                   </div>
                 </div>
-                <TrendingUp className="w-8 h-8 text-[#F59E0B]/50" />
+                <TrendingUp className="w-8 h-8 text-muted-foreground/50" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-surface-raised/50 border-border-subtle/50">
+          <Card className="bg-muted border-border">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-text-muted">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
                 Passing Tests
               </CardTitle>
             </CardHeader>
@@ -126,7 +103,7 @@ export default function ProjectCoveragePage() {
               <div className="flex items-center gap-3">
                 <div className="flex-1">
                   <div className="text-3xl font-bold text-green-500">--</div>
-                  <div className="text-xs text-text-muted mt-1">
+                  <div className="text-xs text-muted-foreground mt-1">
                     No data available
                   </div>
                 </div>
@@ -135,9 +112,9 @@ export default function ProjectCoveragePage() {
             </CardContent>
           </Card>
 
-          <Card className="bg-surface-raised/50 border-border-subtle/50">
+          <Card className="bg-muted border-border">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-text-muted">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
                 Failing Tests
               </CardTitle>
             </CardHeader>
@@ -145,7 +122,7 @@ export default function ProjectCoveragePage() {
               <div className="flex items-center gap-3">
                 <div className="flex-1">
                   <div className="text-3xl font-bold text-red-500">--</div>
-                  <div className="text-xs text-text-muted mt-1">
+                  <div className="text-xs text-muted-foreground mt-1">
                     No data available
                   </div>
                 </div>
@@ -155,7 +132,6 @@ export default function ProjectCoveragePage() {
           </Card>
         </div>
 
-        {/* Coverage Trends Chart */}
         <CoverageTrendChart projectId={projectId} />
       </main>
     </div>

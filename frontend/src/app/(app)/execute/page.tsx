@@ -290,13 +290,13 @@ function QueueTabContent({
       </div>
       <DragOverlay>
         {dragOverlayLabel ? (
-          <div className="flex items-center gap-2 p-3 bg-surface-raised border border-brand-primary rounded-lg shadow-lg shadow-brand-primary/20">
+          <div className="flex items-center gap-2 p-3 bg-muted border border-primary rounded-lg shadow-lg shadow-primary/20">
             {dragActiveId?.startsWith("library-") ? (
-              <Plus className="size-4 text-brand-primary" />
+              <Plus className="size-4 text-primary" />
             ) : (
-              <GripVertical className="size-4 text-brand-primary" />
+              <GripVertical className="size-4 text-primary" />
             )}
-            <span className="text-sm font-medium text-text-primary">
+            <span className="text-sm font-medium text-foreground">
               {dragOverlayLabel}
             </span>
           </div>
@@ -323,17 +323,15 @@ export default function ExecutePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-4">
-            <Play className="w-6 h-6 text-brand-primary" />
-            <h1 className="text-2xl font-bold text-text-primary">Execute</h1>
-          </div>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden text-white">
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <div className="flex items-center gap-3">
+          <Play className="size-5 text-primary" />
+          <h1 className="text-lg font-semibold text-foreground">Execute</h1>
         </div>
       </header>
 
-      <main className="p-6 mx-auto flex gap-6" style={{ maxWidth: "1400px" }}>
+      <main className="flex-1 overflow-y-auto p-6 mx-auto flex flex-col lg:flex-row gap-6 max-w-[1400px] w-full">
         <QueueTabContent
           workflows={workflows}
           workflowsLoading={workflowsLoading}

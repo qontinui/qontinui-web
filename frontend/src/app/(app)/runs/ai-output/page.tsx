@@ -140,7 +140,7 @@ function SessionDivider({ label }: { label: string }) {
       <span
         data-content-role="label"
         data-content-label="session divider"
-        className="text-[10px] text-text-muted font-medium uppercase tracking-wider"
+        className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider"
       >
         {label}
       </span>
@@ -152,8 +152,8 @@ function SessionDivider({ label }: { label: string }) {
 function AiMessage({ content }: { content: string }) {
   return (
     <div className="flex justify-start max-w-[85%]">
-      <div className="rounded-lg px-4 py-3 bg-surface-raised/30 border border-border-subtle/30">
-        <pre className="text-xs font-mono text-text-secondary whitespace-pre-wrap break-words leading-relaxed">
+      <div className="rounded-lg px-4 py-3 bg-muted/50 border border-border">
+        <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-words leading-relaxed">
           {content}
         </pre>
       </div>
@@ -164,8 +164,8 @@ function AiMessage({ content }: { content: string }) {
 function UserMessage({ content }: { content: string }) {
   return (
     <div className="flex justify-end">
-      <div className="max-w-[85%] rounded-lg px-4 py-3 bg-brand-primary/10 border border-brand-primary/30">
-        <p className="text-xs text-text-primary whitespace-pre-wrap break-words leading-relaxed">
+      <div className="max-w-[85%] rounded-lg px-4 py-3 bg-primary/10 border border-primary/30">
+        <p className="text-xs text-foreground whitespace-pre-wrap break-words leading-relaxed">
           {content}
         </p>
       </div>
@@ -187,16 +187,16 @@ function RunListPanel({
   onSelect: (id: string) => void;
 }) {
   return (
-    <div className="w-[250px] shrink-0 border-r border-border-subtle/50 flex flex-col">
-      <div className="px-4 py-3 border-b border-border-subtle/50">
-        <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider">
+    <div className="w-[250px] shrink-0 border-r border-border flex flex-col">
+      <div className="px-4 py-3 border-b border-border">
+        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
           Recent Runs
         </h2>
       </div>
       <ScrollArea className="flex-1">
         <div className="p-2 space-y-1">
           {runs.length === 0 ? (
-            <p className="text-xs text-text-muted text-center py-8 px-2">
+            <p className="text-xs text-muted-foreground text-center py-8 px-2">
               No active runs found.
             </p>
           ) : (
@@ -206,15 +206,15 @@ function RunListPanel({
                 onClick={() => onSelect(run.id)}
                 className={`w-full text-left px-3 py-2.5 rounded-lg transition-all ${
                   selectedRunId === run.id
-                    ? "bg-brand-primary/10 border border-brand-primary/40"
-                    : "hover:bg-surface-raised/50 border border-transparent"
+                    ? "bg-primary/10 border border-primary/40"
+                    : "hover:bg-muted border border-transparent"
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">
                   <span
                     data-content-role="label"
                     data-content-label="run name"
-                    className="text-xs font-medium text-text-primary truncate"
+                    className="text-xs font-medium text-foreground truncate"
                   >
                     {run.task_name}
                   </span>
@@ -225,7 +225,7 @@ function RunListPanel({
                     <span
                       data-content-role="badge"
                       data-content-label="run phase"
-                      className="text-[10px] text-text-muted"
+                      className="text-[10px] text-muted-foreground"
                     >
                       {run.phase}
                     </span>
@@ -292,7 +292,7 @@ function ConversationPanel({ runId }: { runId: string }) {
 
   if (outputLoading) {
     return (
-      <div className="flex-1 flex items-center justify-center text-text-muted">
+      <div className="flex-1 flex items-center justify-center text-muted-foreground">
         <div className="flex items-center gap-2 text-sm">
           <div className="size-4 border-2 border-text-muted/30 border-t-text-muted rounded-full animate-spin" />
           Loading output...
@@ -304,12 +304,12 @@ function ConversationPanel({ runId }: { runId: string }) {
   return (
     <div className="flex-1 flex flex-col min-h-0">
       {/* Conversation header */}
-      <div className="px-4 py-3 border-b border-border-subtle/50 flex items-center gap-2 shrink-0">
+      <div className="px-4 py-3 border-b border-border flex items-center gap-2 shrink-0">
         <MessageSquare className="size-4 text-purple-400" />
         <span
           data-content-role="heading"
           data-content-label="conversation panel title"
-          className="text-sm font-medium text-text-primary"
+          className="text-sm font-medium text-foreground"
         >
           Conversation
         </span>
@@ -327,10 +327,10 @@ function ConversationPanel({ runId }: { runId: string }) {
         className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3"
       >
         {segments.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-text-muted">
+          <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
             <MessageSquare className="size-10 mb-3 opacity-30" />
             <p className="text-sm">No output yet...</p>
-            <p className="text-xs mt-1 text-text-muted/60">
+            <p className="text-xs mt-1 text-muted-foreground/60">
               AI conversation output will appear here.
             </p>
           </div>
@@ -366,7 +366,7 @@ function ConversationPanel({ runId }: { runId: string }) {
               const el = scrollRef.current;
               if (el) el.scrollTop = el.scrollHeight;
             }}
-            className="w-full px-3 py-1.5 rounded-lg bg-brand-primary/10 text-brand-primary text-xs hover:bg-brand-primary/20 transition-colors border border-brand-primary/20"
+            className="w-full px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs hover:bg-primary/20 transition-colors border border-primary/20"
           >
             Scroll to bottom
           </button>
@@ -384,8 +384,8 @@ function EmptySelectionState() {
   return (
     <div className="flex-1 flex items-center justify-center">
       <div className="text-center space-y-3">
-        <Bot className="size-12 mx-auto text-text-muted/30" />
-        <p className="text-sm text-text-muted">
+        <Bot className="size-12 mx-auto text-muted-foreground/30" />
+        <p className="text-sm text-muted-foreground">
           Select a run from the list to view its AI output.
         </p>
       </div>
@@ -416,18 +416,14 @@ export default function AiOutputPage() {
   }, [runs, selectedRunId]);
 
   return (
-    <div className="h-full overflow-y-auto bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white flex flex-col">
-      {/* Page header */}
-      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="flex items-center gap-3 px-6 py-3">
-          <Bot className="size-5 text-purple-400" />
-          <h1 className="text-lg font-bold text-text-primary">AI Output</h1>
-          {runs.length > 0 && (
-            <Badge variant="secondary" className="text-xs">
-              {runs.length} active
-            </Badge>
-          )}
-        </div>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <h1 className="text-lg font-semibold">AI Output</h1>
+        {runs.length > 0 && (
+          <Badge variant="secondary" className="text-xs">
+            {runs.length} active
+          </Badge>
+        )}
       </header>
 
       {isOffline && (
@@ -436,7 +432,7 @@ export default function AiOutputPage() {
 
       {/* Main content: two-panel layout */}
       {runsLoading ? (
-        <div className="flex-1 flex items-center justify-center text-text-muted">
+        <div className="flex-1 flex items-center justify-center text-muted-foreground">
           <div className="flex items-center gap-2 text-sm">
             <div className="size-5 border-2 border-text-muted/30 border-t-text-muted rounded-full animate-spin" />
             Loading runs...

@@ -148,77 +148,85 @@ export default function PricingPage() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-16">
-      <div className="text-center mb-12">
-        <h1 className="text-4xl font-bold mb-4">Choose Your Plan</h1>
-        <p className="text-xl text-muted-foreground">
-          Start for free, upgrade when you need more
-        </p>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+      <div className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <div>
+          <h1 className="text-lg font-semibold text-foreground">
+            Choose Your Plan
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Start for free, upgrade when you need more
+          </p>
+        </div>
       </div>
 
-      <div
-        className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto"
-        data-awas-action="get_subscription"
-        data-ui-id="pricing-tiers-grid"
-      >
-        {tiers.map((tier) => (
-          <Card
-            key={tier.name}
-            className={`relative ${
-              tier.popular ? "border-primary shadow-lg scale-105" : ""
-            }`}
-            data-ui-id={`pricing-tier-${tier.tier}`}
-          >
-            {tier.popular && (
-              <div className="absolute top-0 right-0 bg-primary text-primary-foreground px-3 py-1 text-sm rounded-bl rounded-tr">
-                Popular
-              </div>
-            )}
-            <CardHeader>
-              <CardTitle className="text-2xl">{tier.name}</CardTitle>
-              <CardDescription>{tier.description}</CardDescription>
-              <div className="mt-4">
-                <span className="text-4xl font-bold">{tier.price}</span>
-                {tier.tier !== "free" && (
-                  <span className="text-muted-foreground">/month</span>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              <ul className="space-y-3 mb-6">
-                {tier.features.map((feature) => (
-                  <li key={feature} className="flex items-center gap-2">
-                    <Check className="h-5 w-5 text-primary flex-shrink-0" />
-                    <span>{feature}</span>
-                  </li>
-                ))}
-              </ul>
-              <Button
-                className="w-full"
-                disabled={isButtonDisabled(tier)}
-                onClick={() => tier.tier !== "free" && handleUpgrade(tier.tier)}
-                variant={tier.popular ? "default" : "outline"}
-                data-ui-id={`upgrade-to-${tier.tier}-button`}
-                data-awas-trigger="click"
-              >
-                {getButtonText(tier)}
-              </Button>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <div className="flex-1 overflow-y-auto p-6">
+        <div
+          className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto"
+          data-awas-action="get_subscription"
+          data-ui-id="pricing-tiers-grid"
+        >
+          {tiers.map((tier) => (
+            <Card
+              key={tier.name}
+              className={`relative ${
+                tier.popular ? "border-primary shadow-lg scale-105" : ""
+              }`}
+              data-ui-id={`pricing-tier-${tier.tier}`}
+            >
+              {tier.popular && (
+                <div className="absolute top-0 right-0 bg-primary text-primary-foreground px-3 py-1 text-sm rounded-bl rounded-tr">
+                  Popular
+                </div>
+              )}
+              <CardHeader>
+                <CardTitle className="text-2xl">{tier.name}</CardTitle>
+                <CardDescription>{tier.description}</CardDescription>
+                <div className="mt-4">
+                  <span className="text-4xl font-bold">{tier.price}</span>
+                  {tier.tier !== "free" && (
+                    <span className="text-muted-foreground">/month</span>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-3 mb-6">
+                  {tier.features.map((feature) => (
+                    <li key={feature} className="flex items-center gap-2">
+                      <Check className="h-5 w-5 text-primary flex-shrink-0" />
+                      <span>{feature}</span>
+                    </li>
+                  ))}
+                </ul>
+                <Button
+                  className="w-full"
+                  disabled={isButtonDisabled(tier)}
+                  onClick={() =>
+                    tier.tier !== "free" && handleUpgrade(tier.tier)
+                  }
+                  variant={tier.popular ? "default" : "outline"}
+                  data-ui-id={`upgrade-to-${tier.tier}-button`}
+                  data-awas-trigger="click"
+                >
+                  {getButtonText(tier)}
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
 
-      <div className="mt-16 text-center text-sm text-muted-foreground">
-        <p>All plans include core automation features and JSON export.</p>
-        <p className="mt-2">
-          Need something custom?{" "}
-          <a
-            href="mailto:support@qontinui.com"
-            className="text-primary hover:underline"
-          >
-            Contact us
-          </a>
-        </p>
+        <div className="mt-16 text-center text-sm text-muted-foreground">
+          <p>All plans include core automation features and JSON export.</p>
+          <p className="mt-2">
+            Need something custom?{" "}
+            <a
+              href="mailto:support@qontinui.com"
+              className="text-primary hover:underline"
+            >
+              Contact us
+            </a>
+          </p>
+        </div>
       </div>
     </div>
   );

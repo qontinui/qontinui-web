@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -173,30 +172,28 @@ export default function SelfHealingSettingsPage() {
   if (healthLoading || loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="size-6 animate-spin text-text-muted" />
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   return (
-    <div className="p-6 max-w-3xl space-y-6">
+    <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-text-primary">
-          Self-Healing
-        </h1>
-        <p className="text-sm text-text-muted mt-1">
+        <h1 className="text-lg font-semibold">Self-Healing</h1>
+        <p className="text-sm text-muted-foreground mt-1">
           Configure automation recovery, caching, and visual validation
         </p>
       </div>
 
       {/* Action Caching */}
-      <Card>
-        <CardHeader
-          className="cursor-pointer select-none"
+      <div className="rounded-lg border border-border">
+        <div
+          className="px-4 py-3 border-b border-border bg-muted/50 cursor-pointer select-none"
           onClick={() => setCachingOpen(!cachingOpen)}
         >
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
+            <h3 className="text-sm font-medium flex items-center gap-2">
               {cachingOpen ? (
                 <ChevronDown className="size-4" />
               ) : (
@@ -204,16 +201,16 @@ export default function SelfHealingSettingsPage() {
               )}
               <Database className="size-4" />
               Action Caching
-            </CardTitle>
+            </h3>
             <Switch
               checked={actionCachingEnabled}
               onCheckedChange={setActionCachingEnabled}
               onClick={(e) => e.stopPropagation()}
             />
           </div>
-        </CardHeader>
+        </div>
         {cachingOpen && (
-          <CardContent className="space-y-4">
+          <div className="p-4 space-y-4">
             <div className="flex items-start gap-2 rounded-lg border border-blue-500/20 bg-blue-500/5 p-3">
               <Info className="size-4 mt-0.5 text-blue-500 shrink-0" />
               <p className="text-xs text-muted-foreground">
@@ -238,18 +235,18 @@ export default function SelfHealingSettingsPage() {
                 How long cached action results remain valid
               </p>
             </div>
-          </CardContent>
+          </div>
         )}
-      </Card>
+      </div>
 
       {/* Visual Validation */}
-      <Card>
-        <CardHeader
-          className="cursor-pointer select-none"
+      <div className="rounded-lg border border-border">
+        <div
+          className="px-4 py-3 border-b border-border bg-muted/50 cursor-pointer select-none"
           onClick={() => setValidationOpen(!validationOpen)}
         >
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
+            <h3 className="text-sm font-medium flex items-center gap-2">
               {validationOpen ? (
                 <ChevronDown className="size-4" />
               ) : (
@@ -257,16 +254,16 @@ export default function SelfHealingSettingsPage() {
               )}
               <Eye className="size-4" />
               Visual Validation
-            </CardTitle>
+            </h3>
             <Switch
               checked={visualValidationEnabled}
               onCheckedChange={setVisualValidationEnabled}
               onClick={(e) => e.stopPropagation()}
             />
           </div>
-        </CardHeader>
+        </div>
         {validationOpen && (
-          <CardContent>
+          <div className="p-4">
             <div className="flex items-start gap-2 rounded-lg border border-blue-500/20 bg-blue-500/5 p-3">
               <Info className="size-4 mt-0.5 text-blue-500 shrink-0" />
               <p className="text-xs text-muted-foreground">
@@ -276,18 +273,18 @@ export default function SelfHealingSettingsPage() {
                 automatically.
               </p>
             </div>
-          </CardContent>
+          </div>
         )}
-      </Card>
+      </div>
 
       {/* LLM Assistance */}
-      <Card>
-        <CardHeader
-          className="cursor-pointer select-none"
+      <div className="rounded-lg border border-border">
+        <div
+          className="px-4 py-3 border-b border-border bg-muted/50 cursor-pointer select-none"
           onClick={() => setLlmOpen(!llmOpen)}
         >
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
+            <h3 className="text-sm font-medium flex items-center gap-2">
               {llmOpen ? (
                 <ChevronDown className="size-4" />
               ) : (
@@ -295,11 +292,11 @@ export default function SelfHealingSettingsPage() {
               )}
               <Bot className="size-4" />
               LLM Assistance
-            </CardTitle>
+            </h3>
           </div>
-        </CardHeader>
+        </div>
         {llmOpen && (
-          <CardContent className="space-y-4">
+          <div className="p-4 space-y-4">
             <div className="space-y-2">
               <Label>LLM Mode</Label>
               <Select
@@ -427,16 +424,16 @@ export default function SelfHealingSettingsPage() {
                 </div>
               </div>
             )}
-          </CardContent>
+          </div>
         )}
-      </Card>
+      </div>
 
       {/* Actions */}
       <div className="flex justify-between">
         <Button
           variant="outline"
           onClick={handleResetDefaults}
-          className="text-text-muted"
+          className="text-muted-foreground"
         >
           <RotateCcw className="size-4 mr-2" />
           Reset to Defaults

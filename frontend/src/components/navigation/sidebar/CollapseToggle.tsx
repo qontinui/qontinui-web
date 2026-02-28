@@ -32,10 +32,10 @@ export function CollapseToggle({ isCollapsed, onToggle }: CollapseToggleProps) {
   return (
     <button
       onClick={onToggle}
-      className="flex h-9 w-full items-center justify-center gap-2 rounded-md text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
+      className="flex h-8 w-full items-center justify-center gap-2 rounded-md text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
     >
-      <PanelLeftClose className="size-4" />
-      <span className="text-sm">Collapse</span>
+      <PanelLeftClose className="size-3.5" />
+      <span className="text-xs">Collapse</span>
     </button>
   );
 }

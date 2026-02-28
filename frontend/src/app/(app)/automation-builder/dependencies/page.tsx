@@ -369,10 +369,12 @@ function DependenciesPageInner() {
   // Show loading state during hydration
   if (isHydrating) {
     return (
-      <div className="p-6 space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Workflow Dependencies</h1>
-          <p className="text-muted-foreground mt-1">Loading saved state...</p>
+      <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+        <div className="flex items-center px-6 py-3 border-b border-border shrink-0">
+          <h1 className="text-lg font-semibold">Workflow Dependencies</h1>
+        </div>
+        <div className="flex items-center justify-center flex-1">
+          <p className="text-muted-foreground">Loading saved state...</p>
         </div>
       </div>
     );
@@ -380,40 +382,32 @@ function DependenciesPageInner() {
 
   if (workflows.length === 0) {
     return (
-      <div className="p-6 space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Workflow Dependencies</h1>
-          <p className="text-muted-foreground mt-1">
-            Visualize and analyze workflow relationships
-          </p>
+      <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+        <div className="flex items-center px-6 py-3 border-b border-border shrink-0">
+          <h1 className="text-lg font-semibold">Workflow Dependencies</h1>
         </div>
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="flex flex-col items-center">
             <NetworkIcon className="size-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">No Workflows Found</h3>
             <p className="text-muted-foreground text-center max-w-md">
               Create some workflows in the Automation Builder to see dependency
               analysis
             </p>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-screen">
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
       {/* Header */}
-      <div className="border-b bg-background p-6 space-y-4">
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-3xl font-bold flex items-center gap-2">
-              <NetworkIcon className="size-8" />
-              Workflow Dependencies
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Visualize and analyze workflow relationships
-            </p>
+      <div className="border-b border-border bg-background px-6 py-3 space-y-3 shrink-0">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <NetworkIcon className="size-5" />
+            <h1 className="text-lg font-semibold">Workflow Dependencies</h1>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={handleAnalyzeAll}>

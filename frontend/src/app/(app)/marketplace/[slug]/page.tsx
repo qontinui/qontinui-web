@@ -7,7 +7,6 @@ import {
   Download,
   Star,
   Calendar,
-  User,
   Shield,
   ExternalLink,
   Flag,
@@ -118,10 +117,10 @@ export default function PackageDetailsPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-brand-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-text-muted">Loading package details...</p>
+          <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading package details...</p>
         </div>
       </div>
     );
@@ -129,13 +128,13 @@ export default function PackageDetailsPage() {
 
   if (!pkg) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden items-center justify-center">
         <div className="text-center">
-          <Package className="w-16 h-16 text-text-muted mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-text-secondary mb-2">
+          <Package className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-foreground mb-2">
             Package not found
           </h2>
-          <p className="text-text-muted mb-6">
+          <p className="text-muted-foreground mb-6">
             The package you&apos;re looking for doesn&apos;t exist.
           </p>
           <Button onClick={handleBack} variant="outline">
@@ -152,111 +151,90 @@ export default function PackageDetailsPage() {
     !pkg.latest_version.security_scan.passed;
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="border-b border-border-subtle bg-gradient-to-b from-brand-primary/5 via-brand-secondary/5 to-transparent">
-        <div className="container mx-auto px-6 py-6">
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+      <div className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <div className="flex items-center gap-3">
           <Button
             variant="ghost"
+            size="sm"
             onClick={handleBack}
-            className="mb-4 text-text-muted hover:text-text-secondary"
+            className="text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Marketplace
+            Back
           </Button>
-
-          <div className="flex flex-col lg:flex-row gap-6 lg:items-start lg:justify-between">
-            {/* Package Info */}
-            <div className="flex-1">
-              <div className="flex items-start gap-3 mb-3">
-                <h1 className="text-3xl font-bold text-text-primary">
-                  {pkg.name}
-                </h1>
-                {pkg.verified && (
-                  <div title="Verified by staff">
-                    <Shield className="w-6 h-6 text-brand-primary flex-shrink-0 mt-1" />
-                  </div>
-                )}
-              </div>
-
-              <p className="text-lg text-text-muted mb-4">{pkg.description}</p>
-
-              {/* Tags */}
-              <div className="flex flex-wrap gap-2 mb-4">
-                <Badge variant="outline">
-                  {getCategoryLabel(pkg.category)}
-                </Badge>
-                {pkg.featured && (
-                  <Badge className="bg-gradient-to-r from-brand-primary to-brand-secondary text-white">
-                    Featured
-                  </Badge>
-                )}
-                {pkg.tags.map((tag) => (
-                  <Badge key={tag} variant="secondary">
-                    {tag}
-                  </Badge>
-                ))}
-              </div>
-
-              {/* Author */}
-              <div className="flex items-center gap-2 text-text-muted">
-                <User className="w-4 h-4" />
-                <span>by</span>
-                <span className="font-medium text-text-secondary">
-                  {pkg.author.username}
-                </span>
-                {pkg.author.verified && (
-                  <Shield className="w-3 h-3 text-brand-primary" />
-                )}
-              </div>
+          <h1 className="text-lg font-semibold text-foreground">{pkg.name}</h1>
+          {pkg.verified && (
+            <div title="Verified by staff">
+              <Shield className="w-4 h-4 text-primary flex-shrink-0" />
             </div>
-
-            {/* Install Button */}
-            <div className="flex flex-col gap-4">
-              <Button
-                size="lg"
-                onClick={handleInstallClick}
-                disabled={pkg.deprecated || hasSecurityIssues}
-                className="bg-gradient-to-r from-brand-primary to-brand-secondary hover:from-brand-primary/90 hover:to-brand-secondary/90 w-full lg:w-auto"
-              >
-                <Download className="w-5 h-5 mr-2" />
-                Install Package
-              </Button>
-
-              {pkg.deprecated && (
-                <Alert variant="destructive">
-                  <AlertDescription>
-                    <AlertTriangle className="w-4 h-4 inline mr-2" />
-                    This package is deprecated
-                    {pkg.deprecated_reason && `: ${pkg.deprecated_reason}`}
-                  </AlertDescription>
-                </Alert>
-              )}
-
-              {hasSecurityIssues && (
-                <Alert variant="destructive">
-                  <AlertDescription>
-                    <AlertTriangle className="w-4 h-4 inline mr-2" />
-                    Security issues detected. Installation blocked.
-                  </AlertDescription>
-                </Alert>
-              )}
-            </div>
-          </div>
+          )}
+          {pkg.featured && (
+            <Badge className="bg-primary text-primary-foreground">
+              Featured
+            </Badge>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          {pkg.deprecated && (
+            <Alert variant="destructive" className="py-1 px-3">
+              <AlertDescription className="text-sm">
+                <AlertTriangle className="w-3 h-3 inline mr-1" />
+                Deprecated
+                {pkg.deprecated_reason && `: ${pkg.deprecated_reason}`}
+              </AlertDescription>
+            </Alert>
+          )}
+          {hasSecurityIssues && (
+            <Alert variant="destructive" className="py-1 px-3">
+              <AlertDescription className="text-sm">
+                <AlertTriangle className="w-3 h-3 inline mr-1" />
+                Security issues detected
+              </AlertDescription>
+            </Alert>
+          )}
+          <Button
+            onClick={handleInstallClick}
+            disabled={pkg.deprecated || hasSecurityIssues}
+            className="bg-primary"
+          >
+            <Download className="w-4 h-4 mr-2" />
+            Install Package
+          </Button>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="container mx-auto px-6 py-8">
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="mb-6">
+          <p className="text-sm text-muted-foreground mb-3">
+            {pkg.description}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">{getCategoryLabel(pkg.category)}</Badge>
+            {pkg.tags.map((tag) => (
+              <Badge key={tag} variant="secondary">
+                {tag}
+              </Badge>
+            ))}
+            <span className="text-sm text-muted-foreground ml-2">
+              by{" "}
+              <span className="font-medium text-foreground">
+                {pkg.author.username}
+              </span>
+              {pkg.author.verified && (
+                <Shield className="w-3 h-3 text-primary inline ml-1" />
+              )}
+            </span>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Tabs */}
             <Tabs
               value={selectedTab}
               onValueChange={(v) => setSelectedTab(v as typeof selectedTab)}
             >
-              <TabsList className="bg-surface-raised/50 w-full">
+              <TabsList className="bg-muted w-full">
                 <TabsTrigger value="readme" className="flex-1">
                   <FileText className="w-4 h-4 mr-2" />
                   README
@@ -276,7 +254,7 @@ export default function PackageDetailsPage() {
               </TabsList>
 
               <TabsContent value="readme" className="mt-6">
-                <Card className="bg-surface-raised/30 border-border-subtle">
+                <Card className="bg-muted/50 border-border">
                   <CardContent className="p-6">
                     {pkg.latest_version.readme ? (
                       <div className="prose prose-invert prose-cyan max-w-none">
@@ -285,7 +263,7 @@ export default function PackageDetailsPage() {
                         </ReactMarkdown>
                       </div>
                     ) : (
-                      <div className="text-center py-12 text-text-muted">
+                      <div className="text-center py-12 text-muted-foreground">
                         No README provided for this package.
                       </div>
                     )}
@@ -303,7 +281,7 @@ export default function PackageDetailsPage() {
               </TabsContent>
 
               <TabsContent value="versions" className="mt-6">
-                <Card className="bg-surface-raised/30 border-border-subtle">
+                <Card className="bg-muted/50 border-border">
                   <CardHeader>
                     <CardTitle>Version History</CardTitle>
                     <CardDescription>
@@ -315,18 +293,18 @@ export default function PackageDetailsPage() {
                       {pkg.versions.map((version) => (
                         <div
                           key={version.id}
-                          className="flex items-start justify-between p-4 bg-surface-raised/50 rounded-lg border border-border-subtle"
+                          className="flex items-start justify-between p-4 bg-muted rounded-lg border border-border"
                         >
                           <div className="space-y-1">
                             <div className="flex items-center gap-2">
-                              <span className="font-mono font-semibold text-text-secondary">
+                              <span className="font-mono font-semibold text-foreground">
                                 v{version.version}
                               </span>
                               {version.id === pkg.latest_version.id && (
                                 <Badge variant="secondary">Latest</Badge>
                               )}
                             </div>
-                            <div className="text-sm text-text-muted">
+                            <div className="text-sm text-muted-foreground">
                               Released{" "}
                               {formatDistanceToNow(
                                 new Date(version.created_at),
@@ -334,12 +312,12 @@ export default function PackageDetailsPage() {
                               )}
                             </div>
                             {version.changelog && (
-                              <p className="text-sm text-text-muted mt-2">
+                              <p className="text-sm text-muted-foreground mt-2">
                                 {version.changelog}
                               </p>
                             )}
                           </div>
-                          <div className="text-sm text-text-muted">
+                          <div className="text-sm text-muted-foreground">
                             {formatDownloads(version.downloads)} downloads
                           </div>
                         </div>
@@ -350,7 +328,7 @@ export default function PackageDetailsPage() {
               </TabsContent>
 
               <TabsContent value="dependencies" className="mt-6">
-                <Card className="bg-surface-raised/30 border-border-subtle">
+                <Card className="bg-muted/50 border-border">
                   <CardHeader>
                     <CardTitle>Dependencies</CardTitle>
                     <CardDescription>
@@ -363,11 +341,11 @@ export default function PackageDetailsPage() {
                         {pkg.latest_version.dependencies.map((dep, index) => (
                           <div
                             key={index}
-                            className="flex items-center justify-between p-3 bg-surface-raised/50 rounded-lg border border-border-subtle"
+                            className="flex items-center justify-between p-3 bg-muted rounded-lg border border-border"
                           >
                             <div className="flex items-center gap-2">
-                              <Package className="w-4 h-4 text-text-muted" />
-                              <span className="font-medium text-text-secondary">
+                              <Package className="w-4 h-4 text-muted-foreground" />
+                              <span className="font-medium text-foreground">
                                 {dep.package_name}
                               </span>
                             </div>
@@ -385,7 +363,7 @@ export default function PackageDetailsPage() {
                         ))}
                       </div>
                     ) : (
-                      <div className="text-center py-8 text-text-muted">
+                      <div className="text-center py-8 text-muted-foreground">
                         No dependencies required
                       </div>
                     )}
@@ -395,7 +373,7 @@ export default function PackageDetailsPage() {
             </Tabs>
 
             {/* Ratings & Reviews */}
-            <Card className="bg-surface-raised/30 border-border-subtle">
+            <Card className="bg-muted/50 border-border">
               <CardHeader>
                 <CardTitle>Ratings & Reviews</CardTitle>
               </CardHeader>
@@ -415,47 +393,47 @@ export default function PackageDetailsPage() {
           {/* Sidebar */}
           <div className="space-y-6">
             {/* Stats */}
-            <Card className="bg-surface-raised/30 border-border-subtle">
+            <Card className="bg-muted/50 border-border">
               <CardHeader>
                 <CardTitle className="text-base">Statistics</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-text-muted">
+                  <div className="flex items-center gap-2 text-muted-foreground">
                     <Download className="w-4 h-4" />
                     <span className="text-sm">Downloads</span>
                   </div>
-                  <span className="font-semibold text-text-secondary">
+                  <span className="font-semibold text-foreground">
                     {formatDownloads(pkg.total_downloads)}
                   </span>
                 </div>
-                <Separator className="bg-border-subtle" />
+                <Separator className="bg-border" />
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-text-muted">
+                  <div className="flex items-center gap-2 text-muted-foreground">
                     <Star className="w-4 h-4" />
                     <span className="text-sm">Rating</span>
                   </div>
-                  <span className="font-semibold text-text-secondary">
+                  <span className="font-semibold text-foreground">
                     {formatRating(pkg.average_rating)} ({pkg.rating_count})
                   </span>
                 </div>
-                <Separator className="bg-border-subtle" />
+                <Separator className="bg-border" />
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-text-muted">
+                  <div className="flex items-center gap-2 text-muted-foreground">
                     <GitBranch className="w-4 h-4" />
                     <span className="text-sm">Version</span>
                   </div>
-                  <span className="font-mono text-sm font-semibold text-text-secondary">
+                  <span className="font-mono text-sm font-semibold text-foreground">
                     v{pkg.latest_version.version}
                   </span>
                 </div>
-                <Separator className="bg-border-subtle" />
+                <Separator className="bg-border" />
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-text-muted">
+                  <div className="flex items-center gap-2 text-muted-foreground">
                     <Calendar className="w-4 h-4" />
                     <span className="text-sm">Updated</span>
                   </div>
-                  <span className="text-sm text-text-secondary">
+                  <span className="text-sm text-foreground">
                     {formatDistanceToNow(new Date(pkg.updated_at), {
                       addSuffix: true,
                     })}
@@ -465,7 +443,7 @@ export default function PackageDetailsPage() {
             </Card>
 
             {/* License */}
-            <Card className="bg-surface-raised/30 border-border-subtle">
+            <Card className="bg-muted/50 border-border">
               <CardHeader>
                 <CardTitle className="text-base">License</CardTitle>
               </CardHeader>
@@ -480,7 +458,7 @@ export default function PackageDetailsPage() {
             {(pkg.repository_url ||
               pkg.homepage_url ||
               pkg.documentation_url) && (
-              <Card className="bg-surface-raised/30 border-border-subtle">
+              <Card className="bg-muted/50 border-border">
                 <CardHeader>
                   <CardTitle className="text-base">Links</CardTitle>
                 </CardHeader>
@@ -490,7 +468,7 @@ export default function PackageDetailsPage() {
                       href={pkg.repository_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-2 text-sm text-brand-primary hover:text-brand-primary/80"
+                      className="flex items-center gap-2 text-sm text-primary hover:text-primary/80"
                     >
                       <ExternalLink className="w-4 h-4" />
                       Repository
@@ -501,7 +479,7 @@ export default function PackageDetailsPage() {
                       href={pkg.homepage_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-2 text-sm text-brand-primary hover:text-brand-primary/80"
+                      className="flex items-center gap-2 text-sm text-primary hover:text-primary/80"
                     >
                       <ExternalLink className="w-4 h-4" />
                       Homepage
@@ -512,7 +490,7 @@ export default function PackageDetailsPage() {
                       href={pkg.documentation_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-2 text-sm text-brand-primary hover:text-brand-primary/80"
+                      className="flex items-center gap-2 text-sm text-primary hover:text-primary/80"
                     >
                       <ExternalLink className="w-4 h-4" />
                       Documentation
@@ -526,9 +504,9 @@ export default function PackageDetailsPage() {
             {pkg.latest_version.security_scan.scanned && (
               <Card
                 className={cn(
-                  "border-border-subtle",
+                  "border-border",
                   pkg.latest_version.security_scan.passed
-                    ? "bg-brand-success/10 border-brand-success/50"
+                    ? "bg-green-500/10 border-green-500/50"
                     : "bg-red-950/20 border-red-500/50"
                 )}
               >
@@ -536,7 +514,7 @@ export default function PackageDetailsPage() {
                   <CardTitle className="text-base flex items-center gap-2">
                     {pkg.latest_version.security_scan.passed ? (
                       <>
-                        <CheckCircle2 className="w-4 h-4 text-brand-success" />
+                        <CheckCircle2 className="w-4 h-4 text-green-500" />
                         Security Scan Passed
                       </>
                     ) : (
@@ -556,7 +534,7 @@ export default function PackageDetailsPage() {
                             <Badge variant="destructive" className="mr-2">
                               {issue.severity}
                             </Badge>
-                            <span className="text-text-muted">
+                            <span className="text-muted-foreground">
                               {issue.description}
                             </span>
                           </div>

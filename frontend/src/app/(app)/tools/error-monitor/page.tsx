@@ -193,72 +193,69 @@ export default function ErrorMonitorPage() {
 
   if (healthLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-text-muted" />
+      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-      {/* Header */}
-      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <ShieldAlert className="w-6 h-6 text-red-400" />
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-red-400 to-orange-400 bg-clip-text text-transparent">
-              Error Monitor
-            </h1>
-            {counts.unresolved > 0 && (
-              <Badge variant="destructive" className="gap-1">
-                {counts.unresolved} unresolved
-              </Badge>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {/* Fix Errors Button */}
-            {counts.unresolved > 0 && (
-              <Button
-                onClick={handleFixErrors}
-                disabled={fixLoading}
-                className={`font-semibold ${
-                  counts.critical > 0
-                    ? "bg-red-600 hover:bg-red-700 text-white"
-                    : counts.error > 0
-                      ? "bg-amber-600 hover:bg-amber-700 text-white"
-                      : "bg-surface-raised/50 text-text-muted"
-                }`}
-              >
-                {fixLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                    Generating Fix...
-                  </>
-                ) : (
-                  <>
-                    <Wrench className="w-4 h-4 mr-2" />
-                    Fix Errors ({counts.unresolved})
-                  </>
-                )}
-              </Button>
-            )}
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden text-white">
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <div className="flex items-center gap-3">
+          <ShieldAlert className="w-5 h-5 text-red-400" />
+          <h1 className="text-lg font-semibold text-foreground">
+            Error Monitor
+          </h1>
+          {counts.unresolved > 0 && (
+            <Badge variant="destructive" className="gap-1">
+              {counts.unresolved} unresolved
+            </Badge>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Fix Errors Button */}
+          {counts.unresolved > 0 && (
             <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                refetch();
-                setLastRefresh(new Date());
-              }}
-              className="text-text-muted hover:text-white"
+              onClick={handleFixErrors}
+              disabled={fixLoading}
+              className={`font-semibold ${
+                counts.critical > 0
+                  ? "bg-red-600 hover:bg-red-700 text-white"
+                  : counts.error > 0
+                    ? "bg-amber-600 hover:bg-amber-700 text-white"
+                    : "bg-muted text-muted-foreground"
+              }`}
             >
-              <RefreshCw className="w-4 h-4" />
+              {fixLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  Generating Fix...
+                </>
+              ) : (
+                <>
+                  <Wrench className="w-4 h-4 mr-2" />
+                  Fix Errors ({counts.unresolved})
+                </>
+              )}
             </Button>
-          </div>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              refetch();
+              setLastRefresh(new Date());
+            }}
+            className="text-muted-foreground hover:text-white"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </Button>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="p-6 max-w-5xl mx-auto space-y-6">
+      <main className="flex-1 overflow-y-auto p-6 max-w-5xl mx-auto space-y-6 w-full">
         {isOffline && (
           <RunnerPartialState message="Runner offline — this tool requires the runner for execution" />
         )}
@@ -283,12 +280,12 @@ export default function ErrorMonitorPage() {
 
         {/* Summary Cards */}
         <div className="grid grid-cols-5 gap-4">
-          <Card className="bg-surface-raised/50 border-border-subtle/50">
+          <Card className="bg-muted border-border">
             <CardContent className="py-4">
-              <p className="text-xs text-text-muted uppercase tracking-wider">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider">
                 Total
               </p>
-              <p className="text-2xl font-bold text-text-primary mt-1">
+              <p className="text-2xl font-bold text-foreground mt-1">
                 {counts.total}
               </p>
             </CardContent>
@@ -336,16 +333,16 @@ export default function ErrorMonitorPage() {
         </div>
 
         {/* Search & Filters */}
-        <Card className="bg-surface-raised/50 border-border-subtle/50">
+        <Card className="bg-muted border-border">
           <CardContent className="py-4 space-y-3">
             <div className="flex items-center gap-4">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   placeholder="Search messages, sources, error types..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 bg-surface-raised/50 border-border-subtle/50 text-white placeholder:text-text-muted"
+                  className="pl-10 bg-muted border-border text-white placeholder:text-muted-foreground"
                 />
               </div>
               <Button
@@ -353,7 +350,7 @@ export default function ErrorMonitorPage() {
                 size="sm"
                 onClick={() => setShowFilters(!showFilters)}
                 className={
-                  showFilters ? "" : "text-text-muted hover:text-white"
+                  showFilters ? "" : "text-muted-foreground hover:text-white"
                 }
               >
                 <Filter className="w-4 h-4 mr-1" />
@@ -369,9 +366,11 @@ export default function ErrorMonitorPage() {
               </Button>
             </div>
             {showFilters && (
-              <div className="flex flex-wrap gap-4 pt-2 border-t border-border-subtle/30">
+              <div className="flex flex-wrap gap-4 pt-2 border-t border-border">
                 <div>
-                  <p className="text-xs text-text-muted mb-1.5">Severity</p>
+                  <p className="text-xs text-muted-foreground mb-1.5">
+                    Severity
+                  </p>
                   <div className="flex items-center gap-1">
                     {SEVERITY_FILTERS.map((f) => (
                       <Button
@@ -381,7 +380,7 @@ export default function ErrorMonitorPage() {
                         }
                         size="sm"
                         onClick={() => setSeverityFilter(f.value)}
-                        className={`text-xs ${severityFilter === f.value ? "" : "text-text-muted hover:text-white"}`}
+                        className={`text-xs ${severityFilter === f.value ? "" : "text-muted-foreground hover:text-white"}`}
                       >
                         {f.label}
                       </Button>
@@ -389,7 +388,7 @@ export default function ErrorMonitorPage() {
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs text-text-muted mb-1.5">Status</p>
+                  <p className="text-xs text-muted-foreground mb-1.5">Status</p>
                   <div className="flex items-center gap-1">
                     {STATUS_FILTERS.map((f) => (
                       <Button
@@ -397,7 +396,7 @@ export default function ErrorMonitorPage() {
                         variant={statusFilter === f.value ? "default" : "ghost"}
                         size="sm"
                         onClick={() => setStatusFilter(f.value)}
-                        className={`text-xs ${statusFilter === f.value ? "" : "text-text-muted hover:text-white"}`}
+                        className={`text-xs ${statusFilter === f.value ? "" : "text-muted-foreground hover:text-white"}`}
                       >
                         {f.label}
                       </Button>
@@ -409,7 +408,7 @@ export default function ErrorMonitorPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="text-xs text-text-muted hover:text-white"
+                      className="text-xs text-muted-foreground hover:text-white"
                       onClick={() => {
                         setSeverityFilter("all");
                         setStatusFilter("all");
@@ -425,7 +424,7 @@ export default function ErrorMonitorPage() {
         </Card>
 
         {/* Error Entries */}
-        <Card className="bg-surface-raised/50 border-border-subtle/50">
+        <Card className="bg-muted border-border">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
@@ -433,13 +432,13 @@ export default function ErrorMonitorPage() {
                   <FileText className="w-5 h-5" />
                   Log Entries
                 </CardTitle>
-                <CardDescription className="text-text-muted">
+                <CardDescription className="text-muted-foreground">
                   {filteredEntries.length} entr
                   {filteredEntries.length === 1 ? "y" : "ies"}
                   {activeFilterCount > 0 && " (filtered)"}
                 </CardDescription>
               </div>
-              <div className="flex items-center gap-2 text-xs text-text-muted">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
                 Auto-refresh 30s
               </div>
@@ -451,7 +450,7 @@ export default function ErrorMonitorPage() {
                 {[1, 2, 3, 4, 5].map((i) => (
                   <div
                     key={i}
-                    className="h-16 bg-surface-raised/30 rounded-lg animate-pulse"
+                    className="h-16 bg-muted/50 rounded-lg animate-pulse"
                   />
                 ))}
               </div>
@@ -462,8 +461,8 @@ export default function ErrorMonitorPage() {
               </div>
             ) : filteredEntries.length === 0 ? (
               <div className="text-center py-12">
-                <ShieldAlert className="w-12 h-12 mx-auto mb-3 text-text-muted" />
-                <p className="text-sm text-text-muted">
+                <ShieldAlert className="w-12 h-12 mx-auto mb-3 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">
                   {entries && entries.length > 0
                     ? "No entries match your filters"
                     : "No log entries detected. Monitoring is active."}

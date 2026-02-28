@@ -11,13 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -82,36 +75,36 @@ function ImportResultDisplay({
   };
 }) {
   return (
-    <Card className="bg-surface-raised/30 border-border-subtle/50">
-      <CardHeader>
-        <CardTitle className="text-sm flex items-center gap-2">
+    <div className="rounded-lg border border-border">
+      <div className="px-4 py-3 border-b border-border bg-muted/50">
+        <h3 className="text-sm font-medium flex items-center gap-2">
           {result.errors === 0 ? (
             <CheckCircle className="size-4 text-green-400" />
           ) : (
             <AlertCircle className="size-4 text-amber-400" />
           )}
           Import Complete
-        </CardTitle>
-        <CardDescription>
+        </h3>
+        <p className="text-xs text-muted-foreground">
           {result.imported} imported, {result.skipped} skipped, {result.errors}{" "}
           errors
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+        </p>
+      </div>
+      <div className="p-4">
         <div className="space-y-1">
           {Object.entries(result.details).map(([key, detail]) => (
             <div
               key={key}
-              className="flex items-center justify-between py-1.5 px-2 rounded bg-surface-canvas/20 text-xs"
+              className="flex items-center justify-between py-1.5 px-2 rounded bg-background text-xs"
             >
               <span
                 data-content-role="label"
                 data-content-label="import category"
-                className="text-text-primary"
+                className="text-foreground"
               >
                 {CATEGORY_LABELS[key] ?? key}
               </span>
-              <div className="flex items-center gap-3 text-text-muted">
+              <div className="flex items-center gap-3 text-muted-foreground">
                 {detail.imported > 0 && (
                   <span
                     data-content-role="metric"
@@ -146,8 +139,8 @@ function ImportResultDisplay({
             </div>
           ))}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -294,7 +287,7 @@ export default function BackupSettingsPage() {
   if (healthLoading || loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="size-8 animate-spin text-text-muted" />
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -304,14 +297,14 @@ export default function BackupSettingsPage() {
   }
 
   return (
-    <div className="p-6 max-w-4xl space-y-6">
+    <div className="p-6 space-y-6">
       {/* Header */}
       <div>
-        <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
           <Archive className="size-5" />
           Backup
         </h2>
-        <p className="text-sm text-text-muted mt-1">
+        <p className="text-sm text-muted-foreground mt-1">
           Export and restore your data
         </p>
       </div>
@@ -319,29 +312,29 @@ export default function BackupSettingsPage() {
       {/* ================================================================ */}
       {/* Your Data Summary */}
       {/* ================================================================ */}
-      <Card className="bg-surface-raised/30 border-border-subtle/50">
-        <CardHeader>
+      <div className="rounded-lg border border-border">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="text-sm flex items-center gap-2">
+              <h3 className="text-sm font-medium flex items-center gap-2">
                 <Database className="size-4" />
                 Your Data Summary
-              </CardTitle>
-              <CardDescription>
+              </h3>
+              <p className="text-xs text-muted-foreground">
                 Overview of all stored data categories
-              </CardDescription>
+              </p>
             </div>
             <Button
               variant="ghost"
               size="sm"
               onClick={loadSummary}
-              className="text-text-muted hover:text-text-primary"
+              className="text-muted-foreground hover:text-foreground"
             >
               <RefreshCw className="size-4" />
             </Button>
           </div>
-        </CardHeader>
-        <CardContent>
+        </div>
+        <div className="p-4">
           {summary ? (
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
               {ALL_CATEGORIES.map((key) => {
@@ -350,19 +343,19 @@ export default function BackupSettingsPage() {
                 return (
                   <div
                     key={key}
-                    className="flex flex-col items-center gap-1 p-2.5 rounded-lg bg-surface-canvas/30 border border-border-subtle/20"
+                    className="flex flex-col items-center gap-1 p-2.5 rounded-lg bg-background border border-border"
                   >
                     <span
                       data-content-role="metric"
                       data-content-label="category count"
-                      className="text-lg font-semibold text-text-primary"
+                      className="text-lg font-semibold text-foreground"
                     >
                       {count}
                     </span>
                     <span
                       data-content-role="label"
                       data-content-label="category name"
-                      className="text-[11px] text-text-muted text-center leading-tight"
+                      className="text-[11px] text-muted-foreground text-center leading-tight"
                     >
                       {CATEGORY_LABELS[key]}
                     </span>
@@ -371,29 +364,31 @@ export default function BackupSettingsPage() {
               })}
             </div>
           ) : (
-            <p className="text-sm text-text-muted text-center py-4">
+            <p className="text-sm text-muted-foreground text-center py-4">
               No data available
             </p>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* ================================================================ */}
       {/* Export All Data */}
       {/* ================================================================ */}
-      <Card className="bg-surface-raised/30 border-border-subtle/50">
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
+      <div className="rounded-lg border border-border">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
+          <h3 className="text-sm font-medium flex items-center gap-2">
             <Download className="size-4" />
             Export All Data
-          </CardTitle>
-          <CardDescription>Download a JSON backup of your data</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Download a JSON backup of your data
+          </p>
+        </div>
+        <div className="p-4 space-y-4">
           {/* Toggle export options */}
           <button
             onClick={() => setShowExportOptions(!showExportOptions)}
-            className="flex items-center gap-2 text-sm text-text-muted hover:text-text-primary transition-colors"
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             {showExportOptions ? (
               <ChevronUp className="size-4" />
@@ -405,11 +400,11 @@ export default function BackupSettingsPage() {
           </button>
 
           {showExportOptions && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3 rounded-lg bg-surface-canvas/20 border border-border-subtle/20">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3 rounded-lg bg-background border border-border">
               {ALL_CATEGORIES.map((key) => (
                 <label
                   key={key}
-                  className="flex items-center gap-2 text-xs text-text-primary cursor-pointer"
+                  className="flex items-center gap-2 text-xs text-foreground cursor-pointer"
                 >
                   <Switch
                     checked={exportOptions[key] ?? true}
@@ -436,26 +431,26 @@ export default function BackupSettingsPage() {
             )}
             Export ({selectedExportCount} items)
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* ================================================================ */}
       {/* Import Data */}
       {/* ================================================================ */}
-      <Card className="bg-surface-raised/30 border-border-subtle/50">
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
+      <div className="rounded-lg border border-border">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
+          <h3 className="text-sm font-medium flex items-center gap-2">
             <Upload className="size-4" />
             Import Data
-          </CardTitle>
-          <CardDescription>
+          </h3>
+          <p className="text-xs text-muted-foreground">
             Restore data from a previously exported JSON backup
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          </p>
+        </div>
+        <div className="p-4 space-y-4">
           {/* File input */}
           <div className="space-y-1.5">
-            <Label className="text-sm text-text-primary">Backup File</Label>
+            <Label className="text-sm text-foreground">Backup File</Label>
             <Input
               type="file"
               accept=".json"
@@ -463,19 +458,19 @@ export default function BackupSettingsPage() {
                 const file = e.target.files?.[0];
                 if (file) handleFileSelected(file);
               }}
-              className="bg-surface-raised/50 border-border-subtle/50 text-sm file:mr-3 file:rounded file:border-0 file:bg-brand-primary/10 file:px-3 file:py-1 file:text-xs file:text-brand-primary file:cursor-pointer"
+              className="bg-muted border-border text-sm file:mr-3 file:rounded file:border-0 file:bg-primary/10 file:px-3 file:py-1 file:text-xs file:text-primary file:cursor-pointer"
             />
           </div>
 
           {/* Import Preview */}
           {importPreview && (
-            <div className="space-y-4 p-4 rounded-lg bg-surface-canvas/20 border border-border-subtle/20">
+            <div className="space-y-4 p-4 rounded-lg bg-background border border-border">
               <div className="flex items-center gap-2">
-                <FileArchive className="size-4 text-text-muted" />
+                <FileArchive className="size-4 text-muted-foreground" />
                 <span
                   data-content-role="heading"
                   data-content-label="import preview"
-                  className="text-sm font-medium text-text-primary"
+                  className="text-sm font-medium text-foreground"
                 >
                   Import Preview
                 </span>
@@ -487,7 +482,7 @@ export default function BackupSettingsPage() {
                 importPreview.app_version ||
                 importPreview.created_at
               ) && (
-                <div className="flex flex-wrap gap-3 text-xs text-text-muted">
+                <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
                   {!!importPreview.version && (
                     <span
                       data-content-role="label"
@@ -520,7 +515,7 @@ export default function BackupSettingsPage() {
 
               {/* Conflict resolution */}
               <div className="space-y-1.5">
-                <Label className="text-xs text-text-muted">
+                <Label className="text-xs text-muted-foreground">
                   Conflict Resolution
                 </Label>
                 <div className="flex gap-2">
@@ -533,8 +528,8 @@ export default function BackupSettingsPage() {
                     }
                     className={`px-3 py-1.5 rounded text-xs transition-colors ${
                       importOptions.conflict_resolution === "skip"
-                        ? "bg-brand-primary/10 border border-brand-primary/30 text-brand-primary"
-                        : "bg-surface-canvas/30 border border-border-subtle/30 text-text-muted hover:text-text-primary"
+                        ? "bg-primary/10 border border-primary/30 text-primary"
+                        : "bg-background border border-border text-muted-foreground hover:text-foreground"
                     }`}
                   >
                     Skip existing
@@ -548,8 +543,8 @@ export default function BackupSettingsPage() {
                     }
                     className={`px-3 py-1.5 rounded text-xs transition-colors ${
                       importOptions.conflict_resolution === "overwrite"
-                        ? "bg-brand-primary/10 border border-brand-primary/30 text-brand-primary"
-                        : "bg-surface-canvas/30 border border-border-subtle/30 text-text-muted hover:text-text-primary"
+                        ? "bg-primary/10 border border-primary/30 text-primary"
+                        : "bg-background border border-border text-muted-foreground hover:text-foreground"
                     }`}
                   >
                     Overwrite
@@ -569,7 +564,9 @@ export default function BackupSettingsPage() {
                     <label
                       key={key}
                       className={`flex items-center gap-2 text-xs cursor-pointer ${
-                        inBackup ? "text-text-primary" : "text-text-muted/50"
+                        inBackup
+                          ? "text-foreground"
+                          : "text-muted-foreground/50"
                       }`}
                     >
                       <Switch
@@ -585,7 +582,7 @@ export default function BackupSettingsPage() {
                       <span>
                         {CATEGORY_LABELS[key]}
                         {inBackup && count > 0 && (
-                          <span className="text-text-muted ml-1">
+                          <span className="text-muted-foreground ml-1">
                             ({count})
                           </span>
                         )}
@@ -610,8 +607,8 @@ export default function BackupSettingsPage() {
               </Button>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* ================================================================ */}
       {/* Import Result */}

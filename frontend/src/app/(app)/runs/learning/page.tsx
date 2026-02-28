@@ -8,7 +8,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Lightbulb,
   RefreshCw,
   TrendingUp,
   TrendingDown,
@@ -212,29 +211,17 @@ export default function LearningPage() {
   }, [findingsData]);
 
   return (
-    <div className="h-full overflow-y-auto bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <Lightbulb className="size-6 text-yellow-400" />
-            <h1 className="text-2xl font-bold text-text-primary">
-              Learning Insights
-            </h1>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refetchRuns()}
-            className="border-border-default"
-          >
-            <RefreshCw className="size-4 mr-2" />
-            Refresh
-          </Button>
-        </div>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <h1 className="text-lg font-semibold">Learning Insights</h1>
+        <Button variant="outline" size="sm" onClick={() => refetchRuns()}>
+          <RefreshCw className="size-4 mr-2" />
+          Refresh
+        </Button>
       </header>
 
-      <main className="p-6 max-w-7xl mx-auto space-y-6">
-        <p className="text-text-muted">
+      <main className="flex-1 overflow-y-auto p-6 space-y-6">
+        <p className="text-muted-foreground text-sm">
           ML-style insights derived from task run patterns, iteration trends,
           and finding distributions.
         </p>
@@ -242,7 +229,7 @@ export default function LearningPage() {
         {isOffline && <RunnerPartialState />}
 
         {isLoading ? (
-          <div className="text-center py-16 text-text-muted">
+          <div className="text-center py-16 text-muted-foreground">
             <RefreshCw className="size-6 animate-spin mx-auto mb-3" />
             Analyzing patterns...
           </div>
@@ -251,14 +238,14 @@ export default function LearningPage() {
             Error: {runsError?.message ?? "Unknown error"}
           </div>
         ) : !runs || runs.length === 0 ? (
-          <Card className="bg-surface-raised/50 border-border-subtle/50">
+          <Card className="bg-muted border-border">
             <CardContent className="py-16">
-              <div className="text-center text-text-muted">
+              <div className="text-center text-muted-foreground">
                 <Inbox className="size-16 mx-auto mb-4" />
                 <h3
                   data-content-role="heading"
                   data-content-label="empty state title"
-                  className="text-lg font-medium text-text-secondary mb-2"
+                  className="text-lg font-medium text-muted-foreground mb-2"
                 >
                   No Data for Analysis
                 </h3>
@@ -273,10 +260,10 @@ export default function LearningPage() {
           <>
             {/* Iteration Trend */}
             {iterationTrend && iterationTrend.avgIterations > 0 && (
-              <Card className="bg-surface-raised/50 border-border-subtle/50">
+              <Card className="bg-muted border-border">
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
-                    <Repeat className="size-4 text-brand-primary" />
+                    <Repeat className="size-4 text-primary" />
                     Iteration Trend
                   </CardTitle>
                 </CardHeader>
@@ -286,14 +273,14 @@ export default function LearningPage() {
                       <div
                         data-content-role="metric"
                         data-content-label="average iterations"
-                        className="text-3xl font-bold text-text-primary"
+                        className="text-3xl font-bold text-foreground"
                       >
                         {iterationTrend.avgIterations.toFixed(1)}
                       </div>
                       <div
                         data-content-role="label"
                         data-content-label="average iterations label"
-                        className="text-xs text-text-muted mt-1"
+                        className="text-xs text-muted-foreground mt-1"
                       >
                         Avg Iterations / Run
                       </div>
@@ -305,7 +292,7 @@ export default function LearningPage() {
                         ) : iterationTrend.trend === "increasing" ? (
                           <TrendingUp className="size-5 text-red-500" />
                         ) : (
-                          <Minus className="size-5 text-text-muted" />
+                          <Minus className="size-5 text-muted-foreground" />
                         )}
                         <span
                           data-content-role="status"
@@ -315,7 +302,7 @@ export default function LearningPage() {
                               ? "text-green-500"
                               : iterationTrend.trend === "increasing"
                                 ? "text-red-500"
-                                : "text-text-secondary"
+                                : "text-muted-foreground"
                           }`}
                         >
                           {iterationTrend.trend === "stable"
@@ -325,14 +312,16 @@ export default function LearningPage() {
                               : "Increasing"}
                         </span>
                       </div>
-                      <div className="text-xs text-text-muted mt-1">Trend</div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Trend
+                      </div>
                     </div>
                     <div className="text-center">
-                      <div className="text-sm text-text-secondary">
+                      <div className="text-sm text-muted-foreground">
                         Recent: {iterationTrend.recentAvg.toFixed(1)} &middot;
                         Older: {iterationTrend.olderAvg.toFixed(1)}
                       </div>
-                      <div className="text-xs text-text-muted mt-1">
+                      <div className="text-xs text-muted-foreground mt-1">
                         Comparison (recent vs older half)
                       </div>
                     </div>
@@ -343,7 +332,7 @@ export default function LearningPage() {
 
             {/* Pattern Insights */}
             {insights.length > 0 && (
-              <Card className="bg-surface-raised/50 border-border-subtle/50">
+              <Card className="bg-muted border-border">
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
                     <Brain className="size-4 text-purple-400" />
@@ -360,7 +349,7 @@ export default function LearningPage() {
                             ? "bg-green-500/5 border-green-500/20"
                             : insight.type === "negative"
                               ? "bg-red-500/5 border-red-500/20"
-                              : "bg-surface-canvas/50 border-border-subtle/30"
+                              : "bg-background border-border"
                         }`}
                       >
                         <div className="flex items-center gap-2 mb-1.5">
@@ -369,17 +358,17 @@ export default function LearningPage() {
                           ) : insight.type === "negative" ? (
                             <AlertTriangle className="size-4 text-red-500" />
                           ) : (
-                            <BarChart3 className="size-4 text-text-muted" />
+                            <BarChart3 className="size-4 text-muted-foreground" />
                           )}
                           <span
                             data-content-role="label"
                             data-content-label="insight title"
-                            className="font-medium text-sm text-text-primary"
+                            className="font-medium text-sm text-foreground"
                           >
                             {insight.label}
                           </span>
                         </div>
-                        <p className="text-xs text-text-muted">
+                        <p className="text-xs text-muted-foreground">
                           {insight.description}
                         </p>
                       </div>
@@ -391,7 +380,7 @@ export default function LearningPage() {
 
             {/* Finding Categories */}
             {topCategories.length > 0 && (
-              <Card className="bg-surface-raised/50 border-border-subtle/50">
+              <Card className="bg-muted border-border">
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
                     <Tag className="size-4 text-yellow-500" />
@@ -411,7 +400,7 @@ export default function LearningPage() {
                             <span
                               data-content-role="label"
                               data-content-label="finding category"
-                              className="text-sm text-text-primary"
+                              className="text-sm text-foreground"
                             >
                               {category}
                             </span>
@@ -419,9 +408,9 @@ export default function LearningPage() {
                               {count as number}
                             </Badge>
                           </div>
-                          <div className="h-2 rounded-full bg-surface-canvas/50 overflow-hidden">
+                          <div className="h-2 rounded-full bg-background overflow-hidden">
                             <div
-                              className="h-full rounded-full bg-brand-primary/60 transition-all"
+                              className="h-full rounded-full bg-primary/60 transition-all"
                               style={{ width: `${percentage}%` }}
                             />
                           </div>
@@ -434,7 +423,7 @@ export default function LearningPage() {
             )}
 
             {/* Phase Distribution */}
-            <Card className="bg-surface-raised/50 border-border-subtle/50">
+            <Card className="bg-muted border-border">
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <Layers className="size-4 text-blue-400" />
@@ -457,7 +446,7 @@ export default function LearningPage() {
 
                   if (entries.length === 0) {
                     return (
-                      <p className="text-sm text-text-muted">
+                      <p className="text-sm text-muted-foreground">
                         No phase data available.
                       </p>
                     );
@@ -468,7 +457,7 @@ export default function LearningPage() {
                       {entries.map(([phase, count]) => (
                         <div
                           key={phase}
-                          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-canvas/50 border border-border-subtle/30"
+                          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-background border border-border"
                         >
                           <Badge variant="outline" className="text-xs">
                             {phase}
@@ -476,7 +465,7 @@ export default function LearningPage() {
                           <span
                             data-content-role="metric"
                             data-content-label="phase count"
-                            className="text-sm font-medium text-text-primary"
+                            className="text-sm font-medium text-foreground"
                           >
                             {count}
                           </span>

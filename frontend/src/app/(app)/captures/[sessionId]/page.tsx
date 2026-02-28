@@ -8,7 +8,6 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import {
-  ArrowLeft,
   Download,
   Camera,
   Loader2,
@@ -40,7 +39,6 @@ export default function CaptureViewerPage() {
   const [currentTimestamp, setCurrentTimestamp] = useState(0);
   const [, setIsPlaying] = useState(false);
 
-  // Screenshot save dialog state
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [capturedFrame, setCapturedFrame] = useState<string | null>(null);
   const [capturingFrame, setCapturingFrame] = useState(false);
@@ -49,11 +47,9 @@ export default function CaptureViewerPage() {
     try {
       setLoading(true);
 
-      // Fetch session with events
       const sessionData = await captureService.getSession(sessionId);
       setSession(sessionData);
 
-      // Fetch events separately for more control
       const eventData = await captureService.getSessionEvents(sessionId);
       setEvents(eventData);
     } catch (error: unknown) {
@@ -141,24 +137,21 @@ export default function CaptureViewerPage() {
 
   if (loading) {
     return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="flex justify-center items-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
+      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
 
   if (!session) {
     return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="text-center py-12">
+      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
+        <div className="text-center">
           <h2 className="text-xl font-semibold mb-2">Session not found</h2>
           <p className="text-muted-foreground mb-4">
             The capture session could not be loaded.
           </p>
           <Button onClick={() => router.push("/captures")}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Captures
           </Button>
         </div>
@@ -167,130 +160,113 @@ export default function CaptureViewerPage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      {/* Header */}
-      <div className="mb-6">
-        <Button
-          variant="ghost"
-          onClick={() => router.push("/captures")}
-          className="mb-4"
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Captures
-        </Button>
-
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <div className="flex items-center gap-3 mb-2">
-              <h1 className="text-3xl font-bold">{session.name}</h1>
-              <Badge
-                className={
-                  session.isComplete
-                    ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
-                    : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100"
-                }
-              >
-                {session.isComplete ? "Complete" : "In Progress"}
-              </Badge>
-            </div>
-            {session.notes && (
-              <p className="text-muted-foreground mb-2">{session.notes}</p>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <h1 className="text-lg font-semibold text-foreground truncate">
+            {session.name}
+          </h1>
+          <Badge
+            className={
+              session.isComplete
+                ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
+                : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100"
+            }
+          >
+            {session.isComplete ? "Complete" : "In Progress"}
+          </Badge>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-4 text-sm text-muted-foreground mr-4">
+            <span className="flex items-center gap-1">
+              <Monitor className="h-4 w-4" />
+              {session.videoWidth}x{session.videoHeight}
+            </span>
+            <span>{formatDuration(session.duration)}</span>
+            <span className="flex items-center gap-1">
+              <MousePointer className="h-4 w-4" />
+              {session.stats.mouseClicks}
+            </span>
+            <span className="flex items-center gap-1">
+              <Keyboard className="h-4 w-4" />
+              {session.stats.keyPresses}
+            </span>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleCaptureFrame}
+            disabled={capturingFrame}
+          >
+            {capturingFrame ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Camera className="mr-2 h-4 w-4" />
             )}
-            <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <Monitor className="h-4 w-4" />
-                {session.videoWidth}x{session.videoHeight}
-              </span>
-              <span>{formatDuration(session.duration)}</span>
-              <span>{session.stats.totalEvents} events</span>
-              <span className="flex items-center gap-1">
-                <MousePointer className="h-4 w-4" />
-                {session.stats.mouseClicks} clicks
-              </span>
-              <span className="flex items-center gap-1">
-                <Keyboard className="h-4 w-4" />
-                {session.stats.keyPresses} keys
-              </span>
+            Capture Frame
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleDownloadEvents}>
+            <Download className="mr-2 h-4 w-4" />
+            Export Events
+          </Button>
+        </div>
+      </header>
+
+      <main className="flex-1 overflow-y-auto p-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-4">
+            <Card className="p-4">
+              <VideoPlayer
+                videoUrl={captureService.getVideoUrl(sessionId)}
+                currentTimestamp={currentTimestamp}
+                onTimestampChange={handleTimestampChange}
+                onPlayingChange={setIsPlaying}
+              />
+            </Card>
+
+            <Card className="p-4">
+              <EventTimeline
+                events={events}
+                duration={session.duration}
+                currentTime={currentTimestamp}
+                onSeek={handleSeek}
+              />
+            </Card>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Card className="p-4 text-center">
+                <p className="text-2xl font-bold">
+                  {session.stats.mouseClicks}
+                </p>
+                <p className="text-xs text-muted-foreground">Clicks</p>
+              </Card>
+              <Card className="p-4 text-center">
+                <p className="text-2xl font-bold">{session.stats.keyPresses}</p>
+                <p className="text-xs text-muted-foreground">Key Presses</p>
+              </Card>
+              <Card className="p-4 text-center">
+                <p className="text-2xl font-bold">{session.stats.scrolls}</p>
+                <p className="text-xs text-muted-foreground">Scrolls</p>
+              </Card>
+              <Card className="p-4 text-center">
+                <p className="text-2xl font-bold">
+                  {session.stats.dragOperations}
+                </p>
+                <p className="text-xs text-muted-foreground">Drags</p>
+              </Card>
             </div>
           </div>
 
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={handleCaptureFrame}
-              disabled={capturingFrame}
-            >
-              {capturingFrame ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Camera className="mr-2 h-4 w-4" />
-              )}
-              Capture Frame
-            </Button>
-            <Button variant="outline" onClick={handleDownloadEvents}>
-              <Download className="mr-2 h-4 w-4" />
-              Export Events
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left: Video Player and Timeline */}
-        <div className="lg:col-span-2 space-y-4">
-          <Card className="p-4">
-            <VideoPlayer
-              videoUrl={captureService.getVideoUrl(sessionId)}
-              currentTimestamp={currentTimestamp}
-              onTimestampChange={handleTimestampChange}
-              onPlayingChange={setIsPlaying}
-            />
-          </Card>
-
-          <Card className="p-4">
-            <EventTimeline
+          <div className="lg:col-span-1">
+            <InputEventsSidePanel
               events={events}
-              duration={session.duration}
-              currentTime={currentTimestamp}
-              onSeek={handleSeek}
+              currentTimestamp={currentTimestamp}
+              onEventClick={handleEventClick}
             />
-          </Card>
-
-          {/* Quick Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Card className="p-4 text-center">
-              <p className="text-2xl font-bold">{session.stats.mouseClicks}</p>
-              <p className="text-xs text-muted-foreground">Clicks</p>
-            </Card>
-            <Card className="p-4 text-center">
-              <p className="text-2xl font-bold">{session.stats.keyPresses}</p>
-              <p className="text-xs text-muted-foreground">Key Presses</p>
-            </Card>
-            <Card className="p-4 text-center">
-              <p className="text-2xl font-bold">{session.stats.scrolls}</p>
-              <p className="text-xs text-muted-foreground">Scrolls</p>
-            </Card>
-            <Card className="p-4 text-center">
-              <p className="text-2xl font-bold">
-                {session.stats.dragOperations}
-              </p>
-              <p className="text-xs text-muted-foreground">Drags</p>
-            </Card>
           </div>
         </div>
+      </main>
 
-        {/* Right: Input Events Side Panel */}
-        <div className="lg:col-span-1">
-          <InputEventsSidePanel
-            events={events}
-            currentTimestamp={currentTimestamp}
-            onEventClick={handleEventClick}
-          />
-        </div>
-      </div>
-
-      {/* Save Screenshot Dialog */}
       <SaveScreenshotDialog
         open={showSaveDialog}
         onOpenChange={setShowSaveDialog}

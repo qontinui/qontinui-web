@@ -12,13 +12,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -98,7 +91,7 @@ export default function DebugSettingsPage() {
   if (healthLoading || loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="size-8 animate-spin text-text-muted" />
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -108,15 +101,15 @@ export default function DebugSettingsPage() {
   }
 
   return (
-    <div className="p-6 max-w-4xl space-y-6">
+    <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
             <FlaskConical className="size-5" />
             Debug
           </h2>
-          <p className="text-sm text-text-muted mt-1">
+          <p className="text-sm text-muted-foreground mt-1">
             Diagnostics, debug modes, and device information
           </p>
         </div>
@@ -136,26 +129,23 @@ export default function DebugSettingsPage() {
       </div>
 
       {/* Debug Settings */}
-      <Card className="bg-surface-raised/30 border-border-subtle/50">
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
+      <div className="rounded-lg border border-border">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
+          <h3 className="text-sm font-medium flex items-center gap-2">
             <FlaskConical className="size-4" />
             Debug
-          </CardTitle>
-          <CardDescription>
+          </h3>
+          <p className="text-xs text-muted-foreground">
             Image matching diagnostics and debug output
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          </p>
+        </div>
+        <div className="p-4 space-y-4">
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
-              <Label
-                htmlFor="image-debug"
-                className="text-sm text-text-primary"
-              >
+              <Label htmlFor="image-debug" className="text-sm text-foreground">
                 Enable Image Match Debug Mode
               </Label>
-              <p className="text-xs text-text-muted">
+              <p className="text-xs text-muted-foreground">
                 Save annotated screenshots showing match regions and confidence
                 scores
               </p>
@@ -168,10 +158,10 @@ export default function DebugSettingsPage() {
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="top-matches" className="text-sm text-text-primary">
+            <Label htmlFor="top-matches" className="text-sm text-foreground">
               Top Matches to Display
             </Label>
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-muted-foreground">
               Number of top match candidates to show in debug output (1-10)
             </p>
             <Input
@@ -186,7 +176,7 @@ export default function DebugSettingsPage() {
                   setTopMatchesCount(val);
                 }
               }}
-              className="w-24 bg-surface-canvas/50 border-border-subtle/50"
+              className="w-24 bg-background border-border"
             />
             <input
               type="range"
@@ -194,16 +184,16 @@ export default function DebugSettingsPage() {
               max={10}
               value={topMatchesCount}
               onChange={(e) => setTopMatchesCount(parseInt(e.target.value))}
-              className="w-full h-2 bg-surface-canvas/50 rounded-lg appearance-none cursor-pointer accent-brand-primary"
+              className="w-full h-2 bg-background rounded-lg appearance-none cursor-pointer accent-primary"
             />
           </div>
 
           <div className="flex items-start gap-2 p-3 rounded-md bg-blue-500/5 border border-blue-500/10">
             <Info className="size-4 text-blue-400 mt-0.5 shrink-0" />
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-muted-foreground">
               When image debug mode is enabled, the runner saves annotated
               screenshots to{" "}
-              <code className="text-text-primary bg-surface-canvas/50 px-1 py-0.5 rounded text-[11px]">
+              <code className="text-foreground bg-background px-1 py-0.5 rounded text-[11px]">
                 .dev-logs/screenshots/
               </code>{" "}
               showing bounding boxes and confidence scores for each match
@@ -211,21 +201,21 @@ export default function DebugSettingsPage() {
               but increases disk usage.
             </p>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Device Information */}
-      <Card className="bg-surface-raised/30 border-border-subtle/50">
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
+      <div className="rounded-lg border border-border">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
+          <h3 className="text-sm font-medium flex items-center gap-2">
             <Monitor className="size-4" />
             Device Information
-          </CardTitle>
-          <CardDescription>
+          </h3>
+          <p className="text-xs text-muted-foreground">
             Runner device identification details
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
+          </p>
+        </div>
+        <div className="p-4 space-y-3">
           {deviceInfo ? (
             <>
               <CopyableField
@@ -252,12 +242,12 @@ export default function DebugSettingsPage() {
               />
             </>
           ) : (
-            <p className="text-sm text-text-muted">
+            <p className="text-sm text-muted-foreground">
               Device information not available
             </p>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }
@@ -279,21 +269,21 @@ function CopyableField({
         <span
           data-content-role="label"
           data-content-label="field label"
-          className="text-xs text-text-muted block"
+          className="text-xs text-muted-foreground block"
         >
           {label}
         </span>
         <span
           data-content-role="body-text"
           data-content-label="field value"
-          className="text-sm text-text-primary font-mono truncate block"
+          className="text-sm text-foreground font-mono truncate block"
         >
           {value}
         </span>
       </div>
       <button
         onClick={onCopy}
-        className="p-1.5 rounded-md text-text-muted hover:text-text-primary hover:bg-surface-canvas/50 transition-colors shrink-0"
+        className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
         title={`Copy ${label}`}
       >
         {copied ? (

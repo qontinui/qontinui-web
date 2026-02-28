@@ -8,7 +8,6 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import {
-  HelpCircle,
   Rocket,
   BookOpen,
   Wrench,
@@ -19,8 +18,8 @@ import {
 
 function SectionItem({ children }: { children: React.ReactNode }) {
   return (
-    <li className="flex items-start gap-2 text-sm text-text-secondary">
-      <span className="mt-1.5 size-1.5 rounded-full bg-brand-primary/60 shrink-0" />
+    <li className="flex items-start gap-2 text-sm text-muted-foreground">
+      <span className="mt-1.5 size-1.5 rounded-full bg-primary/60 shrink-0" />
       <span>{children}</span>
     </li>
   );
@@ -35,8 +34,8 @@ function ShortcutRow({
 }) {
   return (
     <div className="flex items-center justify-between py-1.5">
-      <span className="text-sm text-text-secondary">{description}</span>
-      <kbd className="px-2 py-0.5 text-xs font-mono rounded bg-surface-hover border border-border-subtle text-text-muted">
+      <span className="text-sm text-muted-foreground">{description}</span>
+      <kbd className="px-2 py-0.5 text-xs font-mono rounded bg-muted border border-border text-muted-foreground">
         {keys}
       </kbd>
     </div>
@@ -45,21 +44,20 @@ function ShortcutRow({
 
 export default function HelpPage() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-      <main className="p-6 max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <HelpCircle className="size-8 text-brand-primary" />
-            <h2 className="text-3xl font-bold">Help &amp; Documentation</h2>
-          </div>
-          <p className="text-text-muted">Resources for using Qontinui</p>
-        </div>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+      {/* Header */}
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <h1 className="text-lg font-semibold">Help &amp; Documentation</h1>
+        <span className="text-sm text-muted-foreground">
+          Resources for using Qontinui
+        </span>
+      </header>
 
+      <main className="flex-1 overflow-y-auto p-6">
         {/* Cards Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Getting Started */}
-          <Card className="bg-surface-raised/30 border-border-subtle/50 backdrop-blur-sm">
+          <Card className="bg-background border-border">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Rocket className="size-5 text-green-400" />
@@ -79,7 +77,7 @@ export default function HelpPage() {
           </Card>
 
           {/* Key Concepts */}
-          <Card className="bg-surface-raised/30 border-border-subtle/50 backdrop-blur-sm">
+          <Card className="bg-background border-border">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <BookOpen className="size-5 text-blue-400" />
@@ -103,7 +101,7 @@ export default function HelpPage() {
           </Card>
 
           {/* Builder Reference */}
-          <Card className="bg-surface-raised/30 border-border-subtle/50 backdrop-blur-sm">
+          <Card className="bg-background border-border">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Wrench className="size-5 text-amber-400" />
@@ -128,7 +126,7 @@ export default function HelpPage() {
           </Card>
 
           {/* Settings Reference */}
-          <Card className="bg-surface-raised/30 border-border-subtle/50 backdrop-blur-sm">
+          <Card className="bg-background border-border">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Settings className="size-5 text-purple-400" />
@@ -151,10 +149,10 @@ export default function HelpPage() {
           </Card>
 
           {/* Resources */}
-          <Card className="bg-surface-raised/30 border-border-subtle/50 backdrop-blur-sm">
+          <Card className="bg-background border-border">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <ExternalLink className="size-5 text-brand-primary" />
+                <ExternalLink className="size-5 text-primary" />
                 Resources
               </CardTitle>
               <CardDescription>External links and references</CardDescription>
@@ -166,7 +164,7 @@ export default function HelpPage() {
                     href="https://github.com/qontinui/qontinui"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-2 text-sm text-text-secondary hover:text-brand-primary transition-colors"
+                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
                   >
                     <ExternalLink className="size-4 shrink-0" />
                     GitHub Repository (qontinui/qontinui)
@@ -177,7 +175,7 @@ export default function HelpPage() {
                     href="https://qontinui.github.io/multistate/"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-2 text-sm text-text-secondary hover:text-brand-primary transition-colors"
+                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
                   >
                     <ExternalLink className="size-4 shrink-0" />
                     Documentation Site
@@ -188,7 +186,7 @@ export default function HelpPage() {
                     href="https://github.com/qontinui/qontinui/issues"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-2 text-sm text-text-secondary hover:text-brand-primary transition-colors"
+                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
                   >
                     <ExternalLink className="size-4 shrink-0" />
                     Report Issues
@@ -199,10 +197,10 @@ export default function HelpPage() {
           </Card>
 
           {/* Keyboard Shortcuts */}
-          <Card className="bg-surface-raised/30 border-border-subtle/50 backdrop-blur-sm">
+          <Card className="bg-background border-border">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <Keyboard className="size-5 text-text-muted" />
+                <Keyboard className="size-5 text-muted-foreground" />
                 Keyboard Shortcuts
               </CardTitle>
               <CardDescription>

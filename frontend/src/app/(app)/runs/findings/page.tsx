@@ -19,7 +19,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  AlertTriangle,
   RefreshCw,
   ShieldAlert,
   ArrowUpCircle,
@@ -52,7 +51,7 @@ function getSeverityIcon(severity: string) {
     case "low":
       return <ArrowDownCircle className="size-4 text-blue-400" />;
     default:
-      return <Info className="size-4 text-text-muted" />;
+      return <Info className="size-4 text-muted-foreground" />;
   }
 }
 
@@ -188,73 +187,68 @@ export default function FindingsPage() {
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <AlertTriangle className="size-6 text-yellow-500" />
-            <h1 className="text-2xl font-bold text-text-primary">Findings</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant={autoFixEnabled ? "default" : "outline"}
-              size="sm"
-              onClick={() => {
-                setAutoFixEnabled(!autoFixEnabled);
-                toast.info(
-                  autoFixEnabled ? "Auto-fix disabled" : "Auto-fix enabled"
-                );
-              }}
-              className={
-                autoFixEnabled
-                  ? "bg-green-600 hover:bg-green-700"
-                  : "border-border-default"
-              }
-            >
-              <Wrench className="size-4 mr-1" />
-              Auto-Fix {autoFixEnabled ? "On" : "Off"}
-            </Button>
-            {data && data.total > 0 && (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleFixAll}
-                  disabled={isFixing}
-                >
-                  {isFixing ? (
-                    <Loader2 className="size-4 animate-spin mr-1" />
-                  ) : (
-                    <Wrench className="size-4 mr-1" />
-                  )}
-                  Fix All
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleClearAll}
-                  className="text-red-400 border-red-500/30"
-                >
-                  <Trash2 className="size-4 mr-1" />
-                  Clear All
-                </Button>
-              </>
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => refetch()}
-              className="border-border-default"
-            >
-              <RefreshCw className="size-4 mr-2" />
-              Refresh
-            </Button>
-          </div>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <h1 className="text-lg font-semibold">Findings</h1>
+        <div className="flex items-center gap-2">
+          <Button
+            variant={autoFixEnabled ? "default" : "outline"}
+            size="sm"
+            onClick={() => {
+              setAutoFixEnabled(!autoFixEnabled);
+              toast.info(
+                autoFixEnabled ? "Auto-fix disabled" : "Auto-fix enabled"
+              );
+            }}
+            className={
+              autoFixEnabled
+                ? "bg-green-600 hover:bg-green-700"
+                : "border-border"
+            }
+          >
+            <Wrench className="size-4 mr-1" />
+            Auto-Fix {autoFixEnabled ? "On" : "Off"}
+          </Button>
+          {data && data.total > 0 && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleFixAll}
+                disabled={isFixing}
+              >
+                {isFixing ? (
+                  <Loader2 className="size-4 animate-spin mr-1" />
+                ) : (
+                  <Wrench className="size-4 mr-1" />
+                )}
+                Fix All
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleClearAll}
+                className="text-red-400 border-red-500/30"
+              >
+                <Trash2 className="size-4 mr-1" />
+                Clear All
+              </Button>
+            </>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refetch()}
+            className="border-border"
+          >
+            <RefreshCw className="size-4 mr-2" />
+            Refresh
+          </Button>
         </div>
       </header>
 
-      <main className="p-6 max-w-7xl mx-auto space-y-6">
-        <p className="text-text-muted">
+      <main className="flex-1 overflow-y-auto p-6 space-y-6">
+        <p className="text-muted-foreground text-sm">
           Aggregated findings across all task runs, organized by severity and
           category.
         </p>
@@ -264,7 +258,7 @@ export default function FindingsPage() {
         )}
 
         {isLoading ? (
-          <div className="text-center py-16 text-text-muted">
+          <div className="text-center py-16 text-muted-foreground">
             <RefreshCw className="size-6 animate-spin mx-auto mb-3" />
             Loading findings...
           </div>
@@ -273,11 +267,11 @@ export default function FindingsPage() {
             Error loading findings: {error?.message ?? "Unknown error"}
           </div>
         ) : !data || data.total === 0 ? (
-          <Card className="bg-surface-raised/50 border-border-subtle/50">
+          <Card className="bg-muted">
             <CardContent className="py-16">
-              <div className="text-center text-text-muted">
+              <div className="text-center text-muted-foreground">
                 <Inbox className="size-16 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-text-secondary mb-2">
+                <h3 className="text-lg font-medium text-muted-foreground mb-2">
                   No Findings Yet
                 </h3>
                 <p className="text-sm">
@@ -291,17 +285,17 @@ export default function FindingsPage() {
           <>
             {/* Summary Cards */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              <Card className="bg-surface-raised/50 border-border-subtle/50">
+              <Card className="bg-muted">
                 <CardContent className="pt-6 text-center">
                   <div
-                    className="text-3xl font-bold text-text-primary"
+                    className="text-3xl font-bold text-foreground"
                     data-content-role="metric"
                     data-content-label="total-findings"
                   >
                     {data.total}
                   </div>
                   <div
-                    className="text-xs text-text-muted mt-1"
+                    className="text-xs text-muted-foreground mt-1"
                     data-content-role="label"
                   >
                     Total
@@ -317,10 +311,7 @@ export default function FindingsPage() {
                   low: "text-blue-400",
                 };
                 return (
-                  <Card
-                    key={severity}
-                    className="bg-surface-raised/50 border-border-subtle/50"
-                  >
+                  <Card key={severity} className="bg-muted">
                     <CardContent className="pt-6 text-center">
                       <div
                         className={`text-3xl font-bold ${colorMap[severity]}`}
@@ -330,7 +321,7 @@ export default function FindingsPage() {
                         {count}
                       </div>
                       <div
-                        className="text-xs text-text-muted mt-1 capitalize"
+                        className="text-xs text-muted-foreground mt-1 capitalize"
                         data-content-role="label"
                       >
                         {severity}
@@ -343,7 +334,7 @@ export default function FindingsPage() {
 
             {/* Category Breakdown */}
             {Object.keys(data.by_category).length > 0 && (
-              <Card className="bg-surface-raised/50 border-border-subtle/50">
+              <Card className="bg-muted">
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
                     <Tag className="size-4" />
@@ -357,7 +348,7 @@ export default function FindingsPage() {
                         <Badge
                           key={category}
                           variant="outline"
-                          className="cursor-pointer hover:bg-surface-raised/80"
+                          className="cursor-pointer hover:bg-muted"
                           onClick={() =>
                             setCategoryFilter(
                               categoryFilter === category ? "all" : category
@@ -376,7 +367,7 @@ export default function FindingsPage() {
             {/* Filters */}
             <div className="flex gap-4 flex-wrap">
               <Select value={severityFilter} onValueChange={setSeverityFilter}>
-                <SelectTrigger className="w-[160px] bg-surface-raised/50 border-border-default">
+                <SelectTrigger className="w-[160px] bg-muted">
                   <SelectValue placeholder="Severity" />
                 </SelectTrigger>
                 <SelectContent>
@@ -388,7 +379,7 @@ export default function FindingsPage() {
                 </SelectContent>
               </Select>
               <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-[200px] bg-surface-raised/50 border-border-default">
+                <SelectTrigger className="w-[200px] bg-muted">
                   <SelectValue placeholder="Category" />
                 </SelectTrigger>
                 <SelectContent>
@@ -413,7 +404,7 @@ export default function FindingsPage() {
                     variant={statusFilter === status ? "default" : "outline"}
                     size="sm"
                     onClick={() => setStatusFilter(status)}
-                    className={`text-xs ${statusFilter === status ? "bg-brand-primary text-black" : "border-border-default text-text-muted"}`}
+                    className={`text-xs ${statusFilter === status ? "bg-primary text-primary-foreground" : "border-border text-muted-foreground"}`}
                   >
                     {status === "all"
                       ? "All"
@@ -428,7 +419,7 @@ export default function FindingsPage() {
             {/* Findings List */}
             <div className="space-y-3">
               {filteredFindings.length === 0 ? (
-                <div className="text-center py-8 text-text-muted">
+                <div className="text-center py-8 text-muted-foreground">
                   No findings match the current filters.
                 </div>
               ) : (
@@ -437,7 +428,7 @@ export default function FindingsPage() {
                   return (
                     <Card
                       key={finding.id}
-                      className="bg-surface-raised/30 border-border-subtle/50 cursor-pointer transition-all hover:border-border-default"
+                      className="bg-muted/50 border-border cursor-pointer transition-all hover:bg-muted"
                       onClick={() =>
                         setExpandedFinding(isExpanded ? null : finding.id)
                       }
@@ -450,12 +441,12 @@ export default function FindingsPage() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               {isExpanded ? (
-                                <ChevronDown className="size-3.5 text-text-muted" />
+                                <ChevronDown className="size-3.5 text-muted-foreground" />
                               ) : (
-                                <ChevronRight className="size-3.5 text-text-muted" />
+                                <ChevronRight className="size-3.5 text-muted-foreground" />
                               )}
                               <span
-                                className="font-medium text-text-primary text-sm"
+                                className="font-medium text-foreground text-sm"
                                 data-content-role="label"
                                 data-content-label="finding-title"
                               >
@@ -469,15 +460,15 @@ export default function FindingsPage() {
                                 {finding.status}
                               </Badge>
                             </div>
-                            <p className="text-sm text-text-muted mt-1.5">
+                            <p className="text-sm text-muted-foreground mt-1.5">
                               {finding.description}
                             </p>
 
                             {isExpanded && (
-                              <div className="mt-3 space-y-3 border-t border-border-subtle/30 pt-3">
+                              <div className="mt-3 space-y-3 border-t border-border pt-3">
                                 {finding.file_path && (
-                                  <div className="bg-surface-canvas/50 rounded-lg p-3">
-                                    <div className="flex items-center gap-1.5 text-xs text-text-muted font-mono mb-1">
+                                  <div className="bg-background rounded-lg p-3">
+                                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-mono mb-1">
                                       <Code className="size-3" />
                                       {finding.file_path}
                                       {finding.line_number
@@ -487,7 +478,7 @@ export default function FindingsPage() {
                                   </div>
                                 )}
                                 <div className="flex items-center justify-between">
-                                  <div className="text-xs text-text-muted">
+                                  <div className="text-xs text-muted-foreground">
                                     Run #{finding.task_run_id} &middot;{" "}
                                     {new Date(
                                       finding.created_at
@@ -511,7 +502,7 @@ export default function FindingsPage() {
                             )}
 
                             {!isExpanded && finding.file_path && (
-                              <div className="flex items-center gap-1.5 mt-2 text-xs text-text-muted font-mono">
+                              <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground font-mono">
                                 <FileCode className="size-3" />
                                 {finding.file_path}
                                 {finding.line_number
@@ -520,7 +511,7 @@ export default function FindingsPage() {
                               </div>
                             )}
                             {!isExpanded && (
-                              <div className="text-xs text-text-muted mt-1.5">
+                              <div className="text-xs text-muted-foreground mt-1.5">
                                 Run #{finding.task_run_id} &middot;{" "}
                                 {new Date(finding.created_at).toLocaleString()}
                               </div>

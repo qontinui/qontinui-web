@@ -253,9 +253,12 @@ export default function VariablesPage() {
     <RequireProject pageName="Global Variables">
       {/* Error state */}
       {error ? (
-        <div className="container mx-auto py-8">
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-16">
+        <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+          <div className="flex items-center px-6 py-3 border-b border-border shrink-0">
+            <h1 className="text-lg font-semibold">Global Variables</h1>
+          </div>
+          <div className="flex-1 flex items-center justify-center p-6">
+            <div className="flex flex-col items-center">
               <AlertCircle className="h-12 w-12 text-destructive mb-4" />
               <h3 className="text-lg font-semibold mb-2">
                 Error Loading Variables
@@ -264,19 +267,14 @@ export default function VariablesPage() {
                 {error.message}
               </p>
               <Button onClick={() => refetch()}>Retry</Button>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
       ) : (
-        <div className="container mx-auto py-8 space-y-6">
+        <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
           {/* Header */}
-          <div className="flex items-start justify-between">
-            <div>
-              <h1 className="text-3xl font-bold">Global Variables</h1>
-              <p className="text-muted-foreground mt-1">
-                Manage variables shared across all workflows in this project
-              </p>
-            </div>
+          <div className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+            <h1 className="text-lg font-semibold">Global Variables</h1>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={handleImport}>
                 <Upload className="h-4 w-4 mr-2" />
@@ -291,176 +289,178 @@ export default function VariablesPage() {
                 <Download className="h-4 w-4 mr-2" />
                 Export
               </Button>
-              <Button onClick={handleCreateNew}>
+              <Button size="sm" onClick={handleCreateNew}>
                 <Plus className="h-4 w-4 mr-2" />
                 New Variable
               </Button>
             </div>
           </div>
 
-          {/* Info Card */}
-          <Card className="bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900">
-            <CardContent className="pt-6">
-              <div className="flex items-start gap-3">
-                <Info className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
-                    About Global Variables
-                  </p>
-                  <p className="text-sm text-blue-700 dark:text-blue-300">
-                    Global variables are accessible from all workflows in this
-                    project. Use them to store configuration values, API keys,
-                    or shared data. Variables support strings, numbers,
-                    booleans, and complex JSON objects/arrays.
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card>
-              <CardHeader className="pb-3">
-                <CardDescription>Total Variables</CardDescription>
-                <CardTitle className="text-3xl">{variables.length}</CardTitle>
-              </CardHeader>
-            </Card>
-            <Card>
-              <CardHeader className="pb-3">
-                <CardDescription>Strings</CardDescription>
-                <CardTitle className="text-3xl">
-                  {variables.filter((v) => v.type === "string").length}
-                </CardTitle>
-              </CardHeader>
-            </Card>
-            <Card>
-              <CardHeader className="pb-3">
-                <CardDescription>Numbers</CardDescription>
-                <CardTitle className="text-3xl">
-                  {variables.filter((v) => v.type === "number").length}
-                </CardTitle>
-              </CardHeader>
-            </Card>
-            <Card>
-              <CardHeader className="pb-3">
-                <CardDescription>Objects/Arrays</CardDescription>
-                <CardTitle className="text-3xl">
-                  {
-                    variables.filter(
-                      (v) => v.type === "object" || v.type === "array"
-                    ).length
-                  }
-                </CardTitle>
-              </CardHeader>
-            </Card>
-          </div>
-
-          {/* Search and actions */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search variables by name, type, or description..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-9"
-                  />
-                </div>
-                {selectedVariableIds.length > 0 && (
-                  <div className="flex items-center gap-2">
-                    <Badge variant="secondary">
-                      {selectedVariableIds.length} selected
-                    </Badge>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={handleBulkDelete}
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete Selected
-                    </Button>
+          <div className="flex-1 overflow-auto p-6 space-y-6">
+            {/* Info Card */}
+            <Card className="bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900">
+              <CardContent className="pt-6">
+                <div className="flex items-start gap-3">
+                  <Info className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                      About Global Variables
+                    </p>
+                    <p className="text-sm text-blue-700 dark:text-blue-300">
+                      Global variables are accessible from all workflows in this
+                      project. Use them to store configuration values, API keys,
+                      or shared data. Variables support strings, numbers,
+                      booleans, and complex JSON objects/arrays.
+                    </p>
                   </div>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              <VariableTable
-                variables={filteredVariables}
-                onEdit={handleEdit}
-                onDelete={handleDeleteSingle}
-                onDuplicate={handleDuplicate}
-                selectedVariables={selectedVariableIds}
-                onSelectionChange={setSelectedVariables}
-                isLoading={isLoading || isHydrating}
-              />
-            </CardContent>
-          </Card>
+                </div>
+              </CardContent>
+            </Card>
 
-          {/* Variable Editor Dialog */}
-          <VariableEditorDialog
-            open={editorOpen}
-            onOpenChange={setEditorOpen}
-            onSave={handleSave}
-            variable={editingVariable}
-            existingNames={variables.map((v) => v.name)}
-          />
+            {/* Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardDescription>Total Variables</CardDescription>
+                  <CardTitle className="text-3xl">{variables.length}</CardTitle>
+                </CardHeader>
+              </Card>
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardDescription>Strings</CardDescription>
+                  <CardTitle className="text-3xl">
+                    {variables.filter((v) => v.type === "string").length}
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardDescription>Numbers</CardDescription>
+                  <CardTitle className="text-3xl">
+                    {variables.filter((v) => v.type === "number").length}
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardDescription>Objects/Arrays</CardDescription>
+                  <CardTitle className="text-3xl">
+                    {
+                      variables.filter(
+                        (v) => v.type === "object" || v.type === "array"
+                      ).length
+                    }
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+            </div>
 
-          {/* Delete Single Confirmation */}
-          <AlertDialog
-            open={deleteDialogOpen}
-            onOpenChange={setDeleteDialogOpen}
-          >
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete Variable?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Are you sure you want to delete the variable &quot;
-                  {deletingVariable}&quot;? This action cannot be undone and may
-                  affect workflows that use this variable.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={confirmDeleteSingle}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                >
-                  Delete
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+            {/* Search and actions */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1 relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search variables by name, type, or description..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
+                  {selectedVariableIds.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary">
+                        {selectedVariableIds.length} selected
+                      </Badge>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={handleBulkDelete}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete Selected
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent>
+                <VariableTable
+                  variables={filteredVariables}
+                  onEdit={handleEdit}
+                  onDelete={handleDeleteSingle}
+                  onDuplicate={handleDuplicate}
+                  selectedVariables={selectedVariableIds}
+                  onSelectionChange={setSelectedVariables}
+                  isLoading={isLoading || isHydrating}
+                />
+              </CardContent>
+            </Card>
 
-          {/* Bulk Delete Confirmation */}
-          <AlertDialog
-            open={bulkDeleteDialogOpen}
-            onOpenChange={setBulkDeleteDialogOpen}
-          >
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>
-                  Delete {selectedVariableIds.length} Variables?
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  Are you sure you want to delete {selectedVariableIds.length}{" "}
-                  selected variable(s)? This action cannot be undone and may
-                  affect workflows that use these variables.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={confirmBulkDelete}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                >
-                  Delete All
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+            {/* Variable Editor Dialog */}
+            <VariableEditorDialog
+              open={editorOpen}
+              onOpenChange={setEditorOpen}
+              onSave={handleSave}
+              variable={editingVariable}
+              existingNames={variables.map((v) => v.name)}
+            />
+
+            {/* Delete Single Confirmation */}
+            <AlertDialog
+              open={deleteDialogOpen}
+              onOpenChange={setDeleteDialogOpen}
+            >
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete Variable?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Are you sure you want to delete the variable &quot;
+                    {deletingVariable}&quot;? This action cannot be undone and
+                    may affect workflows that use this variable.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={confirmDeleteSingle}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+
+            {/* Bulk Delete Confirmation */}
+            <AlertDialog
+              open={bulkDeleteDialogOpen}
+              onOpenChange={setBulkDeleteDialogOpen}
+            >
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>
+                    Delete {selectedVariableIds.length} Variables?
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Are you sure you want to delete {selectedVariableIds.length}{" "}
+                    selected variable(s)? This action cannot be undone and may
+                    affect workflows that use these variables.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={confirmBulkDelete}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Delete All
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
         </div>
       )}
     </RequireProject>

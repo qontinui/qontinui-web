@@ -10,13 +10,6 @@ import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
 import { toast } from "sonner";
 import { Loader2, Save, Settings, FileText, Wrench, Info } from "lucide-react";
 
@@ -72,7 +65,7 @@ export default function GeneralSettingsPage() {
   if (healthLoading || loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="size-8 animate-spin text-text-muted" />
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -82,15 +75,15 @@ export default function GeneralSettingsPage() {
   }
 
   return (
-    <div className="p-6 max-w-4xl space-y-6">
+    <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
             <Settings className="size-5" />
             General
           </h2>
-          <p className="text-sm text-text-muted mt-1">
+          <p className="text-sm text-muted-foreground mt-1">
             Application preferences and default behaviors
           </p>
         </div>
@@ -110,21 +103,23 @@ export default function GeneralSettingsPage() {
       </div>
 
       {/* Application Section */}
-      <Card className="bg-surface-raised/30 border-border-subtle/50">
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
+      <div className="rounded-lg border border-border">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
+          <h3 className="text-sm font-medium flex items-center gap-2">
             <Wrench className="size-4" />
             Application
-          </CardTitle>
-          <CardDescription>Startup and loading behavior</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Startup and loading behavior
+          </p>
+        </div>
+        <div className="p-4 space-y-4">
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
-              <Label htmlFor="auto-load" className="text-sm text-text-primary">
+              <Label htmlFor="auto-load" className="text-sm text-foreground">
                 Auto-load Last Configuration
               </Label>
-              <p className="text-xs text-text-muted">
+              <p className="text-xs text-muted-foreground">
                 Automatically load the last used configuration when the runner
                 starts
               </p>
@@ -138,34 +133,36 @@ export default function GeneralSettingsPage() {
 
           <div className="flex items-start gap-2 p-3 rounded-md bg-blue-500/5 border border-blue-500/10">
             <Info className="size-4 text-blue-400 mt-0.5 shrink-0" />
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-muted-foreground">
               When enabled, the runner will restore your previous GUI automation
               configuration on startup, saving you from manually loading it each
               time.
             </p>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Workflow Builder Section */}
-      <Card className="bg-surface-raised/30 border-border-subtle/50">
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
+      <div className="rounded-lg border border-border">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
+          <h3 className="text-sm font-medium flex items-center gap-2">
             <FileText className="size-4" />
             Workflow Builder
-          </CardTitle>
-          <CardDescription>Default settings for new workflows</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Default settings for new workflows
+          </p>
+        </div>
+        <div className="p-4 space-y-4">
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
               <Label
                 htmlFor="include-summary"
-                className="text-sm text-text-primary"
+                className="text-sm text-foreground"
               >
                 Include AI Summary in New Workflows
               </Label>
-              <p className="text-xs text-text-muted">
+              <p className="text-xs text-muted-foreground">
                 Add a summary generation step to new workflows by default
               </p>
             </div>
@@ -178,14 +175,14 @@ export default function GeneralSettingsPage() {
 
           <div className="flex items-start gap-2 p-3 rounded-md bg-blue-500/5 border border-blue-500/10">
             <Info className="size-4 text-blue-400 mt-0.5 shrink-0" />
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-muted-foreground">
               AI summaries provide a concise overview of each workflow run,
               including key findings and outcomes. You can always toggle this
               per workflow.
             </p>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

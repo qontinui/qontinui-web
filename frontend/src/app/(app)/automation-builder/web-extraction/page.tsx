@@ -31,8 +31,8 @@ export default function WebExtractionPage() {
   return (
     <div className="flex items-center justify-center h-full">
       <div className="flex flex-col items-center gap-4">
-        <Loader2 className="h-8 w-8 animate-spin text-brand-primary" />
-        <p className="text-sm text-text-muted font-mono">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground font-mono">
           Redirecting to unified Extraction page...
         </p>
       </div>

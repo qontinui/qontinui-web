@@ -6,6 +6,7 @@ import type { PlaywrightResult } from "@/lib/runner-api";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   TestTube2,
@@ -29,7 +30,7 @@ function getRunStatusIcon(status: string) {
     case "running":
       return <RefreshCw className="size-4 text-blue-500 animate-spin" />;
     default:
-      return <Clock className="size-4 text-text-muted" />;
+      return <Clock className="size-4 text-muted-foreground" />;
   }
 }
 
@@ -42,7 +43,7 @@ function getSpecStatusIcon(status: string) {
     case "skipped":
       return <MinusCircle className="size-5 text-gray-400" />;
     default:
-      return <Clock className="size-5 text-text-muted" />;
+      return <Clock className="size-5 text-muted-foreground" />;
   }
 }
 
@@ -81,25 +82,25 @@ function SummaryBar({ results }: { results: PlaywrightResult[] }) {
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
-      <Card className="bg-surface-raised/50 border-border-subtle/50">
+      <Card className="bg-muted border-border">
         <CardContent className="pt-4 pb-3 text-center">
           <div
             data-content-role="metric"
             data-content-label="total specs"
-            className="text-2xl font-bold text-text-primary"
+            className="text-2xl font-bold text-foreground"
           >
             {total}
           </div>
           <div
             data-content-role="label"
             data-content-label="total specs label"
-            className="text-xs text-text-muted mt-0.5"
+            className="text-xs text-muted-foreground mt-0.5"
           >
             Total Specs
           </div>
         </CardContent>
       </Card>
-      <Card className="bg-surface-raised/50 border-border-subtle/50">
+      <Card className="bg-muted border-border">
         <CardContent className="pt-4 pb-3 text-center">
           <div
             data-content-role="metric"
@@ -111,13 +112,13 @@ function SummaryBar({ results }: { results: PlaywrightResult[] }) {
           <div
             data-content-role="label"
             data-content-label="passed label"
-            className="text-xs text-text-muted mt-0.5"
+            className="text-xs text-muted-foreground mt-0.5"
           >
             Passed
           </div>
         </CardContent>
       </Card>
-      <Card className="bg-surface-raised/50 border-border-subtle/50">
+      <Card className="bg-muted border-border">
         <CardContent className="pt-4 pb-3 text-center">
           <div
             data-content-role="metric"
@@ -129,13 +130,13 @@ function SummaryBar({ results }: { results: PlaywrightResult[] }) {
           <div
             data-content-role="label"
             data-content-label="failed label"
-            className="text-xs text-text-muted mt-0.5"
+            className="text-xs text-muted-foreground mt-0.5"
           >
             Failed
           </div>
         </CardContent>
       </Card>
-      <Card className="bg-surface-raised/50 border-border-subtle/50">
+      <Card className="bg-muted border-border">
         <CardContent className="pt-4 pb-3 text-center">
           <div
             data-content-role="metric"
@@ -147,25 +148,25 @@ function SummaryBar({ results }: { results: PlaywrightResult[] }) {
           <div
             data-content-role="label"
             data-content-label="skipped label"
-            className="text-xs text-text-muted mt-0.5"
+            className="text-xs text-muted-foreground mt-0.5"
           >
             Skipped
           </div>
         </CardContent>
       </Card>
-      <Card className="bg-surface-raised/50 border-border-subtle/50">
+      <Card className="bg-muted border-border">
         <CardContent className="pt-4 pb-3 text-center">
           <div
             data-content-role="metric"
             data-content-label="total duration"
-            className="text-2xl font-bold text-text-primary"
+            className="text-2xl font-bold text-foreground"
           >
             {formatDuration(totalDuration)}
           </div>
           <div
             data-content-role="label"
             data-content-label="total time label"
-            className="text-xs text-text-muted mt-0.5"
+            className="text-xs text-muted-foreground mt-0.5"
           >
             Total Time
           </div>
@@ -183,8 +184,8 @@ function SpecResultCard({ result }: { result: PlaywrightResult }) {
 
   return (
     <Card
-      className={`bg-surface-raised/30 border-border-subtle/50 transition-all ${
-        isExpandable ? "cursor-pointer hover:border-border-default" : ""
+      className={`bg-muted/50 border-border transition-all ${
+        isExpandable ? "cursor-pointer hover:bg-muted" : ""
       }`}
       onClick={() => {
         if (isExpandable) setExpanded(!expanded);
@@ -197,14 +198,14 @@ function SpecResultCard({ result }: { result: PlaywrightResult }) {
             <div className="flex items-center gap-2">
               {isExpandable &&
                 (expanded ? (
-                  <ChevronDown className="size-3.5 text-text-muted shrink-0" />
+                  <ChevronDown className="size-3.5 text-muted-foreground shrink-0" />
                 ) : (
-                  <ChevronRight className="size-3.5 text-text-muted shrink-0" />
+                  <ChevronRight className="size-3.5 text-muted-foreground shrink-0" />
                 ))}
               <span
                 data-content-role="label"
                 data-content-label="test name"
-                className="text-sm font-medium text-text-primary truncate"
+                className="text-sm font-medium text-foreground truncate"
               >
                 {result.test_name}
               </span>
@@ -215,7 +216,7 @@ function SpecResultCard({ result }: { result: PlaywrightResult }) {
               <span
                 data-content-role="metric"
                 data-content-label="test duration"
-                className="text-xs text-text-muted flex items-center gap-1"
+                className="text-xs text-muted-foreground flex items-center gap-1"
               >
                 <Clock className="size-3" />
                 {formatDuration(result.duration_ms)}
@@ -241,7 +242,7 @@ function SpecResultCard({ result }: { result: PlaywrightResult }) {
         </div>
 
         {expanded && (
-          <div className="mt-3 space-y-3 border-t border-border-subtle/30 pt-3">
+          <div className="mt-3 space-y-3 border-t border-border pt-3">
             {hasError && (
               <div>
                 <div
@@ -261,11 +262,11 @@ function SpecResultCard({ result }: { result: PlaywrightResult }) {
                 <div
                   data-content-role="label"
                   data-content-label="console output heading"
-                  className="text-xs font-medium text-text-muted mb-1"
+                  className="text-xs font-medium text-muted-foreground mb-1"
                 >
                   Console Output
                 </div>
-                <pre className="text-xs font-mono text-text-secondary bg-surface-canvas/50 border border-border-subtle/30 rounded-md p-3 overflow-x-auto max-h-60 overflow-y-auto whitespace-pre-wrap break-words">
+                <pre className="text-xs font-mono text-muted-foreground bg-background border border-border rounded-md p-3 overflow-x-auto max-h-60 overflow-y-auto whitespace-pre-wrap break-words">
                   {result.console_output}
                 </pre>
               </div>
@@ -297,37 +298,27 @@ export default function TestResultsPage() {
   } = useTaskRunPlaywright(selectedRunId);
 
   return (
-    <div className="h-full overflow-y-auto bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <TestTube2 className="size-6 text-purple-400" />
-            <h1 className="text-2xl font-bold text-text-primary">
-              Test Results
-            </h1>
-          </div>
-          <button
-            onClick={() => refetch()}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm border border-border-default rounded-md hover:bg-surface-raised/30 transition-colors text-text-secondary"
-          >
-            <RefreshCw className="size-4" />
-            Refresh
-          </button>
-        </div>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <h1 className="text-lg font-semibold">Test Results</h1>
+        <Button variant="outline" size="sm" onClick={() => refetch()}>
+          <RefreshCw className="size-4 mr-2" />
+          Refresh
+        </Button>
       </header>
 
       {isOffline && (
         <RunnerPartialState message="Runner offline — live data unavailable" />
       )}
 
-      <main className="p-6 max-w-7xl mx-auto">
-        <p className="text-text-muted mb-6">
+      <main className="flex-1 overflow-y-auto p-6">
+        <p className="text-muted-foreground text-sm mb-6">
           Browse Playwright test results from task runs. Select a run to view
           its test specs and outcomes.
         </p>
 
         {runsLoading ? (
-          <div className="text-center py-16 text-text-muted">
+          <div className="text-center py-16 text-muted-foreground">
             <RefreshCw className="size-6 animate-spin mx-auto mb-3" />
             Loading runs...
           </div>
@@ -336,14 +327,14 @@ export default function TestResultsPage() {
             Error loading runs: {runsError}
           </div>
         ) : runs.length === 0 ? (
-          <Card className="bg-surface-raised/50 border-border-subtle/50">
+          <Card className="bg-muted border-border">
             <CardContent className="py-16">
-              <div className="text-center text-text-muted">
+              <div className="text-center text-muted-foreground">
                 <Inbox className="size-16 mx-auto mb-4" />
                 <h3
                   data-content-role="heading"
                   data-content-label="empty state title"
-                  className="text-lg font-medium text-text-secondary mb-2"
+                  className="text-lg font-medium text-muted-foreground mb-2"
                 >
                   No Runs Available
                 </h3>
@@ -358,7 +349,7 @@ export default function TestResultsPage() {
           <div className="flex gap-6">
             {/* Left Panel - Run List */}
             <div className="w-[250px] shrink-0">
-              <Card className="bg-surface-raised/50 border-border-subtle/50">
+              <Card className="bg-muted border-border">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base flex items-center gap-2">
                     <Layers className="size-4" />
@@ -372,26 +363,26 @@ export default function TestResultsPage() {
                         <button
                           key={run.id}
                           onClick={() => setSelectedRunId(run.id)}
-                          className={`w-full text-left px-4 py-3 hover:bg-surface-raised/30 transition-colors flex items-center gap-3 ${
+                          className={`w-full text-left px-4 py-3 hover:bg-muted/50 transition-colors flex items-center gap-3 ${
                             selectedRunId === run.id
-                              ? "bg-surface-raised/50 border-l-2 border-brand-primary"
+                              ? "bg-muted border-l-2 border-primary"
                               : "border-l-2 border-transparent"
                           }`}
                         >
                           {getRunStatusIcon(run.status)}
                           <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium text-text-primary truncate">
+                            <div className="text-sm font-medium text-foreground truncate">
                               {run.task_name}
                             </div>
-                            <div className="text-xs text-text-muted mt-0.5">
+                            <div className="text-xs text-muted-foreground mt-0.5">
                               {formatDateTime(run.created_at)}
                             </div>
                           </div>
                           <ChevronRight
                             className={`size-4 shrink-0 transition-colors ${
                               selectedRunId === run.id
-                                ? "text-brand-primary"
-                                : "text-text-muted"
+                                ? "text-primary"
+                                : "text-muted-foreground"
                             }`}
                           />
                         </button>
@@ -405,14 +396,14 @@ export default function TestResultsPage() {
             {/* Right Panel - Playwright Results */}
             <div className="flex-1 min-w-0">
               {selectedRunId == null ? (
-                <Card className="bg-surface-raised/50 border-border-subtle/50">
+                <Card className="bg-muted border-border">
                   <CardContent className="py-20">
-                    <div className="text-center text-text-muted">
+                    <div className="text-center text-muted-foreground">
                       <TestTube2 className="size-12 mx-auto mb-4" />
                       <h3
                         data-content-role="heading"
                         data-content-label="empty state title"
-                        className="text-lg font-medium text-text-secondary mb-2"
+                        className="text-lg font-medium text-muted-foreground mb-2"
                       >
                         Select a Run
                       </h3>
@@ -424,16 +415,16 @@ export default function TestResultsPage() {
                   </CardContent>
                 </Card>
               ) : resultsLoading ? (
-                <Card className="bg-surface-raised/50 border-border-subtle/50">
+                <Card className="bg-muted border-border">
                   <CardContent className="py-20">
-                    <div className="text-center text-text-muted">
+                    <div className="text-center text-muted-foreground">
                       <RefreshCw className="size-5 animate-spin mx-auto mb-2" />
                       Loading test results...
                     </div>
                   </CardContent>
                 </Card>
               ) : resultsError ? (
-                <Card className="bg-surface-raised/50 border-border-subtle/50">
+                <Card className="bg-muted border-border">
                   <CardContent className="py-20">
                     <div className="text-center text-red-400">
                       Error loading results: {resultsError}
@@ -441,14 +432,14 @@ export default function TestResultsPage() {
                   </CardContent>
                 </Card>
               ) : !playwrightResults || playwrightResults.length === 0 ? (
-                <Card className="bg-surface-raised/50 border-border-subtle/50">
+                <Card className="bg-muted border-border">
                   <CardContent className="py-20">
-                    <div className="text-center text-text-muted">
+                    <div className="text-center text-muted-foreground">
                       <TestTube2 className="size-12 mx-auto mb-4" />
                       <h3
                         data-content-role="heading"
                         data-content-label="empty state title"
-                        className="text-lg font-medium text-text-secondary mb-2"
+                        className="text-lg font-medium text-muted-foreground mb-2"
                       >
                         No Test Results
                       </h3>
@@ -462,7 +453,7 @@ export default function TestResultsPage() {
                 <div>
                   <SummaryBar results={playwrightResults} />
 
-                  <Card className="bg-surface-raised/50 border-border-subtle/50">
+                  <Card className="bg-muted border-border">
                     <CardHeader>
                       <CardTitle className="text-base flex items-center gap-2">
                         <TestTube2 className="size-4 text-purple-400" />

@@ -229,24 +229,24 @@ export default function LogSourcesPage() {
 
   if (healthLoading || settingsLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-text-muted" />
+      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   if (isOffline) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-        <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-          <div className="flex items-center px-6 py-4">
-            <FileText className="w-6 h-6 text-emerald-400 mr-3" />
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-emerald-400 to-green-400 bg-clip-text text-transparent">
+      <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden text-white">
+        <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+          <div className="flex items-center gap-3">
+            <FileText className="w-5 h-5 text-emerald-400" />
+            <h1 className="text-lg font-semibold text-foreground">
               Log Sources
             </h1>
           </div>
         </header>
-        <main className="p-6 max-w-4xl mx-auto">
+        <main className="flex-1 overflow-y-auto p-6 max-w-4xl mx-auto w-full">
           <RunnerOfflineState message="Start the Qontinui Runner desktop app to configure log sources." />
         </main>
       </div>
@@ -255,17 +255,17 @@ export default function LogSourcesPage() {
 
   if (settingsError || !current) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-        <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-          <div className="flex items-center px-6 py-4">
-            <FileText className="w-6 h-6 text-emerald-400 mr-3" />
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-emerald-400 to-green-400 bg-clip-text text-transparent">
+      <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden text-white">
+        <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+          <div className="flex items-center gap-3">
+            <FileText className="w-5 h-5 text-emerald-400" />
+            <h1 className="text-lg font-semibold text-foreground">
               Log Sources
             </h1>
           </div>
         </header>
-        <main className="p-6 max-w-4xl mx-auto">
-          <div className="text-center py-12 text-text-muted">
+        <main className="flex-1 overflow-y-auto p-6 max-w-4xl mx-auto w-full">
+          <div className="text-center py-12 text-muted-foreground">
             Failed to load log source settings. Make sure the runner is running.
           </div>
         </main>
@@ -274,90 +274,85 @@ export default function LogSourcesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
-      {/* Header */}
-      <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <FileText className="w-6 h-6 text-emerald-400" />
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-emerald-400 to-green-400 bg-clip-text text-transparent">
-              Log Sources
-            </h1>
-          </div>
-          <div className="flex items-center gap-2">
-            {saveMessage && (
-              <span
-                className={`text-xs px-2 py-1 rounded ${
-                  saveMessage.type === "success"
-                    ? "bg-green-500/20 text-green-400"
-                    : "bg-red-500/20 text-red-400"
-                }`}
-              >
-                {saveMessage.text}
-              </span>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden text-white">
+      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <div className="flex items-center gap-3">
+          <FileText className="w-5 h-5 text-emerald-400" />
+          <h1 className="text-lg font-semibold text-foreground">Log Sources</h1>
+        </div>
+        <div className="flex items-center gap-2">
+          {saveMessage && (
+            <span
+              className={`text-xs px-2 py-1 rounded ${
+                saveMessage.type === "success"
+                  ? "bg-green-500/20 text-green-400"
+                  : "bg-red-500/20 text-red-400"
+              }`}
+            >
+              {saveMessage.text}
+            </span>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleMigrate}
+            className="text-muted-foreground hover:text-white text-xs"
+          >
+            <Copy className="w-3.5 h-3.5 mr-1.5" />
+            Import from Projects
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              refetch();
+              setSettings(null);
+              setDirty(false);
+            }}
+            className="text-muted-foreground hover:text-white"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </Button>
+          <Button
+            onClick={handleSave}
+            disabled={saving || !dirty}
+            className="bg-primary hover:bg-primary/90 text-black font-semibold disabled:opacity-50"
+          >
+            {saving ? (
+              <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+            ) : (
+              <Save className="w-4 h-4 mr-2" />
             )}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleMigrate}
-              className="text-text-muted hover:text-white text-xs"
-            >
-              <Copy className="w-3.5 h-3.5 mr-1.5" />
-              Import from Projects
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                refetch();
-                setSettings(null);
-                setDirty(false);
-              }}
-              className="text-text-muted hover:text-white"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={saving || !dirty}
-              className="bg-brand-primary hover:bg-brand-primary/90 text-black font-semibold disabled:opacity-50"
-            >
-              {saving ? (
-                <RefreshCw className="w-4 h-4 animate-spin mr-2" />
-              ) : (
-                <Save className="w-4 h-4 mr-2" />
-              )}
-              Save Changes
-            </Button>
-          </div>
+            Save Changes
+          </Button>
         </div>
       </header>
 
-      <main className="p-6 max-w-4xl mx-auto space-y-4">
-        <p className="text-sm text-text-muted">
+      <main className="flex-1 overflow-y-auto p-6 max-w-4xl mx-auto space-y-4 w-full">
+        <p className="text-sm text-muted-foreground">
           Configure global log sources shared across all projects. Use profiles
           to group sources for different workflows, or let AI automatically
           select relevant sources.
         </p>
 
         {/* AI Source Selection */}
-        <div className="rounded-lg bg-surface-raised/30 border border-border-subtle/30 p-4">
+        <div className="rounded-lg bg-muted/50 border border-border p-4">
           <button
             onClick={() => toggleSection("aiSettings")}
             className="flex items-center gap-2 w-full text-left"
           >
             {expandedSections.aiSettings ? (
-              <ChevronDown className="w-4 h-4 text-text-muted" />
+              <ChevronDown className="w-4 h-4 text-muted-foreground" />
             ) : (
-              <ChevronRight className="w-4 h-4 text-text-muted" />
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
             )}
-            <Sparkles className="w-4 h-4 text-brand-primary" />
+            <Sparkles className="w-4 h-4 text-primary" />
             <span className="font-medium text-sm">AI Source Selection</span>
           </button>
 
           {expandedSections.aiSettings && (
             <div className="mt-4 space-y-3 pl-6">
-              <p className="text-xs text-text-muted">
+              <p className="text-xs text-muted-foreground">
                 Let AI automatically select relevant log sources based on your
                 task description.
               </p>
@@ -385,8 +380,8 @@ export default function LogSourcesPage() {
                     key={mode.value}
                     className={`flex items-center gap-3 p-2 rounded-md cursor-pointer transition-colors ${
                       current.ai_selection_mode === mode.value
-                        ? "bg-brand-primary/10 border border-brand-primary/20"
-                        : "hover:bg-surface-raised/50 border border-transparent"
+                        ? "bg-primary/10 border border-primary/20"
+                        : "hover:bg-muted border border-transparent"
                     }`}
                   >
                     <input
@@ -398,7 +393,9 @@ export default function LogSourcesPage() {
                     />
                     <div>
                       <div className="text-sm font-medium">{mode.label}</div>
-                      <div className="text-xs text-text-muted">{mode.desc}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {mode.desc}
+                      </div>
                     </div>
                   </label>
                 ))}
@@ -408,16 +405,16 @@ export default function LogSourcesPage() {
         </div>
 
         {/* Log Sources Section */}
-        <div className="rounded-lg bg-surface-raised/30 border border-border-subtle/30 p-4">
+        <div className="rounded-lg bg-muted/50 border border-border p-4">
           <div className="flex items-center justify-between">
             <button
               onClick={() => toggleSection("sources")}
               className="flex items-center gap-2 text-left"
             >
               {expandedSections.sources ? (
-                <ChevronDown className="w-4 h-4 text-text-muted" />
+                <ChevronDown className="w-4 h-4 text-muted-foreground" />
               ) : (
-                <ChevronRight className="w-4 h-4 text-text-muted" />
+                <ChevronRight className="w-4 h-4 text-muted-foreground" />
               )}
               <span className="font-medium text-sm">
                 Log Sources ({current.sources.length})
@@ -425,7 +422,7 @@ export default function LogSourcesPage() {
             </button>
             <button
               onClick={() => setShowAddSource(true)}
-              className="flex items-center gap-1 px-2 py-1 text-xs bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary rounded transition-colors"
+              className="flex items-center gap-1 px-2 py-1 text-xs bg-primary/10 hover:bg-primary/20 text-primary rounded transition-colors"
             >
               <Plus className="w-3.5 h-3.5" />
               Add Source
@@ -435,7 +432,7 @@ export default function LogSourcesPage() {
           {expandedSections.sources && (
             <div className="mt-4 space-y-2">
               {current.sources.length === 0 ? (
-                <p className="text-xs text-text-muted text-center py-4">
+                <p className="text-xs text-muted-foreground text-center py-4">
                   No log sources configured. Add sources or import from existing
                   projects.
                 </p>
@@ -445,15 +442,15 @@ export default function LogSourcesPage() {
                     key={source.id}
                     className={`flex items-center gap-3 p-2 rounded-md ${
                       source.enabled
-                        ? "bg-surface-canvas/30"
-                        : "bg-surface-canvas/10 opacity-60"
+                        ? "bg-background/30"
+                        : "bg-background/10 opacity-60"
                     }`}
                   >
                     <button
                       onClick={() => toggleSourceEnabled(source.id)}
                       className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors flex-shrink-0 ${
                         source.enabled
-                          ? "bg-brand-primary border-brand-primary"
+                          ? "bg-primary border-primary"
                           : "border-text-muted"
                       }`}
                     >
@@ -472,23 +469,23 @@ export default function LogSourcesPage() {
                       <div className="text-sm font-medium truncate">
                         {source.name}
                       </div>
-                      <div className="text-xs text-text-muted truncate">
+                      <div className="text-xs text-muted-foreground truncate">
                         {source.path}
                       </div>
                     </div>
-                    <span className="px-1.5 py-0.5 text-[10px] bg-surface-raised/50 rounded capitalize text-text-muted flex-shrink-0">
+                    <span className="px-1.5 py-0.5 text-[10px] bg-muted rounded capitalize text-muted-foreground flex-shrink-0">
                       {source.category}
                     </span>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <button
                         onClick={() => setEditingSource(source)}
-                        className="p-1 text-text-muted hover:text-white transition-colors"
+                        className="p-1 text-muted-foreground hover:text-white transition-colors"
                       >
                         <Edit2 className="w-3.5 h-3.5" />
                       </button>
                       <button
                         onClick={() => deleteSource(source.id)}
-                        className="p-1 text-text-muted hover:text-red-400 transition-colors"
+                        className="p-1 text-muted-foreground hover:text-red-400 transition-colors"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -501,16 +498,16 @@ export default function LogSourcesPage() {
         </div>
 
         {/* Profiles Section */}
-        <div className="rounded-lg bg-surface-raised/30 border border-border-subtle/30 p-4">
+        <div className="rounded-lg bg-muted/50 border border-border p-4">
           <div className="flex items-center justify-between">
             <button
               onClick={() => toggleSection("profiles")}
               className="flex items-center gap-2 text-left"
             >
               {expandedSections.profiles ? (
-                <ChevronDown className="w-4 h-4 text-text-muted" />
+                <ChevronDown className="w-4 h-4 text-muted-foreground" />
               ) : (
-                <ChevronRight className="w-4 h-4 text-text-muted" />
+                <ChevronRight className="w-4 h-4 text-muted-foreground" />
               )}
               <span className="font-medium text-sm">
                 Profiles ({current.profiles.length})
@@ -518,7 +515,7 @@ export default function LogSourcesPage() {
             </button>
             <button
               onClick={() => setShowAddProfile(true)}
-              className="flex items-center gap-1 px-2 py-1 text-xs bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary rounded transition-colors"
+              className="flex items-center gap-1 px-2 py-1 text-xs bg-primary/10 hover:bg-primary/20 text-primary rounded transition-colors"
             >
               <Plus className="w-3.5 h-3.5" />
               Add Profile
@@ -528,7 +525,7 @@ export default function LogSourcesPage() {
           {expandedSections.profiles && (
             <div className="mt-4 space-y-2">
               {current.profiles.length === 0 ? (
-                <p className="text-xs text-text-muted text-center py-4">
+                <p className="text-xs text-muted-foreground text-center py-4">
                   No profiles configured. Profiles group log sources for
                   different workflows.
                 </p>
@@ -543,7 +540,7 @@ export default function LogSourcesPage() {
                   return (
                     <div
                       key={profile.id}
-                      className="flex items-center gap-3 p-2 rounded-md bg-surface-canvas/30"
+                      className="flex items-center gap-3 p-2 rounded-md bg-background/30"
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
@@ -551,12 +548,12 @@ export default function LogSourcesPage() {
                             {profile.name}
                           </span>
                           {isDefault && (
-                            <span className="px-1.5 py-0.5 text-[10px] bg-brand-primary/20 text-brand-primary rounded">
+                            <span className="px-1.5 py-0.5 text-[10px] bg-primary/20 text-primary rounded">
                               Default
                             </span>
                           )}
                         </div>
-                        <div className="text-xs text-text-muted">
+                        <div className="text-xs text-muted-foreground">
                           {enabledCount}/{sourceCount} sources enabled
                         </div>
                       </div>
@@ -564,20 +561,20 @@ export default function LogSourcesPage() {
                         {!isDefault && (
                           <button
                             onClick={() => setDefaultProfile(profile.id)}
-                            className="px-2 py-1 text-xs text-text-muted hover:text-white transition-colors"
+                            className="px-2 py-1 text-xs text-muted-foreground hover:text-white transition-colors"
                           >
                             Set Default
                           </button>
                         )}
                         <button
                           onClick={() => setEditingProfile(profile)}
-                          className="p-1 text-text-muted hover:text-white transition-colors"
+                          className="p-1 text-muted-foreground hover:text-white transition-colors"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => deleteProfile(profile.id)}
-                          className="p-1 text-text-muted hover:text-red-400 transition-colors"
+                          className="p-1 text-muted-foreground hover:text-red-400 transition-colors"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -715,14 +712,14 @@ function SourceEditor({
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-surface-raised rounded-lg shadow-xl w-full max-w-md p-4 space-y-4 max-h-[85vh] overflow-y-auto border border-border-subtle/50">
+      <div className="bg-muted rounded-lg shadow-xl w-full max-w-md p-4 space-y-4 max-h-[85vh] overflow-y-auto border border-border">
         <div className="flex items-center justify-between">
           <h3 className="font-medium text-white">
             {source ? "Edit Source" : "Add Source"}
           </h3>
           <button
             onClick={onCancel}
-            className="p-1 hover:bg-surface-canvas/50 rounded text-text-muted hover:text-white"
+            className="p-1 hover:bg-background rounded text-muted-foreground hover:text-white"
           >
             <X className="w-4 h-4" />
           </button>
@@ -730,7 +727,7 @@ function SourceEditor({
 
         <div className="space-y-3">
           <div>
-            <label className="text-xs font-medium text-text-muted">
+            <label className="text-xs font-medium text-muted-foreground">
               Name *
             </label>
             <input
@@ -738,12 +735,12 @@ function SourceEditor({
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
               placeholder="Backend Logs"
-              className="w-full mt-1 px-2.5 py-1.5 text-sm bg-surface-canvas/50 border border-border-subtle/50 rounded-md outline-none focus:ring-1 focus:ring-brand-primary/50 text-white placeholder:text-text-muted"
+              className="w-full mt-1 px-2.5 py-1.5 text-sm bg-background border border-border rounded-md outline-none focus:ring-1 focus:ring-primary/50 text-white placeholder:text-muted-foreground"
             />
           </div>
 
           <div>
-            <label className="text-xs font-medium text-text-muted">
+            <label className="text-xs font-medium text-muted-foreground">
               Description
             </label>
             <input
@@ -753,13 +750,13 @@ function SourceEditor({
                 setForm((f) => ({ ...f, description: e.target.value }))
               }
               placeholder="FastAPI backend server logs"
-              className="w-full mt-1 px-2.5 py-1.5 text-sm bg-surface-canvas/50 border border-border-subtle/50 rounded-md outline-none focus:ring-1 focus:ring-brand-primary/50 text-white placeholder:text-text-muted"
+              className="w-full mt-1 px-2.5 py-1.5 text-sm bg-background border border-border rounded-md outline-none focus:ring-1 focus:ring-primary/50 text-white placeholder:text-muted-foreground"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-medium text-text-muted">
+              <label className="text-xs font-medium text-muted-foreground">
                 Category
               </label>
               <select
@@ -770,7 +767,7 @@ function SourceEditor({
                     category: e.target.value as LogSourceCategory,
                   }))
                 }
-                className="w-full mt-1 px-2.5 py-1.5 text-sm bg-surface-canvas/50 border border-border-subtle/50 rounded-md outline-none focus:ring-1 focus:ring-brand-primary/50 text-white"
+                className="w-full mt-1 px-2.5 py-1.5 text-sm bg-background border border-border rounded-md outline-none focus:ring-1 focus:ring-primary/50 text-white"
               >
                 {CATEGORIES.map((cat) => (
                   <option key={cat.value} value={cat.value}>
@@ -780,7 +777,7 @@ function SourceEditor({
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-text-muted">
+              <label className="text-xs font-medium text-muted-foreground">
                 Type
               </label>
               <select
@@ -788,7 +785,7 @@ function SourceEditor({
                 onChange={(e) =>
                   setForm((f) => ({ ...f, type: e.target.value }))
                 }
-                className="w-full mt-1 px-2.5 py-1.5 text-sm bg-surface-canvas/50 border border-border-subtle/50 rounded-md outline-none focus:ring-1 focus:ring-brand-primary/50 text-white"
+                className="w-full mt-1 px-2.5 py-1.5 text-sm bg-background border border-border rounded-md outline-none focus:ring-1 focus:ring-primary/50 text-white"
               >
                 <option value="file">File</option>
                 <option value="directory">Directory</option>
@@ -797,7 +794,7 @@ function SourceEditor({
           </div>
 
           <div>
-            <label className="text-xs font-medium text-text-muted">
+            <label className="text-xs font-medium text-muted-foreground">
               Path *
             </label>
             <div className="flex gap-2 mt-1">
@@ -808,9 +805,9 @@ function SourceEditor({
                   setForm((f) => ({ ...f, path: e.target.value }))
                 }
                 placeholder="/path/to/logs/app.log"
-                className="flex-1 px-2.5 py-1.5 text-sm bg-surface-canvas/50 border border-border-subtle/50 rounded-md outline-none focus:ring-1 focus:ring-brand-primary/50 text-white placeholder:text-text-muted"
+                className="flex-1 px-2.5 py-1.5 text-sm bg-background border border-border rounded-md outline-none focus:ring-1 focus:ring-primary/50 text-white placeholder:text-muted-foreground"
               />
-              <button className="p-2 bg-surface-canvas/50 border border-border-subtle/50 hover:bg-surface-canvas/80 rounded-md text-text-muted">
+              <button className="p-2 bg-background border border-border hover:bg-background/80 rounded-md text-muted-foreground">
                 <FolderOpen className="w-4 h-4" />
               </button>
             </div>
@@ -818,7 +815,7 @@ function SourceEditor({
 
           {form.type === "directory" && (
             <div>
-              <label className="text-xs font-medium text-text-muted">
+              <label className="text-xs font-medium text-muted-foreground">
                 Pattern
               </label>
               <input
@@ -828,14 +825,14 @@ function SourceEditor({
                   setForm((f) => ({ ...f, pattern: e.target.value }))
                 }
                 placeholder="*.log"
-                className="w-full mt-1 px-2.5 py-1.5 text-sm bg-surface-canvas/50 border border-border-subtle/50 rounded-md outline-none focus:ring-1 focus:ring-brand-primary/50 text-white placeholder:text-text-muted"
+                className="w-full mt-1 px-2.5 py-1.5 text-sm bg-background border border-border rounded-md outline-none focus:ring-1 focus:ring-primary/50 text-white placeholder:text-muted-foreground"
               />
             </div>
           )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-medium text-text-muted">
+              <label className="text-xs font-medium text-muted-foreground">
                 Tail Lines
               </label>
               <input
@@ -849,11 +846,11 @@ function SourceEditor({
                 }
                 min={10}
                 max={10000}
-                className="w-full mt-1 px-2.5 py-1.5 text-sm bg-surface-canvas/50 border border-border-subtle/50 rounded-md outline-none focus:ring-1 focus:ring-brand-primary/50 text-white"
+                className="w-full mt-1 px-2.5 py-1.5 text-sm bg-background border border-border rounded-md outline-none focus:ring-1 focus:ring-primary/50 text-white"
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-text-muted">
+              <label className="text-xs font-medium text-muted-foreground">
                 Color
               </label>
               <input
@@ -863,13 +860,13 @@ function SourceEditor({
                   setForm((f) => ({ ...f, color: e.target.value }))
                 }
                 placeholder="#22c55e"
-                className="w-full mt-1 px-2.5 py-1.5 text-sm bg-surface-canvas/50 border border-border-subtle/50 rounded-md outline-none focus:ring-1 focus:ring-brand-primary/50 text-white placeholder:text-text-muted"
+                className="w-full mt-1 px-2.5 py-1.5 text-sm bg-background border border-border rounded-md outline-none focus:ring-1 focus:ring-primary/50 text-white placeholder:text-muted-foreground"
               />
             </div>
           </div>
 
           <div>
-            <label className="text-xs font-medium text-text-muted">
+            <label className="text-xs font-medium text-muted-foreground">
               Keywords (comma-separated)
             </label>
             <input
@@ -879,19 +876,19 @@ function SourceEditor({
                 setForm((f) => ({ ...f, keywords: e.target.value }))
               }
               placeholder="python, fastapi, http, api"
-              className="w-full mt-1 px-2.5 py-1.5 text-sm bg-surface-canvas/50 border border-border-subtle/50 rounded-md outline-none focus:ring-1 focus:ring-brand-primary/50 text-white placeholder:text-text-muted"
+              className="w-full mt-1 px-2.5 py-1.5 text-sm bg-background border border-border rounded-md outline-none focus:ring-1 focus:ring-primary/50 text-white placeholder:text-muted-foreground"
             />
-            <p className="text-[10px] text-text-muted mt-1">
+            <p className="text-[10px] text-muted-foreground mt-1">
               Keywords help AI identify when this source is relevant
             </p>
           </div>
 
           {/* Error Monitoring Section */}
-          <div className="border-t border-border-subtle/30 pt-3 mt-3">
+          <div className="border-t border-border pt-3 mt-3">
             <button
               type="button"
               onClick={() => setShowErrorMonitoring(!showErrorMonitoring)}
-              className="flex items-center gap-1 text-xs font-medium text-text-muted hover:text-white"
+              className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-white"
             >
               {showErrorMonitoring ? (
                 <ChevronDown className="w-3 h-3" />
@@ -905,7 +902,7 @@ function SourceEditor({
               <div className="space-y-3 mt-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-medium text-text-muted">
+                    <label className="text-xs font-medium text-muted-foreground">
                       Format
                     </label>
                     <select
@@ -913,7 +910,7 @@ function SourceEditor({
                       onChange={(e) =>
                         setForm((f) => ({ ...f, format: e.target.value }))
                       }
-                      className="w-full mt-1 px-2.5 py-1.5 text-sm bg-surface-canvas/50 border border-border-subtle/50 rounded-md outline-none focus:ring-1 focus:ring-brand-primary/50 text-white"
+                      className="w-full mt-1 px-2.5 py-1.5 text-sm bg-background border border-border rounded-md outline-none focus:ring-1 focus:ring-primary/50 text-white"
                     >
                       <option value="plaintext">Plaintext</option>
                       <option value="json">JSON</option>
@@ -921,7 +918,7 @@ function SourceEditor({
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-text-muted">
+                    <label className="text-xs font-medium text-muted-foreground">
                       Parser
                     </label>
                     <select
@@ -929,7 +926,7 @@ function SourceEditor({
                       onChange={(e) =>
                         setForm((f) => ({ ...f, parser: e.target.value }))
                       }
-                      className="w-full mt-1 px-2.5 py-1.5 text-sm bg-surface-canvas/50 border border-border-subtle/50 rounded-md outline-none focus:ring-1 focus:ring-brand-primary/50 text-white"
+                      className="w-full mt-1 px-2.5 py-1.5 text-sm bg-background border border-border rounded-md outline-none focus:ring-1 focus:ring-primary/50 text-white"
                     >
                       <option value="generic">Generic</option>
                       <option value="python">Python</option>
@@ -940,7 +937,7 @@ function SourceEditor({
                 </div>
 
                 <div>
-                  <label className="text-xs font-medium text-text-muted">
+                  <label className="text-xs font-medium text-muted-foreground">
                     Timestamp Pattern
                   </label>
                   <input
@@ -955,13 +952,13 @@ function SourceEditor({
                     placeholder={
                       "e.g. ^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}"
                     }
-                    className="w-full mt-1 px-2.5 py-1.5 text-sm bg-surface-canvas/50 border border-border-subtle/50 rounded-md outline-none focus:ring-1 focus:ring-brand-primary/50 text-white placeholder:text-text-muted"
+                    className="w-full mt-1 px-2.5 py-1.5 text-sm bg-background border border-border rounded-md outline-none focus:ring-1 focus:ring-primary/50 text-white placeholder:text-muted-foreground"
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-medium text-text-muted">
+                    <label className="text-xs font-medium text-muted-foreground">
                       Timezone
                     </label>
                     <input
@@ -971,11 +968,11 @@ function SourceEditor({
                         setForm((f) => ({ ...f, timezone: e.target.value }))
                       }
                       placeholder="local"
-                      className="w-full mt-1 px-2.5 py-1.5 text-sm bg-surface-canvas/50 border border-border-subtle/50 rounded-md outline-none focus:ring-1 focus:ring-brand-primary/50 text-white placeholder:text-text-muted"
+                      className="w-full mt-1 px-2.5 py-1.5 text-sm bg-background border border-border rounded-md outline-none focus:ring-1 focus:ring-primary/50 text-white placeholder:text-muted-foreground"
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-text-muted">
+                    <label className="text-xs font-medium text-muted-foreground">
                       Poll Interval (ms)
                     </label>
                     <input
@@ -989,13 +986,13 @@ function SourceEditor({
                       }
                       min={500}
                       max={60000}
-                      className="w-full mt-1 px-2.5 py-1.5 text-sm bg-surface-canvas/50 border border-border-subtle/50 rounded-md outline-none focus:ring-1 focus:ring-brand-primary/50 text-white"
+                      className="w-full mt-1 px-2.5 py-1.5 text-sm bg-background border border-border rounded-md outline-none focus:ring-1 focus:ring-primary/50 text-white"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-xs font-medium text-text-muted">
+                  <label className="text-xs font-medium text-muted-foreground">
                     Error Patterns (one per line)
                   </label>
                   <textarea
@@ -1008,12 +1005,12 @@ function SourceEditor({
                     }
                     placeholder="Custom regex patterns to identify errors"
                     rows={3}
-                    className="w-full mt-1 px-2.5 py-1.5 text-sm bg-surface-canvas/50 border border-border-subtle/50 rounded-md outline-none focus:ring-1 focus:ring-brand-primary/50 font-mono text-white placeholder:text-text-muted"
+                    className="w-full mt-1 px-2.5 py-1.5 text-sm bg-background border border-border rounded-md outline-none focus:ring-1 focus:ring-primary/50 font-mono text-white placeholder:text-muted-foreground"
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs font-medium text-text-muted">
+                  <label className="text-xs font-medium text-muted-foreground">
                     Warning Patterns (one per line)
                   </label>
                   <textarea
@@ -1026,12 +1023,12 @@ function SourceEditor({
                     }
                     placeholder="Custom regex patterns to identify warnings"
                     rows={2}
-                    className="w-full mt-1 px-2.5 py-1.5 text-sm bg-surface-canvas/50 border border-border-subtle/50 rounded-md outline-none focus:ring-1 focus:ring-brand-primary/50 font-mono text-white placeholder:text-text-muted"
+                    className="w-full mt-1 px-2.5 py-1.5 text-sm bg-background border border-border rounded-md outline-none focus:ring-1 focus:ring-primary/50 font-mono text-white placeholder:text-muted-foreground"
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs font-medium text-text-muted">
+                  <label className="text-xs font-medium text-muted-foreground">
                     Ignore Patterns (one per line)
                   </label>
                   <textarea
@@ -1044,7 +1041,7 @@ function SourceEditor({
                     }
                     placeholder="Patterns to suppress false positives"
                     rows={2}
-                    className="w-full mt-1 px-2.5 py-1.5 text-sm bg-surface-canvas/50 border border-border-subtle/50 rounded-md outline-none focus:ring-1 focus:ring-brand-primary/50 font-mono text-white placeholder:text-text-muted"
+                    className="w-full mt-1 px-2.5 py-1.5 text-sm bg-background border border-border rounded-md outline-none focus:ring-1 focus:ring-primary/50 font-mono text-white placeholder:text-muted-foreground"
                   />
                 </div>
               </div>
@@ -1055,14 +1052,14 @@ function SourceEditor({
         <div className="flex justify-end gap-2 pt-2">
           <button
             onClick={onCancel}
-            className="px-3 py-1.5 text-sm text-text-muted hover:text-white hover:bg-surface-canvas/50 rounded-md"
+            className="px-3 py-1.5 text-sm text-muted-foreground hover:text-white hover:bg-background rounded-md"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={!form.name || !form.path}
-            className="px-3 py-1.5 text-sm bg-brand-primary text-black font-semibold rounded-md hover:bg-brand-primary/90 disabled:opacity-50"
+            className="px-3 py-1.5 text-sm bg-primary text-black font-semibold rounded-md hover:bg-primary/90 disabled:opacity-50"
           >
             {source ? "Update" : "Add"}
           </button>
@@ -1131,14 +1128,14 @@ function ProfileEditor({
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-surface-raised rounded-lg shadow-xl w-full max-w-md p-4 space-y-4 max-h-[80vh] overflow-y-auto border border-border-subtle/50">
+      <div className="bg-muted rounded-lg shadow-xl w-full max-w-md p-4 space-y-4 max-h-[80vh] overflow-y-auto border border-border">
         <div className="flex items-center justify-between">
           <h3 className="font-medium text-white">
             {profile ? "Edit Profile" : "Add Profile"}
           </h3>
           <button
             onClick={onCancel}
-            className="p-1 hover:bg-surface-canvas/50 rounded text-text-muted hover:text-white"
+            className="p-1 hover:bg-background rounded text-muted-foreground hover:text-white"
           >
             <X className="w-4 h-4" />
           </button>
@@ -1146,7 +1143,7 @@ function ProfileEditor({
 
         <div className="space-y-3">
           <div>
-            <label className="text-xs font-medium text-text-muted">
+            <label className="text-xs font-medium text-muted-foreground">
               Name *
             </label>
             <input
@@ -1154,12 +1151,12 @@ function ProfileEditor({
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
               placeholder="Web Development"
-              className="w-full mt-1 px-2.5 py-1.5 text-sm bg-surface-canvas/50 border border-border-subtle/50 rounded-md outline-none focus:ring-1 focus:ring-brand-primary/50 text-white placeholder:text-text-muted"
+              className="w-full mt-1 px-2.5 py-1.5 text-sm bg-background border border-border rounded-md outline-none focus:ring-1 focus:ring-primary/50 text-white placeholder:text-muted-foreground"
             />
           </div>
 
           <div>
-            <label className="text-xs font-medium text-text-muted">
+            <label className="text-xs font-medium text-muted-foreground">
               Description
             </label>
             <input
@@ -1169,13 +1166,13 @@ function ProfileEditor({
                 setForm((f) => ({ ...f, description: e.target.value }))
               }
               placeholder="Sources for web frontend and backend development"
-              className="w-full mt-1 px-2.5 py-1.5 text-sm bg-surface-canvas/50 border border-border-subtle/50 rounded-md outline-none focus:ring-1 focus:ring-brand-primary/50 text-white placeholder:text-text-muted"
+              className="w-full mt-1 px-2.5 py-1.5 text-sm bg-background border border-border rounded-md outline-none focus:ring-1 focus:ring-primary/50 text-white placeholder:text-muted-foreground"
             />
           </div>
 
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-medium text-text-muted">
+              <label className="text-xs font-medium text-muted-foreground">
                 Sources
               </label>
               <div className="flex gap-1">
@@ -1183,7 +1180,7 @@ function ProfileEditor({
                   <button
                     key={cat}
                     onClick={() => selectByCategory(cat)}
-                    className="px-1.5 py-0.5 text-[10px] bg-surface-canvas/50 hover:bg-surface-canvas/80 rounded capitalize text-text-muted"
+                    className="px-1.5 py-0.5 text-[10px] bg-background hover:bg-background/80 rounded capitalize text-muted-foreground"
                   >
                     + {cat}
                   </button>
@@ -1194,7 +1191,7 @@ function ProfileEditor({
               {sources.map((source) => (
                 <label
                   key={source.id}
-                  className="flex items-center gap-2 p-1.5 rounded hover:bg-surface-canvas/30 cursor-pointer"
+                  className="flex items-center gap-2 p-1.5 rounded hover:bg-background/30 cursor-pointer"
                 >
                   <input
                     type="checkbox"
@@ -1203,7 +1200,7 @@ function ProfileEditor({
                     className="w-4 h-4 accent-brand-primary"
                   />
                   <span className="text-sm text-white">{source.name}</span>
-                  <span className="text-[10px] text-text-muted capitalize">
+                  <span className="text-[10px] text-muted-foreground capitalize">
                     ({source.category})
                   </span>
                 </label>
@@ -1215,14 +1212,14 @@ function ProfileEditor({
         <div className="flex justify-end gap-2 pt-2">
           <button
             onClick={onCancel}
-            className="px-3 py-1.5 text-sm text-text-muted hover:text-white hover:bg-surface-canvas/50 rounded-md"
+            className="px-3 py-1.5 text-sm text-muted-foreground hover:text-white hover:bg-background rounded-md"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={!form.name}
-            className="px-3 py-1.5 text-sm bg-brand-primary text-black font-semibold rounded-md hover:bg-brand-primary/90 disabled:opacity-50"
+            className="px-3 py-1.5 text-sm bg-primary text-black font-semibold rounded-md hover:bg-primary/90 disabled:opacity-50"
           >
             {profile ? "Update" : "Add"}
           </button>

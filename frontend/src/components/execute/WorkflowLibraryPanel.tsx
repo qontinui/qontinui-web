@@ -51,7 +51,7 @@ export function WorkflowLibraryPanel({
   }, [workflows, searchQuery, categoryFilter]);
 
   return (
-    <div className="w-96 shrink-0 space-y-4">
+    <div className="w-full lg:w-96 shrink-0 space-y-4">
       <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardHeader className="py-3">
           <CardTitle className="text-sm flex items-center gap-2">

@@ -6,7 +6,6 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { TestRunsList } from "@/components/testing/TestRunsList";
 import { CoverageTrendChart } from "@/components/testing/CoverageTrendChart";
 import { ReliabilityStats } from "@/components/testing/ReliabilityStats";
@@ -31,10 +30,8 @@ export default function TestingDashboard() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-lg text-muted-foreground">Loading...</div>
-        </div>
+      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
+        <div className="text-lg text-muted-foreground">Loading...</div>
       </div>
     );
   }
@@ -46,108 +43,70 @@ export default function TestingDashboard() {
   return (
     <RequireProject pageName="Test Runs">
       <div
-        className="min-h-screen bg-gradient-to-br from-surface-canvas via-surface-sunken to-surface-canvas text-white"
+        className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden"
         data-ui-id="testing-page-dashboard"
       >
-        {/* Header */}
-        <header className="border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-xl sticky top-0 z-50">
-          <div className="flex items-center justify-between px-6 py-4">
-            <div className="flex items-center gap-4">
-              <Button
-                variant="ghost"
-                onClick={() => router.push("/build/workflows")}
-                className="text-text-muted hover:text-white"
-                data-ui-id="testing-page-back-btn"
-              >
-                ← Dashboard
-              </Button>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
-                Testing Dashboard
-              </h1>
-            </div>
-            <div className="flex items-center gap-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => router.push("/testing/runs")}
-                className="border-border-default hover:border-brand-primary hover:text-brand-primary"
-                data-ui-id="testing-page-all-runs-btn"
-              >
-                <FileText className="w-4 h-4 mr-2" />
-                All Runs
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => router.push("/testing/deficiencies")}
-                className="border-border-default hover:border-brand-secondary hover:text-brand-secondary"
-                data-ui-id="testing-page-deficiencies-btn"
-              >
-                <BarChart3 className="w-4 h-4 mr-2" />
-                Deficiencies
-              </Button>
-            </div>
+        <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+          <h1 className="text-lg font-semibold text-foreground">
+            Testing Dashboard
+          </h1>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push("/testing/runs")}
+              data-ui-id="testing-page-all-runs-btn"
+            >
+              <FileText className="w-4 h-4 mr-2" />
+              All Runs
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push("/testing/deficiencies")}
+              data-ui-id="testing-page-deficiencies-btn"
+            >
+              <BarChart3 className="w-4 h-4 mr-2" />
+              Deficiencies
+            </Button>
           </div>
         </header>
 
-        {/* Main Content */}
-        <main className="p-6 max-w-7xl mx-auto">
-          {/* Welcome Section */}
-          <div className="mb-8">
-            <h2 className="text-3xl font-bold mb-2">Test Results Overview</h2>
-            <p className="text-text-muted">
+        <main className="flex-1 overflow-y-auto p-6">
+          <div className="mb-6">
+            <p className="text-sm text-muted-foreground">
               View historical test results, coverage trends, and deficiency
               reports
             </p>
           </div>
 
-          {/* View Selector */}
           <div
             className="flex items-center gap-2 mb-6"
             data-ui-id="testing-page-view-selector"
           >
-            <Button
-              variant={selectedView === "overview" ? "default" : "outline"}
-              onClick={() => setSelectedView("overview")}
-              className={
-                selectedView === "overview"
-                  ? "bg-brand-primary hover:bg-brand-primary/80 text-black"
-                  : "border-border-default hover:border-brand-primary hover:text-brand-primary"
-              }
-              data-ui-id="testing-page-overview-tab"
-            >
-              <PlayCircle className="w-4 h-4 mr-2" />
-              Test Runs
-            </Button>
-            <Button
-              variant={selectedView === "trends" ? "default" : "outline"}
-              onClick={() => setSelectedView("trends")}
-              className={
-                selectedView === "trends"
-                  ? "bg-brand-primary hover:bg-brand-primary/80 text-black"
-                  : "border-border-default hover:border-brand-primary hover:text-brand-primary"
-              }
-              data-ui-id="testing-page-trends-tab"
-            >
-              <TrendingUp className="w-4 h-4 mr-2" />
-              Coverage Trends
-            </Button>
-            <Button
-              variant={selectedView === "reliability" ? "default" : "outline"}
-              onClick={() => setSelectedView("reliability")}
-              className={
-                selectedView === "reliability"
-                  ? "bg-brand-primary hover:bg-brand-primary/80 text-black"
-                  : "border-border-default hover:border-brand-primary hover:text-brand-primary"
-              }
-              data-ui-id="testing-page-reliability-tab"
-            >
-              <BarChart3 className="w-4 h-4 mr-2" />
-              Reliability
-            </Button>
+            {(
+              [
+                { key: "overview", label: "Test Runs", icon: PlayCircle },
+                { key: "trends", label: "Coverage Trends", icon: TrendingUp },
+                { key: "reliability", label: "Reliability", icon: BarChart3 },
+              ] as const
+            ).map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                onClick={() => setSelectedView(key)}
+                className={`px-3 py-1.5 text-sm rounded-md flex items-center gap-2 ${
+                  selectedView === key
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                data-ui-id={`testing-page-${key}-tab`}
+              >
+                <Icon className="w-4 h-4" />
+                {label}
+              </button>
+            ))}
           </div>
 
-          {/* Content based on selected view */}
           {selectedView === "overview" && (
             <TestRunsList projectId={projectId || undefined} />
           )}
@@ -157,14 +116,12 @@ export default function TestingDashboard() {
           )}
 
           {selectedView === "trends" && !projectId && (
-            <Card className="bg-surface-raised/50 border-border-subtle/50">
-              <CardContent className="p-12 text-center">
-                <div className="text-text-muted" data-content-role="status">
-                  Please select a project from the dashboard to view coverage
-                  trends
-                </div>
-              </CardContent>
-            </Card>
+            <div
+              className="p-12 text-center text-muted-foreground"
+              data-content-role="status"
+            >
+              Please select a project from the dashboard to view coverage trends
+            </div>
           )}
 
           {selectedView === "reliability" && projectId && (
@@ -172,14 +129,13 @@ export default function TestingDashboard() {
           )}
 
           {selectedView === "reliability" && !projectId && (
-            <Card className="bg-surface-raised/50 border-border-subtle/50">
-              <CardContent className="p-12 text-center">
-                <div className="text-text-muted" data-content-role="status">
-                  Please select a project from the dashboard to view reliability
-                  statistics
-                </div>
-              </CardContent>
-            </Card>
+            <div
+              className="p-12 text-center text-muted-foreground"
+              data-content-role="status"
+            >
+              Please select a project from the dashboard to view reliability
+              statistics
+            </div>
           )}
         </main>
       </div>

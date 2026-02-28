@@ -38,7 +38,7 @@ import {
 function LoadingFallback() {
   return (
     <div className="flex items-center justify-center min-h-[400px]">
-      <Loader2 className="h-8 w-8 animate-spin text-brand-primary" />
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
     </div>
   );
 }
@@ -98,234 +98,236 @@ function OverviewPageContent() {
   }
 
   return (
-    <div className="container mx-auto py-8">
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2 flex items-center gap-2">
-          <Layers className="h-8 w-8" />
-          Project Overview
-        </h1>
-        <p className="text-muted-foreground">
-          Summary of your automation project
-        </p>
+      <div className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <div className="flex items-center gap-2">
+          <Layers className="h-5 w-5" />
+          <h1 className="text-lg font-semibold">Project Overview</h1>
+        </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {/* States */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              States
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <div className="text-3xl font-bold">{stats.stateCount}</div>
-              <Network className="h-8 w-8 text-primary opacity-50" />
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {stats.statesWithElements} with visual elements
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Transitions */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Transitions
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <div className="text-3xl font-bold">{stats.transitionCount}</div>
-              <ArrowRight className="h-8 w-8 text-fuchsia-500 opacity-50" />
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {stats.outgoingCount} outgoing, {stats.incomingCount} incoming
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Workflows */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Workflows
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <div className="text-3xl font-bold">{stats.workflowCount}</div>
-              <Workflow className="h-8 w-8 text-cyan-500 opacity-50" />
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {stats.totalActions} total actions
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Images */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Pattern Images
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <div className="text-3xl font-bold">{stats.imageCount}</div>
-              <ImageIcon
-                className="h-8 w-8 text-green-500 opacity-50"
-                aria-hidden="true"
-              />
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Used for visual recognition
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-        {/* State Visualization */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Eye className="h-5 w-5" />
-              State Visualization
-            </CardTitle>
-            <CardDescription>
-              View states positioned on a canvas based on their screen locations
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-muted-foreground">
-                {stats.statesWithElements} states with positioned elements
+      <div className="flex-1 overflow-auto p-6 space-y-6">
+        {/* Stats Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* States */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                States
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div className="text-3xl font-bold">{stats.stateCount}</div>
+                <Network className="h-8 w-8 text-primary opacity-50" />
               </div>
-              <Button
-                onClick={() =>
-                  router.push("/automation-builder/states?tab=state-view")
-                }
-              >
-                Open State View
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+              <p className="text-xs text-muted-foreground mt-1">
+                {stats.statesWithElements} with visual elements
+              </p>
+            </CardContent>
+          </Card>
 
-        {/* Transition Animation */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Play className="h-5 w-5" />
-              Transition Visualization
-            </CardTitle>
-            <CardDescription>
-              Animate transitions to see how actions execute between states
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-muted-foreground">
-                {stats.transitionCount} transitions available
+          {/* Transitions */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Transitions
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div className="text-3xl font-bold">
+                  {stats.transitionCount}
+                </div>
+                <ArrowRight className="h-8 w-8 text-fuchsia-500 opacity-50" />
               </div>
-              <Button
-                onClick={() =>
-                  router.push("/automation-builder/states?tab=transitions")
-                }
-              >
-                Open Transitions
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {stats.outgoingCount} outgoing, {stats.incomingCount} incoming
+              </p>
+            </CardContent>
+          </Card>
 
-      {/* Additional Info */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Variables */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Variable className="h-4 w-4" />
-              Variables
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">
-                Global project variables
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => router.push("/automation-builder/variables")}
-              >
-                Manage
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Runner Status */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Monitor className="h-4 w-4" />
-              Runner Status
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Badge variant={isRunnerConnected ? "default" : "secondary"}>
-                  {isRunnerConnected ? "Connected" : "Disconnected"}
-                </Badge>
-                {isRunnerConnected && (
-                  <span className="text-sm text-muted-foreground">
-                    {stats.monitorCount} monitor
-                    {stats.monitorCount !== 1 ? "s" : ""}
-                  </span>
-                )}
+          {/* Workflows */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Workflows
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div className="text-3xl font-bold">{stats.workflowCount}</div>
+                <Workflow className="h-8 w-8 text-cyan-500 opacity-50" />
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => router.push("/runners")}
-              >
-                Manage
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+              <p className="text-xs text-muted-foreground mt-1">
+                {stats.totalActions} total actions
+              </p>
+            </CardContent>
+          </Card>
 
-        {/* State Machine */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Network className="h-4 w-4" />
-              State Machine
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">
-                Edit states & transitions
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => router.push("/automation-builder/states")}
-              >
-                Open
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+          {/* Images */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Pattern Images
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div className="text-3xl font-bold">{stats.imageCount}</div>
+                <ImageIcon
+                  className="h-8 w-8 text-green-500 opacity-50"
+                  aria-hidden="true"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Used for visual recognition
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* State Visualization */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Eye className="h-5 w-5" />
+                State Visualization
+              </CardTitle>
+              <CardDescription>
+                View states positioned on a canvas based on their screen
+                locations
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-muted-foreground">
+                  {stats.statesWithElements} states with positioned elements
+                </div>
+                <Button
+                  onClick={() =>
+                    router.push("/automation-builder/states?tab=state-view")
+                  }
+                >
+                  Open State View
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Transition Animation */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Play className="h-5 w-5" />
+                Transition Visualization
+              </CardTitle>
+              <CardDescription>
+                Animate transitions to see how actions execute between states
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-muted-foreground">
+                  {stats.transitionCount} transitions available
+                </div>
+                <Button
+                  onClick={() =>
+                    router.push("/automation-builder/states?tab=transitions")
+                  }
+                >
+                  Open Transitions
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Additional Info */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Variables */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Variable className="h-4 w-4" />
+                Variables
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">
+                  Global project variables
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => router.push("/automation-builder/variables")}
+                >
+                  Manage
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Runner Status */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Monitor className="h-4 w-4" />
+                Runner Status
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Badge variant={isRunnerConnected ? "default" : "secondary"}>
+                    {isRunnerConnected ? "Connected" : "Disconnected"}
+                  </Badge>
+                  {isRunnerConnected && (
+                    <span className="text-sm text-muted-foreground">
+                      {stats.monitorCount} monitor
+                      {stats.monitorCount !== 1 ? "s" : ""}
+                    </span>
+                  )}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => router.push("/runners")}
+                >
+                  Manage
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* State Machine */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Network className="h-4 w-4" />
+                State Machine
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">
+                  Edit states & transitions
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => router.push("/automation-builder/states")}
+                >
+                  Open
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );
