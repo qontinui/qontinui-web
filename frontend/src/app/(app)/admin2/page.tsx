@@ -24,8 +24,7 @@
  * - Tabs replaced with sidebar sections to maximize content area
  */
 
-import { useEffect, useState } from "react";
-import dynamic from "next/dynamic";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import {
@@ -55,23 +54,11 @@ import {
   Download,
 } from "lucide-react";
 
-const AnalyticsTab = dynamic(() => import("@/components/admin/AnalyticsTab"), {
-  ssr: false,
-});
-const NotificationsTab = dynamic(
-  () => import("@/components/admin/NotificationsTab"),
-  { ssr: false }
-);
-const HealthDashboardTab = dynamic(
-  () => import("@/components/admin/health/HealthDashboardTab"),
-  { ssr: false }
-);
-const SystemTab = dynamic(() => import("@/components/admin/SystemTab"), {
-  ssr: false,
-});
-const DownloadsTab = dynamic(() => import("@/components/admin/DownloadsTab"), {
-  ssr: false,
-});
+const AnalyticsSection = lazy(() => import("./AnalyticsSection"));
+const NotificationsSection = lazy(() => import("./NotificationsSection"));
+const HealthSection = lazy(() => import("./HealthSection"));
+const SystemSection = lazy(() => import("./SystemSection"));
+const DownloadsSection = lazy(() => import("./DownloadsSection"));
 
 type Section =
   | "users"
@@ -289,31 +276,19 @@ export default function Admin2Dashboard() {
           {activeSection === "projects" && (
             <ProjectsTable projects={projects} loading={projectsLoading} />
           )}
-          {activeSection === "analytics" && (
-            <div className="p-6">
-              <AnalyticsTab />
-            </div>
-          )}
-          {activeSection === "health" && (
-            <div className="p-6">
-              <HealthDashboardTab />
-            </div>
-          )}
-          {activeSection === "system" && (
-            <div className="p-6">
-              <SystemTab />
-            </div>
-          )}
-          {activeSection === "notifications" && (
-            <div className="p-6">
-              <NotificationsTab />
-            </div>
-          )}
-          {activeSection === "downloads" && (
-            <div className="p-6">
-              <DownloadsTab />
-            </div>
-          )}
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">
+                Loading...
+              </div>
+            }
+          >
+            {activeSection === "analytics" && <AnalyticsSection />}
+            {activeSection === "health" && <HealthSection />}
+            {activeSection === "system" && <SystemSection />}
+            {activeSection === "notifications" && <NotificationsSection />}
+            {activeSection === "downloads" && <DownloadsSection />}
+          </Suspense>
         </div>
       </div>
     </div>
