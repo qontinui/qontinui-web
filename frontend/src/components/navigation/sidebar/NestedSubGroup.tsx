@@ -82,12 +82,12 @@ export function NestedSubGroup({
                   {grandchild.icon}
                 </span>
                 <span className="flex-1">{grandchild.label}</span>
-                {mounted && grandchild.hidden && (
+                {mounted && grandchild.hiddenInProd && (
                   <Badge
                     variant="outline"
                     className="h-3.5 px-1 text-[8px] font-medium border-gray-500/30 bg-gray-500/10 text-gray-400"
                   >
-                    hidden
+                    dev
                   </Badge>
                 )}
               </button>

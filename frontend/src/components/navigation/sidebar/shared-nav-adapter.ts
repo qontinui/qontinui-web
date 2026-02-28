@@ -19,7 +19,7 @@ function toNavItem(item: NavigationItem, iconSize = "size-5"): NavItem {
     icon: resolveIcon(item.icon, iconSize),
     route: item.route ?? `/${item.id}`,
     color: item.color ?? "#9CA3AF",
-    hidden: item.hidden,
+    hiddenInProd: item.hiddenInProd,
     adminOnly: item.adminOnly,
     children:
       children.length > 0

@@ -190,12 +190,12 @@ export function CollapsibleNavItem({
             {item.icon}
           </span>
           <span className="flex-1 text-left">{item.label}</span>
-          {mounted && item.hidden && (
+          {mounted && item.hiddenInProd && (
             <Badge
               variant="outline"
               className="h-5 px-1.5 text-[10px] font-medium border-gray-500/30 bg-gray-500/10 text-gray-400"
             >
-              hidden
+              dev
             </Badge>
           )}
           <ChevronRight
@@ -241,12 +241,12 @@ export function CollapsibleNavItem({
                   {child.icon}
                 </span>
                 <span className="flex-1">{child.label}</span>
-                {mounted && child.hidden && (
+                {mounted && child.hiddenInProd && (
                   <Badge
                     variant="outline"
                     className="h-4 px-1 text-[9px] font-medium border-gray-500/30 bg-gray-500/10 text-gray-400"
                   >
-                    hidden
+                    dev
                   </Badge>
                 )}
                 {child.badge && (

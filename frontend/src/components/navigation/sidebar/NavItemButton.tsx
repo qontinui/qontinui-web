@@ -45,12 +45,12 @@ export function NavItemButton({
       {!isCollapsed && (
         <>
           <span className="flex-1 text-left">{item.label}</span>
-          {mounted && item.hidden && (
+          {mounted && item.hiddenInProd && (
             <Badge
               variant="outline"
               className="ml-auto h-5 px-1.5 text-[10px] font-medium border-gray-500/30 bg-gray-500/10 text-gray-400"
             >
-              hidden
+              dev
             </Badge>
           )}
           {item.badge && (

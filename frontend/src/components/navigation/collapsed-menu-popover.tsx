@@ -9,7 +9,7 @@ interface PopoverChild {
   icon: React.ReactNode;
   route: string;
   color?: string;
-  hidden?: boolean;
+  hiddenInProd?: boolean;
 }
 
 interface CollapsedMenuPopoverProps {
@@ -156,7 +156,9 @@ export function CollapsedMenuPopover({
               style={{
                 filter: "drop-shadow(0 0 4px rgba(0,0,0,0.3))",
               }}
-              title={child.hidden ? `${child.label} (hidden)` : child.label}
+              title={
+                child.hiddenInProd ? `${child.label} (dev only)` : child.label
+              }
             >
               <span style={{ color: childIconColor, fontSize: "20px" }}>
                 {child.icon}

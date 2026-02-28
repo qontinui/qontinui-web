@@ -250,14 +250,14 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
     }
   }, [createProject, handleProjectChange]);
 
-  // Filter nav items based on admin status and hidden flag
+  // Filter nav items based on admin status and hiddenInProd flag
   const isDevelopment = process.env.NODE_ENV === "development";
   const filterNavItems = useCallback(
     (items: NavItem[]): NavItem[] => {
       return items
         .filter((item) => {
-          // hidden items only show in development
-          if (item.hidden && (!mounted || !isDevelopment)) return false;
+          // hiddenInProd items only show in development
+          if (item.hiddenInProd && (!mounted || !isDevelopment)) return false;
           if (authLoading || !user) return !item.adminOnly;
           return !item.adminOnly || user.is_superuser === true;
         })
