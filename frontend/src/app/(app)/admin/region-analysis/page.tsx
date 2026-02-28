@@ -12,21 +12,13 @@ import { useAuth } from "@/contexts/auth-context";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { LayoutDashboard, Shield, Sparkles, Grid3x3 } from "lucide-react";
+import { Grid3x3 } from "lucide-react";
 import {
   RegionAnalysisPanel,
   RegionAnalysisResults,
@@ -58,6 +50,11 @@ export default function RegionAnalysisPage() {
   // Analysis results
   const [analysisResults, setAnalysisResults] =
     useState<RegionAnalysisResponse | null>(null);
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState<"run" | "results" | "history">(
+    "run"
+  );
 
   // Protection
   useEffect(() => {
@@ -126,74 +123,46 @@ export default function RegionAnalysisPage() {
   }
 
   return (
-    <div className="container mx-auto py-8">
-      {/* Navigation Links */}
-      <div className="mb-6 flex items-center gap-4">
-        <Button
-          variant="ghost"
-          onClick={() => router.push("/build/workflows")}
-          className="hover:bg-primary/10"
-        >
-          <LayoutDashboard className="mr-2 h-4 w-4" />
-          Dashboard
-        </Button>
-        <Button
-          variant="ghost"
-          onClick={() => router.push("/admin")}
-          className="hover:bg-secondary/10"
-        >
-          <Shield className="mr-2 h-4 w-4" />
-          Admin
-        </Button>
-        <Button
-          variant="ghost"
-          onClick={() => router.push("/automation-builder/extraction")}
-          className="hover:bg-accent/10"
-        >
-          <Sparkles className="mr-2 h-4 w-4" />
-          Extraction
-        </Button>
-      </div>
-
-      <div className="mb-8">
-        <div className="flex items-center gap-3 mb-2">
-          <Grid3x3 className="h-8 w-8 text-primary" />
-          <h1 className="text-3xl font-bold">Region Analysis</h1>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+      <div className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => router.push("/admin")}
+          >
+            Admin
+          </Button>
+          <span className="text-muted-foreground">/</span>
+          <h1 className="text-lg font-semibold">Region Analysis</h1>
         </div>
-        <p className="text-muted-foreground">
-          Run automated analysis to detect UI regions and grid structures using
-          specialized region analyzers
-        </p>
       </div>
 
-      {/* Annotation Set Selector */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>Select Annotation Set</CardTitle>
-          <CardDescription>
-            Choose an annotation set to analyze for regions and grids
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      <div className="flex-1 overflow-y-auto">
+        <div className="px-6 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider border-b border-border bg-muted/50">
+          Annotation Set
+        </div>
+        <div className="px-6 py-3 border-b border-border">
           {isLoadingSets ? (
             <p className="text-sm text-muted-foreground">
               Loading annotation sets...
             </p>
           ) : annotationSets.length === 0 ? (
             <div className="text-center py-4">
-              <p className="text-muted-foreground mb-4">
+              <p className="text-muted-foreground mb-4 text-sm">
                 No annotation sets found. Run an extraction first.
               </p>
               <Button
+                size="sm"
                 onClick={() => router.push("/automation-builder/extraction")}
               >
                 Go to Extraction
               </Button>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="flex items-center gap-4">
               <Select value={selectedSetId} onValueChange={setSelectedSetId}>
-                <SelectTrigger>
+                <SelectTrigger className="w-[300px]">
                   <SelectValue placeholder="Select annotation set" />
                 </SelectTrigger>
                 <SelectContent>
@@ -202,7 +171,7 @@ export default function RegionAnalysisPage() {
                       <div className="flex flex-col items-start">
                         <span>{set.screenshot_name}</span>
                         <span className="text-xs text-muted-foreground">
-                          {set.image_width} × {set.image_height}px •{" "}
+                          {set.image_width} x {set.image_height}px •{" "}
                           {set.annotations_count} annotation
                           {set.annotations_count !== 1 ? "s" : ""}
                         </span>
@@ -213,154 +182,160 @@ export default function RegionAnalysisPage() {
               </Select>
 
               {selectedSet && (
-                <div className="text-sm text-muted-foreground space-y-1">
-                  <div>
+                <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                  <span>
                     <span className="font-medium" data-content-role="label">
                       Size:
                     </span>{" "}
                     <span
                       data-content-role="metric"
                       data-content-label="image-dimensions"
+                      className="tabular-nums"
                     >
-                      {selectedSet.image_width} × {selectedSet.image_height}px
+                      {selectedSet.image_width} x {selectedSet.image_height}px
                     </span>
-                  </div>
-                  <div>
+                  </span>
+                  <span>
                     <span className="font-medium" data-content-role="label">
-                      Annotations:
+                      Elements:
                     </span>{" "}
                     <span
                       data-content-role="metric"
                       data-content-label="annotations-count"
+                      className="tabular-nums"
                     >
-                      {selectedSet.annotations_count} element
-                      {selectedSet.annotations_count !== 1 ? "s" : ""}
+                      {selectedSet.annotations_count}
                     </span>
-                  </div>
-                  <div>
+                  </span>
+                  <span>
                     <span className="font-medium" data-content-role="label">
                       Created:
                     </span>{" "}
                     <span data-content-role="body-text">
-                      {new Date(selectedSet.created_at).toLocaleString()}
+                      {new Date(selectedSet.created_at).toLocaleDateString()}
                     </span>
-                  </div>
+                  </span>
                   {selectedSet.notes && (
-                    <div>
-                      <span className="font-medium" data-content-role="label">
-                        Notes:
-                      </span>{" "}
-                      <span data-content-role="description">
-                        {selectedSet.notes}
-                      </span>
-                    </div>
+                    <span
+                      data-content-role="description"
+                      className="truncate max-w-xs"
+                    >
+                      {selectedSet.notes}
+                    </span>
                   )}
                 </div>
               )}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* Main Content */}
-      {selectedSetId && (
-        <Tabs defaultValue="run" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="run">Run Analysis</TabsTrigger>
-            <TabsTrigger value="results">Results</TabsTrigger>
-            <TabsTrigger value="history">History</TabsTrigger>
-          </TabsList>
+        {selectedSetId && (
+          <>
+            <div className="flex items-center gap-1 px-6 py-2 border-b border-border shrink-0">
+              {(
+                [
+                  { key: "run", label: "Run Analysis" },
+                  { key: "results", label: "Results" },
+                  { key: "history", label: "History" },
+                ] as const
+              ).map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => setActiveTab(key)}
+                  className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                    activeTab === key
+                      ? "bg-primary text-primary-foreground font-medium"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
 
-          <TabsContent value="run" className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Configuration Panel */}
-              <div className="lg:col-span-1">
-                <RegionAnalysisPanel
-                  annotationSetId={selectedSetId}
-                  token={token}
-                  onAnalysisComplete={handleAnalysisComplete}
-                />
-              </div>
+            <div className="p-6">
+              {activeTab === "run" && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  <div className="lg:col-span-1">
+                    <RegionAnalysisPanel
+                      annotationSetId={selectedSetId}
+                      token={token}
+                      onAnalysisComplete={handleAnalysisComplete}
+                    />
+                  </div>
 
-              {/* Preview */}
-              <Card className="lg:col-span-2">
-                <CardHeader>
-                  <CardTitle>Screenshot Preview</CardTitle>
-                  <CardDescription>
-                    {selectedSet?.screenshot_name}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {selectedSet && (
-                    <div className="border rounded-lg overflow-hidden bg-muted">
-                      {/* eslint-disable-next-line @next/next/no-img-element -- External URL from backend, dimensions unknown */}
-                      <img
-                        src={selectedSet.screenshot_url}
-                        alt={selectedSet.screenshot_name}
-                        className="w-full h-auto"
-                      />
+                  <div className="lg:col-span-2">
+                    <div className="px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider border-b border-border bg-muted/50">
+                      Screenshot Preview — {selectedSet?.screenshot_name}
+                    </div>
+                    {selectedSet && (
+                      <div className="border border-border rounded-b-lg overflow-hidden bg-muted">
+                        {/* eslint-disable-next-line @next/next/no-img-element -- External URL from backend, dimensions unknown */}
+                        <img
+                          src={selectedSet.screenshot_url}
+                          alt={selectedSet.screenshot_name}
+                          className="w-full h-auto"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "results" && (
+                <>
+                  {analysisResults ? (
+                    <RegionAnalysisResults
+                      results={analysisResults}
+                      imageUrl={selectedSet?.screenshot_url}
+                      imageWidth={selectedSet?.image_width}
+                      imageHeight={selectedSet?.image_height}
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                      <Grid3x3 className="h-8 w-8 mb-2" />
+                      <p className="text-sm">No region analysis results yet</p>
+                      <p className="text-xs mt-1">
+                        Run a region analysis to see results here
+                      </p>
                     </div>
                   )}
-                </CardContent>
-              </Card>
+                </>
+              )}
+
+              {activeTab === "history" && (
+                <RegionJobList
+                  token={token}
+                  annotationSetId={selectedSetId}
+                  onJobSelect={(job) => {
+                    const results: RegionAnalysisResponse = {
+                      analysis_job_id: job.id,
+                      annotation_set_id: job.annotation_set_id,
+                      analyzer_results: [],
+                      fused_regions: job.fused_regions,
+                      analyzer_statistics: job.analyzer_statistics || {},
+                      fusion_stats: {
+                        total_regions: job.total_fused_regions,
+                        avg_confidence:
+                          job.fused_regions.reduce(
+                            (sum, r) => sum + r.confidence,
+                            0
+                          ) / job.fused_regions.length,
+                        multi_vote_regions: job.fused_regions.filter(
+                          (r) => r.votes > 1
+                        ).length,
+                        total_grid_cells: job.total_grid_cells,
+                      },
+                      status: job.status,
+                    };
+                    setAnalysisResults(results);
+                  }}
+                />
+              )}
             </div>
-          </TabsContent>
-
-          <TabsContent value="results" className="space-y-6">
-            {analysisResults ? (
-              <RegionAnalysisResults
-                results={analysisResults}
-                imageUrl={selectedSet?.screenshot_url}
-                imageWidth={selectedSet?.image_width}
-                imageHeight={selectedSet?.image_height}
-              />
-            ) : (
-              <Card>
-                <CardContent className="py-12">
-                  <div className="text-center text-muted-foreground">
-                    <Grid3x3 className="mx-auto h-12 w-12 mb-4" />
-                    <p>No region analysis results yet</p>
-                    <p className="text-sm mt-2">
-                      Run a region analysis to see results here
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </TabsContent>
-
-          <TabsContent value="history" className="space-y-6">
-            <RegionJobList
-              token={token}
-              annotationSetId={selectedSetId}
-              onJobSelect={(job) => {
-                // Convert job to RegionAnalysisResponse format
-                const results: RegionAnalysisResponse = {
-                  analysis_job_id: job.id,
-                  annotation_set_id: job.annotation_set_id,
-                  analyzer_results: [],
-                  fused_regions: job.fused_regions,
-                  analyzer_statistics: job.analyzer_statistics || {},
-                  fusion_stats: {
-                    total_regions: job.total_fused_regions,
-                    avg_confidence:
-                      job.fused_regions.reduce(
-                        (sum, r) => sum + r.confidence,
-                        0
-                      ) / job.fused_regions.length,
-                    multi_vote_regions: job.fused_regions.filter(
-                      (r) => r.votes > 1
-                    ).length,
-                    total_grid_cells: job.total_grid_cells,
-                  },
-                  status: job.status,
-                };
-                setAnalysisResults(results);
-              }}
-            />
-          </TabsContent>
-        </Tabs>
-      )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

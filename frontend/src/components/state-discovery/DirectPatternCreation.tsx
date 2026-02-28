@@ -6,6 +6,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -49,8 +50,6 @@ export function DirectPatternCreation() {
 
   // Step 1: Snapshot Selection
   const [selectedSnapshots, setSelectedSnapshots] = useState<SnapshotRun[]>([]);
-  const [screenshots, setScreenshots] = useState<SnapshotScreenshot[]>([]);
-  const [loadingScreenshots, setLoadingScreenshots] = useState(false);
 
   // Step 2: Pattern Extraction
   const [currentScreenshotIndex, setCurrentScreenshotIndex] = useState(0);
@@ -64,71 +63,57 @@ export function DirectPatternCreation() {
   const [saving, setSaving] = useState(false);
   const [saveProgress, setSaveProgress] = useState(0);
 
+  // Stable query key based on sorted snapshot run_ids
+  const snapshotRunIds = selectedSnapshots.map((s) => s.run_id).sort();
+
   // Load screenshots when snapshots are selected
-  useEffect(() => {
-    if (selectedSnapshots.length === 0) {
-      setScreenshots([]);
-      setCurrentScreenshotIndex(0);
-      return;
-    }
+  const { data: screenshots = [], isLoading: loadingScreenshots } = useQuery({
+    queryKey: ["directPatternScreenshots", snapshotRunIds],
+    queryFn: async ({ signal }): Promise<SnapshotScreenshot[]> => {
+      const allScreenshots: SnapshotScreenshot[] = [];
 
-    const controller = new AbortController();
+      for (const snapshot of selectedSnapshots) {
+        const response = await fetch(
+          `/api/integration-testing/snapshots/${snapshot.run_id}/screenshots`,
+          { signal }
+        );
 
-    const loadScreenshots = async () => {
-      setLoadingScreenshots(true);
-      try {
-        const allScreenshots: SnapshotScreenshot[] = [];
-
-        for (const snapshot of selectedSnapshots) {
-          const response = await fetch(
-            `/api/integration-testing/snapshots/${snapshot.run_id}/screenshots`,
-            { signal: controller.signal }
-          );
-
-          if (!response.ok) {
-            throw new Error(
-              `Failed to load screenshots for ${snapshot.run_id}`
-            );
-          }
-
-          const data = await response.json();
-
-          const screenshotList: SnapshotScreenshot[] = data.screenshots.map(
-            (s: APIScreenshot, idx: number) => ({
-              id: `${snapshot.run_id}_${idx}`,
-              path: s.screenshot_path,
-              url: `/api/integration-testing/snapshots/${snapshot.run_id}/screenshot/${s.screenshot_path}`,
-              active_states: s.active_states || [],
-              timestamp: s.timestamp,
-              snapshotRunId: snapshot.run_id,
-              snapshotName: snapshot.run_id.substring(0, 8),
-              width: s.width,
-              height: s.height,
-            })
-          );
-
-          allScreenshots.push(...screenshotList);
+        if (!response.ok) {
+          throw new Error(`Failed to load screenshots for ${snapshot.run_id}`);
         }
 
-        setScreenshots(allScreenshots);
-        setCurrentScreenshotIndex(0);
-        toast.success(
-          `Loaded ${allScreenshots.length} screenshots from ${selectedSnapshots.length} snapshot(s)`
-        );
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError")
-          return;
-        console.error("Failed to load screenshots:", error);
-        toast.error("Failed to load screenshots");
-        setScreenshots([]);
-      } finally {
-        setLoadingScreenshots(false);
-      }
-    };
+        const data = await response.json();
 
-    loadScreenshots();
-    return () => controller.abort();
-  }, [selectedSnapshots]);
+        const screenshotList: SnapshotScreenshot[] = data.screenshots.map(
+          (s: APIScreenshot, idx: number) => ({
+            id: `${snapshot.run_id}_${idx}`,
+            path: s.screenshot_path,
+            url: `/api/integration-testing/snapshots/${snapshot.run_id}/screenshot/${s.screenshot_path}`,
+            active_states: s.active_states || [],
+            timestamp: s.timestamp,
+            snapshotRunId: snapshot.run_id,
+            snapshotName: snapshot.run_id.substring(0, 8),
+            width: s.width,
+            height: s.height,
+          })
+        );
+
+        allScreenshots.push(...screenshotList);
+      }
+
+      toast.success(
+        `Loaded ${allScreenshots.length} screenshots from ${selectedSnapshots.length} snapshot(s)`
+      );
+      return allScreenshots;
+    },
+    enabled: selectedSnapshots.length > 0,
+    staleTime: 60 * 1000,
+  });
+
+  // Reset screenshot index when screenshots change
+  useEffect(() => {
+    setCurrentScreenshotIndex(0);
+  }, [screenshots]);
 
   // Extract pattern from current screenshot
   const handleExtractRegion = async () => {

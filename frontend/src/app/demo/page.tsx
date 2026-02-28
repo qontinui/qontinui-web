@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -22,38 +22,31 @@ interface PublicProject {
 }
 
 export default function DemoPage() {
-  const [projects, setProjects] = useState<PublicProject[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    data: projects = [],
+    isLoading: loading,
+    error: queryError,
+  } = useQuery<PublicProject[]>({
+    queryKey: ["publicProjects"],
+    queryFn: async ({ signal }) => {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const response = await fetch(`${apiUrl}/api/v1/public/projects`, {
+        signal,
+      });
 
-  useEffect(() => {
-    const controller = new AbortController();
-
-    const fetchPublicProjects = async () => {
-      try {
-        const apiUrl =
-          process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-        const response = await fetch(`${apiUrl}/api/v1/public/projects`, {
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          throw new Error("Failed to fetch public projects");
-        }
-
-        const data = await response.json();
-        setProjects(data);
-      } catch (err: unknown) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-        setError(err instanceof Error ? err.message : "An error occurred");
-      } finally {
-        setLoading(false);
+      if (!response.ok) {
+        throw new Error("Failed to fetch public projects");
       }
-    };
 
-    fetchPublicProjects();
-    return () => controller.abort();
-  }, []);
+      return response.json();
+    },
+  });
+
+  const error = queryError
+    ? queryError instanceof Error
+      ? queryError.message
+      : "An error occurred"
+    : null;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-950 dark:to-zinc-900">

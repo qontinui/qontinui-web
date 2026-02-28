@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Play,
   Pause,
@@ -64,65 +65,56 @@ export const IntegrationTestPlayback: React.FC<
   IntegrationTestPlaybackProps
 > = ({ historicalResultIds, workflowName, onClose }) => {
   // State
-  const [frames, setFrames] = useState<PlaybackFrame[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Refs
   const playbackRef = useRef<NodeJS.Timeout | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Load frames from API
+  const {
+    data: frames = [],
+    isLoading,
+    error: framesError,
+  } = useQuery({
+    queryKey: ["playback-frames", historicalResultIds],
+    queryFn: async () => {
+      const response = await fetch(
+        `${ApiConfig.RUNNER_URL}/api/capture/frames/playback`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            historical_result_ids: historicalResultIds,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to load frames: ${response.statusText}`);
+      }
+
+      return (await response.json()) as PlaybackFrame[];
+    },
+    enabled: historicalResultIds.length > 0,
+    retry: false,
+    staleTime: 60000,
+  });
+
+  const error =
+    historicalResultIds.length === 0
+      ? "No historical results to display"
+      : framesError
+        ? framesError instanceof Error
+          ? framesError.message
+          : "Failed to load frames"
+        : null;
+
   // Current frame
   const currentFrame = frames[currentIndex];
-
-  // Load frames from API
-  useEffect(() => {
-    if (historicalResultIds.length === 0) {
-      setError("No historical results to display");
-      setIsLoading(false);
-      return;
-    }
-
-    const controller = new AbortController();
-
-    const loadFrames = async () => {
-      setIsLoading(true);
-      setError(null);
-
-      try {
-        const response = await fetch(
-          `${ApiConfig.RUNNER_URL}/api/capture/frames/playback`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              historical_result_ids: historicalResultIds,
-            }),
-            signal: controller.signal,
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error(`Failed to load frames: ${response.statusText}`);
-        }
-
-        const data: PlaybackFrame[] = await response.json();
-        setFrames(data);
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-        setError(err instanceof Error ? err.message : "Failed to load frames");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadFrames();
-    return () => controller.abort();
-  }, [historicalResultIds]);
 
   // Navigation functions
   const goToStart = useCallback(() => {

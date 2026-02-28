@@ -16,30 +16,9 @@ import { useAuth } from "@/contexts/auth-context";
 import { datasetService } from "@/services/dataset-service";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import {
-  LayoutDashboard,
-  Shield,
-  Database,
-  Upload,
-  Eye,
-  Trash2,
-  Download,
-  FolderOpen,
-  ImageIcon,
-  Tag,
-  CheckCircle2,
-  Clock,
-  Plus,
-} from "lucide-react";
+import { Upload, Eye, Trash2, Download, FolderOpen, Plus } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -129,90 +108,49 @@ export default function DatasetsPage() {
   const getSourceBadgeColor = (source: string) => {
     switch (source) {
       case "runner_export":
-        return "bg-brand-primary";
+        return "bg-primary";
       case "manual_upload":
-        return "bg-brand-success";
+        return "bg-green-500";
       case "merged":
-        return "bg-brand-secondary";
+        return "bg-primary";
       default:
-        return "bg-surface-raised";
+        return "bg-muted";
     }
   };
 
   // Don't render until auth is confirmed
   if (authLoading) {
     return (
-      <div className="container mx-auto py-8">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
+      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
+        <p className="text-muted-foreground">Loading...</p>
       </div>
     );
   }
 
   if (!user?.is_superuser) {
-    return (
-      <div className="container mx-auto py-8">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Shield className="h-5 w-5" />
-              Admin Access Required
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground">
-              This page is only accessible to administrators.
-            </p>
-            <Button
-              variant="outline"
-              onClick={() => router.push("/build/workflows")}
-              className="mt-4"
-            >
-              <LayoutDashboard className="mr-2 h-4 w-4" />
-              Return to Dashboard
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
+    return null;
   }
 
   return (
-    <div className="container mx-auto py-8" data-ui-id="admin-page-datasets">
-      {/* Navigation Links */}
-      <div className="mb-6 flex items-center gap-4">
-        <Button
-          variant="ghost"
-          onClick={() => router.push("/build/workflows")}
-          className="hover:bg-primary/10"
-        >
-          <LayoutDashboard className="mr-2 h-4 w-4" />
-          Dashboard
-        </Button>
-        <Button
-          variant="ghost"
-          onClick={() => router.push("/admin")}
-          className="hover:bg-secondary/10"
-        >
-          <Shield className="mr-2 h-4 w-4" />
-          Admin
-        </Button>
-        <Button variant="ghost" className="bg-accent/20">
-          <Database className="mr-2 h-4 w-4" />
-          Datasets
-        </Button>
-      </div>
-
+    <div
+      className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden"
+      data-ui-id="admin-page-datasets"
+    >
       {/* Header */}
-      <div className="mb-8 flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold mb-2">Training Datasets</h1>
-          <p className="text-muted-foreground">
-            Manage and curate training datasets for GUI element detection models
-          </p>
+      <div className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => router.push("/admin")}
+          >
+            Admin
+          </Button>
+          <span className="text-muted-foreground">/</span>
+          <h1 className="text-lg font-semibold">Training Datasets</h1>
         </div>
         <Button
+          size="sm"
           onClick={() => setShowImportDialog(true)}
           data-ui-id="admin-page-datasets-import-btn"
         >
@@ -221,17 +159,17 @@ export default function DatasetsPage() {
         </Button>
       </div>
 
-      {/* Dataset Grid */}
-      {loading ? (
-        <div className="flex items-center justify-center min-h-[300px]">
-          <p className="text-muted-foreground">Loading datasets...</p>
-        </div>
-      ) : datasets.length === 0 ? (
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <FolderOpen className="h-16 w-16 text-muted-foreground mb-4" />
-            <h3 className="text-xl font-semibold mb-2">No datasets yet</h3>
-            <p className="text-muted-foreground text-center mb-6 max-w-md">
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto">
+        {loading ? (
+          <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">
+            Loading datasets...
+          </div>
+        ) : datasets.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16">
+            <FolderOpen className="h-12 w-12 text-muted-foreground mb-4" />
+            <h3 className="text-lg font-semibold mb-2">No datasets yet</h3>
+            <p className="text-muted-foreground text-center mb-6 max-w-md text-sm">
               Import a dataset from the Training Data Exporter to get started.
               Datasets contain screenshots and annotations for training ML
               models.
@@ -240,214 +178,179 @@ export default function DatasetsPage() {
               <Plus className="mr-2 h-4 w-4" />
               Import Your First Dataset
             </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {datasets.map((dataset) => {
-            const progress = getReviewProgress(dataset);
-            return (
-              <Card
-                key={dataset.id}
-                className="hover:shadow-lg transition-shadow cursor-pointer"
-                onClick={() => router.push(`/admin/datasets/${dataset.id}`)}
-                data-ui-id={`admin-page-datasets-item-${dataset.id}`}
-              >
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 min-w-0">
-                      <CardTitle className="truncate">{dataset.name}</CardTitle>
-                      <CardDescription className="truncate mt-1">
-                        {dataset.description || "No description"}
-                      </CardDescription>
-                    </div>
-                    <Badge
-                      className={getSourceBadgeColor(dataset.source)}
-                      data-content-role="badge"
-                      data-content-label="dataset-source"
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
+              <tr className="text-left text-xs text-muted-foreground uppercase tracking-wider">
+                <th className="px-6 py-2 font-medium">Dataset</th>
+                <th className="px-3 py-2 font-medium">Source</th>
+                <th className="px-3 py-2 font-medium text-right">Images</th>
+                <th className="px-3 py-2 font-medium text-right">
+                  Annotations
+                </th>
+                <th className="px-3 py-2 font-medium text-right">Reviewed</th>
+                <th className="px-3 py-2 font-medium">Progress</th>
+                <th className="px-3 py-2 font-medium">Created</th>
+                <th className="px-6 py-2 font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {datasets.map((dataset) => {
+                const progress = getReviewProgress(dataset);
+                return (
+                  <tr
+                    key={dataset.id}
+                    className="hover:bg-muted/30 transition-colors cursor-pointer"
+                    onClick={() => router.push(`/admin/datasets/${dataset.id}`)}
+                    data-ui-id={`admin-page-datasets-item-${dataset.id}`}
+                  >
+                    <td className="px-6 py-2.5">
+                      <div>
+                        <span className="font-medium">{dataset.name}</span>
+                        <div className="text-xs text-muted-foreground truncate max-w-xs">
+                          {dataset.description || "No description"}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <Badge
+                        className={`${getSourceBadgeColor(dataset.source)} text-xs`}
+                        data-content-role="badge"
+                        data-content-label="dataset-source"
+                      >
+                        {dataset.source.replace("_", " ")}
+                      </Badge>
+                    </td>
+                    <td
+                      className="px-3 py-2.5 text-right tabular-nums"
+                      data-content-role="metric"
+                      data-content-label="total-images"
                     >
-                      {dataset.source.replace("_", " ")}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  {/* Statistics */}
-                  <div className="grid grid-cols-3 gap-4 mb-4">
-                    <div className="text-center">
-                      <div className="flex items-center justify-center gap-1 text-muted-foreground mb-1">
-                        <ImageIcon className="h-4 w-4" />
+                      {dataset.total_images}
+                    </td>
+                    <td
+                      className="px-3 py-2.5 text-right tabular-nums"
+                      data-content-role="metric"
+                      data-content-label="total-annotations"
+                    >
+                      {dataset.total_annotations}
+                    </td>
+                    <td
+                      className="px-3 py-2.5 text-right tabular-nums"
+                      data-content-role="metric"
+                      data-content-label="reviewed-count"
+                    >
+                      {dataset.reviewed_count}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <Progress value={progress} className="h-1.5 w-16" />
+                        <span
+                          className="text-xs tabular-nums text-muted-foreground"
+                          data-content-role="metric"
+                          data-content-label="review-progress"
+                        >
+                          {progress}%
+                        </span>
                       </div>
-                      <div
-                        className="text-2xl font-bold"
-                        data-content-role="metric"
-                        data-content-label="total-images"
-                      >
-                        {dataset.total_images}
-                      </div>
-                      <div
-                        className="text-xs text-muted-foreground"
-                        data-content-role="label"
-                      >
-                        Images
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="flex items-center justify-center gap-1 text-muted-foreground mb-1">
-                        <Tag className="h-4 w-4" />
-                      </div>
-                      <div
-                        className="text-2xl font-bold"
-                        data-content-role="metric"
-                        data-content-label="total-annotations"
-                      >
-                        {dataset.total_annotations}
-                      </div>
-                      <div
-                        className="text-xs text-muted-foreground"
-                        data-content-role="label"
-                      >
-                        Annotations
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="flex items-center justify-center gap-1 text-muted-foreground mb-1">
-                        <CheckCircle2 className="h-4 w-4" />
-                      </div>
-                      <div
-                        className="text-2xl font-bold"
-                        data-content-role="metric"
-                        data-content-label="reviewed-count"
-                      >
-                        {dataset.reviewed_count}
-                      </div>
-                      <div
-                        className="text-xs text-muted-foreground"
-                        data-content-role="label"
-                      >
-                        Reviewed
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Review Progress */}
-                  <div className="space-y-2 mb-4">
-                    <div className="flex justify-between text-sm">
-                      <span
-                        className="text-muted-foreground"
-                        data-content-role="label"
-                      >
-                        Review Progress
-                      </span>
-                      <span
-                        className="font-medium"
-                        data-content-role="metric"
-                        data-content-label="review-progress"
-                      >
-                        {progress}%
-                      </span>
-                    </div>
-                    <Progress value={progress} className="h-2" />
-                  </div>
-
-                  {/* Metadata */}
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Clock className="h-3 w-3" />
-                    <span>
-                      Created{" "}
+                    </td>
+                    <td className="px-3 py-2.5 text-xs text-muted-foreground">
                       {new Date(dataset.created_at).toLocaleDateString()}
-                    </span>
-                  </div>
+                    </td>
+                    <td className="px-6 py-2.5">
+                      <div className="flex gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            router.push(`/admin/datasets/${dataset.id}`);
+                          }}
+                          data-ui-id={`admin-page-datasets-view-btn-${dataset.id}`}
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setExportDataset(dataset);
+                          }}
+                          data-ui-id={`admin-page-datasets-export-btn-${dataset.id}`}
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteConfirm(dataset);
+                          }}
+                          data-ui-id={`admin-page-datasets-delete-btn-${dataset.id}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
 
-                  {/* Actions */}
-                  <div className="flex gap-2 mt-4">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="flex-1"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        router.push(`/admin/datasets/${dataset.id}`);
-                      }}
-                      data-ui-id={`admin-page-datasets-view-btn-${dataset.id}`}
-                    >
-                      <Eye className="mr-2 h-4 w-4" />
-                      View
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setExportDataset(dataset);
-                      }}
-                      data-ui-id={`admin-page-datasets-export-btn-${dataset.id}`}
-                    >
-                      <Download className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-destructive hover:text-destructive"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeleteConfirm(dataset);
-                      }}
-                      data-ui-id={`admin-page-datasets-delete-btn-${dataset.id}`}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Import Dialog */}
-      <DatasetImportDialog
-        open={showImportDialog}
-        onOpenChange={setShowImportDialog}
-        onImportComplete={handleImportComplete}
-      />
-
-      {/* Export Dialog */}
-      {exportDataset && (
-        <DatasetExportDialog
-          open={!!exportDataset}
-          onOpenChange={(open) => !open && setExportDataset(null)}
-          datasetId={exportDataset.id}
-          datasetName={exportDataset.name}
+        {/* Import Dialog */}
+        <DatasetImportDialog
+          open={showImportDialog}
+          onOpenChange={setShowImportDialog}
+          onImportComplete={handleImportComplete}
         />
-      )}
 
-      {/* Delete Confirmation */}
-      <AlertDialog
-        open={!!deleteConfirm}
-        onOpenChange={() => setDeleteConfirm(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Dataset</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete &quot;{deleteConfirm?.name}&quot;?
-              This will permanently remove all {deleteConfirm?.total_images}{" "}
-              images and {deleteConfirm?.total_annotations} annotations. This
-              action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              disabled={deleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {deleting ? "Deleting..." : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        {/* Export Dialog */}
+        {exportDataset && (
+          <DatasetExportDialog
+            open={!!exportDataset}
+            onOpenChange={(open) => !open && setExportDataset(null)}
+            datasetId={exportDataset.id}
+            datasetName={exportDataset.name}
+          />
+        )}
+
+        {/* Delete Confirmation */}
+        <AlertDialog
+          open={!!deleteConfirm}
+          onOpenChange={() => setDeleteConfirm(null)}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Dataset</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete &quot;{deleteConfirm?.name}
+                &quot;? This will permanently remove all{" "}
+                {deleteConfirm?.total_images} images and{" "}
+                {deleteConfirm?.total_annotations} annotations. This action
+                cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDelete}
+                disabled={deleting}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {deleting ? "Deleting..." : "Delete"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
     </div>
   );
 }

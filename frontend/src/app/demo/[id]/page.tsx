@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,42 +39,36 @@ export default function DemoProjectPage() {
   const params = useParams();
   const projectId = params.id as string;
 
-  const [project, setProject] = useState<PublicProject | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    data: project,
+    isLoading: loading,
+    error: queryError,
+  } = useQuery<PublicProject>({
+    queryKey: ["publicProject", projectId],
+    queryFn: async ({ signal }) => {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const response = await fetch(
+        `${apiUrl}/api/v1/public/projects/${projectId}`,
+        { signal }
+      );
 
-  useEffect(() => {
-    const controller = new AbortController();
-
-    const fetchPublicProject = async () => {
-      try {
-        const apiUrl =
-          process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-        const response = await fetch(
-          `${apiUrl}/api/v1/public/projects/${projectId}`,
-          { signal: controller.signal }
-        );
-
-        if (!response.ok) {
-          if (response.status === 404) {
-            throw new Error("Project not found or is not public");
-          }
-          throw new Error("Failed to fetch project");
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error("Project not found or is not public");
         }
-
-        const data = await response.json();
-        setProject(data);
-      } catch (err: unknown) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-        setError(err instanceof Error ? err.message : "An error occurred");
-      } finally {
-        setLoading(false);
+        throw new Error("Failed to fetch project");
       }
-    };
 
-    fetchPublicProject();
-    return () => controller.abort();
-  }, [projectId]);
+      return response.json();
+    },
+    enabled: !!projectId,
+  });
+
+  const error = queryError
+    ? queryError instanceof Error
+      ? queryError.message
+      : "An error occurred"
+    : null;
 
   if (loading) {
     return (

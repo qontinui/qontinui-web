@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useSnapshotList } from "@/hooks/useSnapshotList";
+import { useQuery, useQueries } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import type { SnapshotRun } from "@/types/snapshots";
@@ -84,152 +85,99 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
   const [selectedSnapshot, setSelectedSnapshot] = useState<SnapshotRun | null>(
     null
   );
-  const [screenshots, setScreenshots] = useState<SnapshotScreenshot[]>([]);
   const [selectedScreenshots, setSelectedScreenshots] = useState<Set<string>>(
     new Set()
   );
   const [searchQuery, setSearchQuery] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [thumbnailCache, setThumbnailCache] = useState<
-    Map<string, ThumbnailData>
-  >(new Map());
-  const [loadingThumbnails, setLoadingThumbnails] = useState<Set<string>>(
-    new Set()
-  );
 
   // Reset when dialog opens/closes
   useEffect(() => {
     if (!isOpen) {
       setSelectedSnapshot(null);
-      setScreenshots([]);
       setSelectedScreenshots(new Set());
       setSearchQuery("");
-      setThumbnailCache(new Map());
-      setLoadingThumbnails(new Set());
     }
   }, [isOpen]);
 
-  // Load thumbnails for visible snapshots
-  useEffect(() => {
-    if (!isOpen || snapshotsLoading || snapshots.length === 0) return;
-
-    const controller = new AbortController();
-
-    const loadThumbnails = async () => {
-      const snapshotsToLoad = snapshots.filter(
-        (snapshot) =>
-          !thumbnailCache.has(snapshot.run_id) &&
-          !loadingThumbnails.has(snapshot.run_id)
-      );
-
-      if (snapshotsToLoad.length === 0) return;
-
-      // Mark snapshots as loading
-      const newLoadingSet = new Set(loadingThumbnails);
-      snapshotsToLoad.forEach((s) => newLoadingSet.add(s.run_id));
-      setLoadingThumbnails(newLoadingSet);
-
-      // Load thumbnails in parallel
-      const results = await Promise.allSettled(
-        snapshotsToLoad.map(async (snapshot) => {
-          try {
-            const response = await fetch(
-              `/api/integration-testing/snapshots/${snapshot.run_id}/thumbnails?limit=4`,
-              { signal: controller.signal }
-            );
-
-            if (!response.ok) {
-              throw new Error("Failed to load thumbnails");
-            }
-
-            const data: ThumbnailData = await response.json();
-            return { run_id: snapshot.run_id, data };
-          } catch (error) {
-            if (error instanceof DOMException && error.name === "AbortError")
-              return null;
-            console.error(
-              `Failed to load thumbnails for ${snapshot.run_id}:`,
-              error
-            );
-            return null;
-          }
-        })
-      );
-
-      if (controller.signal.aborted) return;
-
-      // Update cache with results
-      const newCache = new Map(thumbnailCache);
-      results.forEach((result) => {
-        if (result.status === "fulfilled" && result.value) {
-          newCache.set(result.value.run_id, result.value.data);
+  // Load thumbnails for each snapshot in parallel using useQueries
+  const thumbnailQueries = useQueries({
+    queries: (isOpen && !snapshotsLoading ? snapshots : []).map((snapshot) => ({
+      queryKey: ["snapshotThumbnails", snapshot.run_id] as const,
+      queryFn: async ({
+        signal,
+      }: {
+        signal: AbortSignal;
+      }): Promise<ThumbnailData> => {
+        const response = await fetch(
+          `/api/integration-testing/snapshots/${snapshot.run_id}/thumbnails?limit=4`,
+          { signal }
+        );
+        if (!response.ok) {
+          throw new Error("Failed to load thumbnails");
         }
-      });
-      setThumbnailCache(newCache);
+        return response.json();
+      },
+      staleTime: 5 * 60 * 1000,
+      enabled: isOpen && !snapshotsLoading,
+    })),
+  });
 
-      // Clear loading states
-      const finalLoadingSet = new Set(loadingThumbnails);
-      snapshotsToLoad.forEach((s) => finalLoadingSet.delete(s.run_id));
-      setLoadingThumbnails(finalLoadingSet);
-    };
+  // Build thumbnail cache map from query results
+  const thumbnailCache = useMemo(() => {
+    const cache = new Map<string, ThumbnailData>();
+    if (!isOpen || snapshotsLoading) return cache;
+    snapshots.forEach((snapshot, idx) => {
+      const query = thumbnailQueries[idx];
+      if (query?.data) {
+        cache.set(snapshot.run_id, query.data);
+      }
+    });
+    return cache;
+  }, [isOpen, snapshotsLoading, snapshots, thumbnailQueries]);
 
-    loadThumbnails();
-    return () => controller.abort();
-  }, [isOpen, snapshots, snapshotsLoading, thumbnailCache, loadingThumbnails]);
+  // Build loading thumbnails set from query states
+  const loadingThumbnails = useMemo(() => {
+    const loading = new Set<string>();
+    if (!isOpen || snapshotsLoading) return loading;
+    snapshots.forEach((snapshot, idx) => {
+      const query = thumbnailQueries[idx];
+      if (query?.isLoading) {
+        loading.add(snapshot.run_id);
+      }
+    });
+    return loading;
+  }, [isOpen, snapshotsLoading, snapshots, thumbnailQueries]);
 
   // Load screenshots when snapshot is selected
-  useEffect(() => {
-    if (!selectedSnapshot) {
-      setScreenshots([]);
-      return;
-    }
-
-    const controller = new AbortController();
-
-    const loadScreenshots = async () => {
-      setLoading(true);
-      try {
-        const response = await fetch(
-          `/api/integration-testing/snapshots/${selectedSnapshot.run_id}/screenshots`,
-          { signal: controller.signal }
-        );
-
-        if (!response.ok) {
-          throw new Error("Failed to load screenshots");
-        }
-
-        const data = await response.json();
-
-        // Convert to our format
-        const screenshotList: SnapshotScreenshot[] = data.screenshots.map(
-          (s: {
-            screenshot_path: string;
-            active_states: string[];
-            timestamp: string;
-          }) => ({
-            path: s.screenshot_path,
-            url: `/api/integration-testing/snapshots/${selectedSnapshot.run_id}/screenshot/${s.screenshot_path}`,
-            active_states: s.active_states,
-            timestamp: s.timestamp,
-            snapshotRunId: selectedSnapshot.run_id,
-            snapshotName: selectedSnapshot.run_id.substring(0, 8),
-          })
-        );
-
-        setScreenshots(screenshotList);
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError")
-          return;
-        console.error("Failed to load screenshots:", error);
-        setScreenshots([]);
-      } finally {
-        setLoading(false);
+  const { data: screenshots = [], isLoading: loading } = useQuery({
+    queryKey: ["snapshotScreenshots", selectedSnapshot?.run_id],
+    queryFn: async ({ signal }): Promise<SnapshotScreenshot[]> => {
+      const response = await fetch(
+        `/api/integration-testing/snapshots/${selectedSnapshot!.run_id}/screenshots`,
+        { signal }
+      );
+      if (!response.ok) {
+        throw new Error("Failed to load screenshots");
       }
-    };
-
-    loadScreenshots();
-    return () => controller.abort();
-  }, [selectedSnapshot]);
+      const data = await response.json();
+      return data.screenshots.map(
+        (s: {
+          screenshot_path: string;
+          active_states: string[];
+          timestamp: string;
+        }) => ({
+          path: s.screenshot_path,
+          url: `/api/integration-testing/snapshots/${selectedSnapshot!.run_id}/screenshot/${s.screenshot_path}`,
+          active_states: s.active_states,
+          timestamp: s.timestamp,
+          snapshotRunId: selectedSnapshot!.run_id,
+          snapshotName: selectedSnapshot!.run_id.substring(0, 8),
+        })
+      );
+    },
+    enabled: !!selectedSnapshot,
+    staleTime: 60 * 1000,
+  });
 
   // Analyze unique states and counts
   const uniqueStates = useMemo(() => {

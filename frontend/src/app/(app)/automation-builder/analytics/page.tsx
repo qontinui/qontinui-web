@@ -681,7 +681,7 @@ export default function WorkflowAnalyticsPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => router.push("/automation-builder")}
-                className="border-border-default hover:border-brand-primary hover:text-brand-primary bg-transparent"
+                className="border-border hover:border-primary hover:text-primary bg-transparent"
               >
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back
@@ -690,12 +690,12 @@ export default function WorkflowAnalyticsPage() {
                 <h1 className="text-3xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
                   Workflow Analytics
                 </h1>
-                <p className="text-text-muted">
+                <p className="text-muted-foreground">
                   Monitor execution, performance, and usage metrics
                 </p>
                 <div className="flex items-center gap-2 mt-1">
-                  <Calendar className="h-4 w-4 text-text-muted" />
-                  <p className="text-sm text-text-muted">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">
                     {timeRange.start.toLocaleDateString()} -{" "}
                     {timeRange.end.toLocaleDateString()}
                   </p>
@@ -710,7 +710,7 @@ export default function WorkflowAnalyticsPage() {
                   handleTimeRangeChange(v as TimeRangePreset)
                 }
               >
-                <SelectTrigger className="w-[180px] bg-surface-raised border-border-default">
+                <SelectTrigger className="w-[180px] bg-muted border-border">
                   <Calendar className="h-4 w-4 mr-2" />
                   <SelectValue />
                 </SelectTrigger>
@@ -728,7 +728,7 @@ export default function WorkflowAnalyticsPage() {
                 variant="outline"
                 size="icon"
                 onClick={handleRefresh}
-                className="border-border-default hover:border-brand-primary bg-surface-raised"
+                className="border-border hover:border-primary bg-muted"
               >
                 <RefreshCw className="h-4 w-4" />
               </Button>
@@ -736,7 +736,7 @@ export default function WorkflowAnalyticsPage() {
               <Button
                 variant="outline"
                 onClick={handleExport}
-                className="border-border-default hover:border-brand-secondary bg-surface-raised"
+                className="border-border hover:border-primary bg-muted"
               >
                 <Download className="h-4 w-4 mr-2" />
                 Export Report
@@ -745,7 +745,7 @@ export default function WorkflowAnalyticsPage() {
               <Button
                 variant="outline"
                 onClick={handleExportCSV}
-                className="border-border-default hover:border-brand-success bg-surface-raised"
+                className="border-border hover:border-green-500 bg-muted"
               >
                 <FileDown className="h-4 w-4 mr-2" />
                 Export CSV
@@ -754,7 +754,7 @@ export default function WorkflowAnalyticsPage() {
           </div>
 
           {/* Filters */}
-          <Card className="bg-surface-raised/50 border-border-subtle/50 backdrop-blur-sm">
+          <Card className="bg-muted border-border backdrop-blur-sm">
             <CardContent className="pt-6">
               <div className="flex items-center gap-4 flex-wrap">
                 <div className="flex items-center gap-2">
@@ -771,7 +771,7 @@ export default function WorkflowAnalyticsPage() {
                       onChange={(e) =>
                         setFilters({ ...filters, searchQuery: e.target.value })
                       }
-                      className="pl-9 bg-surface-canvas border-border-default"
+                      className="pl-9 bg-background border-border"
                     />
                   </div>
                 </div>
@@ -785,7 +785,7 @@ export default function WorkflowAnalyticsPage() {
                     })
                   }
                 >
-                  <SelectTrigger className="w-[150px] bg-surface-canvas border-border-default">
+                  <SelectTrigger className="w-[150px] bg-background border-border">
                     <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
@@ -800,7 +800,7 @@ export default function WorkflowAnalyticsPage() {
                     variant="ghost"
                     size="sm"
                     onClick={handleClearFilters}
-                    className="text-brand-primary hover:text-brand-primary/80"
+                    className="text-primary hover:text-primary/80"
                   >
                     <X className="h-4 w-4 mr-2" />
                     Clear Filters
@@ -884,7 +884,7 @@ export default function WorkflowAnalyticsPage() {
 
           {/* Main Content */}
           <Tabs defaultValue="dashboard" className="space-y-6">
-            <TabsList className="bg-surface-raised border-border-subtle">
+            <TabsList className="bg-muted border-border">
               <TabsTrigger value="dashboard">
                 <BarChart3 className="h-4 w-4 mr-2" />
                 Dashboard
@@ -927,7 +927,7 @@ export default function WorkflowAnalyticsPage() {
             {/* Top Workflows Tab */}
             <TabsContent value="top-workflows" className="space-y-6">
               <Tabs defaultValue="most-executed">
-                <TabsList className="bg-surface-raised border-border-subtle">
+                <TabsList className="bg-muted border-border">
                   <TabsTrigger value="most-executed">Most Executed</TabsTrigger>
                   <TabsTrigger value="slowest">Slowest</TabsTrigger>
                   <TabsTrigger value="highest-error">
@@ -940,7 +940,7 @@ export default function WorkflowAnalyticsPage() {
 
                 {/* Most Executed */}
                 <TabsContent value="most-executed">
-                  <Card className="bg-surface-raised/50 border-border-subtle/50">
+                  <Card className="bg-muted border-border">
                     <CardHeader>
                       <CardTitle>Most Executed Workflows</CardTitle>
                       <CardDescription>
@@ -952,13 +952,13 @@ export default function WorkflowAnalyticsPage() {
                         {topWorkflows.mostExecuted.map((metric, index) => (
                           <div
                             key={metric.workflowId}
-                            className="flex items-center justify-between p-4 rounded-lg border border-border-subtle hover:border-border-default transition-colors cursor-pointer"
+                            className="flex items-center justify-between p-4 rounded-lg border border-border hover:border-border transition-colors cursor-pointer"
                             onClick={() =>
                               setSelectedWorkflow(metric.workflowId)
                             }
                           >
                             <div className="flex items-center gap-4 flex-1">
-                              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-brand-primary/20 text-brand-primary font-bold">
+                              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/20 text-primary font-bold">
                                 {index + 1}
                               </div>
                               <div className="flex-1">
@@ -974,7 +974,7 @@ export default function WorkflowAnalyticsPage() {
                               </div>
                             </div>
                             <div className="text-right">
-                              <p className="text-2xl font-bold text-brand-primary">
+                              <p className="text-2xl font-bold text-primary">
                                 {formatNumber(metric.totalExecutions)}
                               </p>
                               <p className="text-xs text-muted-foreground">
@@ -991,7 +991,7 @@ export default function WorkflowAnalyticsPage() {
 
                 {/* Slowest */}
                 <TabsContent value="slowest">
-                  <Card className="bg-surface-raised/50 border-border-subtle/50">
+                  <Card className="bg-muted border-border">
                     <CardHeader>
                       <CardTitle>Slowest Workflows</CardTitle>
                       <CardDescription>
@@ -1003,7 +1003,7 @@ export default function WorkflowAnalyticsPage() {
                         {topWorkflows.slowest.map((metric, index) => (
                           <div
                             key={metric.workflowId}
-                            className="flex items-center justify-between p-4 rounded-lg border border-border-subtle hover:border-border-default transition-colors cursor-pointer"
+                            className="flex items-center justify-between p-4 rounded-lg border border-border hover:border-border transition-colors cursor-pointer"
                             onClick={() =>
                               setSelectedWorkflow(metric.workflowId)
                             }
@@ -1044,7 +1044,7 @@ export default function WorkflowAnalyticsPage() {
 
                 {/* Highest Error Rate */}
                 <TabsContent value="highest-error">
-                  <Card className="bg-surface-raised/50 border-border-subtle/50">
+                  <Card className="bg-muted border-border">
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
                         <AlertTriangle className="h-5 w-5 text-red-500" />
@@ -1118,7 +1118,7 @@ export default function WorkflowAnalyticsPage() {
 
                 {/* Recently Failed */}
                 <TabsContent value="recently-failed">
-                  <Card className="bg-surface-raised/50 border-border-subtle/50">
+                  <Card className="bg-muted border-border">
                     <CardHeader>
                       <CardTitle>Recently Failed Executions</CardTitle>
                       <CardDescription>
@@ -1183,7 +1183,7 @@ export default function WorkflowAnalyticsPage() {
 
             {/* Executions Tab */}
             <TabsContent value="executions">
-              <Card className="bg-surface-raised/50 border-border-subtle/50">
+              <Card className="bg-muted border-border">
                 <CardHeader>
                   <CardTitle>Execution Log</CardTitle>
                   <CardDescription>
@@ -1216,7 +1216,7 @@ export default function WorkflowAnalyticsPage() {
                   />
                 </>
               ) : (
-                <Card className="bg-surface-raised/50 border-border-subtle/50">
+                <Card className="bg-muted border-border">
                   <CardContent className="flex flex-col items-center justify-center py-16">
                     <Info className="h-16 w-16 text-muted-foreground mb-4" />
                     <h3 className="text-xl font-semibold mb-2">
@@ -1245,7 +1245,7 @@ export default function WorkflowAnalyticsPage() {
             {/* Comparison Tab */}
             {comparisonWorkflows.length > 0 && (
               <TabsContent value="comparison">
-                <Card className="bg-surface-raised/50 border-border-subtle/50">
+                <Card className="bg-muted border-border">
                   <CardHeader>
                     <CardTitle>Workflow Comparison</CardTitle>
                     <CardDescription>
@@ -1270,7 +1270,7 @@ export default function WorkflowAnalyticsPage() {
 
           {/* Execution Details Modal Placeholder */}
           {selectedExecution && (
-            <Alert className="fixed bottom-4 right-4 w-96 bg-surface-raised border-border-default">
+            <Alert className="fixed bottom-4 right-4 w-96 bg-muted border-border">
               <Activity className="h-4 w-4" />
               <AlertTitle className="flex items-center justify-between">
                 Execution Details

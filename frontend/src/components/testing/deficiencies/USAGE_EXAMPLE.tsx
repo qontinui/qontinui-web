@@ -9,7 +9,8 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -32,118 +33,70 @@ import {
 import { User } from "@/types/auth-types";
 
 export function DeficiencyDashboard() {
+  const queryClient = useQueryClient();
+
   // State
-  const [deficiencies, setDeficiencies] = useState<Deficiency[]>([]);
   const [selectedDeficiency, setSelectedDeficiency] =
     useState<Deficiency | null>(null);
-  const [comments, setComments] = useState<DeficiencyComment[]>([]);
-  const [activities, setActivities] = useState<DeficiencyActivity[]>([]);
   const [filters, setFilters] = useState<Filters>({});
-  const [users, setUsers] = useState<User[]>([]);
-  const [tags, setTags] = useState<string[]>([]);
   const [exportOpen, setExportOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
 
   // Fetch deficiencies from API
-  useEffect(() => {
-    const controller = new AbortController();
+  const { data: deficiencies = [], isLoading: loading } = useQuery({
+    queryKey: ["deficiencies", filters],
+    queryFn: async () => {
+      const queryParams = new URLSearchParams();
+      if (filters.search) queryParams.append("search", filters.search);
+      if (filters.severity)
+        queryParams.append("severity", filters.severity.join(","));
+      if (filters.status)
+        queryParams.append("status", filters.status.join(","));
+      if (filters.assigned_to)
+        queryParams.append("assigned_to", filters.assigned_to.join(","));
+      if (filters.date_from) queryParams.append("date_from", filters.date_from);
+      if (filters.date_to) queryParams.append("date_to", filters.date_to);
 
-    const fetchDeficiencies = async () => {
-      setLoading(true);
-      try {
-        const queryParams = new URLSearchParams();
-        if (filters.search) queryParams.append("search", filters.search);
-        if (filters.severity)
-          queryParams.append("severity", filters.severity.join(","));
-        if (filters.status)
-          queryParams.append("status", filters.status.join(","));
-        if (filters.assigned_to)
-          queryParams.append("assigned_to", filters.assigned_to.join(","));
-        if (filters.date_from)
-          queryParams.append("date_from", filters.date_from);
-        if (filters.date_to) queryParams.append("date_to", filters.date_to);
-
-        const response = await fetch(`/api/deficiencies?${queryParams}`, {
-          signal: controller.signal,
-        });
-        const data = await response.json();
-        setDeficiencies(data);
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError")
-          return;
-        console.error("Failed to fetch deficiencies:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchDeficiencies();
-    return () => controller.abort();
-  }, [filters]);
+      const response = await fetch(`/api/deficiencies?${queryParams}`);
+      return (await response.json()) as Deficiency[];
+    },
+    staleTime: 30000,
+  });
 
   // Fetch users for assignment
-  useEffect(() => {
-    const controller = new AbortController();
+  const { data: users = [] } = useQuery({
+    queryKey: ["deficiency-users"],
+    queryFn: async () => {
+      const response = await fetch("/api/users");
+      return (await response.json()) as User[];
+    },
+    staleTime: 60000,
+  });
 
-    const fetchUsers = async () => {
-      try {
-        const response = await fetch("/api/users", {
-          signal: controller.signal,
-        });
-        const data = await response.json();
-        setUsers(data);
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError")
-          return;
-        console.error("Failed to fetch users:", error);
-      }
-    };
-
-    fetchUsers();
-    return () => controller.abort();
-  }, []);
-
-  // Fetch tags for filtering
-  useEffect(() => {
-    const uniqueTags = Array.from(
-      new Set(deficiencies.flatMap((d) => d.tags))
-    ).sort();
-    setTags(uniqueTags);
-  }, [deficiencies]);
+  // Derive tags from deficiencies
+  const tags = Array.from(new Set(deficiencies.flatMap((d) => d.tags))).sort();
 
   // Fetch comments and activities when deficiency is selected
-  useEffect(() => {
-    if (!selectedDeficiency) return;
+  const { data: deficiencyDetails } = useQuery({
+    queryKey: ["deficiency-details", selectedDeficiency?.id],
+    queryFn: async () => {
+      const [commentsRes, activitiesRes] = await Promise.all([
+        fetch(`/api/deficiencies/${selectedDeficiency!.id}/comments`),
+        fetch(`/api/deficiencies/${selectedDeficiency!.id}/activities`),
+      ]);
 
-    const controller = new AbortController();
+      const commentsData = (await commentsRes.json()) as DeficiencyComment[];
+      const activitiesData =
+        (await activitiesRes.json()) as DeficiencyActivity[];
 
-    const fetchDetails = async () => {
-      try {
-        const [commentsRes, activitiesRes] = await Promise.all([
-          fetch(`/api/deficiencies/${selectedDeficiency.id}/comments`, {
-            signal: controller.signal,
-          }),
-          fetch(`/api/deficiencies/${selectedDeficiency.id}/activities`, {
-            signal: controller.signal,
-          }),
-        ]);
+      return { comments: commentsData, activities: activitiesData };
+    },
+    enabled: !!selectedDeficiency,
+    staleTime: 10000,
+  });
 
-        const commentsData = await commentsRes.json();
-        const activitiesData = await activitiesRes.json();
-
-        setComments(commentsData);
-        setActivities(activitiesData);
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError")
-          return;
-        console.error("Failed to fetch deficiency details:", error);
-      }
-    };
-
-    fetchDetails();
-    return () => controller.abort();
-  }, [selectedDeficiency]);
+  const comments = deficiencyDetails?.comments ?? [];
+  const activities = deficiencyDetails?.activities ?? [];
 
   // Handlers
   const handleStatusChange = async (newStatus: DeficiencyStatus) => {
@@ -162,9 +115,7 @@ export function DeficiencyDashboard() {
       if (response.ok) {
         const updated = await response.json();
         setSelectedDeficiency(updated);
-        setDeficiencies((prev) =>
-          prev.map((d) => (d.id === updated.id ? updated : d))
-        );
+        queryClient.invalidateQueries({ queryKey: ["deficiencies"] });
       }
     } catch (error) {
       console.error("Failed to update status:", error);
@@ -188,9 +139,7 @@ export function DeficiencyDashboard() {
       if (response.ok) {
         const updated = await response.json();
         setSelectedDeficiency(updated);
-        setDeficiencies((prev) =>
-          prev.map((d) => (d.id === updated.id ? updated : d))
-        );
+        queryClient.invalidateQueries({ queryKey: ["deficiencies"] });
       }
     } catch (error) {
       console.error("Failed to assign deficiency:", error);
@@ -220,8 +169,9 @@ export function DeficiencyDashboard() {
       );
 
       if (response.ok) {
-        const newComment = await response.json();
-        setComments((prev) => [...prev, newComment]);
+        queryClient.invalidateQueries({
+          queryKey: ["deficiency-details", selectedDeficiency.id],
+        });
       }
     } catch (error) {
       console.error("Failed to add comment:", error);

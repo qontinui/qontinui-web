@@ -23,11 +23,14 @@ export function ChatHeader({
 }: ChatHeaderProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(sessionName);
+  const [prevSessionName, setPrevSessionName] = useState(sessionName);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
+  // Reset edit value when session name changes (adjust state during render)
+  if (sessionName !== prevSessionName) {
+    setPrevSessionName(sessionName);
     setEditValue(sessionName);
-  }, [sessionName]);
+  }
 
   useEffect(() => {
     if (isEditing && inputRef.current) {

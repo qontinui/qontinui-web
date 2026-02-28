@@ -7,6 +7,7 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -118,8 +119,6 @@ export function RAGTestingTab() {
 
   // UI state
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [ragElements, setRagElements] = useState<RAGElement[]>([]);
-  const [loadingElements, setLoadingElements] = useState(false);
   const [elementSelectorOpen, setElementSelectorOpen] = useState(false);
 
   // Preloaded mask images for rendering
@@ -133,6 +132,25 @@ export function RAGTestingTab() {
 
   // Context
   const { screenshots, projectId } = useAutomation();
+
+  // Load RAG elements when project changes (optional - segmentation works without them)
+  const { data: ragElements = [], isLoading: loadingElements } = useQuery({
+    queryKey: ["rag-elements", projectId],
+    queryFn: async () => {
+      const response = await fetch(
+        `${RUNNER_URL}/api/rag/projects/${projectId}/elements`
+      );
+      if (!response.ok) {
+        // 404 is expected when no RAG config exists - not an error, just no elements
+        if (response.status === 404) return [];
+        throw new Error(`Failed to fetch elements: ${response.statusText}`);
+      }
+      return (await response.json()) as RAGElement[];
+    },
+    enabled: !!projectId,
+    retry: false,
+    staleTime: 30000,
+  });
 
   // Get selected segment
   const selectedSegment = useMemo(() => {
@@ -183,49 +201,6 @@ export function RAGTestingTab() {
     setSelectedSegmentId(null);
     setMaskImages(new Map());
   }, []);
-
-  // Load RAG elements when project changes (optional - segmentation works without them)
-  useEffect(() => {
-    if (!projectId) {
-      setRagElements([]);
-      return;
-    }
-
-    const controller = new AbortController();
-
-    async function loadElements() {
-      setLoadingElements(true);
-      try {
-        const response = await fetch(
-          `${RUNNER_URL}/api/rag/projects/${projectId}/elements`,
-          { signal: controller.signal }
-        );
-        if (!response.ok) {
-          // 404 is expected when no RAG config exists - not an error, just no elements
-          if (response.status === 404) {
-            setRagElements([]);
-            return;
-          }
-          throw new Error(`Failed to fetch elements: ${response.statusText}`);
-        }
-        const elements = await response.json();
-        setRagElements(elements);
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-        // Network errors or other issues - just set empty array and continue
-        console.warn(
-          "RAG elements not available (segmentation-only mode):",
-          err
-        );
-        setRagElements([]);
-      } finally {
-        setLoadingElements(false);
-      }
-    }
-
-    loadElements();
-    return () => controller.abort();
-  }, [projectId]);
 
   // Preload mask images when segments change
   useEffect(() => {

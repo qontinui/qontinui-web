@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import {
   Server,
@@ -94,9 +94,6 @@ export default function SystemSection() {
       </Badge>
     );
   };
-
-  const barColor = (pct: number) =>
-    pct > 80 ? "bg-red-500" : pct > 60 ? "bg-yellow-500" : "bg-green-500";
 
   if (loading) {
     return (
@@ -265,41 +262,44 @@ export default function SystemSection() {
       )}
     </div>
   );
+}
 
-  function ResourceCell({
-    icon,
-    label,
-    pct,
-    detail,
-  }: {
-    icon: React.ReactNode;
-    label: string;
-    pct: number;
-    detail: string;
-  }) {
-    return (
-      <div className="bg-background px-4 py-3">
-        <div className="flex items-center gap-1.5 mb-1">
-          <span className="text-muted-foreground">{icon}</span>
-          <span className="text-xs text-muted-foreground uppercase tracking-wider">
-            {label}
-          </span>
-        </div>
-        <div className="text-xl font-semibold tabular-nums">
-          {pct.toFixed(1)}%
-        </div>
-        {detail && (
-          <span className="text-xs text-muted-foreground">{detail}</span>
-        )}
-        <div className="w-full bg-muted rounded-full h-1.5 mt-1.5">
-          <div
-            className={`h-1.5 rounded-full ${barColor(pct)}`}
-            style={{ width: `${pct}%` }}
-          />
-        </div>
+const barColor = (pct: number) =>
+  pct > 80 ? "bg-red-500" : pct > 60 ? "bg-yellow-500" : "bg-green-500";
+
+function ResourceCell({
+  icon,
+  label,
+  pct,
+  detail,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  pct: number;
+  detail: string;
+}) {
+  return (
+    <div className="bg-background px-4 py-3">
+      <div className="flex items-center gap-1.5 mb-1">
+        <span className="text-muted-foreground">{icon}</span>
+        <span className="text-xs text-muted-foreground uppercase tracking-wider">
+          {label}
+        </span>
       </div>
-    );
-  }
+      <div className="text-xl font-semibold tabular-nums">
+        {pct.toFixed(1)}%
+      </div>
+      {detail && (
+        <span className="text-xs text-muted-foreground">{detail}</span>
+      )}
+      <div className="w-full bg-muted rounded-full h-1.5 mt-1.5">
+        <div
+          className={`h-1.5 rounded-full ${barColor(pct)}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
 }
 
 function SectionLabel({ label }: { label: string }) {

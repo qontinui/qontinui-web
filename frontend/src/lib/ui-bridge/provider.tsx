@@ -17,6 +17,7 @@
  */
 
 import React, { useCallback, useEffect, useRef } from "react";
+import { useMutation } from "@tanstack/react-query";
 import {
   UIBridgeProvider,
   AutoRegisterProvider,
@@ -189,22 +190,21 @@ export function UIBridgeWrapper({
   );
 
   // Clear the JSONL files on mount (new session)
+  const clearLogsMutation = useMutation({
+    mutationFn: async () => {
+      const headers = { "Content-Type": "application/json" };
+      const body = JSON.stringify({ clear: true });
+      await Promise.allSettled([
+        fetch(EVENTS_ENDPOINT, { method: "POST", headers, body }),
+        fetch(PERF_EVENTS_ENDPOINT, { method: "POST", headers, body }),
+      ]);
+    },
+  });
+
   useEffect(() => {
     if (!isDev) return;
-    const controller = new AbortController();
-    fetch(EVENTS_ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clear: true }),
-      signal: controller.signal,
-    }).catch(() => {});
-    fetch(PERF_EVENTS_ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clear: true }),
-      signal: controller.signal,
-    }).catch(() => {});
-    return () => controller.abort();
+    clearLogsMutation.mutate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Flush remaining events on page unload

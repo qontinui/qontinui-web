@@ -13,6 +13,7 @@
  */
 
 import { useEffect, useState, Suspense, useMemo, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { useAutomation } from "@/contexts/automation-context";
@@ -132,11 +133,7 @@ export default function WorkflowVisualizationPage() {
   const [selectedTestRunId, setSelectedTestRunId] = useState<string | null>(
     null
   );
-  const [historicalResults, setHistoricalResults] = useState<
-    HistoricalResult[]
-  >([]);
   const [loadingTestRuns, setLoadingTestRuns] = useState(false);
-  const [loadingHistoricalData, setLoadingHistoricalData] = useState(false);
 
   // Get current project ID from automation context
   const { projectId } = useAutomation();
@@ -268,20 +265,13 @@ export default function WorkflowVisualizationPage() {
   }, [projectId, canvasMode, isLiveMode, fetchTestRuns]);
 
   // Fetch historical results when test run is selected
-  useEffect(() => {
-    if (!selectedTestRunId) {
-      setHistoricalResults([]);
-      return;
-    }
-
-    const controller = new AbortController();
-
-    const fetchHistoricalResults = async () => {
-      setLoadingHistoricalData(true);
-      try {
+  const { data: historicalResults = [], isLoading: loadingHistoricalData } =
+    useQuery({
+      queryKey: ["historical-results", selectedTestRunId],
+      queryFn: async () => {
         const res = await fetch(
           `${API_BASE_URL}/api/v1/historical/test-run/${selectedTestRunId}`,
-          { credentials: "include", signal: controller.signal }
+          { credentials: "include" }
         );
         if (!res.ok) throw new Error("Failed to fetch historical results");
         const data = (await res.json()) as {
@@ -289,24 +279,18 @@ export default function WorkflowVisualizationPage() {
           total_results: number;
           results: HistoricalResult[];
         };
-        setHistoricalResults(data.results || []);
         if (data.results?.length > 0) {
           toast.success(`Loaded ${data.results.length} recognition results`);
         }
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError")
-          return;
-        console.error("Failed to fetch historical results:", error);
-        setHistoricalResults([]);
-        toast.error("Failed to load historical data");
-      } finally {
-        setLoadingHistoricalData(false);
-      }
-    };
-
-    fetchHistoricalResults();
-    return () => controller.abort();
-  }, [selectedTestRunId]);
+        return data.results || [];
+      },
+      enabled: !!selectedTestRunId,
+      retry: false,
+      staleTime: 30000,
+      meta: {
+        errorMessage: "Failed to load historical data",
+      },
+    });
 
   // Convert historical results to found images format for canvas
   const historicalFoundImages = useMemo(() => {

@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { RUNNER_API_BASE } from "@/lib/runner-api";
 import {
   GitBranch,
@@ -55,56 +56,42 @@ export function GenerateFromStatesModal({
   const [includeContexts, setIncludeContexts] = useState(true);
   const [includeSummary, setIncludeSummary] = useState(true);
 
-  const [hasConfig, setHasConfig] = useState(false);
-  const [states, setStates] = useState<ConfigState[]>([]);
-  const [isCheckingConfig, setIsCheckingConfig] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    setIsCheckingConfig(true);
-    setError(null);
-
-    const controller = new AbortController();
-
-    (async () => {
-      try {
-        const res = await fetch(`${RUNNER_API_BASE}/status`, {
-          signal: controller.signal,
-        });
-        if (!res.ok) throw new Error("Runner not available");
-        const status = await res.json();
-        const configPath = status.data?.config_path ?? status.config_path;
-        if (!configPath) {
-          setHasConfig(false);
-          setStates([]);
-          return;
-        }
-
-        const parseRes = await fetch(`${RUNNER_API_BASE}/configs/parse`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path: configPath }),
-          signal: controller.signal,
-        });
-        if (!parseRes.ok) throw new Error("Failed to parse config");
-        const result = await parseRes.json();
-        const data = result.data ?? result;
-        const loadedStates: ConfigState[] = data.states ?? [];
-        setStates(loadedStates);
-        setHasConfig(loadedStates.length > 0);
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-        setHasConfig(false);
-        setStates([]);
-      } finally {
-        setIsCheckingConfig(false);
+  // Load runner config and parse states when modal is open
+  const { data: configData, isLoading: isCheckingConfig } = useQuery({
+    queryKey: ["runnerConfigStates"],
+    queryFn: async ({
+      signal,
+    }): Promise<{ hasConfig: boolean; states: ConfigState[] }> => {
+      const res = await fetch(`${RUNNER_API_BASE}/status`, { signal });
+      if (!res.ok) throw new Error("Runner not available");
+      const status = await res.json();
+      const configPath = status.data?.config_path ?? status.config_path;
+      if (!configPath) {
+        return { hasConfig: false, states: [] };
       }
-    })();
 
-    return () => controller.abort();
-  }, [isOpen]);
+      const parseRes = await fetch(`${RUNNER_API_BASE}/configs/parse`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: configPath }),
+        signal,
+      });
+      if (!parseRes.ok) throw new Error("Failed to parse config");
+      const result = await parseRes.json();
+      const data = result.data ?? result;
+      const loadedStates: ConfigState[] = data.states ?? [];
+      return { hasConfig: loadedStates.length > 0, states: loadedStates };
+    },
+    enabled: isOpen,
+    staleTime: 30 * 1000,
+    retry: false,
+  });
+
+  const hasConfig = configData?.hasConfig ?? false;
+  const states = configData?.states ?? [];
 
   const handleGenerate = useCallback(() => {
     setIsGenerating(true);

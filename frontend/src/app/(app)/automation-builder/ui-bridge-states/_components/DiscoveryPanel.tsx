@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,38 +54,22 @@ export function DiscoveryPanel({
   const [selectedConnectionId, setSelectedConnectionId] = useState<
     number | null
   >(null);
-  const [localRunnerAvailable, setLocalRunnerAvailable] = useState(false);
-  const [checkingLocalRunner, setCheckingLocalRunner] = useState(true);
-
   // Hooks
   const exploration = useUIBridgeExploration();
   const { connections, isLoading: connectionsLoading } =
     useRealtimeConnections();
 
   // Check if local runner is available directly (fallback when backend WS registration fails)
-  useEffect(() => {
-    const controller = new AbortController();
-    const checkLocal = async () => {
-      setCheckingLocalRunner(true);
-      try {
-        const res = await fetch(`${LOCAL_RUNNER_URL}/status`, {
-          signal: controller.signal,
-        });
-        if (res.ok) {
-          setLocalRunnerAvailable(true);
-        }
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-        setLocalRunnerAvailable(false);
-      } finally {
-        if (!controller.signal.aborted) setCheckingLocalRunner(false);
-      }
-    };
-    checkLocal();
-    return () => {
-      controller.abort();
-    };
-  }, []);
+  const { data: localRunnerAvailable = false, isLoading: checkingLocalRunner } =
+    useQuery({
+      queryKey: ["local-runner-status"],
+      queryFn: async () => {
+        const res = await fetch(`${LOCAL_RUNNER_URL}/status`);
+        return res.ok;
+      },
+      retry: false,
+      staleTime: 30000,
+    });
 
   // Auto-select local runner when no backend connections but local runner is available
   useEffect(() => {
@@ -147,67 +132,55 @@ export function DiscoveryPanel({
   }, [sdk.activeApp, explorationUpdateConfig]);
 
   // Auto-load completed exploration results from runner (survives page navigation)
+  const { data: pendingExplorationResults } = useQuery({
+    queryKey: ["exploration-pending-results", runnerUrl],
+    queryFn: async () => {
+      const statusRes = await fetch(`${runnerUrl}/ui-bridge/explore/status`);
+      if (!statusRes.ok) return null;
+      const statusData = await statusRes.json();
+      const status = statusData.data || statusData;
+      if (status.status !== "completed" || !status.has_results) return null;
+
+      const resultsRes = await fetch(`${runnerUrl}/ui-bridge/explore/results`);
+      if (!resultsRes.ok) return null;
+      const resultsData = await resultsRes.json();
+      const results = resultsData.data?.data || resultsData.data || resultsData;
+      const renderLogs = results?.render_logs || [];
+      if (renderLogs.length === 0) return null;
+
+      return renderLogs.map(
+        (
+          log: {
+            id?: string;
+            type?: string;
+            url?: string;
+            timestamp?: string;
+            snapshot?: Record<string, unknown>;
+          },
+          idx: number
+        ) => ({
+          id: log.id || `render_${idx}`,
+          type: "dom_snapshot" as const,
+          page_url: log.url || "",
+          snapshot: log.snapshot || { root: {} },
+          timestamp: log.timestamp
+            ? new Date(log.timestamp).getTime()
+            : Date.now(),
+          trigger: idx === 0 ? "initial_load" : "action",
+        })
+      );
+    },
+    enabled: !!runnerUrl && !discovery.renders,
+    retry: false,
+    staleTime: 10000,
+  });
+
+  // Apply pending exploration results when they arrive
   useEffect(() => {
-    if (!runnerUrl || discovery.renders) return;
-    const controller = new AbortController();
-    const loadPendingResults = async () => {
-      try {
-        const statusRes = await fetch(`${runnerUrl}/ui-bridge/explore/status`, {
-          signal: controller.signal,
-        });
-        if (!statusRes.ok) return;
-        const statusData = await statusRes.json();
-        const status = statusData.data || statusData;
-        if (status.status !== "completed" || !status.has_results) return;
-
-        const resultsRes = await fetch(
-          `${runnerUrl}/ui-bridge/explore/results`,
-          {
-            signal: controller.signal,
-          }
-        );
-        if (!resultsRes.ok) return;
-        const resultsData = await resultsRes.json();
-        const results =
-          resultsData.data?.data || resultsData.data || resultsData;
-        const renderLogs = results?.render_logs || [];
-        if (renderLogs.length === 0) return;
-
-        const mapped = renderLogs.map(
-          (
-            log: {
-              id?: string;
-              type?: string;
-              url?: string;
-              timestamp?: string;
-              snapshot?: Record<string, unknown>;
-            },
-            idx: number
-          ) => ({
-            id: log.id || `render_${idx}`,
-            type: "dom_snapshot" as const,
-            page_url: log.url || "",
-            snapshot: log.snapshot || { root: {} },
-            timestamp: log.timestamp
-              ? new Date(log.timestamp).getTime()
-              : Date.now(),
-            trigger: idx === 0 ? "initial_load" : "action",
-          })
-        );
-        if (!controller.signal.aborted) {
-          discovery.setRenders(mapped, "explore");
-        }
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-        // Silently ignore — runner may not be available
-      }
-    };
-    loadPendingResults();
-    return () => {
-      controller.abort();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runnerUrl, discovery.renders, discovery.setRenders]);
+    if (pendingExplorationResults && !discovery.renders) {
+      discovery.setRenders(pendingExplorationResults, "explore");
+    }
+  }, [pendingExplorationResults, discovery.renders, discovery.setRenders]);
 
   // Exploration handlers
   const handleStartExploration = useCallback(async () => {

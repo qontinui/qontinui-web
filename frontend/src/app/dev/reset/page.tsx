@@ -11,8 +11,9 @@
  * - Show current auth state for debugging
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useMutation } from "@tanstack/react-query";
 
 interface DebugInfo {
   timestamp: string;
@@ -24,11 +25,98 @@ interface DebugInfo {
 
 export default function DevResetPage() {
   const router = useRouter();
-  const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
-  const [isClearing, setIsClearing] = useState(true);
   const [redirectCountdown, setRedirectCountdown] = useState<number | null>(
     null
   ); // null = no auto-redirect
+
+  const clearBrowserState = useCallback(async (): Promise<DebugInfo> => {
+    // Collect debug info BEFORE clearing
+    const localStorageData: Record<string, string> = {};
+    const sessionStorageData: Record<string, string> = {};
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key) {
+        localStorageData[key] = localStorage.getItem(key) || "";
+      }
+    }
+
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key) {
+        sessionStorageData[key] = sessionStorage.getItem(key) || "";
+      }
+    }
+
+    const cookies = document.cookie
+      .split(";")
+      .map((c) => c.trim())
+      .filter(Boolean);
+
+    // Clear localStorage
+    localStorage.clear();
+    console.log("[DevReset] localStorage cleared");
+
+    // Clear sessionStorage
+    sessionStorage.clear();
+    console.log("[DevReset] sessionStorage cleared");
+
+    // Clear cookies by calling logout endpoint (clears HttpOnly cookies)
+    try {
+      await fetch("/api/v1/auth/jwt/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+      console.log(
+        "[DevReset] Logout endpoint called (HttpOnly cookies cleared)"
+      );
+    } catch (_e) {
+      console.log(
+        "[DevReset] Logout endpoint failed (may already be logged out)"
+      );
+    }
+
+    // Clear any remaining accessible cookies
+    document.cookie.split(";").forEach((cookie) => {
+      const name = cookie.split("=")[0]?.trim();
+      if (name) {
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+      }
+    });
+    console.log("[DevReset] Accessible cookies cleared");
+
+    // Clear IndexedDB databases (project data, screenshots)
+    try {
+      const databases = await indexedDB.databases();
+      for (const db of databases) {
+        if (db.name) {
+          indexedDB.deleteDatabase(db.name);
+          console.log(`[DevReset] IndexedDB "${db.name}" deleted`);
+        }
+      }
+    } catch (e) {
+      console.log("[DevReset] IndexedDB clear failed:", e);
+    }
+
+    return {
+      timestamp: new Date().toISOString(),
+      localStorage: localStorageData,
+      sessionStorage: sessionStorageData,
+      cookies,
+      cleared: true,
+    };
+  }, []);
+
+  const {
+    data: debugInfo,
+    status: clearStatus,
+    mutate,
+  } = useMutation({
+    mutationFn: clearBrowserState,
+  });
+
+  // Treat both idle (before mutate is called) and pending as "clearing"
+  const isClearing = clearStatus === "idle" || clearStatus === "pending";
 
   useEffect(() => {
     // Only run in development
@@ -37,93 +125,8 @@ export default function DevResetPage() {
       return;
     }
 
-    const controller = new AbortController();
-
-    const clearAndCollectDebug = async () => {
-      // Collect debug info BEFORE clearing
-      const localStorageData: Record<string, string> = {};
-      const sessionStorageData: Record<string, string> = {};
-
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key) {
-          localStorageData[key] = localStorage.getItem(key) || "";
-        }
-      }
-
-      for (let i = 0; i < sessionStorage.length; i++) {
-        const key = sessionStorage.key(i);
-        if (key) {
-          sessionStorageData[key] = sessionStorage.getItem(key) || "";
-        }
-      }
-
-      const cookies = document.cookie
-        .split(";")
-        .map((c) => c.trim())
-        .filter(Boolean);
-
-      // Clear localStorage
-      localStorage.clear();
-      console.log("[DevReset] localStorage cleared");
-
-      // Clear sessionStorage
-      sessionStorage.clear();
-      console.log("[DevReset] sessionStorage cleared");
-
-      // Clear cookies by calling logout endpoint (clears HttpOnly cookies)
-      try {
-        await fetch("/api/v1/auth/jwt/logout", {
-          method: "POST",
-          credentials: "include",
-          signal: controller.signal,
-        });
-        console.log(
-          "[DevReset] Logout endpoint called (HttpOnly cookies cleared)"
-        );
-      } catch (_e) {
-        if (_e instanceof DOMException && _e.name === "AbortError") return;
-        console.log(
-          "[DevReset] Logout endpoint failed (may already be logged out)"
-        );
-      }
-
-      // Clear any remaining accessible cookies
-      document.cookie.split(";").forEach((cookie) => {
-        const name = cookie.split("=")[0]?.trim();
-        if (name) {
-          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
-        }
-      });
-      console.log("[DevReset] Accessible cookies cleared");
-
-      // Clear IndexedDB databases (project data, screenshots)
-      try {
-        const databases = await indexedDB.databases();
-        for (const db of databases) {
-          if (db.name) {
-            indexedDB.deleteDatabase(db.name);
-            console.log(`[DevReset] IndexedDB "${db.name}" deleted`);
-          }
-        }
-      } catch (e) {
-        console.log("[DevReset] IndexedDB clear failed:", e);
-      }
-
-      setDebugInfo({
-        timestamp: new Date().toISOString(),
-        localStorage: localStorageData,
-        sessionStorage: sessionStorageData,
-        cookies,
-        cleared: true,
-      });
-
-      setIsClearing(false);
-    };
-
-    clearAndCollectDebug();
-    return () => controller.abort();
-  }, [router]);
+    mutate();
+  }, [router, mutate]);
 
   // Countdown and redirect (only if countdown is active)
   useEffect(() => {

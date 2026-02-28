@@ -9,6 +9,20 @@
 
 import { useEffect } from "react";
 
+/** Fetch dev debug logs - exposed as window.getDevLogs() in development */
+async function fetchDevLogs() {
+  const response = await fetch("/api/dev-debug/logs?limit=200");
+  const data = await response.json();
+  console.table(data.stats);
+  return data;
+}
+
+/** Clear dev debug logs - exposed as window.clearDevLogs() in development */
+async function clearDevLogs() {
+  await fetch("/api/dev-debug/logs", { method: "DELETE" });
+  console.info("[DevDebugInit] Logs cleared");
+}
+
 export function DevDebugInit() {
   useEffect(() => {
     // Only in development
@@ -22,19 +36,11 @@ export function DevDebugInit() {
       if (devDebugLogger.isEnabled()) {
         console.info("[DevDebugInit] Dev debug logger active");
 
-        // Expose helper function to window for easy access
+        // Expose helper functions to window for easy access
         (window as unknown as Record<string, unknown>).getDevLogs =
-          async () => {
-            const response = await fetch("/api/dev-debug/logs?limit=200");
-            const data = await response.json();
-            console.table(data.stats);
-            return data;
-          };
+          fetchDevLogs;
         (window as unknown as Record<string, unknown>).clearDevLogs =
-          async () => {
-            await fetch("/api/dev-debug/logs", { method: "DELETE" });
-            console.info("[DevDebugInit] Logs cleared");
-          };
+          clearDevLogs;
 
         // Log helpful message
         console.info("[DevDebugInit] Use window.getDevLogs() to retrieve logs");

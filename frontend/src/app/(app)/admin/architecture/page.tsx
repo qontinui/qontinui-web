@@ -12,7 +12,6 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Home, Shield, ArrowLeft } from "lucide-react";
 import ArchitectureDiagrams from "@/components/admin/architecture/ArchitectureDiagrams";
 
 export default function ArchitecturePage() {
@@ -39,49 +38,22 @@ export default function ArchitecturePage() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-6">
-      <div className="max-w-[1800px] mx-auto">
-        {/* Navigation */}
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              onClick={() => router.push("/admin")}
-              className="hover:bg-primary/10"
-            >
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Admin
-            </Button>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={() => router.push("/admin")}
-              className="flex items-center gap-2"
-            >
-              <Shield className="h-4 w-4" />
-              Admin
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => router.push("/build/workflows")}
-              className="flex items-center gap-2"
-            >
-              <Home className="h-4 w-4" />
-              Dashboard
-            </Button>
-          </div>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+      <div className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => router.push("/admin")}
+          >
+            Admin
+          </Button>
+          <span className="text-muted-foreground">/</span>
+          <h1 className="text-lg font-semibold">Architecture</h1>
         </div>
+      </div>
 
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold mb-2">Qontinui Architecture</h1>
-          <p className="text-muted-foreground">
-            Architecture diagrams and technical documentation
-          </p>
-        </div>
-
-        {/* Architecture Diagrams */}
+      <div className="flex-1 overflow-y-auto p-6">
         <ArchitectureDiagrams />
       </div>
     </div>

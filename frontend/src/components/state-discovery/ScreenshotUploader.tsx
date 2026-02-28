@@ -3,7 +3,13 @@
  * Handles screenshot upload and thumbnail display
  */
 
-import React, { useCallback, useRef, useState, useEffect } from "react";
+import React, {
+  useCallback,
+  useRef,
+  useState,
+  useEffect,
+  useMemo,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +36,7 @@ import {
 } from "lucide-react";
 import { calculateImageHashes } from "@/utils/imageUtils";
 import { useAvailableStates } from "@/hooks/useAvailableStates";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import ProjectScreenshotSelector from "./ProjectScreenshotSelector";
 import SnapshotScreenshotSelector from "./SnapshotScreenshotSelector";
 import { DirectPatternCreation } from "./DirectPatternCreation";
@@ -62,12 +69,12 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
   onSelectScreenshot,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("upload");
   const [thumbnails, setThumbnails] = useState<{ [key: string]: string }>({});
   const [screenshotHashes, setScreenshotHashes] = useState<Map<string, string>>(
     new Map()
   );
-  const [projectHashes, setProjectHashes] = useState<string[]>([]);
   const [duplicateCount, setDuplicateCount] = useState(0);
   const [showProjectSelector, setShowProjectSelector] = useState(false);
   const [showSnapshotSelector, setShowSnapshotSelector] = useState(false);
@@ -80,35 +87,30 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
   const { availableStates, loading: statesLoading } = useAvailableStates();
   const [selectedMonitors, setSelectedMonitors] = useState<number[]>([0]); // Default to primary monitor
 
-  // Load project screenshot hashes on mount
-  useEffect(() => {
-    const controller = new AbortController();
-
-    const loadProjectHashes = async () => {
-      try {
-        const projectId = "default";
-        const response = await fetch(
-          `http://localhost:8000/api/state-discovery/project/${projectId}/screenshots`,
-          { signal: controller.signal }
-        );
-
-        if (response.ok) {
-          const data = await response.json();
-          const hashes = data.screenshots.map(
-            (s: APIProjectScreenshot) => s.hash
-          );
-          setProjectHashes(hashes);
-        }
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError")
-          return;
-        console.error("Failed to load project hashes:", error);
+  // Load project screenshots (hashes + count) on mount
+  const { data: projectScreenshotsData } = useQuery({
+    queryKey: ["projectScreenshots", "default"],
+    queryFn: async ({ signal }) => {
+      const projectId = "default";
+      const response = await fetch(
+        `http://localhost:8000/api/state-discovery/project/${projectId}/screenshots`,
+        { signal }
+      );
+      if (!response.ok) {
+        throw new Error("Failed to load project screenshots");
       }
-    };
+      return response.json();
+    },
+    staleTime: 30 * 1000,
+  });
 
-    loadProjectHashes();
-    return () => controller.abort();
-  }, []);
+  // Derive project hashes from query data
+  const projectHashes = useMemo(() => {
+    if (!projectScreenshotsData?.screenshots) return [];
+    return projectScreenshotsData.screenshots.map(
+      (s: APIProjectScreenshot) => s.hash
+    );
+  }, [projectScreenshotsData]);
 
   // Generate thumbnails for uploaded files
   useEffect(() => {
@@ -161,41 +163,26 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load saved project screenshots on mount
+  // Show info message when saved project screenshots are available (on initial load)
+  const hasShownSavedMessageRef = useRef(false);
   useEffect(() => {
-    const controller = new AbortController();
-
-    const loadProjectScreenshots = async () => {
-      try {
-        const projectId = "default";
-        const response = await fetch(
-          `http://localhost:8000/api/state-discovery/project/${projectId}/screenshots`,
-          { signal: controller.signal }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          console.log(
-            "[ScreenshotUploader] Loading saved screenshots:",
-            data.screenshots.length
-          );
-          // Just notify the user that saved screenshots are available
-          if (screenshots.length === 0 && data.screenshots.length > 0) {
-            setSaveMessage({
-              type: "info",
-              text: `${data.screenshots.length} saved screenshot(s) available. Use "Load from Project" to restore them.`,
-            });
-          }
-        }
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError")
-          return;
-        console.error("Failed to check for saved screenshots:", error);
-      }
-    };
-    loadProjectScreenshots();
-    return () => controller.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only on mount
+    if (
+      !hasShownSavedMessageRef.current &&
+      projectScreenshotsData?.screenshots &&
+      screenshots.length === 0 &&
+      projectScreenshotsData.screenshots.length > 0
+    ) {
+      hasShownSavedMessageRef.current = true;
+      console.log(
+        "[ScreenshotUploader] Loading saved screenshots:",
+        projectScreenshotsData.screenshots.length
+      );
+      setSaveMessage({
+        type: "info",
+        text: `${projectScreenshotsData.screenshots.length} saved screenshot(s) available. Use "Load from Project" to restore them.`,
+      });
+    }
+  }, [projectScreenshotsData, screenshots.length]);
 
   // Handle file selection
   const handleFileSelect = useCallback(
@@ -302,17 +289,10 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
           text: `Saved ${result.total_saved} screenshot(s) to project.${result.total_duplicates > 0 ? ` ${result.total_duplicates} duplicate(s) skipped.` : ""}`,
         });
 
-        // Reload project hashes to include newly saved screenshots
-        const hashResponse = await fetch(
-          `http://localhost:8000/api/state-discovery/project/${projectId}/screenshots`
-        );
-        if (hashResponse.ok) {
-          const hashData = await hashResponse.json();
-          const updatedHashes = hashData.screenshots.map(
-            (s: APIProjectScreenshot) => s.hash
-          );
-          setProjectHashes(updatedHashes);
-        }
+        // Invalidate the project screenshots query to refresh hashes
+        await queryClient.invalidateQueries({
+          queryKey: ["projectScreenshots", "default"],
+        });
       }
     } catch (error) {
       console.error("Failed to save screenshots:", error);

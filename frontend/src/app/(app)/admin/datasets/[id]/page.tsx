@@ -17,13 +17,6 @@ import { useAuth } from "@/contexts/auth-context";
 import { datasetService } from "@/services/dataset-service";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -32,7 +25,6 @@ import { Label } from "@/components/ui/label";
 import { ImageCanvas, BoundingBox } from "@/components/common/ImageCanvas";
 import { DatasetExportDialog } from "@/components/datasets/DatasetExportDialog";
 import {
-  ArrowLeft,
   Download,
   ImageIcon,
   Tag,
@@ -399,65 +391,81 @@ export default function DatasetViewerPage() {
 
   const totalPages = Math.ceil(totalImages / (filters.page_size || 24));
 
-  // Loading state
   if (authLoading || loading) {
     return (
-      <div className="container mx-auto py-8">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
+      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
+        <p className="text-muted-foreground text-sm">Loading...</p>
       </div>
     );
   }
 
   if (!user?.is_superuser || !dataset) {
     return (
-      <div className="container mx-auto py-8">
-        <Card>
-          <CardHeader>
-            <CardTitle>Dataset Not Found</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Button
-              variant="outline"
-              onClick={() => router.push("/admin/datasets")}
-            >
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Datasets
-            </Button>
-          </CardContent>
-        </Card>
+      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
+        <div className="text-center">
+          <p className="font-medium mb-2">Dataset Not Found</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push("/admin/datasets")}
+          >
+            Back to Datasets
+          </Button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto py-8">
-      {/* Navigation */}
-      <div className="mb-6 flex items-center gap-4">
-        <Button variant="ghost" onClick={() => router.push("/admin/datasets")}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Datasets
-        </Button>
-        <div className="flex-1" />
-        <Button
-          variant="outline"
-          onClick={() => setShowStatistics(!showStatistics)}
-        >
-          <BarChart3 className="mr-2 h-4 w-4" />
-          {showStatistics ? "Hide" : "Show"} Statistics
-        </Button>
-        <Button variant="outline" onClick={() => setShowFilters(!showFilters)}>
-          <Filter className="mr-2 h-4 w-4" />
-          {showFilters ? "Hide" : "Show"} Filters
-        </Button>
-        <Button onClick={() => setShowExportDialog(true)}>
-          <Download className="mr-2 h-4 w-4" />
-          Export
-        </Button>
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => router.push("/admin/datasets")}
+          >
+            Datasets
+          </Button>
+          <span className="text-muted-foreground">/</span>
+          <h1 className="text-lg font-semibold">{dataset.name}</h1>
+          {dataset.description && (
+            <span className="text-sm text-muted-foreground hidden lg:inline">
+              {dataset.description}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setShowStatistics(!showStatistics)}
+          >
+            <BarChart3 className="h-3.5 w-3.5 mr-1" />
+            Stats
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setShowFilters(!showFilters)}
+          >
+            <Filter className="h-3.5 w-3.5 mr-1" />
+            Filters
+          </Button>
+          <Button
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setShowExportDialog(true)}
+          >
+            <Download className="h-3.5 w-3.5 mr-1" />
+            Export
+          </Button>
+        </div>
       </div>
 
-      {/* Export Dialog */}
       <DatasetExportDialog
         open={showExportDialog}
         onOpenChange={setShowExportDialog}
@@ -465,134 +473,99 @@ export default function DatasetViewerPage() {
         datasetName={dataset.name}
       />
 
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2">{dataset.name}</h1>
-        {dataset.description && (
-          <p className="text-muted-foreground">{dataset.description}</p>
-        )}
-      </div>
-
-      {/* Statistics */}
       {showStatistics && statistics && (
-        <Card className="mb-6">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Statistics</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              <div className="text-center p-3 bg-accent/30 rounded-lg">
-                <ImageIcon className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
-                <div
-                  data-content-role="metric"
-                  data-content-label="total images"
-                  className="text-2xl font-bold"
-                >
-                  {statistics.total_images}
-                </div>
-                <div
-                  data-content-role="label"
-                  data-content-label="images label"
-                  className="text-xs text-muted-foreground"
-                >
-                  Images
-                </div>
-              </div>
-              <div className="text-center p-3 bg-accent/30 rounded-lg">
-                <Tag className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
-                <div
-                  data-content-role="metric"
-                  data-content-label="total annotations"
-                  className="text-2xl font-bold"
-                >
-                  {statistics.total_annotations}
-                </div>
-                <div
-                  data-content-role="label"
-                  data-content-label="annotations label"
-                  className="text-xs text-muted-foreground"
-                >
-                  Annotations
-                </div>
-              </div>
-              <div className="text-center p-3 bg-accent/30 rounded-lg">
-                <CheckCircle2 className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
-                <div
-                  data-content-role="metric"
-                  data-content-label="reviewed images"
-                  className="text-2xl font-bold"
-                >
-                  {statistics.reviewed_images}
-                </div>
-                <div
-                  data-content-role="label"
-                  data-content-label="reviewed label"
-                  className="text-xs text-muted-foreground"
-                >
-                  Reviewed
-                </div>
-              </div>
-              <div className="text-center p-3 bg-green-500/10 rounded-lg">
-                <div
-                  data-content-role="metric"
-                  data-content-label="user clicks count"
-                  className="text-2xl font-bold text-green-600"
-                >
-                  {statistics.by_source.user_click || 0}
-                </div>
-                <div
-                  data-content-role="label"
-                  data-content-label="user clicks label"
-                  className="text-xs text-muted-foreground"
-                >
-                  User Clicks
-                </div>
-              </div>
-              <div className="text-center p-3 bg-blue-500/10 rounded-lg">
-                <div
-                  data-content-role="metric"
-                  data-content-label="smart analysis count"
-                  className="text-2xl font-bold text-blue-600"
-                >
-                  {statistics.by_source.smart_click_analysis || 0}
-                </div>
-                <div
-                  data-content-role="label"
-                  data-content-label="smart analysis label"
-                  className="text-xs text-muted-foreground"
-                >
-                  Smart Analysis
-                </div>
-              </div>
-              <div className="text-center p-3 bg-orange-500/10 rounded-lg">
-                <div
-                  data-content-role="metric"
-                  data-content-label="template match count"
-                  className="text-2xl font-bold text-orange-600"
-                >
-                  {statistics.by_source.template_matching || 0}
-                </div>
-                <div
-                  data-content-role="label"
-                  data-content-label="template match label"
-                  className="text-xs text-muted-foreground"
-                >
-                  Template Match
-                </div>
-              </div>
+        <div className="grid grid-cols-6 gap-px bg-border shrink-0">
+          <div className="bg-background px-4 py-3">
+            <div className="flex items-center gap-1.5 mb-1">
+              <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground uppercase tracking-wider">
+                Images
+              </span>
             </div>
-          </CardContent>
-        </Card>
+            <div
+              data-content-role="metric"
+              data-content-label="total images"
+              className="text-xl font-semibold tabular-nums"
+            >
+              {statistics.total_images}
+            </div>
+          </div>
+          <div className="bg-background px-4 py-3">
+            <div className="flex items-center gap-1.5 mb-1">
+              <Tag className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground uppercase tracking-wider">
+                Annotations
+              </span>
+            </div>
+            <div
+              data-content-role="metric"
+              data-content-label="total annotations"
+              className="text-xl font-semibold tabular-nums"
+            >
+              {statistics.total_annotations}
+            </div>
+          </div>
+          <div className="bg-background px-4 py-3">
+            <div className="flex items-center gap-1.5 mb-1">
+              <CheckCircle2 className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground uppercase tracking-wider">
+                Reviewed
+              </span>
+            </div>
+            <div
+              data-content-role="metric"
+              data-content-label="reviewed images"
+              className="text-xl font-semibold tabular-nums"
+            >
+              {statistics.reviewed_images}
+            </div>
+          </div>
+          <div className="bg-background px-4 py-3">
+            <span className="text-xs text-muted-foreground uppercase tracking-wider">
+              User Clicks
+            </span>
+            <div
+              data-content-role="metric"
+              data-content-label="user clicks count"
+              className="text-xl font-semibold tabular-nums text-green-500"
+            >
+              {statistics.by_source.user_click || 0}
+            </div>
+          </div>
+          <div className="bg-background px-4 py-3">
+            <span className="text-xs text-muted-foreground uppercase tracking-wider">
+              Smart Analysis
+            </span>
+            <div
+              data-content-role="metric"
+              data-content-label="smart analysis count"
+              className="text-xl font-semibold tabular-nums text-blue-500"
+            >
+              {statistics.by_source.smart_click_analysis || 0}
+            </div>
+          </div>
+          <div className="bg-background px-4 py-3">
+            <span className="text-xs text-muted-foreground uppercase tracking-wider">
+              Template Match
+            </span>
+            <div
+              data-content-role="metric"
+              data-content-label="template match count"
+              className="text-xl font-semibold tabular-nums text-orange-500"
+            >
+              {statistics.by_source.template_matching || 0}
+            </div>
+          </div>
+        </div>
       )}
 
-      <div className="grid grid-cols-12 gap-6">
-        {/* Filters Panel */}
+      <div className="flex-1 min-h-0 grid grid-cols-12 divide-x divide-border overflow-hidden">
         {showFilters && (
-          <Card className="col-span-12 lg:col-span-2">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Filters</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
+          <div className="col-span-12 lg:col-span-2 overflow-y-auto">
+            <div className="px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider border-b border-border bg-muted/50">
+              Filters
+            </div>
+            <div className="p-4 space-y-4">
               {/* Source Filter */}
               <div>
                 <Label className="text-xs font-medium">Source</Label>
@@ -692,18 +665,17 @@ export default function DatasetViewerPage() {
                   ))}
                 </div>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         )}
 
-        {/* Image Browser */}
-        <Card
-          className={`col-span-12 ${showFilters ? "lg:col-span-4" : "lg:col-span-5"}`}
+        <div
+          className={`col-span-12 ${showFilters ? "lg:col-span-4" : "lg:col-span-5"} overflow-y-auto`}
         >
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Images ({totalImages})</CardTitle>
-          </CardHeader>
-          <CardContent>
+          <div className="px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider border-b border-border bg-muted/50">
+            Images ({totalImages})
+          </div>
+          <div className="p-4">
             <ScrollArea className="h-[500px]">
               <div className="grid grid-cols-3 gap-2">
                 {images.map((image) => (
@@ -777,25 +749,24 @@ export default function DatasetViewerPage() {
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        {/* Annotation Viewer */}
-        <Card
-          className={`col-span-12 ${showFilters ? "lg:col-span-6" : "lg:col-span-7"}`}
+        <div
+          className={`col-span-12 ${showFilters ? "lg:col-span-6" : "lg:col-span-7"} overflow-y-auto`}
         >
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">
+          <div className="px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider border-b border-border bg-muted/50 flex items-center justify-between">
+            <span>
               {selectedImage ? selectedImage.filename : "Select an image"}
-            </CardTitle>
+            </span>
             {selectedImage && (
-              <CardDescription>
+              <span className="normal-case tracking-normal font-normal">
                 {selectedImage.width} x {selectedImage.height}px •{" "}
                 {annotations.length} annotation(s)
-              </CardDescription>
+              </span>
             )}
-          </CardHeader>
-          <CardContent>
+          </div>
+          <div className="p-4">
             {selectedImage ? (
               <div className="space-y-4">
                 {/* Canvas */}
@@ -818,7 +789,7 @@ export default function DatasetViewerPage() {
 
                 {/* Bulk Actions Toolbar */}
                 {annotations.length > 0 && (
-                  <div className="flex items-center justify-between p-2 bg-accent/30 rounded-lg mb-2">
+                  <div className="flex items-center justify-between p-2 bg-muted/50 rounded-md mb-2">
                     <div className="flex items-center gap-2">
                       <Button
                         variant="ghost"
@@ -997,8 +968,8 @@ export default function DatasetViewerPage() {
                 </div>
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     </div>
   );
