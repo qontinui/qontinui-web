@@ -81,6 +81,7 @@ export const CATEGORY_LABELS: Record<SpecCategory, string> = {
   navigation: "Navigation",
   "cross-page-consistency": "Cross-Page Consistency",
   semantic: "Semantic",
+  design: "Design",
   custom: "Custom",
 };
 

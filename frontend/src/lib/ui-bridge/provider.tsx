@@ -26,6 +26,10 @@ import type {
   UIBridgeConfig,
   BridgeEvent,
 } from "@qontinui/ui-bridge/core";
+import type {
+  BrowserCaptureConfig,
+  AnyCapturedEvent,
+} from "@qontinui/ui-bridge/debug";
 import { UIBridgeTransportListener } from "./UIBridgeTransportListener";
 import type { TransportMode } from "./useUIBridgeTransport";
 
@@ -51,6 +55,27 @@ const config: UIBridgeConfig = {
 
 const FLUSH_INTERVAL_MS = 5000;
 const EVENTS_ENDPOINT = "/api/dev-debug/browser-events";
+const PERF_EVENTS_ENDPOINT = "/api/dev-debug/perf-events";
+
+/**
+ * Browser capture configuration.
+ * Enables performance-relevant captures: long tasks, long animation frames,
+ * network failures, web vitals (LCP, CLS), and memory snapshots.
+ */
+const browserCaptureConfig: BrowserCaptureConfig = {
+  console: false, // Element lifecycle events already captured via onEvent
+  network: true,
+  navigation: true,
+  longTasks: true,
+  longAnimationFrames: true,
+  resourceErrors: true,
+  wsDisconnections: true,
+  hmr: false,
+  webVitals: true,
+  memory: true,
+  memoryIntervalMs: 15000,
+  maxEntries: 500,
+};
 
 interface UIBridgeWrapperProps {
   children: React.ReactNode;
@@ -93,6 +118,8 @@ export function UIBridgeWrapper({
 }: UIBridgeWrapperProps) {
   const bufferRef = useRef<BridgeEvent[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const perfBufferRef = useRef<AnyCapturedEvent[]>([]);
+  const perfTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const flush = useCallback(() => {
     timerRef.current = null;
@@ -118,6 +145,29 @@ export function UIBridgeWrapper({
     }
   }, []);
 
+  const flushPerf = useCallback(() => {
+    perfTimerRef.current = null;
+    const batch = perfBufferRef.current;
+    if (batch.length === 0) return;
+    perfBufferRef.current = [];
+
+    const body = JSON.stringify({ events: batch });
+
+    if (typeof navigator !== "undefined" && navigator.sendBeacon) {
+      navigator.sendBeacon(
+        PERF_EVENTS_ENDPOINT,
+        new Blob([body], { type: "application/json" })
+      );
+    } else {
+      fetch(PERF_EVENTS_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+        keepalive: true,
+      }).catch(() => {});
+    }
+  }, []);
+
   const onEvent = useCallback(
     (event: BridgeEvent) => {
       bufferRef.current.push(event);
@@ -128,11 +178,27 @@ export function UIBridgeWrapper({
     [flush]
   );
 
-  // Clear the JSONL file on mount (new session)
+  const onBrowserEvent = useCallback(
+    (event: AnyCapturedEvent) => {
+      perfBufferRef.current.push(event);
+      if (!perfTimerRef.current) {
+        perfTimerRef.current = setTimeout(flushPerf, FLUSH_INTERVAL_MS);
+      }
+    },
+    [flushPerf]
+  );
+
+  // Clear the JSONL files on mount (new session)
   useEffect(() => {
     if (!isDev) return;
     const controller = new AbortController();
     fetch(EVENTS_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clear: true }),
+      signal: controller.signal,
+    }).catch(() => {});
+    fetch(PERF_EVENTS_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ clear: true }),
@@ -150,6 +216,11 @@ export function UIBridgeWrapper({
         timerRef.current = null;
       }
       flush();
+      if (perfTimerRef.current) {
+        clearTimeout(perfTimerRef.current);
+        perfTimerRef.current = null;
+      }
+      flushPerf();
     };
     window.addEventListener("beforeunload", handleUnload);
     return () => {
@@ -160,14 +231,21 @@ export function UIBridgeWrapper({
         timerRef.current = null;
       }
       flush();
+      if (perfTimerRef.current) {
+        clearTimeout(perfTimerRef.current);
+        perfTimerRef.current = null;
+      }
+      flushPerf();
     };
-  }, [flush]);
+  }, [flush, flushPerf]);
 
   return (
     <UIBridgeProvider
       features={features}
       config={config}
       onEvent={isDev ? onEvent : undefined}
+      onBrowserEvent={isDev ? onBrowserEvent : undefined}
+      browserCaptureConfig={isDev ? browserCaptureConfig : undefined}
     >
       {/* AutoRegisterProvider enables automatic element registration for UI Bridge */}
       {/* All interactive elements (buttons, inputs, links, etc.) are auto-discovered */}

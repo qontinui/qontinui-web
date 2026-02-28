@@ -21,6 +21,16 @@ import type {
   APIResponse,
 } from "@qontinui/ui-bridge/server";
 import type {
+  ElementDesignData,
+  InteractionStateName,
+  StateStyles,
+  ResponsiveSnapshot,
+} from "@qontinui/ui-bridge";
+import type {
+  StyleGuideConfig,
+  StyleAuditReport,
+} from "@qontinui/ui-bridge/specs";
+import type {
   ControlActionRequest,
   ControlActionResponse,
   ComponentActionRequest,
@@ -2102,6 +2112,124 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
       const result = await queueCommand<{ events: unknown[]; count: number }>(
         "getBrowserEvents",
         params ?? {}
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // Design Review Endpoints
+  // --------------------------------------------------------------------------
+
+  async getElementStyles(id: string): Promise<APIResponse<ElementDesignData>> {
+    try {
+      const result = await queueCommand<ElementDesignData>("getElementStyles", {
+        elementId: id,
+      });
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getElementStateStyles(
+    id: string,
+    request: { states?: InteractionStateName[] }
+  ): Promise<APIResponse<{ elementId: string; stateStyles: StateStyles[] }>> {
+    try {
+      const result = await queueCommand<{
+        elementId: string;
+        stateStyles: StateStyles[];
+      }>("getElementStateStyles", {
+        elementId: id,
+        ...request,
+      });
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getDesignSnapshot(request?: {
+    elementIds?: string[];
+    includePseudoElements?: boolean;
+  }): Promise<
+    APIResponse<{ elements: ElementDesignData[]; timestamp: number }>
+  > {
+    try {
+      const result = await queueCommand<{
+        elements: ElementDesignData[];
+        timestamp: number;
+      }>("getDesignSnapshot", request ?? {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getResponsiveSnapshots(request: {
+    viewports?: Record<string, number>;
+    elementIds?: string[];
+  }): Promise<APIResponse<ResponsiveSnapshot[]>> {
+    try {
+      const result = await queueCommand<ResponsiveSnapshot[]>(
+        "getResponsiveSnapshots",
+        request
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async runDesignAudit(request?: {
+    guide?: StyleGuideConfig;
+    elementIds?: string[];
+  }): Promise<APIResponse<StyleAuditReport>> {
+    try {
+      const result = await queueCommand<StyleAuditReport>(
+        "runDesignAudit",
+        request ?? {}
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async loadStyleGuide(request: {
+    guide: StyleGuideConfig;
+  }): Promise<APIResponse<{ loaded: boolean }>> {
+    try {
+      const result = await queueCommand<{ loaded: boolean }>(
+        "loadStyleGuide",
+        request
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getStyleGuide(): Promise<APIResponse<StyleGuideConfig | null>> {
+    try {
+      const result = await queueCommand<StyleGuideConfig | null>(
+        "getStyleGuide",
+        {}
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async clearStyleGuide(): Promise<APIResponse<{ cleared: boolean }>> {
+    try {
+      const result = await queueCommand<{ cleared: boolean }>(
+        "clearStyleGuide",
+        {}
       );
       return success(result);
     } catch (e) {
