@@ -615,6 +615,15 @@ export const devNavItems: NavItem[] = [
         color: "#FF6B6B",
         adminOnly: true,
       },
+      {
+        id: "admin-dashboard-v2",
+        label: "Dashboard v2",
+        description: "UX-optimized admin dashboard",
+        icon: React.createElement(LayoutDashboard, { className: "size-4" }),
+        route: "/admin2",
+        color: "#FF6B6B",
+        adminOnly: true,
+      },
     ],
   },
 ];
