@@ -5,7 +5,7 @@
 
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -53,6 +53,7 @@ export function DirectPatternCreation() {
 
   // Step 2: Pattern Extraction
   const [currentScreenshotIndex, setCurrentScreenshotIndex] = useState(0);
+  const [prevSnapshotRunIds, setPrevSnapshotRunIds] = useState<string[]>([]);
   const [selectedRegion, setSelectedRegion] = useState<Region | null>(null);
   const [extractedPatterns, setExtractedPatterns] = useState<
     ExtractedPattern[]
@@ -110,10 +111,13 @@ export function DirectPatternCreation() {
     staleTime: 60 * 1000,
   });
 
-  // Reset screenshot index when screenshots change
-  useEffect(() => {
+  // Reset screenshot index when snapshots change (render-time state adjustment)
+  const currentRunIds = snapshotRunIds.join(",");
+  const prevRunIds = prevSnapshotRunIds.join(",");
+  if (currentRunIds !== prevRunIds) {
+    setPrevSnapshotRunIds(snapshotRunIds);
     setCurrentScreenshotIndex(0);
-  }, [screenshots]);
+  }
 
   // Extract pattern from current screenshot
   const handleExtractRegion = async () => {
