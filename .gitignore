@@ -23,7 +23,7 @@ backend/scripts
 node_modules/
 .next/
 out/
-build/
+/build/
 dist/
 tsconfig.tsbuildinfo
 .env.local

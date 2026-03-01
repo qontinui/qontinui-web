@@ -1,0 +1,133 @@
+{
+  "version": "1.0.0",
+  "description": "Specs for the Step Builders page — navigation hub for specialized workflow step editors",
+  "groups": [
+    {
+      "id": "tmpl-page-structure",
+      "name": "Page Structure",
+      "description": "Core structural elements that must be present on the Step Builders page for it to be functional.",
+      "category": "element-presence",
+      "assertions": [
+        {
+          "id": "tmpl-struct-heading",
+          "description": "The page heading 'Step Builders' is rendered at the top of the page",
+          "category": "element-presence",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "heading", "textContent": "Step Builders" },
+            "label": "Step Builders heading"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "tmpl-struct-grid",
+          "description": "A grid layout of builder cards is present for navigating to step editors",
+          "category": "element-presence",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "link", "textContent": "Tests" },
+            "label": "Builder card grid (Tests link)"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "tmpl-card-state",
+      "name": "Card State",
+      "description": "Builder cards should be interactive links with descriptive content so users know what each builder does.",
+      "category": "state-consistency",
+      "assertions": [
+        {
+          "id": "tmpl-card-clickable",
+          "description": "Builder cards are rendered as clickable links (enabled), allowing navigation to each step editor",
+          "category": "state-consistency",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "link", "textContent": "Tests" },
+            "label": "Tests builder card link"
+          },
+          "assertionType": "enabled",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "tmpl-card-description",
+          "description": "Each builder card contains descriptive text explaining the step type it covers",
+          "category": "state-consistency",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "link", "textContent": "Checks" },
+            "label": "Checks builder card with description"
+          },
+          "assertionType": "containsText",
+          "expectedValue": "Checks",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "tmpl-page-purpose",
+      "name": "Page Purpose",
+      "description": "The Step Builders page is a navigation hub that provides quick access to specialized editors for building individual workflow steps. Each builder card represents a different step type (Tests, Checks, Playwright Tests, Shell Commands, Contexts, Tasks) and links to its dedicated editor.",
+      "category": "semantic",
+      "assertions": [
+        {
+          "id": "tmpl-purpose-navigate",
+          "description": "Users can navigate to any step builder by clicking its card in the grid layout",
+          "category": "semantic",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Step Builders" },
+            "label": "Page heading"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "tmpl-purpose-types",
+          "description": "Users can see all available step types with descriptions to choose the right builder for their needs",
+          "category": "semantic",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContent": "Tests" },
+            "label": "Tests builder card"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    }
+  ],
+  "metadata": {
+    "component": "StepBuilders",
+    "author": "Joshua Spinak",
+    "createdAt": "2026-02-24T00:00:00.000Z",
+    "updatedAt": "2026-02-26T00:00:00.000Z",
+    "pageUrl": "/build/templates",
+    "elementSource": "sdk",
+    "tags": ["step-builders", "navigation", "hub", "tier-2"]
+  }
+}
