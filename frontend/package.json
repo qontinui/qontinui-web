@@ -27,8 +27,7 @@
     "test:e2e:firefox": "playwright test --project=firefox",
     "test:e2e:webkit": "playwright test --project=webkit",
     "test:e2e:report": "playwright show-report",
-    "prepare": "husky",
-    "preinstall": "node -e \"if(process.env.VERCEL){const{execSync:x}=require('child_process');const p=require('path').resolve(__dirname,'..','..'); ['qontinui/qontinui-schemas','qontinui/qontinui-navigation','qontinui/qontinui-workflow-utils','qontinui/qontinui-workflow-ui'].forEach(r=>{const n=r.split('/')[1];const t=p+'/'+n;try{require('fs').statSync(t)}catch{x('git clone --depth 1 https://github.com/'+r+'.git '+t,{stdio:'inherit'})}})}\""
+    "prepare": "husky"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
