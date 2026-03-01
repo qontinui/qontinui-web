@@ -738,7 +738,10 @@ const PatternOptimizationContent: React.FC = () => {
               {/* Similarity Threshold */}
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <label className="text-sm font-medium text-text-secondary">
+                  <label
+                    htmlFor="pos-similarity-threshold"
+                    className="text-sm font-medium text-text-secondary"
+                  >
                     Similarity Threshold
                   </label>
                   <span className="text-sm font-mono bg-surface-canvas px-2 py-1 rounded text-text-secondary">
@@ -746,6 +749,7 @@ const PatternOptimizationContent: React.FC = () => {
                   </span>
                 </div>
                 <input
+                  id="pos-similarity-threshold"
                   type="range"
                   min="50"
                   max="100"
@@ -769,10 +773,14 @@ const PatternOptimizationContent: React.FC = () => {
 
               {/* Color Averaging */}
               <div>
-                <label className="text-sm font-medium text-text-secondary block mb-2">
+                <label
+                  htmlFor="pos-color-averaging"
+                  className="text-sm font-medium text-text-secondary block mb-2"
+                >
                   Color Averaging Method
                 </label>
                 <select
+                  id="pos-color-averaging"
                   value={pageState.config.colorAveraging}
                   onChange={(e) =>
                     pageState.setConfig({
@@ -820,10 +828,14 @@ const PatternOptimizationContent: React.FC = () => {
                 {pageState.config.morphologicalOps.enabled && (
                   <div className="mt-3 ml-6 space-y-3">
                     <div>
-                      <label className="text-xs text-text-muted">
+                      <label
+                        htmlFor="pos-erosion-size"
+                        className="text-xs text-text-muted"
+                      >
                         Erosion (remove noise)
                       </label>
                       <input
+                        id="pos-erosion-size"
                         type="range"
                         min="0"
                         max="5"
@@ -841,10 +853,14 @@ const PatternOptimizationContent: React.FC = () => {
                       />
                     </div>
                     <div>
-                      <label className="text-xs text-text-muted">
+                      <label
+                        htmlFor="pos-dilation-size"
+                        className="text-xs text-text-muted"
+                      >
                         Dilation (fill gaps)
                       </label>
                       <input
+                        id="pos-dilation-size"
                         type="range"
                         min="0"
                         max="5"
@@ -1245,10 +1261,14 @@ const PatternOptimizationContent: React.FC = () => {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-text-secondary mb-1">
+                <label
+                  htmlFor="pos-state-image-name"
+                  className="block text-sm font-medium text-text-secondary mb-1"
+                >
                   StateImage Name
                 </label>
                 <input
+                  id="pos-state-image-name"
                   type="text"
                   value={pageState.stateImageName}
                   onChange={(e) => pageState.setStateImageName(e.target.value)}
@@ -1258,10 +1278,14 @@ const PatternOptimizationContent: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-text-secondary mb-1">
+                <label
+                  htmlFor="pos-add-to-state"
+                  className="block text-sm font-medium text-text-secondary mb-1"
+                >
                   Add to State
                 </label>
                 <select
+                  id="pos-add-to-state"
                   value={pageState.selectedStateId}
                   onChange={(e) => pageState.setSelectedStateId(e.target.value)}
                   className="w-full px-3 py-2 bg-surface-canvas border border-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-brand-primary text-white"
@@ -1278,10 +1302,14 @@ const PatternOptimizationContent: React.FC = () => {
 
               {pageState.selectedStateId === "new" && (
                 <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-1">
+                  <label
+                    htmlFor="pos-new-state-name"
+                    className="block text-sm font-medium text-text-secondary mb-1"
+                  >
                     New State Name
                   </label>
                   <input
+                    id="pos-new-state-name"
                     type="text"
                     value={pageState.newStateName}
                     onChange={(e) => pageState.setNewStateName(e.target.value)}

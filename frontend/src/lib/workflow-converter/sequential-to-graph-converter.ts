@@ -9,8 +9,13 @@
  * const graphWorkflow = converter.convert(sequentialActions);
  */
 
-import { Action, ActionType, Connection } from "../action-schema/action-types";
-import { Workflow, Connections } from "../action-schema/action-types";
+import {
+  Action,
+  ActionType,
+  Connection,
+  Connections,
+  Workflow,
+} from "../action-schema/action-types";
 import {
   IfActionConfig,
   LoopActionConfig,

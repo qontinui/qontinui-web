@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { useTaskRunKnowledge } from "@/lib/runner-api";
-import type { Finding } from "@/lib/runner-api";
+import { useTaskRunKnowledge, type Finding } from "@/lib/runner-api";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,

@@ -490,7 +490,7 @@ export default function WorkflowVisualizationPage() {
             <div className="flex gap-4 items-end">
               {projects.length > 0 && (
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Project</label>
+                  <p className="text-sm font-medium">Project</p>
                   <Select
                     value={selectedProject}
                     onValueChange={setSelectedProject}
@@ -511,7 +511,7 @@ export default function WorkflowVisualizationPage() {
               )}
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">Workflow</label>
+                <p className="text-sm font-medium">Workflow</p>
                 <Select
                   value={selectedWorkflowId || ""}
                   onValueChange={setSelectedWorkflowId}

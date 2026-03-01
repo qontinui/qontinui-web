@@ -92,19 +92,14 @@ export function CodeBlockNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
     }
   };
 
-  // Render validation status icon
-  const renderValidationIcon = () => {
-    switch (validationStatus) {
-      case "validating":
-        return <Loader2 className="w-3 h-3 animate-spin text-text-muted" />;
-      case "valid":
-        return <CheckCircle className="w-3 h-3 text-green-500" />;
-      case "invalid":
-        return <AlertCircle className="w-3 h-3 text-red-500" />;
-      default:
-        return null;
-    }
-  };
+  const validationIcon =
+    validationStatus === "validating" ? (
+      <Loader2 className="w-3 h-3 animate-spin text-text-muted" />
+    ) : validationStatus === "valid" ? (
+      <CheckCircle className="w-3 h-3 text-green-500" />
+    ) : validationStatus === "invalid" ? (
+      <AlertCircle className="w-3 h-3 text-red-500" />
+    ) : null;
 
   return (
     <div className="code-block-node">
@@ -121,7 +116,7 @@ export function CodeBlockNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
         >
           <Code className="w-3 h-3" />
           {showEditor ? "Hide Code" : "Show Code"}
-          {renderValidationIcon()}
+          {validationIcon}
         </button>
 
         {showEditor && (

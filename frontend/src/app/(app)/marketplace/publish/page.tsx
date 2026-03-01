@@ -34,13 +34,13 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PackageCodePreview } from "@/components/marketplace/PackageCodePreview";
 import { useCreatePackage } from "@/hooks/useCodePackages";
-import type {
-  PackageCategory,
-  PackageLicense,
-  PackageVisibility,
-  CreatePackageRequest,
+import {
+  getCategoryLabel,
+  type CreatePackageRequest,
+  type PackageCategory,
+  type PackageLicense,
+  type PackageVisibility,
 } from "@/types/code-packages";
-import { getCategoryLabel } from "@/types/code-packages";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 

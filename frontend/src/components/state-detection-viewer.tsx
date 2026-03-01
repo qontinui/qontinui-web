@@ -282,8 +282,11 @@ export function StateDetectionViewer({
           {/* Algorithm Parameters */}
           <div className="grid grid-cols-3 gap-2">
             <div className="space-y-1">
-              <label className="text-xs font-medium">Algorithm</label>
+              <label htmlFor="sdv-algorithm" className="text-xs font-medium">
+                Algorithm
+              </label>
               <Input
+                id="sdv-algorithm"
                 value={algorithm}
                 onChange={(e) => setAlgorithm(e.target.value)}
                 disabled={isLoading}
@@ -291,8 +294,14 @@ export function StateDetectionViewer({
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">State Threshold (s)</label>
+              <label
+                htmlFor="sdv-state-threshold"
+                className="text-xs font-medium"
+              >
+                State Threshold (s)
+              </label>
               <Input
+                id="sdv-state-threshold"
                 type="number"
                 step="0.1"
                 value={stateThreshold}
@@ -302,10 +311,14 @@ export function StateDetectionViewer({
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium">
+              <label
+                htmlFor="sdv-max-input-dist"
+                className="text-xs font-medium"
+              >
                 Max Input Distance (s)
               </label>
               <Input
+                id="sdv-max-input-dist"
                 type="number"
                 step="0.1"
                 value={maxInputDistance}
@@ -387,7 +400,6 @@ export function StateDetectionViewer({
                             }
                           }}
                           className="h-7 text-xs"
-                          autoFocus
                         />
                         <Button
                           size="icon"
@@ -498,33 +510,33 @@ export function StateDetectionViewer({
                     {/* Basic Info */}
                     <div className="space-y-2">
                       <div>
-                        <label className="text-xs font-medium text-muted-foreground">
+                        <p className="text-xs font-medium text-muted-foreground">
                           State ID
-                        </label>
+                        </p>
                         <p className="text-sm font-mono">
                           {selectedState.state_id}
                         </p>
                       </div>
                       <div>
-                        <label className="text-xs font-medium text-muted-foreground">
+                        <p className="text-xs font-medium text-muted-foreground">
                           First Seen
-                        </label>
+                        </p>
                         <p className="text-sm">
                           {formatTimestamp(selectedState.timestamp_first_seen)}
                         </p>
                       </div>
                       <div>
-                        <label className="text-xs font-medium text-muted-foreground">
+                        <p className="text-xs font-medium text-muted-foreground">
                           Last Seen
-                        </label>
+                        </p>
                         <p className="text-sm">
                           {formatTimestamp(selectedState.timestamp_last_seen)}
                         </p>
                       </div>
                       <div>
-                        <label className="text-xs font-medium text-muted-foreground">
+                        <p className="text-xs font-medium text-muted-foreground">
                           Duration
-                        </label>
+                        </p>
                         <p className="text-sm">
                           {formatDuration(
                             selectedState.metadata.duration_seconds
@@ -537,9 +549,9 @@ export function StateDetectionViewer({
 
                     {/* Screenshots */}
                     <div className="space-y-2">
-                      <label className="text-xs font-medium text-muted-foreground">
+                      <p className="text-xs font-medium text-muted-foreground">
                         Screenshots ({selectedState.screenshot_ids.length})
-                      </label>
+                      </p>
                       <div className="flex flex-wrap gap-1">
                         {selectedState.screenshot_ids.map((id) => (
                           <Badge
@@ -561,9 +573,9 @@ export function StateDetectionViewer({
 
                     {/* Input Events */}
                     <div className="space-y-2">
-                      <label className="text-xs font-medium text-muted-foreground">
+                      <p className="text-xs font-medium text-muted-foreground">
                         Input Events ({selectedState.input_events.length})
-                      </label>
+                      </p>
                       <div className="flex flex-wrap gap-1">
                         {selectedState.input_events.map((id) => (
                           <Badge key={id} variant="outline" className="text-xs">
@@ -577,10 +589,10 @@ export function StateDetectionViewer({
 
                     {/* Transitions */}
                     <div className="space-y-2">
-                      <label className="text-xs font-medium text-muted-foreground">
+                      <p className="text-xs font-medium text-muted-foreground">
                         Outgoing Transitions (
                         {selectedState.outgoing_transitions.length})
-                      </label>
+                      </p>
                       <div className="space-y-2">
                         {selectedState.outgoing_transitions.map(
                           (transition, idx) => (

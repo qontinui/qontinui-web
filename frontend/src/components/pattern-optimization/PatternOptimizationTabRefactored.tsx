@@ -280,7 +280,10 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
             {/* Similarity Threshold Slider */}
             <div className="mb-3">
               <div className="flex justify-between items-center mb-1">
-                <label className="text-xs font-medium text-text-secondary">
+                <label
+                  htmlFor="potr-similarity-threshold"
+                  className="text-xs font-medium text-text-secondary"
+                >
                   Similarity Threshold
                 </label>
                 <span className="text-xs font-mono bg-surface-raised px-1.5 py-0.5 rounded">
@@ -288,6 +291,7 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                 </span>
               </div>
               <input
+                id="potr-similarity-threshold"
                 type="range"
                 min="50"
                 max="100"
@@ -308,10 +312,14 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
 
             {/* Color Averaging Method */}
             <div className="mb-3">
-              <label className="text-xs font-medium text-text-secondary block mb-1">
+              <label
+                htmlFor="potr-color-averaging"
+                className="text-xs font-medium text-text-secondary block mb-1"
+              >
                 Pixel Averaging Method
               </label>
               <select
+                id="potr-color-averaging"
                 value={extractionConfig.colorAveraging}
                 onChange={(e) =>
                   setExtractionConfig((prev) => ({
@@ -493,7 +501,10 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                       </h3>
                       <div className="mb-2">
                         <div className="flex justify-between items-center mb-1">
-                          <label className="text-xs font-medium">
+                          <label
+                            htmlFor="potr-preview-threshold"
+                            className="text-xs font-medium"
+                          >
                             New Threshold
                           </label>
                           <span className="text-xs font-mono bg-white px-1.5 py-0.5 rounded">
@@ -501,6 +512,7 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                           </span>
                         </div>
                         <input
+                          id="potr-preview-threshold"
                           type="range"
                           min="50"
                           max="100"
@@ -597,7 +609,10 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                       {showConfidenceMap && (
                         <div className="mt-3">
                           <div className="flex justify-between items-center">
-                            <label className="text-xs font-medium text-text-muted">
+                            <label
+                              htmlFor="potr-mask-opacity"
+                              className="text-xs font-medium text-text-muted"
+                            >
                               Confidence Overlay Opacity
                             </label>
                             <span className="text-xs font-mono bg-white px-1.5 py-0.5 rounded">
@@ -605,6 +620,7 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                             </span>
                           </div>
                           <input
+                            id="potr-mask-opacity"
                             type="range"
                             min="0"
                             max="100"

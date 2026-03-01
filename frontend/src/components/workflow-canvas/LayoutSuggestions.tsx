@@ -14,8 +14,10 @@
 
 import React, { useState, useMemo } from "react";
 import type { Workflow } from "@/lib/action-schema/action-types";
-import type { LayoutPreviewResult } from "@/services/layout-service";
-import { getLayoutService } from "@/services/layout-service";
+import {
+  getLayoutService,
+  type LayoutPreviewResult,
+} from "@/services/layout-service";
 import { LayoutStyle } from "@/lib/workflow-layout/auto-layout";
 
 // ============================================================================

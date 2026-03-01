@@ -96,7 +96,7 @@ export function LoopActionProperties({
 
       {/* Loop Type Selector */}
       <div className="space-y-2">
-        <Label className="text-xs text-text-muted">Loop Type</Label>
+        <p className="text-xs text-text-muted">Loop Type</p>
         <Select value={loopType} onValueChange={handleLoopTypeChange}>
           <SelectTrigger
             className="bg-transparent border-border-default"
@@ -129,10 +129,11 @@ export function LoopActionProperties({
       {loopType === "FOR" && (
         <>
           <div className="space-y-2">
-            <Label className="text-xs text-text-muted">
+            <Label htmlFor="lap-iterations" className="text-xs text-text-muted">
               Number of Iterations
             </Label>
             <Input
+              id="lap-iterations"
               type="number"
               min="1"
               value={config.iterations || 10}
@@ -166,7 +167,7 @@ export function LoopActionProperties({
       {/* WHILE Loop Configuration */}
       {loopType === "WHILE" && (
         <div className="space-y-2">
-          <Label className="text-xs text-text-muted">Loop Condition</Label>
+          <p className="text-xs text-text-muted">Loop Condition</p>
           <div className="p-3 bg-surface-raised/50 rounded-md border border-border-default">
             <ConditionEditor
               condition={config.condition}
@@ -187,7 +188,7 @@ export function LoopActionProperties({
       {loopType === "FOREACH" && (
         <>
           <div className="space-y-2">
-            <Label className="text-xs text-text-muted">Collection Type</Label>
+            <p className="text-xs text-text-muted">Collection Type</p>
             <Select
               value={config.collection?.type || "variable"}
               onValueChange={(type) =>
@@ -233,8 +234,14 @@ export function LoopActionProperties({
           {config.collection?.type === "range" && (
             <div className="grid grid-cols-3 gap-2">
               <div className="space-y-2">
-                <Label className="text-xs text-text-muted">Start</Label>
+                <Label
+                  htmlFor="lap-range-start"
+                  className="text-xs text-text-muted"
+                >
+                  Start
+                </Label>
                 <Input
+                  id="lap-range-start"
                   type="number"
                   value={config.collection.start ?? 0}
                   onChange={(e) =>
@@ -247,8 +254,14 @@ export function LoopActionProperties({
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-xs text-text-muted">End</Label>
+                <Label
+                  htmlFor="lap-range-end"
+                  className="text-xs text-text-muted"
+                >
+                  End
+                </Label>
                 <Input
+                  id="lap-range-end"
                   type="number"
                   value={config.collection.end ?? 10}
                   onChange={(e) =>
@@ -261,8 +274,14 @@ export function LoopActionProperties({
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-xs text-text-muted">Step</Label>
+                <Label
+                  htmlFor="lap-range-step"
+                  className="text-xs text-text-muted"
+                >
+                  Step
+                </Label>
                 <Input
+                  id="lap-range-step"
                   type="number"
                   value={config.collection.step ?? 1}
                   onChange={(e) =>
@@ -307,7 +326,7 @@ export function LoopActionProperties({
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <div className="w-1 h-4 bg-purple-500 rounded" />
-          <Label className="text-xs text-purple-400">Loop Body Actions</Label>
+          <p className="text-xs text-purple-400">Loop Body Actions</p>
         </div>
         <div className="pl-3 border-l-2 border-purple-500/30">
           <ActionListEditor
@@ -324,13 +343,17 @@ export function LoopActionProperties({
 
       {/* Safety Settings */}
       <div className="space-y-3 p-3 bg-surface-raised/30 border border-border-default rounded-md">
-        <Label className="text-xs text-text-muted font-medium">
-          Safety Settings
-        </Label>
+        <p className="text-xs text-text-muted font-medium">Safety Settings</p>
 
         <div className="space-y-2">
-          <Label className="text-xs text-text-muted">Max Iterations</Label>
+          <Label
+            htmlFor="lap-max-iterations"
+            className="text-xs text-text-muted"
+          >
+            Max Iterations
+          </Label>
           <Input
+            id="lap-max-iterations"
             type="number"
             min="1"
             value={maxIterations}

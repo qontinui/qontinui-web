@@ -40,6 +40,106 @@ interface TransitionListProps {
   onTransitionSelect: (transition: Transition | null) => void;
 }
 
+interface OutgoingTransitionItemProps {
+  transition: OutgoingTransition;
+  index: number;
+  isSelected: boolean;
+  fromName: string;
+  toNames: string[];
+  onTransitionSelect: (transition: OutgoingTransition | null) => void;
+}
+
+function OutgoingTransitionItem({
+  transition,
+  index,
+  isSelected,
+  fromName,
+  toNames,
+  onTransitionSelect,
+}: OutgoingTransitionItemProps) {
+  const isEven = index % 2 === 0;
+  return (
+    <div
+      className={cn(
+        "px-2 py-1.5 cursor-pointer transition-colors border-l-2",
+        isSelected
+          ? "bg-primary/15 border-l-primary"
+          : isEven
+            ? "bg-muted/30 border-l-transparent hover:bg-muted/50"
+            : "bg-transparent border-l-transparent hover:bg-muted/30"
+      )}
+      role="button"
+      tabIndex={0}
+      onClick={() => onTransitionSelect(isSelected ? null : transition)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onTransitionSelect(isSelected ? null : transition);
+        }
+      }}
+    >
+      <div className="flex items-center gap-1.5 text-xs">
+        <ArrowRight className="h-3 w-3 text-fuchsia-500 flex-shrink-0" />
+        <span className="font-medium truncate">{fromName}</span>
+        <ArrowRight className="h-2.5 w-2.5 text-muted-foreground flex-shrink-0" />
+        <span className="text-muted-foreground truncate flex-1">
+          {toNames.length === 1 ? toNames[0] : `${toNames.length} states`}
+        </span>
+        {transition.staysVisible && (
+          <Eye className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface IncomingTransitionItemProps {
+  transition: IncomingTransition;
+  index: number;
+  isSelected: boolean;
+  toName: string;
+  onTransitionSelect: (transition: IncomingTransition | null) => void;
+}
+
+function IncomingTransitionItem({
+  transition,
+  index,
+  isSelected,
+  toName,
+  onTransitionSelect,
+}: IncomingTransitionItemProps) {
+  const isEven = index % 2 === 0;
+  return (
+    <div
+      className={cn(
+        "px-2 py-1.5 cursor-pointer transition-colors border-l-2",
+        isSelected
+          ? "bg-primary/15 border-l-primary"
+          : isEven
+            ? "bg-muted/30 border-l-transparent hover:bg-muted/50"
+            : "bg-transparent border-l-transparent hover:bg-muted/30"
+      )}
+      role="button"
+      tabIndex={0}
+      onClick={() => onTransitionSelect(isSelected ? null : transition)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onTransitionSelect(isSelected ? null : transition);
+        }
+      }}
+    >
+      <div className="flex items-center gap-1.5 text-xs">
+        <ArrowDown className="h-3 w-3 text-green-500 flex-shrink-0" />
+        <span className="font-medium truncate flex-1">→ {toName}</span>
+        <span className="text-muted-foreground text-[10px]">
+          {transition.workflows.length} wf
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function TransitionList({
   transitions,
   states,
@@ -134,91 +234,6 @@ export function TransitionList({
     return { outgoingTransitions: outgoing, incomingTransitions: incoming };
   }, [filteredTransitions]);
 
-  const renderOutgoingTransition = (
-    transition: OutgoingTransition,
-    index: number
-  ) => {
-    const isSelected = selectedTransition?.id === transition.id;
-    const fromName = getStateName(transition.fromState);
-    const toNames = transition.activateStates.map((id) => getStateName(id));
-    const isEven = index % 2 === 0;
-
-    return (
-      <div
-        key={transition.id}
-        className={cn(
-          "px-2 py-1.5 cursor-pointer transition-colors border-l-2",
-          isSelected
-            ? "bg-primary/15 border-l-primary"
-            : isEven
-              ? "bg-muted/30 border-l-transparent hover:bg-muted/50"
-              : "bg-transparent border-l-transparent hover:bg-muted/30"
-        )}
-        role="button"
-        tabIndex={0}
-        onClick={() => onTransitionSelect(isSelected ? null : transition)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onTransitionSelect(isSelected ? null : transition);
-          }
-        }}
-      >
-        <div className="flex items-center gap-1.5 text-xs">
-          <ArrowRight className="h-3 w-3 text-fuchsia-500 flex-shrink-0" />
-          <span className="font-medium truncate">{fromName}</span>
-          <ArrowRight className="h-2.5 w-2.5 text-muted-foreground flex-shrink-0" />
-          <span className="text-muted-foreground truncate flex-1">
-            {toNames.length === 1 ? toNames[0] : `${toNames.length} states`}
-          </span>
-          {transition.staysVisible && (
-            <Eye className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const renderIncomingTransition = (
-    transition: IncomingTransition,
-    index: number
-  ) => {
-    const isSelected = selectedTransition?.id === transition.id;
-    const toName = getStateName(transition.toState);
-    const isEven = index % 2 === 0;
-
-    return (
-      <div
-        key={transition.id}
-        className={cn(
-          "px-2 py-1.5 cursor-pointer transition-colors border-l-2",
-          isSelected
-            ? "bg-primary/15 border-l-primary"
-            : isEven
-              ? "bg-muted/30 border-l-transparent hover:bg-muted/50"
-              : "bg-transparent border-l-transparent hover:bg-muted/30"
-        )}
-        role="button"
-        tabIndex={0}
-        onClick={() => onTransitionSelect(isSelected ? null : transition)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onTransitionSelect(isSelected ? null : transition);
-          }
-        }}
-      >
-        <div className="flex items-center gap-1.5 text-xs">
-          <ArrowDown className="h-3 w-3 text-green-500 flex-shrink-0" />
-          <span className="font-medium truncate flex-1">→ {toName}</span>
-          <span className="text-muted-foreground text-[10px]">
-            {transition.workflows.length} wf
-          </span>
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="flex flex-col h-full">
       {/* Dropdown Filters */}
@@ -292,9 +307,17 @@ export function TransitionList({
                   </Badge>
                 </div>
                 <div className="rounded-md overflow-hidden border border-border/50">
-                  {outgoingTransitions.map((t, i) =>
-                    renderOutgoingTransition(t, i)
-                  )}
+                  {outgoingTransitions.map((t, i) => (
+                    <OutgoingTransitionItem
+                      key={t.id}
+                      transition={t}
+                      index={i}
+                      isSelected={selectedTransition?.id === t.id}
+                      fromName={getStateName(t.fromState)}
+                      toNames={t.activateStates.map((id) => getStateName(id))}
+                      onTransitionSelect={onTransitionSelect}
+                    />
+                  ))}
                 </div>
               </div>
             )}
@@ -312,9 +335,16 @@ export function TransitionList({
                   </Badge>
                 </div>
                 <div className="rounded-md overflow-hidden border border-border/50">
-                  {incomingTransitions.map((t, i) =>
-                    renderIncomingTransition(t, i)
-                  )}
+                  {incomingTransitions.map((t, i) => (
+                    <IncomingTransitionItem
+                      key={t.id}
+                      transition={t}
+                      index={i}
+                      isSelected={selectedTransition?.id === t.id}
+                      toName={getStateName(t.toState)}
+                      onTransitionSelect={onTransitionSelect}
+                    />
+                  ))}
                 </div>
               </div>
             )}

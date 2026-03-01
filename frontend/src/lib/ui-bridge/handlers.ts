@@ -21,10 +21,11 @@ import type {
   APIResponse,
 } from "@qontinui/ui-bridge/server";
 import type {
+  CapturedError,
   ElementDesignData,
   InteractionStateName,
-  StateStyles,
   ResponsiveSnapshot,
+  StateStyles,
 } from "@qontinui/ui-bridge";
 import type {
   StyleGuideConfig,
@@ -42,7 +43,6 @@ import type {
   ControlSnapshot,
 } from "@qontinui/ui-bridge/control";
 import type { RenderLogEntry } from "@qontinui/ui-bridge/render-log";
-import type { CapturedError } from "@qontinui/ui-bridge";
 import type {
   ElementAnnotation,
   AnnotationConfig,

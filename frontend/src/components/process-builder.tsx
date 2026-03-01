@@ -227,7 +227,7 @@ export function ProcessBuilder() {
                   />
 
                   <div className="flex items-center gap-2">
-                    <label className="text-sm text-text-muted">Category:</label>
+                    <p className="text-sm text-text-muted">Category:</p>
                     <Select
                       value={selectedProcess.category || "Main"}
                       onValueChange={(value) => {

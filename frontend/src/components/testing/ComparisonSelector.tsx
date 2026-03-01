@@ -76,7 +76,7 @@ export function ComparisonSelector({
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-sm text-text-muted">Baseline Run</label>
+            <p className="text-sm text-text-muted">Baseline Run</p>
             <Select value={run1Id} onValueChange={setRun1Id}>
               <SelectTrigger className="bg-surface-canvas/50 border-border-default">
                 <SelectValue placeholder="Select baseline run" />
@@ -94,7 +94,7 @@ export function ComparisonSelector({
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm text-text-muted">Comparison Run</label>
+            <p className="text-sm text-text-muted">Comparison Run</p>
             <Select value={run2Id} onValueChange={setRun2Id}>
               <SelectTrigger className="bg-surface-canvas/50 border-border-default">
                 <SelectValue placeholder="Select comparison run" />

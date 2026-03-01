@@ -26,8 +26,12 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { projectService } from "@/services/service-factory";
-import { ProjectSchema, ProjectsArraySchema, parseApi } from "@/lib/schemas";
-import type { Project } from "@/lib/schemas";
+import {
+  parseApi,
+  ProjectsArraySchema,
+  ProjectSchema,
+  type Project,
+} from "@/lib/schemas";
 
 // Query keys for organizing cache
 export const projectKeys = {

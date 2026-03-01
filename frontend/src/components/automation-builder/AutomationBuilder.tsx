@@ -514,8 +514,8 @@ function AutomationBuilderContent() {
     [addWorkflow]
   );
 
-  // Render the editor based on mode
-  const renderEditor = () => {
+  // Editor content based on mode and selected item
+  const editorContent = (() => {
     if (!selectedItem) {
       return (
         <EmptyState
@@ -588,7 +588,7 @@ function AutomationBuilderContent() {
         />
       );
     }
-  };
+  })();
 
   return (
     <div
@@ -646,7 +646,7 @@ function AutomationBuilderContent() {
           />
 
           {/* Editor Content */}
-          <div className="flex-1 overflow-y-auto">{renderEditor()}</div>
+          <div className="flex-1 overflow-y-auto">{editorContent}</div>
         </div>
 
         {/* Right Panel - Properties */}

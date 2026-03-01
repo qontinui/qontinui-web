@@ -77,10 +77,14 @@ const AnchorRegionCreator: React.FC<AnchorRegionCreatorProps> = ({
       <div className="space-y-3">
         {/* First Anchor Selection */}
         <div>
-          <label className="block text-xs font-medium text-text-secondary mb-1">
+          <label
+            htmlFor="arc-anchor1"
+            className="block text-xs font-medium text-text-secondary mb-1"
+          >
             First Anchor Point
           </label>
           <select
+            id="arc-anchor1"
             value={anchor1Id}
             onChange={(e) => setAnchor1Id(e.target.value)}
             className="w-full px-2 py-1 text-sm border border-border-default rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -96,10 +100,14 @@ const AnchorRegionCreator: React.FC<AnchorRegionCreatorProps> = ({
 
         {/* Second Anchor Selection */}
         <div>
-          <label className="block text-xs font-medium text-text-secondary mb-1">
+          <label
+            htmlFor="arc-anchor2"
+            className="block text-xs font-medium text-text-secondary mb-1"
+          >
             Second Anchor Point
           </label>
           <select
+            id="arc-anchor2"
             value={anchor2Id}
             onChange={(e) => setAnchor2Id(e.target.value)}
             className="w-full px-2 py-1 text-sm border border-border-default rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -118,10 +126,14 @@ const AnchorRegionCreator: React.FC<AnchorRegionCreatorProps> = ({
 
         {/* Region Name */}
         <div>
-          <label className="block text-xs font-medium text-text-secondary mb-1">
+          <label
+            htmlFor="arc-region-name"
+            className="block text-xs font-medium text-text-secondary mb-1"
+          >
             Region Name (optional)
           </label>
           <input
+            id="arc-region-name"
             type="text"
             value={regionName}
             onChange={(e) => setRegionName(e.target.value)}

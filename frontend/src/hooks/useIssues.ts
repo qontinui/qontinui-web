@@ -6,8 +6,11 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { issuesService } from "@/services/service-factory";
-import { IssueStatus } from "@/types/detected-issue";
-import type { DetectedIssueUpdate, IssueFilters } from "@/types/detected-issue";
+import {
+  IssueStatus,
+  type DetectedIssueUpdate,
+  type IssueFilters,
+} from "@/types/detected-issue";
 import type {
   IssuesSyncRequest,
   IssuesSyncResponse,

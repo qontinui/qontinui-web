@@ -18,7 +18,6 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -35,10 +34,10 @@ import {
   XSquare,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { MonitorValidationError } from "@/lib/monitor-validation";
 import {
-  groupErrorsByType,
   getErrorDescription,
+  groupErrorsByType,
+  type MonitorValidationError,
 } from "@/lib/monitor-validation";
 
 export interface MissingMonitorsDialogProps {
@@ -180,9 +179,7 @@ export function MissingMonitorsDialog({
   };
 
   // Render error list for a specific type
-  const renderErrorList = (
-    type: "image" | "region" | "location" | "string"
-  ) => {
+  const errorList = (type: "image" | "region" | "location" | "string") => {
     const typeErrors = errorsByType[type];
 
     if (typeErrors.length === 0) {
@@ -200,9 +197,9 @@ export function MissingMonitorsDialog({
       <div className="space-y-4">
         {/* Selection Controls */}
         <div className="flex items-center justify-between">
-          <Label className="text-sm font-medium">
+          <p className="text-sm font-medium">
             {typeErrors.length} {type}(s) need monitor assignment
-          </Label>
+          </p>
           <div className="flex gap-2">
             <Button
               variant="ghost"
@@ -233,9 +230,10 @@ export function MissingMonitorsDialog({
               const isSelected = selectedErrors.has(errorKey);
 
               return (
-                <label
+                <div
                   key={errorKey}
                   className="flex items-start gap-3 p-3 rounded-lg hover:bg-surface-canvas cursor-pointer transition-colors"
+                  onClick={() => handleToggleError(error)}
                 >
                   <Checkbox
                     checked={isSelected}
@@ -261,7 +259,7 @@ export function MissingMonitorsDialog({
                       {getErrorDescription(error)}
                     </div>
                   </div>
-                </label>
+                </div>
               );
             })}
           </div>
@@ -294,7 +292,7 @@ export function MissingMonitorsDialog({
         <div className="space-y-4 py-4">
           {/* Monitor Selection */}
           <div className="bg-surface-canvas rounded-lg p-4 space-y-2">
-            <Label className="text-sm font-medium">Assign Monitors</Label>
+            <p className="text-sm font-medium">Assign Monitors</p>
             <p className="text-xs text-text-muted mb-2">
               Select which monitors to apply to the selected elements
             </p>
@@ -343,19 +341,19 @@ export function MissingMonitorsDialog({
             </TabsList>
 
             <TabsContent value="image" className="mt-4">
-              {renderErrorList("image")}
+              {errorList("image")}
             </TabsContent>
 
             <TabsContent value="region" className="mt-4">
-              {renderErrorList("region")}
+              {errorList("region")}
             </TabsContent>
 
             <TabsContent value="location" className="mt-4">
-              {renderErrorList("location")}
+              {errorList("location")}
             </TabsContent>
 
             <TabsContent value="string" className="mt-4">
-              {renderErrorList("string")}
+              {errorList("string")}
             </TabsContent>
           </Tabs>
 

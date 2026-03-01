@@ -26,8 +26,10 @@ import { Button } from "@/components/ui/button";
 import { AlertBadge } from "./AlertBadge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
-import type { SecurityWarning } from "@/services/admin/health-service";
-import { healthService } from "@/services/admin/health-service";
+import {
+  healthService,
+  type SecurityWarning,
+} from "@/services/admin/health-service";
 
 interface SecurityWarningsCardProps {
   data: SecurityWarning[] | null;

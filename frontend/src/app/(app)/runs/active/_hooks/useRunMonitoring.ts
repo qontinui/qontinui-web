@@ -1,16 +1,18 @@
 "use client";
 
 import { useRef, useEffect, useCallback } from "react";
-import type { TaskRun } from "@/lib/runner-api";
+import {
+  runnerApi,
+  type CurrentExecutionStepsResponse,
+  type TaskRun,
+} from "@/lib/runner-api";
 import { useRunnerEvent } from "@/contexts/RunnerEventContext";
 import { useSharedStepsData } from "@/contexts/SharedRunnerDataContext";
-import { runnerApi } from "@/lib/runner-api";
 import {
   AUTO_RUN_AFTER_GENERATE_KEY,
   type AutoRunAfterGenerate,
 } from "@/components/workflow-builder/AiGeneratePanel";
 import { toast } from "sonner";
-import type { CurrentExecutionStepsResponse } from "@/lib/runner-api";
 
 export interface RunMonitoringResult {
   stepsData: CurrentExecutionStepsResponse | null;

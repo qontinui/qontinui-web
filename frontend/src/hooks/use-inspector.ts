@@ -14,8 +14,7 @@ import {
   unwrapElementResponse,
 } from "@/lib/ui-bridge/link-extractor";
 import { unwrapSpecResponse } from "@/lib/ui-bridge/spec-parser";
-import { useAppBrowser } from "@/hooks/useAppBrowser";
-import type { UseAppBrowserReturn } from "@/hooks/useAppBrowser";
+import { useAppBrowser, type UseAppBrowserReturn } from "@/hooks/useAppBrowser";
 
 // =============================================================================
 // Types

@@ -231,9 +231,9 @@ export function PromptTemplateEditor({
           {/* Template variables as clickable chips */}
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <label className="text-xs font-medium text-zinc-400">
+              <p className="text-xs font-medium text-zinc-400">
                 Insert Variable
-              </label>
+              </p>
               <button
                 onClick={() => setShowVariableInfo(!showVariableInfo)}
                 className="text-zinc-500 hover:text-zinc-300 transition-colors"

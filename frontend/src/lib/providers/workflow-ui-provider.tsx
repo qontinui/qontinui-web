@@ -1,11 +1,11 @@
 "use client";
 
 import React from "react";
-import { UIProvider } from "@qontinui/workflow-ui";
-import type {
-  CollapsibleProps,
-  CollapsibleTriggerProps,
-  CollapsibleContentProps,
+import {
+  UIProvider,
+  type CollapsibleContentProps,
+  type CollapsibleProps,
+  type CollapsibleTriggerProps,
 } from "@qontinui/workflow-ui";
 import {
   Collapsible,

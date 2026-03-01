@@ -126,7 +126,6 @@ function ResetPasswordContent() {
                     disabled={isSubmitting}
                     required
                     minLength={8}
-                    autoFocus
                   />
                   <button
                     type="button"

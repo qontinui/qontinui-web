@@ -221,8 +221,9 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({
         <CardContent className="space-y-4">
           {/* State Name */}
           <div className="space-y-2">
-            <Label>State Name</Label>
+            <Label htmlFor="ape-state-name">State Name</Label>
             <Input
+              id="ape-state-name"
               type="text"
               placeholder="e.g., LoginPage, Dashboard"
               value={stateName}
@@ -235,8 +236,9 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({
 
           {/* Screenshot Paths */}
           <div className="space-y-2">
-            <Label>Screenshot Paths</Label>
+            <Label htmlFor="ape-screenshot-paths">Screenshot Paths</Label>
             <textarea
+              id="ape-screenshot-paths"
               className="w-full min-h-[100px] p-2 text-sm border rounded-md font-mono"
               placeholder={`Enter screenshot paths (one per line or comma-separated):\n/path/to/screenshot1.png\n/path/to/screenshot2.png`}
               value={screenshotPaths}
@@ -249,7 +251,7 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({
 
           {/* Detection Types */}
           <div className="space-y-2">
-            <Label>Detection Types</Label>
+            <p className="text-sm font-medium leading-none">Detection Types</p>
             <div className="flex flex-col gap-2">
               <div className="flex items-center space-x-2">
                 <Checkbox
@@ -302,7 +304,9 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({
           {/* Confidence Threshold */}
           <div className="space-y-2">
             <div className="flex justify-between">
-              <Label>Min Confidence Threshold</Label>
+              <p className="text-sm font-medium leading-none">
+                Min Confidence Threshold
+              </p>
               <span className="text-sm text-text-muted">
                 {(minConfidence * 100).toFixed(0)}%
               </span>

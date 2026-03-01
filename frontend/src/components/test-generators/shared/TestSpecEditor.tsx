@@ -15,8 +15,7 @@ import {
   XCircle,
   Sparkles,
 } from "lucide-react";
-import type { SpecGroup, SpecCategory } from "../types";
-import { CATEGORY_LABELS } from "../types";
+import { CATEGORY_LABELS, type SpecCategory, type SpecGroup } from "../types";
 import { TestSpecAssertionRow } from "./TestSpecAssertionRow";
 
 interface TestSpecEditorProps {

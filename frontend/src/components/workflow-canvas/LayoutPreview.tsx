@@ -566,8 +566,9 @@ export function LayoutPreview({
               onWheel={handleWheel}
             />
             <div className="overlay-slider-container">
-              <label>Before</label>
+              <label htmlFor="lp-overlay-slider">Before</label>
               <input
+                id="lp-overlay-slider"
                 type="range"
                 min="0"
                 max="100"
@@ -575,7 +576,7 @@ export function LayoutPreview({
                 onChange={(e) => setOverlaySlider(parseInt(e.target.value))}
                 className="overlay-slider"
               />
-              <label>After</label>
+              <span>After</span>
             </div>
           </div>
         )}

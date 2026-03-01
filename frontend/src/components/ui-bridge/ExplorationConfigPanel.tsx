@@ -35,27 +35,28 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Play,
-  Square,
-  Compass,
-  ShieldAlert,
-  Clock,
-  Globe,
-  Loader2,
   AlertCircle,
-  Info,
   ChevronDown,
-  Monitor,
-  Smartphone,
   Chrome,
+  Clock,
+  Compass,
+  Globe,
+  Info,
+  Loader2,
+  Monitor,
+  Play,
+  RefreshCw,
+  ShieldAlert,
+  Smartphone,
+  Square,
 } from "lucide-react";
-import type { TargetType, BrowserTab } from "@/hooks/useUIBridgeExploration";
 import type {
-  UIBridgeExplorationConfig,
+  BrowserTab,
   ExplorationProgress,
+  TargetType,
+  UIBridgeExplorationConfig,
 } from "@/hooks/useUIBridgeExploration";
 import type { RunnerConnection } from "@/types/runner";
-import { RefreshCw } from "lucide-react";
 
 interface ExplorationConfigPanelProps {
   config: UIBridgeExplorationConfig;

@@ -1,8 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { runnerApi } from "@/lib/runner-api";
-import type { Finding, TaskRunKnowledge } from "@/lib/runner-api";
+import {
+  runnerApi,
+  type Finding,
+  type TaskRunKnowledge,
+} from "@/lib/runner-api";
 import { useEventTriggeredFetch } from "@/contexts/RunnerEventContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";

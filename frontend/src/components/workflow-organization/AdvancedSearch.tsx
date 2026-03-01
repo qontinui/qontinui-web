@@ -609,7 +609,7 @@ export function AdvancedSearch({
               </div>
               <div className="space-y-1 max-h-32 overflow-y-auto border rounded-md p-2">
                 {folders.map((folder) => (
-                  <label
+                  <div
                     key={folder.id}
                     className="flex items-center gap-2 py-1 px-2 hover:bg-accent rounded cursor-pointer"
                   >
@@ -629,7 +629,7 @@ export function AdvancedSearch({
                       }}
                     />
                     <span className="text-sm">{folder.name}</span>
-                  </label>
+                  </div>
                 ))}
               </div>
             </div>
@@ -668,7 +668,7 @@ export function AdvancedSearch({
               </div>
               <div className="space-y-1 max-h-32 overflow-y-auto border rounded-md p-2">
                 {availableTags.map((tag) => (
-                  <label
+                  <div
                     key={tag}
                     className="flex items-center gap-2 py-1 px-2 hover:bg-accent rounded cursor-pointer"
                   >
@@ -685,7 +685,7 @@ export function AdvancedSearch({
                       }}
                     />
                     <span className="text-sm">{tag}</span>
-                  </label>
+                  </div>
                 ))}
                 {availableTags.length === 0 && (
                   <div className="text-sm text-muted-foreground text-center py-2">
@@ -794,7 +794,7 @@ export function AdvancedSearch({
               </div>
               <div className="space-y-1 max-h-32 overflow-y-auto border rounded-md p-2">
                 {availableActionTypes.map((type) => (
-                  <label
+                  <div
                     key={type}
                     className="flex items-center gap-2 py-1 px-2 hover:bg-accent rounded cursor-pointer"
                   >
@@ -814,7 +814,7 @@ export function AdvancedSearch({
                       }}
                     />
                     <span className="text-sm font-mono text-xs">{type}</span>
-                  </label>
+                  </div>
                 ))}
               </div>
             </div>
@@ -831,7 +831,7 @@ export function AdvancedSearch({
                 {(
                   ["low", "medium", "high", "very-high"] as ComplexityLevel[]
                 ).map((level) => (
-                  <label
+                  <div
                     key={level}
                     className="flex items-center gap-2 py-1 px-2 hover:bg-accent rounded cursor-pointer"
                   >
@@ -850,7 +850,7 @@ export function AdvancedSearch({
                     <span className="text-sm capitalize">
                       {level.replace("-", " ")}
                     </span>
-                  </label>
+                  </div>
                 ))}
               </div>
             </div>

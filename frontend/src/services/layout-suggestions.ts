@@ -14,9 +14,11 @@
 
 import type { Workflow } from "@/lib/action-schema/action-types";
 import { LayoutStyle } from "@/lib/workflow-layout/auto-layout";
-import { calculateLayoutStatistics } from "./layout-statistics";
+import {
+  calculateLayoutStatistics,
+  type LayoutStatistics,
+} from "./layout-statistics";
 import { getLayoutService } from "./layout-service";
-import type { LayoutStatistics } from "./layout-statistics";
 
 // ============================================================================
 // Types

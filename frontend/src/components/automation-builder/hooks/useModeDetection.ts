@@ -5,8 +5,12 @@
  */
 
 import { useCallback } from "react";
-import type { BuilderMode, LibraryItem } from "../types";
-import { getSuggestedMode, isItemCompatibleWithMode } from "../types";
+import {
+  getSuggestedMode,
+  isItemCompatibleWithMode,
+  type BuilderMode,
+  type LibraryItem,
+} from "../types";
 import { toast } from "sonner";
 
 interface UseModeDetectionOptions {

@@ -30,14 +30,15 @@ import {
 } from "lucide-react";
 import { useIssues, useIssueStats, useUpdateIssue } from "@/hooks/useIssues";
 import { useProjects } from "@/hooks/use-projects";
-import type { DetectedIssue, IssueFilters } from "@/types/detected-issue";
 import {
-  IssueSeverity,
-  IssueStatus,
-  IssueSourceType,
   ISSUE_SEVERITY_CONFIG,
-  ISSUE_STATUS_CONFIG,
   ISSUE_SOURCE_CONFIG,
+  ISSUE_STATUS_CONFIG,
+  IssueSeverity,
+  IssueSourceType,
+  IssueStatus,
+  type DetectedIssue,
+  type IssueFilters,
 } from "@/types/detected-issue";
 import { formatDistanceToNow } from "date-fns";
 

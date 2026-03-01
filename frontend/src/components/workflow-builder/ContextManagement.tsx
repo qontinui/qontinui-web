@@ -346,8 +346,12 @@ export function ContextManagement() {
             {!isLoading && (
               <div className="flex items-center justify-between pb-2 border-b border-zinc-800">
                 <div className="flex items-center gap-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
+                  <label
+                    htmlFor="cm-auto-include"
+                    className="flex items-center gap-2 cursor-pointer"
+                  >
                     <Checkbox
+                      id="cm-auto-include"
                       checked={autoIncludeEnabled}
                       onCheckedChange={(checked) =>
                         setAutoInclude(checked === true)
@@ -500,7 +504,6 @@ export function ContextManagement() {
                           onChange={(e) => setSearchQuery(e.target.value)}
                           placeholder="Search contexts..."
                           className="pl-8 bg-zinc-700 border-zinc-600 text-zinc-200 text-sm h-8"
-                          autoFocus
                         />
                       </div>
                     </div>

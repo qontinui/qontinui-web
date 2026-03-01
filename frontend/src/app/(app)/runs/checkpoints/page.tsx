@@ -1,8 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useTaskRuns, useTaskRunCheckpoints } from "@/lib/runner-api";
-import type { TaskRun, Checkpoint } from "@/lib/runner-api";
+import {
+  useTaskRunCheckpoints,
+  useTaskRuns,
+  type Checkpoint,
+  type TaskRun,
+} from "@/lib/runner-api";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

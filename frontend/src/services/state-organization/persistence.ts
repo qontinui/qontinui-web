@@ -5,8 +5,11 @@
  * Handles saving to and loading from localStorage.
  */
 
-import type { StateOrganizationStorage } from "@/types/state-organization/types";
-import { STORAGE_VERSION, STORAGE_KEY } from "@/types/state-organization/types";
+import {
+  STORAGE_KEY,
+  STORAGE_VERSION,
+  type StateOrganizationStorage,
+} from "@/types/state-organization/types";
 import type { ServiceState } from "./types";
 import { createLogger } from "@/lib/logger";
 

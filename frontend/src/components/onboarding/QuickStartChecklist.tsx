@@ -350,7 +350,7 @@ const ChecklistItem: React.FC<ChecklistItemProps> = ({ task, isCompleted }) => {
 
       {/* Label */}
       <div className="flex-1 min-w-0">
-        <label
+        <span
           className={cn(
             "text-sm font-medium leading-tight cursor-default transition-colors",
             isCompleted
@@ -359,7 +359,7 @@ const ChecklistItem: React.FC<ChecklistItemProps> = ({ task, isCompleted }) => {
           )}
         >
           {task.label}
-        </label>
+        </span>
       </div>
 
       {/* Help Icon */}

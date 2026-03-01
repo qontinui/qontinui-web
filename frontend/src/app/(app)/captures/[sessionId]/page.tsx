@@ -20,8 +20,11 @@ import { InputEventsSidePanel } from "@/components/capture-viewer/InputEventsSid
 import { EventTimeline } from "@/components/capture-viewer/EventTimeline";
 import { SaveScreenshotDialog } from "@/components/captures/SaveScreenshotDialog";
 import { captureService } from "@/services/service-factory";
-import type { CaptureSession, InputEvent } from "@/types/capture";
-import { formatDuration } from "@/types/capture";
+import {
+  formatDuration,
+  type CaptureSession,
+  type InputEvent,
+} from "@/types/capture";
 
 function CaptureViewerPageContent() {
   const params = useParams();

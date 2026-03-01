@@ -24,17 +24,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { authService } from "@/services/service-factory";
 import {
+  AdminProjectDetailsSchema,
+  AdminProjectsArraySchema,
   AdminStatsSchema,
   AdminUsersArraySchema,
-  AdminProjectsArraySchema,
-  AdminProjectDetailsSchema,
   parseApi,
-} from "@/lib/schemas";
-import type {
-  AdminStats,
-  AdminUserData,
-  AdminProjectData,
-  AdminProjectDetails,
+  type AdminProjectData,
+  type AdminProjectDetails,
+  type AdminStats,
+  type AdminUserData,
 } from "@/lib/schemas";
 
 // Admin API base URL - always use empty string for relative URLs through Next.js proxy

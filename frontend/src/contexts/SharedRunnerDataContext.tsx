@@ -13,8 +13,10 @@ import {
   useEventTriggeredFetch,
   useRunnerEvent,
 } from "@/contexts/RunnerEventContext";
-import { runnerFetch } from "@/lib/runner-api";
-import type { CurrentExecutionStepsResponse } from "@/lib/runner-api";
+import {
+  runnerFetch,
+  type CurrentExecutionStepsResponse,
+} from "@/lib/runner-api";
 
 // =============================================================================
 // Types

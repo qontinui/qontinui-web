@@ -4,8 +4,11 @@
  * Handles image collection CRUD operations.
  */
 
-import type { ImageCollection, OperationResult } from "./types";
-import { MAX_COLLECTION_SIZE } from "./types";
+import {
+  MAX_COLLECTION_SIZE,
+  type ImageCollection,
+  type OperationResult,
+} from "./types";
 
 // ============================================================================
 // Dependencies

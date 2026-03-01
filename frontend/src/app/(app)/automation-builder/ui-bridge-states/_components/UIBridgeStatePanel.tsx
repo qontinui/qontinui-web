@@ -69,10 +69,14 @@ export function UIBridgeStatePanel({
       <div className="p-4 space-y-4">
         {/* Name */}
         <div>
-          <label className="text-xs font-medium text-text-muted mb-1 block">
+          <label
+            htmlFor="ubsp-name"
+            className="text-xs font-medium text-text-muted mb-1 block"
+          >
             Name
           </label>
           <Input
+            id="ubsp-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="text-sm"
@@ -81,10 +85,14 @@ export function UIBridgeStatePanel({
 
         {/* Description */}
         <div>
-          <label className="text-xs font-medium text-text-muted mb-1 block">
+          <label
+            htmlFor="ubsp-description"
+            className="text-xs font-medium text-text-muted mb-1 block"
+          >
             Description
           </label>
           <textarea
+            id="ubsp-description"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             className="input w-full text-sm min-h-[60px] resize-y"
@@ -105,9 +113,9 @@ export function UIBridgeStatePanel({
 
         {/* State ID */}
         <div>
-          <label className="text-xs font-medium text-text-muted mb-1 block">
+          <p className="text-xs font-medium text-text-muted mb-1 block">
             State ID
-          </label>
+          </p>
           <code className="text-xs text-text-muted bg-surface-secondary px-2 py-1 rounded block">
             {state.state_id}
           </code>
@@ -115,9 +123,9 @@ export function UIBridgeStatePanel({
 
         {/* Confidence */}
         <div>
-          <label className="text-xs font-medium text-text-muted mb-1 block">
+          <p className="text-xs font-medium text-text-muted mb-1 block">
             Confidence
-          </label>
+          </p>
           <div className="text-sm text-text-primary">
             {Math.round(state.confidence * 100)}%
           </div>
@@ -125,9 +133,9 @@ export function UIBridgeStatePanel({
 
         {/* Element IDs */}
         <div>
-          <label className="text-xs font-medium text-text-muted mb-1 block">
+          <p className="text-xs font-medium text-text-muted mb-1 block">
             Elements ({state.element_ids.length})
-          </label>
+          </p>
           <div className="max-h-40 overflow-y-auto space-y-1">
             {state.element_ids.map((eid) => (
               <code
@@ -143,9 +151,9 @@ export function UIBridgeStatePanel({
         {/* Render IDs */}
         {state.render_ids.length > 0 && (
           <div>
-            <label className="text-xs font-medium text-text-muted mb-1 block">
+            <p className="text-xs font-medium text-text-muted mb-1 block">
               Renders ({state.render_ids.length})
-            </label>
+            </p>
             <div className="text-xs text-text-muted">
               Active in {state.render_ids.length} render snapshots
             </div>
@@ -155,10 +163,10 @@ export function UIBridgeStatePanel({
         {/* Domain Knowledge */}
         {state.domain_knowledge && state.domain_knowledge.length > 0 && (
           <div>
-            <label className="text-xs font-medium text-text-muted mb-1 block">
+            <p className="text-xs font-medium text-text-muted mb-1 block">
               <BookOpen className="size-3 inline mr-1" />
               Domain Knowledge
-            </label>
+            </p>
             <div className="space-y-1">
               {state.domain_knowledge.map((dk) => (
                 <div

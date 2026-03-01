@@ -20,8 +20,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import type { TemplateCandidate } from "@/services/template-capture-service";
-import { TemplateCaptureService } from "@/services/template-capture-service";
+import {
+  TemplateCaptureService,
+  type TemplateCandidate,
+} from "@/services/template-capture-service";
 import { httpClient } from "@/services/service-factory";
 
 export interface SetStateHintDialogProps {
@@ -149,7 +151,6 @@ export function SetStateHintDialog({
                 value={newHint}
                 onChange={(e) => setNewHint(e.target.value)}
                 placeholder="e.g., Main Menu, Settings, Game Screen"
-                autoFocus
               />
               <p className="text-xs text-muted-foreground">
                 Templates with the same state hint will be grouped together

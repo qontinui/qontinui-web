@@ -34,8 +34,10 @@ import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import Link from "next/link";
 import { listExecutionRuns } from "@/services/execution-service";
-import type { ExecutionRunResponse } from "@/types/generated/execution";
-import { RunStatus } from "@/types/generated/execution";
+import {
+  RunStatus,
+  type ExecutionRunResponse,
+} from "@/types/generated/execution";
 
 export function SessionHistory() {
   const [runs, setRuns] = useState<ExecutionRunResponse[]>([]);

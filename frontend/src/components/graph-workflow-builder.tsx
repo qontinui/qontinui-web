@@ -386,7 +386,6 @@ export function GraphWorkflowBuilder() {
                           if (e.key === "Escape") setIsEditingName(false);
                         }}
                         className="text-lg font-bold bg-transparent border-border-default focus:border-brand-success h-8"
-                        autoFocus
                       />
                       <Button
                         size="sm"

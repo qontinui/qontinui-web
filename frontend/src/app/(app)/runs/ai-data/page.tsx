@@ -4,10 +4,12 @@ import { useState, Fragment } from "react";
 import {
   useRunningTaskRuns,
   useTaskRunKnowledge,
-  useTaskRunVerification,
   useTaskRunMcpCalls,
+  useTaskRunVerification,
+  type Finding,
+  type McpCall,
+  type VerificationResult,
 } from "@/lib/runner-api";
-import type { Finding, VerificationResult, McpCall } from "@/lib/runner-api";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

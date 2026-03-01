@@ -90,7 +90,6 @@ export default function ForgotPassword() {
                   onChange={(e) => setEmail(e.target.value)}
                   disabled={isSubmitting}
                   required
-                  autoFocus
                 />
               </div>
 

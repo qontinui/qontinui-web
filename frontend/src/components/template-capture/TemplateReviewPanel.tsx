@@ -43,14 +43,12 @@ import { BoundaryAdjustmentEditor } from "./BoundaryAdjustmentEditor";
 import { ImportToStateMachineDialog } from "./ImportToStateMachineDialog";
 import { GenerateStateMachineDialog } from "./GenerateStateMachineDialog";
 import { SetStateHintDialog } from "./SetStateHintDialog";
-import type {
-  TemplateCandidate,
-  CandidateStatus,
-  CandidateBoundingBox,
-} from "@/services/template-capture-service";
 import {
-  TemplateCaptureService,
   CandidateListResponse,
+  TemplateCaptureService,
+  type CandidateBoundingBox,
+  type CandidateStatus,
+  type TemplateCandidate,
 } from "@/services/template-capture-service";
 import { httpClient } from "@/services/service-factory";
 

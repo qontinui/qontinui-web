@@ -36,12 +36,13 @@ import {
 } from "lucide-react";
 import { recordingService } from "@/services/service-factory";
 import {
-  RecordingStatusLabels,
-  ProcessingPhaseLabels,
-  getConfidenceLevel,
   getConfidenceColor,
+  getConfidenceLevel,
+  ProcessingPhaseLabels,
+  RecordingStatusLabels,
+  type Recording,
+  type RecordingStatus,
 } from "@/types/recording";
-import type { Recording, RecordingStatus } from "@/types/recording";
 import { formatDistanceToNow } from "date-fns";
 
 function RecordingListPageContent() {

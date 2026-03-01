@@ -10,23 +10,20 @@ import type {
   OutgoingTransition,
 } from "@/contexts/automation-context/types";
 
-import type {
-  StateRelationship,
-  TransitionInfo,
-  StateGraph,
-  StateGraphNode,
-  StateGraphEdge,
-  StateComplexity,
-  StateAnalysis,
-  StateImageUsage,
-  StateSimilarity,
-  StateIssue,
-  AnalysisResult,
-} from "@/types/state-organization/types";
-
 import {
   STATE_COMPLEXITY_THRESHOLDS,
   STATE_COMPLEXITY_WEIGHTS,
+  type AnalysisResult,
+  type StateAnalysis,
+  type StateComplexity,
+  type StateGraph,
+  type StateGraphEdge,
+  type StateGraphNode,
+  type StateImageUsage,
+  type StateIssue,
+  type StateRelationship,
+  type StateSimilarity,
+  type TransitionInfo,
 } from "@/types/state-organization/types";
 
 import type { ServiceState } from "./types";

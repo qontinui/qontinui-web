@@ -187,10 +187,14 @@ export function UIBridgeResultsSection({
             <div className="flex flex-col gap-4">
               {/* Description */}
               <div>
-                <label className="text-sm font-medium text-text-secondary mb-2 block">
+                <label
+                  htmlFor="ubrs-state-description"
+                  className="text-sm font-medium text-text-secondary mb-2 block"
+                >
                   Description
                 </label>
                 <Textarea
+                  id="ubrs-state-description"
                   placeholder="Describe what this state represents..."
                   value={stateDescriptions[selectedState.id] || ""}
                   onChange={(e) =>
@@ -203,9 +207,9 @@ export function UIBridgeResultsSection({
               {/* Domain Knowledge */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-sm font-medium text-text-secondary">
+                  <p className="text-sm font-medium text-text-secondary">
                     Domain Knowledge
-                  </label>
+                  </p>
                   {currentSavedConfigId && projectId && (
                     <Dialog
                       open={showLinkKnowledgeDialog}
@@ -296,9 +300,9 @@ export function UIBridgeResultsSection({
 
               {/* Elements */}
               <div>
-                <label className="text-sm font-medium text-text-secondary mb-2 block">
+                <p className="text-sm font-medium text-text-secondary mb-2 block">
                   Elements in this State
-                </label>
+                </p>
                 {selectedStateElements && selectedStateElements.length > 0 ? (
                   <ScrollArea className="h-[200px] border rounded-lg p-2">
                     <div className="space-y-1">
@@ -353,9 +357,9 @@ export function UIBridgeResultsSection({
 
               {/* Renders */}
               <div>
-                <label className="text-sm font-medium text-text-secondary mb-2 block">
+                <p className="text-sm font-medium text-text-secondary mb-2 block">
                   Active in Renders
-                </label>
+                </p>
                 <div className="flex flex-wrap gap-1">
                   {selectedState.screenshot_ids.map((renderId) => (
                     <Badge

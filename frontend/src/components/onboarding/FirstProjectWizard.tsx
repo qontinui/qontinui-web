@@ -337,24 +337,27 @@ export function FirstProjectWizard({
 
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-text-secondary">
+                  <label
+                    htmlFor="fpw-project-name"
+                    className="text-sm font-medium text-text-secondary"
+                  >
                     Project Name <span className="text-red-400">*</span>
                   </label>
                   <Input
+                    id="fpw-project-name"
                     value={wizardState.projectName}
                     onChange={(e) =>
                       updateState({ projectName: e.target.value })
                     }
                     placeholder="Enter project name..."
                     className="bg-surface-raised border-border-default text-white placeholder:text-text-muted focus:border-brand-primary"
-                    autoFocus
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-text-secondary">
+                  <p className="text-sm font-medium text-text-secondary">
                     Suggestions
-                  </label>
+                  </p>
                   <div className="flex flex-wrap gap-2">
                     {["My First Bot", "Civ 6 Helper", "Test Automation"].map(
                       (suggestion) => (
@@ -373,11 +376,15 @@ export function FirstProjectWizard({
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-text-secondary">
+                  <label
+                    htmlFor="fpw-project-description"
+                    className="text-sm font-medium text-text-secondary"
+                  >
                     Description{" "}
                     <span className="text-text-muted text-xs">(optional)</span>
                   </label>
                   <Input
+                    id="fpw-project-description"
                     value={wizardState.projectDescription}
                     onChange={(e) =>
                       updateState({ projectDescription: e.target.value })

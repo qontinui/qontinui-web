@@ -175,9 +175,9 @@ export function MacroStepEditor({ steps, onChange }: MacroStepEditorProps) {
               {(step.action_type === "CLICK" ||
                 step.action_type === "TYPE") && (
                 <div className="flex items-center gap-2">
-                  <label className="text-[10px] text-text-muted w-20 shrink-0">
+                  <p className="text-[10px] text-text-muted w-20 shrink-0">
                     Target Images
-                  </label>
+                  </p>
                   <Input
                     value={step.target_image_names?.join(", ") ?? ""}
                     onChange={(e) =>
@@ -196,9 +196,9 @@ export function MacroStepEditor({ steps, onChange }: MacroStepEditorProps) {
 
               {step.action_type === "TYPE" && (
                 <div className="flex items-center gap-2">
-                  <label className="text-[10px] text-text-muted w-20 shrink-0">
+                  <p className="text-[10px] text-text-muted w-20 shrink-0">
                     Text Input
-                  </label>
+                  </p>
                   <Input
                     value={step.text_input ?? ""}
                     onChange={(e) =>
@@ -212,9 +212,9 @@ export function MacroStepEditor({ steps, onChange }: MacroStepEditorProps) {
 
               {step.action_type === "HOTKEY" && (
                 <div className="flex items-center gap-2">
-                  <label className="text-[10px] text-text-muted w-20 shrink-0">
+                  <p className="text-[10px] text-text-muted w-20 shrink-0">
                     Hotkey
-                  </label>
+                  </p>
                   <Input
                     value={step.hotkey ?? ""}
                     onChange={(e) =>
@@ -228,9 +228,9 @@ export function MacroStepEditor({ steps, onChange }: MacroStepEditorProps) {
 
               {step.action_type === "GO_TO_STATE" && (
                 <div className="flex items-center gap-2">
-                  <label className="text-[10px] text-text-muted w-20 shrink-0">
+                  <p className="text-[10px] text-text-muted w-20 shrink-0">
                     Target States
-                  </label>
+                  </p>
                   <Input
                     value={step.target_state_names?.join(", ") ?? ""}
                     onChange={(e) =>
@@ -249,9 +249,9 @@ export function MacroStepEditor({ steps, onChange }: MacroStepEditorProps) {
 
               {step.action_type === "SCROLL" && (
                 <div className="flex items-center gap-2">
-                  <label className="text-[10px] text-text-muted w-20 shrink-0">
+                  <p className="text-[10px] text-text-muted w-20 shrink-0">
                     Direction
-                  </label>
+                  </p>
                   <Select
                     value={
                       ((step as unknown as Record<string, unknown>)
@@ -275,9 +275,9 @@ export function MacroStepEditor({ steps, onChange }: MacroStepEditorProps) {
                       </SelectItem>
                     </SelectContent>
                   </Select>
-                  <label className="text-[10px] text-text-muted w-14 shrink-0 ml-2">
+                  <p className="text-[10px] text-text-muted w-14 shrink-0 ml-2">
                     Amount
-                  </label>
+                  </p>
                   <Input
                     type="number"
                     value={
@@ -296,9 +296,9 @@ export function MacroStepEditor({ steps, onChange }: MacroStepEditorProps) {
 
               {/* Pause after - shown for all types */}
               <div className="flex items-center gap-2">
-                <label className="text-[10px] text-text-muted w-20 shrink-0">
+                <p className="text-[10px] text-text-muted w-20 shrink-0">
                   Pause After
-                </label>
+                </p>
                 <Input
                   type="number"
                   value={step.pause_after_ms ?? 500}
@@ -314,9 +314,9 @@ export function MacroStepEditor({ steps, onChange }: MacroStepEditorProps) {
 
               {step.action_type !== "WAIT" && (
                 <div className="flex items-center gap-2">
-                  <label className="text-[10px] text-text-muted w-20 shrink-0">
+                  <p className="text-[10px] text-text-muted w-20 shrink-0">
                     Timeout
-                  </label>
+                  </p>
                   <Input
                     type="number"
                     value={step.timeout_seconds ?? 30}

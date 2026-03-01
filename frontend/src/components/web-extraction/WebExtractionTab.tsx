@@ -24,8 +24,10 @@ import { ExtractionProgressBar } from "./ExtractionProgressBar";
 import { StateExplorerView } from "./StateExplorerView";
 import { PageAnalysisView } from "./PageAnalysisView";
 import { TransitionsView } from "./TransitionsView";
-import { PlaywrightCollectorConfig } from "./PlaywrightCollectorConfig";
-import type { PlaywrightCollectorConfigState } from "./PlaywrightCollectorConfig";
+import {
+  PlaywrightCollectorConfig,
+  type PlaywrightCollectorConfigState,
+} from "./PlaywrightCollectorConfig";
 import { PlaywrightResultsView } from "./PlaywrightResultsView";
 import { PlaywrightStateExplorerView } from "./PlaywrightStateExplorerView";
 import { usePlaywrightExtraction } from "@/hooks/use-playwright-extraction";
@@ -739,8 +741,8 @@ export default function WebExtractionTab() {
     }
   };
 
-  // Helper function to render extraction history sidebar
-  const renderExtractionHistory = () => (
+  // Extraction history sidebar content
+  const extractionHistory = (
     <div className="explorer-panel explorer-panel-primary h-full">
       <div className="explorer-panel-header">
         <div className="flex items-center gap-2 flex-1">
@@ -1023,7 +1025,7 @@ export default function WebExtractionTab() {
 
                     {/* Right: Previous Extractions Sidebar (1 column) */}
                     <div className="lg:col-span-1 min-h-0 overflow-hidden">
-                      {renderExtractionHistory()}
+                      {extractionHistory}
                     </div>
                   </div>
                 </TabsContent>

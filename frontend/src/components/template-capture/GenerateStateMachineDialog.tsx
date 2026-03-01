@@ -50,12 +50,12 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Separator } from "@/components/ui/separator";
-import type {
-  GroupingMethod,
-  GenerateStateMachineResponse,
-  ApprovedTemplateData,
+import {
+  TemplateCaptureService,
+  type ApprovedTemplateData,
+  type GenerateStateMachineResponse,
+  type GroupingMethod,
 } from "@/services/template-capture-service";
-import { TemplateCaptureService } from "@/services/template-capture-service";
 import { httpClient } from "@/services/service-factory";
 import { runnerClient } from "@/lib/runner-client";
 import { ProjectService } from "@/services/project-service";

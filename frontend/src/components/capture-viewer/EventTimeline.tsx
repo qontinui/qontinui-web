@@ -8,8 +8,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { MousePointer2, Mouse, Keyboard, ArrowDown, Move } from "lucide-react";
-import type { InputEvent, InputEventType } from "@/types/capture";
-import { getButtonName } from "@/types/capture";
+import {
+  getButtonName,
+  type InputEvent,
+  type InputEventType,
+} from "@/types/capture";
 
 export interface EventTimelineProps {
   events: InputEvent[];

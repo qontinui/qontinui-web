@@ -316,7 +316,6 @@ export function GlobalSearch({
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
               className="border-0 focus-visible:ring-0 shadow-none px-0 h-auto text-base"
-              autoFocus
             />
             {loading && (
               <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />

@@ -207,7 +207,7 @@ export function CommentThread({
   const getReplies = (parentId: string) =>
     thread.comments.filter((c) => c.parent_id === parentId);
 
-  const renderComment = (comment: Comment, depth = 0) => {
+  const commentNode = (comment: Comment, depth = 0) => {
     const isAuthor = comment.author_id === currentUserId;
     const isEditing = editingId === comment.id;
     const isLoading = actionLoading === comment.id;
@@ -361,7 +361,7 @@ export function CommentThread({
         {/* Nested Replies */}
         {replies.length > 0 && (
           <div className="mt-2 space-y-2">
-            {replies.map((reply) => renderComment(reply, depth + 1))}
+            {replies.map((reply) => commentNode(reply, depth + 1))}
           </div>
         )}
       </div>
@@ -412,7 +412,7 @@ export function CommentThread({
       {/* Comments */}
       <ScrollArea className="flex-1 p-3 max-h-[400px]">
         <div className="space-y-4">
-          {rootComments.map((comment) => renderComment(comment))}
+          {rootComments.map((comment) => commentNode(comment))}
           {rootComments.length === 0 && (
             <div className="text-center py-8 text-sm text-muted-foreground">
               No comments yet. Start the discussion!

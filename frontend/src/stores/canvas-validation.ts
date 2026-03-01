@@ -11,8 +11,10 @@
  * - Real-time validation as user edits
  */
 
-import type { Workflow } from "../lib/action-schema/action-types";
-import { getActionOutputCount } from "../lib/action-schema/action-types";
+import {
+  getActionOutputCount,
+  type Workflow,
+} from "../lib/action-schema/action-types";
 
 // ============================================================================
 // Types

@@ -65,6 +65,67 @@ type CompletionFilter = "all" | "completed" | "in-progress" | "not-started";
 // Component
 // ============================================================================
 
+function DifficultyBadge({ difficulty }: { difficulty: DifficultyLevel }) {
+  const variants: Record<
+    DifficultyLevel,
+    { icon: React.ReactNode; color: string }
+  > = {
+    beginner: {
+      icon: <Circle className="h-3 w-3" />,
+      color: "bg-green-500/10 text-green-700",
+    },
+    intermediate: {
+      icon: <Star className="h-3 w-3" />,
+      color: "bg-yellow-500/10 text-yellow-700",
+    },
+    advanced: {
+      icon: <Zap className="h-3 w-3" />,
+      color: "bg-red-500/10 text-red-700",
+    },
+  };
+
+  const { icon, color } = variants[difficulty];
+
+  return (
+    <Badge variant="secondary" className={`${color} flex items-center gap-1`}>
+      {icon}
+      <span className="capitalize">{difficulty}</span>
+    </Badge>
+  );
+}
+
+function StatusBadge({
+  status,
+}: {
+  status: "completed" | "in-progress" | "not-started";
+}) {
+  if (status === "completed") {
+    return (
+      <Badge
+        variant="secondary"
+        className="bg-green-500/10 text-green-700 flex items-center gap-1"
+      >
+        <CheckCircle2 className="h-3 w-3" />
+        Completed
+      </Badge>
+    );
+  }
+
+  if (status === "in-progress") {
+    return (
+      <Badge
+        variant="secondary"
+        className="bg-blue-500/10 text-blue-700 flex items-center gap-1"
+      >
+        <PlayCircle className="h-3 w-3" />
+        In Progress
+      </Badge>
+    );
+  }
+
+  return null;
+}
+
 export const TutorialMenu: React.FC<TutorialMenuProps> = ({
   tutorials,
   isOpen,
@@ -208,66 +269,7 @@ export const TutorialMenu: React.FC<TutorialMenuProps> = ({
   // Render Helpers
   // ============================================================================
 
-  const renderDifficultyBadge = (difficulty: DifficultyLevel) => {
-    const variants: Record<
-      DifficultyLevel,
-      { icon: React.ReactNode; color: string }
-    > = {
-      beginner: {
-        icon: <Circle className="h-3 w-3" />,
-        color: "bg-green-500/10 text-green-700",
-      },
-      intermediate: {
-        icon: <Star className="h-3 w-3" />,
-        color: "bg-yellow-500/10 text-yellow-700",
-      },
-      advanced: {
-        icon: <Zap className="h-3 w-3" />,
-        color: "bg-red-500/10 text-red-700",
-      },
-    };
-
-    const { icon, color } = variants[difficulty];
-
-    return (
-      <Badge variant="secondary" className={`${color} flex items-center gap-1`}>
-        {icon}
-        <span className="capitalize">{difficulty}</span>
-      </Badge>
-    );
-  };
-
-  const renderStatusBadge = (
-    status: "completed" | "in-progress" | "not-started"
-  ) => {
-    if (status === "completed") {
-      return (
-        <Badge
-          variant="secondary"
-          className="bg-green-500/10 text-green-700 flex items-center gap-1"
-        >
-          <CheckCircle2 className="h-3 w-3" />
-          Completed
-        </Badge>
-      );
-    }
-
-    if (status === "in-progress") {
-      return (
-        <Badge
-          variant="secondary"
-          className="bg-blue-500/10 text-blue-700 flex items-center gap-1"
-        >
-          <PlayCircle className="h-3 w-3" />
-          In Progress
-        </Badge>
-      );
-    }
-
-    return null;
-  };
-
-  const renderTutorialCard = (tutorial: Tutorial) => {
+  const tutorialCard = (tutorial: Tutorial) => {
     const status = getTutorialStatus(tutorial.id);
     const isNew = isNewTutorial(tutorial);
 
@@ -298,12 +300,12 @@ export const TutorialMenu: React.FC<TutorialMenuProps> = ({
                 </CardDescription>
               )}
             </div>
-            {renderStatusBadge(status)}
+            <StatusBadge status={status} />
           </div>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            {renderDifficultyBadge(tutorial.difficulty)}
+            <DifficultyBadge difficulty={tutorial.difficulty} />
 
             {tutorial.duration && (
               <Badge variant="outline" className="flex items-center gap-1">
@@ -490,7 +492,7 @@ export const TutorialMenu: React.FC<TutorialMenuProps> = ({
         <ScrollArea className="flex-1 p-6">
           {filteredTutorials.length > 0 ? (
             <div className="space-y-4">
-              {filteredTutorials.map(renderTutorialCard)}
+              {filteredTutorials.map((tutorial) => tutorialCard(tutorial))}
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-12 text-center">

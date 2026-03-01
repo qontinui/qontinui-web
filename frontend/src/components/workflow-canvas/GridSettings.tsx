@@ -69,7 +69,7 @@ export function GridSettings({ onClose }: GridSettingsProps) {
       <div className="space-y-4">
         {/* Show Grid Toggle */}
         <div className="flex items-center justify-between">
-          <label className="text-sm text-text-secondary">Show Grid</label>
+          <p className="text-sm text-text-secondary">Show Grid</p>
           <button
             onClick={toggleGrid}
             className={`
@@ -88,7 +88,7 @@ export function GridSettings({ onClose }: GridSettingsProps) {
 
         {/* Snap to Grid Toggle */}
         <div className="flex items-center justify-between">
-          <label className="text-sm text-text-secondary">Snap to Grid</label>
+          <p className="text-sm text-text-secondary">Snap to Grid</p>
           <button
             onClick={toggleSnapToGrid}
             className={`
@@ -107,9 +107,9 @@ export function GridSettings({ onClose }: GridSettingsProps) {
 
         {/* Grid Size */}
         <div>
-          <label className="text-sm text-text-secondary block mb-2">
+          <p className="text-sm text-text-secondary block mb-2">
             Grid Size: {gridSize}px
-          </label>
+          </p>
           <div className="grid grid-cols-3 gap-2">
             {GRID_SIZES.map((size) => (
               <button
@@ -132,9 +132,7 @@ export function GridSettings({ onClose }: GridSettingsProps) {
 
         {/* Preview */}
         <div className="pt-4 border-t border-border-default">
-          <label className="text-sm text-text-secondary block mb-2">
-            Preview
-          </label>
+          <p className="text-sm text-text-secondary block mb-2">Preview</p>
           <div
             className="w-full h-24 rounded border border-border-default"
             style={{

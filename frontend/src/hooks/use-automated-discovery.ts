@@ -7,13 +7,15 @@
  */
 
 import { useState, useCallback, useRef } from "react";
-import type { PageEntry } from "@/lib/page-discovery-types";
 import {
   mergeDiscoveredPages,
   noSpecPageEntry,
+  type PageEntry,
 } from "@/lib/page-discovery-types";
-import type { CrawlProgress } from "@/lib/ui-bridge/page-crawler";
-import { discoverAndCrawlAllPages } from "@/lib/ui-bridge/page-crawler";
+import {
+  discoverAndCrawlAllPages,
+  type CrawlProgress,
+} from "@/lib/ui-bridge/page-crawler";
 import {
   parseDiscoveredSpecs,
   unwrapSpecResponse,

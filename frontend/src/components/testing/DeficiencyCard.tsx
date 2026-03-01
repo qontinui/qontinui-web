@@ -141,7 +141,7 @@ export function DeficiencyCard({ deficiency }: DeficiencyCardProps) {
           <div className="border-t border-border-subtle/30 p-4 space-y-4">
             {/* Status Update */}
             <div className="flex items-center gap-4">
-              <label className="text-sm text-text-muted">Update Status:</label>
+              <p className="text-sm text-text-muted">Update Status:</p>
               <Select
                 value={deficiency.status}
                 onValueChange={(value) =>

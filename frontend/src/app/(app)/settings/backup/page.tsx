@@ -402,7 +402,7 @@ export default function BackupSettingsPage() {
           {showExportOptions && (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3 rounded-lg bg-background border border-border">
               {ALL_CATEGORIES.map((key) => (
-                <label
+                <div
                   key={key}
                   className="flex items-center gap-2 text-xs text-foreground cursor-pointer"
                 >
@@ -413,7 +413,7 @@ export default function BackupSettingsPage() {
                     }
                   />
                   <span>{CATEGORY_LABELS[key]}</span>
-                </label>
+                </div>
               ))}
             </div>
           )}
@@ -450,8 +450,11 @@ export default function BackupSettingsPage() {
         <div className="p-4 space-y-4">
           {/* File input */}
           <div className="space-y-1.5">
-            <Label className="text-sm text-foreground">Backup File</Label>
+            <Label htmlFor="backup-file" className="text-sm text-foreground">
+              Backup File
+            </Label>
             <Input
+              id="backup-file"
               type="file"
               accept=".json"
               onChange={(e) => {
@@ -515,9 +518,9 @@ export default function BackupSettingsPage() {
 
               {/* Conflict resolution */}
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   Conflict Resolution
-                </Label>
+                </p>
                 <div className="flex gap-2">
                   <button
                     onClick={() =>
@@ -561,7 +564,7 @@ export default function BackupSettingsPage() {
                     ? backupData.length
                     : 0;
                   return (
-                    <label
+                    <div
                       key={key}
                       className={`flex items-center gap-2 text-xs cursor-pointer ${
                         inBackup
@@ -587,7 +590,7 @@ export default function BackupSettingsPage() {
                           </span>
                         )}
                       </span>
-                    </label>
+                    </div>
                   );
                 })}
               </div>

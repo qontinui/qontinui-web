@@ -12,18 +12,16 @@ import {
   WorkflowBuilderProvider as SharedWorkflowBuilderProvider,
   useWorkflowBuilder as useSharedWorkflowBuilder,
 } from "@qontinui/workflow-ui";
-import type {
-  UnifiedWorkflow,
-  UnifiedStep,
-  WorkflowPhase,
-  WorkflowFeatures,
-  WorkflowExport,
-  WorkflowImportResult,
-  WorkflowStage,
-} from "@/types/unified-workflow";
 import {
-  generateStepId,
   createDefaultWorkflow,
+  generateStepId,
+  type UnifiedStep,
+  type UnifiedWorkflow,
+  type WorkflowExport,
+  type WorkflowFeatures,
+  type WorkflowImportResult,
+  type WorkflowPhase,
+  type WorkflowStage,
 } from "@/types/unified-workflow";
 import * as workflowApi from "@/lib/api/unified-workflows";
 

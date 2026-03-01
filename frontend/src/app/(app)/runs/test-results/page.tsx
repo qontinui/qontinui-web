@@ -1,8 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useRunningTaskRuns, useTaskRunPlaywright } from "@/lib/runner-api";
-import type { PlaywrightResult } from "@/lib/runner-api";
+import {
+  useRunningTaskRuns,
+  useTaskRunPlaywright,
+  type PlaywrightResult,
+} from "@/lib/runner-api";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

@@ -135,10 +135,14 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
         <div className="space-y-4">
           {/* Image Name - always required */}
           <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1">
+            <label
+              htmlFor="sid-image-name"
+              className="block text-sm font-medium text-text-secondary mb-1"
+            >
               Image Name
             </label>
             <input
+              id="sid-image-name"
               type="text"
               value={saveDialog.imageName}
               onChange={(e) => onUpdateDialog({ imageName: e.target.value })}
@@ -150,9 +154,9 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
 
           {/* Save Mode Selection */}
           <div>
-            <label className="block text-sm font-medium text-text-secondary mb-2">
+            <p className="block text-sm font-medium text-text-secondary mb-2">
               Save As
-            </label>
+            </p>
             <div className="space-y-2">
               <label className="flex items-start p-3 bg-surface-canvas border border-border-default rounded-md cursor-pointer hover:border-border-default transition-colors">
                 <input
@@ -220,10 +224,14 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
           {saveDialog.mode === "createStateImage" && (
             <>
               <div>
-                <label className="block text-sm font-medium text-text-secondary mb-1">
+                <label
+                  htmlFor="sid-state"
+                  className="block text-sm font-medium text-text-secondary mb-1"
+                >
                   Add to State
                 </label>
                 <select
+                  id="sid-state"
                   value={saveDialog.selectedStateId}
                   onChange={(e) =>
                     onUpdateDialog({ selectedStateId: e.target.value })
@@ -242,10 +250,14 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
 
               {saveDialog.selectedStateId === "new" && (
                 <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-1">
+                  <label
+                    htmlFor="sid-new-state-name"
+                    className="block text-sm font-medium text-text-secondary mb-1"
+                  >
                     New State Name
                   </label>
                   <input
+                    id="sid-new-state-name"
                     type="text"
                     value={saveDialog.newStateName}
                     onChange={(e) =>
@@ -261,10 +273,14 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
 
           {saveDialog.mode === "addPattern" && (
             <div>
-              <label className="block text-sm font-medium text-text-secondary mb-1">
+              <label
+                htmlFor="sid-state-image"
+                className="block text-sm font-medium text-text-secondary mb-1"
+              >
                 Add Pattern to StateImage
               </label>
               <select
+                id="sid-state-image"
                 value={saveDialog.selectedStateImageId}
                 onChange={(e) =>
                   onUpdateDialog({ selectedStateImageId: e.target.value })

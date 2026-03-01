@@ -177,7 +177,7 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
 
             {/* Event Types */}
             <div className="space-y-3">
-              <Label className="text-base font-semibold">Event Types</Label>
+              <p className="text-base font-semibold">Event Types</p>
               <p className="text-sm text-text-muted">
                 Select which types of events should trigger screenshot capture
               </p>
@@ -213,7 +213,7 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
             {/* Mouse Buttons (only shown if mouse_click is selected) */}
             {eventTypes.includes("mouse_click") && (
               <div className="space-y-3">
-                <Label className="text-base font-semibold">Mouse Buttons</Label>
+                <p className="text-base font-semibold">Mouse Buttons</p>
                 <p className="text-sm text-text-muted">
                   Select which mouse buttons to capture
                 </p>

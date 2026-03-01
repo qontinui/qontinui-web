@@ -129,7 +129,7 @@ export function VariableTable({
   };
 
   // Render sort icon
-  const renderSortIcon = (field: SortField) => {
+  const sortIcon = (field: SortField) => {
     if (sortField !== field) return null;
     return sortDirection === "asc" ? (
       <ChevronUp className="inline ml-1 h-4 w-4" />
@@ -235,20 +235,20 @@ export function VariableTable({
               className="cursor-pointer hover:bg-muted/50"
               onClick={() => handleSort("name")}
             >
-              Name {renderSortIcon("name")}
+              Name {sortIcon("name")}
             </TableHead>
             <TableHead
               className="cursor-pointer hover:bg-muted/50"
               onClick={() => handleSort("type")}
             >
-              Type {renderSortIcon("type")}
+              Type {sortIcon("type")}
             </TableHead>
             <TableHead>Value</TableHead>
             <TableHead
               className="cursor-pointer hover:bg-muted/50"
               onClick={() => handleSort("updated_at")}
             >
-              Last Updated {renderSortIcon("updated_at")}
+              Last Updated {sortIcon("updated_at")}
             </TableHead>
             <TableHead className="w-12"></TableHead>
           </TableRow>

@@ -8,7 +8,14 @@
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
-import type { AutomationStore } from "./types";
+import type {
+  AutomationStore,
+  Category,
+  ImageAsset,
+  Pattern,
+  State,
+  Transition,
+} from "./types";
 import {
   createProjectSlice,
   createWorkflowSlice,
@@ -31,7 +38,6 @@ import {
 import { screenshotDB } from "@/lib/screenshot-db";
 import { projectLogger } from "@/lib/project-logger";
 import type { Workflow } from "@/lib/action-schema/action-types";
-import type { State, Transition, ImageAsset, Pattern, Category } from "./types";
 
 // Legacy pattern type for migration (patterns with embedded image data)
 interface LegacyPattern {

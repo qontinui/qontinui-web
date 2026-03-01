@@ -24,8 +24,12 @@ import {
   Loader2,
 } from "lucide-react";
 import { UnifiedStepCard } from "./UnifiedStepCard";
-import type { DisplayNode, TreeEvent, NodeStatus } from "@/types/tree-events";
-import type { UnifiedExecutionStep } from "@/types/tree-events";
+import type {
+  DisplayNode,
+  NodeStatus,
+  TreeEvent,
+  UnifiedExecutionStep,
+} from "@/types/tree-events";
 import {
   treeEventsToUnifiedSteps,
   displayNodesToUnifiedSteps,

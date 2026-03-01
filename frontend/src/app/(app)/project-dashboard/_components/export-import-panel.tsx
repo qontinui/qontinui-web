@@ -143,7 +143,7 @@ export function ExportImportPanel() {
           </div>
           <Separator />
           <div className="space-y-2">
-            <label className="text-sm font-medium">Import Options</label>
+            <p className="text-sm font-medium">Import Options</p>
             <div className="space-y-2 text-sm">
               <div className="flex items-center gap-2">
                 <input

@@ -21,8 +21,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import type { SearchFilters, PackageCategory } from "@/types/code-packages";
-import { getCategoryLabel } from "@/types/code-packages";
+import {
+  getCategoryLabel,
+  type PackageCategory,
+  type SearchFilters,
+} from "@/types/code-packages";
 
 interface PackageSearchBarProps {
   onSearch: (filters: SearchFilters) => void;

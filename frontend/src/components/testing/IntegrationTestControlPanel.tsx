@@ -273,7 +273,7 @@ export function IntegrationTestControlPanel({
       <CardContent className="space-y-4">
         {/* Workflow Selector */}
         <div className="space-y-2">
-          <label className="text-sm text-text-muted">Workflow</label>
+          <p className="text-sm text-text-muted">Workflow</p>
           <div className="relative">
             <button
               onClick={() => setShowWorkflowDropdown(!showWorkflowDropdown)}

@@ -117,7 +117,7 @@ export const PageTutorialMenu: React.FC<PageTutorialMenuProps> = ({
     return null;
   }
 
-  const renderButton = () => {
+  const triggerButton = (() => {
     switch (variant) {
       case "compact":
         return (
@@ -181,11 +181,11 @@ export const PageTutorialMenu: React.FC<PageTutorialMenuProps> = ({
           </button>
         );
     }
-  };
+  })();
 
   return (
     <div className="relative">
-      {renderButton()}
+      {triggerButton}
 
       {/* Dropdown menu */}
       {isOpen && (

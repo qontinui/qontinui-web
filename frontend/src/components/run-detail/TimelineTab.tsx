@@ -12,44 +12,48 @@
  */
 
 import { useState, useMemo } from "react";
-import { useTaskRunCheckpoints, useTaskRunEvents } from "@/lib/runner-api";
-import type { Checkpoint, TaskRunEvent } from "@/lib/runner-api";
+import {
+  useTaskRunCheckpoints,
+  useTaskRunEvents,
+  type Checkpoint,
+  type TaskRunEvent,
+} from "@/lib/runner-api";
 import { Badge } from "@/components/ui/badge";
 import {
-  RefreshCw,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  AlertCircle,
   Activity,
-  Settings,
+  AlertCircle,
+  AlertTriangle,
   Bot,
+  Camera,
+  CheckCircle,
+  CheckCircle2,
   CheckSquare,
-  Flag,
   ChevronDown,
   ChevronRight,
+  Clock,
+  Code,
+  Eye,
+  FileCode,
+  FileSearch,
+  FileType,
+  Flag,
+  GitBranch,
+  Globe,
+  List,
+  MessageSquare,
+  MousePointer2,
+  Navigation,
+  Package,
+  Play,
+  PlayCircle,
+  RefreshCw,
+  Search,
+  Settings,
   Terminal,
   TestTube2,
-  MousePointer2,
-  MessageSquare,
-  FileCode,
-  PlayCircle,
-  GitBranch,
-  Navigation,
-  Globe,
-  Eye,
-  Code,
-  Package,
-  Camera,
-  AlertTriangle,
-  FileType,
-  Search,
-  CheckCircle,
-  List,
-  Play,
-  FileSearch,
+  XCircle,
+  type LucideIcon,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 
 // =============================================================================
 // Types

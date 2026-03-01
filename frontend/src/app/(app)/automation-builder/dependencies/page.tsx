@@ -55,12 +55,12 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAutomation } from "@/contexts/automation-context";
-import { workflowDependencyAnalyzer } from "@/services/workflow-dependency-analyzer";
-import type {
-  DependencyGraph,
-  DependencyNode,
-  DependencyStats,
-  ImpactAnalysis,
+import {
+  workflowDependencyAnalyzer,
+  type DependencyGraph,
+  type DependencyNode,
+  type DependencyStats,
+  type ImpactAnalysis,
 } from "@/services/workflow-dependency-analyzer";
 import type { Workflow } from "@/lib/action-schema/action-types";
 import { toast } from "sonner";
@@ -461,9 +461,7 @@ function DependenciesPageInner() {
             <CardContent className="py-4 space-y-4">
               <div className="flex gap-4">
                 <div className="flex-1">
-                  <label className="text-sm font-medium mb-2 block">
-                    Category
-                  </label>
+                  <p className="text-sm font-medium mb-2">Category</p>
                   <div className="flex flex-wrap gap-2">
                     {["Main", "Helper", "Utility", "Test"].map((cat) => (
                       <Button
@@ -489,9 +487,7 @@ function DependenciesPageInner() {
                   </div>
                 </div>
                 <div className="flex-1">
-                  <label className="text-sm font-medium mb-2 block">
-                    Options
-                  </label>
+                  <p className="text-sm font-medium mb-2">Options</p>
                   <div className="flex flex-wrap gap-2">
                     <Button
                       variant={filters.showOnlyIssues ? "default" : "outline"}

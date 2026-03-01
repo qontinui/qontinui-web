@@ -161,7 +161,7 @@ export function DirectPatternRegionSelector({
   };
 
   // Render region rectangle
-  const renderRegion = (region: Region, color: string, label?: string) => {
+  const regionRect = (region: Region, color: string, label?: string) => {
     if (!imageDimensions) return null;
 
     const scaledRegion = {
@@ -262,18 +262,18 @@ export function DirectPatternRegionSelector({
 
         {/* Existing regions (gray) */}
         {existingRegions.map((region, idx) =>
-          renderRegion(region, "#9CA3AF", `#${idx + 1}`)
+          regionRect(region, "#9CA3AF", `#${idx + 1}`)
         )}
 
         {/* Current/selected region (blue) */}
         {currentRegion &&
           !isDrawing &&
-          renderRegion(currentRegion, "#3B82F6", "Selected")}
+          regionRect(currentRegion, "#3B82F6", "Selected")}
 
         {/* Temporary drawing region (blue dashed) */}
         {isDrawing &&
           tempRegion &&
-          renderRegion(tempRegion, "#60A5FA", "Drawing")}
+          regionRect(tempRegion, "#60A5FA", "Drawing")}
 
         {!imageUrl && (
           <div className="absolute inset-0 flex items-center justify-center text-text-muted">

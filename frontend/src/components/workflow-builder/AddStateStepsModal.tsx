@@ -21,8 +21,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import type { WorkflowPhase } from "@/types/unified-workflow";
-import { createDefaultStep, generateStepId } from "@/types/unified-workflow";
+import {
+  createDefaultStep,
+  generateStepId,
+  type WorkflowPhase,
+} from "@/types/unified-workflow";
 
 // =============================================================================
 // Types
@@ -236,11 +239,15 @@ export function AddStateStepsModal({
 
         {/* Config Path */}
         <div className="px-5 py-3 border-b border-zinc-800/50">
-          <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+          <label
+            htmlFor="assm-config-path"
+            className="block text-xs font-medium text-zinc-400 mb-1.5"
+          >
             Config File Path
           </label>
           <div className="flex gap-2">
             <Input
+              id="assm-config-path"
               value={configPath}
               onChange={(e) => setConfigPath(e.target.value)}
               placeholder="Path to GUI automation config..."

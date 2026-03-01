@@ -757,13 +757,14 @@ function SelectionPhase({
             </div>
           ) : (
             requests.map((req) => (
-              <label
+              <div
                 key={req.id}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 border-b border-border-subtle/20 last:border-b-0 cursor-pointer",
                   "hover:bg-surface-raised/40 transition-colors",
                   selectedIds.has(req.id) && "bg-purple-500/5"
                 )}
+                onClick={() => onToggle(req.id)}
               >
                 <Checkbox
                   checked={selectedIds.has(req.id)}
@@ -780,7 +781,7 @@ function SelectionPhase({
                     {req.url}
                   </div>
                 </div>
-              </label>
+              </div>
             ))
           )}
         </div>

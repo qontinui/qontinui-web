@@ -1,6 +1,8 @@
 import * as React from "react";
-import type { TestCase } from "@/services/workflow-testing";
-import type { getWorkflowTestingService } from "@/services/workflow-testing";
+import type {
+  TestCase,
+  getWorkflowTestingService,
+} from "@/services/workflow-testing";
 
 interface UseTestCaseHandlersParams {
   testingService: ReturnType<typeof getWorkflowTestingService>;

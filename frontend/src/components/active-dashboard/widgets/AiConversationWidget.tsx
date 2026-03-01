@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { runnerApi } from "@/lib/runner-api";
-import type { TaskRunOutput, SessionState } from "@/lib/runner-api";
+import {
+  runnerApi,
+  type SessionState,
+  type TaskRunOutput,
+} from "@/lib/runner-api";
 import { useEventTriggeredFetch } from "@/contexts/RunnerEventContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

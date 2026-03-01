@@ -170,7 +170,6 @@ export function AppBrowser({
             onChange={(e) => setConnectUrl(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleConnect()}
             className="flex-1 h-8 bg-surface-raised/50 border-border-subtle/50 text-white placeholder:text-text-muted text-sm"
-            autoFocus={showConnectInput}
           />
           <Button
             size="sm"

@@ -2,8 +2,7 @@
 
 import type { TaskRun, CurrentExecutionStepsResponse } from "@/lib/runner-api";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { WidgetId } from "../_lib";
-import { getWidgetConfig } from "../_lib";
+import { getWidgetConfig, type WidgetId } from "../_lib";
 import { SummaryCard, SummaryContent } from "./SummaryCards";
 
 interface RunStatePanelProps {

@@ -395,10 +395,14 @@ function ExtractionPageContentInner() {
                       </DialogHeader>
                       <div className="space-y-4">
                         <div>
-                          <label className="text-sm font-medium mb-2 block">
+                          <label
+                            htmlFor="epc-knowledge-title"
+                            className="text-sm font-medium mb-2 block"
+                          >
                             Title
                           </label>
                           <Input
+                            id="epc-knowledge-title"
                             placeholder="e.g., What is user authentication?"
                             value={state.newKnowledgeTitle}
                             onChange={(e) =>
@@ -407,10 +411,14 @@ function ExtractionPageContentInner() {
                           />
                         </div>
                         <div>
-                          <label className="text-sm font-medium mb-2 block">
+                          <label
+                            htmlFor="epc-knowledge-content"
+                            className="text-sm font-medium mb-2 block"
+                          >
                             Content
                           </label>
                           <Textarea
+                            id="epc-knowledge-content"
                             placeholder="Explain the concept, expected behavior, or requirements..."
                             value={state.newKnowledgeContent}
                             onChange={(e) =>

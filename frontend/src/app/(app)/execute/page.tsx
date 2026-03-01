@@ -7,11 +7,11 @@ import pageSpecJson from "./execute.spec.uibridge.json";
 import { runnerApi } from "@/lib/runner-api";
 import { useUnifiedWorkflows } from "@/lib/api/unified-workflows";
 import {
-  getTotalStepCount,
   getPhaseCount,
+  getTotalStepCount,
   normalizeToPhases,
+  type UnifiedWorkflow,
 } from "@/types/unified-workflow";
-import type { UnifiedWorkflow } from "@/types/unified-workflow";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
 import { Play, Plus, GripVertical } from "lucide-react";
 import { toast } from "sonner";

@@ -20,13 +20,11 @@ import {
 } from "lucide-react";
 import { recordingService } from "@/services/service-factory";
 import {
-  RecordingStatusLabels,
   ProcessingPhaseLabels,
-} from "@/types/recording";
-import type {
-  ProcessingJobStatus,
-  ProcessingLogEntry,
-  ProcessingPhase,
+  RecordingStatusLabels,
+  type ProcessingJobStatus,
+  type ProcessingLogEntry,
+  type ProcessingPhase,
 } from "@/types/recording";
 import { formatDistanceToNow } from "date-fns";
 

@@ -153,9 +153,9 @@ export function DeficiencyComments({
             {/* Attachments */}
             {attachments.length > 0 && (
               <div className="space-y-2">
-                <label className="text-xs font-medium text-muted-foreground">
+                <p className="text-xs font-medium text-muted-foreground">
                   Attachments ({attachments.length})
-                </label>
+                </p>
                 <div className="space-y-2">
                   {attachments.map((file, index) => (
                     <div

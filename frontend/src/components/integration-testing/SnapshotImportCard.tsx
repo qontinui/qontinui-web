@@ -109,11 +109,15 @@ export function SnapshotImportCard({
       <div className="space-y-4">
         {/* Directory Path */}
         <div>
-          <label className="block text-sm font-medium text-text-secondary mb-1.5">
+          <label
+            htmlFor="sic-directory"
+            className="block text-sm font-medium text-text-secondary mb-1.5"
+          >
             Snapshot Directory *
           </label>
           <div className="flex space-x-2">
             <Input
+              id="sic-directory"
               type="text"
               value={directoryPath}
               onChange={(e) => setDirectoryPath(e.target.value)}
@@ -138,10 +142,14 @@ export function SnapshotImportCard({
 
         {/* Tags */}
         <div>
-          <label className="block text-sm font-medium text-text-secondary mb-1.5">
+          <label
+            htmlFor="sic-tags"
+            className="block text-sm font-medium text-text-secondary mb-1.5"
+          >
             Tags (optional)
           </label>
           <Input
+            id="sic-tags"
             type="text"
             value={tags}
             onChange={(e) => setTags(e.target.value)}
@@ -155,10 +163,14 @@ export function SnapshotImportCard({
 
         {/* Notes */}
         <div>
-          <label className="block text-sm font-medium text-text-secondary mb-1.5">
+          <label
+            htmlFor="sic-notes"
+            className="block text-sm font-medium text-text-secondary mb-1.5"
+          >
             Notes (optional)
           </label>
           <Textarea
+            id="sic-notes"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Add notes about this snapshot..."

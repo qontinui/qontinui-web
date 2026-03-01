@@ -151,7 +151,7 @@ export function TemplateRatingDialog({
           {error && <div className="error-message">{error}</div>}
 
           <div className="rating-section">
-            <label>Your Rating *</label>
+            <p>Your Rating *</p>
             <StarRating
               rating={rating}
               onRatingChange={setRating}

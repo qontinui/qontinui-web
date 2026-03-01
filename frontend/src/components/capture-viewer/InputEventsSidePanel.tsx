@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -15,9 +15,11 @@ import {
   X,
   Move,
 } from "lucide-react";
-import { useState } from "react";
-import type { InputEvent, InputEventType } from "@/types/capture";
-import { getButtonName } from "@/types/capture";
+import {
+  getButtonName,
+  type InputEvent,
+  type InputEventType,
+} from "@/types/capture";
 
 export interface InputEventsSidePanelProps {
   events: InputEvent[];
@@ -128,7 +130,7 @@ const EventItem: React.FC<EventItemProps> = ({ event, isActive, onClick }) => {
     return `${mins}:${secs.toString().padStart(2, "0")}.${ms.toString().padStart(3, "0")}`;
   };
 
-  const renderEventDetails = () => {
+  const eventDetails = (() => {
     switch (event.eventType) {
       case "mouse_click":
       case "mouse_down":
@@ -213,7 +215,7 @@ const EventItem: React.FC<EventItemProps> = ({ event, isActive, onClick }) => {
       default:
         return null;
     }
-  };
+  })();
 
   return (
     <div
@@ -237,7 +239,7 @@ const EventItem: React.FC<EventItemProps> = ({ event, isActive, onClick }) => {
       </div>
 
       {/* Event Details */}
-      {renderEventDetails()}
+      {eventDetails}
 
       {/* Active Indicator */}
       {isActive && (

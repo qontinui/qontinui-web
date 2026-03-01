@@ -70,7 +70,6 @@ export function StateDetailSidebar({
               onChange={(e) => setEditName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && saveEdit()}
               className="flex-1 px-2 py-1 text-sm bg-neutral-900 border border-neutral-600 rounded text-neutral-200 focus:outline-none focus:border-blue-500"
-              autoFocus
             />
             <button
               onClick={saveEdit}

@@ -200,10 +200,11 @@ export const MaskVisualization: React.FC<MaskVisualizationProps> = ({
       <div className="mask-controls">
         {showMask && (
           <div className="mb-2">
-            <label className="text-xs text-text-muted">
+            <label htmlFor="mv-opacity" className="text-xs text-text-muted">
               Opacity: {Math.round(maskOpacity * 100)}%
             </label>
             <input
+              id="mv-opacity"
               type="range"
               min="0"
               max="100"
@@ -216,8 +217,11 @@ export const MaskVisualization: React.FC<MaskVisualizationProps> = ({
 
         {!readOnly && (
           <div>
-            <label className="text-xs text-text-muted">Mask Type:</label>
+            <label htmlFor="mv-mask-type" className="text-xs text-text-muted">
+              Mask Type:
+            </label>
             <select
+              id="mv-mask-type"
               value={maskType}
               onChange={(e) =>
                 setMaskType(

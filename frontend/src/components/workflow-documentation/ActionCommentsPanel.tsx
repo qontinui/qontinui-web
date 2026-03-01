@@ -177,7 +177,7 @@ export function ActionCommentsPanel({
   };
 
   // Render comment card
-  const renderCommentCard = (
+  const commentCard = (
     comment: ActionComment,
     action: Action,
     isSelected: boolean = false
@@ -241,7 +241,6 @@ export function ActionCommentsPanel({
               onChange={(e) => setEditingText(e.target.value)}
               placeholder="Edit comment..."
               className="min-h-24"
-              autoFocus
             />
             <div className="flex items-center gap-2">
               <Button size="sm" onClick={handleSaveEdit}>
@@ -355,7 +354,7 @@ export function ActionCommentsPanel({
               {selectedActionComment && (
                 <div>
                   <h4 className="text-sm font-medium mb-2">Comment</h4>
-                  {renderCommentCard(
+                  {commentCard(
                     selectedActionComment,
                     getAction(selectedActionId)!,
                     true
@@ -374,7 +373,6 @@ export function ActionCommentsPanel({
                         onChange={(e) => setNewCommentText(e.target.value)}
                         placeholder="Add a comment to describe what this action does..."
                         className="min-h-32"
-                        autoFocus
                       />
                       <div className="flex items-center gap-2">
                         <Button size="sm" onClick={handleAddComment}>
@@ -431,9 +429,7 @@ export function ActionCommentsPanel({
                   </div>
 
                   {filteredActions.map(({ action, comment }) => (
-                    <div key={comment.id}>
-                      {renderCommentCard(comment, action)}
-                    </div>
+                    <div key={comment.id}>{commentCard(comment, action)}</div>
                   ))}
                 </>
               ) : searchQuery ? (

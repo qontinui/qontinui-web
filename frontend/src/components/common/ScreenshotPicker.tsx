@@ -420,9 +420,9 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
                 >
                   {/* Delay buttons */}
                   <div className="mb-3">
-                    <label className="text-xs text-text-muted block mb-2">
+                    <p className="text-xs text-text-muted block mb-2">
                       Capture Delay
-                    </label>
+                    </p>
                     <div className="flex gap-1">
                       {DELAY_OPTIONS.map((delay) => (
                         <button

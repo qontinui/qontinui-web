@@ -9,18 +9,18 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 
-import type {
-  UIBridgeExplorationConfig,
-  ExplorationProgress,
-  ExplorationResults,
-  PlaywrightJobStatus,
-  PlaywrightRawResults,
-  UIBridgeJobStatus,
-  UIBridgeRawResults,
-  ExplorationSession,
-  ExplorationSessionResponse,
+import {
+  DEFAULT_EXPLORATION_CONFIG,
+  type ExplorationProgress,
+  type ExplorationResults,
+  type ExplorationSession,
+  type ExplorationSessionResponse,
+  type PlaywrightJobStatus,
+  type PlaywrightRawResults,
+  type UIBridgeExplorationConfig,
+  type UIBridgeJobStatus,
+  type UIBridgeRawResults,
 } from "./types";
-import { DEFAULT_EXPLORATION_CONFIG } from "./types";
 import {
   loadPersistedConfig,
   persistConfig,

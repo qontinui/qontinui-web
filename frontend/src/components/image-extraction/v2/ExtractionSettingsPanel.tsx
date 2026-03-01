@@ -40,9 +40,9 @@ export const ExtractionSettingsPanel: React.FC<
       <div className="space-y-4">
         {/* Processing Mode */}
         <div>
-          <label className="block text-sm font-medium text-text-secondary mb-2">
+          <p className="block text-sm font-medium text-text-secondary mb-2">
             Processing Mode
-          </label>
+          </p>
           <div className="space-y-2">
             <label className="flex items-center">
               <input
@@ -89,7 +89,10 @@ export const ExtractionSettingsPanel: React.FC<
         {processingMode !== "none" && (
           <div>
             <div className="flex justify-between items-center mb-2">
-              <label className="text-sm font-medium text-text-secondary">
+              <label
+                htmlFor="esp-tolerance"
+                className="text-sm font-medium text-text-secondary"
+              >
                 Color Tolerance
               </label>
               <span className="text-sm font-mono bg-surface-canvas px-2 py-1 rounded text-text-secondary">
@@ -97,6 +100,7 @@ export const ExtractionSettingsPanel: React.FC<
               </span>
             </div>
             <input
+              id="esp-tolerance"
               type="range"
               min="0"
               max="50"

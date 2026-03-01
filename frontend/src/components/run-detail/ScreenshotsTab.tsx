@@ -1,7 +1,6 @@
 "use client";
 
-import { useTaskRunScreenshots } from "@/lib/runner-api";
-import type { Screenshot } from "@/lib/runner-api";
+import { useTaskRunScreenshots, type Screenshot } from "@/lib/runner-api";
 import { Badge } from "@/components/ui/badge";
 import { RefreshCw, Camera, FileImage, Clock, FolderOpen } from "lucide-react";
 

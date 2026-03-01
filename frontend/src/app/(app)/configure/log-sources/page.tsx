@@ -727,10 +727,14 @@ function SourceEditor({
 
         <div className="space-y-3">
           <div>
-            <label className="text-xs font-medium text-muted-foreground">
+            <label
+              htmlFor="ls-name"
+              className="text-xs font-medium text-muted-foreground"
+            >
               Name *
             </label>
             <input
+              id="ls-name"
               type="text"
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -740,10 +744,14 @@ function SourceEditor({
           </div>
 
           <div>
-            <label className="text-xs font-medium text-muted-foreground">
+            <label
+              htmlFor="ls-description"
+              className="text-xs font-medium text-muted-foreground"
+            >
               Description
             </label>
             <input
+              id="ls-description"
               type="text"
               value={form.description}
               onChange={(e) =>
@@ -756,10 +764,14 @@ function SourceEditor({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-medium text-muted-foreground">
+              <label
+                htmlFor="ls-category"
+                className="text-xs font-medium text-muted-foreground"
+              >
                 Category
               </label>
               <select
+                id="ls-category"
                 value={form.category}
                 onChange={(e) =>
                   setForm((f) => ({
@@ -777,10 +789,14 @@ function SourceEditor({
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground">
+              <label
+                htmlFor="ls-type"
+                className="text-xs font-medium text-muted-foreground"
+              >
                 Type
               </label>
               <select
+                id="ls-type"
                 value={form.type}
                 onChange={(e) =>
                   setForm((f) => ({ ...f, type: e.target.value }))
@@ -794,11 +810,15 @@ function SourceEditor({
           </div>
 
           <div>
-            <label className="text-xs font-medium text-muted-foreground">
+            <label
+              htmlFor="ls-path"
+              className="text-xs font-medium text-muted-foreground"
+            >
               Path *
             </label>
             <div className="flex gap-2 mt-1">
               <input
+                id="ls-path"
                 type="text"
                 value={form.path}
                 onChange={(e) =>
@@ -815,10 +835,14 @@ function SourceEditor({
 
           {form.type === "directory" && (
             <div>
-              <label className="text-xs font-medium text-muted-foreground">
+              <label
+                htmlFor="ls-pattern"
+                className="text-xs font-medium text-muted-foreground"
+              >
                 Pattern
               </label>
               <input
+                id="ls-pattern"
                 type="text"
                 value={form.pattern}
                 onChange={(e) =>
@@ -832,10 +856,14 @@ function SourceEditor({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-medium text-muted-foreground">
+              <label
+                htmlFor="ls-tail-lines"
+                className="text-xs font-medium text-muted-foreground"
+              >
                 Tail Lines
               </label>
               <input
+                id="ls-tail-lines"
                 type="number"
                 value={form.tail_lines}
                 onChange={(e) =>
@@ -850,10 +878,14 @@ function SourceEditor({
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground">
+              <label
+                htmlFor="ls-color"
+                className="text-xs font-medium text-muted-foreground"
+              >
                 Color
               </label>
               <input
+                id="ls-color"
                 type="text"
                 value={form.color}
                 onChange={(e) =>
@@ -866,10 +898,14 @@ function SourceEditor({
           </div>
 
           <div>
-            <label className="text-xs font-medium text-muted-foreground">
+            <label
+              htmlFor="ls-keywords"
+              className="text-xs font-medium text-muted-foreground"
+            >
               Keywords (comma-separated)
             </label>
             <input
+              id="ls-keywords"
               type="text"
               value={form.keywords}
               onChange={(e) =>
@@ -902,10 +938,14 @@ function SourceEditor({
               <div className="space-y-3 mt-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-medium text-muted-foreground">
+                    <label
+                      htmlFor="ls-format"
+                      className="text-xs font-medium text-muted-foreground"
+                    >
                       Format
                     </label>
                     <select
+                      id="ls-format"
                       value={form.format}
                       onChange={(e) =>
                         setForm((f) => ({ ...f, format: e.target.value }))
@@ -918,10 +958,14 @@ function SourceEditor({
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-muted-foreground">
+                    <label
+                      htmlFor="ls-parser"
+                      className="text-xs font-medium text-muted-foreground"
+                    >
                       Parser
                     </label>
                     <select
+                      id="ls-parser"
                       value={form.parser}
                       onChange={(e) =>
                         setForm((f) => ({ ...f, parser: e.target.value }))
@@ -937,10 +981,14 @@ function SourceEditor({
                 </div>
 
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground">
+                  <label
+                    htmlFor="ls-timestamp-pattern"
+                    className="text-xs font-medium text-muted-foreground"
+                  >
                     Timestamp Pattern
                   </label>
                   <input
+                    id="ls-timestamp-pattern"
                     type="text"
                     value={form.timestamp_pattern}
                     onChange={(e) =>
@@ -958,10 +1006,14 @@ function SourceEditor({
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-medium text-muted-foreground">
+                    <label
+                      htmlFor="ls-timezone"
+                      className="text-xs font-medium text-muted-foreground"
+                    >
                       Timezone
                     </label>
                     <input
+                      id="ls-timezone"
                       type="text"
                       value={form.timezone}
                       onChange={(e) =>
@@ -972,10 +1024,14 @@ function SourceEditor({
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-muted-foreground">
+                    <label
+                      htmlFor="ls-poll-interval"
+                      className="text-xs font-medium text-muted-foreground"
+                    >
                       Poll Interval (ms)
                     </label>
                     <input
+                      id="ls-poll-interval"
                       type="number"
                       value={form.poll_interval_ms}
                       onChange={(e) =>
@@ -992,10 +1048,14 @@ function SourceEditor({
                 </div>
 
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground">
+                  <label
+                    htmlFor="ls-error-patterns"
+                    className="text-xs font-medium text-muted-foreground"
+                  >
                     Error Patterns (one per line)
                   </label>
                   <textarea
+                    id="ls-error-patterns"
                     value={form.error_patterns}
                     onChange={(e) =>
                       setForm((f) => ({
@@ -1010,10 +1070,14 @@ function SourceEditor({
                 </div>
 
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground">
+                  <label
+                    htmlFor="ls-warning-patterns"
+                    className="text-xs font-medium text-muted-foreground"
+                  >
                     Warning Patterns (one per line)
                   </label>
                   <textarea
+                    id="ls-warning-patterns"
                     value={form.warning_patterns}
                     onChange={(e) =>
                       setForm((f) => ({
@@ -1028,10 +1092,14 @@ function SourceEditor({
                 </div>
 
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground">
+                  <label
+                    htmlFor="ls-ignore-patterns"
+                    className="text-xs font-medium text-muted-foreground"
+                  >
                     Ignore Patterns (one per line)
                   </label>
                   <textarea
+                    id="ls-ignore-patterns"
                     value={form.ignore_patterns}
                     onChange={(e) =>
                       setForm((f) => ({
@@ -1143,10 +1211,14 @@ function ProfileEditor({
 
         <div className="space-y-3">
           <div>
-            <label className="text-xs font-medium text-muted-foreground">
+            <label
+              htmlFor="lsp-name"
+              className="text-xs font-medium text-muted-foreground"
+            >
               Name *
             </label>
             <input
+              id="lsp-name"
               type="text"
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -1156,10 +1228,14 @@ function ProfileEditor({
           </div>
 
           <div>
-            <label className="text-xs font-medium text-muted-foreground">
+            <label
+              htmlFor="lsp-description"
+              className="text-xs font-medium text-muted-foreground"
+            >
               Description
             </label>
             <input
+              id="lsp-description"
               type="text"
               value={form.description}
               onChange={(e) =>
@@ -1172,9 +1248,9 @@ function ProfileEditor({
 
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-medium text-muted-foreground">
+              <p className="text-xs font-medium text-muted-foreground">
                 Sources
-              </label>
+              </p>
               <div className="flex gap-1">
                 {["frontend", "backend", "mobile"].map((cat) => (
                   <button

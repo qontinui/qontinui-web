@@ -617,7 +617,7 @@ export function ContextsManager() {
   };
 
   // Form dialog content (shared between create and edit)
-  const renderFormDialog = (isEdit: boolean) => (
+  const formDialogContent = (isEdit: boolean) => (
     <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
       <DialogHeader>
         <DialogTitle>
@@ -1142,7 +1142,7 @@ export function ContextsManager() {
 
       {/* Create Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        {renderFormDialog(false)}
+        {formDialogContent(false)}
       </Dialog>
 
       {/* Edit Dialog */}
@@ -1150,7 +1150,7 @@ export function ContextsManager() {
         open={!!editingContext}
         onOpenChange={(open) => !open && handleCloseEdit()}
       >
-        {renderFormDialog(true)}
+        {formDialogContent(true)}
       </Dialog>
 
       {/* Delete Confirmation Dialog */}

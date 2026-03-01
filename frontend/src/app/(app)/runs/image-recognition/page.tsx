@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { useRunningTaskRuns, useTaskRunEvents } from "@/lib/runner-api";
-import type { TaskRunEvent } from "@/lib/runner-api";
+import {
+  useRunningTaskRuns,
+  useTaskRunEvents,
+  type TaskRunEvent,
+} from "@/lib/runner-api";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

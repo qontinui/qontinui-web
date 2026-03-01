@@ -1,8 +1,7 @@
 "use client";
 
-import type React from "react";
+import React, { useCallback, useRef, useState } from "react";
 
-import { useState, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { MaskEditor } from "@/components/mask-editor";
 import { Upload, ImageIcon, Trash2, Search, X, Edit } from "lucide-react";
 import { toast } from "sonner";
-import { useAutomation } from "@/contexts/automation-context";
+import { useAutomation, type ImageAsset } from "@/contexts/automation-context";
 import {
   ImageDeletionDialog,
   type ImageUsageInfo,
@@ -20,8 +19,6 @@ import {
   ImageUploadProgress,
   type UploadingImage,
 } from "@/components/ImageUploadProgress";
-
-import type { ImageAsset } from "@/contexts/automation-context";
 
 export function ImagesManager() {
   const {

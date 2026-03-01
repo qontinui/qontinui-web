@@ -23,21 +23,20 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type {
-  UnifiedStep,
-  WorkflowPhase,
-  StepTypeInfo,
-} from "@/types/unified-workflow";
 import {
-  STEP_TYPES,
-  PHASE_INFO,
   createDefaultStep,
+  PHASE_INFO,
+  STEP_TYPES,
+  type StepTypeInfo,
+  type UnifiedStep,
+  type WorkflowPhase,
 } from "@/types/unified-workflow";
 import {
   getTemplatesForPhase,
   TEMPLATE_CATEGORIES,
+  type StepTemplate,
+  type TemplateCategory,
 } from "@/lib/step-templates";
-import type { StepTemplate, TemplateCategory } from "@/lib/step-templates";
 
 // Icon mapping for step types
 const TYPE_ICONS: Record<string, React.ElementType> = {

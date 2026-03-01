@@ -28,10 +28,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  useAutomation,
   DEFAULT_CATEGORY_NAMES,
+  useAutomation,
+  type Category,
 } from "@/contexts/automation-context";
-import type { Category } from "@/contexts/automation-context";
 import { DeleteCategoryDialog } from "@/components/delete-category-dialog";
 import { DeleteWorkflowDialog } from "@/components/delete-process-dialog";
 import { BatchDeleteWorkflowsDialog } from "@/components/batch-delete-workflows-dialog";
@@ -364,7 +364,7 @@ export function UnifiedProcessLibrary({
     setDragOverCategory(null);
   };
 
-  const renderItem = (item: LibraryItem) => {
+  const libraryItem = (item: LibraryItem) => {
     const isLinear = isLinearWorkflow(item);
     const isDraggable = !isSelectionMode; // Disable drag in selection mode
     const isChecked = selectedIds.has(item.id);
@@ -536,7 +536,6 @@ export function UnifiedProcessLibrary({
               }}
               placeholder="Category name..."
               className="h-7 text-xs bg-transparent border-border-default"
-              autoFocus
             />
             <Button size="sm" className="h-7 px-2" onClick={handleAddCategory}>
               Add
@@ -687,7 +686,7 @@ export function UnifiedProcessLibrary({
                         Drop workflows here or use + buttons above
                       </div>
                     ) : (
-                      categoryItems.map(renderItem)
+                      categoryItems.map(libraryItem)
                     )}
                   </div>
                 )}

@@ -30,7 +30,7 @@ export function SnapshotSelector({ value, onChange }: SnapshotSelectorProps) {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <label className="text-sm font-medium">Select Snapshot</label>
+        <p className="text-sm font-medium">Select Snapshot</p>
         <Button variant="ghost" size="sm" onClick={reload} disabled={loading}>
           <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
         </Button>

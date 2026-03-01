@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ActionPropertiesComponentProps } from "../types";
 import { TimingProperties } from "../TimingProperties";
@@ -104,10 +103,10 @@ export function GoToStateActionProperties({
   return (
     <>
       <div className="space-y-2">
-        <Label className="text-xs text-text-muted">
+        <p className="text-xs text-text-muted">
           Target States{" "}
           {selectedStates.length > 0 && `(${selectedStates.length} selected)`}
-        </Label>
+        </p>
         <div className="text-xs text-text-muted mb-2">
           Select one or more states to navigate to. The runner will find the
           optimal path.

@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { useRunningTaskRuns, useTaskRunOutput } from "@/lib/runner-api";
-import type { TaskRun } from "@/lib/runner-api";
+import {
+  useRunningTaskRuns,
+  useTaskRunOutput,
+  type TaskRun,
+} from "@/lib/runner-api";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";

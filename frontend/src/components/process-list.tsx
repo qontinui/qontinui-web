@@ -234,7 +234,7 @@ export function ProcessList({
     setDragOverCategory(null);
   };
 
-  const renderProcess = (process: Process) => {
+  const processCard = (process: Process) => {
     return (
       <Card
         key={process.id}
@@ -317,7 +317,6 @@ export function ProcessList({
               }}
               placeholder="Category name..."
               className="h-7 text-xs bg-transparent border-border-default"
-              autoFocus
             />
             <Button size="sm" className="h-7 px-2" onClick={handleAddCategory}>
               Add
@@ -401,7 +400,7 @@ export function ProcessList({
                         Drop processes here
                       </div>
                     ) : (
-                      categoryProcesses.map(renderProcess)
+                      categoryProcesses.map(processCard)
                     )}
                   </div>
                 )}
@@ -420,7 +419,7 @@ export function ProcessList({
                   .filter(
                     (p) => p.category && !allCategories.includes(p.category)
                   )
-                  .map(renderProcess)}
+                  .map(processCard)}
               </div>
             </div>
           )}

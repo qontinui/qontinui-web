@@ -428,9 +428,9 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
           <div className="bg-surface-raised rounded p-4 mb-4">
             <div className="flex items-center gap-4 mb-4">
               <div className="flex-1">
-                <label className="text-sm text-text-muted">
+                <p className="text-sm text-text-muted">
                   Brush Size: {brushSize}px
-                </label>
+                </p>
                 <Slider
                   value={[brushSize]}
                   onValueChange={(v) => setBrushSize(v[0] ?? 5)}
@@ -441,9 +441,9 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
                 />
               </div>
               <div className="flex-1">
-                <label className="text-sm text-text-muted">
+                <p className="text-sm text-text-muted">
                   Opacity: {Math.round(opacity * 100)}%
-                </label>
+                </p>
                 <Slider
                   value={[opacity * 100]}
                   onValueChange={(v) => setOpacity(v[0]! / 100)}

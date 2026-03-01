@@ -28,8 +28,7 @@ import type {
   CheckMode,
   ScheduleType,
 } from "@/stores/automation";
-import { useWorkflows } from "@/hooks/automation";
-import { useSchedules } from "@/hooks/automation";
+import { useSchedules, useWorkflows } from "@/hooks/automation";
 
 interface ScheduleEditorProps {
   schedule: Schedule | null;

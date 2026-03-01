@@ -4,17 +4,18 @@
  * Handles save/load/storage operations and import/export functionality.
  */
 
-import type {
-  ImageFolder,
-  ImageMetadata,
-  ImageCollection,
-  ImageUsageRecord,
-  ImageVersion,
-  ImageOrganizationData,
-  ImportExportData,
-  OperationResult,
+import {
+  STORAGE_KEY,
+  STORAGE_VERSION,
+  type ImageCollection,
+  type ImageFolder,
+  type ImageMetadata,
+  type ImageOrganizationData,
+  type ImageUsageRecord,
+  type ImageVersion,
+  type ImportExportData,
+  type OperationResult,
 } from "./types";
-import { STORAGE_VERSION, STORAGE_KEY } from "./types";
 import { calculateFolderDepthFromFolder } from "./folder-manager";
 import { createLogger } from "@/lib/logger";
 const logger = createLogger("ImageOrgPersistence");

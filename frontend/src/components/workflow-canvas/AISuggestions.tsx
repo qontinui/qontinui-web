@@ -21,8 +21,10 @@ import {
   TrendingUp,
   CheckCircle,
 } from "lucide-react";
-import { getMCPClient } from "../../services/mcp-client";
-import type { WorkflowSuggestion } from "../../services/mcp-client";
+import {
+  getMCPClient,
+  type WorkflowSuggestion,
+} from "../../services/mcp-client";
 import type { Workflow } from "../../lib/action-schema/action-types";
 
 // ============================================================================

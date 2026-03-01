@@ -202,10 +202,10 @@ function ExecutionHistoryPageContent() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* Workflow Selector */}
                     <div className="space-y-2">
-                      <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                      <p className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                         <Workflow className="w-4 h-4" />
                         Workflow
-                      </label>
+                      </p>
                       {workflowsLoading ? (
                         <Skeleton className="h-9 w-full bg-muted" />
                       ) : workflowsError ? (
@@ -253,10 +253,10 @@ function ExecutionHistoryPageContent() {
 
                     {/* Run Selector */}
                     <div className="space-y-2">
-                      <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                      <p className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                         <Calendar className="w-4 h-4" />
                         Execution Run
-                      </label>
+                      </p>
                       {!selectedWorkflow ? (
                         <div className="text-sm text-muted-foreground py-2">
                           Select a workflow first

@@ -21,7 +21,6 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
-import { Label } from "@/components/ui/label";
 import { ImageCanvas, BoundingBox } from "@/components/common/ImageCanvas";
 import { DatasetExportDialog } from "@/components/datasets/DatasetExportDialog";
 import {
@@ -568,7 +567,7 @@ export default function DatasetViewerPage() {
             <div className="p-4 space-y-4">
               {/* Source Filter */}
               <div>
-                <Label className="text-xs font-medium">Source</Label>
+                <p className="text-xs font-medium">Source</p>
                 <div className="mt-2 space-y-2">
                   {(
                     [
@@ -603,10 +602,10 @@ export default function DatasetViewerPage() {
 
               {/* Confidence Filter */}
               <div>
-                <Label className="text-xs font-medium">
+                <p className="text-xs font-medium">
                   Confidence: {(filters.confidence_min || 0).toFixed(2)} -{" "}
                   {(filters.confidence_max || 1).toFixed(2)}
-                </Label>
+                </p>
                 <Slider
                   className="mt-2"
                   min={0}
@@ -628,7 +627,7 @@ export default function DatasetViewerPage() {
 
               {/* Review Status Filter */}
               <div>
-                <Label className="text-xs font-medium">Review Status</Label>
+                <p className="text-xs font-medium">Review Status</p>
                 <div className="mt-2 space-y-2">
                   {(
                     [

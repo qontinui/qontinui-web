@@ -50,11 +50,11 @@ import {
 } from "@/components/ui/tooltip";
 import {
   runnerApi,
+  useAiSettings,
   useContextsDetailed,
   usePromptsDetailed,
-  useAiSettings,
+  type ContextItem,
 } from "@/lib/runner-api";
-import type { ContextItem } from "@/lib/runner-api";
 import type { GenerateWorkflowRequest } from "@/lib/runner/types/workflow";
 import { SpecSourceSection, type SpecSourceState } from "./SpecSourceSection";
 import { buildSpecPrompt } from "@/lib/spec-prompt-builder";
@@ -664,7 +664,6 @@ export function AiGeneratePanel({
               }
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              autoFocus
             />
           </div>
 
@@ -716,9 +715,10 @@ export function AiGeneratePanel({
                               {scope}
                             </p>
                             {contexts.map((ctx) => (
-                              <label
+                              <div
                                 key={ctx.id}
                                 className="flex items-start gap-2 p-1.5 rounded hover:bg-zinc-800/50 cursor-pointer"
+                                onClick={() => handleContextToggle(ctx.id)}
                               >
                                 <Checkbox
                                   checked={selectedContextIds.includes(ctx.id)}
@@ -740,7 +740,7 @@ export function AiGeneratePanel({
                                     </Badge>
                                   )}
                                 </div>
-                              </label>
+                              </div>
                             ))}
                           </div>
                         )
@@ -957,8 +957,12 @@ export function AiGeneratePanel({
                   </p>
                 </div>
                 <div className="flex items-end pb-1">
-                  <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+                  <label
+                    htmlFor="agp-auto-contexts"
+                    className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer"
+                  >
                     <Checkbox
+                      id="agp-auto-contexts"
                       checked={autoIncludeContexts}
                       onCheckedChange={(v) =>
                         setAutoIncludeContexts(v === true)
@@ -982,8 +986,12 @@ export function AiGeneratePanel({
                   </label>
                 </div>
                 <div className="flex items-end pb-1">
-                  <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+                  <label
+                    htmlFor="agp-ui-bridge"
+                    className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer"
+                  >
                     <Checkbox
+                      id="agp-ui-bridge"
                       checked={includeUIBridge}
                       onCheckedChange={(v) => setIncludeUIBridge(v === true)}
                     />
@@ -1006,8 +1014,12 @@ export function AiGeneratePanel({
                   </label>
                 </div>
                 <div className="flex items-end pb-1">
-                  <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+                  <label
+                    htmlFor="agp-reflection-mode"
+                    className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer"
+                  >
                     <Checkbox
+                      id="agp-reflection-mode"
                       checked={reflectionMode}
                       onCheckedChange={(v) => setReflectionMode(v === true)}
                     />
@@ -1031,8 +1043,12 @@ export function AiGeneratePanel({
                   </label>
                 </div>
                 <div className="flex items-end pb-1">
-                  <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+                  <label
+                    htmlFor="agp-investigate-codebase"
+                    className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer"
+                  >
                     <Checkbox
+                      id="agp-investigate-codebase"
                       checked={investigateCodebase}
                       onCheckedChange={(v) =>
                         setInvestigateCodebase(v === true)

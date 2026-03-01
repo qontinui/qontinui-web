@@ -76,8 +76,8 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
 
   if (!action) return null;
 
-  // Render appropriate quick edit fields based on action type
-  const renderQuickEditFields = () => {
+  // Quick edit fields based on action type
+  const quickEditFields = (() => {
     switch (action.type as string) {
       case "CLICK":
         return (
@@ -243,7 +243,7 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
           </div>
         );
     }
-  };
+  })();
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
@@ -280,7 +280,7 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
           </div>
 
           {/* Quick edit fields */}
-          <div className="py-2">{renderQuickEditFields()}</div>
+          <div className="py-2">{quickEditFields}</div>
 
           {/* Actions */}
           <div className="flex justify-end gap-2 pt-2 border-t border-border-default">

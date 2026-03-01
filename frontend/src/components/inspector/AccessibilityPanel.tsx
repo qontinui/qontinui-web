@@ -353,7 +353,6 @@ function NodeDetailsPanel({
                     if (e.key === "Enter") handleFill();
                     if (e.key === "Escape") setShowFillInput(false);
                   }}
-                  autoFocus
                 />
                 <Button
                   size="sm"

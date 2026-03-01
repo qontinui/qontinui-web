@@ -309,9 +309,9 @@ export function InlineFolderSelector({
   return (
     <div className="space-y-2">
       {label && (
-        <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+        <p className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
           {label}
-        </label>
+        </p>
       )}
       <FolderSelector {...props} />
       {error && <p className="text-sm text-destructive">{error}</p>}

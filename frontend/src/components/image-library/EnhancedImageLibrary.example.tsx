@@ -6,7 +6,7 @@
 
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { EnhancedImageLibrary } from "./EnhancedImageLibrary";
 
 /**
@@ -287,7 +287,6 @@ export function ProgrammaticExample() {
  *
  * Shows how to integrate with workflow builder for image selection.
  */
-import { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -309,11 +308,15 @@ export function WorkflowIntegrationExample() {
 
       <div className="border rounded-lg p-4 space-y-4">
         <div>
-          <label className="block text-sm font-medium mb-2">
+          <label
+            htmlFor="eil-selected-image"
+            className="block text-sm font-medium mb-2"
+          >
             Selected Image
           </label>
           <div className="flex gap-2">
             <input
+              id="eil-selected-image"
               type="text"
               value={selectedImageForWorkflow || "No image selected"}
               readOnly

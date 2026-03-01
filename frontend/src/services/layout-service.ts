@@ -18,8 +18,12 @@ import {
   LayoutConfig,
 } from "@/lib/workflow-layout/auto-layout";
 import type { Workflow } from "@/lib/action-schema/action-types";
-import { calculateLayoutStatistics, compareLayouts } from "./layout-statistics";
-import type { LayoutStatistics, LayoutComparison } from "./layout-statistics";
+import {
+  calculateLayoutStatistics,
+  compareLayouts,
+  type LayoutComparison,
+  type LayoutStatistics,
+} from "./layout-statistics";
 
 // ============================================================================
 // Types

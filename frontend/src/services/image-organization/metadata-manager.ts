@@ -4,13 +4,14 @@
  * Handles image metadata operations including tags, usage tracking, and version history.
  */
 
-import type {
-  ImageMetadata,
-  ImageUsageRecord,
-  ImageVersion,
-  OperationResult,
+import {
+  MAX_TAG_LENGTH,
+  MAX_TAGS_PER_IMAGE,
+  type ImageMetadata,
+  type ImageUsageRecord,
+  type ImageVersion,
+  type OperationResult,
 } from "./types";
-import { MAX_TAG_LENGTH, MAX_TAGS_PER_IMAGE } from "./types";
 
 // ============================================================================
 // Dependencies

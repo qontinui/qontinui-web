@@ -77,10 +77,14 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
       <div className="p-4 space-y-4">
         {/* Name */}
         <div>
-          <label className="block text-sm font-medium text-text-secondary mb-1">
+          <label
+            htmlFor="lpp-name"
+            className="block text-sm font-medium text-text-secondary mb-1"
+          >
             Name
           </label>
           <input
+            id="lpp-name"
             type="text"
             value={location.name}
             onChange={handleNameChange}
@@ -90,17 +94,19 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
 
         {/* Coordinates */}
         <div>
-          <label className="block text-sm font-medium text-text-secondary mb-1">
+          <p className="block text-sm font-medium text-text-secondary mb-1">
             Position
-          </label>
+          </p>
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label
+                htmlFor="lpp-x"
                 className={`block text-xs ${location.referenceImageId && location.referenceImageId !== "pending" ? "text-text-muted" : "text-text-muted"}`}
               >
                 X
               </label>
               <input
+                id="lpp-x"
                 type="number"
                 value={location.x}
                 onChange={(e) =>
@@ -122,11 +128,13 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
             </div>
             <div>
               <label
+                htmlFor="lpp-y"
                 className={`block text-xs ${location.referenceImageId && location.referenceImageId !== "pending" ? "text-text-muted" : "text-text-muted"}`}
               >
                 Y
               </label>
               <input
+                id="lpp-y"
                 type="number"
                 value={location.y}
                 onChange={(e) =>
@@ -188,10 +196,14 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
             <div className="pl-6 space-y-2">
               {/* Associated State - Only when relative is checked */}
               <div>
-                <label className="block text-xs text-text-muted mb-1">
+                <label
+                  htmlFor="lpp-ref-state"
+                  className="block text-xs text-text-muted mb-1"
+                >
                   Associated State
                 </label>
                 <select
+                  id="lpp-ref-state"
                   value={location.referenceStateId || ""}
                   onChange={(e) => {
                     const referenceStateId = e.target.value;
@@ -226,10 +238,14 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
                 (states.find((s) => s.id === location.referenceStateId)
                   ?.stateImages?.length ?? 0) > 0 && (
                   <div>
-                    <label className="block text-xs text-text-muted mb-1">
+                    <label
+                      htmlFor="lpp-ref-image"
+                      className="block text-xs text-text-muted mb-1"
+                    >
                       Reference Image
                     </label>
                     <select
+                      id="lpp-ref-image"
                       value={
                         location.referenceImageId === "pending"
                           ? ""
@@ -269,10 +285,14 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
                 <div className="mt-2 pl-2 border-l-2 border-blue-300 space-y-3">
                   {/* Position Enum */}
                   <div>
-                    <label className="block text-xs text-text-muted mb-1">
+                    <label
+                      htmlFor="lpp-anchor-type"
+                      className="block text-xs text-text-muted mb-1"
+                    >
                       Position
                     </label>
                     <select
+                      id="lpp-anchor-type"
                       value={location.anchorType || "CENTER"}
                       onChange={(e) => {
                         const anchorType = e.target.value as AnchorType;
@@ -317,15 +337,19 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
 
                   {/* Percent of Width/Height */}
                   <div>
-                    <label className="block text-xs text-text-muted mb-1">
+                    <p className="block text-xs text-text-muted mb-1">
                       Percent of Width/Height
-                    </label>
+                    </p>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="block text-xs text-text-muted">
+                        <label
+                          htmlFor="lpp-percent-w"
+                          className="block text-xs text-text-muted"
+                        >
                           W%
                         </label>
                         <input
+                          id="lpp-percent-w"
                           type="number"
                           min="0"
                           max="1"
@@ -344,10 +368,14 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-text-muted">
+                        <label
+                          htmlFor="lpp-percent-h"
+                          className="block text-xs text-text-muted"
+                        >
                           H%
                         </label>
                         <input
+                          id="lpp-percent-h"
                           type="number"
                           min="0"
                           max="1"
@@ -373,15 +401,19 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
 
                   {/* Pixel Offsets */}
                   <div>
-                    <label className="block text-xs text-text-muted mb-1">
+                    <p className="block text-xs text-text-muted mb-1">
                       Offsets (pixels)
-                    </label>
+                    </p>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="block text-xs text-text-muted">
+                        <label
+                          htmlFor="lpp-offset-x"
+                          className="block text-xs text-text-muted"
+                        >
                           X
                         </label>
                         <input
+                          id="lpp-offset-x"
                           type="number"
                           value={location.offsetX || 0}
                           onChange={(e) => {
@@ -397,10 +429,14 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-text-muted">
+                        <label
+                          htmlFor="lpp-offset-y"
+                          className="block text-xs text-text-muted"
+                        >
                           Y
                         </label>
                         <input
+                          id="lpp-offset-y"
                           type="number"
                           value={location.offsetY || 0}
                           onChange={(e) => {
@@ -450,10 +486,14 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
 
           {location.anchor && (
             <div className="pl-6">
-              <label className="block text-xs text-text-muted mb-1">
+              <label
+                htmlFor="lpp-anchor-pos"
+                className="block text-xs text-text-muted mb-1"
+              >
                 Anchor Position
               </label>
               <select
+                id="lpp-anchor-pos"
                 value={location.anchorType || "CENTER"}
                 onChange={(e) => {
                   const updatedLocation = {
@@ -485,10 +525,14 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
 
         {/* Save to State - Always Visible */}
         <div>
-          <label className="block text-sm font-medium text-text-secondary mb-1">
+          <label
+            htmlFor="lpp-state"
+            className="block text-sm font-medium text-text-secondary mb-1"
+          >
             Save to State
           </label>
           <select
+            id="lpp-state"
             value={location.stateId || ""}
             onChange={(e) => {
               const updatedLocation = { ...location, stateId: e.target.value };

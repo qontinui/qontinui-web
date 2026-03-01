@@ -7,17 +7,17 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  listExecutionRuns,
-  getExecutionRun,
-  listIssues,
-  getIssue,
-  updateIssue,
-  getExecutionTrends,
   getActionReliability,
+  getExecutionRun,
+  getExecutionTrends,
+  getIssue,
   listActions,
+  listExecutionRuns,
+  listIssues,
   listWorkflows,
+  updateIssue,
+  type WorkflowSummary,
 } from "@/services/execution-service";
-import type { WorkflowSummary } from "@/services/execution-service";
 import type {
   RunType,
   RunStatus,

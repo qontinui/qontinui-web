@@ -9,8 +9,7 @@ import type {
   Action,
   ActionType,
 } from "@/lib/action-schema/action-types";
-import { ACTION_TIME_ESTIMATES } from "./types";
-import type { ExecutionData } from "./types";
+import { ACTION_TIME_ESTIMATES, type ExecutionData } from "./types";
 
 // ============================================================================
 // Action Utilities

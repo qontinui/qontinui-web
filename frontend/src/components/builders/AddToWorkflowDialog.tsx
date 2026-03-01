@@ -20,11 +20,12 @@ import {
   updateWorkflow,
   createWorkflow,
 } from "@/lib/api/unified-workflows";
-import type { UnifiedStep, WorkflowPhase } from "@/types/unified-workflow";
 import {
-  generateStepId,
   canStepExistInPhase,
+  generateStepId,
   PHASE_INFO,
+  type UnifiedStep,
+  type WorkflowPhase,
 } from "@/types/unified-workflow";
 
 interface AddToWorkflowDialogProps {

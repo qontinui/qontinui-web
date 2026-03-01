@@ -249,10 +249,14 @@ export function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
           {/* Basic Information */}
           <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium text-text-muted mb-1.5 block">
+              <label
+                htmlFor="he-name"
+                className="text-sm font-medium text-text-muted mb-1.5 block"
+              >
                 Name <span className="text-red-400">*</span>
               </label>
               <Input
+                id="he-name"
                 placeholder="e.g., Slack Error Notification"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -260,10 +264,14 @@ export function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
               />
             </div>
             <div>
-              <label className="text-sm font-medium text-text-muted mb-1.5 block">
+              <label
+                htmlFor="he-description"
+                className="text-sm font-medium text-text-muted mb-1.5 block"
+              >
                 Description
               </label>
               <Textarea
+                id="he-description"
                 placeholder="Optional description..."
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
@@ -275,9 +283,9 @@ export function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
 
           {/* Trigger Selection */}
           <div>
-            <label className="text-sm font-medium text-text-muted mb-2 block">
+            <p className="text-sm font-medium text-text-muted mb-2 block">
               Trigger
-            </label>
+            </p>
             <div className="grid grid-cols-2 gap-2">
               {TRIGGERS.map((t) => (
                 <button
@@ -304,9 +312,9 @@ export function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
 
           {/* Action Type Selection */}
           <div>
-            <label className="text-sm font-medium text-text-muted mb-2 block">
+            <p className="text-sm font-medium text-text-muted mb-2 block">
               Action Type
-            </label>
+            </p>
             <div className="grid grid-cols-2 gap-2">
               {ACTION_TYPES.map((a) => {
                 const Icon = a.icon;
@@ -339,17 +347,21 @@ export function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
 
           {/* Action Configuration */}
           <div className="space-y-4">
-            <label className="text-sm font-medium text-text-muted block">
+            <p className="text-sm font-medium text-text-muted block">
               Action Configuration
-            </label>
+            </p>
 
             {actionType === "command" && (
               <div className="space-y-3">
                 <div>
-                  <label className="text-xs text-text-muted mb-1 block">
+                  <label
+                    htmlFor="he-cmd-command"
+                    className="text-xs text-text-muted mb-1 block"
+                  >
                     Command <span className="text-red-400">*</span>
                   </label>
                   <Textarea
+                    id="he-cmd-command"
                     placeholder='echo "Task {{task_name}} completed"'
                     value={cmdCommand}
                     onChange={(e) => setCmdCommand(e.target.value)}
@@ -362,10 +374,14 @@ export function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                   </p>
                 </div>
                 <div>
-                  <label className="text-xs text-text-muted mb-1 block">
+                  <label
+                    htmlFor="he-cmd-workdir"
+                    className="text-xs text-text-muted mb-1 block"
+                  >
                     Working Directory
                   </label>
                   <Input
+                    id="he-cmd-workdir"
                     placeholder="e.g., C:\path\to\directory"
                     value={cmdWorkingDir}
                     onChange={(e) => setCmdWorkingDir(e.target.value)}
@@ -373,10 +389,14 @@ export function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-text-muted mb-1 block">
+                  <label
+                    htmlFor="he-cmd-timeout"
+                    className="text-xs text-text-muted mb-1 block"
+                  >
                     Timeout (seconds)
                   </label>
                   <Input
+                    id="he-cmd-timeout"
                     type="number"
                     min={1}
                     max={600}
@@ -386,9 +406,9 @@ export function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-text-muted mb-1 block">
+                  <p className="text-xs text-text-muted mb-1 block">
                     Environment Variables
-                  </label>
+                  </p>
                   {cmdEnvVars.map(([key, val], i) => (
                     <div key={i} className="flex items-center gap-2 mb-2">
                       <Input
@@ -441,9 +461,7 @@ export function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
               <div className="space-y-3">
                 <div className="grid grid-cols-4 gap-2">
                   <div>
-                    <label className="text-xs text-text-muted mb-1 block">
-                      Method
-                    </label>
+                    <p className="text-xs text-text-muted mb-1 block">Method</p>
                     <Select
                       value={webhookMethod}
                       onValueChange={setWebhookMethod}
@@ -461,10 +479,14 @@ export function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                     </Select>
                   </div>
                   <div className="col-span-3">
-                    <label className="text-xs text-text-muted mb-1 block">
+                    <label
+                      htmlFor="he-webhook-url"
+                      className="text-xs text-text-muted mb-1 block"
+                    >
                       URL <span className="text-red-400">*</span>
                     </label>
                     <Input
+                      id="he-webhook-url"
                       placeholder="https://hooks.slack.com/services/..."
                       value={webhookUrl}
                       onChange={(e) => setWebhookUrl(e.target.value)}
@@ -473,9 +495,7 @@ export function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs text-text-muted mb-1 block">
-                    Headers
-                  </label>
+                  <p className="text-xs text-text-muted mb-1 block">Headers</p>
                   {webhookHeaders.map(([key, val], i) => (
                     <div key={i} className="flex items-center gap-2 mb-2">
                       <Input
@@ -526,10 +546,14 @@ export function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                   </Button>
                 </div>
                 <div>
-                  <label className="text-xs text-text-muted mb-1 block">
+                  <label
+                    htmlFor="he-webhook-body"
+                    className="text-xs text-text-muted mb-1 block"
+                  >
                     Request Body
                   </label>
                   <Textarea
+                    id="he-webhook-body"
                     placeholder='{"text": "Task {{task_name}} completed with status {{status}}"}'
                     value={webhookBody}
                     onChange={(e) => setWebhookBody(e.target.value)}
@@ -541,10 +565,14 @@ export function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                   </p>
                 </div>
                 <div>
-                  <label className="text-xs text-text-muted mb-1 block">
+                  <label
+                    htmlFor="he-webhook-timeout"
+                    className="text-xs text-text-muted mb-1 block"
+                  >
                     Timeout (seconds)
                   </label>
                   <Input
+                    id="he-webhook-timeout"
                     type="number"
                     min={1}
                     max={300}
@@ -559,9 +587,9 @@ export function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
             {actionType === "log" && (
               <div className="space-y-3">
                 <div>
-                  <label className="text-xs text-text-muted mb-1 block">
+                  <p className="text-xs text-text-muted mb-1 block">
                     Log Level
-                  </label>
+                  </p>
                   <Select value={logLevel} onValueChange={setLogLevel}>
                     <SelectTrigger className="bg-surface-raised/50 border-border-subtle/50 text-sm w-40">
                       <SelectValue />
@@ -576,10 +604,14 @@ export function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                   </Select>
                 </div>
                 <div>
-                  <label className="text-xs text-text-muted mb-1 block">
+                  <label
+                    htmlFor="he-log-message"
+                    className="text-xs text-text-muted mb-1 block"
+                  >
                     Message <span className="text-red-400">*</span>
                   </label>
                   <Textarea
+                    id="he-log-message"
                     placeholder="Task {{task_name}} iteration {{iteration}} status: {{status}}"
                     value={logMessage}
                     onChange={(e) => setLogMessage(e.target.value)}
@@ -597,10 +629,14 @@ export function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
             {actionType === "notification" && (
               <div className="space-y-3">
                 <div>
-                  <label className="text-xs text-text-muted mb-1 block">
+                  <label
+                    htmlFor="he-notif-title"
+                    className="text-xs text-text-muted mb-1 block"
+                  >
                     Title <span className="text-red-400">*</span>
                   </label>
                   <Input
+                    id="he-notif-title"
                     placeholder="Task {{task_name}} Complete"
                     value={notifTitle}
                     onChange={(e) => setNotifTitle(e.target.value)}
@@ -608,10 +644,14 @@ export function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-text-muted mb-1 block">
+                  <label
+                    htmlFor="he-notif-body"
+                    className="text-xs text-text-muted mb-1 block"
+                  >
                     Body <span className="text-red-400">*</span>
                   </label>
                   <Textarea
+                    id="he-notif-body"
                     placeholder="Completed iteration {{iteration}} with status {{status}}"
                     value={notifBody}
                     onChange={(e) => setNotifBody(e.target.value)}
@@ -630,9 +670,9 @@ export function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
           <div>
             <div className="flex items-center justify-between mb-2">
               <div>
-                <label className="text-sm font-medium text-text-muted block">
+                <p className="text-sm font-medium text-text-muted block">
                   Conditions
-                </label>
+                </p>
                 <p className="text-xs text-text-muted">
                   Hook will only execute if all conditions are met
                 </p>
@@ -731,14 +771,18 @@ export function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
 
           {/* Execution Settings */}
           <div className="space-y-3">
-            <label className="text-sm font-medium text-text-muted block">
+            <p className="text-sm font-medium text-text-muted block">
               Execution Settings
-            </label>
+            </p>
             <div>
-              <label className="text-xs text-text-muted mb-1 block">
+              <label
+                htmlFor="he-execution-order"
+                className="text-xs text-text-muted mb-1 block"
+              >
                 Execution Order
               </label>
               <Input
+                id="he-execution-order"
                 type="number"
                 value={executionOrder}
                 onChange={(e) => setExecutionOrder(Number(e.target.value))}
@@ -749,16 +793,26 @@ export function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <Switch checked={enabled} onCheckedChange={setEnabled} />
-              <label className="text-sm text-text-muted">Enabled</label>
+              <Switch
+                id="he-enabled"
+                checked={enabled}
+                onCheckedChange={setEnabled}
+              />
+              <label htmlFor="he-enabled" className="text-sm text-text-muted">
+                Enabled
+              </label>
             </div>
             <div className="flex items-center gap-3">
               <Switch
+                id="he-continue-on-failure"
                 checked={continueOnFailure}
                 onCheckedChange={setContinueOnFailure}
               />
               <div>
-                <label className="text-sm text-text-muted">
+                <label
+                  htmlFor="he-continue-on-failure"
+                  className="text-sm text-text-muted"
+                >
                   Continue on failure
                 </label>
                 <p className="text-xs text-text-muted">

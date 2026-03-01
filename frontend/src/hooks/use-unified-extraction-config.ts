@@ -13,20 +13,18 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import type {
-  UnifiedExtractionConfig,
-  ExtractionMethod,
-  WebExtractionConfig,
-  UITarsExtractionConfig,
-  ImageExtractionConfig,
-  VisionExtractionConfig,
-} from "@/types/extraction-unified";
 import {
-  DEFAULT_UNIFIED_CONFIG,
-  DEFAULT_WEB_CONFIG,
-  DEFAULT_UITARS_CONFIG,
   DEFAULT_IMAGE_CONFIG,
+  DEFAULT_UITARS_CONFIG,
+  DEFAULT_UNIFIED_CONFIG,
   DEFAULT_VISION_CONFIG,
+  DEFAULT_WEB_CONFIG,
+  type ExtractionMethod,
+  type ImageExtractionConfig,
+  type UITarsExtractionConfig,
+  type UnifiedExtractionConfig,
+  type VisionExtractionConfig,
+  type WebExtractionConfig,
 } from "@/types/extraction-unified";
 
 const STORAGE_KEY = "qontinui_unified_extraction_config";

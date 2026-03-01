@@ -125,74 +125,69 @@ export function TryItButton({
     }
   };
 
+  const preloadedData = config.preloadedData || {};
+
   /**
-   * Render the appropriate component based on try it type
-   * This serves as a placeholder for actual component rendering
+   * The appropriate component content based on try it type.
+   * This serves as a placeholder for actual component rendering.
    */
-  const renderTryItComponent = () => {
-    const preloadedData = config.preloadedData || {};
+  const tryItContent = (
+    <div className="space-y-6">
+      {/* Component would be rendered here based on config.type */}
+      <div className="text-center py-12">
+        <h3 className="text-lg font-semibold text-text-primary mb-4">
+          {config.type === "upload-screenshots" && "Upload Your Screenshots"}
+          {config.type === "identify-element" && "Identify the Element"}
+          {config.type === "create-action" && "Create an Action"}
+          {config.type === "configure-automation" && "Configure Automation"}
+          {config.type === "test-automation" && "Test Your Automation"}
+          {config.type === "debug-pattern" && "Debug the Pattern"}
+          {config.type === "optimize-automation" && "Optimize Your Automation"}
+          {config.type === "custom" && "Complete This Exercise"}
+        </h3>
 
-    // This is a framework for rendering different component types
-    // Each type would render the appropriate interactive component
-    return (
-      <div className="space-y-6">
-        {/* Component would be rendered here based on config.type */}
-        <div className="text-center py-12">
-          <h3 className="text-lg font-semibold text-text-primary mb-4">
-            {config.type === "upload-screenshots" && "Upload Your Screenshots"}
-            {config.type === "identify-element" && "Identify the Element"}
-            {config.type === "create-action" && "Create an Action"}
-            {config.type === "configure-automation" && "Configure Automation"}
-            {config.type === "test-automation" && "Test Your Automation"}
-            {config.type === "debug-pattern" && "Debug the Pattern"}
-            {config.type === "optimize-automation" &&
-              "Optimize Your Automation"}
-            {config.type === "custom" && "Complete This Exercise"}
-          </h3>
+        <p className="text-text-muted mb-8">
+          Interactive component for:{" "}
+          <code className="bg-surface-raised px-2 py-1 rounded text-sm">
+            {config.component}
+          </code>
+        </p>
 
-          <p className="text-text-muted mb-8">
-            Interactive component for:{" "}
-            <code className="bg-surface-raised px-2 py-1 rounded text-sm">
-              {config.component}
-            </code>
-          </p>
+        {/* Show preloaded data if available */}
+        {Object.keys(preloadedData).length > 0 && (
+          <div className="bg-surface-canvas rounded-lg p-4 mb-8 text-left text-sm">
+            <p className="font-semibold text-text-primary mb-2">
+              Preloaded Data:
+            </p>
+            <pre className="text-xs text-text-muted overflow-auto">
+              {JSON.stringify(preloadedData, null, 2)}
+            </pre>
+          </div>
+        )}
 
-          {/* Show preloaded data if available */}
-          {Object.keys(preloadedData).length > 0 && (
-            <div className="bg-surface-canvas rounded-lg p-4 mb-8 text-left text-sm">
-              <p className="font-semibold text-text-primary mb-2">
-                Preloaded Data:
-              </p>
-              <pre className="text-xs text-text-muted overflow-auto">
-                {JSON.stringify(preloadedData, null, 2)}
-              </pre>
-            </div>
-          )}
+        {/* Success Criteria */}
+        {config.successCriteria && (
+          <div className="bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-800 rounded-lg p-4 text-left mb-8">
+            <p className="font-semibold text-cyan-900 dark:text-cyan-100 mb-2">
+              Success Criteria:
+            </p>
+            <p className="text-cyan-800 dark:text-cyan-200">
+              {config.successCriteria.description}
+            </p>
+          </div>
+        )}
 
-          {/* Success Criteria */}
-          {config.successCriteria && (
-            <div className="bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-800 rounded-lg p-4 text-left mb-8">
-              <p className="font-semibold text-cyan-900 dark:text-cyan-100 mb-2">
-                Success Criteria:
-              </p>
-              <p className="text-cyan-800 dark:text-cyan-200">
-                {config.successCriteria.description}
-              </p>
-            </div>
-          )}
-
-          {/* Completion Button */}
-          <Button
-            size="lg"
-            onClick={() => handleExerciseComplete({ completed: true })}
-            className="bg-cyan-500 hover:bg-cyan-600 text-white"
-          >
-            Complete Exercise
-          </Button>
-        </div>
+        {/* Completion Button */}
+        <Button
+          size="lg"
+          onClick={() => handleExerciseComplete({ completed: true })}
+          className="bg-cyan-500 hover:bg-cyan-600 text-white"
+        >
+          Complete Exercise
+        </Button>
       </div>
-    );
-  };
+    </div>
+  );
 
   return (
     <div className={`space-y-4 ${className}`}>
@@ -287,7 +282,7 @@ export function TryItButton({
                 <Loader2 className="h-8 w-8 animate-spin text-cyan-500" />
               </div>
             ) : (
-              renderTryItComponent()
+              tryItContent
             )}
           </div>
         </DialogContent>

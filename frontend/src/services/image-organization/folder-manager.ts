@@ -4,13 +4,14 @@
  * Handles folder CRUD operations and tree structure management.
  */
 
-import type {
-  ImageFolder,
-  ImageMetadata,
-  FolderTreeNode,
-  OperationResult,
+import {
+  MAX_FOLDER_DEPTH,
+  MAX_FOLDER_NAME_LENGTH,
+  type FolderTreeNode,
+  type ImageFolder,
+  type ImageMetadata,
+  type OperationResult,
 } from "./types";
-import { MAX_FOLDER_DEPTH, MAX_FOLDER_NAME_LENGTH } from "./types";
 
 // ============================================================================
 // Utility helpers (shared across managers via injection)

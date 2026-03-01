@@ -46,10 +46,10 @@ export function FindStateActionProperties({
   return (
     <>
       <div className="space-y-2">
-        <Label className="text-xs text-text-muted">
+        <p className="text-xs text-text-muted">
           States to Check{" "}
           {selectedStates.length > 0 && `(${selectedStates.length} selected)`}
-        </Label>
+        </p>
         <div className="text-xs text-text-muted mb-2">
           Select states to check for visibility. The action will search for all
           images of the selected states and return which states are currently
@@ -105,13 +105,14 @@ export function FindStateActionProperties({
 
       {/* Output Variable */}
       <div className="space-y-2 mt-4">
-        <Label className="text-xs text-text-muted">
+        <Label htmlFor="fsa-output-var" className="text-xs text-text-muted">
           Output Variable (optional)
         </Label>
         <div className="text-xs text-text-muted mb-1">
           Variable name to store the array of active state IDs
         </div>
         <Input
+          id="fsa-output-var"
           value={outputVariable}
           onChange={(e) => handleOutputVariableChange(e.target.value)}
           placeholder="e.g., activeStates"

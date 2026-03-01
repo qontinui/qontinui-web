@@ -12,11 +12,11 @@ import { recordingService } from "@/services/service-factory";
 import { ProcessingMonitor } from "@/components/recordings/ProcessingMonitor";
 import { StateStructureReview } from "@/components/recordings/StateStructureReview";
 import {
-  RecordingStatusLabels,
-  getConfidenceLevel,
   getConfidenceColor,
+  getConfidenceLevel,
+  RecordingStatusLabels,
+  type Recording,
 } from "@/types/recording";
-import type { Recording } from "@/types/recording";
 import { formatDistanceToNow } from "date-fns";
 
 export default function RecordingDetailPage() {

@@ -6,8 +6,7 @@
  */
 
 import { Check, X, MessageSquare } from "lucide-react";
-import type { SpecAssertion } from "../types";
-import { SEVERITY_COLORS } from "../types";
+import { SEVERITY_COLORS, type SpecAssertion } from "../types";
 
 interface TestSpecAssertionRowProps {
   assertion: SpecAssertion;

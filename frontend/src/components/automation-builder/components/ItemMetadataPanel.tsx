@@ -24,9 +24,12 @@ import {
 } from "@/components/ui/collapsible";
 import { Check, X, Users, ChevronDown, Play, AlertCircle } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
-import type { LibraryItem } from "../types";
-import { isLinearWorkflow, getSuggestedMode } from "../types";
-import type { BuilderMode } from "../types";
+import {
+  getSuggestedMode,
+  isLinearWorkflow,
+  type BuilderMode,
+  type LibraryItem,
+} from "../types";
 import { PermissionBadge } from "./PermissionBadge";
 import type { PermissionLevel } from "@/types/collaboration";
 import { ExpectationsPanel } from "@/components/expectations/ExpectationsPanel";
@@ -251,7 +254,6 @@ export function ItemMetadataPanel({
             data-ui-id="automation-metadata-name-input"
             className="bg-surface-canvas border-border-default text-white"
             placeholder="Enter name..."
-            autoFocus
           />
         ) : (
           <div
@@ -511,9 +513,12 @@ export function ItemMetadataPanel({
                           : isDefaultInitial;
 
                       return (
-                        <label
+                        <div
                           key={state.id}
                           className="flex items-center gap-2 p-2 rounded hover:bg-surface-raised/50 cursor-pointer transition-colors"
+                          onClick={() =>
+                            handleInitialStateToggle(state.id, !isSelected)
+                          }
                         >
                           <Checkbox
                             checked={isSelected}
@@ -539,7 +544,7 @@ export function ItemMetadataPanel({
                               {state.description}
                             </span>
                           )}
-                        </label>
+                        </div>
                       );
                     })}
                   </div>

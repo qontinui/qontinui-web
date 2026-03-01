@@ -55,9 +55,9 @@ export function PathfindingPanel({
       <div className="grid grid-cols-2 gap-6">
         {/* From States */}
         <div>
-          <label className="text-sm font-medium text-text-primary mb-2 block">
+          <p className="text-sm font-medium text-text-primary mb-2 block">
             From States (currently active)
-          </label>
+          </p>
           <div className="flex flex-wrap gap-1.5">
             {states.map((s) => (
               <button
@@ -77,9 +77,9 @@ export function PathfindingPanel({
 
         {/* Target States */}
         <div>
-          <label className="text-sm font-medium text-text-primary mb-2 block">
+          <p className="text-sm font-medium text-text-primary mb-2 block">
             Target States (to reach)
-          </label>
+          </p>
           <div className="flex flex-wrap gap-1.5">
             {states.map((s) => (
               <button

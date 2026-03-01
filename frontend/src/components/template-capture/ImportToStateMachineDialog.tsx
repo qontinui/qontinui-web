@@ -33,8 +33,10 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { TemplateCandidate } from "@/services/template-capture-service";
-import { TemplateCaptureService } from "@/services/template-capture-service";
+import {
+  TemplateCaptureService,
+  type TemplateCandidate,
+} from "@/services/template-capture-service";
 import { httpClient } from "@/services/service-factory";
 
 export interface ImportToStateMachineDialogProps {

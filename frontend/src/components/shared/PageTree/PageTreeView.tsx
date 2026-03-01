@@ -2,8 +2,7 @@
 
 import { useState, useMemo } from "react";
 import type { DiscoveredLink, PageNodeStatus } from "@/lib/ui-bridge/types";
-import type { TreeNode } from "./tree-builder";
-import { buildTree } from "./tree-builder";
+import { buildTree, type TreeNode } from "./tree-builder";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ChevronRight,

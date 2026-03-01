@@ -222,7 +222,7 @@ export function DocumentationViewer({
   };
 
   // Render markdown content (simplified - use react-markdown in production)
-  const renderContent = (content: string) => {
+  const contentRenderer = (content: string) => {
     const lines = content.split("\n");
 
     return lines.map((line, idx) => {
@@ -314,7 +314,7 @@ export function DocumentationViewer({
   };
 
   // Render TOC recursively
-  const renderTOCItem = (item: TOCItem, depth: number = 0) => {
+  const tocItem = (item: TOCItem, depth: number = 0) => {
     const hasChildren = item.children.length > 0;
     const isActive = activeSection === item.id;
 
@@ -347,9 +347,7 @@ export function DocumentationViewer({
         </button>
 
         {hasChildren && !collapsedSections.has(item.id) && (
-          <div>
-            {item.children.map((child) => renderTOCItem(child, depth + 1))}
-          </div>
+          <div>{item.children.map((child) => tocItem(child, depth + 1))}</div>
         )}
       </div>
     );
@@ -413,7 +411,7 @@ export function DocumentationViewer({
 
         <ScrollArea className="flex-1">
           <div className="p-2 space-y-1">
-            {toc.map((item) => renderTOCItem(item))}
+            {toc.map((item) => tocItem(item))}
           </div>
         </ScrollArea>
 
@@ -577,7 +575,7 @@ export function DocumentationViewer({
                 <div
                   className={cn(collapsedSections.has(section.id) && "hidden")}
                 >
-                  {renderContent(section.content)}
+                  {contentRenderer(section.content)}
                 </div>
               </section>
             ))}

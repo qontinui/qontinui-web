@@ -63,6 +63,20 @@ interface ConflictResolutionDialogProps {
   onResolveAll: (resolution: "local" | "remote") => Promise<void>;
 }
 
+function ConflictValueDisplay({ value }: { value: unknown }) {
+  if (value === null || value === undefined) {
+    return <span className="text-muted-foreground italic">empty</span>;
+  }
+  if (typeof value === "object") {
+    return (
+      <pre className="text-xs bg-muted p-2 rounded overflow-x-auto">
+        {JSON.stringify(value, null, 2)}
+      </pre>
+    );
+  }
+  return <span className="font-mono text-sm">{String(value)}</span>;
+}
+
 export function ConflictResolutionDialog({
   open,
   onOpenChange,
@@ -161,21 +175,7 @@ export function ConflictResolutionDialog({
     }
   };
 
-  const renderValue = (value: unknown) => {
-    if (value === null || value === undefined) {
-      return <span className="text-muted-foreground italic">empty</span>;
-    }
-    if (typeof value === "object") {
-      return (
-        <pre className="text-xs bg-muted p-2 rounded overflow-x-auto">
-          {JSON.stringify(value, null, 2)}
-        </pre>
-      );
-    }
-    return <span className="font-mono text-sm">{String(value)}</span>;
-  };
-
-  const renderDiff = (change: ConflictChange) => {
+  const diffItem = (change: ConflictChange) => {
     if (!change.conflicted) {
       return (
         <div className="p-3 border rounded-lg bg-muted/30">
@@ -189,7 +189,9 @@ export function ConflictResolutionDialog({
               No Conflict
             </Badge>
           </div>
-          <div className="text-sm">{renderValue(change.local_value)}</div>
+          <div className="text-sm">
+            <ConflictValueDisplay value={change.local_value} />
+          </div>
         </div>
       );
     }
@@ -247,7 +249,9 @@ export function ConflictResolutionDialog({
                   <Check className="h-4 w-4 text-green-500" />
                 )}
               </div>
-              <div className="text-sm">{renderValue(change.local_value)}</div>
+              <div className="text-sm">
+                <ConflictValueDisplay value={change.local_value} />
+              </div>
             </div>
 
             {/* Remote Version */}
@@ -288,7 +292,9 @@ export function ConflictResolutionDialog({
                   <Check className="h-4 w-4 text-blue-500" />
                 )}
               </div>
-              <div className="text-sm">{renderValue(change.remote_value)}</div>
+              <div className="text-sm">
+                <ConflictValueDisplay value={change.remote_value} />
+              </div>
             </div>
           </div>
         </div>
@@ -336,7 +342,9 @@ export function ConflictResolutionDialog({
                   <Check className="h-3 w-3 text-green-500 ml-auto" />
                 )}
               </div>
-              <div className="text-sm">{renderValue(change.local_value)}</div>
+              <div className="text-sm">
+                <ConflictValueDisplay value={change.local_value} />
+              </div>
             </div>
             <div
               className={cn(
@@ -373,7 +381,9 @@ export function ConflictResolutionDialog({
                   <Check className="h-3 w-3 text-blue-500 ml-auto" />
                 )}
               </div>
-              <div className="text-sm">{renderValue(change.remote_value)}</div>
+              <div className="text-sm">
+                <ConflictValueDisplay value={change.remote_value} />
+              </div>
             </div>
           </div>
         </div>
@@ -461,7 +471,7 @@ export function ConflictResolutionDialog({
                   <AlertTriangle className="h-4 w-4 text-orange-500" />
                   Conflicting Changes ({conflictedChanges.length})
                 </h3>
-                {conflictedChanges.map((change) => renderDiff(change))}
+                {conflictedChanges.map((change) => diffItem(change))}
               </>
             )}
 
@@ -472,7 +482,7 @@ export function ConflictResolutionDialog({
                   <Check className="h-4 w-4 text-green-500" />
                   Non-conflicting Changes ({nonConflictedChanges.length})
                 </h3>
-                {nonConflictedChanges.map((change) => renderDiff(change))}
+                {nonConflictedChanges.map((change) => diffItem(change))}
               </>
             )}
           </div>

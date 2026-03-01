@@ -156,10 +156,14 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
       <div className="p-4 space-y-4">
         {/* Name */}
         <div>
-          <label className="block text-sm font-medium text-text-muted mb-1">
+          <label
+            htmlFor="rpp-name"
+            className="block text-sm font-medium text-text-muted mb-1"
+          >
             Name
           </label>
           <input
+            id="rpp-name"
             type="text"
             value={region.name}
             onChange={handleNameChange}
@@ -169,9 +173,9 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
 
         {/* Type Toggle */}
         <div>
-          <label className="block text-sm font-medium text-text-muted mb-2">
+          <p className="block text-sm font-medium text-text-muted mb-2">
             Region Type
-          </label>
+          </p>
           <div className="flex gap-2">
             <button
               className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
@@ -199,10 +203,14 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
         {/* Save to State (for StateRegion) */}
         {region.type === "StateRegion" && (
           <div>
-            <label className="block text-sm font-medium text-text-muted mb-1">
+            <label
+              htmlFor="rpp-state-id"
+              className="block text-sm font-medium text-text-muted mb-1"
+            >
               Save to State
             </label>
             <select
+              id="rpp-state-id"
               value={region.stateId}
               onChange={(e) => {
                 const updatedRegion = { ...region, stateId: e.target.value };
@@ -226,10 +234,14 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
         {region.type === "SearchRegion" && (
           <>
             <div>
-              <label className="block text-sm font-medium text-text-muted mb-1">
+              <label
+                htmlFor="rpp-search-state"
+                className="block text-sm font-medium text-text-muted mb-1"
+              >
                 Select State
               </label>
               <select
+                id="rpp-search-state"
                 value={region.saveToStateImageStateId || ""}
                 onChange={(e) => {
                   const updatedRegion = {
@@ -257,10 +269,14 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
 
             {region.saveToStateImageStateId && (
               <div>
-                <label className="block text-sm font-medium text-text-muted mb-1">
+                <label
+                  htmlFor="rpp-state-image"
+                  className="block text-sm font-medium text-text-muted mb-1"
+                >
                   Save to StateImage
                 </label>
                 <select
+                  id="rpp-state-image"
                   value={region.saveToStateImageId || ""}
                   onChange={(e) => {
                     const updatedRegion = {
@@ -315,17 +331,19 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
 
         {/* Position & Size (greyed when linked) */}
         <div>
-          <label className="block text-sm font-medium text-text-muted mb-1">
+          <p className="block text-sm font-medium text-text-muted mb-1">
             Position & Size
-          </label>
+          </p>
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label
+                htmlFor="rpp-bounds-x"
                 className={`block text-xs ${linkToMatch ? "text-text-muted" : "text-text-muted"}`}
               >
                 X
               </label>
               <input
+                id="rpp-bounds-x"
                 type="number"
                 value={region.bounds.x}
                 onChange={(e) =>
@@ -341,11 +359,13 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
             </div>
             <div>
               <label
+                htmlFor="rpp-bounds-y"
                 className={`block text-xs ${linkToMatch ? "text-text-muted" : "text-text-muted"}`}
               >
                 Y
               </label>
               <input
+                id="rpp-bounds-y"
                 type="number"
                 value={region.bounds.y}
                 onChange={(e) =>
@@ -361,11 +381,13 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
             </div>
             <div>
               <label
+                htmlFor="rpp-bounds-width"
                 className={`block text-xs ${linkToMatch ? "text-text-muted" : "text-text-muted"}`}
               >
                 Width
               </label>
               <input
+                id="rpp-bounds-width"
                 type="number"
                 value={region.bounds.width}
                 onChange={(e) =>
@@ -381,11 +403,13 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
             </div>
             <div>
               <label
+                htmlFor="rpp-bounds-height"
                 className={`block text-xs ${linkToMatch ? "text-text-muted" : "text-text-muted"}`}
               >
                 Height
               </label>
               <input
+                id="rpp-bounds-height"
                 type="number"
                 value={region.bounds.height}
                 onChange={(e) =>
@@ -406,10 +430,14 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
         {linkToMatch && (
           <>
             <div>
-              <label className="block text-sm font-medium text-text-muted mb-1">
+              <label
+                htmlFor="rpp-linked-state"
+                className="block text-sm font-medium text-text-muted mb-1"
+              >
                 State
               </label>
               <select
+                id="rpp-linked-state"
                 value={linkedMatchState}
                 onChange={(e) => handleLinkedMatchStateChange(e.target.value)}
                 className="w-full px-3 py-2 border border-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-text-primary"
@@ -428,10 +456,14 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
 
             {linkedMatchState && (
               <div>
-                <label className="block text-sm font-medium text-text-muted mb-1">
+                <label
+                  htmlFor="rpp-linked-image"
+                  className="block text-sm font-medium text-text-muted mb-1"
+                >
                   Linked Image
                 </label>
                 <select
+                  id="rpp-linked-image"
                   value={linkedMatchImage}
                   onChange={(e) => handleLinkedMatchImageChange(e.target.value)}
                   className="w-full px-3 py-2 border border-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-text-primary"

@@ -10,17 +10,14 @@ import type {
   OutgoingTransition,
 } from "@/contexts/automation-context/types";
 
-import type {
-  StateMetadata,
-  StateSearchFilter,
-  StateSearchResult,
-  SearchMatch,
-  StateComplexity,
-} from "@/types/state-organization/types";
-
 import {
   STATE_COMPLEXITY_THRESHOLDS,
   STATE_COMPLEXITY_WEIGHTS,
+  type SearchMatch,
+  type StateComplexity,
+  type StateMetadata,
+  type StateSearchFilter,
+  type StateSearchResult,
 } from "@/types/state-organization/types";
 
 import type { ServiceState } from "./types";

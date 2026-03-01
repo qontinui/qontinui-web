@@ -253,8 +253,14 @@ function SaveComposedDialog({
       </CardHeader>
       <CardContent className="space-y-3">
         <div>
-          <label className="text-xs text-text-muted block mb-1">Name</label>
+          <label
+            htmlFor="sbp-name"
+            className="text-xs text-text-muted block mb-1"
+          >
+            Name
+          </label>
           <input
+            id="sbp-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="w-full h-8 px-3 text-sm bg-surface-canvas/50 border border-border-subtle rounded-md text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-brand-primary"
@@ -263,8 +269,14 @@ function SaveComposedDialog({
         </div>
 
         <div>
-          <label className="text-xs text-text-muted block mb-1">Category</label>
+          <label
+            htmlFor="sbp-category"
+            className="text-xs text-text-muted block mb-1"
+          >
+            Category
+          </label>
           <input
+            id="sbp-category"
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             className="w-full h-8 px-3 text-sm bg-surface-canvas/50 border border-border-subtle rounded-md text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-brand-primary"
@@ -273,10 +285,14 @@ function SaveComposedDialog({
         </div>
 
         <div>
-          <label className="text-xs text-text-muted block mb-1">
+          <label
+            htmlFor="sbp-description"
+            className="text-xs text-text-muted block mb-1"
+          >
             Description
           </label>
           <textarea
+            id="sbp-description"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             className="w-full h-20 px-3 py-2 text-sm bg-surface-canvas/50 border border-border-subtle rounded-md text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-brand-primary resize-none"

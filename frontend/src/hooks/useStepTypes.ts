@@ -1,8 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { WorkflowPhase, StepTypeInfo } from "@/types/unified-workflow";
-import { STEP_TYPES, fetchStepTypes } from "@/types/unified-workflow";
+import {
+  fetchStepTypes,
+  STEP_TYPES,
+  type StepTypeInfo,
+  type WorkflowPhase,
+} from "@/types/unified-workflow";
 
 type StepTypesMap = Record<WorkflowPhase, StepTypeInfo[]>;
 

@@ -31,6 +31,98 @@ export interface StateListProps {
   onSelectState: (stateId: string) => void;
 }
 
+function getElementCounts(state: State) {
+  const imageCount =
+    state.stateImages?.filter((img) =>
+      img.patterns?.some(
+        (p) => p.fixed && p.offsetX !== undefined && p.offsetY !== undefined
+      )
+    ).length || 0;
+  const regionCount = state.regions?.length || 0;
+  const locationCount = state.locations?.length || 0;
+  const total = imageCount + regionCount + locationCount;
+  return { imageCount, regionCount, locationCount, total };
+}
+
+interface StateItemProps {
+  state: State;
+  isSelected: boolean;
+  onSelectState: (stateId: string) => void;
+}
+
+function StateItem({ state, isSelected, onSelectState }: StateItemProps) {
+  const counts = getElementCounts(state);
+
+  return (
+    <div
+      className={`
+        flex flex-col gap-2 p-3 rounded-lg border cursor-pointer
+        transition-colors
+        ${
+          isSelected
+            ? "bg-primary/10 border-primary shadow-sm"
+            : "hover:bg-muted/50 hover:border-muted-foreground/20"
+        }
+      `}
+      onClick={() => onSelectState(state.id)}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            {state.initial && (
+              <Star
+                className="h-3 w-3 text-yellow-500 flex-shrink-0"
+                fill="currentColor"
+              />
+            )}
+            <div className="font-medium truncate">{state.name}</div>
+          </div>
+          {state.description && (
+            <div className="text-xs text-muted-foreground truncate mt-1">
+              {state.description}
+            </div>
+          )}
+        </div>
+        {counts.total > 0 && (
+          <Badge variant="outline" className="flex-shrink-0">
+            {counts.total}
+          </Badge>
+        )}
+      </div>
+
+      {/* Element counts breakdown */}
+      {counts.total > 0 && (
+        <div className="flex gap-2 text-xs text-muted-foreground">
+          {counts.imageCount > 0 && (
+            <span className="flex items-center gap-1">
+              <div className="w-2 h-2 bg-blue-500 rounded-sm" />
+              {counts.imageCount} img
+            </span>
+          )}
+          {counts.regionCount > 0 && (
+            <span className="flex items-center gap-1">
+              <div className="w-2 h-2 bg-green-500 rounded-sm" />
+              {counts.regionCount} rgn
+            </span>
+          )}
+          {counts.locationCount > 0 && (
+            <span className="flex items-center gap-1">
+              <div className="w-2 h-2 bg-orange-500 rounded-sm" />
+              {counts.locationCount} loc
+            </span>
+          )}
+        </div>
+      )}
+
+      {counts.total === 0 && (
+        <div className="text-xs text-muted-foreground italic">
+          No positioned elements
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function StateList({
   states,
   selectedStateId,
@@ -65,96 +157,6 @@ export function StateList({
 
     return { initialStates: initial, normalStates: normal };
   }, [filteredStates]);
-
-  // Count elements for a state
-  const getElementCounts = (state: State) => {
-    const imageCount =
-      state.stateImages?.filter((img) =>
-        img.patterns?.some(
-          (p) => p.fixed && p.offsetX !== undefined && p.offsetY !== undefined
-        )
-      ).length || 0;
-    const regionCount = state.regions?.length || 0;
-    const locationCount = state.locations?.length || 0;
-    const total = imageCount + regionCount + locationCount;
-
-    return { imageCount, regionCount, locationCount, total };
-  };
-
-  const renderStateItem = (state: State) => {
-    const isSelected = selectedStateId === state.id;
-    const counts = getElementCounts(state);
-
-    return (
-      <div
-        key={state.id}
-        className={`
-          flex flex-col gap-2 p-3 rounded-lg border cursor-pointer
-          transition-colors
-          ${
-            isSelected
-              ? "bg-primary/10 border-primary shadow-sm"
-              : "hover:bg-muted/50 hover:border-muted-foreground/20"
-          }
-        `}
-        onClick={() => onSelectState(state.id)}
-      >
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              {state.initial && (
-                <Star
-                  className="h-3 w-3 text-yellow-500 flex-shrink-0"
-                  fill="currentColor"
-                />
-              )}
-              <div className="font-medium truncate">{state.name}</div>
-            </div>
-            {state.description && (
-              <div className="text-xs text-muted-foreground truncate mt-1">
-                {state.description}
-              </div>
-            )}
-          </div>
-          {counts.total > 0 && (
-            <Badge variant="outline" className="flex-shrink-0">
-              {counts.total}
-            </Badge>
-          )}
-        </div>
-
-        {/* Element counts breakdown */}
-        {counts.total > 0 && (
-          <div className="flex gap-2 text-xs text-muted-foreground">
-            {counts.imageCount > 0 && (
-              <span className="flex items-center gap-1">
-                <div className="w-2 h-2 bg-blue-500 rounded-sm" />
-                {counts.imageCount} img
-              </span>
-            )}
-            {counts.regionCount > 0 && (
-              <span className="flex items-center gap-1">
-                <div className="w-2 h-2 bg-green-500 rounded-sm" />
-                {counts.regionCount} rgn
-              </span>
-            )}
-            {counts.locationCount > 0 && (
-              <span className="flex items-center gap-1">
-                <div className="w-2 h-2 bg-orange-500 rounded-sm" />
-                {counts.locationCount} loc
-              </span>
-            )}
-          </div>
-        )}
-
-        {counts.total === 0 && (
-          <div className="text-xs text-muted-foreground italic">
-            No positioned elements
-          </div>
-        )}
-      </div>
-    );
-  };
 
   return (
     <Card className="flex flex-col h-full">
@@ -213,7 +215,14 @@ export function StateList({
                     </div>
                   </div>
                   <div className="space-y-2">
-                    {initialStates.map(renderStateItem)}
+                    {initialStates.map((state) => (
+                      <StateItem
+                        key={state.id}
+                        state={state}
+                        isSelected={selectedStateId === state.id}
+                        onSelectState={onSelectState}
+                      />
+                    ))}
                   </div>
                 </div>
               )}
@@ -230,7 +239,14 @@ export function StateList({
                     </div>
                   )}
                   <div className="space-y-2">
-                    {normalStates.map(renderStateItem)}
+                    {normalStates.map((state) => (
+                      <StateItem
+                        key={state.id}
+                        state={state}
+                        isSelected={selectedStateId === state.id}
+                        onSelectState={onSelectState}
+                      />
+                    ))}
                   </div>
                 </div>
               )}

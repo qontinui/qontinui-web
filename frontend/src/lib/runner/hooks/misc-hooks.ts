@@ -8,8 +8,7 @@ import {
 } from "../api-client";
 import type { RunnerHealth } from "../types/task-run";
 import type { TestResult, ExecutionSpan } from "../types/testing";
-import type { LogSource } from "../types/log-sources";
-import type { GlobalLogSourceSettings } from "../types/log-sources";
+import type { GlobalLogSourceSettings, LogSource } from "../types/log-sources";
 import type { Hook } from "../types/hooks-config";
 import type { ErrorMonitorEntry } from "../types/error-monitor";
 import type { McpServerConfig } from "../types/settings";

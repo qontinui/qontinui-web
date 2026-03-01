@@ -3,8 +3,10 @@
 import { Button } from "@/components/ui/button";
 import { Plus, Check } from "lucide-react";
 import { useDraggable } from "@dnd-kit/core";
-import type { UnifiedWorkflow } from "@/types/unified-workflow";
-import { getTotalStepCount } from "@/types/unified-workflow";
+import {
+  getTotalStepCount,
+  type UnifiedWorkflow,
+} from "@/types/unified-workflow";
 
 interface WorkflowLibraryCardProps {
   workflow: UnifiedWorkflow;

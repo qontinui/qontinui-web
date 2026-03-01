@@ -9,6 +9,41 @@ import {
 } from "lucide-react";
 import { useExecutionDebugger } from "../../stores/execution-debugger-store";
 
+interface VariableValueProps {
+  value: unknown;
+  type: string;
+}
+
+function VariableValue({ value, type }: VariableValueProps) {
+  if (value === null) return <span className="text-text-muted">null</span>;
+  if (value === undefined)
+    return <span className="text-text-muted">undefined</span>;
+
+  const isArray = Array.isArray(value);
+
+  switch (type) {
+    case "string":
+      return (
+        <span className="text-green-600">&quot;{String(value)}&quot;</span>
+      );
+    case "number":
+      return <span className="text-blue-600">{String(value)}</span>;
+    case "boolean":
+      return <span className="text-purple-600">{String(value)}</span>;
+    case "object":
+      if (isArray) {
+        return (
+          <span className="text-text-muted">
+            [{(value as unknown[]).length} items]
+          </span>
+        );
+      }
+      return <span className="text-text-muted">{"{...}"}</span>;
+    default:
+      return <span className="text-text-secondary">{String(value)}</span>;
+  }
+}
+
 interface VariableNodeProps {
   name: string;
   value: unknown;
@@ -31,34 +66,6 @@ const VariableNode: React.FC<VariableNodeProps> = ({
   const isExpandable =
     type === "object" && value !== null && typeof value === "object";
   const isArray = Array.isArray(value);
-
-  const renderValue = () => {
-    if (value === null) return <span className="text-text-muted">null</span>;
-    if (value === undefined)
-      return <span className="text-text-muted">undefined</span>;
-
-    switch (type) {
-      case "string":
-        return (
-          <span className="text-green-600">&quot;{String(value)}&quot;</span>
-        );
-      case "number":
-        return <span className="text-blue-600">{String(value)}</span>;
-      case "boolean":
-        return <span className="text-purple-600">{String(value)}</span>;
-      case "object":
-        if (isArray) {
-          return (
-            <span className="text-text-muted">
-              [{(value as unknown[]).length} items]
-            </span>
-          );
-        }
-        return <span className="text-text-muted">{"{...}"}</span>;
-      default:
-        return <span className="text-text-secondary">{String(value)}</span>;
-    }
-  };
 
   const getChildEntries = () => {
     if (!isExpandable) return [];
@@ -112,7 +119,7 @@ const VariableNode: React.FC<VariableNodeProps> = ({
           </span>
         )}
         <span className="text-sm font-mono flex-1 text-right">
-          {renderValue()}
+          <VariableValue value={value} type={type} />
         </span>
       </div>
 
@@ -139,7 +146,6 @@ export const VariableInspector: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [showHistory, setShowHistory] = useState(false);
 
-  // Determine which variables are new or changed in the last action
   const recentChanges = variableHistory
     .filter((h) => h.actionIndex === currentActionIndex)
     .reduce(
@@ -150,18 +156,15 @@ export const VariableInspector: React.FC = () => {
       {} as Record<string, boolean>
     );
 
-  // Check if a variable is new (first time set)
   const isNewVariable = (name: string) => {
     const history = variableHistory.filter((h) => h.variableName === name);
     return history.length === 1 && recentChanges[name];
   };
 
-  // Filter variables based on search query
   const filteredVariables = Object.entries(context.variables).filter(([name]) =>
     name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Group variable history by variable name for history view
   const variableHistoryMap = variableHistory.reduce(
     (acc, entry) => {
       if (!acc[entry.variableName]) {
@@ -175,7 +178,6 @@ export const VariableInspector: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
       <div className="p-3 border-b bg-surface-raised">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
@@ -198,7 +200,6 @@ export const VariableInspector: React.FC = () => {
           </button>
         </div>
 
-        {/* Search */}
         <div className="relative">
           <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-text-muted" />
           <input
@@ -211,10 +212,8 @@ export const VariableInspector: React.FC = () => {
         </div>
       </div>
 
-      {/* Content */}
       <div className="flex-1 overflow-y-auto p-3">
         {!showHistory ? (
-          // Current Variables View
           <div className="space-y-1">
             {filteredVariables.length === 0 ? (
               <div className="text-center text-text-muted text-sm py-8">
@@ -236,7 +235,6 @@ export const VariableInspector: React.FC = () => {
             )}
           </div>
         ) : (
-          // Variable History View
           <div className="space-y-4">
             {Object.keys(context.variables).length === 0 ? (
               <div className="text-center text-text-muted text-sm py-8">
@@ -277,7 +275,6 @@ export const VariableInspector: React.FC = () => {
         )}
       </div>
 
-      {/* Loop Iterations Section */}
       {Object.keys(context.loopIterations).length > 0 && (
         <div className="border-t p-3 bg-surface-raised">
           <div className="flex items-center gap-2 mb-2">

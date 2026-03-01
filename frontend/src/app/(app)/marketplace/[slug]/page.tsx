@@ -45,8 +45,8 @@ import {
   formatDownloads,
   formatRating,
   getCategoryLabel,
+  type InstallStatus,
 } from "@/types/code-packages";
-import type { InstallStatus } from "@/types/code-packages";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 

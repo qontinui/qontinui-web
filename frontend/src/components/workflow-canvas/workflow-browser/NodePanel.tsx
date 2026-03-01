@@ -27,8 +27,11 @@ import {
 } from "../../ui/dropdown-menu";
 import { cn } from "../../../lib/utils";
 import { WorkflowBadges, ComplexityBadge } from "./EdgePanel";
-import { formatRelativeTime } from "./types";
-import type { EnhancedWorkflowItem, ColumnConfig } from "./types";
+import {
+  formatRelativeTime,
+  type ColumnConfig,
+  type EnhancedWorkflowItem,
+} from "./types";
 
 // ============================================================================
 // Shared Props

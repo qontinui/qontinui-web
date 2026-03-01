@@ -4,8 +4,11 @@ import { useState, useCallback } from "react";
 import { useRunnerHealth } from "@/lib/runner-api";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { usePageSpecs } from "@/hooks/usePageSpecs";
-import { useInspector } from "@/hooks/use-inspector";
-import type { ExternalElement, DiscoveredSpec } from "@/hooks/use-inspector";
+import {
+  useInspector,
+  type DiscoveredSpec,
+  type ExternalElement,
+} from "@/hooks/use-inspector";
 import {
   ElementsPanel,
   ActionsPanel,

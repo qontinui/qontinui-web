@@ -10,13 +10,13 @@
 
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
-import { getMCPClient } from "../services/mcp-client";
-import type {
-  GeneratedWorkflow,
-  WorkflowSuggestion,
-  ActionResult,
-  GenerationContext,
-  RefinementFeedback,
+import {
+  getMCPClient,
+  type ActionResult,
+  type GeneratedWorkflow,
+  type GenerationContext,
+  type RefinementFeedback,
+  type WorkflowSuggestion,
 } from "../services/mcp-client";
 import type { Workflow } from "../lib/action-schema/action-types";
 

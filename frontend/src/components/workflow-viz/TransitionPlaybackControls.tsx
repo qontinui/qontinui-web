@@ -25,8 +25,10 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-import type { TransitionAnimationState } from "@/types/transition-animation";
-import { PLAYBACK_SPEEDS } from "@/types/transition-animation";
+import {
+  PLAYBACK_SPEEDS,
+  type TransitionAnimationState,
+} from "@/types/transition-animation";
 import { cn } from "@/lib/utils";
 
 interface TransitionPlaybackControlsProps {

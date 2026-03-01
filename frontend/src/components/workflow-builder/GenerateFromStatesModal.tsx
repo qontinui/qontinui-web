@@ -20,12 +20,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import type {
-  UnifiedWorkflow,
-  UnifiedStep,
-  PromptStep,
+import {
+  generateStepId,
+  type PromptStep,
+  type UnifiedStep,
+  type UnifiedWorkflow,
 } from "@/types/unified-workflow";
-import { generateStepId } from "@/types/unified-workflow";
 
 interface GenerateFromStatesModalProps {
   isOpen: boolean;
@@ -234,8 +234,11 @@ export function GenerateFromStatesModal({
           {hasConfig && !isCheckingConfig && (
             <>
               <div className="space-y-1.5">
-                <Label className="text-xs text-text-muted">Workflow Name</Label>
+                <Label htmlFor="gfsm-name" className="text-xs text-text-muted">
+                  Workflow Name
+                </Label>
                 <Input
+                  id="gfsm-name"
                   value={workflowName}
                   onChange={(e) => setWorkflowName(e.target.value)}
                   placeholder="Enter workflow name..."
@@ -244,8 +247,14 @@ export function GenerateFromStatesModal({
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs text-text-muted">Description</Label>
+                <Label
+                  htmlFor="gfsm-description"
+                  className="text-xs text-text-muted"
+                >
+                  Description
+                </Label>
                 <Textarea
+                  id="gfsm-description"
                   value={workflowDescription}
                   onChange={(e) => setWorkflowDescription(e.target.value)}
                   placeholder="What does this workflow verify?"
@@ -256,10 +265,14 @@ export function GenerateFromStatesModal({
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-text-muted">
+                  <Label
+                    htmlFor="gfsm-max-iterations"
+                    className="text-xs text-text-muted"
+                  >
                     Max Iterations
                   </Label>
                   <Input
+                    id="gfsm-max-iterations"
                     type="number"
                     value={maxIterations}
                     onChange={(e) =>
@@ -271,10 +284,14 @@ export function GenerateFromStatesModal({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-text-muted">
+                  <Label
+                    htmlFor="gfsm-timeout"
+                    className="text-xs text-text-muted"
+                  >
                     State Timeout (sec)
                   </Label>
                   <Input
+                    id="gfsm-timeout"
                     type="number"
                     value={stateTimeout}
                     onChange={(e) =>

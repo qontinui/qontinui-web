@@ -1,8 +1,10 @@
 "use client";
 
 import { useMemo } from "react";
-import { useExplorationHistory } from "@/lib/runner-api";
-import type { ExplorationReport } from "@/lib/runner-api";
+import {
+  useExplorationHistory,
+  type ExplorationReport,
+} from "@/lib/runner-api";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

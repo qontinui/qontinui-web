@@ -11,9 +11,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import type { WorkflowPhase } from "@/types/unified-workflow";
-import { generateStepId } from "@/types/unified-workflow";
-import type { CommandStep } from "@/types/unified-workflow";
+import {
+  generateStepId,
+  type CommandStep,
+  type WorkflowPhase,
+} from "@/types/unified-workflow";
 
 // =============================================================================
 // Curl Parser
@@ -171,10 +173,14 @@ export function CurlImportDialog({
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+            <label
+              htmlFor="cid-curl-input"
+              className="block text-xs font-medium text-zinc-400 mb-1.5"
+            >
               Paste curl command
             </label>
             <Textarea
+              id="cid-curl-input"
               value={curlInput}
               onChange={(e) => {
                 setCurlInput(e.target.value);
@@ -243,8 +249,11 @@ export function CurlImportDialog({
         {/* Footer */}
         <div className="px-5 py-3 border-t border-zinc-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <label className="text-xs text-zinc-400">Add to phase:</label>
+            <label htmlFor="cid-phase" className="text-xs text-zinc-400">
+              Add to phase:
+            </label>
             <select
+              id="cid-phase"
               value={targetPhase}
               onChange={(e) => setTargetPhase(e.target.value as WorkflowPhase)}
               className="h-7 px-2 text-xs bg-zinc-800 border border-zinc-700 rounded text-zinc-300"

@@ -850,11 +850,12 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
                       {!isCollapsed && (
                         <div className="pl-9 pb-1">
                           {groups.map((group) => (
-                            <label
+                            <div
                               key={group.id}
                               data-ui-id={`spec-group-${slugId}`}
                               data-ui-label={`${pageUrl}: ${(group.description || group.name).slice(0, 60)}`}
                               className="flex items-start gap-2 p-1 rounded hover:bg-zinc-700/30 cursor-pointer"
+                              onClick={() => toggleGroup(group.id)}
                             >
                               <Checkbox
                                 data-ui-id={`spec-checkbox-${slugId}`}
@@ -865,7 +866,7 @@ export function SpecSourceSection({ onSpecsChanged }: SpecSourceSectionProps) {
                               <span className="text-xs text-zinc-400">
                                 {group.description || group.name}
                               </span>
-                            </label>
+                            </div>
                           ))}
                         </div>
                       )}

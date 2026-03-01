@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useRunnerHealth, runnerApi } from "@/lib/runner-api";
-import type { SelfHealingSettings } from "@/lib/runner-api";
+import {
+  runnerApi,
+  useRunnerHealth,
+  type SelfHealingSettings,
+} from "@/lib/runner-api";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

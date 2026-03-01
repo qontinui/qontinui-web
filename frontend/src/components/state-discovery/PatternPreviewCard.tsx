@@ -99,7 +99,6 @@ export function PatternPreviewCard({
                 if (e.key === "Enter") handleSaveName();
                 if (e.key === "Escape") handleCancelName();
               }}
-              autoFocus
             />
             <Button
               variant="ghost"

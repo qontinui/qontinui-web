@@ -44,12 +44,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
-import type {
-  ApplicationProfile,
-  DetectionStrategyType,
-  TuningResult,
+import {
+  TemplateCaptureService,
+  type ApplicationProfile,
+  type DetectionStrategyType,
+  type TuningResult,
 } from "@/services/template-capture-service";
-import { TemplateCaptureService } from "@/services/template-capture-service";
 import { httpClient } from "@/services/service-factory";
 
 export interface ApplicationProfileManagerProps {

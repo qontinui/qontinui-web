@@ -63,10 +63,14 @@ export function ApiPanel({
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <label className="text-xs text-text-muted uppercase tracking-wider mb-1 block">
+            <label
+              htmlFor="ap-action"
+              className="text-xs text-text-muted uppercase tracking-wider mb-1 block"
+            >
               Action
             </label>
             <Input
+              id="ap-action"
               placeholder="e.g. listTabs, getElements, connect..."
               value={apiAction}
               onChange={(e) => onApiActionChange(e.target.value)}
@@ -76,10 +80,14 @@ export function ApiPanel({
           </div>
 
           <div>
-            <label className="text-xs text-text-muted uppercase tracking-wider mb-1 block">
+            <label
+              htmlFor="ap-params"
+              className="text-xs text-text-muted uppercase tracking-wider mb-1 block"
+            >
               Params (JSON)
             </label>
             <textarea
+              id="ap-params"
               value={apiParams}
               onChange={(e) => onApiParamsChange(e.target.value)}
               placeholder="{}"

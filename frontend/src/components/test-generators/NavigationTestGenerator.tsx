@@ -313,10 +313,14 @@ export function NavigationTestGenerator({
               </h3>
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs text-neutral-400 mb-1">
+                  <label
+                    htmlFor="ntg-url"
+                    className="block text-xs text-neutral-400 mb-1"
+                  >
                     Target URL
                   </label>
                   <input
+                    id="ntg-url"
                     type="text"
                     value={targetUrl}
                     onChange={(e) => setTargetUrl(e.target.value)}
@@ -325,10 +329,14 @@ export function NavigationTestGenerator({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-neutral-400 mb-1">
+                  <label
+                    htmlFor="ntg-max-depth"
+                    className="block text-xs text-neutral-400 mb-1"
+                  >
                     Max Depth
                   </label>
                   <input
+                    id="ntg-max-depth"
                     type="number"
                     value={maxDepth}
                     onChange={(e) => setMaxDepth(Number(e.target.value))}
@@ -338,10 +346,14 @@ export function NavigationTestGenerator({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-neutral-400 mb-1">
+                  <label
+                    htmlFor="ntg-max-elements"
+                    className="block text-xs text-neutral-400 mb-1"
+                  >
                     Max Elements
                   </label>
                   <input
+                    id="ntg-max-elements"
                     type="number"
                     value={maxElements}
                     onChange={(e) => setMaxElements(Number(e.target.value))}

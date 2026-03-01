@@ -288,10 +288,11 @@ export function ComparisonReviewPanel({
 
               {/* Notes input */}
               <div className="space-y-2">
-                <label className="text-sm font-medium">
+                <label htmlFor="crp-notes" className="text-sm font-medium">
                   Review Notes (optional)
                 </label>
                 <Textarea
+                  id="crp-notes"
                   placeholder="Add notes about your decision..."
                   value={reviewNotes}
                   onChange={(e) => setReviewNotes(e.target.value)}

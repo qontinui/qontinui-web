@@ -170,9 +170,7 @@ export const PatternOptimizationTab: React.FC = () => {
             </select>
 
             <div className="mb-2">
-              <label className="text-xs text-text-muted block mb-1">
-                Screenshot
-              </label>
+              <p className="text-xs text-text-muted block mb-1">Screenshot</p>
               <ScreenshotSelector
                 selectedScreenshot={selectedScreenshotId}
                 onSelectScreenshot={setSelectedScreenshotId}
@@ -188,10 +186,14 @@ export const PatternOptimizationTab: React.FC = () => {
               className="w-full text-sm border rounded px-2 py-1 mb-2"
             />
             <div className="mb-2">
-              <label className="text-xs text-text-muted">
+              <label
+                htmlFor="pot-similarity"
+                className="text-xs text-text-muted"
+              >
                 Similarity: {(similarityThreshold * 100).toFixed(0)}%
               </label>
               <input
+                id="pot-similarity"
                 type="range"
                 min="50"
                 max="100"

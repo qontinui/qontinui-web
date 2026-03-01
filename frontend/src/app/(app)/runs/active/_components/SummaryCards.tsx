@@ -22,8 +22,12 @@ import {
   Monitor,
   GitBranch,
 } from "lucide-react";
-import type { WidgetId, WidgetConfig } from "../_lib";
-import { transformVerification, transformKnowledge } from "../_lib";
+import {
+  transformKnowledge,
+  transformVerification,
+  type WidgetConfig,
+  type WidgetId,
+} from "../_lib";
 
 // ---------------------------------------------------------------------------
 // Step type sets for filtering

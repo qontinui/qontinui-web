@@ -449,10 +449,14 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
           {/* Basic Information */}
           <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+              <label
+                htmlFor="hp-name"
+                className="text-sm font-medium text-muted-foreground mb-1.5 block"
+              >
                 Name <span className="text-red-400">*</span>
               </label>
               <Input
+                id="hp-name"
                 placeholder="e.g., Slack Error Notification"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -460,10 +464,14 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
               />
             </div>
             <div>
-              <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+              <label
+                htmlFor="hp-description"
+                className="text-sm font-medium text-muted-foreground mb-1.5 block"
+              >
                 Description
               </label>
               <Textarea
+                id="hp-description"
                 placeholder="Optional description..."
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
@@ -475,9 +483,9 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
 
           {/* Trigger Selection */}
           <div>
-            <label className="text-sm font-medium text-muted-foreground mb-2 block">
+            <p className="text-sm font-medium text-muted-foreground mb-2 block">
               Trigger
-            </label>
+            </p>
             <div className="grid grid-cols-2 gap-2">
               {TRIGGERS.map((t) => (
                 <button
@@ -504,9 +512,9 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
 
           {/* Action Type Selection */}
           <div>
-            <label className="text-sm font-medium text-muted-foreground mb-2 block">
+            <p className="text-sm font-medium text-muted-foreground mb-2 block">
               Action Type
-            </label>
+            </p>
             <div className="grid grid-cols-2 gap-2">
               {ACTION_TYPES.map((a) => {
                 const Icon = a.icon;
@@ -539,17 +547,21 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
 
           {/* Action Configuration */}
           <div className="space-y-4">
-            <label className="text-sm font-medium text-muted-foreground block">
+            <p className="text-sm font-medium text-muted-foreground block">
               Action Configuration
-            </label>
+            </p>
 
             {actionType === "command" && (
               <div className="space-y-3">
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">
+                  <label
+                    htmlFor="hp-cmd-command"
+                    className="text-xs text-muted-foreground mb-1 block"
+                  >
                     Command <span className="text-red-400">*</span>
                   </label>
                   <Textarea
+                    id="hp-cmd-command"
                     placeholder='echo "Task {{task_name}} completed"'
                     value={cmdCommand}
                     onChange={(e) => setCmdCommand(e.target.value)}
@@ -562,10 +574,14 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                   </p>
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">
+                  <label
+                    htmlFor="hp-cmd-workdir"
+                    className="text-xs text-muted-foreground mb-1 block"
+                  >
                     Working Directory
                   </label>
                   <Input
+                    id="hp-cmd-workdir"
                     placeholder="e.g., C:\path\to\directory"
                     value={cmdWorkingDir}
                     onChange={(e) => setCmdWorkingDir(e.target.value)}
@@ -573,10 +589,14 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">
+                  <label
+                    htmlFor="hp-cmd-timeout"
+                    className="text-xs text-muted-foreground mb-1 block"
+                  >
                     Timeout (seconds)
                   </label>
                   <Input
+                    id="hp-cmd-timeout"
                     type="number"
                     min={1}
                     max={600}
@@ -586,9 +606,9 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">
+                  <p className="text-xs text-muted-foreground mb-1 block">
                     Environment Variables
-                  </label>
+                  </p>
                   {cmdEnvVars.map(([key, val], i) => (
                     <div key={i} className="flex items-center gap-2 mb-2">
                       <Input
@@ -641,9 +661,9 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
               <div className="space-y-3">
                 <div className="grid grid-cols-4 gap-2">
                   <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">
+                    <p className="text-xs text-muted-foreground mb-1 block">
                       Method
-                    </label>
+                    </p>
                     <Select
                       value={webhookMethod}
                       onValueChange={setWebhookMethod}
@@ -661,10 +681,14 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                     </Select>
                   </div>
                   <div className="col-span-3">
-                    <label className="text-xs text-muted-foreground mb-1 block">
+                    <label
+                      htmlFor="hp-webhook-url"
+                      className="text-xs text-muted-foreground mb-1 block"
+                    >
                       URL <span className="text-red-400">*</span>
                     </label>
                     <Input
+                      id="hp-webhook-url"
                       placeholder="https://hooks.slack.com/services/..."
                       value={webhookUrl}
                       onChange={(e) => setWebhookUrl(e.target.value)}
@@ -673,9 +697,9 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">
+                  <p className="text-xs text-muted-foreground mb-1 block">
                     Headers
-                  </label>
+                  </p>
                   {webhookHeaders.map(([key, val], i) => (
                     <div key={i} className="flex items-center gap-2 mb-2">
                       <Input
@@ -726,10 +750,14 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                   </Button>
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">
+                  <label
+                    htmlFor="hp-webhook-body"
+                    className="text-xs text-muted-foreground mb-1 block"
+                  >
                     Request Body
                   </label>
                   <Textarea
+                    id="hp-webhook-body"
                     placeholder='{"text": "Task {{task_name}} completed with status {{status}}"}'
                     value={webhookBody}
                     onChange={(e) => setWebhookBody(e.target.value)}
@@ -741,10 +769,14 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                   </p>
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">
+                  <label
+                    htmlFor="hp-webhook-timeout"
+                    className="text-xs text-muted-foreground mb-1 block"
+                  >
                     Timeout (seconds)
                   </label>
                   <Input
+                    id="hp-webhook-timeout"
                     type="number"
                     min={1}
                     max={300}
@@ -759,9 +791,9 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
             {actionType === "log" && (
               <div className="space-y-3">
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">
+                  <p className="text-xs text-muted-foreground mb-1 block">
                     Log Level
-                  </label>
+                  </p>
                   <Select value={logLevel} onValueChange={setLogLevel}>
                     <SelectTrigger className="bg-muted border-border text-sm w-40">
                       <SelectValue />
@@ -776,10 +808,14 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                   </Select>
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">
+                  <label
+                    htmlFor="hp-log-message"
+                    className="text-xs text-muted-foreground mb-1 block"
+                  >
                     Message <span className="text-red-400">*</span>
                   </label>
                   <Textarea
+                    id="hp-log-message"
                     placeholder="Task {{task_name}} iteration {{iteration}} status: {{status}}"
                     value={logMessage}
                     onChange={(e) => setLogMessage(e.target.value)}
@@ -797,10 +833,14 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
             {actionType === "notification" && (
               <div className="space-y-3">
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">
+                  <label
+                    htmlFor="hp-notif-title"
+                    className="text-xs text-muted-foreground mb-1 block"
+                  >
                     Title <span className="text-red-400">*</span>
                   </label>
                   <Input
+                    id="hp-notif-title"
                     placeholder="Task {{task_name}} Complete"
                     value={notifTitle}
                     onChange={(e) => setNotifTitle(e.target.value)}
@@ -808,10 +848,14 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">
+                  <label
+                    htmlFor="hp-notif-body"
+                    className="text-xs text-muted-foreground mb-1 block"
+                  >
                     Body <span className="text-red-400">*</span>
                   </label>
                   <Textarea
+                    id="hp-notif-body"
                     placeholder="Completed iteration {{iteration}} with status {{status}}"
                     value={notifBody}
                     onChange={(e) => setNotifBody(e.target.value)}
@@ -830,9 +874,9 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
           <div>
             <div className="flex items-center justify-between mb-2">
               <div>
-                <label className="text-sm font-medium text-muted-foreground block">
+                <p className="text-sm font-medium text-muted-foreground block">
                   Conditions
-                </label>
+                </p>
                 <p className="text-xs text-muted-foreground">
                   Hook will only execute if all conditions are met
                 </p>
@@ -931,14 +975,18 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
 
           {/* Execution Settings */}
           <div className="space-y-3">
-            <label className="text-sm font-medium text-muted-foreground block">
+            <p className="text-sm font-medium text-muted-foreground block">
               Execution Settings
-            </label>
+            </p>
             <div>
-              <label className="text-xs text-muted-foreground mb-1 block">
+              <label
+                htmlFor="hp-execution-order"
+                className="text-xs text-muted-foreground mb-1 block"
+              >
                 Execution Order
               </label>
               <Input
+                id="hp-execution-order"
                 type="number"
                 value={executionOrder}
                 onChange={(e) => setExecutionOrder(Number(e.target.value))}
@@ -949,16 +997,29 @@ function HookEditor({ hook, onSave, onClose }: HookEditorProps) {
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <Switch checked={enabled} onCheckedChange={setEnabled} />
-              <label className="text-sm text-muted-foreground">Enabled</label>
+              <Switch
+                id="hp-enabled"
+                checked={enabled}
+                onCheckedChange={setEnabled}
+              />
+              <label
+                htmlFor="hp-enabled"
+                className="text-sm text-muted-foreground"
+              >
+                Enabled
+              </label>
             </div>
             <div className="flex items-center gap-3">
               <Switch
+                id="hp-continue-on-failure"
                 checked={continueOnFailure}
                 onCheckedChange={setContinueOnFailure}
               />
               <div>
-                <label className="text-sm text-muted-foreground">
+                <label
+                  htmlFor="hp-continue-on-failure"
+                  className="text-sm text-muted-foreground"
+                >
                   Continue on failure
                 </label>
                 <p className="text-xs text-muted-foreground">
