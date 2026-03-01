@@ -35,8 +35,7 @@ import { ExplorationConfigPanel } from "@/components/ui-bridge/ExplorationConfig
 import { useUIBridgeExploration } from "@/hooks/useUIBridgeExploration";
 import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
 import { useStateMachineDiscovery } from "../_hooks/useStateMachineDiscovery";
-import { useSDKApps } from "../_hooks/useSDKApps";
-import type { SDKApp } from "../_hooks/useSDKApps";
+import { useSDKApps, type SDKApp } from "../_hooks/useSDKApps";
 
 const LOCAL_RUNNER_URL = "http://localhost:9876";
 const DIRECT_CONNECTION_ID = -1;

@@ -94,7 +94,10 @@ export function TransitionMatrixView({
                   <td
                     key={toState.id}
                     className="border border-border-default p-0 cursor-pointer hover:opacity-80 transition-opacity"
+                    role="button"
+                    tabIndex={0}
                     onClick={() => onTransitionClick(fromState.id, toState.id)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onTransitionClick(fromState.id, toState.id); } }}
                   >
                     <div
                       className="h-12 flex items-center justify-center"

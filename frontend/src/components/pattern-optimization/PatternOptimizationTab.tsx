@@ -129,7 +129,10 @@ export const PatternOptimizationTab: React.FC = () => {
             {patterns.map((pattern) => (
               <div
                 key={pattern.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => setSelectedPattern(pattern)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedPattern(pattern); } }}
                 className={`p-2 border rounded cursor-pointer hover:bg-surface-raised ${
                   selectedPattern?.id === pattern.id
                     ? "border-blue-500 bg-blue-50"
@@ -170,9 +173,9 @@ export const PatternOptimizationTab: React.FC = () => {
             </select>
 
             <div className="mb-2">
-              <label className="text-xs text-text-muted block mb-1">
+              <p className="text-xs text-text-muted block mb-1">
                 Screenshot
-              </label>
+              </p>
               <ScreenshotSelector
                 selectedScreenshot={selectedScreenshotId}
                 onSelectScreenshot={setSelectedScreenshotId}
@@ -188,10 +191,11 @@ export const PatternOptimizationTab: React.FC = () => {
               className="w-full text-sm border rounded px-2 py-1 mb-2"
             />
             <div className="mb-2">
-              <label className="text-xs text-text-muted">
+              <label htmlFor="pot-similarity" className="text-xs text-text-muted">
                 Similarity: {(similarityThreshold * 100).toFixed(0)}%
               </label>
               <input
+                id="pot-similarity"
                 type="range"
                 min="50"
                 max="100"

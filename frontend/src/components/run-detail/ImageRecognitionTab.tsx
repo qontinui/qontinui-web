@@ -1,8 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { useTaskRunEvents } from "@/lib/runner-api";
-import type { TaskRunEvent } from "@/lib/runner-api";
+import { useTaskRunEvents, type TaskRunEvent } from "@/lib/runner-api";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,

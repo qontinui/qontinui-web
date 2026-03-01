@@ -178,7 +178,10 @@ export function ReproductionPathViewer({
                   {/* Step Header */}
                   <div
                     className="flex items-start gap-3 p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+                    role="button"
+                    tabIndex={0}
                     onClick={() => toggleStep(index)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleStep(index); } }}
                   >
                     {/* Step Number / Checkbox */}
                     <button

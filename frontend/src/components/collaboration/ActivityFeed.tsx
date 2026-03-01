@@ -389,7 +389,10 @@ export function ActivityFeed({
                           "flex gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors",
                           onActivityClick && "cursor-pointer"
                         )}
+                        role="button"
+                        tabIndex={0}
                         onClick={() => onActivityClick?.(activity)}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onActivityClick?.(activity); } }}
                       >
                         <Avatar
                           src={activity.user_avatar}

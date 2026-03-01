@@ -108,10 +108,11 @@ export function ExportDialog({
         <div className="space-y-4">
           {/* Format Selection */}
           <div>
-            <label className="block text-sm font-medium text-text-secondary mb-2">
+            <label htmlFor="export-format" className="block text-sm font-medium text-text-secondary mb-2">
               Format
             </label>
             <select
+              id="export-format"
               value={format}
               onChange={(e) => setFormat(e.target.value as ExportFormat)}
               className="w-full bg-surface-canvas border border-border-default text-white rounded-md px-3 py-2 focus:border-brand-primary focus:ring-1 focus:ring-brand-primary"
@@ -126,10 +127,11 @@ export function ExportDialog({
 
           {/* Filename */}
           <div>
-            <label className="block text-sm font-medium text-text-secondary mb-2">
+            <label htmlFor="export-filename" className="block text-sm font-medium text-text-secondary mb-2">
               Filename
             </label>
             <input
+              id="export-filename"
               type="text"
               value={filename}
               onChange={(e) => setFilename(e.target.value)}
@@ -142,10 +144,11 @@ export function ExportDialog({
           {/* Quality (for PNG) */}
           {format === "png" && (
             <div>
-              <label className="block text-sm font-medium text-text-secondary mb-2">
+              <label htmlFor="export-quality" className="block text-sm font-medium text-text-secondary mb-2">
                 Quality: {Math.round(quality * 100)}%
               </label>
               <input
+                id="export-quality"
                 type="range"
                 min="0.1"
                 max="1"
@@ -161,10 +164,11 @@ export function ExportDialog({
           {/* Background (for images) */}
           {(format === "png" || format === "svg") && (
             <div>
-              <label className="block text-sm font-medium text-text-secondary mb-2">
+              <label htmlFor="export-background" className="block text-sm font-medium text-text-secondary mb-2">
                 Background
               </label>
               <select
+                id="export-background"
                 value={background}
                 onChange={(e) =>
                   setBackground(
@@ -342,9 +346,9 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
         <div className="space-y-4">
           {/* Import Method Selection */}
           <div>
-            <label className="block text-sm font-medium text-text-secondary mb-2">
+            <p className="block text-sm font-medium text-text-secondary mb-2">
               Import From
-            </label>
+            </p>
             <div className="flex space-x-2">
               <button
                 onClick={() => setImportMethod("file")}
@@ -373,10 +377,11 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
           {/* URL Input */}
           {importMethod === "url" && (
             <div>
-              <label className="block text-sm font-medium text-text-secondary mb-2">
+              <label htmlFor="import-workflow-url" className="block text-sm font-medium text-text-secondary mb-2">
                 Workflow URL
               </label>
               <input
+                id="import-workflow-url"
                 type="url"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}

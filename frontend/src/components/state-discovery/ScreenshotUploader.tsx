@@ -642,7 +642,10 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
                     ? "border-blue-500 shadow-md"
                     : "border-border-subtle hover:border-border-default"
                 )}
+                role="button"
+                tabIndex={0}
                 onClick={() => onSelectScreenshot(index)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectScreenshot(index); } }}
               >
                 {/* Thumbnail */}
                 <div className="aspect-video bg-surface-raised flex items-center justify-center overflow-hidden">

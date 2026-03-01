@@ -213,7 +213,10 @@ export default function UsersTab() {
               <div
                 key={user.id}
                 className="p-4 hover:bg-muted/50 transition-colors cursor-pointer flex items-center gap-4"
+                role="button"
+                tabIndex={0}
                 onClick={() => setSelectedUser(user)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedUser(user); } }}
                 data-ui-id={`admin-users-item-${user.id}`}
               >
                 <div className="flex-1 min-w-0">

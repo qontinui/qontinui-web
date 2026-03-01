@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useTaskRun } from "@/lib/runner-api";
-import type { TaskRun } from "@/lib/runner-api";
+import { useTaskRun, type TaskRun } from "@/lib/runner-api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";

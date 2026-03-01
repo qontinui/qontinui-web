@@ -215,7 +215,10 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
               return (
                 <div
                   key={pattern.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setSelectedPattern(pattern)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedPattern(pattern); } }}
                   className={`p-3 border rounded-lg cursor-pointer hover:bg-surface-raised/80 transition-colors ${
                     selectedPattern?.id === pattern.id
                       ? "border-blue-500 bg-blue-50"
@@ -280,7 +283,7 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
             {/* Similarity Threshold Slider */}
             <div className="mb-3">
               <div className="flex justify-between items-center mb-1">
-                <label className="text-xs font-medium text-text-secondary">
+                <label htmlFor="pot-similarity-threshold" className="text-xs font-medium text-text-secondary">
                   Similarity Threshold
                 </label>
                 <span className="text-xs font-mono bg-surface-raised px-1.5 py-0.5 rounded">
@@ -288,6 +291,7 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                 </span>
               </div>
               <input
+                id="pot-similarity-threshold"
                 type="range"
                 min="50"
                 max="100"
@@ -308,10 +312,11 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
 
             {/* Color Averaging Method */}
             <div className="mb-3">
-              <label className="text-xs font-medium text-text-secondary block mb-1">
+              <label htmlFor="pot-color-averaging" className="text-xs font-medium text-text-secondary block mb-1">
                 Pixel Averaging Method
               </label>
               <select
+                id="pot-color-averaging"
                 value={extractionConfig.colorAveraging}
                 onChange={(e) =>
                   setExtractionConfig((prev) => ({
@@ -493,7 +498,7 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                       </h3>
                       <div className="mb-2">
                         <div className="flex justify-between items-center mb-1">
-                          <label className="text-xs font-medium">
+                          <label htmlFor="pot-preview-threshold" className="text-xs font-medium">
                             New Threshold
                           </label>
                           <span className="text-xs font-mono bg-white px-1.5 py-0.5 rounded">
@@ -501,6 +506,7 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                           </span>
                         </div>
                         <input
+                          id="pot-preview-threshold"
                           type="range"
                           min="50"
                           max="100"
@@ -597,7 +603,7 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                       {showConfidenceMap && (
                         <div className="mt-3">
                           <div className="flex justify-between items-center">
-                            <label className="text-xs font-medium text-text-muted">
+                            <label htmlFor="pot-mask-opacity" className="text-xs font-medium text-text-muted">
                               Confidence Overlay Opacity
                             </label>
                             <span className="text-xs font-mono bg-white px-1.5 py-0.5 rounded">
@@ -605,6 +611,7 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
                             </span>
                           </div>
                           <input
+                            id="pot-mask-opacity"
                             type="range"
                             min="0"
                             max="100"

@@ -2,8 +2,7 @@
 
 import { useState, useMemo } from "react";
 import type { DiscoveredLink, PageNodeStatus } from "@/lib/ui-bridge/types";
-import type { TreeNode } from "./tree-builder";
-import { buildTree } from "./tree-builder";
+import { buildTree, type TreeNode } from "./tree-builder";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ChevronRight,
@@ -95,7 +94,7 @@ function TreeNodeView({
         style={{ paddingLeft: `${depth * 14 + 6}px` }}
       >
         {hasChildren ? (
-          <span onClick={handleChevronClick} className="flex-shrink-0">
+          <span onClick={handleChevronClick} className="flex-shrink-0" role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpanded(!expanded); } }}>
             {expanded ? (
               <ChevronDown className="w-3 h-3 text-text-muted" />
             ) : (

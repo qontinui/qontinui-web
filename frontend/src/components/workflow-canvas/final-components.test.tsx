@@ -14,8 +14,7 @@ import { ConversionPreview } from "./ConversionPreview";
 import { LayoutSuggestions } from "./LayoutSuggestions";
 import { SequentialListView } from "../workflow-editor/SequentialListView";
 import { ConversionWizard } from "./ConversionWizard";
-import type { Workflow } from "@/lib/action-schema/action-types";
-import { createAction } from "@/lib/action-schema/action-types";
+import { createAction, type Workflow } from "@/lib/action-schema/action-types";
 import { LayoutStyle } from "@/lib/workflow-layout/auto-layout";
 
 // Mock the layout-service module

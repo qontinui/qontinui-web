@@ -180,10 +180,13 @@ export default function ProjectsTab() {
                   <div
                     key={project.id}
                     className="p-4 hover:bg-muted/50 transition-colors cursor-pointer"
+                    role="button"
+                    tabIndex={0}
                     onClick={() => {
                       setSelectedProjectId(project.id);
                       setIsModalOpen(true);
                     }}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedProjectId(project.id); setIsModalOpen(true); } }}
                     data-ui-id={`admin-projects-item-${project.id}`}
                   >
                     <div className="flex items-start gap-4">

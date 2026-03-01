@@ -11,12 +11,7 @@ import { Play, Trash2 } from "lucide-react";
 import { recordingService } from "@/services/service-factory";
 import { ProcessingMonitor } from "@/components/recordings/ProcessingMonitor";
 import { StateStructureReview } from "@/components/recordings/StateStructureReview";
-import {
-  RecordingStatusLabels,
-  getConfidenceLevel,
-  getConfidenceColor,
-} from "@/types/recording";
-import type { Recording } from "@/types/recording";
+import { getConfidenceColor, getConfidenceLevel, RecordingStatusLabels, type Recording } from "@/types/recording";
 import { formatDistanceToNow } from "date-fns";
 
 export default function RecordingDetailPage() {

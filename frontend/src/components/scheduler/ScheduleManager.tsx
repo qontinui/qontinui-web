@@ -18,8 +18,7 @@ import { ScheduleEditor } from "./ScheduleEditor";
 import { ExecutionHistory } from "./ExecutionHistory";
 import type { Schedule } from "@/stores/automation";
 import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
-import { useWorkflows } from "@/hooks/automation";
-import { useSchedules } from "@/hooks/automation";
+import { useSchedules, useWorkflows } from "@/hooks/automation";
 
 export function ScheduleManager() {
   const { workflows } = useWorkflows();

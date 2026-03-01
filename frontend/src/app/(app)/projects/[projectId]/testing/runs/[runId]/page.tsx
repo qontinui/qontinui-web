@@ -322,7 +322,10 @@ export default function TestRunDetailPage() {
                             >
                               <div
                                 className="flex items-center gap-4 p-4 cursor-pointer hover:bg-white/5"
+                                role="button"
+                                tabIndex={0}
                                 onClick={() => toggleStep(transition.id)}
+                                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleStep(transition.id); } }}
                               >
                                 <div className="flex-shrink-0 w-8 h-8 rounded-full bg-background/50 flex items-center justify-center text-xs font-bold">
                                   {index + 1}

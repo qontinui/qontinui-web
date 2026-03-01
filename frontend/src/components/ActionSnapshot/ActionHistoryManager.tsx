@@ -143,10 +143,11 @@ export const ActionHistoryManager: React.FC<ActionHistoryManagerProps> = ({
           {/* Screenshot Selector */}
           {screenshots.length > 0 && (
             <div className="mb-4">
-              <label className="block text-sm font-medium mb-2">
+              <label htmlFor="action-history-screenshot" className="block text-sm font-medium mb-2">
                 Current Screenshot
               </label>
               <select
+                id="action-history-screenshot"
                 value={selectedScreenshot?.id || ""}
                 onChange={(e) => {
                   const screenshot = screenshots.find(

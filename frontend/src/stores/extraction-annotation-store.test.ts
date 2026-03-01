@@ -12,11 +12,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
-import { useExtractionAnnotationStore } from "./extraction-annotation-store";
-import type {
-  AnnotatedElement,
-  BoundingBox,
-} from "./extraction-annotation-store";
+import { useExtractionAnnotationStore, type AnnotatedElement, type BoundingBox } from "./extraction-annotation-store";
 
 // Mock the annotation persistence service
 vi.mock("@/services/annotation-persistence", () => ({

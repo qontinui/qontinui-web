@@ -9,9 +9,8 @@
  */
 
 import { create } from "zustand";
-import { devtools } from "zustand/middleware";
+import { createJSONStorage, devtools, persist } from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
-import { persist, createJSONStorage } from "zustand/middleware";
 import type { Region } from "@/types/pattern-optimization";
 import type { MonitorInfo } from "@/components/common/ScreenshotPicker";
 import type { ProcessingMode } from "@/services/image-extraction";

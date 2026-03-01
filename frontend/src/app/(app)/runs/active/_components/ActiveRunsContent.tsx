@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import type { TaskRun } from "@/lib/runner-api";
+import { runnerApi, type TaskRun } from "@/lib/runner-api";
 import {
   useEventTriggeredFetch,
   useRunnerEvent,
@@ -14,15 +14,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ControlBar } from "@/components/active-dashboard/ControlBar";
 import { BottomBar } from "@/components/active-dashboard/BottomBar";
-import { runnerApi } from "@/lib/runner-api";
 import {
   AUTO_RUN_AFTER_GENERATE_KEY,
   type AutoRunAfterGenerate,
 } from "@/components/workflow-builder/AiGeneratePanel";
 import { toast } from "sonner";
 import { Activity, RefreshCw } from "lucide-react";
-import type { WidgetId } from "../_lib";
-import { detectWidgets } from "../_lib";
+import { detectWidgets, type WidgetId } from "../_lib";
 import { ActiveRunsBar } from "./ActiveRunsBar";
 import { DashboardLayout } from "./DashboardLayout";
 import { TabBar } from "./TabBar";

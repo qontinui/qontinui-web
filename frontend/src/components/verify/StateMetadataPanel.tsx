@@ -25,21 +25,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import {
-  Eye,
-  MapPin,
-  Image as ImageIcon,
-  Square,
-  ArrowRight,
-  ArrowLeft,
-  Info,
-} from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronDown, Eye, Image as ImageIcon, Info, MapPin, Square } from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { ChevronDown } from "lucide-react";
 
 export interface StateMetadataPanelProps {
   state: State | null;

@@ -44,6 +44,38 @@ interface VisualDiffViewerProps {
  */
 const DEFAULT_DIFF_REGIONS: DiffRegion[] = [];
 
+function DiffRegionOverlays({
+  showDiffRegions,
+  diffRegions,
+  zoom,
+}: {
+  showDiffRegions: boolean;
+  diffRegions: DiffRegion[];
+  zoom: number;
+}) {
+  if (!showDiffRegions || diffRegions.length === 0) return null;
+
+  return (
+    <div className="absolute inset-0 pointer-events-none">
+      {diffRegions.map((region, index) => (
+        <div
+          key={index}
+          className="absolute border-2 border-red-500 bg-red-500/20"
+          style={{
+            left: `${region.x}px`,
+            top: `${region.y}px`,
+            width: `${region.width}px`,
+            height: `${region.height}px`,
+            transform: `scale(${zoom})`,
+            transformOrigin: "top left",
+          }}
+          title={`Change: ${(region.change_percentage * 100).toFixed(1)}%`}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function VisualDiffViewer({
   baselineUrl,
   screenshotUrl,
@@ -121,30 +153,6 @@ export function VisualDiffViewer({
       </div>
     );
   }
-
-  const renderDiffRegionOverlays = () => {
-    if (!showDiffRegions || diffRegions.length === 0) return null;
-
-    return (
-      <div className="absolute inset-0 pointer-events-none">
-        {diffRegions.map((region, index) => (
-          <div
-            key={index}
-            className="absolute border-2 border-red-500 bg-red-500/20"
-            style={{
-              left: `${region.x}px`,
-              top: `${region.y}px`,
-              width: `${region.width}px`,
-              height: `${region.height}px`,
-              transform: `scale(${zoom})`,
-              transformOrigin: "top left",
-            }}
-            title={`Change: ${(region.change_percentage * 100).toFixed(1)}%`}
-          />
-        ))}
-      </div>
-    );
-  };
 
   return (
     <div
@@ -376,7 +384,7 @@ export function VisualDiffViewer({
                       height={600}
                       className="w-full h-auto"
                     />
-                    {renderDiffRegionOverlays()}
+                    <DiffRegionOverlays showDiffRegions={showDiffRegions} diffRegions={diffRegions} zoom={zoom} />
                   </div>
                 ) : (
                   <div className="flex items-center justify-center h-48 text-muted-foreground">
@@ -450,7 +458,7 @@ export function VisualDiffViewer({
                   className="w-full h-auto"
                 />
               </div>
-              {renderDiffRegionOverlays()}
+              <DiffRegionOverlays showDiffRegions={showDiffRegions} diffRegions={diffRegions} zoom={zoom} />
             </div>
           </div>
         )}
@@ -490,7 +498,7 @@ export function VisualDiffViewer({
                 className="absolute top-0 bottom-0 w-0.5 bg-primary"
                 style={{ left: `${swipePosition}%` }}
               />
-              {renderDiffRegionOverlays()}
+              <DiffRegionOverlays showDiffRegions={showDiffRegions} diffRegions={diffRegions} zoom={zoom} />
             </div>
           </div>
         )}
@@ -521,7 +529,7 @@ export function VisualDiffViewer({
                     height={600}
                     className="w-full h-auto"
                   />
-                  {renderDiffRegionOverlays()}
+                  <DiffRegionOverlays showDiffRegions={showDiffRegions} diffRegions={diffRegions} zoom={zoom} />
                 </>
               ) : (
                 <div className="flex items-center justify-center h-48 text-muted-foreground">

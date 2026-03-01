@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -15,9 +15,7 @@ import {
   X,
   Move,
 } from "lucide-react";
-import { useState } from "react";
-import type { InputEvent, InputEventType } from "@/types/capture";
-import { getButtonName } from "@/types/capture";
+import { getButtonName, type InputEvent, type InputEventType } from "@/types/capture";
 
 export interface InputEventsSidePanelProps {
   events: InputEvent[];
@@ -106,30 +104,8 @@ interface EventItemProps {
   onClick: () => void;
 }
 
-const EventItem: React.FC<EventItemProps> = ({ event, isActive, onClick }) => {
-  const config = EVENT_CONFIG[event.eventType];
-  const Icon = config.icon;
-  const itemRef = useRef<HTMLDivElement>(null);
-
-  // Auto-scroll to active event
-  useEffect(() => {
-    if (isActive && itemRef.current) {
-      itemRef.current.scrollIntoView({
-        behavior: "smooth",
-        block: "nearest",
-      });
-    }
-  }, [isActive]);
-
-  const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    const ms = Math.floor((seconds % 1) * 1000);
-    return `${mins}:${secs.toString().padStart(2, "0")}.${ms.toString().padStart(3, "0")}`;
-  };
-
-  const renderEventDetails = () => {
-    switch (event.eventType) {
+function EventDetails({ event }: { event: InputEvent }) {
+  switch (event.eventType) {
       case "mouse_click":
       case "mouse_down":
       case "mouse_up":
@@ -213,6 +189,27 @@ const EventItem: React.FC<EventItemProps> = ({ event, isActive, onClick }) => {
       default:
         return null;
     }
+}
+
+const EventItem: React.FC<EventItemProps> = ({ event, isActive, onClick }) => {
+  const config = EVENT_CONFIG[event.eventType];
+  const Icon = config.icon;
+  const itemRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isActive && itemRef.current) {
+      itemRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+      });
+    }
+  }, [isActive]);
+
+  const formatTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    const ms = Math.floor((seconds % 1) * 1000);
+    return `${mins}:${secs.toString().padStart(2, "0")}.${ms.toString().padStart(3, "0")}`;
   };
 
   return (
@@ -221,7 +218,10 @@ const EventItem: React.FC<EventItemProps> = ({ event, isActive, onClick }) => {
       className={`relative p-3 border-l-4 rounded-r cursor-pointer transition-all ${
         config.borderColor
       } ${isActive ? `${config.bgColor} ring-2 ring-blue-500 ring-opacity-50` : "bg-white hover:bg-surface-raised/80"} hover:shadow-md`}
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick?.(); } }}
     >
       {/* Event Header */}
       <div className="flex items-start justify-between mb-2">
@@ -237,7 +237,7 @@ const EventItem: React.FC<EventItemProps> = ({ event, isActive, onClick }) => {
       </div>
 
       {/* Event Details */}
-      {renderEventDetails()}
+      <EventDetails event={event} />
 
       {/* Active Indicator */}
       {isActive && (

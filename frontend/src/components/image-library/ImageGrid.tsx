@@ -265,7 +265,10 @@ export function ImageList({
                   "border-b border-border-subtle hover:bg-surface-raised cursor-pointer transition-colors",
                   selectedImageId === image.id && "bg-brand-success/10"
                 )}
+                role="button"
+                tabIndex={0}
                 onClick={() => onSelectImage(image.id)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectImage(image.id); } }}
               >
                 <td className="py-2">
                   <Checkbox

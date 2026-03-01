@@ -27,6 +27,200 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
+function ConflictValue({ value }: { value: unknown }) {
+  if (value === null || value === undefined) {
+    return <span className="text-muted-foreground italic">empty</span>;
+  }
+  if (typeof value === "object") {
+    return (
+      <pre className="text-xs bg-muted p-2 rounded overflow-x-auto">
+        {JSON.stringify(value, null, 2)}
+      </pre>
+    );
+  }
+  return <span className="font-mono text-sm">{String(value)}</span>;
+}
+
+interface ConflictDiffProps {
+  change: ConflictChange;
+  viewMode: "split" | "unified";
+  mergeChoices: Record<string, "local" | "remote">;
+  remoteUserName: string;
+  onChoose: (field: string, choice: "local" | "remote") => void;
+}
+
+function ConflictDiff({ change, viewMode, mergeChoices, remoteUserName, onChoose }: ConflictDiffProps) {
+  if (!change.conflicted) {
+    return (
+      <div className="p-3 border rounded-lg bg-muted/30">
+        <div className="flex items-center gap-2 mb-2">
+          <Check className="h-4 w-4 text-green-500" />
+          <span className="text-sm font-medium">{change.field}</span>
+          <Badge
+            variant="outline"
+            className="bg-green-500/10 text-green-500 border-green-500/20"
+          >
+            No Conflict
+          </Badge>
+        </div>
+        <div className="text-sm"><ConflictValue value={change.local_value} /></div>
+      </div>
+    );
+  }
+
+  if (viewMode === "split") {
+    return (
+      <div className="border rounded-lg overflow-hidden">
+        <div className="flex items-center justify-between bg-muted px-3 py-2 border-b">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-orange-500" />
+            <span className="text-sm font-medium">{change.field}</span>
+          </div>
+          <Badge
+            variant="outline"
+            className="bg-orange-500/10 text-orange-500 border-orange-500/20"
+          >
+            Conflict
+          </Badge>
+        </div>
+        <div className="grid grid-cols-2 divide-x">
+          {/* Local Version */}
+          <div
+            className={cn(
+              "p-3 cursor-pointer transition-colors",
+              mergeChoices[change.field] === "local"
+                ? "bg-green-500/10"
+                : "hover:bg-muted/50"
+            )}
+            role="button"
+            tabIndex={0}
+            onClick={() => onChoose(change.field, "local")}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onChoose(change.field, "local");
+              }
+            }}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <User className="h-3 w-3" />
+                <span className="text-xs font-medium text-muted-foreground">
+                  Your Changes
+                </span>
+              </div>
+              {mergeChoices[change.field] === "local" && (
+                <Check className="h-4 w-4 text-green-500" />
+              )}
+            </div>
+            <div className="text-sm"><ConflictValue value={change.local_value} /></div>
+          </div>
+
+          {/* Remote Version */}
+          <div
+            className={cn(
+              "p-3 cursor-pointer transition-colors",
+              mergeChoices[change.field] === "remote"
+                ? "bg-blue-500/10"
+                : "hover:bg-muted/50"
+            )}
+            role="button"
+            tabIndex={0}
+            onClick={() => onChoose(change.field, "remote")}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onChoose(change.field, "remote");
+              }
+            }}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Users className="h-3 w-3" />
+                <span className="text-xs font-medium text-muted-foreground">
+                  {remoteUserName}&apos;s Changes
+                </span>
+              </div>
+              {mergeChoices[change.field] === "remote" && (
+                <Check className="h-4 w-4 text-blue-500" />
+              )}
+            </div>
+            <div className="text-sm"><ConflictValue value={change.remote_value} /></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Unified view
+  return (
+    <div className="border rounded-lg overflow-hidden">
+      <div className="flex items-center justify-between bg-muted px-3 py-2 border-b">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-orange-500" />
+          <span className="text-sm font-medium">{change.field}</span>
+        </div>
+      </div>
+      <div className="space-y-2 p-3">
+        <div
+          className={cn(
+            "p-2 rounded border-l-2 cursor-pointer",
+            mergeChoices[change.field] === "local"
+              ? "border-green-500 bg-green-500/10"
+              : "border-red-500 bg-red-500/5"
+          )}
+          role="button"
+          tabIndex={0}
+          onClick={() => onChoose(change.field, "local")}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onChoose(change.field, "local");
+            }
+          }}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <X className="h-3 w-3 text-red-500" />
+            <span className="text-xs font-medium">Your Changes</span>
+            {mergeChoices[change.field] === "local" && (
+              <Check className="h-3 w-3 text-green-500 ml-auto" />
+            )}
+          </div>
+          <div className="text-sm"><ConflictValue value={change.local_value} /></div>
+        </div>
+        <div
+          className={cn(
+            "p-2 rounded border-l-2 cursor-pointer",
+            mergeChoices[change.field] === "remote"
+              ? "border-blue-500 bg-blue-500/10"
+              : "border-border-default bg-surface-raised/5"
+          )}
+          role="button"
+          tabIndex={0}
+          onClick={() => onChoose(change.field, "remote")}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onChoose(change.field, "remote");
+            }
+          }}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <ChevronRight className="h-3 w-3 text-blue-500" />
+            <span className="text-xs font-medium">
+              {remoteUserName}&apos;s Changes
+            </span>
+            {mergeChoices[change.field] === "remote" && (
+              <Check className="h-3 w-3 text-blue-500 ml-auto" />
+            )}
+          </div>
+          <div className="text-sm"><ConflictValue value={change.remote_value} /></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export interface ConflictChange {
   field: string;
   local_value: unknown;
@@ -161,224 +355,8 @@ export function ConflictResolutionDialog({
     }
   };
 
-  const renderValue = (value: unknown) => {
-    if (value === null || value === undefined) {
-      return <span className="text-muted-foreground italic">empty</span>;
-    }
-    if (typeof value === "object") {
-      return (
-        <pre className="text-xs bg-muted p-2 rounded overflow-x-auto">
-          {JSON.stringify(value, null, 2)}
-        </pre>
-      );
-    }
-    return <span className="font-mono text-sm">{String(value)}</span>;
-  };
-
-  const renderDiff = (change: ConflictChange) => {
-    if (!change.conflicted) {
-      return (
-        <div className="p-3 border rounded-lg bg-muted/30">
-          <div className="flex items-center gap-2 mb-2">
-            <Check className="h-4 w-4 text-green-500" />
-            <span className="text-sm font-medium">{change.field}</span>
-            <Badge
-              variant="outline"
-              className="bg-green-500/10 text-green-500 border-green-500/20"
-            >
-              No Conflict
-            </Badge>
-          </div>
-          <div className="text-sm">{renderValue(change.local_value)}</div>
-        </div>
-      );
-    }
-
-    if (viewMode === "split") {
-      return (
-        <div key={change.field} className="border rounded-lg overflow-hidden">
-          <div className="flex items-center justify-between bg-muted px-3 py-2 border-b">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-orange-500" />
-              <span className="text-sm font-medium">{change.field}</span>
-            </div>
-            <Badge
-              variant="outline"
-              className="bg-orange-500/10 text-orange-500 border-orange-500/20"
-            >
-              Conflict
-            </Badge>
-          </div>
-          <div className="grid grid-cols-2 divide-x">
-            {/* Local Version */}
-            <div
-              className={cn(
-                "p-3 cursor-pointer transition-colors",
-                mergeChoices[change.field] === "local"
-                  ? "bg-green-500/10"
-                  : "hover:bg-muted/50"
-              )}
-              role="button"
-              tabIndex={0}
-              onClick={() =>
-                setMergeChoices((prev) => ({
-                  ...prev,
-                  [change.field]: "local",
-                }))
-              }
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  setMergeChoices((prev) => ({
-                    ...prev,
-                    [change.field]: "local",
-                  }));
-                }
-              }}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <User className="h-3 w-3" />
-                  <span className="text-xs font-medium text-muted-foreground">
-                    Your Changes
-                  </span>
-                </div>
-                {mergeChoices[change.field] === "local" && (
-                  <Check className="h-4 w-4 text-green-500" />
-                )}
-              </div>
-              <div className="text-sm">{renderValue(change.local_value)}</div>
-            </div>
-
-            {/* Remote Version */}
-            <div
-              className={cn(
-                "p-3 cursor-pointer transition-colors",
-                mergeChoices[change.field] === "remote"
-                  ? "bg-blue-500/10"
-                  : "hover:bg-muted/50"
-              )}
-              role="button"
-              tabIndex={0}
-              onClick={() =>
-                setMergeChoices((prev) => ({
-                  ...prev,
-                  [change.field]: "remote",
-                }))
-              }
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  setMergeChoices((prev) => ({
-                    ...prev,
-                    [change.field]: "remote",
-                  }));
-                }
-              }}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <Users className="h-3 w-3" />
-                  <span className="text-xs font-medium text-muted-foreground">
-                    {currentConflict?.remote_user_name ?? "Unknown user"}&apos;s
-                    Changes
-                  </span>
-                </div>
-                {mergeChoices[change.field] === "remote" && (
-                  <Check className="h-4 w-4 text-blue-500" />
-                )}
-              </div>
-              <div className="text-sm">{renderValue(change.remote_value)}</div>
-            </div>
-          </div>
-        </div>
-      );
-    } else {
-      // Unified view
-      return (
-        <div key={change.field} className="border rounded-lg overflow-hidden">
-          <div className="flex items-center justify-between bg-muted px-3 py-2 border-b">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-orange-500" />
-              <span className="text-sm font-medium">{change.field}</span>
-            </div>
-          </div>
-          <div className="space-y-2 p-3">
-            <div
-              className={cn(
-                "p-2 rounded border-l-2 cursor-pointer",
-                mergeChoices[change.field] === "local"
-                  ? "border-green-500 bg-green-500/10"
-                  : "border-red-500 bg-red-500/5"
-              )}
-              role="button"
-              tabIndex={0}
-              onClick={() =>
-                setMergeChoices((prev) => ({
-                  ...prev,
-                  [change.field]: "local",
-                }))
-              }
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  setMergeChoices((prev) => ({
-                    ...prev,
-                    [change.field]: "local",
-                  }));
-                }
-              }}
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <X className="h-3 w-3 text-red-500" />
-                <span className="text-xs font-medium">Your Changes</span>
-                {mergeChoices[change.field] === "local" && (
-                  <Check className="h-3 w-3 text-green-500 ml-auto" />
-                )}
-              </div>
-              <div className="text-sm">{renderValue(change.local_value)}</div>
-            </div>
-            <div
-              className={cn(
-                "p-2 rounded border-l-2 cursor-pointer",
-                mergeChoices[change.field] === "remote"
-                  ? "border-blue-500 bg-blue-500/10"
-                  : "border-border-default bg-surface-raised/5"
-              )}
-              role="button"
-              tabIndex={0}
-              onClick={() =>
-                setMergeChoices((prev) => ({
-                  ...prev,
-                  [change.field]: "remote",
-                }))
-              }
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  setMergeChoices((prev) => ({
-                    ...prev,
-                    [change.field]: "remote",
-                  }));
-                }
-              }}
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <ChevronRight className="h-3 w-3 text-blue-500" />
-                <span className="text-xs font-medium">
-                  {currentConflict?.remote_user_name ?? "Unknown user"}&apos;s
-                  Changes
-                </span>
-                {mergeChoices[change.field] === "remote" && (
-                  <Check className="h-3 w-3 text-blue-500 ml-auto" />
-                )}
-              </div>
-              <div className="text-sm">{renderValue(change.remote_value)}</div>
-            </div>
-          </div>
-        </div>
-      );
-    }
+  const handleChoose = (field: string, choice: "local" | "remote") => {
+    setMergeChoices((prev) => ({ ...prev, [field]: choice }));
   };
 
   if (!currentConflict) {
@@ -461,7 +439,9 @@ export function ConflictResolutionDialog({
                   <AlertTriangle className="h-4 w-4 text-orange-500" />
                   Conflicting Changes ({conflictedChanges.length})
                 </h3>
-                {conflictedChanges.map((change) => renderDiff(change))}
+                {conflictedChanges.map((change) => (
+                  <ConflictDiff key={change.field} change={change} viewMode={viewMode} mergeChoices={mergeChoices} remoteUserName={currentConflict.remote_user_name ?? "Unknown user"} onChoose={handleChoose} />
+                ))}
               </>
             )}
 
@@ -472,7 +452,9 @@ export function ConflictResolutionDialog({
                   <Check className="h-4 w-4 text-green-500" />
                   Non-conflicting Changes ({nonConflictedChanges.length})
                 </h3>
-                {nonConflictedChanges.map((change) => renderDiff(change))}
+                {nonConflictedChanges.map((change) => (
+                  <ConflictDiff key={change.field} change={change} viewMode={viewMode} mergeChoices={mergeChoices} remoteUserName={currentConflict.remote_user_name ?? "Unknown user"} onChoose={handleChoose} />
+                ))}
               </>
             )}
           </div>

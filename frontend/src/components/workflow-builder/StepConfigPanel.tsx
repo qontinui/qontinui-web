@@ -127,10 +127,11 @@ function ShellCommandFields({
   return (
     <>
       <div>
-        <label className="block text-xs font-medium text-zinc-400 mb-1">
+        <label htmlFor="shell-command" className="block text-xs font-medium text-zinc-400 mb-1">
           Command
         </label>
         <textarea
+          id="shell-command"
           className="w-full min-h-[80px] px-3 py-1.5 font-mono bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 text-sm focus:ring-2 focus:ring-blue-500/50"
           placeholder="e.g., git status"
           value={step.command ?? ""}
@@ -138,10 +139,11 @@ function ShellCommandFields({
         />
       </div>
       <div>
-        <label className="block text-xs font-medium text-zinc-400 mb-1">
+        <label htmlFor="shell-working-dir" className="block text-xs font-medium text-zinc-400 mb-1">
           Working Directory
         </label>
         <input
+          id="shell-working-dir"
           type="text"
           className="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 text-sm focus:ring-2 focus:ring-blue-500/50"
           placeholder="Relative to project root"
@@ -153,10 +155,11 @@ function ShellCommandFields({
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-medium text-zinc-400 mb-1">
+          <label htmlFor="shell-timeout" className="block text-xs font-medium text-zinc-400 mb-1">
             Timeout (seconds)
           </label>
           <input
+            id="shell-timeout"
             type="number"
             className="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 text-sm focus:ring-2 focus:ring-blue-500/50"
             value={step.timeout_seconds ?? 60}
@@ -206,10 +209,11 @@ function CheckFieldsConfig({
   return (
     <>
       <div>
-        <label className="block text-xs font-medium text-zinc-400 mb-1">
+        <label htmlFor="check-type" className="block text-xs font-medium text-zinc-400 mb-1">
           Check Type
         </label>
         <select
+          id="check-type"
           value={step.check_type ?? "custom_command"}
           onChange={(e) => onUpdate({ check_type: e.target.value })}
           className="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 text-sm focus:ring-2 focus:ring-blue-500/50"
@@ -226,10 +230,11 @@ function CheckFieldsConfig({
         </select>
       </div>
       <div>
-        <label className="block text-xs font-medium text-zinc-400 mb-1">
+        <label htmlFor="check-command" className="block text-xs font-medium text-zinc-400 mb-1">
           Command
         </label>
         <input
+          id="check-command"
           type="text"
           value={step.command ?? ""}
           onChange={(e) => onUpdate({ command: e.target.value })}
@@ -238,10 +243,11 @@ function CheckFieldsConfig({
         />
       </div>
       <div>
-        <label className="block text-xs font-medium text-zinc-400 mb-1">
+        <label htmlFor="check-timeout" className="block text-xs font-medium text-zinc-400 mb-1">
           Timeout (seconds)
         </label>
         <input
+          id="check-timeout"
           type="number"
           className="w-32 px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 text-sm focus:ring-2 focus:ring-blue-500/50"
           value={step.timeout_seconds ?? 60}
@@ -277,10 +283,11 @@ function TestFieldsConfig({
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-xs font-medium text-zinc-400 mb-1">
+        <label htmlFor="test-type" className="block text-xs font-medium text-zinc-400 mb-1">
           Test Type
         </label>
         <select
+          id="test-type"
           value={step.test_type ?? "custom_command"}
           onChange={(e) => onUpdate({ test_type: e.target.value as TestType })}
           className="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 text-sm focus:ring-2 focus:ring-blue-500/50"
@@ -297,10 +304,11 @@ function TestFieldsConfig({
         step.test_type === "python" ||
         step.test_type === "repository") && (
         <div>
-          <label className="block text-xs font-medium text-zinc-400 mb-1">
+          <label htmlFor="test-command" className="block text-xs font-medium text-zinc-400 mb-1">
             Command
           </label>
           <input
+            id="test-command"
             type="text"
             value={step.command ?? ""}
             onChange={(e) => onUpdate({ command: e.target.value })}
@@ -319,10 +327,11 @@ function TestFieldsConfig({
       {step.test_type === "playwright" && (
         <>
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">
+            <label htmlFor="playwright-execution-mode" className="block text-xs font-medium text-zinc-400 mb-1">
               Execution Mode
             </label>
             <select
+              id="playwright-execution-mode"
               value={step.execution_mode ?? "independent"}
               onChange={(e) =>
                 onUpdate({
@@ -336,10 +345,11 @@ function TestFieldsConfig({
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">
+            <label htmlFor="playwright-target-url" className="block text-xs font-medium text-zinc-400 mb-1">
               Target URL (optional)
             </label>
             <input
+              id="playwright-target-url"
               type="text"
               value={step.target_url ?? ""}
               onChange={(e) =>
@@ -353,10 +363,11 @@ function TestFieldsConfig({
       )}
 
       <div>
-        <label className="block text-xs font-medium text-zinc-400 mb-1">
+        <label htmlFor="test-timeout" className="block text-xs font-medium text-zinc-400 mb-1">
           Timeout (seconds)
         </label>
         <input
+          id="test-timeout"
           type="number"
           className="w-32 px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 text-sm focus:ring-2 focus:ring-blue-500/50"
           value={step.timeout_seconds ?? 60}
@@ -383,10 +394,11 @@ function UiBridgeConfig({
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-xs font-medium text-zinc-400 mb-1">
+        <label htmlFor="uibridge-action" className="block text-xs font-medium text-zinc-400 mb-1">
           Action
         </label>
         <select
+          id="uibridge-action"
           value={step.action ?? "snapshot"}
           onChange={(e) =>
             onUpdate({ action: e.target.value as UiBridgeStep["action"] })
@@ -403,10 +415,11 @@ function UiBridgeConfig({
 
       {step.action === "navigate" && (
         <div>
-          <label className="block text-xs font-medium text-zinc-400 mb-1">
+          <label htmlFor="uibridge-url" className="block text-xs font-medium text-zinc-400 mb-1">
             URL
           </label>
           <input
+            id="uibridge-url"
             type="url"
             value={step.url ?? ""}
             onChange={(e) => onUpdate({ url: e.target.value })}
@@ -418,10 +431,11 @@ function UiBridgeConfig({
 
       {step.action === "execute" && (
         <div>
-          <label className="block text-xs font-medium text-zinc-400 mb-1">
+          <label htmlFor="uibridge-instruction" className="block text-xs font-medium text-zinc-400 mb-1">
             Instruction
           </label>
           <textarea
+            id="uibridge-instruction"
             value={step.instruction ?? ""}
             onChange={(e) => onUpdate({ instruction: e.target.value })}
             placeholder="Click the submit button, fill in the form..."
@@ -434,10 +448,11 @@ function UiBridgeConfig({
       {step.action === "assert" && (
         <>
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">
+            <label htmlFor="uibridge-assert-target" className="block text-xs font-medium text-zinc-400 mb-1">
               Target Element
             </label>
             <input
+              id="uibridge-assert-target"
               type="text"
               value={step.target ?? ""}
               onChange={(e) => onUpdate({ target: e.target.value })}
@@ -446,10 +461,11 @@ function UiBridgeConfig({
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">
+            <label htmlFor="uibridge-assert-type" className="block text-xs font-medium text-zinc-400 mb-1">
               Assert Type
             </label>
             <select
+              id="uibridge-assert-type"
               value={step.assert_type ?? "exists"}
               onChange={(e) =>
                 onUpdate({
@@ -466,10 +482,11 @@ function UiBridgeConfig({
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">
+            <label htmlFor="uibridge-assert-expected" className="block text-xs font-medium text-zinc-400 mb-1">
               Expected Value
             </label>
             <input
+              id="uibridge-assert-expected"
               type="text"
               value={step.expected ?? ""}
               onChange={(e) => onUpdate({ expected: e.target.value })}
@@ -483,10 +500,11 @@ function UiBridgeConfig({
       {step.action === "compare" && (
         <>
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">
+            <label htmlFor="compare-target-url" className="block text-xs font-medium text-zinc-400 mb-1">
               Target URL
             </label>
             <input
+              id="compare-target-url"
               type="url"
               value={step.url ?? ""}
               onChange={(e) => onUpdate({ url: e.target.value })}
@@ -495,10 +513,11 @@ function UiBridgeConfig({
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">
+            <label htmlFor="compare-mode" className="block text-xs font-medium text-zinc-400 mb-1">
               Comparison Mode
             </label>
             <select
+              id="compare-mode"
               value={step.comparison_mode ?? "structural"}
               onChange={(e) =>
                 onUpdate({
@@ -514,10 +533,11 @@ function UiBridgeConfig({
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">
+            <label htmlFor="compare-snapshot-id" className="block text-xs font-medium text-zinc-400 mb-1">
               Reference Snapshot ID
             </label>
             <input
+              id="compare-snapshot-id"
               type="text"
               value={step.reference_snapshot_id ?? ""}
               onChange={(e) =>
@@ -530,10 +550,11 @@ function UiBridgeConfig({
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">
+            <label htmlFor="compare-severity-threshold" className="block text-xs font-medium text-zinc-400 mb-1">
               Severity Threshold
             </label>
             <select
+              id="compare-severity-threshold"
               value={step.severity_threshold ?? "major"}
               onChange={(e) =>
                 onUpdate({
@@ -556,10 +577,11 @@ function UiBridgeConfig({
       )}
 
       <div>
-        <label className="block text-xs font-medium text-zinc-400 mb-1">
+        <label htmlFor="uibridge-timeout-ms" className="block text-xs font-medium text-zinc-400 mb-1">
           Timeout (ms)
         </label>
         <input
+          id="uibridge-timeout-ms"
           type="number"
           className="w-32 px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 text-sm focus:ring-2 focus:ring-emerald-500/50"
           value={step.timeout_ms ?? (step.action === "compare" ? 120000 : 5000)}
@@ -590,10 +612,11 @@ function PromptConfig({
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-xs font-medium text-zinc-400 mb-1">
+        <label htmlFor="prompt-content" className="block text-xs font-medium text-zinc-400 mb-1">
           Prompt Content
         </label>
         <textarea
+          id="prompt-content"
           value={step.content ?? ""}
           onChange={(e) => onUpdate({ content: e.target.value })}
           placeholder="Enter the prompt for the AI agent..."
@@ -603,10 +626,11 @@ function PromptConfig({
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-medium text-zinc-400 mb-1">
+          <label htmlFor="prompt-provider" className="block text-xs font-medium text-zinc-400 mb-1">
             Provider (optional)
           </label>
           <select
+            id="prompt-provider"
             value={step.provider ?? ""}
             onChange={(e) =>
               onUpdate({ provider: e.target.value || undefined })
@@ -619,10 +643,11 @@ function PromptConfig({
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-zinc-400 mb-1">
+          <label htmlFor="prompt-model" className="block text-xs font-medium text-zinc-400 mb-1">
             Model (optional)
           </label>
           <select
+            id="prompt-model"
             value={step.model ?? ""}
             onChange={(e) => onUpdate({ model: e.target.value || undefined })}
             className="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 text-sm focus:ring-2 focus:ring-blue-500/50"
@@ -635,6 +660,39 @@ function PromptConfig({
       </div>
     </div>
   );
+}
+
+// =============================================================================
+// StepConfig
+// =============================================================================
+
+interface StepConfigProps {
+  step: CommandStep | UiBridgeStep | PromptStep | { type: string };
+  onUpdate: (updates: Record<string, unknown>) => void;
+  phase: WorkflowPhase;
+}
+
+function StepConfig({ step, onUpdate, phase }: StepConfigProps) {
+  switch (step.type) {
+    case "command":
+      return <CommandConfig step={step as CommandStep} onUpdate={onUpdate} />;
+    case "ui_bridge":
+      return <UiBridgeConfig step={step as UiBridgeStep} onUpdate={onUpdate} />;
+    case "prompt":
+      return (
+        <PromptConfig
+          step={step as PromptStep}
+          onUpdate={onUpdate}
+          phase={phase}
+        />
+      );
+    default:
+      return (
+        <div className="text-zinc-500 text-sm p-4">
+          Unknown step type: {(step as { type: string }).type}
+        </div>
+      );
+  }
 }
 
 // =============================================================================
@@ -659,28 +717,6 @@ export function StepConfigPanel() {
     updateStep({ ...selectedStep, ...updates } as typeof selectedStep, phase);
   };
 
-  const renderConfig = () => {
-    switch (selectedStep.type) {
-      case "command":
-        return <CommandConfig step={selectedStep} onUpdate={handleUpdate} />;
-      case "ui_bridge":
-        return <UiBridgeConfig step={selectedStep} onUpdate={handleUpdate} />;
-      case "prompt":
-        return (
-          <PromptConfig
-            step={selectedStep}
-            onUpdate={handleUpdate}
-            phase={phase}
-          />
-        );
-      default:
-        return (
-          <div className="text-zinc-500 text-sm p-4">
-            Unknown step type: {(selectedStep as { type: string }).type}
-          </div>
-        );
-    }
-  };
 
   return (
     <div className="flex flex-col h-full">
@@ -701,10 +737,11 @@ export function StepConfigPanel() {
         <div className="p-4 space-y-4">
           {/* Common: Step name */}
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">
+            <label htmlFor="step-name" className="block text-xs font-medium text-zinc-400 mb-1">
               Step Name
             </label>
             <input
+              id="step-name"
               type="text"
               className="w-full px-3 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500"
               value={selectedStep.name}
@@ -713,7 +750,7 @@ export function StepConfigPanel() {
           </div>
 
           {/* Type-specific config */}
-          {renderConfig()}
+          <StepConfig step={selectedStep} onUpdate={handleUpdate} phase={phase} />
         </div>
       </ScrollArea>
     </div>

@@ -90,10 +90,11 @@ export function SettingsPanel() {
   function renderNumberSetting(def: NumberSettingDef) {
     return (
       <div key={def.key}>
-        <label className="block text-xs font-medium text-zinc-400 mb-1">
+        <label htmlFor={`setting-${def.key}`} className="block text-xs font-medium text-zinc-400 mb-1">
           {def.label}
         </label>
         <Input
+          id={`setting-${def.key}`}
           type="number"
           className="bg-zinc-800 border-zinc-700 text-zinc-200 text-sm"
           placeholder={def.placeholder}
@@ -120,10 +121,11 @@ export function SettingsPanel() {
   function renderSelectSetting(def: SelectSettingDef) {
     return (
       <div key={def.key}>
-        <label className="block text-xs font-medium text-zinc-400 mb-1">
+        <label htmlFor={`setting-${def.key}`} className="block text-xs font-medium text-zinc-400 mb-1">
           {def.label}
         </label>
         <select
+          id={`setting-${def.key}`}
           className={selectClass}
           value={((workflow as never)[def.key] as string) ?? def.defaultValue}
           onChange={(e) =>
@@ -151,10 +153,11 @@ export function SettingsPanel() {
       case "name_input":
         return (
           <div key={def.key}>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">
+            <label htmlFor="setting-workflow-name" className="block text-xs font-medium text-zinc-400 mb-1">
               Name
             </label>
             <Input
+              id="setting-workflow-name"
               className="bg-zinc-800 border-zinc-700 text-zinc-200 text-sm"
               placeholder="Workflow name"
               value={workflow.name}
@@ -166,10 +169,11 @@ export function SettingsPanel() {
       case "description_input":
         return (
           <div key={def.key}>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">
+            <label htmlFor="setting-workflow-description" className="block text-xs font-medium text-zinc-400 mb-1">
               Description
             </label>
             <Textarea
+              id="setting-workflow-description"
               className="min-h-[60px] bg-zinc-800 border-zinc-700 text-zinc-200 text-sm"
               placeholder="What this workflow does..."
               value={workflow.description}
@@ -181,10 +185,11 @@ export function SettingsPanel() {
       case "category_input":
         return (
           <div key={def.key}>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">
+            <label htmlFor="setting-workflow-category" className="block text-xs font-medium text-zinc-400 mb-1">
               Category
             </label>
             <Input
+              id="setting-workflow-category"
               className="bg-zinc-800 border-zinc-700 text-zinc-200 text-sm"
               placeholder="general"
               value={workflow.category}
@@ -196,10 +201,11 @@ export function SettingsPanel() {
       case "tags_input":
         return (
           <div key={def.key}>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">
+            <label htmlFor="setting-workflow-tags" className="block text-xs font-medium text-zinc-400 mb-1">
               Tags
             </label>
             <Input
+              id="setting-workflow-tags"
               className="bg-zinc-800 border-zinc-700 text-zinc-200 text-sm"
               placeholder="Comma-separated"
               value={workflow.tags.join(", ")}
@@ -221,11 +227,12 @@ export function SettingsPanel() {
         if (!provider) return null;
         return (
           <div key={def.key}>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">
+            <label htmlFor="setting-ai-model" className="block text-xs font-medium text-zinc-400 mb-1">
               AI Model
             </label>
             {models ? (
               <select
+                id="setting-ai-model"
                 className={selectClass}
                 value={workflow.model ?? ""}
                 onChange={(e) =>
@@ -240,6 +247,7 @@ export function SettingsPanel() {
               </select>
             ) : (
               <Input
+                id="setting-ai-model"
                 className="bg-zinc-800 border-zinc-700 text-zinc-200 text-sm"
                 placeholder="Default"
                 value={workflow.model ?? ""}
@@ -255,10 +263,11 @@ export function SettingsPanel() {
       case "log_source_select":
         return (
           <div key={def.key}>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">
+            <label htmlFor="setting-log-source" className="block text-xs font-medium text-zinc-400 mb-1">
               Log Sources
             </label>
             <select
+              id="setting-log-source"
               className={selectClass}
               value={getLogSourceValue(
                 workflow.log_source_selection as LogSourceSelection | undefined
@@ -287,9 +296,9 @@ export function SettingsPanel() {
         }>;
         return (
           <div key={def.key}>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">
+            <p className="block text-xs font-medium text-zinc-400 mb-1">
               Health Check URLs
-            </label>
+            </p>
             {urls.map((hc, i) => (
               <div key={i} className="flex gap-2 mb-1">
                 <Input

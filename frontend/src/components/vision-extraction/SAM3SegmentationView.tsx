@@ -204,9 +204,12 @@ export function SAM3SegmentationView({
                         ? "border-success bg-success-muted"
                         : "hover:bg-accent"
                     }`}
+                    role="button"
+                    tabIndex={0}
                     onClick={() =>
                       setSelectedId(isSelected ? null : segment.id)
                     }
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId(isSelected ? null : segment.id); } }}
                   >
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">

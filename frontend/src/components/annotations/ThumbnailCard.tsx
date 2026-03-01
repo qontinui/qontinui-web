@@ -62,7 +62,10 @@ export function ThumbnailCard({
           : "border-border hover:border-primary/50"
       )}
       style={{ width: "120px" }}
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick?.(); } }}
     >
       {/* Screenshot Number Badge */}
       <Badge

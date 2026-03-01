@@ -62,6 +62,156 @@ interface TutorialMenuProps {
 type CompletionFilter = "all" | "completed" | "in-progress" | "not-started";
 
 // ============================================================================
+// Sub-components
+// ============================================================================
+
+function DifficultyBadge({ difficulty }: { difficulty: DifficultyLevel }) {
+  const variants: Record<
+    DifficultyLevel,
+    { icon: React.ReactNode; color: string }
+  > = {
+    beginner: {
+      icon: <Circle className="h-3 w-3" />,
+      color: "bg-green-500/10 text-green-700",
+    },
+    intermediate: {
+      icon: <Star className="h-3 w-3" />,
+      color: "bg-yellow-500/10 text-yellow-700",
+    },
+    advanced: {
+      icon: <Zap className="h-3 w-3" />,
+      color: "bg-red-500/10 text-red-700",
+    },
+  };
+
+  const { icon, color } = variants[difficulty];
+
+  return (
+    <Badge variant="secondary" className={`${color} flex items-center gap-1`}>
+      {icon}
+      <span className="capitalize">{difficulty}</span>
+    </Badge>
+  );
+}
+
+function StatusBadge({
+  status,
+}: {
+  status: "completed" | "in-progress" | "not-started";
+}) {
+  if (status === "completed") {
+    return (
+      <Badge
+        variant="secondary"
+        className="bg-green-500/10 text-green-700 flex items-center gap-1"
+      >
+        <CheckCircle2 className="h-3 w-3" />
+        Completed
+      </Badge>
+    );
+  }
+
+  if (status === "in-progress") {
+    return (
+      <Badge
+        variant="secondary"
+        className="bg-blue-500/10 text-blue-700 flex items-center gap-1"
+      >
+        <PlayCircle className="h-3 w-3" />
+        In Progress
+      </Badge>
+    );
+  }
+
+  return null;
+}
+
+interface TutorialCardProps {
+  tutorial: Tutorial;
+  status: "completed" | "in-progress" | "not-started";
+  isNew: boolean;
+  onClick: (tutorial: Tutorial) => void;
+}
+
+function TutorialCard({ tutorial, status, isNew, onClick }: TutorialCardProps) {
+  return (
+    <Card
+      className="cursor-pointer hover:bg-accent/50 transition-colors"
+      onClick={() => onClick(tutorial)}
+    >
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <BookOpen className="h-4 w-4" />
+              {tutorial.title}
+              {isNew && (
+                <Badge
+                  variant="secondary"
+                  className="bg-blue-500/10 text-blue-700"
+                >
+                  New
+                </Badge>
+              )}
+            </CardTitle>
+            {tutorial.description && (
+              <CardDescription className="mt-2">
+                {tutorial.description}
+              </CardDescription>
+            )}
+          </div>
+          <StatusBadge status={status} />
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <DifficultyBadge difficulty={tutorial.difficulty} />
+
+          {tutorial.duration && (
+            <Badge variant="outline" className="flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              {tutorial.duration}
+            </Badge>
+          )}
+
+          {tutorial.category && (
+            <Badge variant="outline" className="capitalize">
+              {tutorial.category}
+            </Badge>
+          )}
+
+          <Badge variant="outline">
+            {tutorial.steps.length}{" "}
+            {tutorial.steps.length === 1 ? "step" : "steps"}
+          </Badge>
+        </div>
+
+        {tutorial.learningObjectives &&
+          tutorial.learningObjectives.length > 0 && (
+            <div className="mt-3 space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">
+                You&apos;ll learn:
+              </p>
+              <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
+                {tutorial.learningObjectives
+                  .slice(0, 2)
+                  .map((objective, idx) => (
+                    <li key={idx}>{objective}</li>
+                  ))}
+                {tutorial.learningObjectives.length > 2 && (
+                  <li className="text-muted-foreground/70">
+                    +{tutorial.learningObjectives.length - 2} more...
+                  </li>
+                )}
+              </ul>
+            </div>
+          )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================================
 // Component
 // ============================================================================
 
@@ -204,150 +354,6 @@ export const TutorialMenu: React.FC<TutorialMenuProps> = ({
     setCompletionFilter("all");
   }, []);
 
-  // ============================================================================
-  // Render Helpers
-  // ============================================================================
-
-  const renderDifficultyBadge = (difficulty: DifficultyLevel) => {
-    const variants: Record<
-      DifficultyLevel,
-      { icon: React.ReactNode; color: string }
-    > = {
-      beginner: {
-        icon: <Circle className="h-3 w-3" />,
-        color: "bg-green-500/10 text-green-700",
-      },
-      intermediate: {
-        icon: <Star className="h-3 w-3" />,
-        color: "bg-yellow-500/10 text-yellow-700",
-      },
-      advanced: {
-        icon: <Zap className="h-3 w-3" />,
-        color: "bg-red-500/10 text-red-700",
-      },
-    };
-
-    const { icon, color } = variants[difficulty];
-
-    return (
-      <Badge variant="secondary" className={`${color} flex items-center gap-1`}>
-        {icon}
-        <span className="capitalize">{difficulty}</span>
-      </Badge>
-    );
-  };
-
-  const renderStatusBadge = (
-    status: "completed" | "in-progress" | "not-started"
-  ) => {
-    if (status === "completed") {
-      return (
-        <Badge
-          variant="secondary"
-          className="bg-green-500/10 text-green-700 flex items-center gap-1"
-        >
-          <CheckCircle2 className="h-3 w-3" />
-          Completed
-        </Badge>
-      );
-    }
-
-    if (status === "in-progress") {
-      return (
-        <Badge
-          variant="secondary"
-          className="bg-blue-500/10 text-blue-700 flex items-center gap-1"
-        >
-          <PlayCircle className="h-3 w-3" />
-          In Progress
-        </Badge>
-      );
-    }
-
-    return null;
-  };
-
-  const renderTutorialCard = (tutorial: Tutorial) => {
-    const status = getTutorialStatus(tutorial.id);
-    const isNew = isNewTutorial(tutorial);
-
-    return (
-      <Card
-        key={tutorial.id}
-        className="cursor-pointer hover:bg-accent/50 transition-colors"
-        onClick={() => handleTutorialClick(tutorial)}
-      >
-        <CardHeader className="pb-3">
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex-1">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <BookOpen className="h-4 w-4" />
-                {tutorial.title}
-                {isNew && (
-                  <Badge
-                    variant="secondary"
-                    className="bg-blue-500/10 text-blue-700"
-                  >
-                    New
-                  </Badge>
-                )}
-              </CardTitle>
-              {tutorial.description && (
-                <CardDescription className="mt-2">
-                  {tutorial.description}
-                </CardDescription>
-              )}
-            </div>
-            {renderStatusBadge(status)}
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            {renderDifficultyBadge(tutorial.difficulty)}
-
-            {tutorial.duration && (
-              <Badge variant="outline" className="flex items-center gap-1">
-                <Clock className="h-3 w-3" />
-                {tutorial.duration}
-              </Badge>
-            )}
-
-            {tutorial.category && (
-              <Badge variant="outline" className="capitalize">
-                {tutorial.category}
-              </Badge>
-            )}
-
-            <Badge variant="outline">
-              {tutorial.steps.length}{" "}
-              {tutorial.steps.length === 1 ? "step" : "steps"}
-            </Badge>
-          </div>
-
-          {tutorial.learningObjectives &&
-            tutorial.learningObjectives.length > 0 && (
-              <div className="mt-3 space-y-1">
-                <p className="text-xs font-medium text-muted-foreground">
-                  You&apos;ll learn:
-                </p>
-                <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
-                  {tutorial.learningObjectives
-                    .slice(0, 2)
-                    .map((objective, idx) => (
-                      <li key={idx}>{objective}</li>
-                    ))}
-                  {tutorial.learningObjectives.length > 2 && (
-                    <li className="text-muted-foreground/70">
-                      +{tutorial.learningObjectives.length - 2} more...
-                    </li>
-                  )}
-                </ul>
-              </div>
-            )}
-        </CardContent>
-      </Card>
-    );
-  };
 
   // ============================================================================
   // Render
@@ -490,7 +496,15 @@ export const TutorialMenu: React.FC<TutorialMenuProps> = ({
         <ScrollArea className="flex-1 p-6">
           {filteredTutorials.length > 0 ? (
             <div className="space-y-4">
-              {filteredTutorials.map(renderTutorialCard)}
+              {filteredTutorials.map((tutorial) => (
+                <TutorialCard
+                  key={tutorial.id}
+                  tutorial={tutorial}
+                  status={getTutorialStatus(tutorial.id)}
+                  isNew={isNewTutorial(tutorial)}
+                  onClick={handleTutorialClick}
+                />
+              ))}
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-12 text-center">

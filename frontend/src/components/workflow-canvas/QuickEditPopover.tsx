@@ -23,6 +23,151 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Check, X } from "lucide-react";
 
+interface QuickEditFieldsProps {
+  action: { type: string | unknown; config: Record<string, unknown> };
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  updateConfig: (key: string, value: string | number) => void;
+  handleKeyDown: (e: React.KeyboardEvent) => void;
+}
+
+function QuickEditFields({ action, inputRef, updateConfig, handleKeyDown }: QuickEditFieldsProps) {
+  switch (action.type as string) {
+    case "CLICK":
+      return (
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Target</Label>
+            <Input
+              ref={inputRef}
+              value={(action.config as Record<string, string | number>).target || ""}
+              onChange={(e) => updateConfig("target", e.target.value)}
+              onKeyDown={handleKeyDown}
+              className="h-8 text-sm"
+              placeholder="Click target..."
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Number of Clicks</Label>
+            <Input
+              type="number"
+              value={(action.config as Record<string, string | number>).numberOfClicks || 1}
+              onChange={(e) => updateConfig("numberOfClicks", Number(e.target.value))}
+              onKeyDown={handleKeyDown}
+              className="h-8 text-sm"
+              min="1"
+            />
+          </div>
+        </div>
+      );
+
+    case "TYPE":
+      return (
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Text to Type</Label>
+            <Input
+              ref={inputRef}
+              value={(action.config as Record<string, string | number>).text || ""}
+              onChange={(e) => updateConfig("text", e.target.value)}
+              onKeyDown={handleKeyDown}
+              className="h-8 text-sm"
+              placeholder="Enter text..."
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Delay (ms)</Label>
+            <Input
+              type="number"
+              value={(action.config as Record<string, string | number>).delay || 0}
+              onChange={(e) => updateConfig("delay", Number(e.target.value))}
+              onKeyDown={handleKeyDown}
+              className="h-8 text-sm"
+              min="0"
+            />
+          </div>
+        </div>
+      );
+
+    case "IF":
+      return (
+        <div className="space-y-1.5">
+          <Label className="text-xs">Condition</Label>
+          <Input
+            ref={inputRef}
+            value={(action.config as Record<string, string | number>).condition || ""}
+            onChange={(e) => updateConfig("condition", e.target.value)}
+            onKeyDown={handleKeyDown}
+            className="h-8 text-sm"
+            placeholder="Enter condition..."
+          />
+        </div>
+      );
+
+    case "SET_VARIABLE":
+      return (
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Variable Name</Label>
+            <Input
+              ref={inputRef}
+              value={(action.config as Record<string, string | number>).variableName || ""}
+              onChange={(e) => updateConfig("variableName", e.target.value)}
+              onKeyDown={handleKeyDown}
+              className="h-8 text-sm font-mono"
+              placeholder="variableName"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Value</Label>
+            <Input
+              value={(action.config as Record<string, string | number>).value || ""}
+              onChange={(e) => updateConfig("value", e.target.value)}
+              onKeyDown={handleKeyDown}
+              className="h-8 text-sm"
+              placeholder="Value..."
+            />
+          </div>
+        </div>
+      );
+
+    case "LOOP":
+      return (
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Loop Type</Label>
+            <Input
+              ref={inputRef}
+              value={(action.config as Record<string, string | number>).loopType || "count"}
+              onChange={(e) => updateConfig("loopType", e.target.value)}
+              onKeyDown={handleKeyDown}
+              className="h-8 text-sm"
+            />
+          </div>
+          {(action.config as Record<string, string | number>).loopType === "count" && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Count</Label>
+              <Input
+                type="number"
+                value={(action.config as Record<string, string | number>).count || 1}
+                onChange={(e) => updateConfig("count", Number(e.target.value))}
+                onKeyDown={handleKeyDown}
+                className="h-8 text-sm"
+                min="1"
+              />
+            </div>
+          )}
+        </div>
+      );
+
+    default:
+      return (
+        <div className="text-xs text-text-muted">
+          Quick edit not available for {action.type as string}. Use the full properties panel.
+        </div>
+      );
+  }
+}
+
 export interface QuickEditPopoverProps {
   actionId: string;
   open: boolean;
@@ -76,174 +221,6 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
 
   if (!action) return null;
 
-  // Render appropriate quick edit fields based on action type
-  const renderQuickEditFields = () => {
-    switch (action.type as string) {
-      case "CLICK":
-        return (
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Target</Label>
-              <Input
-                ref={inputRef}
-                value={
-                  (action.config as Record<string, string | number>).target ||
-                  ""
-                }
-                onChange={(e) => updateConfig("target", e.target.value)}
-                onKeyDown={handleKeyDown}
-                className="h-8 text-sm"
-                placeholder="Click target..."
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Number of Clicks</Label>
-              <Input
-                type="number"
-                value={
-                  (action.config as Record<string, string | number>)
-                    .numberOfClicks || 1
-                }
-                onChange={(e) =>
-                  updateConfig("numberOfClicks", Number(e.target.value))
-                }
-                onKeyDown={handleKeyDown}
-                className="h-8 text-sm"
-                min="1"
-              />
-            </div>
-          </div>
-        );
-
-      case "TYPE":
-        return (
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Text to Type</Label>
-              <Input
-                ref={inputRef}
-                value={
-                  (action.config as Record<string, string | number>).text || ""
-                }
-                onChange={(e) => updateConfig("text", e.target.value)}
-                onKeyDown={handleKeyDown}
-                className="h-8 text-sm"
-                placeholder="Enter text..."
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Delay (ms)</Label>
-              <Input
-                type="number"
-                value={
-                  (action.config as Record<string, string | number>).delay || 0
-                }
-                onChange={(e) => updateConfig("delay", Number(e.target.value))}
-                onKeyDown={handleKeyDown}
-                className="h-8 text-sm"
-                min="0"
-              />
-            </div>
-          </div>
-        );
-
-      case "IF":
-        return (
-          <div className="space-y-1.5">
-            <Label className="text-xs">Condition</Label>
-            <Input
-              ref={inputRef}
-              value={
-                (action.config as Record<string, string | number>).condition ||
-                ""
-              }
-              onChange={(e) => updateConfig("condition", e.target.value)}
-              onKeyDown={handleKeyDown}
-              className="h-8 text-sm"
-              placeholder="Enter condition..."
-            />
-          </div>
-        );
-
-      case "SET_VARIABLE":
-        return (
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Variable Name</Label>
-              <Input
-                ref={inputRef}
-                value={
-                  (action.config as Record<string, string | number>)
-                    .variableName || ""
-                }
-                onChange={(e) => updateConfig("variableName", e.target.value)}
-                onKeyDown={handleKeyDown}
-                className="h-8 text-sm font-mono"
-                placeholder="variableName"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Value</Label>
-              <Input
-                value={
-                  (action.config as Record<string, string | number>).value || ""
-                }
-                onChange={(e) => updateConfig("value", e.target.value)}
-                onKeyDown={handleKeyDown}
-                className="h-8 text-sm"
-                placeholder="Value..."
-              />
-            </div>
-          </div>
-        );
-
-      case "LOOP":
-        return (
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Loop Type</Label>
-              <Input
-                ref={inputRef}
-                value={
-                  (action.config as Record<string, string | number>).loopType ||
-                  "count"
-                }
-                onChange={(e) => updateConfig("loopType", e.target.value)}
-                onKeyDown={handleKeyDown}
-                className="h-8 text-sm"
-              />
-            </div>
-            {(action.config as Record<string, string | number>).loopType ===
-              "count" && (
-              <div className="space-y-1.5">
-                <Label className="text-xs">Count</Label>
-                <Input
-                  type="number"
-                  value={
-                    (action.config as Record<string, string | number>).count ||
-                    1
-                  }
-                  onChange={(e) =>
-                    updateConfig("count", Number(e.target.value))
-                  }
-                  onKeyDown={handleKeyDown}
-                  className="h-8 text-sm"
-                  min="1"
-                />
-              </div>
-            )}
-          </div>
-        );
-
-      default:
-        return (
-          <div className="text-xs text-text-muted">
-            Quick edit not available for {action.type}. Use the full properties
-            panel.
-          </div>
-        );
-    }
-  };
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
@@ -280,7 +257,14 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
           </div>
 
           {/* Quick edit fields */}
-          <div className="py-2">{renderQuickEditFields()}</div>
+          <div className="py-2">
+            <QuickEditFields
+              action={action}
+              inputRef={inputRef}
+              updateConfig={updateConfig}
+              handleKeyDown={handleKeyDown}
+            />
+          </div>
 
           {/* Actions */}
           <div className="flex justify-end gap-2 pt-2 border-t border-border-default">

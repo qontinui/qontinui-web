@@ -14,8 +14,7 @@
  */
 
 import { useEffect } from "react";
-import { getGlobalSpecStore } from "@qontinui/ui-bridge/specs";
-import type { SpecConfig } from "@qontinui/ui-bridge/specs";
+import { getGlobalSpecStore, type SpecConfig } from "@qontinui/ui-bridge/specs";
 
 /**
  * Load one or more SpecConfig objects into the global SpecStore.

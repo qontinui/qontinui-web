@@ -48,13 +48,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  runnerApi,
-  useContextsDetailed,
-  usePromptsDetailed,
-  useAiSettings,
-} from "@/lib/runner-api";
-import type { ContextItem } from "@/lib/runner-api";
+import { runnerApi, useAiSettings, useContextsDetailed, usePromptsDetailed, type ContextItem } from "@/lib/runner-api";
 import type { GenerateWorkflowRequest } from "@/lib/runner/types/workflow";
 import { SpecSourceSection, type SpecSourceState } from "./SpecSourceSection";
 import { buildSpecPrompt } from "@/lib/spec-prompt-builder";
@@ -664,7 +658,6 @@ export function AiGeneratePanel({
               }
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              autoFocus
             />
           </div>
 
@@ -957,7 +950,7 @@ export function AiGeneratePanel({
                   </p>
                 </div>
                 <div className="flex items-end pb-1">
-                  <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+                  <div className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
                     <Checkbox
                       checked={autoIncludeContexts}
                       onCheckedChange={(v) =>
@@ -979,10 +972,10 @@ export function AiGeneratePanel({
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
-                  </label>
+                  </div>
                 </div>
                 <div className="flex items-end pb-1">
-                  <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+                  <div className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
                     <Checkbox
                       checked={includeUIBridge}
                       onCheckedChange={(v) => setIncludeUIBridge(v === true)}
@@ -1003,10 +996,10 @@ export function AiGeneratePanel({
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
-                  </label>
+                  </div>
                 </div>
                 <div className="flex items-end pb-1">
-                  <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+                  <div className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
                     <Checkbox
                       checked={reflectionMode}
                       onCheckedChange={(v) => setReflectionMode(v === true)}
@@ -1028,10 +1021,10 @@ export function AiGeneratePanel({
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
-                  </label>
+                  </div>
                 </div>
                 <div className="flex items-end pb-1">
-                  <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+                  <div className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
                     <Checkbox
                       checked={investigateCodebase}
                       onCheckedChange={(v) =>
@@ -1054,7 +1047,7 @@ export function AiGeneratePanel({
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
-                  </label>
+                  </div>
                 </div>
               </div>
             </CollapsibleContent>

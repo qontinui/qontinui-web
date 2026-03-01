@@ -27,11 +27,7 @@ import {
   Play,
 } from "lucide-react";
 import { toast } from "sonner";
-import {
-  useAutomation,
-  DEFAULT_CATEGORY_NAMES,
-} from "@/contexts/automation-context";
-import type { Category } from "@/contexts/automation-context";
+import { DEFAULT_CATEGORY_NAMES, useAutomation, type Category } from "@/contexts/automation-context";
 import { DeleteCategoryDialog } from "@/components/delete-category-dialog";
 import { DeleteWorkflowDialog } from "@/components/delete-process-dialog";
 import { BatchDeleteWorkflowsDialog } from "@/components/batch-delete-workflows-dialog";
@@ -39,6 +35,133 @@ import type { Workflow } from "@/lib/action-schema/action-types";
 
 // LibraryItem is now just Workflow - sequential workflows are linear graphs
 type LibraryItem = Workflow;
+
+interface LibraryItemCardProps {
+  item: LibraryItem;
+  isSelected: boolean;
+  isLinear: boolean;
+  isDraggable: boolean;
+  isChecked: boolean;
+  isSelectionMode: boolean;
+  draggedItem: LibraryItem | null;
+  onConvertItem?: (item: LibraryItem) => void;
+  onSelect: (item: LibraryItem) => void;
+  onToggleSelection: (id: string) => void;
+  onDelete: (item: LibraryItem) => void;
+  onDragStart: (e: DragEvent<HTMLDivElement>, item: LibraryItem) => void;
+  onDragEnd: () => void;
+  getItemName: (item: LibraryItem) => string;
+  getItemActionCount: (item: LibraryItem) => number;
+}
+
+function LibraryItemCard({
+  item,
+  isSelected,
+  isLinear,
+  isDraggable,
+  isChecked,
+  isSelectionMode,
+  draggedItem,
+  onConvertItem,
+  onSelect,
+  onToggleSelection,
+  onDelete,
+  onDragStart,
+  onDragEnd,
+  getItemName,
+  getItemActionCount,
+}: LibraryItemCardProps) {
+  return (
+    <Card
+      draggable={isDraggable}
+      onDragStart={(e) => onDragStart(e, item)}
+      onDragEnd={onDragEnd}
+      className={`cursor-pointer transition-all hover:border-brand-primary/50 !py-0 !gap-0 ${
+        isSelectionMode && isChecked
+          ? "border-red-500 bg-red-500/10"
+          : isSelected
+            ? isLinear
+              ? "border-brand-primary bg-brand-primary/10"
+              : "border-brand-success bg-brand-success/10"
+            : "border-border-default bg-surface-raised"
+      } ${draggedItem?.id === item.id ? "opacity-50" : ""}`}
+      onClick={() => {
+        if (isSelectionMode) {
+          onToggleSelection(item.id);
+        } else {
+          onSelect(item);
+        }
+      }}
+    >
+      <CardContent className="py-1 px-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            {isSelectionMode && (
+              <Checkbox
+                checked={isChecked}
+                onCheckedChange={() => onToggleSelection(item.id)}
+                onClick={(e) => e.stopPropagation()}
+                className="h-3.5 w-3.5 flex-shrink-0 border-border-default data-[state=checked]:bg-red-500 data-[state=checked]:border-red-500"
+              />
+            )}
+            {isLinear ? (
+              <List className="w-3 h-3 text-brand-primary flex-shrink-0" />
+            ) : (
+              <WorkflowIcon className="w-3 h-3 text-brand-success flex-shrink-0" />
+            )}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <h4 className="font-medium text-xs truncate">
+                  {getItemName(item)}
+                </h4>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{getItemName(item)}</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <div className="flex items-center gap-1 ml-2">
+            <Badge
+              variant="secondary"
+              className={`text-[10px] h-4 px-1 ${
+                !isLinear ? "bg-brand-success/20 text-brand-success" : ""
+              }`}
+            >
+              {getItemActionCount(item)}
+            </Badge>
+            {!isSelectionMode && onConvertItem && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-4 w-4 p-0 text-text-muted hover:text-brand-success"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onConvertItem(item);
+                }}
+                title={!isLinear ? "View as sequential" : "View as graph"}
+              >
+                <ArrowRightLeft className="w-2.5 h-2.5" />
+              </Button>
+            )}
+            {!isSelectionMode && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-4 w-4 p-0 text-text-muted hover:text-red-400"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(item);
+                }}
+              >
+                <Trash2 className="w-2.5 h-2.5" />
+              </Button>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 interface UnifiedProcessLibraryProps {
   selectedItem: LibraryItem | null;
@@ -364,104 +487,6 @@ export function UnifiedProcessLibrary({
     setDragOverCategory(null);
   };
 
-  const renderItem = (item: LibraryItem) => {
-    const isLinear = isLinearWorkflow(item);
-    const isDraggable = !isSelectionMode; // Disable drag in selection mode
-    const isChecked = selectedIds.has(item.id);
-
-    return (
-      <Card
-        key={item.id}
-        draggable={isDraggable}
-        onDragStart={(e) => handleDragStart(e, item)}
-        onDragEnd={handleDragEnd}
-        className={`cursor-pointer transition-all hover:border-brand-primary/50 !py-0 !gap-0 ${
-          isSelectionMode && isChecked
-            ? "border-red-500 bg-red-500/10"
-            : isItemSelected(item)
-              ? isLinear
-                ? "border-brand-primary bg-brand-primary/10"
-                : "border-brand-success bg-brand-success/10"
-              : "border-border-default bg-surface-raised"
-        } ${draggedItem?.id === item.id ? "opacity-50" : ""}`}
-        onClick={() => {
-          if (isSelectionMode) {
-            toggleItemSelection(item.id);
-          } else {
-            onSelectItem(item);
-          }
-        }}
-      >
-        <CardContent className="py-1 px-2">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 flex-1 min-w-0">
-              {isSelectionMode && (
-                <Checkbox
-                  checked={isChecked}
-                  onCheckedChange={() => toggleItemSelection(item.id)}
-                  onClick={(e) => e.stopPropagation()}
-                  className="h-3.5 w-3.5 flex-shrink-0 border-border-default data-[state=checked]:bg-red-500 data-[state=checked]:border-red-500"
-                />
-              )}
-              {isLinear ? (
-                <List className="w-3 h-3 text-brand-primary flex-shrink-0" />
-              ) : (
-                <WorkflowIcon className="w-3 h-3 text-brand-success flex-shrink-0" />
-              )}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <h4 className="font-medium text-xs truncate">
-                    {getItemName(item)}
-                  </h4>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>{getItemName(item)}</p>
-                </TooltipContent>
-              </Tooltip>
-            </div>
-            <div className="flex items-center gap-1 ml-2">
-              <Badge
-                variant="secondary"
-                className={`text-[10px] h-4 px-1 ${
-                  !isLinear ? "bg-brand-success/20 text-brand-success" : ""
-                }`}
-              >
-                {getItemActionCount(item)}
-              </Badge>
-              {!isSelectionMode && onConvertItem && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-4 w-4 p-0 text-text-muted hover:text-brand-success"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onConvertItem(item);
-                  }}
-                  title={!isLinear ? "View as sequential" : "View as graph"}
-                >
-                  <ArrowRightLeft className="w-2.5 h-2.5" />
-                </Button>
-              )}
-              {!isSelectionMode && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-4 w-4 p-0 text-text-muted hover:text-red-400"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDelete(item);
-                  }}
-                >
-                  <Trash2 className="w-2.5 h-2.5" />
-                </Button>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  };
-
   return (
     <TooltipProvider>
       <div className="space-y-2">
@@ -536,7 +561,6 @@ export function UnifiedProcessLibrary({
               }}
               placeholder="Category name..."
               className="h-7 text-xs bg-transparent border-border-default"
-              autoFocus
             />
             <Button size="sm" className="h-7 px-2" onClick={handleAddCategory}>
               Add
@@ -687,7 +711,31 @@ export function UnifiedProcessLibrary({
                         Drop workflows here or use + buttons above
                       </div>
                     ) : (
-                      categoryItems.map(renderItem)
+                      categoryItems.map((item) => {
+                        const isLinear = isLinearWorkflow(item);
+                        const isDraggable = !isSelectionMode;
+                        const isChecked = selectedIds.has(item.id);
+                        return (
+                          <LibraryItemCard
+                            key={item.id}
+                            item={item}
+                            isSelected={isItemSelected(item)}
+                            isLinear={isLinear}
+                            isDraggable={isDraggable}
+                            isChecked={isChecked}
+                            isSelectionMode={isSelectionMode}
+                            draggedItem={draggedItem}
+                            onConvertItem={onConvertItem}
+                            onSelect={onSelectItem}
+                            onToggleSelection={toggleItemSelection}
+                            onDelete={handleDelete}
+                            onDragStart={handleDragStart}
+                            onDragEnd={handleDragEnd}
+                            getItemName={getItemName}
+                            getItemActionCount={getItemActionCount}
+                          />
+                        );
+                      })
                     )}
                   </div>
                 )}

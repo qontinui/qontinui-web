@@ -230,11 +230,14 @@ function AITasksPageContent() {
                       <tr
                         key={task.id}
                         className="hover:bg-muted/30 transition-colors cursor-pointer"
+                        role="button"
+                        tabIndex={0}
                         onClick={() =>
                           router.push(
                             `/ai-tasks/${task.id}${projectId ? `?project=${projectId}` : ""}`
                           )
                         }
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(`/ai-tasks/${task.id}${projectId ? `?project=${projectId}` : ""}`); } }}
                       >
                         <td className="px-6 py-2.5">
                           <div className="flex items-center gap-2">

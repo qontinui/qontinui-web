@@ -3,8 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { TaskRun, CurrentExecutionStepsResponse } from "@/lib/runner";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { WidgetId } from "../_lib";
-import { getWidgetConfig } from "../_lib";
+import { getWidgetConfig, type WidgetId } from "../_lib";
 import { FullWidget } from "./WidgetPanel";
 import { SummaryCard, SummaryContent } from "./SummaryCards";
 

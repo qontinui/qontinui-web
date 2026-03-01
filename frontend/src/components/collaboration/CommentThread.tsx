@@ -28,6 +28,227 @@ import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 
+interface CommentItemCallbacks {
+  currentUserId: string;
+  editingId: string | null;
+  editContent: string;
+  actionLoading: string | null;
+  replyToId: string | null;
+  newComment: string;
+  loading: boolean;
+  getReplies: (parentId: string) => Comment[];
+  getInitials: (name: string) => string;
+  formatDate: (date: Date | string) => string;
+  handleEdit: (commentId: string) => void;
+  handleDelete: (commentId: string) => void;
+  handleSubmit: (text: string, parentId?: string) => void;
+  handleTextChange: (text: string) => void;
+  setEditingId: (id: string | null) => void;
+  setEditContent: (content: string) => void;
+  setReplyToId: (id: string | null) => void;
+  setNewComment: (text: string) => void;
+}
+
+interface CommentItemProps extends CommentItemCallbacks {
+  comment: Comment;
+  depth?: number;
+}
+
+function CommentItem({
+  comment,
+  depth = 0,
+  currentUserId,
+  editingId,
+  editContent,
+  actionLoading,
+  replyToId,
+  newComment,
+  loading,
+  getReplies,
+  getInitials,
+  formatDate,
+  handleEdit,
+  handleDelete,
+  handleSubmit,
+  handleTextChange,
+  setEditingId,
+  setEditContent,
+  setReplyToId,
+  setNewComment,
+}: CommentItemProps) {
+  const isAuthor = comment.author_id === currentUserId;
+  const isEditing = editingId === comment.id;
+  const isLoading = actionLoading === comment.id;
+  const replies = getReplies(comment.id);
+  const callbacks: CommentItemCallbacks = {
+    currentUserId, editingId, editContent, actionLoading, replyToId,
+    newComment, loading, getReplies, getInitials, formatDate,
+    handleEdit, handleDelete, handleSubmit, handleTextChange,
+    setEditingId, setEditContent, setReplyToId, setNewComment,
+  };
+
+  return (
+    <div className={cn(depth > 0 && "ml-8 mt-2")}>
+      <div className="flex gap-3 group">
+        <Avatar
+          src={comment.author_avatar}
+          fallback={
+            <span className="text-xs font-medium">
+              {getInitials(comment.author_name)}
+            </span>
+          }
+          className="h-8 w-8 mt-1"
+        />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-sm font-medium">{comment.author_name}</span>
+            <span className="text-xs text-muted-foreground">
+              {formatDate(comment.created_at)}
+            </span>
+            {comment.updated_at &&
+              comment.updated_at !== comment.created_at && (
+                <span className="text-xs text-muted-foreground">
+                  (edited)
+                </span>
+              )}
+          </div>
+
+          {isEditing ? (
+            <div className="space-y-2">
+              <Textarea
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                className="min-h-[80px]"
+                disabled={isLoading}
+              />
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => handleEdit(comment.id)}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Check className="h-3 w-3" />
+                  )}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setEditingId(null);
+                    setEditContent("");
+                  }}
+                  disabled={isLoading}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm whitespace-pre-wrap break-words">
+                {comment.content}
+              </p>
+              <div className="flex items-center gap-2 mt-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-xs"
+                  onClick={() => setReplyToId(comment.id)}
+                >
+                  <Reply className="mr-1 h-3 w-3" />
+                  Reply
+                </Button>
+                {isAuthor && !isLoading && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-6 px-2">
+                        <MoreVertical className="h-3 w-3" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setEditingId(comment.id);
+                          setEditContent(comment.content);
+                        }}
+                      >
+                        <Edit2 className="mr-2 h-3 w-3" />
+                        Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => handleDelete(comment.id)}
+                        className="text-destructive focus:text-destructive"
+                      >
+                        <Trash2 className="mr-2 h-3 w-3" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* Reply Input */}
+          {replyToId === comment.id && (
+            <div className="mt-3 space-y-2">
+              <Textarea
+                placeholder={`Reply to ${comment.author_name}...`}
+                value={newComment}
+                onChange={(e) => handleTextChange(e.target.value)}
+                className="min-h-[80px]"
+                disabled={loading}
+              />
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => handleSubmit(newComment, comment.id)}
+                  disabled={loading || !newComment.trim()}
+                >
+                  {loading ? (
+                    <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                  ) : (
+                    <Send className="mr-2 h-3 w-3" />
+                  )}
+                  Reply
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setReplyToId(null);
+                    setNewComment("");
+                  }}
+                  disabled={loading}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Nested Replies */}
+      {replies.length > 0 && (
+        <div className="mt-2 space-y-2">
+          {replies.map((reply) => (
+            <CommentItem
+              key={reply.id}
+              comment={reply}
+              depth={depth + 1}
+              {...callbacks}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export interface Comment {
   id: string;
   author_id: string;
@@ -207,165 +428,25 @@ export function CommentThread({
   const getReplies = (parentId: string) =>
     thread.comments.filter((c) => c.parent_id === parentId);
 
-  const renderComment = (comment: Comment, depth = 0) => {
-    const isAuthor = comment.author_id === currentUserId;
-    const isEditing = editingId === comment.id;
-    const isLoading = actionLoading === comment.id;
-    const replies = getReplies(comment.id);
-
-    return (
-      <div key={comment.id} className={cn(depth > 0 && "ml-8 mt-2")}>
-        <div className="flex gap-3 group">
-          <Avatar
-            src={comment.author_avatar}
-            fallback={
-              <span className="text-xs font-medium">
-                {getInitials(comment.author_name)}
-              </span>
-            }
-            className="h-8 w-8 mt-1"
-          />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-sm font-medium">{comment.author_name}</span>
-              <span className="text-xs text-muted-foreground">
-                {formatDate(comment.created_at)}
-              </span>
-              {comment.updated_at &&
-                comment.updated_at !== comment.created_at && (
-                  <span className="text-xs text-muted-foreground">
-                    (edited)
-                  </span>
-                )}
-            </div>
-
-            {isEditing ? (
-              <div className="space-y-2">
-                <Textarea
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  className="min-h-[80px]"
-                  disabled={isLoading}
-                />
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    onClick={() => handleEdit(comment.id)}
-                    disabled={isLoading}
-                  >
-                    {isLoading ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <Check className="h-3 w-3" />
-                    )}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setEditingId(null);
-                      setEditContent("");
-                    }}
-                    disabled={isLoading}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <>
-                <p className="text-sm whitespace-pre-wrap break-words">
-                  {comment.content}
-                </p>
-                <div className="flex items-center gap-2 mt-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 text-xs"
-                    onClick={() => setReplyToId(comment.id)}
-                  >
-                    <Reply className="mr-1 h-3 w-3" />
-                    Reply
-                  </Button>
-                  {isAuthor && !isLoading && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm" className="h-6 px-2">
-                          <MoreVertical className="h-3 w-3" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start">
-                        <DropdownMenuItem
-                          onClick={() => {
-                            setEditingId(comment.id);
-                            setEditContent(comment.content);
-                          }}
-                        >
-                          <Edit2 className="mr-2 h-3 w-3" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => handleDelete(comment.id)}
-                          className="text-destructive focus:text-destructive"
-                        >
-                          <Trash2 className="mr-2 h-3 w-3" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-                </div>
-              </>
-            )}
-
-            {/* Reply Input */}
-            {replyToId === comment.id && (
-              <div className="mt-3 space-y-2">
-                <Textarea
-                  placeholder={`Reply to ${comment.author_name}...`}
-                  value={newComment}
-                  onChange={(e) => handleTextChange(e.target.value)}
-                  className="min-h-[80px]"
-                  disabled={loading}
-                />
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    onClick={() => handleSubmit(newComment, comment.id)}
-                    disabled={loading || !newComment.trim()}
-                  >
-                    {loading ? (
-                      <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                    ) : (
-                      <Send className="mr-2 h-3 w-3" />
-                    )}
-                    Reply
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setReplyToId(null);
-                      setNewComment("");
-                    }}
-                    disabled={loading}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Nested Replies */}
-        {replies.length > 0 && (
-          <div className="mt-2 space-y-2">
-            {replies.map((reply) => renderComment(reply, depth + 1))}
-          </div>
-        )}
-      </div>
-    );
+  const commentCallbacks: CommentItemCallbacks = {
+    currentUserId,
+    editingId,
+    editContent,
+    actionLoading,
+    replyToId,
+    newComment,
+    loading,
+    getReplies,
+    getInitials,
+    formatDate,
+    handleEdit,
+    handleDelete,
+    handleSubmit,
+    handleTextChange,
+    setEditingId,
+    setEditContent,
+    setReplyToId,
+    setNewComment,
   };
 
   return (
@@ -412,7 +493,9 @@ export function CommentThread({
       {/* Comments */}
       <ScrollArea className="flex-1 p-3 max-h-[400px]">
         <div className="space-y-4">
-          {rootComments.map((comment) => renderComment(comment))}
+          {rootComments.map((comment) => (
+            <CommentItem key={comment.id} comment={comment} {...commentCallbacks} />
+          ))}
           {rootComments.length === 0 && (
             <div className="text-center py-8 text-sm text-muted-foreground">
               No comments yet. Start the discussion!

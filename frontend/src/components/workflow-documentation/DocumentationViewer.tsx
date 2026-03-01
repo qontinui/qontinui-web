@@ -63,6 +63,172 @@ interface Section {
 }
 
 // ============================================================================
+// Sub-components
+// ============================================================================
+
+function DocumentContent({ content }: { content: string }) {
+  const lines = content.split("\n");
+
+  return (
+    <>
+      {lines.map((line, idx) => {
+        // Code blocks
+        if (line.startsWith("```")) {
+          const language = line.slice(3).trim();
+          return (
+            <div
+              key={idx}
+              className="bg-muted p-4 rounded-lg my-4 font-mono text-sm overflow-x-auto"
+            >
+              <div className="text-xs text-muted-foreground mb-2">
+                {language || "code"}
+              </div>
+              <pre>{line}</pre>
+            </div>
+          );
+        }
+
+        // Tables
+        if (line.includes("|")) {
+          return (
+            <div key={idx} className="overflow-x-auto my-4">
+              <table className="min-w-full border-collapse border border-border">
+                <tbody>
+                  <tr>
+                    {line
+                      .split("|")
+                      .filter(Boolean)
+                      .map((cell, cellIdx) => (
+                        <td
+                          key={cellIdx}
+                          className="border border-border px-4 py-2"
+                        >
+                          {cell.trim()}
+                        </td>
+                      ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          );
+        }
+
+        // Lists
+        if (line.match(/^\d+\.\s/)) {
+          return (
+            <li key={idx} className="ml-6 mb-2 list-decimal">
+              {line.replace(/^\d+\.\s/, "")}
+            </li>
+          );
+        }
+        if (line.startsWith("- ")) {
+          return (
+            <li key={idx} className="ml-6 mb-2 list-disc">
+              {line.slice(2)}
+            </li>
+          );
+        }
+
+        // Bold
+        const boldText = line.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+
+        // Inline code
+        const codeText = boldText.replace(
+          /`(.+?)`/g,
+          '<code class="bg-muted px-1.5 py-0.5 rounded text-sm">$1</code>'
+        );
+
+        // Sanitize HTML to prevent XSS
+        const sanitizedHtml = DOMPurify.sanitize(codeText, {
+          ALLOWED_TAGS: ["strong", "code"],
+          ALLOWED_ATTR: ["class"],
+        });
+
+        // Regular paragraph
+        if (line.trim()) {
+          return (
+            <p
+              key={idx}
+              className="mb-4 leading-7"
+              dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+            />
+          );
+        }
+
+        return <br key={idx} />;
+      })}
+    </>
+  );
+}
+
+interface TOCItemNodeProps {
+  item: TOCItem;
+  depth: number;
+  activeSection: string;
+  collapsedSections: Set<string>;
+  onToggle: (id: string) => void;
+  onScroll: (id: string) => void;
+}
+
+function TOCItemNode({
+  item,
+  depth,
+  activeSection,
+  collapsedSections,
+  onToggle,
+  onScroll,
+}: TOCItemNodeProps) {
+  const hasChildren = item.children.length > 0;
+  const isActive = activeSection === item.id;
+
+  return (
+    <div key={item.id}>
+      <button
+        onClick={() => {
+          if (hasChildren) {
+            onToggle(item.id);
+          }
+          onScroll(item.id);
+        }}
+        className={cn(
+          "w-full flex items-center gap-2 text-left px-2 py-1.5 rounded text-sm transition-colors",
+          isActive && "bg-accent font-medium",
+          !isActive && "hover:bg-accent/50"
+        )}
+        style={{ paddingLeft: `${depth * 12 + 8}px` }}
+      >
+        {hasChildren && (
+          <span className="size-4">
+            {collapsedSections.has(item.id) ? (
+              <ChevronRight className="size-3" />
+            ) : (
+              <ChevronDown className="size-3" />
+            )}
+          </span>
+        )}
+        <span className="flex-1 truncate">{item.text}</span>
+      </button>
+
+      {hasChildren && !collapsedSections.has(item.id) && (
+        <div>
+          {item.children.map((child) => (
+            <TOCItemNode
+              key={child.id}
+              item={child}
+              depth={depth + 1}
+              activeSection={activeSection}
+              collapsedSections={collapsedSections}
+              onToggle={onToggle}
+              onScroll={onScroll}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
 // Component
 // ============================================================================
 
@@ -221,140 +387,6 @@ export function DocumentationViewer({
     window.print();
   };
 
-  // Render markdown content (simplified - use react-markdown in production)
-  const renderContent = (content: string) => {
-    const lines = content.split("\n");
-
-    return lines.map((line, idx) => {
-      // Code blocks
-      if (line.startsWith("```")) {
-        const language = line.slice(3).trim();
-        return (
-          <div
-            key={idx}
-            className="bg-muted p-4 rounded-lg my-4 font-mono text-sm overflow-x-auto"
-          >
-            <div className="text-xs text-muted-foreground mb-2">
-              {language || "code"}
-            </div>
-            <pre>{line}</pre>
-          </div>
-        );
-      }
-
-      // Tables
-      if (line.includes("|")) {
-        return (
-          <div key={idx} className="overflow-x-auto my-4">
-            <table className="min-w-full border-collapse border border-border">
-              <tbody>
-                <tr>
-                  {line
-                    .split("|")
-                    .filter(Boolean)
-                    .map((cell, cellIdx) => (
-                      <td
-                        key={cellIdx}
-                        className="border border-border px-4 py-2"
-                      >
-                        {cell.trim()}
-                      </td>
-                    ))}
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        );
-      }
-
-      // Lists
-      if (line.match(/^\d+\.\s/)) {
-        return (
-          <li key={idx} className="ml-6 mb-2 list-decimal">
-            {line.replace(/^\d+\.\s/, "")}
-          </li>
-        );
-      }
-      if (line.startsWith("- ")) {
-        return (
-          <li key={idx} className="ml-6 mb-2 list-disc">
-            {line.slice(2)}
-          </li>
-        );
-      }
-
-      // Bold
-      const boldText = line.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-
-      // Inline code
-      const codeText = boldText.replace(
-        /`(.+?)`/g,
-        '<code class="bg-muted px-1.5 py-0.5 rounded text-sm">$1</code>'
-      );
-
-      // Sanitize HTML to prevent XSS
-      const sanitizedHtml = DOMPurify.sanitize(codeText, {
-        ALLOWED_TAGS: ["strong", "code"],
-        ALLOWED_ATTR: ["class"],
-      });
-
-      // Regular paragraph
-      if (line.trim()) {
-        return (
-          <p
-            key={idx}
-            className="mb-4 leading-7"
-            dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
-          />
-        );
-      }
-
-      return <br key={idx} />;
-    });
-  };
-
-  // Render TOC recursively
-  const renderTOCItem = (item: TOCItem, depth: number = 0) => {
-    const hasChildren = item.children.length > 0;
-    const isActive = activeSection === item.id;
-
-    return (
-      <div key={item.id}>
-        <button
-          onClick={() => {
-            if (hasChildren) {
-              toggleSection(item.id);
-            }
-            scrollToSection(item.id);
-          }}
-          className={cn(
-            "w-full flex items-center gap-2 text-left px-2 py-1.5 rounded text-sm transition-colors",
-            isActive && "bg-accent font-medium",
-            !isActive && "hover:bg-accent/50"
-          )}
-          style={{ paddingLeft: `${depth * 12 + 8}px` }}
-        >
-          {hasChildren && (
-            <span className="size-4">
-              {collapsedSections.has(item.id) ? (
-                <ChevronRight className="size-3" />
-              ) : (
-                <ChevronDown className="size-3" />
-              )}
-            </span>
-          )}
-          <span className="flex-1 truncate">{item.text}</span>
-        </button>
-
-        {hasChildren && !collapsedSections.has(item.id) && (
-          <div>
-            {item.children.map((child) => renderTOCItem(child, depth + 1))}
-          </div>
-        )}
-      </div>
-    );
-  };
-
   // Observe sections for active state
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -413,7 +445,17 @@ export function DocumentationViewer({
 
         <ScrollArea className="flex-1">
           <div className="p-2 space-y-1">
-            {toc.map((item) => renderTOCItem(item))}
+            {toc.map((item) => (
+              <TOCItemNode
+                key={item.id}
+                item={item}
+                depth={0}
+                activeSection={activeSection}
+                collapsedSections={collapsedSections}
+                onToggle={toggleSection}
+                onScroll={scrollToSection}
+              />
+            ))}
           </div>
         </ScrollArea>
 
@@ -577,7 +619,7 @@ export function DocumentationViewer({
                 <div
                   className={cn(collapsedSections.has(section.id) && "hidden")}
                 >
-                  {renderContent(section.content)}
+                  <DocumentContent content={section.content} />
                 </div>
               </section>
             ))}

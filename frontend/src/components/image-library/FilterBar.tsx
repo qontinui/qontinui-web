@@ -24,7 +24,7 @@ export function FilterBar({ filter, onFilterChange }: FilterBarProps) {
       <div className="grid grid-cols-4 gap-4">
         {/* Source Filter */}
         <div>
-          <label className="text-xs text-text-muted mb-2 block">Source</label>
+          <p className="text-xs text-text-muted mb-2 block">Source</p>
           <div className="flex flex-wrap gap-1">
             {(
               [
@@ -62,7 +62,7 @@ export function FilterBar({ filter, onFilterChange }: FilterBarProps) {
 
         {/* Usage Filter */}
         <div>
-          <label className="text-xs text-text-muted mb-2 block">Usage</label>
+          <p className="text-xs text-text-muted mb-2 block">Usage</p>
           <div className="flex gap-1">
             {(["all", "used", "unused"] as const).map((usage) => (
               <Badge

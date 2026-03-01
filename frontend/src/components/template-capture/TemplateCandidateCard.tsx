@@ -70,7 +70,10 @@ export function TemplateCandidateCard({
           ? "border-primary shadow-lg ring-2 ring-primary/20"
           : "border-border hover:border-primary/50"
       )}
+      role="button"
+      tabIndex={0}
       onClick={onSelect}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(); } }}
     >
       {/* Status Badge */}
       <Badge

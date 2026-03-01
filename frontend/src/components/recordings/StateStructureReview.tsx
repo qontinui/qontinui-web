@@ -21,13 +21,7 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { Check, Trash2, CheckSquare, Square } from "lucide-react";
 import { recordingService } from "@/services/service-factory";
-import { getConfidenceLevel, getConfidenceColor } from "@/types/recording";
-import type {
-  DiscoveredStateStructure,
-  DiscoveredState,
-  DiscoveredTransition,
-  AcceptanceRequest,
-} from "@/types/recording";
+import { getConfidenceColor, getConfidenceLevel, type AcceptanceRequest, type DiscoveredState, type DiscoveredStateStructure, type DiscoveredTransition } from "@/types/recording";
 
 interface StateStructureReviewProps {
   recordingId: string;

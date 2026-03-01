@@ -19,8 +19,7 @@ import {
 } from "@/components/ui/select";
 import { CheckCircle2, XCircle, Clock, AlertCircle } from "lucide-react";
 import type { ExecutionRecord } from "@/stores/automation";
-import { useWorkflows } from "@/hooks/automation";
-import { useSchedules } from "@/hooks/automation";
+import { useSchedules, useWorkflows } from "@/hooks/automation";
 
 export function ExecutionHistory() {
   const { workflows } = useWorkflows();

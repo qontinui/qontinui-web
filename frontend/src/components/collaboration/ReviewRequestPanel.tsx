@@ -268,7 +268,10 @@ export function ReviewRequestPanel({
                         ? "bg-primary/10 border border-primary"
                         : "hover:bg-muted border border-transparent"
                     )}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => toggleReviewer(reviewer.id)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleReviewer(reviewer.id); } }}
                   >
                     <Avatar
                       src={reviewer.avatar_url}

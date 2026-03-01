@@ -515,6 +515,8 @@ export function AnalysisPanel() {
                           >
                             <div
                               className="cursor-pointer"
+                              role="button"
+                              tabIndex={0}
                               onClick={() => {
                                 const newSelection = new Set(selectedPatterns);
                                 if (isSelected) {
@@ -524,6 +526,7 @@ export function AnalysisPanel() {
                                 }
                                 setSelectedPatterns(newSelection);
                               }}
+                              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); const newSelection = new Set(selectedPatterns); if (isSelected) { newSelection.delete(pattern.id); } else { newSelection.add(pattern.id); } setSelectedPatterns(newSelection); } }}
                             >
                               <div className="aspect-video bg-surface-raised rounded mb-2 flex items-center justify-center overflow-hidden">
                                 {pattern.imageUrl ? (

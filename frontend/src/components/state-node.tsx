@@ -291,10 +291,13 @@ export function StateNode({
       {!hasOutgoingTransitions && onAddOutgoingTransition && (
         <div
           className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 cursor-pointer hover:scale-110 transition-transform z-10"
+          role="button"
+          tabIndex={0}
           onClick={(e) => {
             e.stopPropagation();
             onAddOutgoingTransition(state.id);
           }}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onAddOutgoingTransition(state.id); } }}
           title="Add Outgoing Transition"
         >
           <div className="w-8 h-8 rounded-full bg-[var(--brand-success)]/70 hover:bg-[var(--brand-success)] flex items-center justify-center shadow-lg">

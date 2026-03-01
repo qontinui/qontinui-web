@@ -61,6 +61,100 @@ import {
 } from "@/lib/project-validator";
 import { runnerClient } from "@/lib/runner-client";
 
+interface EditorContentProps {
+  selectedItem: import("./index").LibraryItem | null;
+  mode: import("./index").BuilderMode;
+  selectedAction: import("@/lib/action-schema/action-types").Action | null;
+  handleCreateSequential: () => void;
+  handleCreateGraph: () => void;
+  handleSelectAction: (action: import("@/lib/action-schema/action-types").Action | null) => void;
+  handleUpdateActions: (actions: import("@/lib/action-schema/action-types").Action[]) => void;
+  handleUpdateWorkflow: (workflow: import("@/lib/action-schema/action-types").Workflow) => void;
+  handleAddNode: (nodeType: import("@/lib/action-schema/action-types").ActionType) => void;
+}
+
+function EditorContent({
+  selectedItem,
+  mode,
+  selectedAction,
+  handleCreateSequential,
+  handleCreateGraph,
+  handleSelectAction,
+  handleUpdateActions,
+  handleUpdateWorkflow,
+  handleAddNode,
+}: EditorContentProps) {
+  if (!selectedItem) {
+    return (
+      <EmptyState
+        mode={mode}
+        onCreateNew={
+          mode === "sequential"
+            ? () => handleCreateSequential()
+            : () => handleCreateGraph()
+        }
+      />
+    );
+  }
+
+  if (mode === "sequential") {
+    if (!isLinearWorkflow(selectedItem)) {
+      return (
+        <div className="flex items-center justify-center h-full text-text-muted">
+          <div className="text-center">
+            <p className="text-lg">This workflow has branching logic</p>
+            <p className="text-sm">Switch to graph mode to edit</p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <SequentialEditor
+        actions={selectedItem.actions}
+        selectedAction={selectedAction}
+        onSelectAction={handleSelectAction}
+        onUpdateActions={handleUpdateActions}
+        onAddAction={(action) =>
+          handleUpdateActions([...selectedItem.actions, action])
+        }
+        onDeleteAction={(actionId) =>
+          handleUpdateActions(
+            selectedItem.actions.filter((a: Action) => a.id !== actionId)
+          )
+        }
+        onDuplicateAction={(actionId) => {
+          const action = selectedItem.actions.find(
+            (a: Action) => a.id === actionId
+          );
+          if (action) {
+            const duplicated = { ...action, id: `action-${Date.now()}` };
+            handleUpdateActions([...selectedItem.actions, duplicated]);
+          }
+        }}
+        onReorderActions={(startIndex, endIndex) => {
+          const actions = [...selectedItem.actions];
+          const [removed] = actions.splice(startIndex, 1);
+          if (removed) {
+            actions.splice(endIndex, 0, removed);
+            handleUpdateActions(actions);
+          }
+        }}
+      />
+    );
+  }
+
+  return (
+    <GraphEditor
+      workflow={selectedItem}
+      selectedNode={selectedAction}
+      onSelectNode={handleSelectAction}
+      onUpdateWorkflow={handleUpdateWorkflow}
+      onAddNode={handleAddNode}
+    />
+  );
+}
+
 function AutomationBuilderContent() {
   // State
   const [mode, setMode] = useState<BuilderMode>("sequential");
@@ -514,82 +608,6 @@ function AutomationBuilderContent() {
     [addWorkflow]
   );
 
-  // Render the editor based on mode
-  const renderEditor = () => {
-    if (!selectedItem) {
-      return (
-        <EmptyState
-          mode={mode}
-          onCreateNew={
-            mode === "sequential"
-              ? () => handleCreateSequential()
-              : () => handleCreateGraph()
-          }
-        />
-      );
-    }
-
-    if (mode === "sequential") {
-      // Sequential mode - SequentialEditor
-      // Warn if workflow has branching
-      if (!isLinearWorkflow(selectedItem)) {
-        return (
-          <div className="flex items-center justify-center h-full text-text-muted">
-            <div className="text-center">
-              <p className="text-lg">This workflow has branching logic</p>
-              <p className="text-sm">Switch to graph mode to edit</p>
-            </div>
-          </div>
-        );
-      }
-
-      return (
-        <SequentialEditor
-          actions={selectedItem.actions}
-          selectedAction={selectedAction}
-          onSelectAction={handleSelectAction}
-          onUpdateActions={handleUpdateActions}
-          onAddAction={(action) =>
-            handleUpdateActions([...selectedItem.actions, action])
-          }
-          onDeleteAction={(actionId) =>
-            handleUpdateActions(
-              selectedItem.actions.filter((a: Action) => a.id !== actionId)
-            )
-          }
-          onDuplicateAction={(actionId) => {
-            const action = selectedItem.actions.find(
-              (a: Action) => a.id === actionId
-            );
-            if (action) {
-              const duplicated = { ...action, id: `action-${Date.now()}` };
-              handleUpdateActions([...selectedItem.actions, duplicated]);
-            }
-          }}
-          onReorderActions={(startIndex, endIndex) => {
-            const actions = [...selectedItem.actions];
-            const [removed] = actions.splice(startIndex, 1);
-            if (removed) {
-              actions.splice(endIndex, 0, removed);
-              handleUpdateActions(actions);
-            }
-          }}
-        />
-      );
-    } else {
-      // Graph mode - GraphEditor (works with all workflows)
-      return (
-        <GraphEditor
-          workflow={selectedItem}
-          selectedNode={selectedAction}
-          onSelectNode={handleSelectAction}
-          onUpdateWorkflow={handleUpdateWorkflow}
-          onAddNode={handleAddNode}
-        />
-      );
-    }
-  };
-
   return (
     <div
       className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden"
@@ -646,7 +664,19 @@ function AutomationBuilderContent() {
           />
 
           {/* Editor Content */}
-          <div className="flex-1 overflow-y-auto">{renderEditor()}</div>
+          <div className="flex-1 overflow-y-auto">
+            <EditorContent
+              selectedItem={selectedItem}
+              mode={mode}
+              selectedAction={selectedAction}
+              handleCreateSequential={handleCreateSequential}
+              handleCreateGraph={handleCreateGraph}
+              handleSelectAction={handleSelectAction}
+              handleUpdateActions={handleUpdateActions}
+              handleUpdateWorkflow={handleUpdateWorkflow}
+              handleAddNode={handleAddNode}
+            />
+          </div>
         </div>
 
         {/* Right Panel - Properties */}

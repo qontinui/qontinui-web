@@ -35,11 +35,113 @@ import {
   XSquare,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { MonitorValidationError } from "@/lib/monitor-validation";
-import {
-  groupErrorsByType,
-  getErrorDescription,
-} from "@/lib/monitor-validation";
+import { getErrorDescription, groupErrorsByType, type MonitorValidationError } from "@/lib/monitor-validation";
+
+interface ErrorListProps {
+  type: "image" | "region" | "location" | "string";
+  typeErrors: MonitorValidationError[];
+  selectedErrors: Set<string>;
+  getErrorKey: (error: MonitorValidationError) => string;
+  getElementIcon: (type: "image" | "region" | "location" | "string") => React.ReactNode;
+  handleSelectAll: (type: "image" | "region" | "location" | "string") => void;
+  handleSelectNone: (type: "image" | "region" | "location" | "string") => void;
+  handleToggleError: (error: MonitorValidationError) => void;
+}
+
+function ErrorList({
+  type,
+  typeErrors,
+  selectedErrors,
+  getErrorKey,
+  getElementIcon,
+  handleSelectAll,
+  handleSelectNone,
+  handleToggleError,
+}: ErrorListProps) {
+  if (typeErrors.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-40 text-text-muted">
+        <div className="text-center">
+          <CheckSquare className="w-12 h-12 mx-auto mb-3 opacity-50 text-green-500" />
+          <p>All {type}s have monitors assigned</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Selection Controls */}
+      <div className="flex items-center justify-between">
+        <Label className="text-sm font-medium">
+          {typeErrors.length} {type}(s) need monitor assignment
+        </Label>
+        <div className="flex gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => handleSelectAll(type)}
+            className="h-7 text-xs"
+          >
+            <CheckSquare className="w-3 h-3 mr-1" />
+            Select All
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => handleSelectNone(type)}
+            className="h-7 text-xs"
+          >
+            <XSquare className="w-3 h-3 mr-1" />
+            Select None
+          </Button>
+        </div>
+      </div>
+
+      {/* Error List */}
+      <ScrollArea className="h-[300px] border border-border-subtle rounded-lg">
+        <div className="p-2 space-y-1">
+          {typeErrors.map((error) => {
+            const errorKey = getErrorKey(error);
+            const isSelected = selectedErrors.has(errorKey);
+
+            return (
+              <label
+                key={errorKey}
+                className="flex items-start gap-3 p-3 rounded-lg hover:bg-surface-canvas cursor-pointer transition-colors"
+              >
+                <Checkbox
+                  checked={isSelected}
+                  onCheckedChange={() => handleToggleError(error)}
+                  className="mt-1"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    {getElementIcon(error.elementType)}
+                    <span className="text-sm font-medium text-text-secondary truncate">
+                      {error.elementName}
+                    </span>
+                    {error.error === "invalid" && (
+                      <Badge variant="destructive" className="text-xs">
+                        Invalid
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="text-xs text-text-muted mb-1">
+                    State: {error.stateName}
+                  </div>
+                  <div className="text-xs text-amber-400">
+                    {getErrorDescription(error)}
+                  </div>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
 
 export interface MissingMonitorsDialogProps {
   open: boolean;
@@ -179,96 +281,7 @@ export function MissingMonitorsDialog({
     }
   };
 
-  // Render error list for a specific type
-  const renderErrorList = (
-    type: "image" | "region" | "location" | "string"
-  ) => {
-    const typeErrors = errorsByType[type];
-
-    if (typeErrors.length === 0) {
-      return (
-        <div className="flex items-center justify-center h-40 text-text-muted">
-          <div className="text-center">
-            <CheckSquare className="w-12 h-12 mx-auto mb-3 opacity-50 text-green-500" />
-            <p>All {type}s have monitors assigned</p>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div className="space-y-4">
-        {/* Selection Controls */}
-        <div className="flex items-center justify-between">
-          <Label className="text-sm font-medium">
-            {typeErrors.length} {type}(s) need monitor assignment
-          </Label>
-          <div className="flex gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleSelectAll(type)}
-              className="h-7 text-xs"
-            >
-              <CheckSquare className="w-3 h-3 mr-1" />
-              Select All
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleSelectNone(type)}
-              className="h-7 text-xs"
-            >
-              <XSquare className="w-3 h-3 mr-1" />
-              Select None
-            </Button>
-          </div>
-        </div>
-
-        {/* Error List */}
-        <ScrollArea className="h-[300px] border border-border-subtle rounded-lg">
-          <div className="p-2 space-y-1">
-            {typeErrors.map((error) => {
-              const errorKey = getErrorKey(error);
-              const isSelected = selectedErrors.has(errorKey);
-
-              return (
-                <label
-                  key={errorKey}
-                  className="flex items-start gap-3 p-3 rounded-lg hover:bg-surface-canvas cursor-pointer transition-colors"
-                >
-                  <Checkbox
-                    checked={isSelected}
-                    onCheckedChange={() => handleToggleError(error)}
-                    className="mt-1"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      {getElementIcon(error.elementType)}
-                      <span className="text-sm font-medium text-text-secondary truncate">
-                        {error.elementName}
-                      </span>
-                      {error.error === "invalid" && (
-                        <Badge variant="destructive" className="text-xs">
-                          Invalid
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="text-xs text-text-muted mb-1">
-                      State: {error.stateName}
-                    </div>
-                    <div className="text-xs text-amber-400">
-                      {getErrorDescription(error)}
-                    </div>
-                  </div>
-                </label>
-              );
-            })}
-          </div>
-        </ScrollArea>
-      </div>
-    );
-  };
+  // Calculate total counts
 
   // Calculate total counts
   const totalErrors = errors.length;
@@ -343,19 +356,19 @@ export function MissingMonitorsDialog({
             </TabsList>
 
             <TabsContent value="image" className="mt-4">
-              {renderErrorList("image")}
+              <ErrorList type="image" typeErrors={errorsByType.image} selectedErrors={selectedErrors} getErrorKey={getErrorKey} getElementIcon={getElementIcon} handleSelectAll={handleSelectAll} handleSelectNone={handleSelectNone} handleToggleError={handleToggleError} />
             </TabsContent>
 
             <TabsContent value="region" className="mt-4">
-              {renderErrorList("region")}
+              <ErrorList type="region" typeErrors={errorsByType.region} selectedErrors={selectedErrors} getErrorKey={getErrorKey} getElementIcon={getElementIcon} handleSelectAll={handleSelectAll} handleSelectNone={handleSelectNone} handleToggleError={handleToggleError} />
             </TabsContent>
 
             <TabsContent value="location" className="mt-4">
-              {renderErrorList("location")}
+              <ErrorList type="location" typeErrors={errorsByType.location} selectedErrors={selectedErrors} getErrorKey={getErrorKey} getElementIcon={getElementIcon} handleSelectAll={handleSelectAll} handleSelectNone={handleSelectNone} handleToggleError={handleToggleError} />
             </TabsContent>
 
             <TabsContent value="string" className="mt-4">
-              {renderErrorList("string")}
+              <ErrorList type="string" typeErrors={errorsByType.string} selectedErrors={selectedErrors} getErrorKey={getErrorKey} getElementIcon={getElementIcon} handleSelectAll={handleSelectAll} handleSelectNone={handleSelectNone} handleToggleError={handleToggleError} />
             </TabsContent>
           </Tabs>
 

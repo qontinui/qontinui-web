@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import type { TaskRun } from "@/lib/runner";
+import { runnerApi, type TaskRun } from "@/lib/runner";
 import { useEventTriggeredFetch } from "@/contexts/RunnerEventContext";
-import { runnerApi } from "@/lib/runner";
 import { runnerFetch } from "@/lib/runner/api-client";
 import { toast } from "sonner";
 import {

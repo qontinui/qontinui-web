@@ -51,6 +51,23 @@ interface VariableTableProps {
 type SortField = "name" | "type" | "updated_at";
 type SortDirection = "asc" | "desc";
 
+function SortIcon({
+  field,
+  sortField,
+  sortDirection,
+}: {
+  field: SortField;
+  sortField: SortField;
+  sortDirection: SortDirection;
+}) {
+  if (sortField !== field) return null;
+  return sortDirection === "asc" ? (
+    <ChevronUp className="inline ml-1 h-4 w-4" />
+  ) : (
+    <ChevronDown className="inline ml-1 h-4 w-4" />
+  );
+}
+
 export function VariableTable({
   variables,
   onEdit,
@@ -128,15 +145,6 @@ export function VariableTable({
     setExpandedRows(newExpanded);
   };
 
-  // Render sort icon
-  const renderSortIcon = (field: SortField) => {
-    if (sortField !== field) return null;
-    return sortDirection === "asc" ? (
-      <ChevronUp className="inline ml-1 h-4 w-4" />
-    ) : (
-      <ChevronDown className="inline ml-1 h-4 w-4" />
-    );
-  };
 
   // Get type badge color
   const getTypeBadgeColor = (type: string) => {
@@ -235,20 +243,20 @@ export function VariableTable({
               className="cursor-pointer hover:bg-muted/50"
               onClick={() => handleSort("name")}
             >
-              Name {renderSortIcon("name")}
+              Name <SortIcon field="name" sortField={sortField} sortDirection={sortDirection} />
             </TableHead>
             <TableHead
               className="cursor-pointer hover:bg-muted/50"
               onClick={() => handleSort("type")}
             >
-              Type {renderSortIcon("type")}
+              Type <SortIcon field="type" sortField={sortField} sortDirection={sortDirection} />
             </TableHead>
             <TableHead>Value</TableHead>
             <TableHead
               className="cursor-pointer hover:bg-muted/50"
               onClick={() => handleSort("updated_at")}
             >
-              Last Updated {renderSortIcon("updated_at")}
+              Last Updated <SortIcon field="updated_at" sortField={sortField} sortDirection={sortDirection} />
             </TableHead>
             <TableHead className="w-12"></TableHead>
           </TableRow>

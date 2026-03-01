@@ -123,7 +123,7 @@ export function DeficiencyWorkflow({
       <CardContent className="space-y-6">
         {/* Current Status */}
         <div className="space-y-2">
-          <label className="text-sm font-medium">Current Status</label>
+          <p className="text-sm font-medium">Current Status</p>
           <Badge
             className={cn(
               "text-base px-4 py-2",
@@ -142,7 +142,7 @@ export function DeficiencyWorkflow({
           <>
             <Separator />
             <div className="space-y-4">
-              <label className="text-sm font-medium">Change Status</label>
+              <p className="text-sm font-medium">Change Status</p>
               <div className="flex gap-2">
                 <Select
                   value={selectedStatus || ""}
@@ -208,7 +208,7 @@ export function DeficiencyWorkflow({
           <>
             <Separator />
             <div className="space-y-3">
-              <label className="text-sm font-medium">Status History</label>
+              <p className="text-sm font-medium">Status History</p>
               <div className="space-y-2">
                 {statusActivities.map((activity) => {
                   const oldStatus = activity.details.old_value as
@@ -264,7 +264,7 @@ export function DeficiencyWorkflow({
         {/* Workflow Guide */}
         <Separator />
         <div className="space-y-2">
-          <label className="text-sm font-medium">Workflow Guide</label>
+          <p className="text-sm font-medium">Workflow Guide</p>
           <div className="text-xs text-muted-foreground space-y-1">
             <p>
               <strong>New:</strong> Initial state when deficiency is reported

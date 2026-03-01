@@ -102,7 +102,10 @@ export function AccessibilityNodeItem({
           isInteractive && "font-medium"
         )}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
+        role="button"
+        tabIndex={0}
         onClick={() => onSelectNode(node)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectNode(node); } }}
       >
         {/* Expand/Collapse button */}
         {hasChildren ? (

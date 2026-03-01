@@ -10,8 +10,7 @@
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { Search, Plus, X, Loader2, Sparkles } from "lucide-react";
-import { getMCPClient } from "../../services/mcp-client";
-import type { ActionResult } from "../../services/mcp-client";
+import { getMCPClient, type ActionResult } from "../../services/mcp-client";
 import type { Action } from "../../lib/action-schema/action-types";
 
 // ============================================================================

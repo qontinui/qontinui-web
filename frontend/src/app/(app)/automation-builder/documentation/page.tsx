@@ -362,6 +362,109 @@ function calculateWorkflowStats(workflow: Workflow): WorkflowQuickStats {
 // Sub-Components
 // ============================================================================
 
+interface DocumentationNodeItemProps {
+  node: DocumentationNode;
+  depth: number;
+  expandedNodes: Set<string>;
+  selectedNodeId: string | null;
+  filter: DocumentationFilter;
+  onToggle: (nodeId: string) => void;
+  onSelectNode: (node: DocumentationNode) => void;
+}
+
+function DocumentationNodeItem({
+  node,
+  depth,
+  expandedNodes,
+  selectedNodeId,
+  filter,
+  onToggle,
+  onSelectNode,
+}: DocumentationNodeItemProps) {
+  const hasChildren = node.children && node.children.length > 0;
+  const isExpanded = expandedNodes.has(node.id);
+  const isSelected = selectedNodeId === node.id;
+  const Icon = node.icon;
+
+  // Apply filter
+  if (
+    filter.status === "documented" &&
+    !node.hasDocumentation &&
+    node.type === "workflow"
+  ) {
+    return null;
+  }
+  if (
+    filter.status === "undocumented" &&
+    node.hasDocumentation &&
+    node.type === "workflow"
+  ) {
+    return null;
+  }
+  if (filter.searchQuery && node.type === "workflow") {
+    if (
+      !node.label.toLowerCase().includes(filter.searchQuery.toLowerCase())
+    ) {
+      return null;
+    }
+  }
+
+  return (
+    <div>
+      <button
+        onClick={() => {
+          if (hasChildren) {
+            onToggle(node.id);
+          }
+          onSelectNode(node);
+        }}
+        className={cn(
+          "w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors",
+          isSelected && "bg-primary/20 text-primary font-medium",
+          !isSelected && "hover:bg-muted text-muted-foreground"
+        )}
+        style={{ paddingLeft: `${depth * 12 + 8}px` }}
+      >
+        {hasChildren && (
+          <span className="size-4 flex items-center justify-center">
+            {isExpanded ? (
+              <ChevronDown className="size-3" />
+            ) : (
+              <ChevronRight className="size-3" />
+            )}
+          </span>
+        )}
+        {!hasChildren && <span className="size-4" />}
+        <Icon className="size-4 flex-shrink-0" />
+        <span className="flex-1 truncate text-left">{node.label}</span>
+        {node.type === "workflow" && !node.hasDocumentation && (
+          <AlertCircle className="size-3 text-yellow-500" />
+        )}
+        {node.type === "workflow" && node.hasDocumentation && (
+          <CheckCircle2 className="size-3 text-green-500" />
+        )}
+      </button>
+
+      {hasChildren && isExpanded && (
+        <div>
+          {node.children!.map((child) => (
+            <DocumentationNodeItem
+              key={child.id}
+              node={child}
+              depth={depth + 1}
+              expandedNodes={expandedNodes}
+              selectedNodeId={selectedNodeId}
+              filter={filter}
+              onToggle={onToggle}
+              onSelectNode={onSelectNode}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DocumentationNavigator({
   tree,
   selectedNodeId,
@@ -389,83 +492,6 @@ function DocumentationNavigator({
       }
       return next;
     });
-  };
-
-  const renderNode = (
-    node: DocumentationNode,
-    depth: number = 0
-  ): React.ReactNode => {
-    const hasChildren = node.children && node.children.length > 0;
-    const isExpanded = expandedNodes.has(node.id);
-    const isSelected = selectedNodeId === node.id;
-    const Icon = node.icon;
-
-    // Apply filter
-    if (
-      filter.status === "documented" &&
-      !node.hasDocumentation &&
-      node.type === "workflow"
-    ) {
-      return null;
-    }
-    if (
-      filter.status === "undocumented" &&
-      node.hasDocumentation &&
-      node.type === "workflow"
-    ) {
-      return null;
-    }
-    if (filter.searchQuery && node.type === "workflow") {
-      if (
-        !node.label.toLowerCase().includes(filter.searchQuery.toLowerCase())
-      ) {
-        return null;
-      }
-    }
-
-    return (
-      <div key={node.id}>
-        <button
-          onClick={() => {
-            if (hasChildren) {
-              toggleNode(node.id);
-            }
-            onSelectNode(node);
-          }}
-          className={cn(
-            "w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors",
-            isSelected && "bg-primary/20 text-primary font-medium",
-            !isSelected && "hover:bg-muted text-muted-foreground"
-          )}
-          style={{ paddingLeft: `${depth * 12 + 8}px` }}
-        >
-          {hasChildren && (
-            <span className="size-4 flex items-center justify-center">
-              {isExpanded ? (
-                <ChevronDown className="size-3" />
-              ) : (
-                <ChevronRight className="size-3" />
-              )}
-            </span>
-          )}
-          {!hasChildren && <span className="size-4" />}
-          <Icon className="size-4 flex-shrink-0" />
-          <span className="flex-1 truncate text-left">{node.label}</span>
-          {node.type === "workflow" && !node.hasDocumentation && (
-            <AlertCircle className="size-3 text-yellow-500" />
-          )}
-          {node.type === "workflow" && node.hasDocumentation && (
-            <CheckCircle2 className="size-3 text-green-500" />
-          )}
-        </button>
-
-        {hasChildren && isExpanded && (
-          <div>
-            {node.children!.map((child) => renderNode(child, depth + 1))}
-          </div>
-        )}
-      </div>
-    );
   };
 
   return (
@@ -516,7 +542,18 @@ function DocumentationNavigator({
       {/* Tree */}
       <ScrollArea className="flex-1">
         <div className="p-2 space-y-1">
-          {tree.map((node) => renderNode(node))}
+          {tree.map((node) => (
+            <DocumentationNodeItem
+              key={node.id}
+              node={node}
+              depth={0}
+              expandedNodes={expandedNodes}
+              selectedNodeId={selectedNodeId}
+              filter={filter}
+              onToggle={toggleNode}
+              onSelectNode={onSelectNode}
+            />
+          ))}
         </div>
       </ScrollArea>
 
@@ -676,7 +713,10 @@ function DocumentationDashboard({
                   <div
                     key={workflow.id}
                     className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-border transition-colors cursor-pointer"
+                    role="button"
+                    tabIndex={0}
                     onClick={() => onSelectWorkflow(workflow)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectWorkflow(workflow); } }}
                   >
                     <div className="flex items-center gap-3">
                       <FileCode className="size-4 text-muted-foreground" />

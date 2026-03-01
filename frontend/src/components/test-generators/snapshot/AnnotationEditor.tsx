@@ -128,10 +128,11 @@ export function AnnotationEditor({
 
           <div className="space-y-3">
             <div>
-              <label className="block text-xs text-neutral-400 mb-1">
+              <label htmlFor="ae-description" className="block text-xs text-neutral-400 mb-1">
                 Description
               </label>
               <input
+                id="ae-description"
                 type="text"
                 value={editForm.description}
                 onChange={(e) =>
@@ -142,10 +143,11 @@ export function AnnotationEditor({
               />
             </div>
             <div>
-              <label className="block text-xs text-neutral-400 mb-1">
+              <label htmlFor="ae-purpose" className="block text-xs text-neutral-400 mb-1">
                 Purpose
               </label>
               <input
+                id="ae-purpose"
                 type="text"
                 value={editForm.purpose}
                 onChange={(e) =>
@@ -156,10 +158,11 @@ export function AnnotationEditor({
               />
             </div>
             <div>
-              <label className="block text-xs text-neutral-400 mb-1">
+              <label htmlFor="ae-notes" className="block text-xs text-neutral-400 mb-1">
                 Notes
               </label>
               <textarea
+                id="ae-notes"
                 value={editForm.notes}
                 onChange={(e) =>
                   setEditForm({ ...editForm, notes: e.target.value })
@@ -170,9 +173,9 @@ export function AnnotationEditor({
               />
             </div>
             <div>
-              <label className="block text-xs text-neutral-400 mb-1">
+              <p className="block text-xs text-neutral-400 mb-1">
                 Tags
-              </label>
+              </p>
               <div className="flex flex-wrap gap-1 mb-2">
                 {editForm.tags.map((tag) => (
                   <span

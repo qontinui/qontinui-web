@@ -52,6 +52,127 @@ export interface ActionCommentsPanelProps {
 }
 
 // ============================================================================
+// Sub-components
+// ============================================================================
+
+interface CommentCardProps {
+  comment: ActionComment;
+  action: Action;
+  isSelected?: boolean;
+  editingCommentId: string | null;
+  editingText: string;
+  onStartEdit: (comment: ActionComment) => void;
+  onSaveEdit: () => void;
+  onCancelEdit: () => void;
+  onDelete: (commentId: string) => void;
+  onEditingTextChange: (text: string) => void;
+}
+
+function CommentCard({
+  comment,
+  action,
+  isSelected = false,
+  editingCommentId,
+  editingText,
+  onStartEdit,
+  onSaveEdit,
+  onCancelEdit,
+  onDelete,
+  onEditingTextChange,
+}: CommentCardProps) {
+  const isEditing = editingCommentId === comment.id;
+
+  return (
+    <div
+      className={cn(
+        "p-4 rounded-lg border transition-colors",
+        isSelected && "border-primary bg-accent",
+        !isSelected && "border-border hover:border-primary/50"
+      )}
+    >
+      {/* Action Info */}
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <h4 className="font-medium text-sm">
+              {action.name || action.id}
+            </h4>
+            <span className="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground">
+              {action.type}
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            ID: {action.id}
+          </p>
+        </div>
+
+        {!isEditing && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="size-8">
+                <MoreVertical className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => onStartEdit(comment)}>
+                <Edit2 className="size-4 mr-2" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => onDelete(comment.id)}
+                className="text-destructive focus:text-destructive"
+              >
+                <Trash2 className="size-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
+
+      {/* Comment Content */}
+      {isEditing ? (
+        <div className="space-y-2">
+          <Textarea
+            value={editingText}
+            onChange={(e) => onEditingTextChange(e.target.value)}
+            placeholder="Edit comment..."
+            className="min-h-24"
+          />
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={onSaveEdit}>
+              <Check className="size-4" />
+              Save
+            </Button>
+            <Button size="sm" variant="outline" onClick={onCancelEdit}>
+              <X className="size-4" />
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <p className="text-sm leading-relaxed whitespace-pre-wrap">
+            {comment.comment}
+          </p>
+
+          {/* Metadata */}
+          <div className="mt-3 pt-3 border-t flex items-center justify-between text-xs text-muted-foreground">
+            <div>{comment.author && <span>by {comment.author}</span>}</div>
+            <div className="flex items-center gap-2">
+              <span>{new Date(comment.updated).toLocaleDateString()}</span>
+              {comment.updated !== comment.created && (
+                <span className="text-xs">(edited)</span>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
 // Component
 // ============================================================================
 
@@ -176,106 +297,6 @@ export function ActionCommentsPanel({
     URL.revokeObjectURL(url);
   };
 
-  // Render comment card
-  const renderCommentCard = (
-    comment: ActionComment,
-    action: Action,
-    isSelected: boolean = false
-  ) => {
-    const isEditing = editingCommentId === comment.id;
-
-    return (
-      <div
-        key={comment.id}
-        className={cn(
-          "p-4 rounded-lg border transition-colors",
-          isSelected && "border-primary bg-accent",
-          !isSelected && "border-border hover:border-primary/50"
-        )}
-      >
-        {/* Action Info */}
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex-1">
-            <div className="flex items-center gap-2">
-              <h4 className="font-medium text-sm">
-                {action.name || action.id}
-              </h4>
-              <span className="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground">
-                {action.type}
-              </span>
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              ID: {action.id}
-            </p>
-          </div>
-
-          {!isEditing && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="size-8">
-                  <MoreVertical className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => handleStartEdit(comment)}>
-                  <Edit2 className="size-4 mr-2" />
-                  Edit
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => handleDelete(comment.id)}
-                  className="text-destructive focus:text-destructive"
-                >
-                  <Trash2 className="size-4 mr-2" />
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-        </div>
-
-        {/* Comment Content */}
-        {isEditing ? (
-          <div className="space-y-2">
-            <Textarea
-              value={editingText}
-              onChange={(e) => setEditingText(e.target.value)}
-              placeholder="Edit comment..."
-              className="min-h-24"
-              autoFocus
-            />
-            <div className="flex items-center gap-2">
-              <Button size="sm" onClick={handleSaveEdit}>
-                <Check className="size-4" />
-                Save
-              </Button>
-              <Button size="sm" variant="outline" onClick={handleCancelEdit}>
-                <X className="size-4" />
-                Cancel
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <>
-            <p className="text-sm leading-relaxed whitespace-pre-wrap">
-              {comment.comment}
-            </p>
-
-            {/* Metadata */}
-            <div className="mt-3 pt-3 border-t flex items-center justify-between text-xs text-muted-foreground">
-              <div>{comment.author && <span>by {comment.author}</span>}</div>
-              <div className="flex items-center gap-2">
-                <span>{new Date(comment.updated).toLocaleDateString()}</span>
-                {comment.updated !== comment.created && (
-                  <span className="text-xs">(edited)</span>
-                )}
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-    );
-  };
-
   return (
     <div className={cn("flex flex-col h-full bg-background", className)}>
       {/* Header */}
@@ -355,11 +376,19 @@ export function ActionCommentsPanel({
               {selectedActionComment && (
                 <div>
                   <h4 className="text-sm font-medium mb-2">Comment</h4>
-                  {renderCommentCard(
-                    selectedActionComment,
-                    getAction(selectedActionId)!,
-                    true
-                  )}
+                  <CommentCard
+                    key={selectedActionComment.id}
+                    comment={selectedActionComment}
+                    action={getAction(selectedActionId)!}
+                    isSelected={true}
+                    editingCommentId={editingCommentId}
+                    editingText={editingText}
+                    onStartEdit={handleStartEdit}
+                    onSaveEdit={handleSaveEdit}
+                    onCancelEdit={handleCancelEdit}
+                    onDelete={handleDelete}
+                    onEditingTextChange={setEditingText}
+                  />
                 </div>
               )}
 
@@ -374,7 +403,6 @@ export function ActionCommentsPanel({
                         onChange={(e) => setNewCommentText(e.target.value)}
                         placeholder="Add a comment to describe what this action does..."
                         className="min-h-32"
-                        autoFocus
                       />
                       <div className="flex items-center gap-2">
                         <Button size="sm" onClick={handleAddComment}>
@@ -431,9 +459,18 @@ export function ActionCommentsPanel({
                   </div>
 
                   {filteredActions.map(({ action, comment }) => (
-                    <div key={comment.id}>
-                      {renderCommentCard(comment, action)}
-                    </div>
+                    <CommentCard
+                      key={comment.id}
+                      comment={comment}
+                      action={action}
+                      editingCommentId={editingCommentId}
+                      editingText={editingText}
+                      onStartEdit={handleStartEdit}
+                      onSaveEdit={handleSaveEdit}
+                      onCancelEdit={handleCancelEdit}
+                      onDelete={handleDelete}
+                      onEditingTextChange={setEditingText}
+                    />
                   ))}
                 </>
               ) : searchQuery ? (

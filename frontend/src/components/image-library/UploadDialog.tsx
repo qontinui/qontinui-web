@@ -75,7 +75,6 @@ export function CollectionsSidebar({
               onChange={(e) => setNewCollectionName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleCreate()}
               className="text-sm bg-transparent border-border-default"
-              autoFocus
             />
             <Button
               size="sm"

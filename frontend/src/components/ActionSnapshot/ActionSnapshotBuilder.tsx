@@ -173,9 +173,9 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
 
           {/* Action Type Selection */}
           <div>
-            <label className="block text-sm font-medium mb-2">
+            <p className="block text-sm font-medium mb-2">
               Action Type
-            </label>
+            </p>
             <div className="grid grid-cols-3 gap-2">
               {actionTypes.map((type) => (
                 <button
@@ -200,10 +200,11 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
 
             {actionType === "FIND" && (
               <div>
-                <label className="block text-sm font-medium mb-1">
+                <label htmlFor="snapshot-similarity" className="block text-sm font-medium mb-1">
                   Similarity Threshold
                 </label>
                 <input
+                  id="snapshot-similarity"
                   type="number"
                   min="0"
                   max="1"
@@ -223,10 +224,11 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
             {actionType === "CLICK" && (
               <div className="space-y-2">
                 <div>
-                  <label className="block text-sm font-medium mb-1">
+                  <label htmlFor="snapshot-mouse-button" className="block text-sm font-medium mb-1">
                     Mouse Button
                   </label>
                   <select
+                    id="snapshot-mouse-button"
                     value={actionConfig.mouseButton}
                     onChange={(e) =>
                       setActionConfig({
@@ -244,10 +246,11 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-sm font-medium mb-1">
+                    <label htmlFor="snapshot-offset-x" className="block text-sm font-medium mb-1">
                       Offset X
                     </label>
                     <input
+                      id="snapshot-offset-x"
                       type="number"
                       value={actionConfig.offset.x}
                       onChange={(e) =>
@@ -263,10 +266,11 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">
+                    <label htmlFor="snapshot-offset-y" className="block text-sm font-medium mb-1">
                       Offset Y
                     </label>
                     <input
+                      id="snapshot-offset-y"
                       type="number"
                       value={actionConfig.offset.y}
                       onChange={(e) =>
@@ -287,10 +291,11 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
 
             {actionType === "TYPE" && (
               <div>
-                <label className="block text-sm font-medium mb-1">
+                <label htmlFor="snapshot-type-text" className="block text-sm font-medium mb-1">
                   Text to Type
                 </label>
                 <input
+                  id="snapshot-type-text"
                   type="text"
                   value={text}
                   onChange={(e) => setText(e.target.value)}
@@ -331,8 +336,9 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
 
                   <div className="grid grid-cols-4 gap-2">
                     <div>
-                      <label className="block text-xs text-text-muted">X</label>
+                      <label htmlFor={`match-${index}-x`} className="block text-xs text-text-muted">X</label>
                       <input
+                        id={`match-${index}-x`}
                         type="number"
                         value={match.region.x}
                         onChange={(e) =>
@@ -346,8 +352,9 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-text-muted">Y</label>
+                      <label htmlFor={`match-${index}-y`} className="block text-xs text-text-muted">Y</label>
                       <input
+                        id={`match-${index}-y`}
                         type="number"
                         value={match.region.y}
                         onChange={(e) =>
@@ -361,10 +368,11 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-text-muted">
+                      <label htmlFor={`match-${index}-width`} className="block text-xs text-text-muted">
                         Width
                       </label>
                       <input
+                        id={`match-${index}-width`}
                         type="number"
                         value={match.region.width}
                         onChange={(e) =>
@@ -378,10 +386,11 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-text-muted">
+                      <label htmlFor={`match-${index}-height`} className="block text-xs text-text-muted">
                         Height
                       </label>
                       <input
+                        id={`match-${index}-height`}
                         type="number"
                         value={match.region.height}
                         onChange={(e) =>
@@ -397,10 +406,11 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs text-text-muted">
+                    <label htmlFor={`match-${index}-score`} className="block text-xs text-text-muted">
                       Score
                     </label>
                     <input
+                      id={`match-${index}-score`}
                       type="number"
                       min="0"
                       max="1"
@@ -514,10 +524,11 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
 
           {/* Duration */}
           <div>
-            <label className="block text-sm font-medium mb-1">
+            <label htmlFor="snapshot-duration" className="block text-sm font-medium mb-1">
               Expected Duration (ms)
             </label>
             <input
+              id="snapshot-duration"
               type="number"
               min="0"
               value={duration}

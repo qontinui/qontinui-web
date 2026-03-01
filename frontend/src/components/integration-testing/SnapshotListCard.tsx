@@ -80,7 +80,10 @@ export function SnapshotListCard({
                     : "border-border-subtle hover:border-border-default hover:bg-surface-raised/80"
                 }
               `}
+              role="button"
+              tabIndex={0}
               onClick={() => onSelect?.(snapshot)}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(snapshot); } }}
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1">

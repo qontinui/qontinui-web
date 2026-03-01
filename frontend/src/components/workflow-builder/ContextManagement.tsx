@@ -500,7 +500,6 @@ export function ContextManagement() {
                           onChange={(e) => setSearchQuery(e.target.value)}
                           placeholder="Search contexts..."
                           className="pl-8 bg-zinc-700 border-zinc-600 text-zinc-200 text-sm h-8"
-                          autoFocus
                         />
                       </div>
                     </div>

@@ -55,13 +55,7 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAutomation } from "@/contexts/automation-context";
-import { workflowDependencyAnalyzer } from "@/services/workflow-dependency-analyzer";
-import type {
-  DependencyGraph,
-  DependencyNode,
-  DependencyStats,
-  ImpactAnalysis,
-} from "@/services/workflow-dependency-analyzer";
+import { workflowDependencyAnalyzer, type DependencyGraph, type DependencyNode, type DependencyStats, type ImpactAnalysis } from "@/services/workflow-dependency-analyzer";
 import type { Workflow } from "@/lib/action-schema/action-types";
 import { toast } from "sonner";
 

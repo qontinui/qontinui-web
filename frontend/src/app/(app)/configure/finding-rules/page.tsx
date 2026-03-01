@@ -518,10 +518,11 @@ export default function FindingRulesPage() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                  <label htmlFor="finding-rule-name" className="text-sm font-medium text-muted-foreground mb-1.5 block">
                     Name
                   </label>
                   <Input
+                    id="finding-rule-name"
                     placeholder="e.g., Accessibility Issue"
                     value={formName}
                     onChange={(e) => setFormName(e.target.value)}
@@ -534,10 +535,11 @@ export default function FindingRulesPage() {
                   )}
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                  <label htmlFor="finding-rule-description" className="text-sm font-medium text-muted-foreground mb-1.5 block">
                     Description
                   </label>
                   <Input
+                    id="finding-rule-description"
                     placeholder="Short description"
                     value={formDescription}
                     onChange={(e) => setFormDescription(e.target.value)}
@@ -548,9 +550,9 @@ export default function FindingRulesPage() {
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                  <p className="text-sm font-medium text-muted-foreground mb-1.5 block">
                     Icon
-                  </label>
+                  </p>
                   <Select value={formIcon} onValueChange={setFormIcon}>
                     <SelectTrigger className="bg-muted border-border">
                       <SelectValue />
@@ -568,9 +570,9 @@ export default function FindingRulesPage() {
                   </Select>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                  <p className="text-sm font-medium text-muted-foreground mb-1.5 block">
                     Color
-                  </label>
+                  </p>
                   <Select value={formColor} onValueChange={setFormColor}>
                     <SelectTrigger className="bg-muted border-border">
                       <SelectValue />
@@ -593,9 +595,9 @@ export default function FindingRulesPage() {
                   </Select>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                  <p className="text-sm font-medium text-muted-foreground mb-1.5 block">
                     Default Action
-                  </label>
+                  </p>
                   <Select
                     value={formActionType}
                     onValueChange={(v) =>
@@ -626,9 +628,9 @@ export default function FindingRulesPage() {
                   checked={formEnabled}
                   onCheckedChange={setFormEnabled}
                 />
-                <label className="text-sm text-muted-foreground">
+                <span className="text-sm text-muted-foreground">
                   Enable category
-                </label>
+                </span>
               </div>
 
               {saveError && (

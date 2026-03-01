@@ -468,7 +468,6 @@ function FolderTreeItem({
               }
             }}
             className="h-6 py-0 px-1 text-sm flex-1"
-            autoFocus
             onClick={(e) => e.stopPropagation()}
           />
         ) : (
@@ -1012,7 +1011,6 @@ export function FolderTree({
                       }}
                       placeholder="New folder name..."
                       className="h-6 py-0 px-1 text-sm flex-1"
-                      autoFocus
                     />
                   </div>
                 )}

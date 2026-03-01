@@ -299,8 +299,9 @@ function StageSettings({
             />
           </div>
           <div>
-            <label className="text-[10px] text-zinc-500">Max iterations</label>
+            <label htmlFor="stage-max-iterations" className="text-[10px] text-zinc-500">Max iterations</label>
             <Input
+              id="stage-max-iterations"
               type="number"
               value={stage.max_iterations ?? 10}
               onChange={(e) =>
@@ -312,10 +313,11 @@ function StageSettings({
             />
           </div>
           <div>
-            <label className="text-[10px] text-zinc-500">
+            <label htmlFor="stage-provider-override" className="text-[10px] text-zinc-500">
               Provider override
             </label>
             <Input
+              id="stage-provider-override"
               value={stage.provider ?? ""}
               onChange={(e) =>
                 onUpdate({ provider: e.target.value || undefined })
@@ -325,8 +327,9 @@ function StageSettings({
             />
           </div>
           <div>
-            <label className="text-[10px] text-zinc-500">Model override</label>
+            <label htmlFor="stage-model-override" className="text-[10px] text-zinc-500">Model override</label>
             <Input
+              id="stage-model-override"
               value={stage.model ?? ""}
               onChange={(e) => onUpdate({ model: e.target.value || undefined })}
               placeholder="(inherit)"

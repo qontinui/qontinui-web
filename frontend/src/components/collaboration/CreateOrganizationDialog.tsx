@@ -92,7 +92,6 @@ export function CreateOrganizationDialog({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 disabled={loading}
-                autoFocus
                 data-ui-id="dialog-create-organization-name-input"
               />
             </div>

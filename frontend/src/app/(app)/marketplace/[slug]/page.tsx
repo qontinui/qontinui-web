@@ -41,12 +41,7 @@ import {
   useRatePackage,
 } from "@/hooks/useCodePackages";
 import { useProjects } from "@/hooks/use-projects";
-import {
-  formatDownloads,
-  formatRating,
-  getCategoryLabel,
-} from "@/types/code-packages";
-import type { InstallStatus } from "@/types/code-packages";
+import { formatDownloads, formatRating, getCategoryLabel, type InstallStatus } from "@/types/code-packages";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 

@@ -1,8 +1,7 @@
 "use client";
 
-import React from "react";
+import React, { useCallback, useRef, useState } from "react";
 
-import { useState, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Plus, Square, Trash2, Settings, Network } from "lucide-react";
 import {
@@ -1348,10 +1347,13 @@ export function StateStructure() {
                         ? "bg-[var(--brand-secondary)]/20 border border-[var(--brand-secondary)]"
                         : "hover:bg-surface-raised/80"
                     }`}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => {
                       setSelectedNode(state.id);
                       setSelectedEdge(null);
                     }}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedNode(state.id); setSelectedEdge(null); } }}
                   >
                     <span className="text-sm flex-1 truncate">
                       {state.name}

@@ -12,14 +12,7 @@
  *   ai        - AI-driven prompts
  */
 
-import type {
-  WorkflowPhase,
-  UnifiedStep,
-  CommandStep,
-  UiBridgeStep,
-  PromptStep,
-} from "@/types/unified-workflow";
-import { generateStepId } from "@/types/unified-workflow";
+import { generateStepId, type CommandStep, type PromptStep, type UiBridgeStep, type UnifiedStep, type WorkflowPhase } from "@/types/unified-workflow";
 
 // =============================================================================
 // Template Types

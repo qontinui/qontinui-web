@@ -324,10 +324,11 @@ export function ScheduleEditorDialog({
         <CardContent className="space-y-5">
           {/* Task Name */}
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-text-muted">
+            <label htmlFor="schedule-task-name" className="text-sm font-medium text-text-muted">
               Task Name
             </label>
             <Input
+              id="schedule-task-name"
               placeholder="e.g., Daily regression test"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -337,10 +338,11 @@ export function ScheduleEditorDialog({
 
           {/* Description */}
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-text-muted">
+            <label htmlFor="schedule-description" className="text-sm font-medium text-text-muted">
               Description <span className="text-text-muted/50">(optional)</span>
             </label>
             <textarea
+              id="schedule-description"
               placeholder="What does this scheduled task do?"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -351,9 +353,9 @@ export function ScheduleEditorDialog({
 
           {/* Workflow Selector */}
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-text-muted">
+            <p className="text-sm font-medium text-text-muted">
               Workflow
-            </label>
+            </p>
             {workflowName && (
               <div className="flex items-center gap-2 mb-2">
                 <Badge
@@ -424,9 +426,9 @@ export function ScheduleEditorDialog({
 
           {/* Schedule Type */}
           <div className="space-y-2">
-            <label className="text-sm font-medium text-text-muted">
+            <p className="text-sm font-medium text-text-muted">
               Schedule
-            </label>
+            </p>
             <div className="flex gap-1">
               {(
                 [
@@ -453,8 +455,9 @@ export function ScheduleEditorDialog({
             {/* One-time: date + time */}
             {scheduleType === "once" && (
               <div className="space-y-1.5 mt-2">
-                <label className="text-xs text-text-muted">Date & Time</label>
+                <label htmlFor="schedule-once-datetime" className="text-xs text-text-muted">Date & Time</label>
                 <Input
+                  id="schedule-once-datetime"
                   type="datetime-local"
                   value={onceDateTime}
                   onChange={(e) => setOnceDateTime(e.target.value)}
@@ -466,10 +469,11 @@ export function ScheduleEditorDialog({
             {/* Cron */}
             {scheduleType === "cron" && (
               <div className="space-y-1.5 mt-2">
-                <label className="text-xs text-text-muted">
+                <label htmlFor="schedule-cron-expression" className="text-xs text-text-muted">
                   Cron Expression
                 </label>
                 <Input
+                  id="schedule-cron-expression"
                   placeholder="0 9 * * *"
                   value={cronExpression}
                   onChange={(e) => setCronExpression(e.target.value)}
@@ -485,9 +489,10 @@ export function ScheduleEditorDialog({
             {/* Interval */}
             {scheduleType === "interval" && (
               <div className="space-y-1.5 mt-2">
-                <label className="text-xs text-text-muted">Repeat Every</label>
+                <p className="text-xs text-text-muted">Repeat Every</p>
                 <div className="flex gap-2">
                   <Input
+                    id="schedule-interval-amount"
                     type="number"
                     min={1}
                     value={intervalAmount}
@@ -499,6 +504,7 @@ export function ScheduleEditorDialog({
                     className="w-24 bg-surface-canvas/50 border-border-subtle/50 text-sm"
                   />
                   <select
+                    id="schedule-interval-unit"
                     value={intervalUnit}
                     onChange={(e) =>
                       setIntervalUnit(e.target.value as IntervalUnit)
@@ -543,10 +549,11 @@ export function ScheduleEditorDialog({
                 </label>
 
                 <div className="space-y-1">
-                  <label className="text-xs text-text-muted">
+                  <label htmlFor="schedule-timeout-minutes" className="text-xs text-text-muted">
                     Timeout (minutes)
                   </label>
                   <Input
+                    id="schedule-timeout-minutes"
                     type="number"
                     min={0}
                     placeholder="0 = no timeout"

@@ -125,7 +125,7 @@ export function DeficiencyAssignment({
         {/* Currently Assigned */}
         {assignedUser ? (
           <div className="space-y-3">
-            <label className="text-sm font-medium">Currently Assigned To</label>
+            <p className="text-sm font-medium">Currently Assigned To</p>
             <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
               <Avatar className="h-10 w-10">
                 <div className="h-full w-full bg-primary/10 flex items-center justify-center">
@@ -179,9 +179,9 @@ export function DeficiencyAssignment({
           <>
             <Separator />
             <div className="space-y-3">
-              <label className="text-sm font-medium">
+              <p className="text-sm font-medium">
                 {assignedUser ? "Reassign To" : "Assign To"}
-              </label>
+              </p>
               <div className="flex gap-2">
                 <Select
                   value={selectedUserId || ""}

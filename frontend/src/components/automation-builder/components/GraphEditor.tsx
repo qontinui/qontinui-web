@@ -8,7 +8,7 @@
 
 import React, { useCallback, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
-import { WorkflowCanvas } from "@/components/workflow-canvas";
+import { WorkflowCanvas, type EdgeInfo } from "@/components/workflow-canvas";
 import { NodePalette } from "@/components/workflow-canvas/NodePalette";
 import type {
   Workflow,
@@ -16,7 +16,6 @@ import type {
   Connection,
   ActionType,
 } from "@/lib/action-schema/action-types";
-import type { EdgeInfo } from "@/components/workflow-canvas";
 import { EdgePropertiesPanel } from "./EdgePropertiesPanel";
 import type { GraphEditorProps } from "../types";
 

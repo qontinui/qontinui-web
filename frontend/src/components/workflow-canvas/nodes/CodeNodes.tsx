@@ -20,6 +20,21 @@ import type {
 // CODE_BLOCK Node
 // =============================================================================
 
+type ValidationStatus = "idle" | "validating" | "valid" | "invalid";
+
+function ValidationIcon({ status }: { status: ValidationStatus }) {
+  switch (status) {
+    case "validating":
+      return <Loader2 className="w-3 h-3 animate-spin text-text-muted" />;
+    case "valid":
+      return <CheckCircle className="w-3 h-3 text-green-500" />;
+    case "invalid":
+      return <AlertCircle className="w-3 h-3 text-red-500" />;
+    default:
+      return null;
+  }
+}
+
 /**
  * CODE_BLOCK Node - Inline Python code execution
  *
@@ -32,9 +47,7 @@ import type {
 export function CodeBlockNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   const config = props.data.action.config as CodeBlockActionConfig;
   const [showEditor, setShowEditor] = useState(false);
-  const [validationStatus, setValidationStatus] = useState<
-    "idle" | "validating" | "valid" | "invalid"
-  >("idle");
+  const [validationStatus, setValidationStatus] = useState<ValidationStatus>("idle");
   const [validationError, setValidationError] = useState<string | null>(null);
 
   // Get code preview (first line or empty)
@@ -92,19 +105,6 @@ export function CodeBlockNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
     }
   };
 
-  // Render validation status icon
-  const renderValidationIcon = () => {
-    switch (validationStatus) {
-      case "validating":
-        return <Loader2 className="w-3 h-3 animate-spin text-text-muted" />;
-      case "valid":
-        return <CheckCircle className="w-3 h-3 text-green-500" />;
-      case "invalid":
-        return <AlertCircle className="w-3 h-3 text-red-500" />;
-      default:
-        return null;
-    }
-  };
 
   return (
     <div className="code-block-node">
@@ -121,7 +121,7 @@ export function CodeBlockNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
         >
           <Code className="w-3 h-3" />
           {showEditor ? "Hide Code" : "Show Code"}
-          {renderValidationIcon()}
+          <ValidationIcon status={validationStatus} />
         </button>
 
         {showEditor && (

@@ -79,7 +79,10 @@ export function CoverageMatrix({
                 border-b border-border-subtle hover:bg-surface-raised transition-colors
                 ${onStateClick ? "cursor-pointer" : ""}
               `}
+              role="button"
+              tabIndex={0}
               onClick={() => onStateClick?.(state.state_name)}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onStateClick?.(state.state_name); } }}
             >
               {/* State Name */}
               <td className="px-4 py-3 text-sm font-medium text-text-primary">

@@ -12,10 +12,8 @@ import type {
   BulkOperationResult,
   OperationResult,
 } from "./types";
-import { addImageTag } from "./metadata-manager";
-import { moveImageToFolder } from "./folder-manager";
-import type { FolderManagerDeps } from "./folder-manager";
-import type { MetadataManagerDeps } from "./metadata-manager";
+import { addImageTag, type MetadataManagerDeps } from "./metadata-manager";
+import { moveImageToFolder, type FolderManagerDeps } from "./folder-manager";
 
 // ============================================================================
 // Dependencies

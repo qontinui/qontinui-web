@@ -36,17 +36,7 @@ import {
   FlaskConical,
   Filter,
 } from "lucide-react";
-import {
-  runnerApi,
-  useTaskRunVerification,
-  useTaskRunKnowledge,
-} from "@/lib/runner-api";
-import type {
-  TaskRun,
-  VerificationData,
-  Finding,
-  FailureInfo,
-} from "@/lib/runner-api";
+import { runnerApi, useTaskRunKnowledge, useTaskRunVerification, type FailureInfo, type Finding, type TaskRun, type VerificationData } from "@/lib/runner-api";
 import type { TaskRunView } from "@/lib/task-run-mappers";
 import { toast } from "sonner";
 const TimelineTab = lazy(() =>

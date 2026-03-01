@@ -186,7 +186,10 @@ function StateVisualizationTab() {
                         ${isSelected ? "bg-primary/10 border-primary" : "hover:bg-muted/50"}
                         ${isHighlighted ? "ring-2 ring-primary" : ""}
                       `}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => toggleState(state.id)}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleState(state.id); } }}
                       onMouseEnter={() =>
                         isSelected && setHighlightedStateId(state.id)
                       }

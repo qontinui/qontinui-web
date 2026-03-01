@@ -9,6 +9,49 @@ import {
 } from "lucide-react";
 import { useExecutionDebugger } from "../../stores/execution-debugger-store";
 
+// ============================================================================
+// VariableValue component
+// ============================================================================
+
+interface VariableValueProps {
+  value: unknown;
+  type: string;
+}
+
+function VariableValue({ value, type }: VariableValueProps) {
+  if (value === null) return <span className="text-text-muted">null</span>;
+  if (value === undefined)
+    return <span className="text-text-muted">undefined</span>;
+
+  const isArray = Array.isArray(value);
+
+  switch (type) {
+    case "string":
+      return (
+        <span className="text-green-600">&quot;{String(value)}&quot;</span>
+      );
+    case "number":
+      return <span className="text-blue-600">{String(value)}</span>;
+    case "boolean":
+      return <span className="text-purple-600">{String(value)}</span>;
+    case "object":
+      if (isArray) {
+        return (
+          <span className="text-text-muted">
+            [{(value as unknown[]).length} items]
+          </span>
+        );
+      }
+      return <span className="text-text-muted">{"{...}"}</span>;
+    default:
+      return <span className="text-text-secondary">{String(value)}</span>;
+  }
+}
+
+// ============================================================================
+// VariableNode component
+// ============================================================================
+
 interface VariableNodeProps {
   name: string;
   value: unknown;
@@ -31,34 +74,6 @@ const VariableNode: React.FC<VariableNodeProps> = ({
   const isExpandable =
     type === "object" && value !== null && typeof value === "object";
   const isArray = Array.isArray(value);
-
-  const renderValue = () => {
-    if (value === null) return <span className="text-text-muted">null</span>;
-    if (value === undefined)
-      return <span className="text-text-muted">undefined</span>;
-
-    switch (type) {
-      case "string":
-        return (
-          <span className="text-green-600">&quot;{String(value)}&quot;</span>
-        );
-      case "number":
-        return <span className="text-blue-600">{String(value)}</span>;
-      case "boolean":
-        return <span className="text-purple-600">{String(value)}</span>;
-      case "object":
-        if (isArray) {
-          return (
-            <span className="text-text-muted">
-              [{(value as unknown[]).length} items]
-            </span>
-          );
-        }
-        return <span className="text-text-muted">{"{...}"}</span>;
-      default:
-        return <span className="text-text-secondary">{String(value)}</span>;
-    }
-  };
 
   const getChildEntries = () => {
     if (!isExpandable) return [];
@@ -112,7 +127,7 @@ const VariableNode: React.FC<VariableNodeProps> = ({
           </span>
         )}
         <span className="text-sm font-mono flex-1 text-right">
-          {renderValue()}
+          <VariableValue value={value} type={type} />
         </span>
       </div>
 

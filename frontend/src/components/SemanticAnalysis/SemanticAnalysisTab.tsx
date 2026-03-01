@@ -911,7 +911,10 @@ export function SemanticAnalysisTab() {
               {scene.objects.map((obj) => (
                 <div
                   key={obj.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setSelectedObject(obj)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedObject(obj); } }}
                   onMouseEnter={() => setHoveredObject(obj.id)}
                   onMouseLeave={() => setHoveredObject(null)}
                   className={cn(

@@ -41,6 +41,82 @@ const difficultyColors: Record<DifficultyLevel, string> = {
   advanced: "text-purple-500",
 };
 
+interface TriggerButtonProps {
+  variant: "button" | "compact" | "inline";
+  buttonRef: React.RefObject<HTMLButtonElement | null>;
+  isOpen: boolean;
+  onToggle: () => void;
+  tutorialCount: number;
+  completedCount: number;
+  className?: string;
+}
+
+function TriggerButton({ variant, buttonRef, isOpen, onToggle, tutorialCount, completedCount, className = "" }: TriggerButtonProps) {
+  switch (variant) {
+    case "compact":
+      return (
+        <button
+          ref={buttonRef}
+          onClick={onToggle}
+          className={`
+            relative p-2 rounded-md text-text-secondary hover:text-text-primary
+            hover:bg-surface-hover transition-colors
+            ${className}
+          `}
+          aria-label={`${tutorialCount} tutorials available`}
+        >
+          <BookOpen className="w-5 h-5" />
+          {tutorialCount > 0 && (
+            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary text-white text-xs flex items-center justify-center">
+              {tutorialCount}
+            </span>
+          )}
+        </button>
+      );
+
+    case "inline":
+      return (
+        <button
+          ref={buttonRef}
+          onClick={onToggle}
+          className={`
+            inline-flex items-center gap-1 text-sm text-primary hover:underline
+            ${className}
+          `}
+        >
+          <BookOpen className="w-4 h-4" />
+          <span>{tutorialCount} tutorials</span>
+        </button>
+      );
+
+    default: // "button"
+      return (
+        <button
+          ref={buttonRef}
+          onClick={onToggle}
+          className={`
+            inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium
+            text-text-secondary hover:text-text-primary
+            border border-border-default hover:border-border-strong
+            rounded-md transition-colors
+            ${className}
+          `}
+        >
+          <BookOpen className="w-4 h-4" />
+          <span>Tutorials</span>
+          {tutorialCount > 0 && (
+            <span className="px-1.5 py-0.5 text-xs bg-primary/10 text-primary rounded-full">
+              {completedCount}/{tutorialCount}
+            </span>
+          )}
+          <ChevronDown
+            className={`w-4 h-4 transition-transform ${isOpen ? "rotate-180" : ""}`}
+          />
+        </button>
+      );
+  }
+}
+
 export const PageTutorialMenu: React.FC<PageTutorialMenuProps> = ({
   focusPage,
   tutorials,
@@ -117,75 +193,17 @@ export const PageTutorialMenu: React.FC<PageTutorialMenuProps> = ({
     return null;
   }
 
-  const renderButton = () => {
-    switch (variant) {
-      case "compact":
-        return (
-          <button
-            ref={buttonRef}
-            onClick={() => setIsOpen(!isOpen)}
-            className={`
-              relative p-2 rounded-md text-text-secondary hover:text-text-primary
-              hover:bg-surface-hover transition-colors
-              ${className}
-            `}
-            aria-label={`${pageTutorials.length} tutorials available`}
-          >
-            <BookOpen className="w-5 h-5" />
-            {pageTutorials.length > 0 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary text-white text-xs flex items-center justify-center">
-                {pageTutorials.length}
-              </span>
-            )}
-          </button>
-        );
-
-      case "inline":
-        return (
-          <button
-            ref={buttonRef}
-            onClick={() => setIsOpen(!isOpen)}
-            className={`
-              inline-flex items-center gap-1 text-sm text-primary hover:underline
-              ${className}
-            `}
-          >
-            <BookOpen className="w-4 h-4" />
-            <span>{pageTutorials.length} tutorials</span>
-          </button>
-        );
-
-      default: // "button"
-        return (
-          <button
-            ref={buttonRef}
-            onClick={() => setIsOpen(!isOpen)}
-            className={`
-              inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium
-              text-text-secondary hover:text-text-primary
-              border border-border-default hover:border-border-strong
-              rounded-md transition-colors
-              ${className}
-            `}
-          >
-            <BookOpen className="w-4 h-4" />
-            <span>Tutorials</span>
-            {pageTutorials.length > 0 && (
-              <span className="px-1.5 py-0.5 text-xs bg-primary/10 text-primary rounded-full">
-                {completedCount}/{pageTutorials.length}
-              </span>
-            )}
-            <ChevronDown
-              className={`w-4 h-4 transition-transform ${isOpen ? "rotate-180" : ""}`}
-            />
-          </button>
-        );
-    }
-  };
-
   return (
     <div className="relative">
-      {renderButton()}
+      <TriggerButton
+        variant={variant}
+        buttonRef={buttonRef}
+        isOpen={isOpen}
+        onToggle={() => setIsOpen(!isOpen)}
+        tutorialCount={pageTutorials.length}
+        completedCount={completedCount}
+        className={className}
+      />
 
       {/* Dropdown menu */}
       {isOpen && (

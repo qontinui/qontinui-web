@@ -1,12 +1,6 @@
 import { HttpClient } from "./http-client";
 import { ApiConfig } from "./api-config";
-import type {
-  CaptureSession,
-  CaptureSessionApi,
-  InputEvent,
-  InputEventApi,
-} from "@/types/capture";
-import { transformCaptureSession, transformInputEvent } from "@/types/capture";
+import { transformCaptureSession, transformInputEvent, type CaptureSession, type CaptureSessionApi, type InputEvent, type InputEventApi } from "@/types/capture";
 
 export interface CaptureSessionListResponse {
   sessions: CaptureSession[];

@@ -38,6 +38,74 @@ interface Action {
   config: Record<string, unknown>;
 }
 
+interface ProcessCardProps {
+  process: Process;
+  selectedProcess: Process | null;
+  draggedProcess: Process | null;
+  onSelect: (process: Process) => void;
+  onDelete: (processId: string, processName: string) => void;
+  onDragStart: (e: DragEvent<HTMLDivElement>, process: Process) => void;
+  onDragEnd: () => void;
+}
+
+function ProcessCard({
+  process,
+  selectedProcess,
+  draggedProcess,
+  onSelect,
+  onDelete,
+  onDragStart,
+  onDragEnd,
+}: ProcessCardProps) {
+  return (
+    <Card
+      key={process.id}
+      draggable
+      onDragStart={(e) => onDragStart(e, process)}
+      onDragEnd={onDragEnd}
+      className={`cursor-pointer transition-all hover:border-brand-primary/50 !py-0 !gap-0 ${
+        selectedProcess?.id === process.id
+          ? "border-brand-primary bg-brand-primary/10"
+          : "border-border-default bg-surface-raised"
+      } ${draggedProcess?.id === process.id ? "opacity-50" : ""}`}
+      onClick={() => onSelect(process)}
+    >
+      <CardContent className="py-1 px-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <h4 className="font-medium text-xs truncate">
+                  {process.name}
+                </h4>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{process.name}</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <div className="flex items-center gap-1 ml-2">
+            <Badge variant="secondary" className="text-[10px] h-4 px-1">
+              {process.actions.length}
+            </Badge>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-4 w-4 p-0 text-text-muted hover:text-red-400"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(process.id, process.name);
+              }}
+            >
+              <Trash2 className="w-2.5 h-2.5" />
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 interface ProcessListProps {
   processes: Process[];
   selectedProcess: Process | null;
@@ -234,56 +302,6 @@ export function ProcessList({
     setDragOverCategory(null);
   };
 
-  const renderProcess = (process: Process) => {
-    return (
-      <Card
-        key={process.id}
-        draggable
-        onDragStart={(e) => handleDragStart(e, process)}
-        onDragEnd={handleDragEnd}
-        className={`cursor-pointer transition-all hover:border-brand-primary/50 !py-0 !gap-0 ${
-          selectedProcess?.id === process.id
-            ? "border-brand-primary bg-brand-primary/10"
-            : "border-border-default bg-surface-raised"
-        } ${draggedProcess?.id === process.id ? "opacity-50" : ""}`}
-        onClick={() => onSelectProcess(process)}
-      >
-        <CardContent className="py-1 px-2">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex-1 min-w-0">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <h4 className="font-medium text-xs truncate">
-                    {process.name}
-                  </h4>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>{process.name}</p>
-                </TooltipContent>
-              </Tooltip>
-            </div>
-            <div className="flex items-center gap-1 ml-2">
-              <Badge variant="secondary" className="text-[10px] h-4 px-1">
-                {process.actions.length}
-              </Badge>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-4 w-4 p-0 text-text-muted hover:text-red-400"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDelete(process.id, process.name);
-                }}
-              >
-                <Trash2 className="w-2.5 h-2.5" />
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  };
-
   return (
     <TooltipProvider>
       <div className="space-y-2">
@@ -317,7 +335,6 @@ export function ProcessList({
               }}
               placeholder="Category name..."
               className="h-7 text-xs bg-transparent border-border-default"
-              autoFocus
             />
             <Button size="sm" className="h-7 px-2" onClick={handleAddCategory}>
               Add
@@ -401,7 +418,9 @@ export function ProcessList({
                         Drop processes here
                       </div>
                     ) : (
-                      categoryProcesses.map(renderProcess)
+                      categoryProcesses.map((p) => (
+                        <ProcessCard key={p.id} process={p} selectedProcess={selectedProcess} draggedProcess={draggedProcess} onSelect={onSelectProcess} onDelete={handleDelete} onDragStart={handleDragStart} onDragEnd={handleDragEnd} />
+                      ))
                     )}
                   </div>
                 )}
@@ -420,7 +439,9 @@ export function ProcessList({
                   .filter(
                     (p) => p.category && !allCategories.includes(p.category)
                   )
-                  .map(renderProcess)}
+                  .map((p) => (
+                    <ProcessCard key={p.id} process={p} selectedProcess={selectedProcess} draggedProcess={draggedProcess} onSelect={onSelectProcess} onDelete={handleDelete} onDragStart={handleDragStart} onDragEnd={handleDragEnd} />
+                  ))}
               </div>
             </div>
           )}

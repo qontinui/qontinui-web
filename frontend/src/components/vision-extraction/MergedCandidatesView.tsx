@@ -394,9 +394,12 @@ export function MergedCandidatesView({
 
                     <div
                       className="text-xs text-muted-foreground cursor-pointer"
+                      role="button"
+                      tabIndex={0}
                       onClick={() =>
                         setSelectedId(isSelected ? null : candidate.id)
                       }
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId(isSelected ? null : candidate.id); } }}
                     >
                       {candidate.bbox.width} x {candidate.bbox.height} at (
                       {candidate.bbox.x}, {candidate.bbox.y})

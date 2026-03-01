@@ -139,7 +139,10 @@ export function BoundingBoxOverlay({
 
   return (
     <div
+      role="button"
+      tabIndex={0}
       className={`absolute ${onClick ? "cursor-pointer pointer-events-auto" : ""}`}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); } }}
       style={{
         left: bbox.x,
         top: bbox.y,

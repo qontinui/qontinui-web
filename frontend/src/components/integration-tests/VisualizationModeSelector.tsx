@@ -71,7 +71,10 @@ export const VisualizationModeSelector: React.FC<
                   ? "bg-blue-50 border-blue-300 shadow-sm"
                   : "bg-white border-border-subtle hover:bg-surface-raised/80"
               } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
+              role="button"
+              tabIndex={0}
               onClick={() => !disabled && onModeChange(vizMode.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); !disabled && onModeChange(vizMode.value); } }}
             >
               <RadioGroupItem
                 value={vizMode.value}

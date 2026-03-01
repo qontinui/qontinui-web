@@ -12,8 +12,7 @@
  * @module tree-event-adapter
  */
 
-import type { TreeEvent, DisplayNode } from "@/types/tree-events";
-import type { UnifiedExecutionStep } from "@/types/tree-events";
+import type { DisplayNode, TreeEvent, UnifiedExecutionStep } from "@/types/tree-events";
 import type {
   ExecutionStep,
   StateDiscoveryStep,

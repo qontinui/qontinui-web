@@ -439,7 +439,10 @@ function SortableStepItem({
           ? "bg-zinc-700/80 ring-1 ring-zinc-500"
           : "hover:bg-zinc-800/60"
       )}
+      role="button"
+      tabIndex={0}
       onClick={onSelect}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(); } }}
     >
       {/* Drag handle */}
       <button

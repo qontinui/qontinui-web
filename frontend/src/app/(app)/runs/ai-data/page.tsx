@@ -1,13 +1,7 @@
 "use client";
 
 import { useState, Fragment } from "react";
-import {
-  useRunningTaskRuns,
-  useTaskRunKnowledge,
-  useTaskRunVerification,
-  useTaskRunMcpCalls,
-} from "@/lib/runner-api";
-import type { Finding, VerificationResult, McpCall } from "@/lib/runner-api";
+import { useRunningTaskRuns, useTaskRunKnowledge, useTaskRunMcpCalls, useTaskRunVerification, type Finding, type McpCall, type VerificationResult } from "@/lib/runner-api";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -401,7 +395,10 @@ function McpCallsTab({ runId }: { runId: string }) {
               <Fragment key={call.id}>
                 <tr
                   className="border-b border-border hover:bg-muted/50 cursor-pointer"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setExpandedRow(isExpanded ? null : call.id)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpandedRow(isExpanded ? null : call.id); } }}
                 >
                   <td className="py-2.5 px-2 text-muted-foreground">
                     {isExpanded ? (

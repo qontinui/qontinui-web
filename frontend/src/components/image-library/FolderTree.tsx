@@ -89,7 +89,6 @@ export function FolderTreeSidebar({
               onChange={(e) => setNewFolderName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleCreateFolder()}
               className="text-sm bg-transparent border-border-default"
-              autoFocus
             />
             <Button
               size="sm"
@@ -226,7 +225,6 @@ function FolderTreeNode({
               }}
               onBlur={handleSaveEdit}
               className="text-sm h-6 bg-transparent border-border-default"
-              autoFocus
             />
           ) : (
             <>

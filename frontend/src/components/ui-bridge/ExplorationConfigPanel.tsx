@@ -34,28 +34,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Play,
-  Square,
-  Compass,
-  ShieldAlert,
-  Clock,
-  Globe,
-  Loader2,
-  AlertCircle,
-  Info,
-  ChevronDown,
-  Monitor,
-  Smartphone,
-  Chrome,
-} from "lucide-react";
-import type { TargetType, BrowserTab } from "@/hooks/useUIBridgeExploration";
-import type {
-  UIBridgeExplorationConfig,
-  ExplorationProgress,
-} from "@/hooks/useUIBridgeExploration";
+import { AlertCircle, ChevronDown, Chrome, Clock, Compass, Globe, Info, Loader2, Monitor, Play, RefreshCw, ShieldAlert, Smartphone, Square } from "lucide-react";
+import type { BrowserTab, ExplorationProgress, TargetType, UIBridgeExplorationConfig } from "@/hooks/useUIBridgeExploration";
 import type { RunnerConnection } from "@/types/runner";
-import { RefreshCw } from "lucide-react";
 
 interface ExplorationConfigPanelProps {
   config: UIBridgeExplorationConfig;

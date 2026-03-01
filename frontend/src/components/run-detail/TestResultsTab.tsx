@@ -1,18 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import {
-  useTaskRunPlaywright,
-  useTaskRunVerificationPhaseResults,
-} from "@/lib/runner-api";
-import type {
-  LoopResult,
-  PlaywrightResult,
-  VerificationPhaseResult,
-  VerificationStepResult,
-  IndividualCheckResult,
-  CheckIssueDetail,
-} from "@/lib/runner-api";
+import { useTaskRunPlaywright, useTaskRunVerificationPhaseResults, type CheckIssueDetail, type IndividualCheckResult, type LoopResult, type PlaywrightResult, type VerificationPhaseResult, type VerificationStepResult } from "@/lib/runner-api";
 import { ComparisonResultInline } from "@/components/run-detail/ComparisonResultInline";
 import type { ComparisonResult } from "@/lib/runner/types/exploration";
 import { Badge } from "@/components/ui/badge";

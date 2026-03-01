@@ -202,7 +202,10 @@ export default function DatasetsPage() {
                   <tr
                     key={dataset.id}
                     className="hover:bg-muted/30 transition-colors cursor-pointer"
+                    role="button"
+                    tabIndex={0}
                     onClick={() => router.push(`/admin/datasets/${dataset.id}`)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(`/admin/datasets/${dataset.id}`); } }}
                     data-ui-id={`admin-page-datasets-item-${dataset.id}`}
                   >
                     <td className="px-6 py-2.5">

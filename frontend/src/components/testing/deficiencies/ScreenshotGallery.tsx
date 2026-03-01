@@ -155,7 +155,10 @@ export function ScreenshotGallery({
           <div
             key={index}
             className="relative aspect-video rounded-lg border bg-muted cursor-pointer overflow-hidden group hover:border-primary transition-colors"
+            role="button"
+            tabIndex={0}
             onClick={() => handleOpen(index)}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleOpen(index); } }}
           >
             <Image
               src={url}

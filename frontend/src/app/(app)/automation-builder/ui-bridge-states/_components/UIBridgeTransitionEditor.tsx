@@ -192,10 +192,11 @@ export function UIBridgeTransitionEditor({
       <div className="p-4 space-y-4">
         {/* Name */}
         <div>
-          <label className="text-xs font-medium text-text-muted mb-1 block">
+          <label htmlFor="uibte-transition-name" className="text-xs font-medium text-text-muted mb-1 block">
             Name
           </label>
           <Input
+            id="uibte-transition-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g., Open Settings"
@@ -205,9 +206,9 @@ export function UIBridgeTransitionEditor({
 
         {/* From States */}
         <div>
-          <label className="text-xs font-medium text-text-muted mb-1 block">
+          <p className="text-xs font-medium text-text-muted mb-1 block">
             From States (required active)
-          </label>
+          </p>
           <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
             {states.map((s) => (
               <button
@@ -229,9 +230,9 @@ export function UIBridgeTransitionEditor({
 
         {/* Activate States */}
         <div>
-          <label className="text-xs font-medium text-text-muted mb-1 block">
+          <p className="text-xs font-medium text-text-muted mb-1 block">
             Activate States (will become active)
-          </label>
+          </p>
           <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
             {states.map((s) => (
               <button
@@ -253,9 +254,9 @@ export function UIBridgeTransitionEditor({
 
         {/* Exit States */}
         <div>
-          <label className="text-xs font-medium text-text-muted mb-1 block">
+          <p className="text-xs font-medium text-text-muted mb-1 block">
             Exit States (will deactivate)
-          </label>
+          </p>
           <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
             {states.map((s) => (
               <button
@@ -278,9 +279,9 @@ export function UIBridgeTransitionEditor({
         {/* Actions */}
         <div>
           <div className="flex items-center justify-between mb-1">
-            <label className="text-xs font-medium text-text-muted">
+            <p className="text-xs font-medium text-text-muted">
               Actions
-            </label>
+            </p>
             <Button
               variant="ghost"
               size="sm"
@@ -450,10 +451,11 @@ export function UIBridgeTransitionEditor({
 
         {/* Path Cost */}
         <div>
-          <label className="text-xs font-medium text-text-muted mb-1 block">
+          <label htmlFor="uibte-path-cost" className="text-xs font-medium text-text-muted mb-1 block">
             Path Cost
           </label>
           <Input
+            id="uibte-path-cost"
             type="number"
             value={pathCost}
             onChange={(e) => setPathCost(parseFloat(e.target.value) || 1.0)}

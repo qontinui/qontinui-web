@@ -116,7 +116,10 @@ export function SnapshotMultiSelector({
                         : "bg-white border-border-subtle hover:border-border-default hover:bg-surface-raised/80"
                     }
                   `}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => handleToggle(snapshot)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleToggle(snapshot); } }}
                 >
                   <div className="flex items-start gap-3">
                     <Checkbox

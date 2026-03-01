@@ -13,12 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { CodePackage } from "@/types/code-packages";
-import {
-  formatDownloads,
-  formatRating,
-  getCategoryLabel,
-} from "@/types/code-packages";
+import { formatDownloads, formatRating, getCategoryLabel, type CodePackage } from "@/types/code-packages";
 
 interface PackageCardProps {
   package: CodePackage;

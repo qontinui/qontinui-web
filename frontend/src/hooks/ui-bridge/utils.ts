@@ -5,12 +5,7 @@
  * and data conversion used across UI Bridge exploration sub-hooks.
  */
 
-import type {
-  UIBridgeExplorationConfig,
-  ExplorationSession,
-  ExplorationSessionResponse,
-} from "./types";
-import { DEFAULT_EXPLORATION_CONFIG } from "./types";
+import { DEFAULT_EXPLORATION_CONFIG, type ExplorationSession, type ExplorationSessionResponse, type UIBridgeExplorationConfig } from "./types";
 
 const STORAGE_KEY = "qontinui-exploration-config";
 

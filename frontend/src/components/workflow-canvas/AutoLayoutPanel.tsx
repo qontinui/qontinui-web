@@ -481,11 +481,12 @@ export function AutoLayoutPanel({
           <h3>Spacing</h3>
 
           <div className="control-group">
-            <label>
+            <label htmlFor="layout-horizontal-spacing">
               <span>Horizontal Spacing:</span>
               <span className="value">{customOptions.horizontalSpacing}px</span>
             </label>
             <input
+              id="layout-horizontal-spacing"
               type="range"
               min="100"
               max="400"
@@ -501,11 +502,12 @@ export function AutoLayoutPanel({
           </div>
 
           <div className="control-group">
-            <label>
+            <label htmlFor="layout-vertical-spacing">
               <span>Vertical Spacing:</span>
               <span className="value">{customOptions.verticalSpacing}px</span>
             </label>
             <input
+              id="layout-vertical-spacing"
               type="range"
               min="80"
               max="300"
@@ -518,11 +520,12 @@ export function AutoLayoutPanel({
           </div>
 
           <div className="control-group">
-            <label>
+            <label htmlFor="layout-branch-offset">
               <span>Branch Offset:</span>
               <span className="value">{customOptions.branchOffset}px</span>
             </label>
             <input
+              id="layout-branch-offset"
               type="range"
               min="80"
               max="300"
@@ -535,11 +538,12 @@ export function AutoLayoutPanel({
           </div>
 
           <div className="control-group">
-            <label>
+            <label htmlFor="layout-min-node-spacing">
               <span>Minimum Node Spacing:</span>
               <span className="value">{customOptions.minNodeSpacing}px</span>
             </label>
             <input
+              id="layout-min-node-spacing"
               type="range"
               min="10"
               max="50"

@@ -332,7 +332,10 @@ export default function RunHistoryPage() {
                     <tr
                       key={run.id}
                       className="hover:bg-muted/50 cursor-pointer"
+                      role="button"
+                      tabIndex={0}
                       onClick={() => router.push(`/runs/${run.id}`)}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(`/runs/${run.id}`); } }}
                     >
                       <td className="px-3 py-2.5">
                         <Checkbox

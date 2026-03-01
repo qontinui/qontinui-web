@@ -23,11 +23,7 @@ import {
   Copy,
   Lightbulb,
 } from "lucide-react";
-import { getMCPClient } from "../../services/mcp-client";
-import type {
-  GeneratedWorkflow,
-  GenerationContext,
-} from "../../services/mcp-client";
+import { getMCPClient, type GeneratedWorkflow, type GenerationContext } from "../../services/mcp-client";
 import type { Workflow } from "../../lib/action-schema/action-types";
 import {
   PROMPT_TEMPLATES,
@@ -246,10 +242,11 @@ export function AIGenerationDialog({
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
               {/* Description Input */}
               <div>
-                <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary mb-2">
+                <label htmlFor="aidg-workflow-description" className="block text-sm font-medium text-text-secondary dark:text-text-secondary mb-2">
                   Workflow Description
                 </label>
                 <textarea
+                  id="aidg-workflow-description"
                   ref={textAreaRef}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
@@ -285,9 +282,9 @@ export function AIGenerationDialog({
                 )}
 
                 <div>
-                  <label className="block text-xs text-text-muted dark:text-text-muted mb-2">
+                  <p className="block text-xs text-text-muted dark:text-text-muted mb-2">
                     Use Templates
-                  </label>
+                  </p>
                   <div className="flex flex-wrap gap-2">
                     {[
                       "web_scraping",

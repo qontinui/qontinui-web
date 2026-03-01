@@ -337,7 +337,10 @@ export function ScreenshotManager() {
                     ? "border-brand-primary ring-1 ring-brand-primary/50"
                     : "border-border-default hover:border-border-subtle"
                 )}
+                role="button"
+                tabIndex={0}
                 onClick={() => toggleSelection(screenshot.id)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleSelection(screenshot.id); } }}
               >
                 <div className="aspect-video bg-surface-canvas relative">
                   <ScreenshotImage

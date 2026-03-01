@@ -22,8 +22,7 @@ import {
   Monitor,
   GitBranch,
 } from "lucide-react";
-import type { WidgetId, WidgetConfig } from "../_lib";
-import { transformVerification, transformKnowledge } from "../_lib";
+import { transformKnowledge, transformVerification, type WidgetConfig, type WidgetId } from "../_lib";
 
 // ---------------------------------------------------------------------------
 // Step type sets for filtering
@@ -581,7 +580,10 @@ export function SummaryCard({
   const Icon = config.icon;
   return (
     <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick?.(); } }}
       className={cn(
         "rounded-lg border overflow-hidden cursor-pointer transition-all",
         "hover:border-white/20 hover:bg-white/[0.02]",

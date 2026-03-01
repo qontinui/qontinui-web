@@ -1,7 +1,6 @@
 "use client";
 
-import type React from "react";
-import { Suspense } from "react";
+import React, { Suspense } from "react";
 import nextDynamic from "next/dynamic";
 import { AutomationProvider } from "@/contexts/automation-context/AutomationProviderV2";
 import { OrganizationProvider } from "@/contexts/organization-context";

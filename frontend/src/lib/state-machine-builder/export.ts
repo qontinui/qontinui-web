@@ -1,10 +1,4 @@
-import type {
-  UIBridgeConfig,
-  UIBridgeState,
-  UIBridgeTransition,
-  ElementFingerprint,
-} from "./types";
-import { isValidUIBridgeConfig } from "./types";
+import { isValidUIBridgeConfig, type ElementFingerprint, type UIBridgeConfig, type UIBridgeState, type UIBridgeTransition } from "./types";
 
 export interface ExportOptions {
   configName: string;

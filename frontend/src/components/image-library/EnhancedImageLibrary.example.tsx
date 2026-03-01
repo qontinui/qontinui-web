@@ -6,7 +6,7 @@
 
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { EnhancedImageLibrary } from "./EnhancedImageLibrary";
 
 /**
@@ -287,7 +287,6 @@ export function ProgrammaticExample() {
  *
  * Shows how to integrate with workflow builder for image selection.
  */
-import { useState } from "react";
 import {
   Dialog,
   DialogContent,

@@ -94,7 +94,6 @@ export function CreateProjectDialog({
                 }}
                 placeholder="My Automation Project"
                 className="bg-surface-canvas border-border-default text-white placeholder:text-text-muted focus:border-brand-primary"
-                autoFocus
                 disabled={isLoading}
                 data-ui-id="project-name-input"
                 data-awas-param-name={name}

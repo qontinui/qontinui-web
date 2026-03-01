@@ -17,6 +17,58 @@ interface DirectPatternRegionSelectorProps {
 
 const DEFAULT_EXISTING_REGIONS: Region[] = [];
 
+interface RegionOverlayProps {
+  region: Region;
+  color: string;
+  label?: string;
+  imageDimensions: { width: number; height: number } | null;
+  scale: number;
+  containerRef: React.RefObject<HTMLDivElement | null>;
+}
+
+function RegionOverlay({ region, color, label, imageDimensions, scale, containerRef }: RegionOverlayProps) {
+  if (!imageDimensions) return null;
+
+  const scaledRegion = {
+    x: region.x * scale,
+    y: region.y * scale,
+    width: region.width * scale,
+    height: region.height * scale,
+  };
+
+  const containerWidth = containerRef.current?.clientWidth || 0;
+  const containerHeight = containerRef.current?.clientHeight || 0;
+  const scaledImageWidth = imageDimensions.width * scale;
+  const scaledImageHeight = imageDimensions.height * scale;
+
+  const imageLeft = (containerWidth - scaledImageWidth) / 2;
+  const imageTop = (containerHeight - scaledImageHeight) / 2;
+
+  return (
+    <div
+      key={`${region.x}-${region.y}`}
+      className="absolute border-2 pointer-events-none"
+      style={{
+        left: imageLeft + scaledRegion.x,
+        top: imageTop + scaledRegion.y,
+        width: scaledRegion.width,
+        height: scaledRegion.height,
+        borderColor: color,
+        backgroundColor: `${color}20`,
+      }}
+    >
+      {label && (
+        <div
+          className="absolute -top-6 left-0 text-xs px-1 rounded text-white"
+          style={{ backgroundColor: color }}
+        >
+          {label}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function DirectPatternRegionSelector({
   imageUrl,
   onRegionSelected,
@@ -160,49 +212,6 @@ export function DirectPatternRegionSelector({
     });
   };
 
-  // Render region rectangle
-  const renderRegion = (region: Region, color: string, label?: string) => {
-    if (!imageDimensions) return null;
-
-    const scaledRegion = {
-      x: region.x * scale,
-      y: region.y * scale,
-      width: region.width * scale,
-      height: region.height * scale,
-    };
-
-    const containerWidth = containerRef.current?.clientWidth || 0;
-    const containerHeight = containerRef.current?.clientHeight || 0;
-    const scaledImageWidth = imageDimensions.width * scale;
-    const scaledImageHeight = imageDimensions.height * scale;
-
-    const imageLeft = (containerWidth - scaledImageWidth) / 2;
-    const imageTop = (containerHeight - scaledImageHeight) / 2;
-
-    return (
-      <div
-        key={`${region.x}-${region.y}`}
-        className="absolute border-2 pointer-events-none"
-        style={{
-          left: imageLeft + scaledRegion.x,
-          top: imageTop + scaledRegion.y,
-          width: scaledRegion.width,
-          height: scaledRegion.height,
-          borderColor: color,
-          backgroundColor: `${color}20`,
-        }}
-      >
-        {label && (
-          <div
-            className="absolute -top-6 left-0 text-xs px-1 rounded text-white"
-            style={{ backgroundColor: color }}
-          >
-            {label}
-          </div>
-        )}
-      </div>
-    );
-  };
 
   return (
     <div className="space-y-3">
@@ -261,19 +270,41 @@ export function DirectPatternRegionSelector({
         )}
 
         {/* Existing regions (gray) */}
-        {existingRegions.map((region, idx) =>
-          renderRegion(region, "#9CA3AF", `#${idx + 1}`)
-        )}
+        {existingRegions.map((region, idx) => (
+          <RegionOverlay
+            key={idx}
+            region={region}
+            color="#9CA3AF"
+            label={`#${idx + 1}`}
+            imageDimensions={imageDimensions}
+            scale={scale}
+            containerRef={containerRef}
+          />
+        ))}
 
         {/* Current/selected region (blue) */}
-        {currentRegion &&
-          !isDrawing &&
-          renderRegion(currentRegion, "#3B82F6", "Selected")}
+        {currentRegion && !isDrawing && (
+          <RegionOverlay
+            region={currentRegion}
+            color="#3B82F6"
+            label="Selected"
+            imageDimensions={imageDimensions}
+            scale={scale}
+            containerRef={containerRef}
+          />
+        )}
 
         {/* Temporary drawing region (blue dashed) */}
-        {isDrawing &&
-          tempRegion &&
-          renderRegion(tempRegion, "#60A5FA", "Drawing")}
+        {isDrawing && tempRegion && (
+          <RegionOverlay
+            region={tempRegion}
+            color="#60A5FA"
+            label="Drawing"
+            imageDimensions={imageDimensions}
+            scale={scale}
+            containerRef={containerRef}
+          />
+        )}
 
         {!imageUrl && (
           <div className="absolute inset-0 flex items-center justify-center text-text-muted">

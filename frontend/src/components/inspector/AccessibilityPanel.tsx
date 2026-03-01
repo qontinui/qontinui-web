@@ -353,7 +353,6 @@ function NodeDetailsPanel({
                     if (e.key === "Enter") handleFill();
                     if (e.key === "Escape") setShowFillInput(false);
                   }}
-                  autoFocus
                 />
                 <Button
                   size="sm"
@@ -437,7 +436,10 @@ function AccessibilityTreeNode({
               ? "bg-brand-primary/10"
               : "hover:bg-surface-hover"
         }`}
+        role="button"
+        tabIndex={0}
         onClick={() => onSelectNode(node)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectNode(node); } }}
       >
         {hasChildren ? (
           <button

@@ -15,8 +15,7 @@ import type {
   Activity,
   ResourceType,
 } from "@/types/collaboration";
-import type { PermissionLevel } from "@/lib/permissions";
-import { hasPermission } from "@/lib/permissions";
+import { hasPermission, type PermissionLevel } from "@/lib/permissions";
 import {
   organizationService,
   lockService,

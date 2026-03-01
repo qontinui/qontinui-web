@@ -726,7 +726,6 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
                         }
                       }}
                       className="flex-1 text-xs"
-                      autoFocus
                     />
                     <button
                       onClick={handleSaveEdit}

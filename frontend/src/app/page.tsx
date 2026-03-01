@@ -1,8 +1,7 @@
 "use client";
 
-import type React from "react";
+import React, { useEffect, useState } from "react";
 
-import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -84,7 +83,10 @@ function LandingContent() {
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
           <div
             className="flex items-center gap-1 cursor-pointer"
+            role="button"
+            tabIndex={0}
             onClick={() => router.push("/")}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push("/"); } }}
           >
             <Image
               src="/q-logo.png"

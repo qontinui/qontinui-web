@@ -444,8 +444,9 @@ function SaveTemplateDialog({ onSave, onClose }: SaveTemplateDialogProps) {
 
         <div className="dialog-content">
           <div className="form-group">
-            <label>Template Name *</label>
+            <label htmlFor="tb-template-name">Template Name *</label>
             <input
+              id="tb-template-name"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -454,8 +455,9 @@ function SaveTemplateDialog({ onSave, onClose }: SaveTemplateDialogProps) {
           </div>
 
           <div className="form-group">
-            <label>Description *</label>
+            <label htmlFor="tb-template-description">Description *</label>
             <textarea
+              id="tb-template-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Describe what this template does..."
@@ -464,8 +466,9 @@ function SaveTemplateDialog({ onSave, onClose }: SaveTemplateDialogProps) {
           </div>
 
           <div className="form-group">
-            <label>Category</label>
+            <label htmlFor="tb-template-category">Category</label>
             <select
+              id="tb-template-category"
               value={category}
               onChange={(e) => setCategory(e.target.value as TemplateCategory)}
             >
@@ -479,8 +482,9 @@ function SaveTemplateDialog({ onSave, onClose }: SaveTemplateDialogProps) {
           </div>
 
           <div className="form-group">
-            <label>Tags (comma-separated)</label>
+            <label htmlFor="tb-template-tags">Tags (comma-separated)</label>
             <input
+              id="tb-template-tags"
               type="text"
               value={tagsInput}
               onChange={(e) => setTagsInput(e.target.value)}

@@ -190,7 +190,10 @@ export function DatasetImportDialog({
         {step === "select" && (
           <div
             className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:bg-accent/50 transition-colors"
+            role="button"
+            tabIndex={0}
             onClick={() => fileInputRef.current?.click()}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInputRef.current?.click(); } }}
             onDrop={handleDrop}
             onDragOver={handleDragOver}
           >

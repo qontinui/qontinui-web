@@ -145,7 +145,10 @@ export function ComparisonReviewPanel({
                 {/* Thumbnail */}
                 <div
                   className="flex-shrink-0 w-32 h-24 rounded-lg border bg-muted cursor-pointer overflow-hidden relative group"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setSelectedComparison(comparison)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedComparison(comparison); } }}
                 >
                   {comparison.screenshot_url ? (
                     // eslint-disable-next-line @next/next/no-img-element

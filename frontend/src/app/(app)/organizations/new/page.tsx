@@ -96,7 +96,6 @@ export default function NewOrganizationPage() {
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., Acme Corporation"
                 className="bg-background border-border mt-1.5"
-                autoFocus
               />
               <p className="text-xs text-muted-foreground mt-1">
                 This will be the display name for your organization

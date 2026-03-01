@@ -12,12 +12,7 @@ import type {
   DocumentationVersion,
   ExportOptions,
 } from "./types";
-import { generateDocumentation as generateDocContent } from "./generator";
-import {
-  generateVariablesTable,
-  generateDependenciesList,
-  generateFlowchart,
-} from "./generator";
+import { generateDependenciesList, generateDocumentation as generateDocContent, generateFlowchart, generateVariablesTable } from "./generator";
 import { getTemplates } from "./templates";
 import {
   generateTOC,

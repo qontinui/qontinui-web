@@ -1261,9 +1261,12 @@ function ExtractionPageContentInner() {
                                         ? "border-[#9B59B6] bg-[#9B59B6]/10"
                                         : "border-border-subtle hover:border-[#9B59B6]/50"
                                     }`}
+                                    role="button"
+                                    tabIndex={0}
                                     onClick={() =>
                                       annotationStore.selectElement(element.id)
                                     }
+                                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); annotationStore.selectElement(element.id); } }}
                                   >
                                     <div className="flex items-center justify-between">
                                       <div className="flex items-center gap-2">

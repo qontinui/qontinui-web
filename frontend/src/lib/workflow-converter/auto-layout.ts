@@ -5,8 +5,7 @@
  * Handles branches, merges, and complex control flow structures.
  */
 
-import { Action } from "../action-schema/action-types";
-import { Connections } from "../action-schema/action-types";
+import { Action, Connections } from "../action-schema/action-types";
 
 /**
  * Layout options

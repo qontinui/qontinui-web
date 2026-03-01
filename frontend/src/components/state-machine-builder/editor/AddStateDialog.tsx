@@ -140,7 +140,6 @@ export function AddStateDialog({
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Login Page"
               className="h-8 text-sm"
-              autoFocus
             />
             {name.trim() && (
               <p className="text-xs text-text-muted">

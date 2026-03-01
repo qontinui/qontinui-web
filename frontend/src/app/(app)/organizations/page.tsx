@@ -165,7 +165,10 @@ export default function OrganizationsPage() {
                 <tr
                   key={org.id}
                   className="hover:bg-muted/50 cursor-pointer transition-colors"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => router.push(`/organizations/${org.id}`)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(`/organizations/${org.id}`); } }}
                 >
                   <td className="px-6 py-3 font-medium">{org.name}</td>
                   <td className="px-6 py-3 text-sm text-muted-foreground truncate max-w-[300px]">

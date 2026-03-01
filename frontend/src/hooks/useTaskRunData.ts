@@ -10,21 +10,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { httpClient } from "@/services/service-factory";
-import { useTaskRuns as useRunnerTaskRuns } from "@/lib/runner/hooks/task-run-hooks";
-import { useFindingsSummary as useRunnerFindingsSummary } from "@/lib/runner/hooks/task-run-hooks";
-import type {
-  BackendTaskRunListResponse,
-  BackendTaskRunResponse,
-  BackendFindingsSummaryResponse,
-  TaskRunView,
-  FindingsSummaryView,
-} from "@/lib/task-run-mappers";
-import {
-  mapBackendTaskRun,
-  mapRunnerTaskRun,
-  mapBackendFinding,
-  mergeTaskRunSources,
-} from "@/lib/task-run-mappers";
+import { useFindingsSummary as useRunnerFindingsSummary, useTaskRuns as useRunnerTaskRuns } from "@/lib/runner/hooks/task-run-hooks";
+import { mapBackendFinding, mapBackendTaskRun, mapRunnerTaskRun, mergeTaskRunSources, type BackendFindingsSummaryResponse, type BackendTaskRunListResponse, type BackendTaskRunResponse, type FindingsSummaryView, type TaskRunView } from "@/lib/task-run-mappers";
 
 // =============================================================================
 // Query Keys
