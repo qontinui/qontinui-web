@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import { type Hook, type TestHookResponse } from "@/lib/runner";
 import { Badge } from "@/components/ui/badge";

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
   PatternOptimizationProvider,
   usePatternOptimization,
@@ -9,28 +9,18 @@ import {
   type Region,
 } from "@/types/pattern-optimization";
 import { AdvancedRegionSelector } from "./AdvancedRegionSelector";
-import {
-  Upload,
-  X,
-  Sliders,
-  AlertCircle,
-  Check,
-  ImageIcon,
-  MousePointer,
-  Edit2,
-  Eraser,
-  Plus,
-  FolderOpen,
-  ChevronDown,
-  ChevronUp,
-  HelpCircle,
-} from "lucide-react";
+import { ChevronDown, ChevronUp, HelpCircle, ImageIcon } from "lucide-react";
 import { useAutomation } from "@/contexts/automation-context";
 import { ScreenshotSelector } from "../screenshot-selector";
-import { prepareStateImageCreation } from "@/lib/state-image-creator";
-import { createImageAsset, findImageByData } from "@/lib/image-library-utils";
-import { toast } from "sonner";
 import { usePatternOptimizationBridge } from "@/stores/page-state";
+import { HowItWorksSection } from "./_components/HowItWorksSection";
+import { ScreenshotListPanel } from "./_components/ScreenshotListPanel";
+import { ExtractionConfigPanel } from "./_components/ExtractionConfigPanel";
+import { ExtractionResultsPanel } from "./_components/ExtractionResultsPanel";
+import { StateImageDialog } from "./_components/StateImageDialog";
+import { usePatternCanvas } from "./_hooks/usePatternCanvas";
+import { useScreenshotManagement } from "./_hooks/useScreenshotManagement";
+import { useStateImageCreation } from "./_hooks/useStateImageCreation";
 
 /**
  * Pattern Optimization Component - Simplified
@@ -50,20 +40,8 @@ const PatternOptimizationContent: React.FC = () => {
     analyzePatternQuality,
   } = usePatternOptimization();
 
-  // Use bridge hook for persistent state
   const pageState = usePatternOptimizationBridge();
 
-  const [patternQuality, setPatternQuality] = useState<PatternQuality | null>(
-    null
-  );
-  const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(
-    null
-  );
-  const [showHowItWorks, setShowHowItWorks] = useState(false);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const patternCanvasRef = useRef<HTMLCanvasElement>(null);
-  const screenshotSelectorTriggerRef = useRef<HTMLButtonElement>(null);
   const {
     states,
     addState,
@@ -73,22 +51,61 @@ const PatternOptimizationContent: React.FC = () => {
     addImage,
   } = useAutomation();
 
-  const BRUSH_RADIUS = 5; // Smaller brush size
+  const [patternQuality, setPatternQuality] = useState<PatternQuality | null>(
+    null
+  );
+  const [showHowItWorks, setShowHowItWorks] = useState(false);
 
-  // Initialize session on mount and select first screenshot
-  useEffect(() => {
-    if (!session) {
-      createSession();
-    } else if (
-      session.screenshots?.length > 0 &&
-      !pageState.selectedScreenshotId
-    ) {
-      const firstScreenshot = session.screenshots[0];
-      if (firstScreenshot) {
-        pageState.setSelectedScreenshotId(firstScreenshot.id);
-      }
-    }
-  }, [session, createSession, pageState]);
+  // Screenshot management (upload, selection, session init)
+  const {
+    fileInputRef,
+    screenshotSelectorTriggerRef,
+    selectedScreenshot,
+    handleFileSelect,
+    handleProjectScreenshotSelect,
+  } = useScreenshotManagement({
+    session,
+    selectedScreenshotId: pageState.selectedScreenshotId,
+    projectScreenshots,
+    createSession,
+    addScreenshots,
+    setSelectedScreenshotId: pageState.setSelectedScreenshotId,
+  });
+
+  // Canvas editing for pattern transparency
+  const {
+    patternCanvasRef,
+    cursorPos,
+    brushRadius,
+    handlePatternEdit,
+    handlePatternMouseMove,
+    handlePatternMouseLeave,
+  } = usePatternCanvas({
+    editMode: pageState.editMode,
+    extractedPattern,
+    editedPattern: pageState.editedPattern,
+    onEditedPatternChange: pageState.setEditedPattern,
+  });
+
+  // StateImage creation dialog logic
+  const { handleCreateStateImage, handleCancelDialog } = useStateImageCreation({
+    extractedPattern,
+    editedPattern: pageState.editedPattern,
+    stateImageName: pageState.stateImageName,
+    selectedStateId: pageState.selectedStateId,
+    newStateName: pageState.newStateName,
+    fixedLocation: pageState.fixedLocation,
+    session,
+    states,
+    images,
+    addImage,
+    addState,
+    updateState,
+    setShowStateImageDialog: pageState.setShowStateImageDialog,
+    setStateImageName: pageState.setStateImageName,
+    setSelectedStateId: pageState.setSelectedStateId,
+    setNewStateName: pageState.setNewStateName,
+  });
 
   // Analyze pattern quality when extracted
   useEffect(() => {
@@ -98,68 +115,11 @@ const PatternOptimizationContent: React.FC = () => {
     }
   }, [extractedPattern, analyzePatternQuality]);
 
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length > 0) {
-      await addScreenshots(files);
-      // Select first screenshot after adding if none selected
-      setTimeout(() => {
-        if (
-          !pageState.selectedScreenshotId &&
-          (session?.screenshots?.length ?? 0) > 0
-        ) {
-          const firstScreenshot = session?.screenshots[0];
-          if (firstScreenshot) {
-            pageState.setSelectedScreenshotId(firstScreenshot.id);
-          }
-        }
-      }, 100);
-    }
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-
-  const handleProjectScreenshotSelect = async (screenshotIds: string[]) => {
-    // Convert all selected screenshots
-    const files: File[] = [];
-    for (const screenshotId of screenshotIds) {
-      const projectScreenshot = projectScreenshots.find(
-        (s) => s.id === screenshotId
-      );
-      if (projectScreenshot) {
-        const file = await urlToFile(
-          projectScreenshot.url,
-          projectScreenshot.name
-        );
-        files.push(file);
-      }
-    }
-
-    if (files.length > 0) {
-      await addScreenshots(files);
-
-      // Select the first newly added screenshot
-      setTimeout(() => {
-        if ((session?.screenshots?.length ?? 0) > 0) {
-          const targetScreenshot =
-            session?.screenshots[
-              (session?.screenshots?.length ?? 0) - files.length
-            ];
-          if (targetScreenshot) {
-            pageState.setSelectedScreenshotId(targetScreenshot.id);
-          }
-        }
-      }, 100);
-    }
-  };
-
-  // Helper function to convert data URL to File object
-  const urlToFile = async (url: string, filename: string): Promise<File> => {
-    const response = await fetch(url);
-    const blob = await response.blob();
-    return new File([blob], filename, { type: blob.type });
-  };
+  // Check if we can extract - need at least one screenshot with a region
+  const hasRegions = session?.screenshots?.some((s) => s.region) || false;
+  const hasRequirements =
+    session && (session.screenshots?.length ?? 0) > 0 && hasRegions;
+  const canExtract = hasRequirements && !isExtracting;
 
   const handleExtract = async () => {
     console.log("[PatternOptimization] Extract clicked");
@@ -178,24 +138,20 @@ const PatternOptimizationContent: React.FC = () => {
     }
 
     try {
-      // Create a full ExtractionConfig with minActivePixels
       const fullConfig: ExtractionConfig = {
         ...pageState.config,
-        minActivePixels: 100, // Default value
+        minActivePixels: 100,
       };
       await extractPattern(fullConfig);
     } catch (error) {
       console.error("Pattern extraction failed:", error);
-      // Don't show alert, let the error be handled gracefully
     }
   };
 
   const handleRegionChange = (region: Region) => {
     console.log("[PatternOptimization] Region changed:", region);
-    // Apply region to all screenshots automatically using batch update
     setAllScreenshotRegions(region);
 
-    // Force a re-render to update canExtract
     setTimeout(() => {
       console.log("[PatternOptimization] After region update - checking state");
       console.log(
@@ -204,17 +160,6 @@ const PatternOptimizationContent: React.FC = () => {
       );
     }, 100);
   };
-
-  const selectedScreenshot = session?.screenshots.find(
-    (s) => s.id === pageState.selectedScreenshotId
-  );
-
-  // Check if we can extract - need at least one screenshot with a region
-  const hasRegions = session?.screenshots?.some((s) => s.region) || false;
-  const hasRequirements =
-    session && (session.screenshots?.length ?? 0) > 0 && hasRegions;
-
-  const canExtract = hasRequirements && !isExtracting;
 
   // Debug logging
   useEffect(() => {
@@ -229,221 +174,6 @@ const PatternOptimizationContent: React.FC = () => {
       console.log("[PatternOptimization] Can extract?", canExtract);
     }
   }, [session, canExtract]);
-
-  // Initialize pattern canvas when entering edit mode
-  useEffect(() => {
-    if (
-      pageState.editMode !== "none" &&
-      extractedPattern?.patternImage &&
-      patternCanvasRef.current
-    ) {
-      const canvas = patternCanvasRef.current;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-
-      // Draw checkerboard background for transparency
-      const checkSize = 5;
-      for (let y = 0; y < canvas.height; y += checkSize) {
-        for (let x = 0; x < canvas.width; x += checkSize) {
-          ctx.fillStyle =
-            (x / checkSize + y / checkSize) % 2 === 0 ? "#f3f4f6" : "#ffffff";
-          ctx.fillRect(x, y, checkSize, checkSize);
-        }
-      }
-
-      // Draw the pattern image
-      const img = new Image();
-      img.onload = () => {
-        ctx.drawImage(img, 0, 0);
-      };
-      img.src = pageState.editedPattern || extractedPattern.patternImage;
-    }
-  }, [pageState.editMode, extractedPattern, pageState.editedPattern]);
-
-  const getQualityColor = (rating: PatternQuality["rating"]) => {
-    switch (rating) {
-      case "excellent":
-        return "text-green-600 bg-green-50 border-green-200";
-      case "good":
-        return "text-blue-600 bg-blue-50 border-blue-200";
-      case "fair":
-        return "text-yellow-600 bg-yellow-50 border-yellow-200";
-      case "poor":
-        return "text-red-600 bg-red-50 border-red-200";
-    }
-  };
-
-  const handlePatternMouseMove = (
-    event: React.MouseEvent<HTMLCanvasElement>
-  ) => {
-    if (!patternCanvasRef.current) return;
-
-    const canvas = patternCanvasRef.current;
-    const rect = canvas.getBoundingClientRect();
-    const x = (event.clientX - rect.left) * (canvas.width / rect.width);
-    const y = (event.clientY - rect.top) * (canvas.height / rect.height);
-
-    setCursorPos({ x, y });
-
-    // Handle dragging
-    if (event.buttons === 1 && pageState.editMode !== "none") {
-      handlePatternEdit(event);
-    }
-  };
-
-  const handlePatternMouseLeave = () => {
-    setCursorPos(null);
-  };
-
-  const handlePatternEdit = (event: React.MouseEvent<HTMLCanvasElement>) => {
-    if (
-      pageState.editMode === "none" ||
-      !patternCanvasRef.current ||
-      !extractedPattern
-    )
-      return;
-
-    const canvas = patternCanvasRef.current;
-    const rect = canvas.getBoundingClientRect();
-    const x = Math.floor(
-      (event.clientX - rect.left) * (canvas.width / rect.width)
-    );
-    const y = Math.floor(
-      (event.clientY - rect.top) * (canvas.height / rect.height)
-    );
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    // Get the current image data
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-    // Create a circular brush
-    for (let dy = -BRUSH_RADIUS; dy <= BRUSH_RADIUS; dy++) {
-      for (let dx = -BRUSH_RADIUS; dx <= BRUSH_RADIUS; dx++) {
-        if (dx * dx + dy * dy <= BRUSH_RADIUS * BRUSH_RADIUS) {
-          const px = x + dx;
-          const py = y + dy;
-
-          if (px >= 0 && px < canvas.width && py >= 0 && py < canvas.height) {
-            const index = (py * canvas.width + px) * 4;
-
-            if (pageState.editMode === "add") {
-              // Add transparency (make pixels transparent)
-              imageData.data[index + 3] = 0; // Set alpha to 0
-            } else if (pageState.editMode === "remove") {
-              // Remove transparency (make pixels opaque)
-              // Restore pixels from original pattern if available
-              if (imageData.data[index + 3] === 0) {
-                // Only fill if currently transparent
-                imageData.data[index] = 128; // R
-                imageData.data[index + 1] = 128; // G
-                imageData.data[index + 2] = 128; // B
-                imageData.data[index + 3] = 255; // A
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // Put the modified image data back
-    ctx.putImageData(imageData, 0, 0);
-
-    // Save the edited pattern
-    pageState.setEditedPattern(canvas.toDataURL());
-  };
-
-  const handleCreateStateImage = async () => {
-    if (!extractedPattern || !pageState.stateImageName) {
-      toast.error("Missing required fields");
-      return;
-    }
-
-    // Validate new state name when creating a new state
-    if (pageState.selectedStateId === "new" && !pageState.newStateName.trim()) {
-      toast.error("Please enter a name for the new state");
-      return;
-    }
-
-    try {
-      const imageData =
-        pageState.editedPattern || extractedPattern.patternImage || "";
-
-      // Step 1: Add image to library first (or find existing)
-      // The library is the source of truth for all image data
-      let imageAsset = findImageByData(images, imageData);
-      if (!imageAsset) {
-        imageAsset = createImageAsset(
-          imageData,
-          pageState.stateImageName,
-          "pattern_optimization"
-        );
-        // Add mask to the image asset if present
-        if (extractedPattern.maskImage) {
-          imageAsset.mask = extractedPattern.maskImage;
-        }
-        addImage(imageAsset);
-        toast.success("Added to Image Library");
-      }
-
-      // Step 2: If fixed location is enabled, get the first screenshot's region as the search region
-      let searchRegion:
-        | {
-            id: string;
-            name: string;
-            x: number;
-            y: number;
-            width: number;
-            height: number;
-          }
-        | undefined;
-      if (pageState.fixedLocation && (session?.screenshots?.length ?? 0) > 0) {
-        const firstScreenshot = session?.screenshots[0];
-        if (firstScreenshot?.region) {
-          searchRegion = {
-            id: `search_region_${Date.now()}`,
-            name: "Pattern Region",
-            x: firstScreenshot.region.x,
-            y: firstScreenshot.region.y,
-            width: firstScreenshot.region.width,
-            height: firstScreenshot.region.height,
-          };
-        }
-      }
-
-      // Step 3: Create StateImage with imageId referencing the library
-      const result = prepareStateImageCreation(
-        {
-          name: pageState.stateImageName,
-          imageId: imageAsset.id, // Reference to library image
-          source: "pattern-optimization",
-          fixed: pageState.fixedLocation,
-          searchRegion: searchRegion,
-        },
-        pageState.selectedStateId,
-        states,
-        pageState.newStateName.trim() || undefined
-      );
-
-      if (result.action === "create-state" && result.targetState) {
-        addState(result.targetState);
-        toast.success(`Created new state: ${result.targetState.name}`);
-      } else if (result.action === "update-state" && result.targetState) {
-        updateState(result.targetState);
-        toast.success(`Added StateImage to ${result.targetState.name}`);
-      }
-
-      // Reset dialog
-      pageState.setShowStateImageDialog(false);
-      pageState.setStateImageName("");
-      pageState.setSelectedStateId("");
-      pageState.setNewStateName("");
-    } catch (error) {
-      console.error("Error creating StateImage:", error);
-      toast.error("Failed to create StateImage");
-    }
-  };
 
   return (
     <div className="h-full flex flex-col bg-surface-canvas">
@@ -473,443 +203,41 @@ const PatternOptimizationContent: React.FC = () => {
           </button>
         </div>
 
-        {/* Expandable explanation */}
-        {showHowItWorks && (
-          <div className="mt-4 p-4 bg-surface-canvas rounded-lg border border-border-default">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* What it does */}
-              <div>
-                <h3 className="text-sm font-semibold text-white mb-2">
-                  What is Pattern Extraction?
-                </h3>
-                <p className="text-sm text-text-muted leading-relaxed">
-                  Pattern Extraction creates{" "}
-                  <strong className="text-text-secondary">
-                    masked image templates
-                  </strong>{" "}
-                  for UI automation. By comparing multiple screenshots of the
-                  same element, it identifies which pixels are{" "}
-                  <strong className="text-text-secondary">stable</strong>{" "}
-                  (always the same) vs{" "}
-                  <strong className="text-text-secondary">variable</strong>{" "}
-                  (change between screenshots). Variable pixels are made
-                  transparent, so they&apos;re ignored during matching.
-                </p>
-              </div>
-
-              {/* Why use it */}
-              <div>
-                <h3 className="text-sm font-semibold text-white mb-2">
-                  Why Use This?
-                </h3>
-                <p className="text-sm text-text-muted leading-relaxed">
-                  Standard template matching fails when UI elements contain
-                  changing content - usernames, timestamps, notification counts,
-                  etc. Pattern Extraction creates templates that match the{" "}
-                  <strong className="text-text-secondary">structure</strong> of
-                  an element while ignoring its{" "}
-                  <strong className="text-text-secondary">
-                    dynamic content
-                  </strong>
-                  .
-                </p>
-              </div>
-
-              {/* How to use */}
-              <div>
-                <h3 className="text-sm font-semibold text-white mb-2">
-                  How to Use
-                </h3>
-                <ol className="text-sm text-text-muted space-y-1.5 list-decimal list-inside">
-                  <li>
-                    Upload{" "}
-                    <strong className="text-text-secondary">
-                      2+ screenshots
-                    </strong>{" "}
-                    showing the same UI element with different content
-                  </li>
-                  <li>
-                    <strong className="text-text-secondary">
-                      Draw a region
-                    </strong>{" "}
-                    around the element you want to extract
-                  </li>
-                  <li>
-                    Adjust the{" "}
-                    <strong className="text-text-secondary">
-                      similarity threshold
-                    </strong>{" "}
-                    to control what&apos;s considered &quot;variable&quot;
-                  </li>
-                  <li>
-                    Click{" "}
-                    <strong className="text-text-secondary">
-                      Extract Pattern
-                    </strong>{" "}
-                    to generate the masked template
-                  </li>
-                  <li>
-                    Optionally edit the result, then{" "}
-                    <strong className="text-text-secondary">
-                      create a StateImage
-                    </strong>{" "}
-                    for use in automation
-                  </li>
-                </ol>
-              </div>
-
-              {/* Understanding the output */}
-              <div>
-                <h3 className="text-sm font-semibold text-white mb-2">
-                  Understanding the Output
-                </h3>
-                <ul className="text-sm text-text-muted space-y-1.5">
-                  <li>
-                    <strong className="text-text-secondary">Pattern:</strong>{" "}
-                    The final template with variable areas made transparent
-                    (shown as checkerboard)
-                  </li>
-                  <li>
-                    <strong className="text-text-secondary">
-                      Confidence Map:
-                    </strong>{" "}
-                    Grayscale showing pixel stability - white = stable, black =
-                    variable
-                  </li>
-                  <li>
-                    <strong className="text-text-secondary">Mask:</strong>{" "}
-                    Binary version showing which pixels are included (white) or
-                    excluded (black)
-                  </li>
-                  <li>
-                    <strong className="text-text-secondary">
-                      Mask Density:
-                    </strong>{" "}
-                    Percentage of pixels kept - lower means more was masked out
-                  </li>
-                </ul>
-              </div>
-            </div>
-
-            {/* Example use cases */}
-            <div className="mt-4 pt-4 border-t border-border-subtle">
-              <h3 className="text-sm font-semibold text-white mb-2">
-                Example Use Cases
-              </h3>
-              <div className="flex flex-wrap gap-2">
-                {[
-                  "Buttons with dynamic labels",
-                  "Notification badges with counts",
-                  "User profile cards",
-                  "Status indicators",
-                  "Navigation items with badges",
-                  "Form fields with placeholder text",
-                ].map((useCase) => (
-                  <span
-                    key={useCase}
-                    className="px-2 py-1 text-xs bg-surface-raised text-text-secondary rounded-md"
-                  >
-                    {useCase}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
+        {showHowItWorks && <HowItWorksSection />}
       </div>
 
       <div className="flex-1 flex overflow-hidden">
         {/* Left Panel - Screenshots */}
-        <div className="w-64 bg-surface-raised/50 border-r border-border-subtle flex flex-col">
-          <div className="p-4 border-b border-border-subtle">
-            <div className="flex justify-between items-center mb-2">
-              <h2 className="font-semibold text-white">Screenshots</h2>
-              {(session?.screenshots?.length ?? 0) > 0 && (
-                <button
-                  onClick={clearSession}
-                  className="px-3 py-1.5 bg-red-500/90 text-white rounded-md hover:bg-red-600 text-sm"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="flex-1 px-3 py-1.5 bg-brand-primary text-black rounded-md hover:bg-brand-primary/90 font-medium text-sm flex items-center justify-center gap-1"
-                title="Upload new screenshots from your computer"
-              >
-                <Upload className="w-4 h-4" />
-                Upload
-              </button>
-              <button
-                onClick={() => screenshotSelectorTriggerRef.current?.click()}
-                className="flex-1 px-3 py-1.5 bg-brand-success text-black rounded-md hover:bg-brand-success/90 font-medium text-sm flex items-center justify-center gap-1"
-                title="Select screenshots from project"
-              >
-                <FolderOpen className="w-4 h-4" />
-                Project
-              </button>
-            </div>
+        <ScreenshotListPanel
+          screenshots={session?.screenshots ?? []}
+          selectedScreenshotId={pageState.selectedScreenshotId}
+          onSelectScreenshot={(id) => pageState.setSelectedScreenshotId(id)}
+          onRemoveScreenshot={removeScreenshot}
+          onClearSession={clearSession}
+          onUploadClick={() => fileInputRef.current?.click()}
+          onProjectClick={() => screenshotSelectorTriggerRef.current?.click()}
+        />
 
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept="image/*"
-              onChange={handleFileSelect}
-              className="hidden"
-            />
-          </div>
-
-          {/* Screenshot List */}
-          <div className="flex-1 overflow-y-auto p-4">
-            <div className="space-y-2">
-              {session?.screenshots.map((screenshot) => (
-                <div
-                  key={screenshot.id}
-                  className={`p-3 border rounded-lg cursor-pointer transition-all ${
-                    pageState.selectedScreenshotId === screenshot.id
-                      ? "border-brand-primary bg-brand-primary/10 shadow-sm"
-                      : "border-border-default hover:bg-surface-raised/80"
-                  }`}
-                >
-                  <div className="flex justify-between items-start">
-                    <div
-                      className="flex-1"
-                      onClick={() => {
-                        pageState.setSelectedScreenshotId(screenshot.id);
-                      }}
-                    >
-                      <div className="font-medium text-sm text-white truncate">
-                        {screenshot.name}
-                      </div>
-                      {screenshot.region ? (
-                        <div className="text-xs text-brand-success mt-1 flex items-center gap-1">
-                          <Check className="w-3 h-3" />
-                          Region: {Math.round(screenshot.region.width)}×
-                          {Math.round(screenshot.region.height)}
-                        </div>
-                      ) : (
-                        <div className="text-xs text-text-muted mt-1 flex items-center gap-1">
-                          <MousePointer className="w-3 h-3" />
-                          Click to select region
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeScreenshot(screenshot.id);
-                      }}
-                      className="p-1 hover:bg-surface-raised rounded transition-colors"
-                    >
-                      <X className="w-4 h-4 text-text-muted" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {session?.screenshots.length === 0 && (
-              <div className="text-center py-8">
-                <ImageIcon className="w-12 h-12 mx-auto mb-2 text-text-muted" />
-                <p className="text-sm text-text-muted">
-                  No screenshots uploaded
-                </p>
-                <p className="text-xs text-text-muted mt-1">
-                  Click &quot;Add&quot; to upload screenshots
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept="image/*"
+          onChange={handleFileSelect}
+          className="hidden"
+        />
 
         {/* Middle Panel - Configuration and Screenshot Viewer */}
         <div className="flex-1 flex">
-          {/* Configuration Panel */}
-          <div className="w-64 bg-surface-raised/50 border-r border-border-subtle p-4">
-            <h2 className="font-semibold text-white mb-4 flex items-center gap-2">
-              <Sliders className="w-4 h-4" />
-              Extraction Configuration
-            </h2>
-
-            <div className="space-y-4">
-              {/* Similarity Threshold */}
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <label
-                    htmlFor="pos-similarity-threshold"
-                    className="text-sm font-medium text-text-secondary"
-                  >
-                    Similarity Threshold
-                  </label>
-                  <span className="text-sm font-mono bg-surface-canvas px-2 py-1 rounded text-text-secondary">
-                    {(pageState.config.similarityThreshold * 100).toFixed(0)}%
-                  </span>
-                </div>
-                <input
-                  id="pos-similarity-threshold"
-                  type="range"
-                  min="50"
-                  max="100"
-                  value={pageState.config.similarityThreshold * 100}
-                  onChange={(e) =>
-                    pageState.setConfig({
-                      ...pageState.config,
-                      similarityThreshold: Number(e.target.value) / 100,
-                    })
-                  }
-                  className="w-full"
-                />
-                <div className="flex justify-between text-xs text-text-muted mt-1">
-                  <span>More inclusive</span>
-                  <span>More strict</span>
-                </div>
-                <p className="text-xs text-text-muted mt-2">
-                  Pixels with confidence below this threshold will be masked out
-                </p>
-              </div>
-
-              {/* Color Averaging */}
-              <div>
-                <label
-                  htmlFor="pos-color-averaging"
-                  className="text-sm font-medium text-text-secondary block mb-2"
-                >
-                  Color Averaging Method
-                </label>
-                <select
-                  id="pos-color-averaging"
-                  value={pageState.config.colorAveraging}
-                  onChange={(e) =>
-                    pageState.setConfig({
-                      ...pageState.config,
-                      colorAveraging: e.target.value as
-                        | "mean"
-                        | "median"
-                        | "weighted",
-                    })
-                  }
-                  className="w-full bg-surface-canvas border border-border-default rounded-md px-3 py-2 text-sm text-white"
-                >
-                  <option value="mean">Mean (Simple Average)</option>
-                  <option value="median">Median (Robust to Outliers)</option>
-                  <option value="weighted">Weighted by Confidence</option>
-                </select>
-                <p className="text-xs text-text-muted mt-2">
-                  {pageState.config.colorAveraging === "weighted"
-                    ? "Pixels are weighted by their stability across screenshots"
-                    : pageState.config.colorAveraging === "median"
-                      ? "Uses the middle value, ignoring extreme variations"
-                      : "Simple average of all pixel values"}
-                </p>
-              </div>
-
-              {/* Morphological Operations */}
-              <div>
-                <label className="flex items-center text-sm font-medium text-text-secondary">
-                  <input
-                    type="checkbox"
-                    checked={pageState.config.morphologicalOps.enabled}
-                    onChange={(e) =>
-                      pageState.setConfig({
-                        ...pageState.config,
-                        morphologicalOps: {
-                          ...pageState.config.morphologicalOps,
-                          enabled: e.target.checked,
-                        },
-                      })
-                    }
-                    className="mr-2"
-                  />
-                  Clean Mask
-                </label>
-                {pageState.config.morphologicalOps.enabled && (
-                  <div className="mt-3 ml-6 space-y-3">
-                    <div>
-                      <label
-                        htmlFor="pos-erosion-size"
-                        className="text-xs text-text-muted"
-                      >
-                        Erosion (remove noise)
-                      </label>
-                      <input
-                        id="pos-erosion-size"
-                        type="range"
-                        min="0"
-                        max="5"
-                        value={pageState.config.morphologicalOps.erosionSize}
-                        onChange={(e) =>
-                          pageState.setConfig({
-                            ...pageState.config,
-                            morphologicalOps: {
-                              ...pageState.config.morphologicalOps,
-                              erosionSize: Number(e.target.value),
-                            },
-                          })
-                        }
-                        className="w-full"
-                      />
-                    </div>
-                    <div>
-                      <label
-                        htmlFor="pos-dilation-size"
-                        className="text-xs text-text-muted"
-                      >
-                        Dilation (fill gaps)
-                      </label>
-                      <input
-                        id="pos-dilation-size"
-                        type="range"
-                        min="0"
-                        max="5"
-                        value={pageState.config.morphologicalOps.dilationSize}
-                        onChange={(e) =>
-                          pageState.setConfig({
-                            ...pageState.config,
-                            morphologicalOps: {
-                              ...pageState.config.morphologicalOps,
-                              dilationSize: Number(e.target.value),
-                            },
-                          })
-                        }
-                        className="w-full"
-                      />
-                    </div>
-                  </div>
-                )}
-                <p className="text-xs text-text-muted mt-2">
-                  Removes small isolated pixels and fills small gaps in the mask
-                </p>
-              </div>
-
-              {/* Extract Button */}
-              <div className="pt-4">
-                <button
-                  onClick={handleExtract}
-                  disabled={!canExtract}
-                  className={`w-full py-2.5 rounded-md font-medium transition-colors ${
-                    canExtract
-                      ? "bg-brand-success hover:bg-brand-success/90 text-black"
-                      : "bg-surface-raised text-text-muted cursor-not-allowed"
-                  }`}
-                >
-                  {isExtracting ? "Extracting..." : "Extract Pattern"}
-                </button>
-
-                {!hasRequirements &&
-                  (session?.screenshots?.length ?? 0) > 0 &&
-                  !isExtracting && (
-                    <p className="text-xs text-amber-500 flex items-start gap-1 mt-2">
-                      <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                      Draw a selection box on the screenshot to define the
-                      pattern region
-                    </p>
-                  )}
-              </div>
-            </div>
-          </div>
+          <ExtractionConfigPanel
+            config={pageState.config}
+            onConfigChange={pageState.setConfig}
+            canExtract={!!canExtract}
+            isExtracting={isExtracting}
+            hasRequirements={!!hasRequirements}
+            hasScreenshots={(session?.screenshots?.length ?? 0) > 0}
+            onExtract={handleExtract}
+          />
 
           {/* Screenshot Viewer */}
           <div className="flex-1 bg-surface-canvas">
@@ -932,443 +260,39 @@ const PatternOptimizationContent: React.FC = () => {
         </div>
 
         {/* Right Panel - Results */}
-        <div className="w-80 bg-surface-raised/50 border-l border-border-subtle flex flex-col">
-          <div className="p-4 border-b border-border-subtle flex-shrink-0">
-            <h2 className="font-semibold text-white">Extraction Results</h2>
-          </div>
-
-          <div className="p-4 flex-1 overflow-y-auto">
-            {extractedPattern ? (
-              <div className="space-y-4">
-                {/* Pattern Info */}
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className="font-medium text-white">
-                      {extractedPattern.name}
-                    </h3>
-                    <p className="text-sm text-text-muted">
-                      {extractedPattern.width}×{extractedPattern.height} pixels
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => pageState.setShowStateImageDialog(true)}
-                    className="px-3 py-1.5 bg-brand-success text-black rounded-md hover:bg-brand-success/90 font-medium text-sm flex items-center gap-1"
-                    title="Create a StateImage from this pattern"
-                  >
-                    <Plus className="w-4 h-4" />
-                    StateImage
-                  </button>
-                </div>
-
-                {/* Quality Badge */}
-                {patternQuality && (
-                  <div
-                    className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium border ${getQualityColor(patternQuality.rating)}`}
-                  >
-                    {patternQuality.rating.toUpperCase()} (
-                    {patternQuality.score}/100)
-                  </div>
-                )}
-
-                {/* Pattern Images */}
-                <div className="space-y-3">
-                  {/* Pattern Editing Tools - Moved above Pattern */}
-                  <div className="bg-surface-raised rounded-lg p-3 border border-border-default">
-                    <h4 className="text-xs font-medium text-text-secondary mb-2">
-                      Edit Transparency
-                    </h4>
-                    <div className="flex gap-2 mb-2">
-                      <button
-                        onClick={() =>
-                          pageState.setEditMode(
-                            pageState.editMode === "add" ? "none" : "add"
-                          )
-                        }
-                        className={`px-2 py-1 text-xs rounded ${
-                          pageState.editMode === "add"
-                            ? "bg-blue-500 text-white"
-                            : "bg-surface-raised text-text-secondary hover:bg-surface-raised/80"
-                        }`}
-                        title="Add transparency (make pixels transparent)"
-                      >
-                        <Edit2 className="w-3 h-3 inline mr-1" />
-                        Add
-                      </button>
-                      <button
-                        onClick={() =>
-                          pageState.setEditMode(
-                            pageState.editMode === "remove" ? "none" : "remove"
-                          )
-                        }
-                        className={`px-2 py-1 text-xs rounded ${
-                          pageState.editMode === "remove"
-                            ? "bg-green-500 text-white"
-                            : "bg-surface-raised text-text-secondary hover:bg-surface-raised/80"
-                        }`}
-                        title="Remove transparency (make pixels opaque)"
-                      >
-                        <Eraser className="w-3 h-3 inline mr-1" />
-                        Remove
-                      </button>
-                      {pageState.editedPattern && (
-                        <button
-                          onClick={() => pageState.setEditedPattern(null)}
-                          className="px-2 py-1 text-xs rounded bg-surface-raised text-text-secondary hover:bg-surface-raised/80"
-                          title="Reset to original pattern"
-                        >
-                          Reset
-                        </button>
-                      )}
-                    </div>
-                    <div className="text-xs text-text-muted">
-                      {pageState.editMode === "add" &&
-                        "Click or drag on the pattern below to add transparency (make areas transparent)"}
-                      {pageState.editMode === "remove" &&
-                        "Click or drag on the pattern below to remove transparency (make areas opaque)"}
-                      {pageState.editMode === "none" &&
-                        "Select Add or Remove to edit transparency in the pattern below"}
-                    </div>
-                  </div>
-
-                  <div>
-                    <h4
-                      className="text-xs font-medium text-text-secondary mb-1 cursor-help"
-                      title="The final extracted pattern. Only pixels that passed the confidence threshold (shown as white in the mask) are included. Pixels with low confidence (black in mask) are made transparent, creating a pattern that focuses on stable, consistent elements while ignoring variable parts like text or changing UI elements."
-                    >
-                      Pattern
-                    </h4>
-                    <div className="relative">
-                      {pageState.editMode !== "none" ? (
-                        // Show editable canvas when in edit mode
-                        <>
-                          <canvas
-                            ref={patternCanvasRef}
-                            width={extractedPattern.width}
-                            height={extractedPattern.height}
-                            className="w-full h-auto border rounded cursor-crosshair"
-                            onClick={handlePatternEdit}
-                            onMouseMove={handlePatternMouseMove}
-                            onMouseLeave={handlePatternMouseLeave}
-                            style={{
-                              imageRendering: "pixelated",
-                              maxHeight: "300px",
-                              objectFit: "contain",
-                            }}
-                          />
-                          {/* Cursor indicator overlay */}
-                          {cursorPos &&
-                            (pageState.editMode === "add" ||
-                              pageState.editMode === "remove") &&
-                            patternCanvasRef.current && (
-                              <div
-                                className="absolute pointer-events-none border-2 rounded-full"
-                                style={{
-                                  left: `${(cursorPos.x / extractedPattern.width) * 100}%`,
-                                  top: `${(cursorPos.y / extractedPattern.height) * 100}%`,
-                                  width: `${(BRUSH_RADIUS * 2 + 1) * (patternCanvasRef.current.getBoundingClientRect().width / extractedPattern.width)}px`,
-                                  height: `${(BRUSH_RADIUS * 2 + 1) * (patternCanvasRef.current.getBoundingClientRect().height / extractedPattern.height)}px`,
-                                  transform: "translate(-50%, -50%)",
-                                  borderColor:
-                                    pageState.editMode === "add"
-                                      ? "#3b82f6"
-                                      : "#10b981",
-                                  opacity: 0.8,
-                                }}
-                              />
-                            )}
-                        </>
-                      ) : (
-                        // Show static pattern when not editing
-                        <div
-                          className="border rounded p-2"
-                          style={{
-                            background: `
-                              linear-gradient(45deg, #f3f4f6 25%, transparent 25%),
-                              linear-gradient(-45deg, #f3f4f6 25%, transparent 25%),
-                              linear-gradient(45deg, transparent 75%, #f3f4f6 75%),
-                              linear-gradient(-45deg, transparent 75%, #f3f4f6 75%)
-                            `,
-                            backgroundSize: "10px 10px",
-                            backgroundPosition:
-                              "0 0, 0 5px, 5px -5px, -5px 0px",
-                            backgroundColor: "#ffffff",
-                          }}
-                        >
-                          {pageState.editedPattern ||
-                          extractedPattern.patternImage ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={
-                                pageState.editedPattern ||
-                                extractedPattern.patternImage
-                              }
-                              alt="Pattern"
-                              className="w-full h-auto"
-                              style={{
-                                maxHeight: "300px",
-                                objectFit: "contain",
-                              }}
-                            />
-                          ) : (
-                            <div className="h-24 flex items-center justify-center text-text-muted text-xs bg-surface-raised rounded">
-                              No image
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <h4
-                        className="text-xs font-medium text-text-secondary mb-1 cursor-help"
-                        title="Shows pixel consistency across screenshots. Brighter areas (white) indicate high similarity between screenshots - these pixels are stable. Darker areas (black) show high variation - these pixels change between screenshots."
-                      >
-                        Confidence Map
-                      </h4>
-                      <div className="border rounded bg-surface-raised p-2">
-                        {extractedPattern.confidenceMap ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={extractedPattern.confidenceMap}
-                            alt="Confidence"
-                            className="w-full h-auto"
-                          />
-                        ) : (
-                          <div className="h-20 flex items-center justify-center text-text-muted text-xs">
-                            No image
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div>
-                      <h4
-                        className="text-xs font-medium text-text-secondary mb-1 cursor-help"
-                        title="Binary mask showing which pixels are included in the pattern. White pixels are included (confidence above threshold), black pixels are excluded (confidence below threshold or too variable)."
-                      >
-                        Mask
-                      </h4>
-                      <div className="border rounded bg-surface-raised p-2">
-                        {extractedPattern.maskImage ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={extractedPattern.maskImage}
-                            alt="Mask"
-                            className="w-full h-auto"
-                          />
-                        ) : (
-                          <div className="h-20 flex items-center justify-center text-text-muted text-xs">
-                            No image
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Color Legend */}
-                  <div className="text-xs text-text-muted space-y-1 bg-surface-raised rounded p-2">
-                    <div className="font-medium mb-1">Color Guide:</div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 bg-white border border-border-default rounded"></div>
-                      <span>High confidence / Included pixels</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 bg-black rounded"></div>
-                      <span>Low confidence / Excluded pixels</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 bg-surface-raised rounded"></div>
-                      <span>Medium confidence (Confidence Map only)</span>
-                    </div>
-                  </div>
-
-                  {/* Statistics */}
-                  <div className="bg-surface-raised rounded-lg p-3 border border-border-default">
-                    <h4 className="text-xs font-medium text-text-secondary mb-2">
-                      Statistics
-                    </h4>
-                    <div className="space-y-1 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-text-muted">Mask Density:</span>
-                        <span className="font-mono text-text-secondary">
-                          {(extractedPattern.maskDensity * 100).toFixed(1)}%
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-text-muted">Active Pixels:</span>
-                        <span className="font-mono text-text-secondary">
-                          {extractedPattern.activePixels.toLocaleString()}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-text-muted">Min Confidence:</span>
-                        <span className="font-mono text-text-secondary">
-                          {(extractedPattern.minConfidence * 100).toFixed(1)}%
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-text-muted">Avg Confidence:</span>
-                        <span className="font-mono text-text-secondary">
-                          {(extractedPattern.avgConfidence * 100).toFixed(1)}%
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Recommendations */}
-                {(patternQuality?.recommendations?.length ?? 0) > 0 && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-md p-3">
-                    <h4 className="text-sm font-medium text-white mb-1">
-                      Recommendations
-                    </h4>
-                    <ul className="text-xs text-amber-800 space-y-1">
-                      {patternQuality?.recommendations?.map((rec, i) => (
-                        <li key={i} className="flex items-start gap-1">
-                          <span className="text-amber-600">•</span>
-                          <span>{rec}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="text-center py-12">
-                <div className="mb-3">
-                  <div className="w-16 h-16 mx-auto bg-surface-raised rounded-full flex items-center justify-center">
-                    <ImageIcon className="w-8 h-8 text-text-muted" />
-                  </div>
-                </div>
-                <p className="font-medium text-white">No Pattern Extracted</p>
-                <p className="text-sm text-text-muted mt-1">
-                  Configure settings and extract a pattern
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
+        <ExtractionResultsPanel
+          extractedPattern={extractedPattern}
+          patternQuality={patternQuality}
+          editMode={pageState.editMode}
+          editedPattern={pageState.editedPattern}
+          patternCanvasRef={patternCanvasRef}
+          cursorPos={cursorPos}
+          brushRadius={brushRadius}
+          onSetEditMode={pageState.setEditMode}
+          onResetEditedPattern={() => pageState.setEditedPattern(null)}
+          onShowStateImageDialog={() => pageState.setShowStateImageDialog(true)}
+          onPatternEdit={handlePatternEdit}
+          onPatternMouseMove={handlePatternMouseMove}
+          onPatternMouseLeave={handlePatternMouseLeave}
+        />
       </div>
 
       {/* StateImage Creation Dialog */}
       {pageState.showStateImageDialog && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-surface-raised border border-border-default rounded-lg p-6 w-96 max-w-full">
-            <h3 className="text-lg font-semibold text-white mb-4">
-              Create StateImage
-            </h3>
-
-            <div className="space-y-4">
-              <div>
-                <label
-                  htmlFor="pos-state-image-name"
-                  className="block text-sm font-medium text-text-secondary mb-1"
-                >
-                  StateImage Name
-                </label>
-                <input
-                  id="pos-state-image-name"
-                  type="text"
-                  value={pageState.stateImageName}
-                  onChange={(e) => pageState.setStateImageName(e.target.value)}
-                  placeholder="Enter name for the StateImage"
-                  className="w-full px-3 py-2 bg-surface-canvas border border-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-brand-primary text-white"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="pos-add-to-state"
-                  className="block text-sm font-medium text-text-secondary mb-1"
-                >
-                  Add to State
-                </label>
-                <select
-                  id="pos-add-to-state"
-                  value={pageState.selectedStateId}
-                  onChange={(e) => pageState.setSelectedStateId(e.target.value)}
-                  className="w-full px-3 py-2 bg-surface-canvas border border-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-brand-primary text-white"
-                >
-                  <option value="">Select a state...</option>
-                  <option value="new">Create New State</option>
-                  {states.map((state) => (
-                    <option key={state.id} value={state.id}>
-                      {state.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {pageState.selectedStateId === "new" && (
-                <div>
-                  <label
-                    htmlFor="pos-new-state-name"
-                    className="block text-sm font-medium text-text-secondary mb-1"
-                  >
-                    New State Name
-                  </label>
-                  <input
-                    id="pos-new-state-name"
-                    type="text"
-                    value={pageState.newStateName}
-                    onChange={(e) => pageState.setNewStateName(e.target.value)}
-                    placeholder="Enter name for the new state"
-                    className="w-full px-3 py-2 bg-surface-canvas border border-border-default rounded-md focus:outline-none focus:ring-2 focus:ring-brand-primary text-white"
-                  />
-                </div>
-              )}
-
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="fixed-location-pattern"
-                  checked={pageState.fixedLocation}
-                  onChange={(e) => pageState.setFixedLocation(e.target.checked)}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-border-default rounded"
-                />
-                <label
-                  htmlFor="fixed-location-pattern"
-                  className="ml-2 block text-sm text-text-secondary"
-                >
-                  Fixed location pattern (saves pattern region as search region)
-                </label>
-              </div>
-
-              {pageState.editedPattern && (
-                <div className="text-sm text-amber-600 bg-amber-50 p-2 rounded">
-                  Using edited pattern with transparency modifications
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-end gap-2 mt-6">
-              <button
-                onClick={() => {
-                  pageState.setShowStateImageDialog(false);
-                  pageState.setStateImageName("");
-                  pageState.setSelectedStateId("");
-                  pageState.setNewStateName("");
-                }}
-                className="px-4 py-2 text-sm text-text-secondary bg-surface-raised rounded-md hover:bg-surface-raised/80"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreateStateImage}
-                disabled={
-                  !pageState.stateImageName ||
-                  !pageState.selectedStateId ||
-                  (pageState.selectedStateId === "new" &&
-                    !pageState.newStateName.trim())
-                }
-                className="px-4 py-2 text-sm text-black bg-brand-success rounded-md hover:bg-brand-success/90 disabled:bg-surface-raised disabled:text-text-muted disabled:cursor-not-allowed"
-              >
-                Create StateImage
-              </button>
-            </div>
-          </div>
-        </div>
+        <StateImageDialog
+          stateImageName={pageState.stateImageName}
+          selectedStateId={pageState.selectedStateId}
+          newStateName={pageState.newStateName}
+          fixedLocation={pageState.fixedLocation}
+          editedPattern={pageState.editedPattern}
+          states={states}
+          onStateImageNameChange={pageState.setStateImageName}
+          onSelectedStateIdChange={pageState.setSelectedStateId}
+          onNewStateNameChange={pageState.setNewStateName}
+          onFixedLocationChange={pageState.setFixedLocation}
+          onCancel={handleCancelDialog}
+          onConfirm={handleCreateStateImage}
+        />
       )}
 
       {/* Screenshot Selector with multi-select */}

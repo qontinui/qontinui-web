@@ -9,20 +9,21 @@ export function useRAGScreenshot(
     useState<ScreenshotInfo | null>(null);
 
   const handleUploadScreenshot = useCallback(
-    (file: File, resetResults: () => void) => {
+    (file: File, onReset: () => void) => {
       const url = URL.createObjectURL(file);
       setCurrentScreenshot({
         id: `screenshot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         name: file.name,
         url,
       });
-      resetResults();
+      // Reset results when new screenshot is loaded
+      onReset();
     },
     []
   );
 
   const handleSelectProjectScreenshot = useCallback(
-    (screenshotId: string, resetResults: () => void) => {
+    (screenshotId: string, onReset: () => void) => {
       const projectScreenshot = screenshots.find((s) => s.id === screenshotId);
       if (projectScreenshot && projectScreenshot.url) {
         setCurrentScreenshot({
@@ -30,7 +31,8 @@ export function useRAGScreenshot(
           name: projectScreenshot.name,
           url: projectScreenshot.url,
         });
-        resetResults();
+        // Reset results when new screenshot is loaded
+        onReset();
       } else {
         toast.error("Selected screenshot has no image URL");
       }
@@ -38,14 +40,13 @@ export function useRAGScreenshot(
     [screenshots]
   );
 
-  const handleClearScreenshot = useCallback((resetResults: () => void) => {
+  const handleClearScreenshot = useCallback((onReset: () => void) => {
     setCurrentScreenshot(null);
-    resetResults();
+    onReset();
   }, []);
 
   return {
     currentScreenshot,
-    setCurrentScreenshot,
     handleUploadScreenshot,
     handleSelectProjectScreenshot,
     handleClearScreenshot,

@@ -35,6 +35,8 @@ export interface GenerateWorkflowRequest {
   reflection_mode?: boolean;
   /** Whether to run an AI investigation step before the builder agent (default: true) */
   investigate_codebase?: boolean;
+  /** Whether to include frontend design quality guidance in the builder prompt (default: false) */
+  include_design_guidance?: boolean;
 }
 
 /** One pass of the verification->fix loop during workflow generation. */

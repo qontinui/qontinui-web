@@ -1,11 +1,6 @@
 import * as React from "react";
 import type { TestCase } from "@/services/workflow-testing";
-
-interface ValidationErrors {
-  name?: string;
-  assertions?: string;
-  [key: string]: string | undefined;
-}
+import type { ValidationErrors } from "../test-case-editor-types";
 
 export function useTestCaseUI(testCase?: TestCase) {
   const [isRunning, setIsRunning] = React.useState(false);

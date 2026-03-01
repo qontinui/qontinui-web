@@ -21,6 +21,7 @@ export interface WorkflowGenerationTemplate {
     discoveryMode?: "auto" | "enabled" | "disabled";
     category?: string;
     tags?: string;
+    includeDesignGuidance?: boolean;
   };
 }
 
@@ -359,6 +360,55 @@ For each finding, generate an agentic prompt step that:
     advancedDefaults: {
       discoveryMode: "enabled",
       category: "review",
+      includeDesignGuidance: true,
+    },
+  },
+  {
+    id: "frontend-design-implementation",
+    name: "Frontend Design Implementation",
+    icon: "Paintbrush",
+    description:
+      "Implement or redesign a frontend page with intentional design direction and quality verification",
+    content: `Implement or redesign a frontend page with a specific design direction, ensuring high visual quality and UX.
+
+## Project
+- Path: [PROJECT_PATH, e.g. C:\\Users\\me\\my-app]
+- Framework: [FRAMEWORK, e.g. Next.js 15, Vite + React]
+- App URL when running: [APP_URL, e.g. http://localhost:3000]
+
+## Design Brief
+- Page/Route: [PAGE_PATH, e.g. /dashboard, /landing, /settings]
+- Purpose: [What this page does and who it's for]
+- Key content: [List the main content sections, data displays, or interactive elements]
+
+## Aesthetic Direction
+Pick one (or describe your own):
+- [ ] Brutalist — raw, bold, monospace, harsh contrasts
+- [ ] Minimalist — generous whitespace, single accent, typography-driven
+- [ ] Retro-futuristic — neon accents, dark backgrounds, tech-inspired
+- [ ] Editorial — magazine-like layouts, dramatic type scale, asymmetric
+- [ ] Organic — soft curves, natural colors, flowing layouts
+- [ ] Industrial — exposed structure, monochrome with accent, dense information
+- [ ] Custom: [DESCRIBE_YOUR_DIRECTION]
+
+## Typography & Color Preferences (optional)
+- Font pairing: [e.g. "Space Grotesk for headings, Inter for body" or "surprise me"]
+- Color mood: [e.g. "warm earth tones", "cool professional blues", "high-contrast dark mode"]
+- Inspirations: [Any reference sites, styles, or moods to draw from]
+
+## Instructions
+1. Analyze the current page state (if it exists) via UI Bridge
+2. Implement the design following the aesthetic direction above
+3. Apply the design guidance principles (typography hierarchy, color cohesion, spatial composition, motion)
+4. Ensure all original content and functionality is preserved if redesigning
+5. Run sdk_design_evaluate to verify design quality scores
+6. Iterate on any metrics scoring below 70
+7. Add data-ui-id attributes and UI Bridge instrumentation to new elements`,
+    advancedDefaults: {
+      discoveryMode: "enabled",
+      category: "design",
+      tags: "frontend, design",
+      includeDesignGuidance: true,
     },
   },
   {
