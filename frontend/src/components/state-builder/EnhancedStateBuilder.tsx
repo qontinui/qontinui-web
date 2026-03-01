@@ -593,7 +593,15 @@ export function EnhancedStateBuilder() {
                       ? "bg-primary/10 border-primary"
                       : "border-transparent hover:bg-accent"
                   )}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setCurrentStateId(state.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setCurrentStateId(state.id);
+                    }
+                  }}
                 >
                   <Checkbox
                     checked={isChecked}
@@ -773,7 +781,15 @@ export function EnhancedStateBuilder() {
                             ? "border-primary bg-primary/5"
                             : "border-border hover:border-primary/50"
                         )}
+                        role="button"
+                        tabIndex={0}
                         onClick={() => setSelectedImageIndex(idx)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setSelectedImageIndex(idx);
+                          }
+                        }}
                       >
                         {imageData ? (
                           // eslint-disable-next-line @next/next/no-img-element

@@ -86,6 +86,8 @@ interface ExplorationConfigPanelProps {
   hideRunnerSection?: boolean;
 }
 
+const DEFAULT_BROWSER_TABS: BrowserTab[] = [];
+
 export function ExplorationConfigPanel({
   config,
   onConfigChange,
@@ -97,7 +99,7 @@ export function ExplorationConfigPanel({
   connectionsLoading,
   selectedConnectionId,
   onConnectionChange,
-  browserTabs = [],
+  browserTabs = DEFAULT_BROWSER_TABS,
   browserTabsLoading = false,
   browserTabsError = null,
   onRefreshBrowserTabs,

@@ -123,7 +123,7 @@ export function ConflictResolutionDialog({
 
       // Move to next conflict or close
       if (selectedIndex < conflicts.length - 1) {
-        setSelectedIndex(selectedIndex + 1);
+        setSelectedIndex((prev) => prev + 1);
       } else {
         onOpenChange(false);
       }
@@ -218,12 +218,23 @@ export function ConflictResolutionDialog({
                   ? "bg-green-500/10"
                   : "hover:bg-muted/50"
               )}
+              role="button"
+              tabIndex={0}
               onClick={() =>
                 setMergeChoices((prev) => ({
                   ...prev,
                   [change.field]: "local",
                 }))
               }
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setMergeChoices((prev) => ({
+                    ...prev,
+                    [change.field]: "local",
+                  }));
+                }
+              }}
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
@@ -247,12 +258,23 @@ export function ConflictResolutionDialog({
                   ? "bg-blue-500/10"
                   : "hover:bg-muted/50"
               )}
+              role="button"
+              tabIndex={0}
               onClick={() =>
                 setMergeChoices((prev) => ({
                   ...prev,
                   [change.field]: "remote",
                 }))
               }
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setMergeChoices((prev) => ({
+                    ...prev,
+                    [change.field]: "remote",
+                  }));
+                }
+              }}
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
@@ -289,12 +311,23 @@ export function ConflictResolutionDialog({
                   ? "border-green-500 bg-green-500/10"
                   : "border-red-500 bg-red-500/5"
               )}
+              role="button"
+              tabIndex={0}
               onClick={() =>
                 setMergeChoices((prev) => ({
                   ...prev,
                   [change.field]: "local",
                 }))
               }
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setMergeChoices((prev) => ({
+                    ...prev,
+                    [change.field]: "local",
+                  }));
+                }
+              }}
             >
               <div className="flex items-center gap-2 mb-1">
                 <X className="h-3 w-3 text-red-500" />
@@ -312,12 +345,23 @@ export function ConflictResolutionDialog({
                   ? "border-blue-500 bg-blue-500/10"
                   : "border-border-default bg-surface-raised/5"
               )}
+              role="button"
+              tabIndex={0}
               onClick={() =>
                 setMergeChoices((prev) => ({
                   ...prev,
                   [change.field]: "remote",
                 }))
               }
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setMergeChoices((prev) => ({
+                    ...prev,
+                    [change.field]: "remote",
+                  }));
+                }
+              }}
             >
               <div className="flex items-center gap-2 mb-1">
                 <ChevronRight className="h-3 w-3 text-blue-500" />

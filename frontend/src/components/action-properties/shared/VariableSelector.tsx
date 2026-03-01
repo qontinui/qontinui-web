@@ -38,6 +38,7 @@ export interface VariableSelectorProps {
 }
 
 const CUSTOM_VALUE = "__custom__";
+const DEFAULT_EXISTING_VARIABLES: string[] = [];
 
 /**
  * VariableSelector component - provides a dropdown for selecting existing variables
@@ -52,7 +53,7 @@ const CUSTOM_VALUE = "__custom__";
 export function VariableSelector({
   value,
   onChange,
-  existingVariables = [],
+  existingVariables = DEFAULT_EXISTING_VARIABLES,
   label,
   placeholder = "variableName",
   className,

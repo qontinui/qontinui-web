@@ -275,11 +275,25 @@ export function BuilderLayout<T extends BuilderItem>({
                     className={`group/item relative flex items-center gap-2 rounded-lg px-2 py-2 cursor-pointer transition-colors
                       ${isSelected ? `${ACCENT_CLASSES[accentColor]?.bg ?? "bg-cyan-500/10"} border ${ACCENT_CLASSES[accentColor]?.border ?? "border-cyan-500/30"}` : "border border-transparent hover:bg-muted"}
                     `}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => {
                       if (selectionMode) {
                         toggleSelection(item.id);
                       } else {
                         onSelect(isSelected ? null : item);
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        (() => {
+                          if (selectionMode) {
+                            toggleSelection(item.id);
+                          } else {
+                            onSelect(isSelected ? null : item);
+                          }
+                        })();
                       }
                     }}
                   >
@@ -304,7 +318,15 @@ export function BuilderLayout<T extends BuilderItem>({
                     {renderListActions && !selectionMode && (
                       <div
                         className="absolute right-1.5 top-1.5 opacity-0 group-hover/item:opacity-100 transition-opacity"
+                        role="button"
+                        tabIndex={0}
                         onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            ((e) => e.stopPropagation())(e);
+                          }
+                        }}
                       >
                         {renderListActions(item)}
                       </div>

@@ -161,7 +161,18 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({
       <div
         ref={timelineRef}
         className="relative h-20 bg-surface-raised rounded-lg border border-border-subtle cursor-pointer overflow-hidden"
+        role="button"
+        tabIndex={0}
         onClick={handleTimelineClick}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowLeft") {
+            e.preventDefault();
+            onSeek(Math.max(0, (currentTime || 0) - duration * 0.05));
+          } else if (e.key === "ArrowRight") {
+            e.preventDefault();
+            onSeek(Math.min(duration, (currentTime || 0) + duration * 0.05));
+          }
+        }}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
         onMouseMove={handleMouseMove}
@@ -198,9 +209,20 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({
                   <div
                     className={`absolute top-0 bottom-0 w-1 ${color} opacity-70 hover:opacity-100 hover:w-2 transition-all cursor-pointer z-10`}
                     style={{ left: `${position}%` }}
+                    role="button"
+                    tabIndex={0}
                     onClick={(e) => {
                       e.stopPropagation();
                       onSeek(event.timestamp);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        ((e) => {
+                          e.stopPropagation();
+                          onSeek(event.timestamp);
+                        })(e);
+                      }
                     }}
                   >
                     {/* Event icon at top */}

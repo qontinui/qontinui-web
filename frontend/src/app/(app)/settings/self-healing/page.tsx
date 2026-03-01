@@ -190,7 +190,15 @@ export default function SelfHealingSettingsPage() {
       <div className="rounded-lg border border-border">
         <div
           className="px-4 py-3 border-b border-border bg-muted/50 cursor-pointer select-none"
+          role="button"
+          tabIndex={0}
           onClick={() => setCachingOpen(!cachingOpen)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setCachingOpen(!cachingOpen);
+            }
+          }}
         >
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-medium flex items-center gap-2">
@@ -243,7 +251,15 @@ export default function SelfHealingSettingsPage() {
       <div className="rounded-lg border border-border">
         <div
           className="px-4 py-3 border-b border-border bg-muted/50 cursor-pointer select-none"
+          role="button"
+          tabIndex={0}
           onClick={() => setValidationOpen(!validationOpen)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setValidationOpen(!validationOpen);
+            }
+          }}
         >
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-medium flex items-center gap-2">
@@ -281,7 +297,15 @@ export default function SelfHealingSettingsPage() {
       <div className="rounded-lg border border-border">
         <div
           className="px-4 py-3 border-b border-border bg-muted/50 cursor-pointer select-none"
+          role="button"
+          tabIndex={0}
           onClick={() => setLlmOpen(!llmOpen)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setLlmOpen(!llmOpen);
+            }
+          }}
         >
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-medium flex items-center gap-2">

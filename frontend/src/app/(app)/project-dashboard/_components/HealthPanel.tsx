@@ -9,7 +9,15 @@ import {
 } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { AlertTriangle } from "lucide-react";
-import { HealthScoreGauge } from "./health-score-gauge";
+import dynamic from "next/dynamic";
+
+const HealthScoreGauge = dynamic(
+  () =>
+    import("./health-score-gauge").then((m) => ({
+      default: m.HealthScoreGauge,
+    })),
+  { ssr: false }
+);
 import { HealthIssuesList } from "./health-issues-list";
 import type { ProjectData } from "../_lib/types";
 

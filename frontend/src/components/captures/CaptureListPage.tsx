@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAutomation } from "@/contexts/automation-context";
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,7 @@ import { captureService } from "@/services/service-factory";
 import type { CaptureSession } from "@/types/capture";
 import { formatDistanceToNow } from "date-fns";
 
-export function CaptureListPage() {
+function CaptureListPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { projectId: contextProjectId } = useAutomation();
@@ -276,5 +276,13 @@ export function CaptureListPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export function CaptureListPage() {
+  return (
+    <Suspense fallback={null}>
+      <CaptureListPageContent />
+    </Suspense>
   );
 }

@@ -7,7 +7,7 @@
 
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,7 +51,7 @@ import type {
   VariableImportExport,
 } from "@/types/variables";
 
-export default function VariablesPage() {
+function VariablesPageContent() {
   const searchParams = useSearchParams();
   const projectId = searchParams.get("project");
 
@@ -464,5 +464,13 @@ export default function VariablesPage() {
         </div>
       )}
     </RequireProject>
+  );
+}
+
+export default function VariablesPage() {
+  return (
+    <Suspense fallback={null}>
+      <VariablesPageContent />
+    </Suspense>
   );
 }

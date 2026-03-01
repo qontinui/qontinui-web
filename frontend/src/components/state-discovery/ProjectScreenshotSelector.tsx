@@ -42,11 +42,13 @@ interface ProjectScreenshotSelectorProps {
   currentHashes?: string[]; // Hashes of currently loaded screenshots
 }
 
+const DEFAULT_CURRENT_HASHES: string[] = [];
+
 const ProjectScreenshotSelector: React.FC<ProjectScreenshotSelectorProps> = ({
   isOpen,
   onClose,
   onSelect,
-  currentHashes = [],
+  currentHashes = DEFAULT_CURRENT_HASHES,
 }) => {
   const [projectScreenshots, setProjectScreenshots] = useState<
     ProjectScreenshot[]

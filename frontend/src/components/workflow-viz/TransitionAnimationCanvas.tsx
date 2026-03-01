@@ -85,12 +85,14 @@ const STATE_COLORS = [
 // Component
 // ============================================================================
 
+const DEFAULT_MONITORS: Monitor[] = [];
+
 export function TransitionAnimationCanvas({
   transition,
   states,
   workflows,
   images,
-  monitors = [],
+  monitors = DEFAULT_MONITORS,
   className,
   animation: externalAnimation,
   controllerRef,

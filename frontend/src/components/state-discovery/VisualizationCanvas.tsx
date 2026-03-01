@@ -25,12 +25,14 @@ interface VisualizationCanvasProps {
   maskOpacity?: number;
 }
 
+const DEFAULT_HIGHLIGHTED_STATE_IMAGES: string[] = [];
+
 const VisualizationCanvas: React.FC<VisualizationCanvasProps> = ({
   screenshot,
   stateImages,
   selectedStateImage,
   selectedStateImages,
-  highlightedStateImages = [],
+  highlightedStateImages = DEFAULT_HIGHLIGHTED_STATE_IMAGES,
   viewMode,
   onSelectStateImage,
   onMultiSelectStateImage,

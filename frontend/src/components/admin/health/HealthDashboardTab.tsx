@@ -16,7 +16,13 @@ import { healthService } from "@/services/admin/health-service";
 import { HealthOverviewCard } from "./HealthOverviewCard";
 import { RedisStatusCard } from "./RedisStatusCard";
 import { SecurityWarningsCard } from "./SecurityWarningsCard";
-import { SessionStatsCard } from "./SessionStatsCard";
+import dynamic from "next/dynamic";
+
+const SessionStatsCard = dynamic(
+  () =>
+    import("./SessionStatsCard").then((m) => ({ default: m.SessionStatsCard })),
+  { ssr: false }
+);
 import { SystemMetricsCard } from "./SystemMetricsCard";
 
 const REFRESH_INTERVAL = 30000; // 30 seconds

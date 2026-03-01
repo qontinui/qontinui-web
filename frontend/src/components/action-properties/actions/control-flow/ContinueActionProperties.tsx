@@ -9,6 +9,9 @@ import { TimingProperties } from "../../TimingProperties";
 import { ConditionEditor } from "../../shared";
 import { ContinueActionConfig } from "@/lib/action-schema";
 
+const DEFAULT_IMAGES: ActionPropertiesComponentProps["images"] = [];
+const DEFAULT_VARIABLE_NAMES: string[] = [];
+
 /**
  * Properties component for CONTINUE action.
  *
@@ -19,8 +22,8 @@ import { ContinueActionConfig } from "@/lib/action-schema";
 export function ContinueActionProperties({
   action,
   updateConfig,
-  images = [],
-  variableNames = [],
+  images = DEFAULT_IMAGES,
+  variableNames = DEFAULT_VARIABLE_NAMES,
 }: ActionPropertiesComponentProps) {
   const config = action.config as ContinueActionConfig;
 

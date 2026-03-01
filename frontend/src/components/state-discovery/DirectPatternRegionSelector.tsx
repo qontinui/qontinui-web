@@ -15,10 +15,12 @@ interface DirectPatternRegionSelectorProps {
   currentRegion?: Region | null;
 }
 
+const DEFAULT_EXISTING_REGIONS: Region[] = [];
+
 export function DirectPatternRegionSelector({
   imageUrl,
   onRegionSelected,
-  existingRegions = [],
+  existingRegions = DEFAULT_EXISTING_REGIONS,
   currentRegion = null,
 }: DirectPatternRegionSelectorProps) {
   const containerRef = useRef<HTMLDivElement>(null);

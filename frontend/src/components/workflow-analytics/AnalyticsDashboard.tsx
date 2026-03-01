@@ -210,10 +210,12 @@ function MetricCard({
 // Main Dashboard Component
 // ============================================================================
 
+const DEFAULT_EXECUTIONS: ExecutionRecord[] = [];
+
 export function AnalyticsDashboard({
   workflows,
   metrics,
-  executions = [],
+  executions = DEFAULT_EXECUTIONS,
   timeRange,
   onTimeRangeChange,
   onRefresh,

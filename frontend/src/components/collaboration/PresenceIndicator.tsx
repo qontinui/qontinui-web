@@ -160,7 +160,15 @@ export function PresenceIndicator({
                         "flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors",
                         onUserClick && "cursor-pointer"
                       )}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => onUserClick?.(user)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onUserClick?.(user);
+                        }
+                      }}
                     >
                       <div className="relative">
                         <Avatar
@@ -239,7 +247,15 @@ export function PresenceIndicator({
                       "flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors opacity-60",
                       onUserClick && "cursor-pointer"
                     )}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => onUserClick?.(user)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onUserClick?.(user);
+                      }
+                    }}
                   >
                     <Avatar
                       src={user.avatar_url}

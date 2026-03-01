@@ -136,7 +136,15 @@ export function WorkflowListRow({
         "border rounded-lg p-4 hover:border-primary hover:shadow-sm transition cursor-pointer",
         selected && "border-primary bg-accent"
       )}
+      role="button"
+      tabIndex={0}
       onClick={bulkSelectMode ? onToggleSelect : onOpen}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          (bulkSelectMode ? onToggleSelect : onOpen)();
+        }
+      }}
     >
       <div className="flex items-center gap-4">
         {/* Checkbox */}
@@ -288,7 +296,15 @@ export function WorkflowGridCard({
         "border rounded-lg p-4 hover:border-primary hover:shadow-md transition cursor-pointer relative",
         selected && "border-primary bg-accent"
       )}
+      role="button"
+      tabIndex={0}
       onClick={bulkSelectMode ? onToggleSelect : onOpen}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          (bulkSelectMode ? onToggleSelect : onOpen)();
+        }
+      }}
     >
       {/* Checkbox */}
       {bulkSelectMode && (
@@ -361,7 +377,15 @@ export function WorkflowCompactRow({
         "border rounded px-3 py-2 hover:border-primary hover:bg-accent/50 transition cursor-pointer flex items-center gap-3",
         selected && "border-primary bg-accent"
       )}
+      role="button"
+      tabIndex={0}
       onClick={bulkSelectMode ? onToggleSelect : onOpen}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          (bulkSelectMode ? onToggleSelect : onOpen)();
+        }
+      }}
     >
       {bulkSelectMode && (
         <Checkbox checked={selected} onCheckedChange={onToggleSelect} />

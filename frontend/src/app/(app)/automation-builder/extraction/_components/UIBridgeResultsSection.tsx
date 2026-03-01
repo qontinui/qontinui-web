@@ -130,7 +130,15 @@ export function UIBridgeResultsSection({
                         : "hover:bg-muted/50"
                     }
                   `}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setSelectedStateId(state.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setSelectedStateId(state.id);
+                    }
+                  }}
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-medium">{state.name}</span>
@@ -227,7 +235,15 @@ export function UIBridgeResultsSection({
                                 <div
                                   key={k.id}
                                   className="p-3 border rounded-lg hover:bg-muted/50 cursor-pointer"
+                                  role="button"
+                                  tabIndex={0}
                                   onClick={() => linkKnowledgeToState(k.id)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                      e.preventDefault();
+                                      linkKnowledgeToState(k.id);
+                                    }
+                                  }}
                                 >
                                   <div className="font-medium">{k.title}</div>
                                   <div className="text-xs text-text-muted line-clamp-2">

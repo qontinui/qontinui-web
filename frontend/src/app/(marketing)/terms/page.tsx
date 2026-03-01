@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function TermsOfService() {
   return (
     <div className="min-h-screen bg-white">
@@ -338,12 +340,12 @@ export default function TermsOfService() {
             </ul>
             <p className="mt-4">
               For complete details on acceptable use, please review our{" "}
-              <a
+              <Link
                 href="/acceptable-use"
                 className="text-blue-600 hover:underline"
               >
                 Acceptable Use Policy
-              </a>
+              </Link>
               .
             </p>
           </section>

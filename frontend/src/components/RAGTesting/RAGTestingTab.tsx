@@ -858,9 +858,17 @@ export function RAGTestingTab() {
                                     ? "border-brand-primary bg-brand-primary/10"
                                     : "border-border-default hover:border-border-subtle"
                                 )}
+                                role="button"
+                                tabIndex={0}
                                 onClick={() =>
                                   toggleElementSelection(element.id)
                                 }
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" || e.key === " ") {
+                                    e.preventDefault();
+                                    toggleElementSelection(element.id);
+                                  }
+                                }}
                               >
                                 <Checkbox
                                   checked={selectedElementIds.includes(
@@ -1320,7 +1328,15 @@ export function RAGTestingTab() {
                             ? "bg-brand-primary/20 border border-brand-primary/50"
                             : "hover:bg-surface-raised/50"
                         )}
+                        role="button"
+                        tabIndex={0}
                         onClick={() => setSelectedSegmentId(segment.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setSelectedSegmentId(segment.id);
+                          }
+                        }}
                       >
                         <span className="font-mono">{segment.id}</span>
                         {segment.bestMatch ? (

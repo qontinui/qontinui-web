@@ -13,7 +13,13 @@
  * - Works with Next.js App Router
  */
 
-import { useEffect, useRef, useCallback, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useCallback,
+  Suspense,
+  type ReactNode,
+} from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useUIBridgeOptional } from "@qontinui/ui-bridge/react";
 
@@ -33,7 +39,7 @@ export interface RenderLogWrapperProps {
  * Place this at the root of your app (inside UIBridgeProvider) for
  * comprehensive DOM snapshot coverage.
  */
-export function RenderLogWrapper({
+function RenderLogWrapperContent({
   children,
   enableOnMount = true,
   enableMutationObserver = false, // Disabled by default - DOM snapshot capture is expensive (several MB per snapshot)
@@ -238,4 +244,12 @@ export function RenderLogWrapper({
   ]);
 
   return <>{children}</>;
+}
+
+export function RenderLogWrapper(props: RenderLogWrapperProps) {
+  return (
+    <Suspense fallback={null}>
+      <RenderLogWrapperContent {...props} />
+    </Suspense>
+  );
 }

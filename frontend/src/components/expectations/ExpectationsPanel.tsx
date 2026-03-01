@@ -15,6 +15,9 @@ interface ExpectationsPanelProps {
   availableStates?: string[];
 }
 
+const DEFAULT_CHECKPOINTS: string[] = [];
+const DEFAULT_STATES: string[] = [];
+
 /**
  * Main expectations panel that combines all expectation editors
  *
@@ -29,8 +32,8 @@ interface ExpectationsPanelProps {
 export function ExpectationsPanel({
   expectations,
   onChange,
-  availableCheckpoints = [],
-  availableStates = [],
+  availableCheckpoints = DEFAULT_CHECKPOINTS,
+  availableStates = DEFAULT_STATES,
 }: ExpectationsPanelProps) {
   const current = expectations || {};
 

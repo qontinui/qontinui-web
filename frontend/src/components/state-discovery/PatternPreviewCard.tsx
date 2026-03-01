@@ -26,7 +26,7 @@ export function PatternPreviewCard({
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState(pattern.name);
   const [isEditingStates, setIsEditingStates] = useState(false);
-  const [stateInput, setStateInput] = useState(pattern.states.join(", "));
+  const [stateInput, setStateInput] = useState(() => pattern.states.join(", "));
 
   const handleSaveName = () => {
     if (editedName.trim()) {

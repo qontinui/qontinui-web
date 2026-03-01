@@ -175,7 +175,15 @@ export function WorkflowManagementExample() {
                     ? "border-primary bg-primary/5"
                     : "hover:border-primary/50"
                 }`}
+                role="button"
+                tabIndex={0}
                 onClick={() => toggleWorkflowSelection(workflow.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    toggleWorkflowSelection(workflow.id);
+                  }
+                }}
               >
                 <div className="flex items-start justify-between mb-2">
                   <h3 className="font-semibold">{workflow.name}</h3>

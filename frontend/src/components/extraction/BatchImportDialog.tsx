@@ -384,7 +384,15 @@ export function BatchImportDialog({
               <Label>Classes File (optional)</Label>
               <div
                 className="border-2 border-dashed rounded-lg p-3 text-center cursor-pointer hover:border-primary/50 transition-colors"
+                role="button"
+                tabIndex={0}
                 onClick={() => !importing && classesInputRef.current?.click()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    if (!importing) classesInputRef.current?.click();
+                  }
+                }}
               >
                 <input
                   ref={classesInputRef}
@@ -522,7 +530,15 @@ export function BatchImportDialog({
           {files.length === 0 && (
             <div
               className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 transition-colors"
+              role="button"
+              tabIndex={0}
               onClick={() => fileInputRef.current?.click()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  fileInputRef.current?.click();
+                }
+              }}
             >
               <Upload className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
               <p className="text-sm text-muted-foreground">

@@ -91,6 +91,8 @@ function flattenTree(nodes: FolderTreeNode[]): FolderTreeNode[] {
   return result;
 }
 
+const DEFAULT_EXCLUDE_FOLDER_IDS: string[] = [];
+
 /**
  * Folder Selector - Dialog Version
  */
@@ -98,7 +100,7 @@ export function FolderSelector({
   folders,
   selectedFolderId,
   onSelect,
-  excludeFolderIds = [],
+  excludeFolderIds = DEFAULT_EXCLUDE_FOLDER_IDS,
   allowRoot = true,
   allowUncategorized = false,
   className,

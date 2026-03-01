@@ -14,9 +14,29 @@ import {
   WorkflowMetrics,
 } from "@/services/workflow-analytics-service";
 import { workflowComplexityAnalyzer } from "@/services/workflow-complexity-analyzer";
-import { AnalyticsDashboard } from "./AnalyticsDashboard";
-import { WorkflowMetricsPanel } from "./WorkflowMetricsPanel";
-import { PerformanceAnalyzer } from "./PerformanceAnalyzer";
+import dynamic from "next/dynamic";
+
+const AnalyticsDashboard = dynamic(
+  () =>
+    import("./AnalyticsDashboard").then((m) => ({
+      default: m.AnalyticsDashboard,
+    })),
+  { ssr: false }
+);
+const WorkflowMetricsPanel = dynamic(
+  () =>
+    import("./WorkflowMetricsPanel").then((m) => ({
+      default: m.WorkflowMetricsPanel,
+    })),
+  { ssr: false }
+);
+const PerformanceAnalyzer = dynamic(
+  () =>
+    import("./PerformanceAnalyzer").then((m) => ({
+      default: m.PerformanceAnalyzer,
+    })),
+  { ssr: false }
+);
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,

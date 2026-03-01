@@ -8,6 +8,8 @@ import { TimingProperties } from "../../TimingProperties";
 import { ConditionEditor, ActionListEditor } from "../../shared";
 import { IfActionConfig } from "@/lib/action-schema";
 
+const DEFAULT_VARIABLE_NAMES: string[] = [];
+
 /**
  * Properties component for IF action.
  *
@@ -21,7 +23,7 @@ export function IfActionProperties({
   action,
   updateConfig,
   images,
-  variableNames = [],
+  variableNames = DEFAULT_VARIABLE_NAMES,
 }: ActionPropertiesComponentProps) {
   const config = action.config as unknown as IfActionConfig;
 

@@ -11,11 +11,11 @@
  * - Image Extraction (Template matching)
  */
 
-import { useEffect } from "react";
+import { useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
-export default function WebExtractionPage() {
+function WebExtractionPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -37,5 +37,13 @@ export default function WebExtractionPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function WebExtractionPage() {
+  return (
+    <Suspense fallback={null}>
+      <WebExtractionPageContent />
+    </Suspense>
   );
 }

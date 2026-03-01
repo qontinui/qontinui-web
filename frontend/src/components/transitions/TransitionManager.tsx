@@ -36,7 +36,15 @@ import { TransitionFilters } from "./TransitionFilters";
 import { TransitionMatrixView } from "./TransitionMatrixView";
 import { TransitionListView } from "./TransitionListView";
 import { TransitionGraphView } from "./TransitionGraphView";
-import { TransitionStatisticsView } from "./TransitionStatisticsView";
+import dynamic from "next/dynamic";
+
+const TransitionStatisticsView = dynamic(
+  () =>
+    import("./TransitionStatisticsView").then((m) => ({
+      default: m.TransitionStatisticsView,
+    })),
+  { ssr: false }
+);
 import { TransitionDetailsPanel } from "./TransitionDetailsPanel";
 import { ValidationPanel } from "./ValidationPanel";
 import { BulkCreationWizard } from "./BulkCreationWizard";

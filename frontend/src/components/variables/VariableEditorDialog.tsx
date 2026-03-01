@@ -51,12 +51,14 @@ interface VariableEditorDialogProps {
 
 type EditorMode = "simple" | "json";
 
+const DEFAULT_EXISTING_NAMES: string[] = [];
+
 export function VariableEditorDialog({
   open,
   onOpenChange,
   onSave,
   variable,
-  existingNames = [],
+  existingNames = DEFAULT_EXISTING_NAMES,
 }: VariableEditorDialogProps) {
   const isEditing = !!variable;
   const [name, setName] = useState("");

@@ -61,9 +61,29 @@ import {
   Info,
   ArrowLeft,
 } from "lucide-react";
-import { AnalyticsDashboard } from "@/components/workflow-analytics/AnalyticsDashboard";
-import { WorkflowMetricsPanel } from "@/components/workflow-analytics/WorkflowMetricsPanel";
-import { PerformanceAnalyzer } from "@/components/workflow-analytics/PerformanceAnalyzer";
+import dynamic from "next/dynamic";
+
+const AnalyticsDashboard = dynamic(
+  () =>
+    import("@/components/workflow-analytics/AnalyticsDashboard").then((m) => ({
+      default: m.AnalyticsDashboard,
+    })),
+  { ssr: false }
+);
+const WorkflowMetricsPanel = dynamic(
+  () =>
+    import("@/components/workflow-analytics/WorkflowMetricsPanel").then(
+      (m) => ({ default: m.WorkflowMetricsPanel })
+    ),
+  { ssr: false }
+);
+const PerformanceAnalyzer = dynamic(
+  () =>
+    import("@/components/workflow-analytics/PerformanceAnalyzer").then((m) => ({
+      default: m.PerformanceAnalyzer,
+    })),
+  { ssr: false }
+);
 import {
   workflowAnalyticsService,
   ExecutionRecord,
@@ -350,7 +370,15 @@ function ExecutionTable({ executions, onRowClick }: ExecutionTableProps) {
                 <tr
                   key={execution.id}
                   className="border-b transition-colors hover:bg-muted/50 cursor-pointer"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => onRowClick?.(execution)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onRowClick?.(execution);
+                    }
+                  }}
                 >
                   <td className="p-4 align-middle">
                     <div className="font-medium">{execution.workflowName}</div>
@@ -465,7 +493,7 @@ export default function WorkflowAnalyticsPage() {
   const router = useRouter();
 
   // State
-  const [timeRange, setTimeRange] = useState<{ start: Date; end: Date }>(
+  const [timeRange, setTimeRange] = useState<{ start: Date; end: Date }>(() =>
     TIME_RANGES.week()
   );
   const [timeRangePreset, setTimeRangePreset] =
@@ -953,9 +981,17 @@ export default function WorkflowAnalyticsPage() {
                           <div
                             key={metric.workflowId}
                             className="flex items-center justify-between p-4 rounded-lg border border-border hover:border-border transition-colors cursor-pointer"
+                            role="button"
+                            tabIndex={0}
                             onClick={() =>
                               setSelectedWorkflow(metric.workflowId)
                             }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                setSelectedWorkflow(metric.workflowId);
+                              }
+                            }}
                           >
                             <div className="flex items-center gap-4 flex-1">
                               <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/20 text-primary font-bold">
@@ -1004,9 +1040,17 @@ export default function WorkflowAnalyticsPage() {
                           <div
                             key={metric.workflowId}
                             className="flex items-center justify-between p-4 rounded-lg border border-border hover:border-border transition-colors cursor-pointer"
+                            role="button"
+                            tabIndex={0}
                             onClick={() =>
                               setSelectedWorkflow(metric.workflowId)
                             }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                setSelectedWorkflow(metric.workflowId);
+                              }
+                            }}
                           >
                             <div className="flex items-center gap-4 flex-1">
                               <div className="flex items-center justify-center w-8 h-8 rounded-full bg-brand-secondary/20 text-brand-secondary font-bold">
@@ -1061,9 +1105,17 @@ export default function WorkflowAnalyticsPage() {
                             <div
                               key={metric.workflowId}
                               className="flex items-center justify-between p-4 rounded-lg border border-red-500/20 bg-red-500/5 hover:border-red-500/30 transition-colors cursor-pointer"
+                              role="button"
+                              tabIndex={0}
                               onClick={() =>
                                 setSelectedWorkflow(metric.workflowId)
                               }
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  setSelectedWorkflow(metric.workflowId);
+                                }
+                              }}
                             >
                               <div className="flex items-center gap-4 flex-1">
                                 <div className="flex items-center justify-center w-8 h-8 rounded-full bg-red-500/20 text-red-500 font-bold">
@@ -1132,7 +1184,15 @@ export default function WorkflowAnalyticsPage() {
                             <div
                               key={execution.id}
                               className="p-4 rounded-lg border border-red-500/20 bg-red-500/5 hover:border-red-500/30 transition-colors cursor-pointer"
+                              role="button"
+                              tabIndex={0}
                               onClick={() => setSelectedExecution(execution)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  setSelectedExecution(execution);
+                                }
+                              }}
                             >
                               <div className="flex items-start justify-between mb-2">
                                 <div className="flex-1">

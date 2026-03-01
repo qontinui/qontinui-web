@@ -2,14 +2,14 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect } from "react";
+import { useEffect, Suspense } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { DeficiencyList } from "@/components/testing/DeficiencyList";
 import { TrendingUp, BarChart3 } from "lucide-react";
 
-export default function ProjectDeficienciesPage() {
+function ProjectDeficienciesPageContent() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const params = useParams();
@@ -76,5 +76,13 @@ export default function ProjectDeficienciesPage() {
         />
       </main>
     </div>
+  );
+}
+
+export default function ProjectDeficienciesPage() {
+  return (
+    <Suspense fallback={null}>
+      <ProjectDeficienciesPageContent />
+    </Suspense>
   );
 }

@@ -60,14 +60,14 @@ export function ScreenshotGallery({
 
   const handlePrevious = () => {
     if (selectedIndex !== null && selectedIndex > 0) {
-      setSelectedIndex(selectedIndex - 1);
+      setSelectedIndex((prev) => (prev !== null ? prev - 1 : prev));
       setZoom(1);
     }
   };
 
   const handleNext = () => {
     if (selectedIndex !== null && selectedIndex < screenshots.length - 1) {
-      setSelectedIndex(selectedIndex + 1);
+      setSelectedIndex((prev) => (prev !== null ? prev + 1 : prev));
       setZoom(1);
     }
   };

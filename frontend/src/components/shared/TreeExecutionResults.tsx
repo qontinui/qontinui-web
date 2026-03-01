@@ -70,6 +70,9 @@ function formatDuration(ms: number): string {
   return `${Math.floor(ms / 60000)}m ${((ms % 60000) / 1000).toFixed(0)}s`;
 }
 
+const DEFAULT_INITIAL_STATES: string[] = [];
+const DEFAULT_FINAL_STATES: string[] = [];
+
 export function TreeExecutionResults({
   displayNodes,
   treeEvents,
@@ -77,8 +80,8 @@ export function TreeExecutionResults({
   workflowName = "Execution",
   status = "pending",
   durationMs = 0,
-  initialStates = [],
-  finalStates = [],
+  initialStates = DEFAULT_INITIAL_STATES,
+  finalStates = DEFAULT_FINAL_STATES,
   isLive = false,
   nameMap,
   onStepClick,

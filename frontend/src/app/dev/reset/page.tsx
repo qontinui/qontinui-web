@@ -132,7 +132,7 @@ export default function DevResetPage() {
   useEffect(() => {
     if (!isClearing && redirectCountdown !== null && redirectCountdown > 0) {
       const timer = setTimeout(() => {
-        setRedirectCountdown(redirectCountdown - 1);
+        setRedirectCountdown((prev) => (prev !== null ? prev - 1 : prev));
       }, 1000);
       return () => clearTimeout(timer);
     } else if (redirectCountdown === 0) {

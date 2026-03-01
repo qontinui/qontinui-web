@@ -12,7 +12,13 @@
 
 "use client";
 
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, {
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  Suspense,
+} from "react";
 import { useSearchParams } from "next/navigation";
 import { UnifiedProcessLibrary } from "@/components/unified-process-library";
 import { ActionProperties } from "@/components/action-properties";
@@ -55,7 +61,7 @@ import {
 } from "@/lib/project-validator";
 import { runnerClient } from "@/lib/runner-client";
 
-export function AutomationBuilder() {
+function AutomationBuilderContent() {
   // State
   const [mode, setMode] = useState<BuilderMode>("sequential");
   const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null);
@@ -725,5 +731,13 @@ export function AutomationBuilder() {
         onNavigateToWorkflow={handleNavigateToWorkflow}
       />
     </div>
+  );
+}
+
+export function AutomationBuilder() {
+  return (
+    <Suspense fallback={null}>
+      <AutomationBuilderContent />
+    </Suspense>
   );
 }

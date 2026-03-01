@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAutomation } from "@/contexts/automation-context";
 import { Button } from "@/components/ui/button";
@@ -44,7 +44,7 @@ import {
 import type { Recording, RecordingStatus } from "@/types/recording";
 import { formatDistanceToNow } from "date-fns";
 
-export function RecordingListPage() {
+function RecordingListPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { projectId: contextProjectId } = useAutomation();
@@ -428,5 +428,13 @@ export function RecordingListPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export function RecordingListPage() {
+  return (
+    <Suspense fallback={null}>
+      <RecordingListPageContent />
+    </Suspense>
   );
 }

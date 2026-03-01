@@ -344,11 +344,21 @@ export function StateImageTab({
                                 {/* Pattern image */}
                                 <div
                                   className="w-24 h-16 bg-surface-raised rounded overflow-hidden flex-shrink-0 cursor-pointer hover:ring-2 hover:ring-brand-primary transition-all"
+                                  role="button"
+                                  tabIndex={0}
                                   onClick={() =>
                                     setOpenImageSelectorId(
                                       `${stateImage.id}_pattern_${pIdx}`
                                     )
                                   }
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                      e.preventDefault();
+                                      setOpenImageSelectorId(
+                                        `${stateImage.id}_pattern_${pIdx}`
+                                      );
+                                    }
+                                  }}
                                   title="Click to select image for this pattern"
                                   style={{
                                     background:
@@ -1303,11 +1313,27 @@ export function StateImageTab({
       {showAddSearchRegionDialog !== null && (
         <div
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="button"
+          tabIndex={0}
           onClick={() => setShowAddSearchRegionDialog(null)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setShowAddSearchRegionDialog(null);
+            }
+          }}
         >
           <div
             className="bg-surface-raised border border-border-default rounded-lg p-6 max-w-md w-full max-h-[80vh] overflow-y-auto scrollbar-dark"
+            role="button"
+            tabIndex={0}
             onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                ((e) => e.stopPropagation())(e);
+              }
+            }}
           >
             <h3 className="text-lg font-semibold text-text-secondary mb-4">
               Add Search Region

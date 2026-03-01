@@ -5,6 +5,7 @@
  * into your application. Follow these steps to add interactive tours.
  */
 
+import Link from "next/link";
 import { TutorialOverlay } from "./TutorialOverlay";
 import { useOnboardingStore } from "@/stores/onboarding-store";
 
@@ -39,9 +40,9 @@ export function DashboardWithTutorial() {
           {/* Quick start checklist */}
         </div>
 
-        <a data-tour="documentation" href="/docs">
+        <Link data-tour="documentation" href="/docs">
           Documentation
-        </a>
+        </Link>
 
         <button data-tour="profile" className="profile-button">
           Profile

@@ -12,12 +12,14 @@ interface StateImageDisplayProps {
  * Component to display a StateImage with optional mask applied
  * If mask is provided, it composites the image with transparency based on the mask
  */
+const DEFAULT_STYLE: React.CSSProperties = {};
+
 export const StateImageDisplay: React.FC<StateImageDisplayProps> = ({
   image,
   mask,
   alt = "State Image",
   className = "",
-  style = {},
+  style = DEFAULT_STYLE,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [dimensions, setDimensions] = useState<{

@@ -217,7 +217,15 @@ function ActionItem({
       onDragOver={onDragOver}
       onDrop={onDrop}
       onDragEnd={onDragEnd}
+      role="button"
+      tabIndex={0}
       onClick={() => onClick?.(action)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick?.(action);
+        }
+      }}
     >
       {/* Indent Lines */}
       {level > 0 && (

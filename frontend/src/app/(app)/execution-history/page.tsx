@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { useProject } from "@/hooks/automation/useProject";
@@ -81,7 +81,7 @@ function getStatusIcon(status: string) {
   }
 }
 
-export default function ExecutionHistoryPage() {
+function ExecutionHistoryPageContent() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -352,5 +352,13 @@ export default function ExecutionHistoryPage() {
         </main>
       </div>
     </RequireProject>
+  );
+}
+
+export default function ExecutionHistoryPage() {
+  return (
+    <Suspense fallback={null}>
+      <ExecutionHistoryPageContent />
+    </Suspense>
   );
 }

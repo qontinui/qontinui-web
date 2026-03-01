@@ -182,7 +182,18 @@ function IssueCard({
 }: IssueCardProps) {
   return (
     <div className={`issue-card severity-${issue.severity}`}>
-      <div className="issue-header" onClick={onToggleExpand}>
+      <div
+        className="issue-header"
+        role="button"
+        tabIndex={0}
+        onClick={onToggleExpand}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onToggleExpand();
+          }
+        }}
+      >
         <div className="issue-main">
           <span className={`severity-badge ${issue.severity}`}>
             {issue.severity === "error" && "⚠️"}
@@ -222,7 +233,6 @@ function IssueCard({
           <button className="expand-button">{expanded ? "▼" : "▶"}</button>
         </div>
       </div>
-
       {expanded && (
         <div className="issue-details">
           <p className="issue-description">{issue.description}</p>

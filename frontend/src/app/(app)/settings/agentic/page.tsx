@@ -167,7 +167,15 @@ export default function AgenticSettingsPage() {
       <div className="rounded-lg border border-border">
         <div
           className="px-4 py-3 border-b border-border bg-muted/50 cursor-pointer select-none"
+          role="button"
+          tabIndex={0}
           onClick={() => setCompressionOpen(!compressionOpen)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setCompressionOpen(!compressionOpen);
+            }
+          }}
         >
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-medium flex items-center gap-2">
@@ -288,7 +296,15 @@ export default function AgenticSettingsPage() {
       <div className="rounded-lg border border-border">
         <div
           className="px-4 py-3 border-b border-border bg-muted/50 cursor-pointer select-none"
+          role="button"
+          tabIndex={0}
           onClick={() => setRetryOpen(!retryOpen)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setRetryOpen(!retryOpen);
+            }
+          }}
         >
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-medium flex items-center gap-2">
@@ -421,7 +437,15 @@ export default function AgenticSettingsPage() {
       <div className="rounded-lg border border-border">
         <div
           className="px-4 py-3 border-b border-border bg-muted/50 cursor-pointer select-none"
+          role="button"
+          tabIndex={0}
           onClick={() => setRoutingOpen(!routingOpen)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setRoutingOpen(!routingOpen);
+            }
+          }}
         >
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-medium flex items-center gap-2">

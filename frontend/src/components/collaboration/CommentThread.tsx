@@ -63,11 +63,13 @@ interface CommentThreadProps {
   className?: string;
 }
 
+const DEFAULT_AVAILABLE_USERS: Array<{ id: string; name: string }> = [];
+
 export function CommentThread({
   thread,
   currentUserId,
   currentUserName: _currentUserName,
-  availableUsers = [],
+  availableUsers = DEFAULT_AVAILABLE_USERS,
   onAddComment,
   onEditComment,
   onDeleteComment,

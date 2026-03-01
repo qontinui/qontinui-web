@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,7 @@ import { LiveTestDashboard } from "@/components/testing/LiveTestDashboard";
 import { TestRunCard } from "@/components/testing/TestRunCard";
 import { useTestRuns } from "@/hooks/useTesting";
 
-export default function ProjectLiveTestingPage() {
+function ProjectLiveTestingPageContent() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const params = useParams();
@@ -268,5 +268,13 @@ export default function ProjectLiveTestingPage() {
         </Tabs>
       </main>
     </div>
+  );
+}
+
+export default function ProjectLiveTestingPage() {
+  return (
+    <Suspense fallback={null}>
+      <ProjectLiveTestingPageContent />
+    </Suspense>
   );
 }

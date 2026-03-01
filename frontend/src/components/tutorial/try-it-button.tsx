@@ -112,7 +112,7 @@ export function TryItButton({
    */
   const handleNextHint = () => {
     if (config.hints && currentHintIndex < config.hints.length - 1) {
-      setCurrentHintIndex(currentHintIndex + 1);
+      setCurrentHintIndex((prev) => prev + 1);
     }
   };
 
@@ -121,7 +121,7 @@ export function TryItButton({
    */
   const handlePreviousHint = () => {
     if (currentHintIndex > 0) {
-      setCurrentHintIndex(currentHintIndex - 1);
+      setCurrentHintIndex((prev) => prev - 1);
     }
   };
 

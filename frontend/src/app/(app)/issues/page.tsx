@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
@@ -240,7 +240,7 @@ function StatsCards({ projectId }: { projectId?: string }) {
   );
 }
 
-export default function IssuesPage() {
+function IssuesPageContent() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -428,5 +428,13 @@ export default function IssuesPage() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function IssuesPage() {
+  return (
+    <Suspense fallback={null}>
+      <IssuesPageContent />
+    </Suspense>
   );
 }

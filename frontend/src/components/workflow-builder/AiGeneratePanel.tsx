@@ -175,6 +175,7 @@ export function AiGeneratePanel({
     localStorage.setItem("generate-include-ui-bridge", String(includeUIBridge));
   }, [includeUIBridge]);
   const [reflectionMode, setReflectionMode] = useState(true);
+  const [investigateCodebase, setInvestigateCodebase] = useState(true);
   const [discoveryMode, setDiscoveryMode] = useState<
     "auto" | "enabled" | "disabled"
   >("auto");
@@ -346,6 +347,7 @@ export function AiGeneratePanel({
       discovery_mode: discoveryMode !== "auto" ? discoveryMode : undefined,
       include_ui_bridge_instructions: includeUIBridge,
       reflection_mode: reflectionMode,
+      investigate_codebase: investigateCodebase,
     };
   }, [
     tagsInput,
@@ -361,6 +363,7 @@ export function AiGeneratePanel({
     hasSpecs,
     includeUIBridge,
     reflectionMode,
+    investigateCodebase,
   ]);
 
   /** Build a single request (non-batch or fallback). */
@@ -1021,6 +1024,32 @@ export function AiGeneratePanel({
                             exploration, and document findings before
                             implementing changes. Uses more tokens but produces
                             better fixes for complex issues.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </label>
+                </div>
+                <div className="flex items-end pb-1">
+                  <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+                    <Checkbox
+                      checked={investigateCodebase}
+                      onCheckedChange={(v) =>
+                        setInvestigateCodebase(v === true)
+                      }
+                    />
+                    Investigate codebase
+                    <TooltipProvider delayDuration={200}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="w-3 h-3 text-zinc-500 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs p-3">
+                          <p className="text-xs text-muted-foreground">
+                            Run an AI investigation step before generating the
+                            workflow. Analyzes project structure to produce a
+                            more targeted workflow. Adds ~30s to generation
+                            time.
                           </p>
                         </TooltipContent>
                       </Tooltip>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -70,9 +71,9 @@ export default function SetupAdmin() {
 
           {result.startsWith("✅") && (
             <div className="text-center">
-              <a href="/admin" className="text-primary hover:underline">
+              <Link href="/admin" className="text-primary hover:underline">
                 Go to Admin Dashboard →
-              </a>
+              </Link>
             </div>
           )}
         </CardContent>

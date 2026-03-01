@@ -1008,7 +1008,7 @@ export default function DocumentationPage() {
   const docService = WorkflowDocumentationService.getInstance();
 
   // State
-  const [workflows] = useState<Workflow[]>(generateMockWorkflows());
+  const [workflows] = useState<Workflow[]>(() => generateMockWorkflows());
   const [selectedNode, setSelectedNode] = useState<DocumentationNode | null>(
     null
   );

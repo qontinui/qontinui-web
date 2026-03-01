@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useAutomation } from "@/contexts/automation-context";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,7 @@ import { captureService } from "@/services/service-factory";
 import type { CaptureSession, InputEvent } from "@/types/capture";
 import { formatDuration } from "@/types/capture";
 
-export default function CaptureViewerPage() {
+function CaptureViewerPageContent() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -275,5 +275,13 @@ export default function CaptureViewerPage() {
         defaultName={`Frame at ${formatDuration(currentTimestamp)}`}
       />
     </div>
+  );
+}
+
+export default function CaptureViewerPage() {
+  return (
+    <Suspense fallback={null}>
+      <CaptureViewerPageContent />
+    </Suspense>
   );
 }

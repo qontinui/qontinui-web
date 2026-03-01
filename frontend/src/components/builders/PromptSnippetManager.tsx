@@ -76,7 +76,7 @@ export function PromptSnippetManager({
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isNew, setIsNew] = useState(false);
-  const [form, setForm] = useState<SnippetForm>(emptyForm());
+  const [form, setForm] = useState<SnippetForm>(() => emptyForm());
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
 

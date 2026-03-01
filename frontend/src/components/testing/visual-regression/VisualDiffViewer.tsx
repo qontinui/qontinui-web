@@ -42,11 +42,13 @@ interface VisualDiffViewerProps {
  * - Diff region highlighting
  * - Download images
  */
+const DEFAULT_DIFF_REGIONS: DiffRegion[] = [];
+
 export function VisualDiffViewer({
   baselineUrl,
   screenshotUrl,
   diffUrl,
-  diffRegions = [],
+  diffRegions = DEFAULT_DIFF_REGIONS,
   similarityScore,
   threshold,
   className,

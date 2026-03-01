@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
+import Link from "next/link";
 import { listExecutionRuns } from "@/services/execution-service";
 import type { ExecutionRunResponse } from "@/types/generated/execution";
 import { RunStatus } from "@/types/generated/execution";
@@ -335,12 +336,12 @@ export function SessionHistory() {
                 <ImageIcon className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
                 <p className="text-muted-foreground">
                   For detailed execution tree view, visit the{" "}
-                  <a
+                  <Link
                     href="/execution-history"
                     className="text-primary hover:underline"
                   >
                     Execution History
-                  </a>{" "}
+                  </Link>{" "}
                   page
                 </p>
               </CardContent>

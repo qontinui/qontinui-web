@@ -33,6 +33,8 @@ export interface GenerateWorkflowRequest {
   include_ui_bridge_instructions?: boolean;
   /** Whether to enable reflection mode for agentic iterations (default: true) */
   reflection_mode?: boolean;
+  /** Whether to run an AI investigation step before the builder agent (default: true) */
+  investigate_codebase?: boolean;
 }
 
 /** One pass of the verification->fix loop during workflow generation. */

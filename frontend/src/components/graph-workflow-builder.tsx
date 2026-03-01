@@ -326,9 +326,20 @@ export function GraphWorkflowBuilder() {
                         ? "bg-brand-success/20 border border-brand-success"
                         : "bg-surface-raised/50 hover:bg-surface-raised border border-transparent"
                     }`}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => {
                       setSelectedWorkflow(workflow);
                       setSelectedAction(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        (() => {
+                          setSelectedWorkflow(workflow);
+                          setSelectedAction(null);
+                        })();
+                      }
                     }}
                   >
                     <div className="font-medium text-sm text-text-secondary">
@@ -395,9 +406,20 @@ export function GraphWorkflowBuilder() {
                   ) : (
                     <h2
                       className="text-lg font-bold text-brand-success cursor-pointer hover:underline"
+                      role="button"
+                      tabIndex={0}
                       onClick={() => {
                         setTempName(selectedWorkflow.name);
                         setIsEditingName(true);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          (() => {
+                            setTempName(selectedWorkflow.name);
+                            setIsEditingName(true);
+                          })();
+                        }
                       }}
                     >
                       {selectedWorkflow.name}

@@ -9,6 +9,9 @@ import { TimingProperties } from "../../TimingProperties";
 import { ConditionEditor } from "../../shared";
 import { BreakActionConfig } from "@/lib/action-schema";
 
+const DEFAULT_IMAGES: ActionPropertiesComponentProps["images"] = [];
+const DEFAULT_VARIABLE_NAMES: string[] = [];
+
 /**
  * Properties component for BREAK action.
  *
@@ -19,8 +22,8 @@ import { BreakActionConfig } from "@/lib/action-schema";
 export function BreakActionProperties({
   action,
   updateConfig,
-  images = [],
-  variableNames = [],
+  images = DEFAULT_IMAGES,
+  variableNames = DEFAULT_VARIABLE_NAMES,
 }: ActionPropertiesComponentProps) {
   const config = action.config as BreakActionConfig;
 

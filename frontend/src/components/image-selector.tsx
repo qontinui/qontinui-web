@@ -72,6 +72,8 @@ interface ImageSelectorProps {
   hideTrigger?: boolean;
 }
 
+const DEFAULT_STATES: State[] = [];
+
 export function ImageSelector({
   selectedImage,
   onSelectImage,
@@ -79,7 +81,7 @@ export function ImageSelector({
   onSelectImages,
   multiSelect = false,
   images,
-  states = [],
+  states = DEFAULT_STATES,
   placeholder = "Select image",
   initialOpen = false,
   showStateFilter = false,

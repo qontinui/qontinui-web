@@ -686,7 +686,15 @@ export default function DatasetViewerPage() {
                         ? "border-primary ring-2 ring-primary/50"
                         : "border-transparent hover:border-accent"
                     }`}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => setSelectedImage(image)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setSelectedImage(image);
+                      }
+                    }}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element -- Dynamic thumbnail URL from backend */}
                     <img
@@ -866,7 +874,15 @@ export default function DatasetViewerPage() {
                               ? "border-blue-300 bg-blue-50 dark:bg-blue-950"
                               : "hover:bg-accent/50"
                         }`}
+                        role="button"
+                        tabIndex={0}
                         onClick={() => setSelectedAnnotation(ann)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setSelectedAnnotation(ann);
+                          }
+                        }}
                       >
                         <div className="flex items-start justify-between">
                           <div className="flex items-center gap-2">

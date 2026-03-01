@@ -231,7 +231,7 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
     if (newHistory.length > 10) {
       newHistory.shift();
     } else {
-      setHistoryIndex(historyIndex + 1);
+      setHistoryIndex((prev) => prev + 1);
     }
 
     setHistory(newHistory);

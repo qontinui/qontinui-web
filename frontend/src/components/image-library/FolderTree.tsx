@@ -112,7 +112,15 @@ export function FolderTreeSidebar({
                 ? "bg-brand-success/20 text-brand-success"
                 : "hover:bg-surface-raised"
             )}
+            role="button"
+            tabIndex={0}
             onClick={() => onSelectFolder(null)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelectFolder(null);
+              }
+            }}
           >
             <ImageIcon className="w-4 h-4" />
             <span className="text-sm font-medium flex-1">All Images</span>
@@ -189,7 +197,15 @@ function FolderTreeNode({
 
         <div
           className="flex items-center gap-2 flex-1 cursor-pointer"
+          role="button"
+          tabIndex={0}
           onClick={() => !isEditing && onSelectFolder(folder.id)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              if (!isEditing) onSelectFolder(folder.id);
+            }
+          }}
         >
           {folder.expanded ? (
             <FolderOpen className="w-4 h-4" style={{ color: folder.color }} />

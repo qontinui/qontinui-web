@@ -533,7 +533,15 @@ export function TemplateDialog({
             {templates.map((template) => (
               <div
                 key={template.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => handleSelectTemplate(template)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    handleSelectTemplate(template);
+                  }
+                }}
                 className="border border-border-default bg-surface-canvas rounded-lg p-4 hover:border-brand-primary hover:shadow-md cursor-pointer transition"
                 data-ui-id={`canvas-template-item-${template.id}`}
               >

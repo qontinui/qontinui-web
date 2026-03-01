@@ -7,6 +7,8 @@ import { TimingProperties } from "../../TimingProperties";
 import { VariableSelector } from "../../shared";
 import { GetVariableActionConfig } from "@/lib/action-schema";
 
+const DEFAULT_VARIABLE_NAMES: string[] = [];
+
 /**
  * Properties component for GET_VARIABLE action.
  *
@@ -18,7 +20,7 @@ import { GetVariableActionConfig } from "@/lib/action-schema";
 export function GetVariableActionProperties({
   action,
   updateConfig,
-  variableNames = [],
+  variableNames = DEFAULT_VARIABLE_NAMES,
 }: ActionPropertiesComponentProps) {
   const config = action.config as unknown as GetVariableActionConfig;
 

@@ -65,10 +65,13 @@ interface DeficiencyDetailsProps {
  * - Export and share functionality
  * - Keyboard navigation support
  */
+const DEFAULT_COMMENTS: DeficiencyComment[] = [];
+const DEFAULT_ACTIVITIES: DeficiencyActivity[] = [];
+
 export function DeficiencyDetails({
   deficiency,
-  comments = [],
-  activities = [],
+  comments = DEFAULT_COMMENTS,
+  activities = DEFAULT_ACTIVITIES,
   open,
   onOpenChange,
   onStatusChange,

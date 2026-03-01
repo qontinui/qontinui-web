@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { useProjects } from "@/hooks/use-projects";
 import { useAutomation } from "@/contexts/automation-context";
 import { Button } from "@/components/ui/button";
@@ -23,7 +24,7 @@ interface RequireProjectProps {
  *
  * Styled to match the dashboard's empty state design.
  */
-export function RequireProject({
+function RequireProjectContent({
   children,
   pageName = "this page",
 }: RequireProjectProps) {
@@ -144,4 +145,17 @@ export function RequireProject({
   }
 
   return <>{children}</>;
+}
+
+export function RequireProject({
+  children,
+  pageName = "this page",
+}: RequireProjectProps) {
+  return (
+    <Suspense fallback={null}>
+      <RequireProjectContent pageName={pageName}>
+        {children}
+      </RequireProjectContent>
+    </Suspense>
+  );
 }

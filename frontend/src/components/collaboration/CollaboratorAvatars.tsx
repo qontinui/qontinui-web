@@ -106,7 +106,15 @@ export function CollaboratorAvatars({
                     onAvatarClick &&
                       "cursor-pointer hover:z-10 transition-transform hover:scale-110"
                   )}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => onAvatarClick?.(collaborator)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onAvatarClick?.(collaborator);
+                    }
+                  }}
                   style={{ zIndex: visibleCollaborators.length - index }}
                 >
                   <Avatar
@@ -208,9 +216,20 @@ export function CollaboratorAvatars({
                         "flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50",
                         onAvatarClick && "cursor-pointer"
                       )}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => {
                         onAvatarClick?.(collaborator);
                         setShowAll(false);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          (() => {
+                            onAvatarClick?.(collaborator);
+                            setShowAll(false);
+                          })();
+                        }
                       }}
                     >
                       <div className="relative">

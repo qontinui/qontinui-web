@@ -87,7 +87,7 @@ const VALID_TABS = [
   "errors",
 ];
 
-export function RunDetailContent({ runId }: { runId: string }) {
+function RunDetailContentInner({ runId }: { runId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
@@ -279,5 +279,13 @@ export function RunDetailContent({ runId }: { runId: string }) {
         </Tabs>
       </main>
     </div>
+  );
+}
+
+export function RunDetailContent({ runId }: { runId: string }) {
+  return (
+    <Suspense fallback={null}>
+      <RunDetailContentInner runId={runId} />
+    </Suspense>
   );
 }

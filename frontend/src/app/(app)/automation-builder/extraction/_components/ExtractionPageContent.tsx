@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useProjectLoader } from "@/hooks/use-project-loader";
 import { useUnifiedExtractionConfig } from "@/hooks/use-unified-extraction-config";
@@ -84,7 +84,7 @@ import { UIBridgeResultsSection } from "./UIBridgeResultsSection";
 import { createLogger } from "@/lib/logger";
 const logger = createLogger("ExtractionPageContent");
 
-export function ExtractionPageContent() {
+function ExtractionPageContentInner() {
   const { projectId } = useProjectLoader();
   const searchParams = useSearchParams();
   const extractionConfig = useUnifiedExtractionConfig();
@@ -1581,5 +1581,13 @@ export function ExtractionPageContent() {
         </div>
       </div>
     </div>
+  );
+}
+
+export function ExtractionPageContent() {
+  return (
+    <Suspense fallback={null}>
+      <ExtractionPageContentInner />
+    </Suspense>
   );
 }

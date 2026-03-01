@@ -14,6 +14,8 @@ import { TimingProperties } from "../../TimingProperties";
 import { VariableSelector, ExpressionEditor } from "../../shared";
 import { SetVariableActionConfig } from "@/lib/action-schema";
 
+const DEFAULT_VARIABLE_NAMES: string[] = [];
+
 /**
  * Properties component for SET_VARIABLE action.
  *
@@ -26,7 +28,7 @@ import { SetVariableActionConfig } from "@/lib/action-schema";
 export function SetVariableActionProperties({
   action,
   updateConfig,
-  variableNames = [],
+  variableNames = DEFAULT_VARIABLE_NAMES,
 }: ActionPropertiesComponentProps) {
   const config = action.config as unknown as SetVariableActionConfig;
 

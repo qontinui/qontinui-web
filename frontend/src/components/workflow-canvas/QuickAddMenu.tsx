@@ -37,7 +37,7 @@ export const QuickAddMenu: React.FC<QuickAddMenuProps> = ({
 }) => {
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [results, setResults] = useState(
+  const [results, setResults] = useState(() =>
     Object.values(NODE_METADATA).slice(0, 8)
   );
 

@@ -21,6 +21,8 @@ import {
 } from "../../shared";
 import { LoopActionConfig } from "@/lib/action-schema";
 
+const DEFAULT_VARIABLE_NAMES: string[] = [];
+
 /**
  * Properties component for LOOP action.
  *
@@ -34,7 +36,7 @@ export function LoopActionProperties({
   action,
   updateConfig,
   images,
-  variableNames = [],
+  variableNames = DEFAULT_VARIABLE_NAMES,
 }: ActionPropertiesComponentProps) {
   const config = action.config as unknown as LoopActionConfig;
 

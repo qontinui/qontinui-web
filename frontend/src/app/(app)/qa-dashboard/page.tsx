@@ -2,12 +2,20 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { TestRunsList } from "@/components/testing/TestRunsList";
-import { CoverageTrendChart } from "@/components/testing/CoverageTrendChart";
+import nextDynamic from "next/dynamic";
+
+const CoverageTrendChart = nextDynamic(
+  () =>
+    import("@/components/testing/CoverageTrendChart").then((m) => ({
+      default: m.CoverageTrendChart,
+    })),
+  { ssr: false }
+);
 import { ReliabilityStats } from "@/components/testing/ReliabilityStats";
 import { LiveTestExecution } from "@/components/testing/LiveTestExecution";
 import { RequireProject } from "@/components/require-project";
@@ -19,7 +27,7 @@ import {
   Activity,
 } from "lucide-react";
 
-export default function QADashboard() {
+function QADashboardContent() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -158,5 +166,13 @@ export default function QADashboard() {
         </main>
       </div>
     </RequireProject>
+  );
+}
+
+export default function QADashboard() {
+  return (
+    <Suspense fallback={null}>
+      <QADashboardContent />
+    </Suspense>
   );
 }

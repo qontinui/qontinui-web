@@ -15,13 +15,15 @@ export interface StateImageViewerProps {
 /**
  * Component to display a StateImage using the StateImageRenderer
  */
+const DEFAULT_STYLE: React.CSSProperties = {};
+
 export const StateImageViewer: React.FC<StateImageViewerProps> = ({
   image,
   mask,
   mode = "normal",
   alt = "State Image",
   className = "",
-  style = {},
+  style = DEFAULT_STYLE,
   onLoad,
   onError,
 }) => {

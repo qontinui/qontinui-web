@@ -54,10 +54,12 @@ interface EdgeDetectionViewProps {
   imageHeight?: number;
 }
 
+const DEFAULT_CONTOURS: ContourResult[] = [];
+
 export function EdgeDetectionView({
   screenshotSource,
   results,
-  contours: _contours = [],
+  contours: _contours = DEFAULT_CONTOURS,
   edgeOverlayImage,
   config,
   onConfigChange,

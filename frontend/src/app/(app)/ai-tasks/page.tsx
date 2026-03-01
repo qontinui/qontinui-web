@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
@@ -33,7 +33,7 @@ import type {
   TaskRunStatus,
 } from "@/types/task-runs";
 
-export default function AITasksPage() {
+function AITasksPageContent() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -310,5 +310,13 @@ export default function AITasksPage() {
         </div>
       </div>
     </RequireProject>
+  );
+}
+
+export default function AITasksPage() {
+  return (
+    <Suspense fallback={null}>
+      <AITasksPageContent />
+    </Suspense>
   );
 }

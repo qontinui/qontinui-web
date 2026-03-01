@@ -231,15 +231,17 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
   // Undo/Redo
   const undo = () => {
     if (historyIndex >= 0) {
-      setHistoryIndex(historyIndex - 1);
-      replayHistory(historyIndex - 1);
+      const newIndex = historyIndex - 1;
+      setHistoryIndex(newIndex);
+      replayHistory(newIndex);
     }
   };
 
   const redo = () => {
     if (historyIndex < history.length - 1) {
-      setHistoryIndex(historyIndex + 1);
-      replayHistory(historyIndex + 1);
+      const newIndex = historyIndex + 1;
+      setHistoryIndex(newIndex);
+      replayHistory(newIndex);
     }
   };
 

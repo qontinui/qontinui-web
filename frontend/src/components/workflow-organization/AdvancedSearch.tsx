@@ -335,12 +335,14 @@ function getAllCategories(workflows: Workflow[]): string[] {
 // Main Component
 // ============================================================================
 
+const DEFAULT_SAVED_FILTERS: SavedFilter[] = [];
+
 export function AdvancedSearch({
   workflows,
   folders,
   onSearch,
   onSaveFilter,
-  savedFilters = [],
+  savedFilters = DEFAULT_SAVED_FILTERS,
   executionStats,
   className,
 }: AdvancedSearchProps) {

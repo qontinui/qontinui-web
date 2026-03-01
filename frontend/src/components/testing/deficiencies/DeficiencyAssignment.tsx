@@ -49,9 +49,11 @@ interface DeficiencyAssignmentProps {
  * - Email notification option (optional)
  * - Loading states during assignment changes
  */
+const DEFAULT_AVAILABLE_USERS: User[] = [];
+
 export function DeficiencyAssignment({
   deficiency,
-  availableUsers = [],
+  availableUsers = DEFAULT_AVAILABLE_USERS,
   onAssignmentChange,
   className,
 }: DeficiencyAssignmentProps) {

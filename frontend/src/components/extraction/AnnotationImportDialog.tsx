@@ -167,7 +167,15 @@ export function AnnotationImportDialog({
             <Label>Annotations File</Label>
             <div
               className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 transition-colors"
+              role="button"
+              tabIndex={0}
               onClick={() => fileInputRef.current?.click()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  fileInputRef.current?.click();
+                }
+              }}
             >
               <input
                 ref={fileInputRef}
@@ -201,7 +209,15 @@ export function AnnotationImportDialog({
               <Label>Classes File (optional)</Label>
               <div
                 className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-primary/50 transition-colors"
+                role="button"
+                tabIndex={0}
                 onClick={() => classesInputRef.current?.click()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    classesInputRef.current?.click();
+                  }
+                }}
               >
                 <input
                   ref={classesInputRef}

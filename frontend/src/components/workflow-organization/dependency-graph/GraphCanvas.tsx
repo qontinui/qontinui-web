@@ -103,7 +103,18 @@ export function GraphCanvas({
       {/* Context menu */}
       {contextMenu && (
         <>
-          <div className="fixed inset-0 z-40" onClick={onCloseContextMenu} />
+          <div
+            className="fixed inset-0 z-40"
+            role="button"
+            tabIndex={0}
+            onClick={onCloseContextMenu}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onCloseContextMenu();
+              }
+            }}
+          />
           <div
             className="fixed z-50 bg-popover rounded-md shadow-lg border p-1 min-w-[200px]"
             style={{ top: contextMenu.y, left: contextMenu.x }}

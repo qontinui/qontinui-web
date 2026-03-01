@@ -2,13 +2,13 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect } from "react";
+import { useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { DeficiencyList } from "@/components/testing/DeficiencyList";
 import { RequireProject } from "@/components/require-project";
 
-export default function DeficienciesPage() {
+function QADeficienciesPageContent() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -60,5 +60,13 @@ export default function DeficienciesPage() {
         </main>
       </div>
     </RequireProject>
+  );
+}
+
+export default function DeficienciesPage() {
+  return (
+    <Suspense fallback={null}>
+      <QADeficienciesPageContent />
+    </Suspense>
   );
 }

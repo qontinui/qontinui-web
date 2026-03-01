@@ -75,11 +75,13 @@ interface ThumbnailData {
   total_screenshots: number;
 }
 
+const DEFAULT_STATE_FILTER: string[] = [];
+
 const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
   isOpen,
   onClose,
   onSelect,
-  stateFilter = [],
+  stateFilter = DEFAULT_STATE_FILTER,
 }) => {
   const { snapshots, loading: snapshotsLoading } = useSnapshotList();
   const [selectedSnapshot, setSelectedSnapshot] = useState<SnapshotRun | null>(
@@ -328,7 +330,15 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
                     return (
                       <div
                         key={snapshot.id}
+                        role="button"
+                        tabIndex={0}
                         onClick={() => setSelectedSnapshot(snapshot)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setSelectedSnapshot(snapshot);
+                          }
+                        }}
                         className={`
                           p-3 rounded-lg border cursor-pointer transition-all
                           ${
@@ -565,7 +575,15 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
                         return (
                           <div
                             key={screenshot.path}
+                            role="button"
+                            tabIndex={0}
                             onClick={() => toggleScreenshot(screenshot.path)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                toggleScreenshot(screenshot.path);
+                              }
+                            }}
                             className={`
                               relative group cursor-pointer rounded-lg border-2 overflow-hidden transition-all
                               ${

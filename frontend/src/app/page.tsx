@@ -28,6 +28,7 @@ import {
   Settings,
 } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { AuthDialog } from "@/components/auth-dialog";
 import { AuthProvider, useAuth } from "@/contexts/auth-context";
 import { Footer } from "@/components/marketing/footer";
@@ -638,9 +639,12 @@ function LandingContent() {
             </Button>
           </div>
           <p className="mt-4 text-sm text-muted-foreground">
-            <a href="/runner/download" className="text-primary hover:underline">
+            <Link
+              href="/runner/download"
+              className="text-primary hover:underline"
+            >
               All download options
-            </a>{" "}
+            </Link>{" "}
             | Windows 10+, 64-bit, 200 MB disk space
           </p>
         </div>

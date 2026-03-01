@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import Image from "next/image";
 import { ArrowRight, LogIn, Github, Download } from "lucide-react";
 import { AuthDialog } from "@/components/auth-dialog";
 import { useAuth } from "@/contexts/auth-context";
@@ -21,8 +22,13 @@ export function Header() {
             className="flex items-center gap-1 cursor-pointer"
             onClick={() => router.push("/")}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/q-logo.png" alt="Qontinui" className="h-8 w-auto" />
+            <Image
+              src="/q-logo.png"
+              alt="Qontinui"
+              width={32}
+              height={32}
+              className="h-8 w-auto"
+            />
             <span className="text-2xl font-bold text-primary">ontinui</span>
           </div>
           <div className="flex items-center gap-4">

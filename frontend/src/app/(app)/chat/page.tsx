@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { MessageSquare, Plus, Wifi, WifiOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
@@ -146,12 +147,12 @@ export default function ChatPage() {
               <p className="text-xs text-text-muted mb-1">No active workflow</p>
               <p className="text-sm text-center max-w-md">
                 Connect a runner to start chatting with Claude. Go to{" "}
-                <a
+                <Link
                   href="/runners"
                   className="text-brand-primary hover:underline"
                 >
                   Runners
-                </a>{" "}
+                </Link>{" "}
                 to set up a connection.
               </p>
             </div>

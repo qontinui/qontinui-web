@@ -783,9 +783,17 @@ export default function WebExtractionTab() {
                           : "explorer-panel-item"
                       }
                     `}
+                    role="button"
+                    tabIndex={0}
                     onClick={() =>
                       handleSelectPreviousExtraction(extraction.id)
                     }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        handleSelectPreviousExtraction(extraction.id);
+                      }
+                    }}
                   >
                     <div className="flex items-start justify-between mb-2 gap-2">
                       <div

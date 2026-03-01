@@ -384,7 +384,15 @@ export function DocumentationDialog({
     <div className={`fixed inset-0 z-50 ${open ? "" : "hidden"}`}>
       <div
         className="fixed inset-0 bg-background/80 backdrop-blur-sm"
+        role="button"
+        tabIndex={0}
         onClick={() => onOpenChange(false)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onOpenChange(false);
+          }
+        }}
       />
       <div className="fixed inset-4 bg-background border rounded-lg shadow-lg overflow-hidden flex flex-col">
         {mode === "view" && documentation ? (

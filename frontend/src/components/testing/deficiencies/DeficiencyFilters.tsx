@@ -62,11 +62,14 @@ interface DeficiencyFiltersProps {
  * - Active filter count badge
  * - Collapsible sections
  */
+const DEFAULT_AVAILABLE_USERS: { id: string; name: string }[] = [];
+const DEFAULT_AVAILABLE_TAGS: string[] = [];
+
 export function DeficiencyFilters({
   filters,
   onFiltersChange,
-  availableUsers = [],
-  availableTags = [],
+  availableUsers = DEFAULT_AVAILABLE_USERS,
+  availableTags = DEFAULT_AVAILABLE_TAGS,
   className,
 }: DeficiencyFiltersProps) {
   const [localFilters, setLocalFilters] = useState<Filters>(filters);

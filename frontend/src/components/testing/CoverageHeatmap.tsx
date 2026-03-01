@@ -12,9 +12,11 @@ interface CoverageHeatmapProps {
   allStates?: string[];
 }
 
+const DEFAULT_ALL_STATES: string[] = [];
+
 export function CoverageHeatmap({
   coverage,
-  allStates = [],
+  allStates = DEFAULT_ALL_STATES,
 }: CoverageHeatmapProps) {
   const heatmapData = useMemo(() => {
     if (!coverage) {

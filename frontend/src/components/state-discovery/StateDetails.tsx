@@ -226,9 +226,17 @@ const StateDetails: React.FC<StateDetailsProps> = ({
                       <div
                         key={stateImage.id}
                         className="p-2 border rounded hover:bg-surface-raised/80 cursor-pointer"
+                        role="button"
+                        tabIndex={0}
                         onClick={() =>
                           onHighlightStateImages?.([stateImage.id])
                         }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            onHighlightStateImages?.([stateImage.id]);
+                          }
+                        }}
                       >
                         <div className="flex gap-3">
                           {/* Thumbnail */}
@@ -287,7 +295,15 @@ const StateDetails: React.FC<StateDetailsProps> = ({
                       <div
                         key={screenshotId}
                         className="p-3 border rounded hover:bg-surface-raised/80 cursor-pointer transition-colors"
+                        role="button"
+                        tabIndex={0}
                         onClick={() => handleScreenshotClick(screenshotId)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            handleScreenshotClick(screenshotId);
+                          }
+                        }}
                       >
                         <div className="flex items-center">
                           <Camera className="h-4 w-4 mr-2 text-text-muted flex-shrink-0" />

@@ -65,9 +65,11 @@ const STATUS_ICONS = {
  * - Activity timeline showing status change history
  * - User information for each status change
  */
+const DEFAULT_ACTIVITIES: DeficiencyActivity[] = [];
+
 export function DeficiencyWorkflow({
   deficiency,
-  activities = [],
+  activities = DEFAULT_ACTIVITIES,
   onStatusChange,
   className,
 }: DeficiencyWorkflowProps) {

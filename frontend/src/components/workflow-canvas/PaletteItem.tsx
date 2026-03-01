@@ -78,7 +78,15 @@ export const PaletteItem: React.FC<PaletteItemProps> = ({
       )}
       draggable
       onDragStart={handleDragStart}
+      role="button"
+      tabIndex={0}
       onClick={handleClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          handleClick();
+        }
+      }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       data-node-type={metadata.type}

@@ -904,7 +904,15 @@ export function FolderTree({
               selectedFolderId === null && "bg-accent",
               selectedFolderId !== null && "hover:bg-accent/50"
             )}
+            role="button"
+            tabIndex={0}
             onClick={() => onSelectFolder(null)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelectFolder(null);
+              }
+            }}
           >
             <FolderTreeIcon className="h-4 w-4" />
             <span className="text-sm font-medium flex-1">All Workflows</span>
@@ -921,7 +929,15 @@ export function FolderTree({
                 selectedFolderId === "uncategorized" && "bg-accent",
                 selectedFolderId !== "uncategorized" && "hover:bg-accent/50"
               )}
+              role="button"
+              tabIndex={0}
               onClick={() => onSelectFolder("uncategorized")}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onSelectFolder("uncategorized");
+                }
+              }}
             >
               <Folder className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm font-medium flex-1 text-muted-foreground">

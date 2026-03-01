@@ -522,7 +522,15 @@ function FormatCard({
   return (
     <div
       className={`format-card ${selected ? "selected" : ""} ${disabled ? "disabled" : ""}`}
+      role="button"
+      tabIndex={0}
       onClick={disabled ? undefined : onClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          if (!disabled) onClick?.();
+        }
+      }}
     >
       <div className="format-icon">{info.icon}</div>
       <h4>{info.title}</h4>
@@ -588,7 +596,15 @@ function LayoutOption({
   return (
     <div
       className={`layout-option ${selected ? "selected" : ""}`}
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
     >
       <div className="layout-preview">
         <LayoutPreviewIcon style={style} />

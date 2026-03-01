@@ -38,6 +38,9 @@ export interface ConditionEditorProps {
   images?: Array<{ id: string; name: string }>;
 }
 
+const DEFAULT_EXISTING_VARIABLES: string[] = [];
+const DEFAULT_IMAGES: Array<{ id: string; name: string }> = [];
+
 /**
  * ConditionEditor component - provides UI for editing condition configurations.
  *
@@ -52,9 +55,9 @@ export function ConditionEditor({
   onChange,
   label = "Condition",
   className,
-  existingVariables = [],
+  existingVariables = DEFAULT_EXISTING_VARIABLES,
   allowEmpty = true,
-  images = [],
+  images = DEFAULT_IMAGES,
 }: ConditionEditorProps) {
   const [localCondition, setLocalCondition] = React.useState<ConditionConfig>(
     condition || {

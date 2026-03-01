@@ -16,7 +16,15 @@ import {
   TrendingUp,
   BarChart3,
 } from "lucide-react";
-import { ResourceOverviewTabs } from "./resource-overview-tabs";
+import dynamic from "next/dynamic";
+
+const ResourceOverviewTabs = dynamic(
+  () =>
+    import("./resource-overview-tabs").then((m) => ({
+      default: m.ResourceOverviewTabs,
+    })),
+  { ssr: false }
+);
 import type { ProjectData } from "../_lib/types";
 
 interface ResourceUsagePanelProps {

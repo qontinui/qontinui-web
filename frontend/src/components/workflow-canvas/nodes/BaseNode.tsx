@@ -116,7 +116,15 @@ export function BaseNode({
         min-w-[180px] max-w-[280px]
         cursor-pointer
       `}
+      role="button"
+      tabIndex={0}
       onClick={handleClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          handleClick();
+        }
+      }}
       onDoubleClick={handleDoubleClick}
     >
       {/* Input Handle */}

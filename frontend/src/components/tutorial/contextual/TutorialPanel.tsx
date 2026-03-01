@@ -35,10 +35,12 @@ export interface TutorialPanelProps {
   className?: string;
 }
 
+const DEFAULT_COMPLETED_STEP_IDS: string[] = [];
+
 export const TutorialPanel: React.FC<TutorialPanelProps> = ({
   steps,
   currentStepIndex,
-  completedStepIds = [],
+  completedStepIds = DEFAULT_COMPLETED_STEP_IDS,
   onStepClick,
   initialCollapsed = false,
   position = "right",

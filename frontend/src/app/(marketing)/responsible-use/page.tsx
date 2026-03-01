@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function ResponsibleUseFAQ() {
   return (
     <div className="min-h-screen bg-white">
@@ -25,16 +27,16 @@ export default function ResponsibleUseFAQ() {
             </p>
             <p>
               For complete legal details, see our{" "}
-              <a href="/terms" className="text-blue-600 hover:underline">
+              <Link href="/terms" className="text-blue-600 hover:underline">
                 Terms of Service
-              </a>{" "}
+              </Link>{" "}
               and{" "}
-              <a
+              <Link
                 href="/acceptable-use"
                 className="text-blue-600 hover:underline"
               >
                 Acceptable Use Policy
-              </a>
+              </Link>
               .
             </p>
           </section>
@@ -1076,19 +1078,19 @@ export default function ResponsibleUseFAQ() {
               <li>
                 <strong>Read the Full Terms:</strong> This FAQ is for
                 convenience only. For complete legal terms, see our{" "}
-                <a
+                <Link
                   href="/terms"
                   className="text-blue-600 hover:underline font-semibold"
                 >
                   Terms of Service
-                </a>{" "}
+                </Link>{" "}
                 and{" "}
-                <a
+                <Link
                   href="/acceptable-use"
                   className="text-blue-600 hover:underline font-semibold"
                 >
                   Acceptable Use Policy
-                </a>
+                </Link>
                 .
               </li>
             </ul>

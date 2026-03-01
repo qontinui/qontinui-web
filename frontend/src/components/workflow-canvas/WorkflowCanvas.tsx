@@ -131,6 +131,8 @@ const edgeTypes = {
 // Main Component (Inner - with React Flow context)
 // ============================================================================
 
+const DEFAULT_CANVAS_STYLE: React.CSSProperties = {};
+
 function WorkflowCanvasInner({
   workflow,
   onWorkflowChange,
@@ -139,7 +141,7 @@ function WorkflowCanvasInner({
   onEdgeClick,
   settings: userSettings,
   className = "",
-  style = {},
+  style = DEFAULT_CANVAS_STYLE,
 }: WorkflowCanvasProps) {
   const reactFlowInstance = useReactFlow();
   const containerRef = useRef<HTMLDivElement>(null);

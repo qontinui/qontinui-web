@@ -2,13 +2,13 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect } from "react";
+import { useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { TestRunsList } from "@/components/testing/TestRunsList";
 import { RequireProject } from "@/components/require-project";
 
-export default function TestRunsPage() {
+function TestRunsPageContent() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -55,5 +55,13 @@ export default function TestRunsPage() {
         </main>
       </div>
     </RequireProject>
+  );
+}
+
+export default function TestRunsPage() {
+  return (
+    <Suspense fallback={null}>
+      <TestRunsPageContent />
+    </Suspense>
   );
 }

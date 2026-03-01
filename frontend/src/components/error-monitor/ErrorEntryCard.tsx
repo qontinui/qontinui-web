@@ -144,7 +144,15 @@ export function ErrorEntryCard({
       {/* Main row */}
       <div
         className="p-4 cursor-pointer"
+        role="button"
+        tabIndex={0}
         onClick={() => setExpanded(!expanded)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setExpanded(!expanded);
+          }
+        }}
       >
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3 flex-1 min-w-0">
@@ -299,7 +307,15 @@ export function ErrorEntryCard({
               ) : (
                 <div
                   className="flex-1 flex items-center gap-2"
+                  role="button"
+                  tabIndex={0}
                   onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      ((e) => e.stopPropagation())(e);
+                    }
+                  }}
                 >
                   <Textarea
                     placeholder="Resolution notes (optional)..."

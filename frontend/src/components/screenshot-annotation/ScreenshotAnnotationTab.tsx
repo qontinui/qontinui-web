@@ -1087,7 +1087,15 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
                           ? "bg-surface-raised border-2 border-brand-primary ring-2 ring-brand-primary/50"
                           : "bg-surface-raised border-2 border-border-default hover:border-border-subtle"
                       }`}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => setSelectedScreenshot(screenshot)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setSelectedScreenshot(screenshot);
+                        }
+                      }}
                     >
                       <div className="aspect-video relative overflow-hidden rounded bg-surface-overlay mb-2">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1188,9 +1196,20 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
                         ? "bg-surface-raised/50 border-brand-primary text-text-primary"
                         : "bg-surface-raised border-transparent text-text-muted hover:bg-surface-overlay"
                     }`}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => {
                       setActiveRegionTab(region.id);
                       setSelectedRegion(region);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        (() => {
+                          setActiveRegionTab(region.id);
+                          setSelectedRegion(region);
+                        })();
+                      }
                     }}
                   >
                     <span className="text-sm font-medium truncate max-w-[120px]">
@@ -1238,9 +1257,20 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
                         ? "bg-surface-raised/50 border-brand-primary text-text-primary"
                         : "bg-surface-raised border-transparent text-text-muted hover:bg-surface-overlay"
                     }`}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => {
                       setActiveLocationTab(location.id);
                       setSelectedLocation(location);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        (() => {
+                          setActiveLocationTab(location.id);
+                          setSelectedLocation(location);
+                        })();
+                      }
                     }}
                   >
                     <span className="text-sm font-medium truncate max-w-[120px]">

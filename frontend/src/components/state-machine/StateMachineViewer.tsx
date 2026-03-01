@@ -370,7 +370,15 @@ function StateListItem({
       >
         <div
           className="flex items-center gap-2 p-3 cursor-pointer"
+          role="button"
+          tabIndex={0}
           onClick={onClick}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onClick();
+            }
+          }}
         >
           <CollapsibleTrigger asChild onClick={(e) => e.stopPropagation()}>
             <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
@@ -410,7 +418,8 @@ function StateListItem({
             {images.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {images.slice(0, 6).map((img) => (
-                  <div
+                  <button
+                    type="button"
                     key={img.id}
                     className="w-12 h-12 rounded bg-surface-default border border-border-subtle flex items-center justify-center cursor-pointer hover:border-brand-primary"
                     onClick={(e) => {
@@ -420,7 +429,7 @@ function StateListItem({
                     title={img.label || img.id}
                   >
                     <ImageIcon className="h-5 w-5 text-text-muted" />
-                  </div>
+                  </button>
                 ))}
                 {images.length > 6 && (
                   <div className="w-12 h-12 rounded bg-surface-default border border-border-subtle flex items-center justify-center text-xs text-text-muted">
@@ -489,7 +498,8 @@ function StateDetails({
             <h5 className="text-sm font-medium mb-2">Images</h5>
             <div className="grid grid-cols-4 gap-2">
               {images.map((img) => (
-                <div
+                <button
+                  type="button"
                   key={img.id}
                   className="aspect-square rounded bg-surface-default border border-border-subtle flex flex-col items-center justify-center cursor-pointer hover:border-brand-primary p-2"
                   onClick={() => onImageClick?.(img)}
@@ -498,7 +508,7 @@ function StateDetails({
                   <span className="text-[10px] text-text-muted truncate w-full text-center">
                     {img.label || img.elementType || img.id}
                   </span>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -516,7 +526,15 @@ function StateDetails({
                   <div
                     key={t.id}
                     className="flex items-center gap-2 text-sm p-2 rounded bg-surface-default/50 cursor-pointer hover:bg-surface-default"
+                    role="button"
+                    tabIndex={0}
                     onClick={() => onTransitionClick?.(t)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onTransitionClick?.(t);
+                      }
+                    }}
                   >
                     <span
                       className={
@@ -591,7 +609,15 @@ function TransitionListItem({
   return (
     <div
       className="flex items-center gap-3 p-3 rounded-lg border border-border-subtle bg-surface-default/50 hover:bg-surface-default cursor-pointer"
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick?.();
+        }
+      }}
     >
       <div className="flex-1 flex items-center gap-2">
         <div className="flex items-center gap-2 flex-1">

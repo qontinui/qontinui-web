@@ -58,7 +58,7 @@ export const NodeSearch: React.FC<NodeSearchProps> = ({
   className,
 }) => {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState(Object.values(NODE_METADATA));
+  const [results, setResults] = useState(() => Object.values(NODE_METADATA));
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [searchHistory, setSearchHistory] = useState<SearchHistoryEntry[]>([]);
   const [showHistoryDropdown, setShowHistoryDropdown] = useState(false);
@@ -320,7 +320,15 @@ export const NodeSearch: React.FC<NodeSearchProps> = ({
                     selectedIndex === index &&
                       "node-search__result-item--selected"
                   )}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => handleSelect(metadata.type)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handleSelect(metadata.type);
+                    }
+                  }}
                   onMouseEnter={() => setSelectedIndex(index)}
                 >
                   <PaletteItem
@@ -394,10 +402,29 @@ export const QuickSearchModal: React.FC<QuickSearchModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="quick-search-modal" onClick={onClose}>
+    <div
+      className="quick-search-modal"
+      role="button"
+      tabIndex={0}
+      onClick={onClose}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClose();
+        }
+      }}
+    >
       <div
         className="quick-search-modal__content"
+        role="button"
+        tabIndex={0}
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }}
       >
         <NodeSearch
           onSelect={(nodeType) => {

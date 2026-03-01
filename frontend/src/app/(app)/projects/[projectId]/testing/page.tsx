@@ -7,7 +7,15 @@ import { useRouter, useParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { TestRunsList } from "@/components/testing/TestRunsList";
-import { CoverageTrendChart } from "@/components/testing/CoverageTrendChart";
+import nextDynamic from "next/dynamic";
+
+const CoverageTrendChart = nextDynamic(
+  () =>
+    import("@/components/testing/CoverageTrendChart").then((m) => ({
+      default: m.CoverageTrendChart,
+    })),
+  { ssr: false }
+);
 import { ReliabilityStats } from "@/components/testing/ReliabilityStats";
 import { LiveTestExecution } from "@/components/testing/LiveTestExecution";
 import {

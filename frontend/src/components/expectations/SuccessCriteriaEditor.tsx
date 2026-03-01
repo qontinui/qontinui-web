@@ -31,6 +31,9 @@ interface SuccessCriteriaEditorProps {
   availableStates?: string[];
 }
 
+const DEFAULT_CHECKPOINTS: string[] = [];
+const DEFAULT_STATES: string[] = [];
+
 /**
  * Workflow Success Criteria Editor Component
  *
@@ -45,8 +48,8 @@ interface SuccessCriteriaEditorProps {
 export function SuccessCriteriaEditor({
   criteria,
   onChange,
-  availableCheckpoints = [],
-  availableStates = [],
+  availableCheckpoints = DEFAULT_CHECKPOINTS,
+  availableStates = DEFAULT_STATES,
 }: SuccessCriteriaEditorProps) {
   const [stateInput, setStateInput] = useState("");
 

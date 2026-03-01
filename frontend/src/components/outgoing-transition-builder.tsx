@@ -225,9 +225,17 @@ export function OutgoingTransitionBuilder({
                           <div
                             key={stateId}
                             className="p-2 bg-surface-sunken rounded flex items-center justify-between hover:bg-surface-overlay cursor-pointer transition-colors"
+                            role="button"
+                            tabIndex={0}
                             onClick={() =>
                               moveToAvailable(stateId, "deactivate")
                             }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                moveToAvailable(stateId, "deactivate");
+                              }
+                            }}
                           >
                             <span className="text-sm">{state.name}</span>
                             <ChevronRight className="w-4 h-4 text-text-muted" />
@@ -312,7 +320,15 @@ export function OutgoingTransitionBuilder({
                           <div
                             key={stateId}
                             className="p-2 bg-surface-sunken rounded flex items-center justify-between hover:bg-surface-overlay cursor-pointer transition-colors"
+                            role="button"
+                            tabIndex={0}
                             onClick={() => moveToAvailable(stateId, "activate")}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                moveToAvailable(stateId, "activate");
+                              }
+                            }}
                           >
                             <ChevronLeft className="w-4 h-4 text-text-muted" />
                             <span className="text-sm">{state.name}</span>

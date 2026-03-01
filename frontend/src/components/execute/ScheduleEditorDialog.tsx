@@ -115,7 +115,7 @@ export function ScheduleEditorDialog({
   const [workflowName, setWorkflowName] = useState("");
   const [workflowSearch, setWorkflowSearch] = useState("");
   const [scheduleType, setScheduleType] = useState<ScheduleType>("once");
-  const [onceDateTime, setOnceDateTime] = useState(toDateTimeLocal());
+  const [onceDateTime, setOnceDateTime] = useState(() => toDateTimeLocal());
   const [cronExpression, setCronExpression] = useState("0 9 * * *");
   const [intervalAmount, setIntervalAmount] = useState(30);
   const [intervalUnit, setIntervalUnit] = useState<IntervalUnit>("minutes");
@@ -294,7 +294,15 @@ export function ScheduleEditorDialog({
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        role="button"
+        tabIndex={0}
         onClick={onClose}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onClose();
+          }
+        }}
       />
 
       {/* Dialog */}
@@ -392,7 +400,15 @@ export function ScheduleEditorDialog({
                         ? "bg-brand-primary/10 border border-brand-primary/30 text-brand-primary"
                         : "bg-surface-canvas/30 border border-transparent hover:border-border-subtle text-text-secondary hover:text-text-primary"
                     }`}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => setWorkflowName(w.name)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setWorkflowName(w.name);
+                      }
+                    }}
                   >
                     <span className="font-medium">{w.name}</span>
                     {w.description && (

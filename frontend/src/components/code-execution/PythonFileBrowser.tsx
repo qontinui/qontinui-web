@@ -310,10 +310,12 @@ function TreeNode({
 // Main Component
 // ============================================================================
 
+const DEFAULT_FILES: PythonFile[] = [];
+
 export function PythonFileBrowser({
   selectedPath,
   onSelectFile,
-  files = [],
+  files = DEFAULT_FILES,
   isLoading = false,
   error = null,
   onRefresh,

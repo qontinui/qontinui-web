@@ -240,7 +240,18 @@ interface TemplateCardProps {
 
 function TemplateCard({ template, onUse, onShowDetails }: TemplateCardProps) {
   return (
-    <div className="template-card" onClick={onShowDetails}>
+    <div
+      className="template-card"
+      role="button"
+      tabIndex={0}
+      onClick={onShowDetails}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onShowDetails();
+        }
+      }}
+    >
       {/* Thumbnail */}
       <div className="template-thumbnail">
         {template.thumbnail ? (

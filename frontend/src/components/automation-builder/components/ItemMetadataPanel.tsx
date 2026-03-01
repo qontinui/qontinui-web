@@ -56,6 +56,8 @@ const WORKFLOW_CATEGORIES = [
   "Custom",
 ] as const;
 
+const DEFAULT_STATES: State[] = [];
+
 export function ItemMetadataPanel({
   item,
   onUpdate,
@@ -63,7 +65,7 @@ export function ItemMetadataPanel({
   collaboratorCount,
   onOpenShare,
   className,
-  states = [],
+  states = DEFAULT_STATES,
 }: ItemMetadataPanelProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [tempName, setTempName] = useState(item.name);
@@ -253,7 +255,15 @@ export function ItemMetadataPanel({
           />
         ) : (
           <div
+            role="button"
+            tabIndex={0}
             onClick={() => setIsEditing(true)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setIsEditing(true);
+              }
+            }}
             className="px-3 py-2 bg-surface-canvas border border-border-subtle rounded-md cursor-pointer hover:border-border-default transition-colors"
           >
             <span className="text-white">{item.name}</span>
@@ -281,7 +291,15 @@ export function ItemMetadataPanel({
           />
         ) : (
           <div
+            role="button"
+            tabIndex={0}
             onClick={() => setIsEditing(true)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setIsEditing(true);
+              }
+            }}
             className="px-3 py-2 bg-surface-canvas border border-border-subtle rounded-md cursor-pointer hover:border-border-default transition-colors min-h-[80px]"
           >
             <span className="text-text-muted text-sm">
@@ -317,7 +335,15 @@ export function ItemMetadataPanel({
           </Select>
         ) : (
           <div
+            role="button"
+            tabIndex={0}
             onClick={() => setIsEditing(true)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setIsEditing(true);
+              }
+            }}
             className="px-3 py-2 bg-surface-canvas border border-border-subtle rounded-md cursor-pointer hover:border-border-default transition-colors"
           >
             <span className="text-white">{item.category || "Main"}</span>
@@ -351,7 +377,15 @@ export function ItemMetadataPanel({
           </Select>
         ) : (
           <div
+            role="button"
+            tabIndex={0}
             onClick={() => setIsEditing(true)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setIsEditing(true);
+              }
+            }}
             className="px-3 py-2 bg-surface-canvas border border-border-subtle rounded-md cursor-pointer hover:border-border-default transition-colors"
           >
             <span className="text-white">

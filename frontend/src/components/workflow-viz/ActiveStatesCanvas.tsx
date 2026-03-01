@@ -122,10 +122,12 @@ function buildImageToStateMap(
   return map;
 }
 
+const DEFAULT_MONITORS: Monitor[] = [];
+
 export function ActiveStatesCanvas({
   states,
   images,
-  monitors = [],
+  monitors = DEFAULT_MONITORS,
   mode = "perception",
   activeStateIds,
   foundImages,

@@ -635,7 +635,15 @@ export function PresetManagerDialog({
             <div
               key={preset.id}
               className={`preset-item ${selectedPreset?.id === preset.id ? "selected" : ""}`}
+              role="button"
+              tabIndex={0}
               onClick={() => setSelectedPreset(preset)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setSelectedPreset(preset);
+                }
+              }}
             >
               <div className="preset-info">
                 <h4>{preset.name}</h4>

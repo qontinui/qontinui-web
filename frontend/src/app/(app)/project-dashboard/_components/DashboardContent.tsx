@@ -34,10 +34,39 @@ import { useDashboardFilters } from "../_hooks/useDashboardFilters";
 import { MetricsOverview } from "./MetricsOverview";
 import { HealthPanel } from "./HealthPanel";
 import { ResourceUsagePanel } from "./ResourceUsagePanel";
-import { ActivityTimelineChart, ActivityLineChart } from "./ChartsSection";
-import { HealthScoreGauge } from "./health-score-gauge";
-import { StorageAnalysis } from "./storage-analysis";
-import { ResourceOverviewTabs } from "./resource-overview-tabs";
+import dynamic from "next/dynamic";
+
+const ActivityTimelineChart = dynamic(
+  () =>
+    import("./ChartsSection").then((m) => ({
+      default: m.ActivityTimelineChart,
+    })),
+  { ssr: false }
+);
+const ActivityLineChart = dynamic(
+  () =>
+    import("./ChartsSection").then((m) => ({ default: m.ActivityLineChart })),
+  { ssr: false }
+);
+const HealthScoreGauge = dynamic(
+  () =>
+    import("./health-score-gauge").then((m) => ({
+      default: m.HealthScoreGauge,
+    })),
+  { ssr: false }
+);
+const StorageAnalysis = dynamic(
+  () =>
+    import("./storage-analysis").then((m) => ({ default: m.StorageAnalysis })),
+  { ssr: false }
+);
+const ResourceOverviewTabs = dynamic(
+  () =>
+    import("./resource-overview-tabs").then((m) => ({
+      default: m.ResourceOverviewTabs,
+    })),
+  { ssr: false }
+);
 import { ActivityTimeline } from "./activity-timeline";
 import { BulkOptimizationTools } from "./bulk-optimization-tools";
 import { ExportImportPanel } from "./export-import-panel";

@@ -154,7 +154,15 @@ export function TransitionList({
               ? "bg-muted/30 border-l-transparent hover:bg-muted/50"
               : "bg-transparent border-l-transparent hover:bg-muted/30"
         )}
+        role="button"
+        tabIndex={0}
         onClick={() => onTransitionSelect(isSelected ? null : transition)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onTransitionSelect(isSelected ? null : transition);
+          }
+        }}
       >
         <div className="flex items-center gap-1.5 text-xs">
           <ArrowRight className="h-3 w-3 text-fuchsia-500 flex-shrink-0" />
@@ -190,7 +198,15 @@ export function TransitionList({
               ? "bg-muted/30 border-l-transparent hover:bg-muted/50"
               : "bg-transparent border-l-transparent hover:bg-muted/30"
         )}
+        role="button"
+        tabIndex={0}
         onClick={() => onTransitionSelect(isSelected ? null : transition)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onTransitionSelect(isSelected ? null : transition);
+          }
+        }}
       >
         <div className="flex items-center gap-1.5 text-xs">
           <ArrowDown className="h-3 w-3 text-green-500 flex-shrink-0" />

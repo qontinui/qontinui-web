@@ -229,7 +229,7 @@ export function StepProgressMarker({
   className,
 }: StepProgressMarkerProps) {
   const [localElapsedMs, setLocalElapsedMs] = useState(0);
-  const [startTime] = useState(Date.now());
+  const [startTime] = useState(() => Date.now());
 
   const {
     data: progress,

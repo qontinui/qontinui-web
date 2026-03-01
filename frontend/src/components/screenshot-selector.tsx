@@ -28,13 +28,15 @@ interface ScreenshotSelectorProps {
   onSelectScreenshots?: (screenshotIds: string[]) => void;
 }
 
+const DEFAULT_SELECTED_SCREENSHOTS: string[] = [];
+
 export function ScreenshotSelector({
   selectedScreenshot,
   onSelectScreenshot,
   trigger,
   allowUpload = true,
   multiSelect = false,
-  selectedScreenshots = [],
+  selectedScreenshots = DEFAULT_SELECTED_SCREENSHOTS,
   onSelectScreenshots,
 }: ScreenshotSelectorProps) {
   const { screenshots, addScreenshot, deleteScreenshot } = useAutomation();

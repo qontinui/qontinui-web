@@ -7,7 +7,15 @@ import { useRouter, useParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CoverageTrendChart } from "@/components/testing/CoverageTrendChart";
+import nextDynamic from "next/dynamic";
+
+const CoverageTrendChart = nextDynamic(
+  () =>
+    import("@/components/testing/CoverageTrendChart").then((m) => ({
+      default: m.CoverageTrendChart,
+    })),
+  { ssr: false }
+);
 import {
   TrendingUp,
   BarChart3,
