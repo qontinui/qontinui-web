@@ -3,50 +3,50 @@ set -e
 
 # Vercel Install Script
 # ---------------------
-# Clones sibling repos that are referenced as file: dependencies in
-# package.json. On Vercel, only qontinui-web is cloned, so we need to
-# fetch the other packages before npm install can resolve them.
+# Clones sibling repos into the repo root (one level up from frontend/)
+# and patches package.json file: paths to match.
 #
-# The dist/ directories are committed to each repo, so no build step
-# is needed — just clone and install.
-#
-# This script runs from the frontend/ directory (Vercel root directory).
-# package.json uses paths like file:../../repo-name.
+# Local dev uses file:../../X (two levels up) because frontend/ is inside
+# the repo which is inside the parent dir with sibling repos.
+# On Vercel, we clone repos to ../ (repo root) and patch paths to file:../X.
 
-echo "=== Vercel Install: Cloning sibling dependencies ==="
+echo "=== Vercel Install: Setting up sibling dependencies ==="
 
 FRONTEND_DIR="$(pwd)"
+REPO_ROOT="$(cd .. && pwd)"
+
 echo "Frontend dir: $FRONTEND_DIR"
+echo "Repo root: $REPO_ROOT"
 
-# Resolve the parent directory where sibling repos should live.
-# frontend/package.json uses file:../../X, so repos go at ../../
-PARENT_DIR="$(cd ../.. && pwd)"
-echo "Sibling repos target: $PARENT_DIR"
-
-# Clone all required sibling repos (shallow, single branch for speed)
+# Clone sibling repos into the repo root
 echo ""
-echo "--- Cloning repositories ---"
+echo "--- Cloning repositories to repo root ---"
+
+cd "$REPO_ROOT"
 
 git clone --depth 1 --branch main \
-  https://github.com/qontinui/qontinui-schemas.git \
-  "$PARENT_DIR/qontinui-schemas" && echo "OK: qontinui-schemas"
+  https://github.com/qontinui/qontinui-schemas.git && echo "OK: qontinui-schemas"
 
 git clone --depth 1 --branch master \
-  https://github.com/qontinui/qontinui-navigation.git \
-  "$PARENT_DIR/qontinui-navigation" && echo "OK: qontinui-navigation"
+  https://github.com/qontinui/qontinui-navigation.git && echo "OK: qontinui-navigation"
 
 git clone --depth 1 --branch master \
-  https://github.com/qontinui/qontinui-workflow-utils.git \
-  "$PARENT_DIR/qontinui-workflow-utils" && echo "OK: qontinui-workflow-utils"
+  https://github.com/qontinui/qontinui-workflow-utils.git && echo "OK: qontinui-workflow-utils"
 
 git clone --depth 1 --branch master \
-  https://github.com/qontinui/qontinui-workflow-ui.git \
-  "$PARENT_DIR/qontinui-workflow-ui" && echo "OK: qontinui-workflow-ui"
+  https://github.com/qontinui/qontinui-workflow-ui.git && echo "OK: qontinui-workflow-ui"
 
-# Install frontend dependencies (file: deps now resolve to cloned repos)
+# Patch package.json: change file:../../X to file:../X
+# (repos are now one level up from frontend/, not two)
+echo ""
+echo "--- Patching package.json file: paths ---"
+cd "$FRONTEND_DIR"
+sed -i 's|file:../../|file:../|g' package.json
+echo "Patched: file:../../ -> file:../"
+
+# Install dependencies
 echo ""
 echo "--- Installing frontend dependencies ---"
-cd "$FRONTEND_DIR"
 npm install
 
 echo ""
