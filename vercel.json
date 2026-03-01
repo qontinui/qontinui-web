@@ -1,3 +1,3 @@
 {
-  "installCommand": "bash vercel-install.sh"
+  "installCommand": "cd ../.. && git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git qontinui-schemas && git clone --depth 1 https://github.com/qontinui/qontinui-navigation.git qontinui-navigation && git clone --depth 1 https://github.com/qontinui/qontinui-workflow-utils.git qontinui-workflow-utils && git clone --depth 1 https://github.com/qontinui/qontinui-workflow-ui.git qontinui-workflow-ui && cd - && npm install"
 }
