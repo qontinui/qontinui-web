@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Screenshot,
   SelectionMode,
@@ -8,11 +8,16 @@ import {
 import { State } from "../../../contexts/automation-context/types";
 import { useAutomation } from "../../../contexts/automation-context";
 import { useDebouncedCallback } from "../../../hooks/use-debounced-callback";
-import { useScreenshotCapture } from "./use-screenshot-capture";
+import { useScreenshotCapture } from "../../common/_hooks/useScreenshotCapture";
 import { useAnnotationOperations } from "./use-annotation-operations";
+import { toast } from "sonner";
 
 export function useScreenshotAnnotationState(states: State[]) {
-  const { screenshots: projectScreenshots, triggerSave } = useAutomation();
+  const {
+    screenshots: projectScreenshots,
+    addScreenshot,
+    triggerSave,
+  } = useAutomation();
 
   // Core annotation state
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
@@ -29,6 +34,10 @@ export function useScreenshotAnnotationState(states: State[]) {
   const [activeLocationTab, setActiveLocationTab] = useState<string | null>(
     null
   );
+
+  // File upload/project screenshot refs
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const screenshotSelectorTriggerRef = useRef<HTMLButtonElement>(null);
 
   // Auto-save state
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">(
@@ -53,8 +62,76 @@ export function useScreenshotAnnotationState(states: State[]) {
     }, 100);
   }, 2500);
 
-  // Screenshot capture/upload functionality
-  const capture = useScreenshotCapture(screenshots, setSelectedScreenshot);
+  // File upload handler: reads file as base64, validates, and adds to automation context
+  const handleFileUpload = useCallback(
+    async (file: File) => {
+      if (!file.type.startsWith("image/")) {
+        toast.error("Please upload an image file");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = reader.result as string;
+        const img = new window.Image();
+        img.onload = () => {
+          if (img.width < 10 || img.height < 10) {
+            toast.error("Image too small", {
+              description: `${file.name} is ${img.width}x${img.height}px. Images must be at least 10x10 pixels.`,
+            });
+            return;
+          }
+
+          const newScreenshot = {
+            id: `screenshot-${Date.now()}`,
+            name: file.name,
+            url: base64,
+            size: file.size,
+            uploadedAt: new Date(),
+          };
+
+          addScreenshot(newScreenshot);
+          toast.success("Screenshot uploaded successfully");
+        };
+        img.onerror = () => {
+          toast.error("Failed to process image", {
+            description: `${file.name} could not be loaded.`,
+          });
+        };
+        img.src = base64;
+      };
+      reader.readAsDataURL(file);
+    },
+    [addScreenshot]
+  );
+
+  // Screenshot capture (uses the consolidated common hook)
+  const capture = useScreenshotCapture({
+    onUploadScreenshot: handleFileUpload,
+  });
+
+  const handleFileSelect = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files || []);
+      if (files.length > 0 && files[0]) {
+        handleFileUpload(files[0]);
+      }
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    },
+    [handleFileUpload]
+  );
+
+  const handleSelectProjectScreenshot = useCallback(
+    (screenshotId: string) => {
+      const screenshot = screenshots.find((s) => s.id === screenshotId);
+      if (screenshot) {
+        setSelectedScreenshot(screenshot);
+      }
+    },
+    [screenshots]
+  );
 
   // Annotation CRUD operations
   const operations = useAnnotationOperations(
@@ -224,8 +301,21 @@ export function useScreenshotAnnotationState(states: State[]) {
     setActiveLocationTab,
     saveStatus,
 
-    // Capture (refs + handlers)
-    ...capture,
+    // Capture state (from common hook)
+    isCapturing: capture.isCapturing,
+    showMonitorMenu: capture.showMonitorMenu,
+    runnerMonitors: capture.runnerMonitors,
+    monitorMenuRef: capture.monitorMenuRef,
+
+    // File/project screenshot refs and handlers
+    fileInputRef,
+    screenshotSelectorTriggerRef,
+    handleFileSelect,
+    handleSelectProjectScreenshot,
+
+    // Capture handlers
+    handleOpenMonitorMenu: capture.handleOpenMonitorMenu,
+    handleCaptureFromScreen: capture.captureSingleMonitor,
 
     // Operations (CRUD handlers)
     ...operations,

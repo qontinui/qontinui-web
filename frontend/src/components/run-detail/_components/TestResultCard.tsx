@@ -15,7 +15,7 @@ import {
   FlaskConical,
   Camera,
 } from "lucide-react";
-import { CheckResultCard } from "./CheckResultCard";
+import { CheckResultCard } from "@/components/common/_components/CheckResultCard";
 import { formatDurationMs } from "../_utils/test-results-utils";
 
 interface TestResultCardProps {

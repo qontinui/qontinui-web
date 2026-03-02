@@ -30,6 +30,10 @@ export function useRAGCanvas({
     setPan({ x: 0, y: 0 });
   }, []);
 
+  const zoomIn = useCallback(() => setZoom((z) => Math.min(z * 1.2, 5)), []);
+
+  const zoomOut = useCallback(() => setZoom((z) => Math.max(z / 1.2, 0.1)), []);
+
   // Redraw on window resize
   useEffect(() => {
     const handleResize = () => {
@@ -150,6 +154,8 @@ export function useRAGCanvas({
     canvasRef,
     containerRef,
     resetView,
+    zoomIn,
+    zoomOut,
     handleCanvasClick,
     handleCanvasMove,
     handleMouseDown,

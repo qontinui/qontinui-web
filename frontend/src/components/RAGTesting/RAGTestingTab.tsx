@@ -15,11 +15,11 @@ import {
   MatchingOptionsPanel,
   DisplayOptionsPanel,
   ResultsSummaryPanel,
-  CanvasToolbar,
   SegmentCanvas,
   SegmentDetailsPanel,
   SegmentListPanel,
 } from "./_components";
+import { CanvasToolbar } from "@/components/common/_components/CanvasToolbar";
 
 export function RAGTestingTab() {
   // Context
@@ -140,8 +140,16 @@ export function RAGTestingTab() {
       <div className="flex-1 flex flex-col overflow-hidden bg-surface-raised">
         <CanvasToolbar
           zoom={canvas.zoom}
-          setZoom={canvas.setZoom}
-          resetView={canvas.resetView}
+          onZoomIn={canvas.zoomIn}
+          onZoomOut={canvas.zoomOut}
+          onReset={canvas.resetView}
+          leftContent={
+            <div className="text-sm text-text-muted px-2">
+              <span className="font-medium">Left Click:</span> Select Segment
+              {" \u2022 "}
+              <span className="font-medium">Right Click:</span> Pan
+            </div>
+          }
         />
 
         <SegmentCanvas

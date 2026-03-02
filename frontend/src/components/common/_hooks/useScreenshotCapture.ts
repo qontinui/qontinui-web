@@ -35,6 +35,48 @@ function saveMonitorPrefs(monitors: number[], delay: number): void {
   }
 }
 
+/**
+ * Capture a screenshot from a specific monitor via the runner API.
+ * Returns `{ file, width, height }` on success.
+ */
+export async function captureScreenshotFromRunner(
+  monitorIndex: number
+): Promise<{ file: File; width: number; height: number }> {
+  const apiUrl = process.env.NEXT_PUBLIC_RUNNER_URL || "http://127.0.0.1:9876";
+
+  const response = await fetch(
+    `${apiUrl}/api/capture/screenshot/current?monitor=${monitorIndex}&quality=95`
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      errorText || `Failed to capture screenshot from monitor ${monitorIndex}`
+    );
+  }
+
+  const data = await response.json();
+
+  if (!data.screenshot_base64) {
+    throw new Error(`No screenshot data returned for monitor ${monitorIndex}`);
+  }
+
+  const byteCharacters = atob(data.screenshot_base64);
+  const byteNumbers = new Array(byteCharacters.length);
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNumbers);
+  const blob = new Blob([byteArray], { type: "image/png" });
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const monitorLabel = `monitor${monitorIndex}_`;
+  const filename = `screenshot_${monitorLabel}${timestamp}.png`;
+  const file = new File([blob], filename, { type: "image/png" });
+
+  return { file, width: data.width, height: data.height };
+}
+
 export interface UseScreenshotCaptureOptions {
   onUploadScreenshot: (file: File) => void;
   onCaptureMultipleScreenshots?: (screenshots: CapturedScreenshot[]) => void;
@@ -162,45 +204,12 @@ export function useScreenshotCapture({
         setCountdown(null);
       }
 
-      const apiUrl =
-        process.env.NEXT_PUBLIC_RUNNER_URL || "http://127.0.0.1:9876";
-
       const capturedScreenshots: CapturedScreenshot[] = [];
 
       for (const monitorIndex of selectedMonitors) {
-        const response = await fetch(
-          `${apiUrl}/api/capture/screenshot/current?monitor=${monitorIndex}&quality=95`
-        );
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(
-            errorText ||
-              `Failed to capture screenshot from monitor ${monitorIndex}`
-          );
-        }
-
-        const data = await response.json();
-
-        if (!data.screenshot_base64) {
-          throw new Error(
-            `No screenshot data returned for monitor ${monitorIndex}`
-          );
-        }
-
-        const byteCharacters = atob(data.screenshot_base64);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: "image/png" });
-
-        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-        const monitorLabel = `monitor${monitorIndex}_`;
-        const filename = `screenshot_${monitorLabel}${timestamp}.png`;
-        const file = new File([blob], filename, { type: "image/png" });
-        const url = URL.createObjectURL(blob);
+        const { file, width, height } =
+          await captureScreenshotFromRunner(monitorIndex);
+        const url = URL.createObjectURL(file);
 
         const monitorInfo = availableMonitors.find(
           (m) => m.index === monitorIndex
@@ -211,14 +220,14 @@ export function useScreenshotCapture({
 
         capturedScreenshots.push({
           id: `screenshot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          name: filename,
+          name: file.name,
           url,
           file,
           monitor: monitorInfo,
         });
 
         toast.success("Screenshot captured", {
-          description: `Monitor ${monitorIndex}: ${data.width}x${data.height} pixels`,
+          description: `Monitor ${monitorIndex}: ${width}x${height} pixels`,
         });
       }
 
@@ -247,6 +256,41 @@ export function useScreenshotCapture({
     onUploadScreenshot,
   ]);
 
+  /**
+   * Capture a single monitor by index without delay/countdown.
+   * Useful for simple UIs where the user clicks a specific monitor to capture.
+   * Pass `null` to capture the primary monitor (first available).
+   */
+  const captureSingleMonitor = useCallback(
+    async (monitorIndex: number | null) => {
+      setIsCapturing(true);
+      try {
+        const targetIndex =
+          monitorIndex ?? runnerMonitors.find((m) => m.is_primary)?.index ?? 0;
+
+        const { file, width, height } =
+          await captureScreenshotFromRunner(targetIndex);
+
+        onUploadScreenshot(file);
+
+        toast.success("Screenshot captured", {
+          description: `${width}x${height} pixels`,
+        });
+      } catch (error: unknown) {
+        console.error("Screenshot capture failed:", error);
+        toast.error("Failed to capture screenshot", {
+          description:
+            error instanceof Error
+              ? error.message
+              : "Make sure the runner is running on port 9876",
+        });
+      } finally {
+        setIsCapturing(false);
+      }
+    },
+    [runnerMonitors, onUploadScreenshot]
+  );
+
   return {
     monitorMenuRef,
     captureButtonRef,
@@ -262,5 +306,6 @@ export function useScreenshotCapture({
     handleOpenMonitorMenu,
     handleMonitorSelectionChange,
     handleCaptureFromScreen,
+    captureSingleMonitor,
   };
 }

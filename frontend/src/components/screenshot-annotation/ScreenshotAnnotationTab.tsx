@@ -31,7 +31,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
     saveStatus,
     isCapturing,
     showMonitorMenu,
-    availableMonitors,
+    runnerMonitors,
 
     // Refs
     fileInputRef,
@@ -83,7 +83,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
           states={states}
           isCapturing={isCapturing}
           showMonitorMenu={showMonitorMenu}
-          availableMonitors={availableMonitors}
+          availableMonitors={runnerMonitors}
           fileInputRef={fileInputRef}
           screenshotSelectorTriggerRef={screenshotSelectorTriggerRef}
           monitorMenuRef={monitorMenuRef}

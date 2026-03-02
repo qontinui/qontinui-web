@@ -13,7 +13,7 @@ import { ImageUploadCard } from "./_components/ImageUploadCard";
 import { ProcessingOptionsCard } from "./_components/ProcessingOptionsCard";
 import { DisplayOptionsCard } from "./_components/DisplayOptionsCard";
 import { AnalysisResultsCard } from "./_components/AnalysisResultsCard";
-import { CanvasToolbar } from "./_components/CanvasToolbar";
+import { CanvasToolbar } from "@/components/common/_components/CanvasToolbar";
 import { AnalysisCanvas } from "./_components/AnalysisCanvas";
 import { ObjectDetailPanel } from "./_components/ObjectDetailPanel";
 import { ObjectListPanel } from "./_components/ObjectListPanel";
@@ -70,7 +70,12 @@ export function SemanticAnalysisTab() {
 
       {/* Center - Canvas */}
       <div className="flex-1 flex flex-col">
-        <CanvasToolbar viewport={viewport} />
+        <CanvasToolbar
+          zoom={viewport.zoom}
+          onZoomIn={viewport.zoomIn}
+          onZoomOut={viewport.zoomOut}
+          onReset={viewport.resetView}
+        />
         <AnalysisCanvas
           selectedImage={imageAnalysis.selectedImage}
           scene={imageAnalysis.scene}

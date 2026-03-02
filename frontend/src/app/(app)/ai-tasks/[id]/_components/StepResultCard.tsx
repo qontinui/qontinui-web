@@ -18,7 +18,7 @@ import {
 import { ComparisonResultInline } from "@/components/run-detail/ComparisonResultInline";
 import type { ComparisonResult } from "@/lib/runner/types/exploration";
 import type { VerificationStepResult } from "@/types/task-runs";
-import { CheckResultCard } from "./CheckResultCard";
+import { CheckResultCard } from "@/components/common/_components/CheckResultCard";
 import { EvidenceSection } from "./EvidenceSection";
 import { formatDurationMs } from "./utils";
 

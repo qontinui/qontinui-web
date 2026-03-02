@@ -21,7 +21,7 @@ import AnchorRegionCreator from "../../ScreenshotTab/AnchorRegionCreator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { ScreenshotSelector } from "../../screenshot-selector";
-import { MonitorInfo } from "../screenshot-annotation-types";
+import type { RunnerMonitor } from "@/lib/schemas/geometry";
 
 interface ScreenshotSidebarProps {
   screenshots: Screenshot[];
@@ -29,7 +29,7 @@ interface ScreenshotSidebarProps {
   states: State[];
   isCapturing: boolean;
   showMonitorMenu: boolean;
-  availableMonitors: MonitorInfo[];
+  availableMonitors: RunnerMonitor[];
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   screenshotSelectorTriggerRef: React.RefObject<HTMLButtonElement | null>;
   monitorMenuRef: React.RefObject<HTMLDivElement | null>;

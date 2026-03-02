@@ -9,7 +9,7 @@ import { useProgressiveImage } from "./ProgressiveImage";
 import { useCanvasZoom } from "./_hooks/useCanvasZoom";
 import { useCanvasInteraction } from "./_hooks/useCanvasInteraction";
 import { useCanvasDrawing } from "./_hooks/useCanvasDrawing";
-import CanvasToolbar from "./_components/CanvasToolbar";
+import { CanvasToolbar } from "@/components/common/_components/CanvasToolbar";
 
 interface ScreenshotCanvasProps {
   screenshot: Screenshot;
@@ -19,6 +19,18 @@ interface ScreenshotCanvasProps {
   onLocationCreate: (location: ScreenshotLocation) => void;
   onRegionSelect: (region: ScreenshotRegion | null) => void;
   onLocationSelect: (location: ScreenshotLocation | null) => void;
+}
+
+const MODE_LABELS: Record<SelectionMode, string> = {
+  view: "Left Click: Select annotation \u2022 Right Click: Pan",
+  region: "Left Click: Draw region \u2022 Right Click: Pan",
+  location: "Left Click: Place location \u2022 Right Click: Pan",
+};
+
+function getQualityLabel(effectiveZoom: number): string {
+  if (effectiveZoom > 4) return "Original";
+  if (effectiveZoom > 2) return "Large";
+  return "Medium";
 }
 
 const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
@@ -99,15 +111,28 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
   return (
     <div className="flex-1 flex flex-col bg-surface-raised min-h-0 relative">
       <CanvasToolbar
-        selectionMode={selectionMode}
-        effectiveZoom={effectiveZoom}
-        screenshotWidth={screenshot.width}
-        screenshotHeight={screenshot.height}
-        isLoading={isLoading}
-        screenshotVariants={screenshotVariants}
+        zoom={effectiveZoom}
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}
-        onResetZoom={handleResetZoom}
+        onReset={handleResetZoom}
+        leftContent={
+          <div className="bg-blue-600 text-white px-3 py-1 rounded text-sm">
+            {MODE_LABELS[selectionMode]}
+          </div>
+        }
+        rightContent={
+          <>
+            {screenshotVariants && (
+              <div className="bg-surface-raised text-white px-3 py-1 rounded text-sm">
+                {getQualityLabel(effectiveZoom)}
+                {isLoading && " (Loading...)"}
+              </div>
+            )}
+            <div className="bg-surface-raised text-white px-3 py-1 rounded text-sm">
+              {screenshot.width} x {screenshot.height}px
+            </div>
+          </>
+        }
       />
 
       <div ref={containerRef} className="flex-1 overflow-auto min-h-0">

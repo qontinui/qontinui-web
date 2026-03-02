@@ -176,9 +176,9 @@ export interface IndividualCheckResult {
   /** Number of files checked */
   files_checked: number;
   /** Error message if failed */
-  error_message?: string | null;
+  error_message: string | null;
   /** Raw output from the check tool */
-  output?: string | null;
+  output: string | null;
   /** Individual issues found */
   issues: CheckIssueDetail[];
 }
