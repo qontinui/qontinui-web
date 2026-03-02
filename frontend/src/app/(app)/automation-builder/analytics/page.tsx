@@ -46,7 +46,7 @@ import {
 } from "./analytics-utils";
 import type { TimeRangePreset } from "./analytics-types";
 import { useAnalyticsPage } from "./_hooks/useAnalyticsPage";
-import { MetricCard } from "./_components/MetricCard";
+import { MetricCard } from "@/components/common/_components/MetricCard";
 import { ExecutionTable } from "./_components/ExecutionTable";
 import { TopWorkflowsTab } from "./_components/TopWorkflowsTab";
 import { PerformanceTab } from "./_components/PerformanceTab";

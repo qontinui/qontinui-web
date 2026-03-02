@@ -8,7 +8,7 @@ import {
   TestTube,
   BookOpen,
 } from "lucide-react";
-import { MetricCard } from "./metric-card";
+import { MetricCard } from "@/components/common/_components/MetricCard";
 import type { ProjectData } from "../_lib/types";
 
 interface MetricsOverviewProps {
@@ -20,43 +20,49 @@ export function MetricsOverview({ data }: MetricsOverviewProps) {
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
       <MetricCard
         icon={FileCode}
-        label="Total Workflows"
+        title="Total Workflows"
         value={data.metrics.totalWorkflows}
         color="var(--brand-primary)"
+        colorValue
         trend={data.metrics.trends.workflows}
       />
       <MetricCard
         icon={Layers}
-        label="Total States"
+        title="Total States"
         value={data.metrics.totalStates}
         color="var(--brand-secondary)"
+        colorValue
         trend={data.metrics.trends.states}
       />
       <MetricCard
         icon={ImageIcon}
-        label="Total Images"
+        title="Total Images"
         value={data.metrics.totalImages}
         color="var(--brand-success)"
+        colorValue
         trend={data.metrics.trends.images}
       />
       <MetricCard
         icon={GitBranch}
-        label="Total Transitions"
+        title="Total Transitions"
         value={data.metrics.totalTransitions}
         color="var(--warning)"
+        colorValue
         trend={data.metrics.trends.transitions}
       />
       <MetricCard
         icon={TestTube}
-        label="Test Coverage"
+        title="Test Coverage"
         value={`${data.metrics.testCoverage.toFixed(1)}%`}
         color="var(--error)"
+        colorValue
       />
       <MetricCard
         icon={BookOpen}
-        label="Doc Coverage"
+        title="Doc Coverage"
         value={`${data.metrics.docCoverage.toFixed(1)}%`}
         color="var(--text-muted)"
+        colorValue
       />
     </div>
   );

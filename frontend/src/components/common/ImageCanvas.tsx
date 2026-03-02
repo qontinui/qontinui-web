@@ -61,7 +61,7 @@ export function ImageCanvas({
           zoom={viewport.zoom}
           onZoomIn={viewport.zoomIn}
           onZoomOut={viewport.zoomOut}
-          onResetView={viewport.resetView}
+          onReset={viewport.resetView}
         />
       )}
 

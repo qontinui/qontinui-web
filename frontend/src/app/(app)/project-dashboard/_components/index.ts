@@ -3,7 +3,6 @@ export { MetricsOverview } from "./MetricsOverview";
 export { HealthPanel } from "./HealthPanel";
 export { ResourceUsagePanel } from "./ResourceUsagePanel";
 export { ActivityTimelineChart, ActivityLineChart } from "./ChartsSection";
-export { MetricCard } from "./metric-card";
 export { HealthScoreGauge } from "./health-score-gauge";
 export { HealthIssuesList } from "./health-issues-list";
 export { ResourceOverviewTabs } from "./resource-overview-tabs";

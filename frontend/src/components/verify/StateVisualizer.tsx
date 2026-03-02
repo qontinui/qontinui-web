@@ -16,9 +16,10 @@
 import React, { useRef } from "react";
 import type { State } from "@/contexts/automation-context/types";
 import { useImageLoader } from "./_hooks/useImageLoader";
-import { useCanvasView } from "./_hooks/useCanvasView";
+import { useCanvasViewport } from "@/components/common/_hooks/useCanvasViewport";
 import { useCanvasRenderer } from "./_hooks/useCanvasRenderer";
-import { ZoomControls } from "./_components/ZoomControls";
+import { ZoomControls } from "@/components/common/_components/ZoomControls";
+import { Maximize2 } from "lucide-react";
 import { CanvasInfo } from "./_components/CanvasInfo";
 
 export interface StateVisualizerProps {
@@ -41,11 +42,14 @@ export function StateVisualizer({
   const loadedImages = useImageLoader(state);
 
   // Pan/zoom state and mouse interaction
-  const { viewState, mouseHandlers, zoomControls } = useCanvasView(
-    canvasSize,
+  const viewport = useCanvasViewport({
+    canvasRef,
     containerRef,
-    canvasRef
-  );
+    contentSize: canvasSize,
+    autoFit: true,
+    enableMousePan: true,
+    maxZoom: 5,
+  });
 
   // Canvas drawing (grid, regions, images, locations)
   useCanvasRenderer(
@@ -53,7 +57,7 @@ export function StateVisualizer({
     containerRef,
     state,
     canvasSize,
-    viewState,
+    { zoom: viewport.zoom, pan: viewport.pan },
     showPositions,
     highlightElement,
     loadedImages
@@ -62,10 +66,12 @@ export function StateVisualizer({
   return (
     <div className="relative flex flex-col h-full">
       <ZoomControls
-        zoom={viewState.zoom}
-        onZoomIn={zoomControls.handleZoomIn}
-        onZoomOut={zoomControls.handleZoomOut}
-        onResetView={zoomControls.handleResetView}
+        zoom={viewport.zoom}
+        onZoomIn={viewport.zoomIn}
+        onZoomOut={viewport.zoomOut}
+        onReset={viewport.fitToContent}
+        resetIcon={Maximize2}
+        resetTitle="Fit to View"
       />
 
       <CanvasInfo
@@ -81,12 +87,12 @@ export function StateVisualizer({
       >
         <canvas
           ref={canvasRef}
-          style={{ cursor: viewState.isPanning ? "grabbing" : "grab" }}
-          onMouseDown={mouseHandlers.handleMouseDown}
-          onMouseMove={mouseHandlers.handleMouseMove}
-          onMouseUp={mouseHandlers.handleMouseUp}
-          onMouseLeave={mouseHandlers.handleMouseUp}
-          onWheel={mouseHandlers.handleWheel}
+          style={{ cursor: viewport.isPanning ? "grabbing" : "grab" }}
+          onMouseDown={viewport.handleMouseDown}
+          onMouseMove={viewport.handleMouseMove}
+          onMouseUp={viewport.handleMouseUp}
+          onMouseLeave={viewport.handleMouseUp}
+          onWheel={viewport.handleWheel}
           className="w-full h-full"
         />
       </div>

@@ -1,6 +1,8 @@
 import { Region } from "@/types/pattern-optimization";
 import type { MonitorInfo } from "@/components/common/ScreenshotPicker";
 
+export type { DragHandle } from "@/components/common/_types/region-interaction";
+
 export interface CompositeScreenshotDisplay {
   id: string;
   name: string;
@@ -21,18 +23,6 @@ export interface CompositeScreenshotCanvasProps {
     panY?: number;
   }) => void;
 }
-
-export type DragHandle =
-  | "tl"
-  | "tr"
-  | "bl"
-  | "br"
-  | "t"
-  | "r"
-  | "b"
-  | "l"
-  | "move"
-  | null;
 
 export interface LoadedImage {
   screenshot: CompositeScreenshotDisplay;

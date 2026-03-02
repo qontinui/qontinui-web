@@ -5,7 +5,7 @@ import { useAutomation } from "@/contexts/automation-context";
 import { MaskEditor } from "@/components/mask-editor";
 import { ImageUploadProgress } from "@/components/ImageUploadProgress";
 import { ImageDeletionDialog } from "@/components/image-deletion-dialog";
-import { useImageUpload } from "./_hooks/use-image-upload";
+import { useImageUpload } from "@/hooks/useImageUpload";
 import { useImageActions } from "./_hooks/use-image-actions";
 import { useImageFilter } from "./_hooks/use-image-filter";
 import { ImageHeader } from "./_components/ImageHeader";
@@ -14,7 +14,7 @@ import { DropZone } from "./_components/DropZone";
 import { ImageGallery } from "./_components/ImageGallery";
 
 export function ImagesManager() {
-  const { images } = useAutomation();
+  const { images, addImage, projectName, projectId } = useAutomation();
 
   const {
     uploadingFiles,
@@ -23,7 +23,7 @@ export function ImagesManager() {
     handleDrag,
     handleDrop,
     handleFileInput,
-  } = useImageUpload();
+  } = useImageUpload({ projectId, projectName, addImage });
 
   const {
     showMaskEditor,

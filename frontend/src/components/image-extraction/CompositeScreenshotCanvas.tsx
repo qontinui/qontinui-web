@@ -1,10 +1,11 @@
 import React, { useRef, useEffect, useCallback } from "react";
 import type { CompositeScreenshotCanvasProps } from "./types";
 import { useImageLoader } from "./_hooks/useImageLoader";
-import { useViewport } from "./_hooks/useViewport";
-import { useRegionInteraction } from "./_hooks/useRegionInteraction";
+import { useCanvasViewport } from "@/components/common/_hooks/useCanvasViewport";
+import { useRegionInteraction } from "@/components/common/_hooks/useRegionInteraction";
 import { useCanvasRenderer } from "./_hooks/useCanvasRenderer";
-import { ZoomControls } from "./_components/ZoomControls";
+import { ZoomControls } from "@/components/common/_components/ZoomControls";
+import { Maximize2 } from "lucide-react";
 import { InfoOverlay } from "./_components/InfoOverlay";
 
 export type { CompositeScreenshotDisplay } from "./types";
@@ -31,19 +32,19 @@ export const CompositeScreenshotCanvas: React.FC<
     };
   }, []);
 
-  const { loadedImages, compositeBounds, screenshotKey } =
-    useImageLoader(screenshots);
+  const { loadedImages, compositeBounds } = useImageLoader(screenshots);
 
-  const { zoom, pan, setZoom, setPan, fitToView } = useViewport({
-    propZoom,
-    propPanX,
-    propPanY,
-    onViewportChange,
-    compositeBounds,
-    containerRef,
-    screenshotKey,
-    hasLoadedImages: loadedImages.length > 0,
-  });
+  const { zoom, pan, setZoom, setPan, fitToContent, handleWheel } =
+    useCanvasViewport({
+      canvasRef,
+      containerRef,
+      controlledZoom: propZoom,
+      controlledPanX: propPanX,
+      controlledPanY: propPanY,
+      onViewportChange,
+      contentSize: compositeBounds,
+      autoFit: loadedImages.length > 0,
+    });
 
   const {
     currentRegion,
@@ -100,12 +101,15 @@ export const CompositeScreenshotCanvas: React.FC<
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
         onContextMenu={handleContextMenu}
+        onWheel={handleWheel}
       />
 
       <ZoomControls
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}
-        onFitToView={fitToView}
+        onReset={fitToContent}
+        resetIcon={Maximize2}
+        resetTitle="Fit to View"
       />
 
       <InfoOverlay

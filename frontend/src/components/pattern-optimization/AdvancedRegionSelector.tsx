@@ -1,9 +1,9 @@
 import React, { useRef, useEffect } from "react";
 import { AdvancedRegionSelectorProps } from "./types";
-import { useViewport } from "./_hooks/useViewport";
+import { useCanvasViewport } from "@/components/common/_hooks/useCanvasViewport";
 import { useImageLoader } from "./_hooks/useImageLoader";
 import { useCanvasRenderer } from "./_hooks/useCanvasRenderer";
-import { useRegionInteraction } from "./_hooks/useRegionInteraction";
+import { useRegionInteraction } from "@/components/common/_hooks/useRegionInteraction";
 import { RegionSelectorToolbar } from "./_components/RegionSelectorToolbar";
 
 export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
@@ -19,12 +19,15 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const { zoom, pan, setZoom, setPan, resetView, handleWheel } = useViewport({
-    controlledZoom,
-    controlledPanX,
-    controlledPanY,
-    onViewportChange,
-  });
+  const { zoom, pan, setZoom, setPan, resetView, handleWheel } =
+    useCanvasViewport({
+      canvasRef,
+      controlledZoom,
+      controlledPanX,
+      controlledPanY,
+      onViewportChange,
+      maxZoom: 5,
+    });
 
   const { imageData, imageDimensions } = useImageLoader(screenshotUrl);
 

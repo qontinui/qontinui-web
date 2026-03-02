@@ -10,17 +10,9 @@ import { analyticsService } from "@/services/service-factory";
 import { Activity, FolderOpen, HardDrive, Clock } from "lucide-react";
 import { toast } from "sonner";
 
-// Dynamic imports for analytics components (charts/visualizations)
-const MetricCard = dynamicImport(
-  () =>
-    import("@/components/analytics/metric-card").then((mod) => ({
-      default: mod.MetricCard,
-    })),
-  {
-    loading: () => <div className="h-32 bg-muted rounded-lg animate-pulse" />,
-  }
-);
+import { MetricCard } from "@/components/common/_components/MetricCard";
 
+// Dynamic imports for analytics components (charts/visualizations)
 const UsageChart = dynamicImport(
   () =>
     import("@/components/analytics/usage-chart").then((mod) => ({
@@ -260,10 +252,8 @@ export default function AnalyticsPage() {
                   title="API Calls Today"
                   value={usageSummary.api_calls_today}
                   icon={Activity}
-                  trend="up"
-                  trendValue="+12%"
-                  gradientFrom="var(--color-brand-primary)"
-                  gradientTo="#0099FF"
+                  trend={12}
+                  color="var(--color-brand-primary)"
                 />
               </div>
               <div className="bg-background px-4 py-3">
@@ -271,8 +261,7 @@ export default function AnalyticsPage() {
                   title="Total Projects"
                   value={usageSummary.total_projects}
                   icon={FolderOpen}
-                  gradientFrom="var(--color-brand-secondary)"
-                  gradientTo="#8B00CC"
+                  color="var(--color-brand-secondary)"
                 />
               </div>
               <div className="bg-background px-4 py-3">
@@ -280,10 +269,8 @@ export default function AnalyticsPage() {
                   title="Storage Used"
                   value={formatBytes(usageSummary.storage_used)}
                   icon={HardDrive}
-                  trend="up"
-                  trendValue="+5%"
-                  gradientFrom="var(--color-brand-success)"
-                  gradientTo="#00CC6A"
+                  trend={5}
+                  color="var(--color-brand-success)"
                 />
               </div>
               <div className="bg-background px-4 py-3">
@@ -291,8 +278,7 @@ export default function AnalyticsPage() {
                   title="Last Active"
                   value={getRelativeTime(usageSummary.last_active)}
                   icon={Clock}
-                  gradientFrom="#FFB800"
-                  gradientTo="#CC9300"
+                  color="#FFB800"
                 />
               </div>
             </div>

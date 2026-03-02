@@ -30,19 +30,7 @@ export interface DisplayOptionsState {
   setShowMasks: (v: boolean) => void;
 }
 
-export interface CanvasViewportState {
-  zoom: number;
-  panOffset: Point;
-  isDragging: boolean;
-  dragStart: Point;
-  setZoom: (v: number) => void;
-  setPanOffset: (v: Point) => void;
-  setIsDragging: (v: boolean) => void;
-  setDragStart: (v: Point) => void;
-  zoomIn: () => void;
-  zoomOut: () => void;
-  resetView: () => void;
-}
+export type { UseCanvasViewportReturn as CanvasViewportState } from "@/components/common/_hooks/useCanvasViewport";
 
 export interface ImageAnalysisState {
   selectedImage: string | null;

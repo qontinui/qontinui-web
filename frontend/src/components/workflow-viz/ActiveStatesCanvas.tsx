@@ -36,7 +36,8 @@ import { useActiveStatesData } from "./_hooks/useActiveStatesData";
 import { useCanvasRenderer } from "./_hooks/useCanvasRenderer";
 import { useLegendPanel } from "./_hooks/useLegendPanel";
 import { LegendPanel } from "./_components/LegendPanel";
-import { ZoomControls } from "./_components/ZoomControls";
+import { ZoomControls } from "@/components/common/_components/ZoomControls";
+import { RotateCcw } from "lucide-react";
 import { EmptyStateOverlay } from "./_components/EmptyStateOverlay";
 
 export type { ActiveStatesCanvasProps } from "./ActiveStatesCanvas-types";
@@ -150,7 +151,9 @@ export function ActiveStatesCanvas({
         zoom={canvas.zoom}
         onZoomIn={canvas.handleZoomIn}
         onZoomOut={canvas.handleZoomOut}
-        onFitView={canvas.handleFitView}
+        onReset={canvas.handleFitView}
+        resetIcon={RotateCcw}
+        resetTitle="Fit to View"
       />
 
       {/* Canvas */}

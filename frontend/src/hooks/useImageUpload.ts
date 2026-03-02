@@ -3,25 +3,33 @@ import { toast } from "sonner";
 import type { ImageAsset } from "@/contexts/automation-context/types";
 import type { UploadingImage } from "@/components/ImageUploadProgress";
 import { uploadScreenshotOffline } from "@/lib/offline-screenshot-upload";
-import type { ImageWithMetadata } from "../types";
 import { createLogger } from "@/lib/logger";
 
-const logger = createLogger("ImageLibrary.upload");
+const logger = createLogger("useImageUpload");
 
-interface UseImageUploadOptions {
+export interface UseImageUploadOptions {
+  /** Project ID (required for upload). Upload is rejected if null. */
   projectId: string | number | null;
+  /** Project name attached to uploaded ImageAsset metadata. */
   projectName?: string;
-  selectedFolderId: string | null;
-  uploadMonitors: number[];
+  /** Callback invoked with each newly-created ImageAsset (and again after server sync). */
   addImage: (image: ImageAsset) => void;
+  /** Optional folder ID assigned to uploaded images. */
+  selectedFolderId?: string | null;
+  /** Optional monitor indices attached to uploaded images. */
+  uploadMonitors?: number[];
 }
 
+/**
+ * Shared hook for image uploading with drag-and-drop, progress tracking,
+ * offline-first support, and categorized error toasts.
+ */
 export function useImageUpload({
   projectId,
   projectName,
+  addImage,
   selectedFolderId,
   uploadMonitors,
-  addImage,
 }: UseImageUploadOptions) {
   const [dragActive, setDragActive] = useState(false);
   const [uploadingFiles, setUploadingFiles] = useState<UploadingImage[]>([]);
@@ -59,6 +67,30 @@ export function useImageUpload({
       // Upload files with offline-first support
       const uploadPromises = fileArray.map(async (file) => {
         try {
+          // Validate image dimensions before uploading
+          await new Promise<void>((resolve, reject) => {
+            const img = new Image();
+            const reader = new FileReader();
+
+            reader.onload = (e) => {
+              img.onload = () => {
+                if (img.width < 10 || img.height < 10) {
+                  reject(
+                    new Error(
+                      `Image too small: ${img.width}x${img.height}px. Images must be at least 10x10 pixels.`
+                    )
+                  );
+                } else {
+                  resolve();
+                }
+              };
+              img.onerror = () => reject(new Error("Failed to load image"));
+              img.src = e.target?.result as string;
+            };
+            reader.onerror = () => reject(new Error("Failed to read file"));
+            reader.readAsDataURL(file);
+          });
+
           const result = await uploadScreenshotOffline(
             file,
             Number(projectId),
@@ -87,18 +119,16 @@ export function useImageUpload({
             projectName: projectName,
             s3_key: result.screenshot.s3Key,
             url_expires_at: result.screenshot.urlExpiresAt,
-            monitors: uploadMonitors,
+            ...(uploadMonitors ? { monitors: uploadMonitors } : {}),
+            ...(selectedFolderId ? { folderId: selectedFolderId } : {}),
           };
-
-          if (selectedFolderId) {
-            (imageAsset as ImageWithMetadata).folderId = selectedFolderId;
-          }
 
           addImage(imageAsset);
           toast.success(`${file.name} uploaded`);
 
           setUploadingFiles((prev) => prev.filter((f) => f.name !== file.name));
 
+          // Wait for server sync in background
           result.whenSynced
             .then((serverData) => {
               const updatedAsset = {
@@ -119,13 +149,34 @@ export function useImageUpload({
           return { success: true, fileName: file.name };
         } catch (error: unknown) {
           logger.error(`Upload failed for ${file.name}:`, error);
-          const errorMessage =
+
+          // Categorized error toasts
+          const errorMsg =
             error instanceof Error ? error.message : "Unknown error occurred";
-          toast.error(`Failed to save ${file.name}`, {
-            description: errorMessage,
-          });
+          if (errorMsg.includes("quota") || errorMsg.includes("Quota")) {
+            toast.error("Storage quota exceeded", {
+              description: "Please upgrade your plan or delete unused images.",
+            });
+          } else if (errorMsg.includes("too small")) {
+            toast.error("Image too small", {
+              description: errorMsg,
+            });
+          } else if (
+            errorMsg.includes("Network error") ||
+            errorMsg.includes("timeout")
+          ) {
+            toast.error("Network error", {
+              description:
+                "Please check your internet connection and try again.",
+            });
+          } else {
+            toast.error(`Failed to upload ${file.name}`, {
+              description: errorMsg,
+            });
+          }
+
           setUploadingFiles((prev) => prev.filter((f) => f.name !== file.name));
-          return { success: false, fileName: file.name };
+          return { success: false, fileName: file.name, error: errorMsg };
         }
       });
 
@@ -138,8 +189,7 @@ export function useImageUpload({
         });
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- uploadMonitors is stable state that doesn't change frequently; including it would cause unnecessary callback recreation
-    [projectId, projectName, selectedFolderId, addImage]
+    [projectId, projectName, selectedFolderId, uploadMonitors, addImage]
   );
 
   const handleDrag = useCallback((e: React.DragEvent) => {

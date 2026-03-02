@@ -6,7 +6,7 @@ import { useSemanticAnalysisBridge } from "@/stores/page-state";
 
 import { useProcessingOptions } from "./_hooks/use-processing-options";
 import { useDisplayOptions } from "./_hooks/use-display-options";
-import { useCanvasViewport } from "./_hooks/use-canvas-viewport";
+import { useCanvasViewport } from "@/components/common/_hooks/useCanvasViewport";
 import { useImageAnalysis } from "./_hooks/use-image-analysis";
 
 import { ImageUploadCard } from "./_components/ImageUploadCard";
@@ -25,7 +25,7 @@ export function SemanticAnalysisTab() {
   // Local UI state grouped into logical hooks
   const processingOptions = useProcessingOptions();
   const displayOptions = useDisplayOptions();
-  const viewport = useCanvasViewport();
+  const viewport = useCanvasViewport({ minZoom: 0.5, maxZoom: 5 });
   const imageAnalysis = useImageAnalysis(processingOptions);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -95,7 +95,7 @@ export function SemanticAnalysisTab() {
             selectedObject={imageAnalysis.selectedObject}
             canvasRef={canvasRef}
             zoom={viewport.zoom}
-            onCenterObject={viewport.setPanOffset}
+            onCenterObject={viewport.setPan}
           />
         ) : imageAnalysis.scene ? (
           <ObjectListPanel

@@ -44,17 +44,7 @@ export interface PatternQualityAnalysis {
   recommendations: string[];
 }
 
-export type DragHandle =
-  | "tl"
-  | "tr"
-  | "bl"
-  | "br"
-  | "t"
-  | "r"
-  | "b"
-  | "l"
-  | "move"
-  | null;
+export type { DragHandle } from "@/components/common/_types/region-interaction";
 
 export interface Point {
   x: number;

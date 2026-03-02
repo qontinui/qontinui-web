@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Image as ImageIcon } from "lucide-react";
 import type { SemanticObject, SemanticScene } from "@/types/semantic-analysis";
 import type { CanvasViewportState } from "../semantic-analysis-types";
+import type { Point } from "../semantic-analysis-types";
 import { drawSceneOnCanvas } from "../semantic-analysis-utils";
 
 interface AnalysisCanvasProps {
@@ -34,6 +35,10 @@ export function AnalysisCanvas({
   canvasRef,
 }: AnalysisCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Local shift-drag state for panning
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState<Point>({ x: 0, y: 0 });
 
   // Draw visualization on canvas
   useEffect(() => {
@@ -69,8 +74,8 @@ export function AnalysisCanvas({
     if (!scene || !canvasRef.current) return;
 
     const rect = canvasRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / viewport.zoom - viewport.panOffset.x;
-    const y = (e.clientY - rect.top) / viewport.zoom - viewport.panOffset.y;
+    const x = (e.clientX - rect.left) / viewport.zoom - viewport.pan.x;
+    const y = (e.clientY - rect.top) / viewport.zoom - viewport.pan.y;
 
     const clickedObject = scene.objects.find(
       (obj) =>
@@ -86,22 +91,18 @@ export function AnalysisCanvas({
   const handleCanvasMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!scene || !canvasRef.current) return;
 
-    if (viewport.isDragging) {
-      viewport.setPanOffset({
-        x:
-          viewport.panOffset.x +
-          (e.clientX - viewport.dragStart.x) / viewport.zoom,
-        y:
-          viewport.panOffset.y +
-          (e.clientY - viewport.dragStart.y) / viewport.zoom,
+    if (isDragging) {
+      viewport.setPan({
+        x: viewport.pan.x + (e.clientX - dragStart.x) / viewport.zoom,
+        y: viewport.pan.y + (e.clientY - dragStart.y) / viewport.zoom,
       });
-      viewport.setDragStart({ x: e.clientX, y: e.clientY });
+      setDragStart({ x: e.clientX, y: e.clientY });
       return;
     }
 
     const rect = canvasRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / viewport.zoom - viewport.panOffset.x;
-    const y = (e.clientY - rect.top) / viewport.zoom - viewport.panOffset.y;
+    const x = (e.clientX - rect.left) / viewport.zoom - viewport.pan.x;
+    const y = (e.clientY - rect.top) / viewport.zoom - viewport.pan.y;
 
     const hoveredObj = scene.objects.find(
       (obj) =>
@@ -118,12 +119,12 @@ export function AnalysisCanvas({
     <div
       ref={containerRef}
       className="flex-1 overflow-auto bg-surface-canvas relative"
-      style={{ cursor: viewport.isDragging ? "grabbing" : "grab" }}
+      style={{ cursor: isDragging ? "grabbing" : "grab" }}
     >
       {selectedImage ? (
         <div
           style={{
-            transform: `scale(${viewport.zoom}) translate(${viewport.panOffset.x}px, ${viewport.panOffset.y}px)`,
+            transform: `scale(${viewport.zoom}) translate(${viewport.pan.x}px, ${viewport.pan.y}px)`,
             transformOrigin: "top left",
           }}
         >
@@ -134,16 +135,16 @@ export function AnalysisCanvas({
             onMouseLeave={() => onObjectHover(null)}
             onMouseDown={(e) => {
               if (e.shiftKey) {
-                viewport.setIsDragging(true);
-                viewport.setDragStart({ x: e.clientX, y: e.clientY });
+                setIsDragging(true);
+                setDragStart({ x: e.clientX, y: e.clientY });
               }
             }}
-            onMouseUp={() => viewport.setIsDragging(false)}
+            onMouseUp={() => setIsDragging(false)}
             className="max-w-full"
             style={{
               cursor: hoveredObject
                 ? "pointer"
-                : viewport.isDragging
+                : isDragging
                   ? "grabbing"
                   : "grab",
             }}

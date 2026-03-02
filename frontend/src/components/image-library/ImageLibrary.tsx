@@ -10,9 +10,9 @@ import { ImageDeletionDialog } from "@/components/image-deletion-dialog";
 import { MonitorSelector } from "@/components/monitor-selector";
 import { FilterBar } from "./FilterBar";
 import { BulkActions } from "./BulkActions";
+import { useImageUpload } from "@/hooks/useImageUpload";
 import {
   useFilteredImages,
-  useImageUpload,
   useImageOperations,
   useBulkActions,
   useImageUsageDetails,

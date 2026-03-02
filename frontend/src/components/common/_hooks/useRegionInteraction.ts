@@ -1,11 +1,11 @@
 import { useState, useCallback, useEffect } from "react";
 import { Region } from "@/types/pattern-optimization";
-import type { DragHandle } from "../types";
+import type { DragHandle } from "../_types/region-interaction";
 import {
   getHandleAtPosition,
   getCursorForHandle,
   applyDragToRegion,
-} from "../utils";
+} from "./regionInteractionUtils";
 
 interface UseRegionInteractionOptions {
   region?: Region;

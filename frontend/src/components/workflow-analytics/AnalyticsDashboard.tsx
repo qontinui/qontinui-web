@@ -17,7 +17,7 @@ import {
   formatDuration,
 } from "./analytics-dashboard-utils";
 import { useAnalyticsDashboard } from "./_hooks/useAnalyticsDashboard";
-import { MetricCard } from "./_components/MetricCard";
+import { MetricCard } from "@/components/common/_components/MetricCard";
 import { DashboardHeader } from "./_components/DashboardHeader";
 import { ChartTabs } from "./_components/ChartTabs";
 import { TopWorkflowsTables } from "./_components/TopWorkflowsTables";

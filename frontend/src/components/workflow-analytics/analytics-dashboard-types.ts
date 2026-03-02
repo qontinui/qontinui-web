@@ -14,15 +14,6 @@ export interface AnalyticsDashboardProps {
   className?: string;
 }
 
-export interface MetricCardProps {
-  title: string;
-  value: string | number;
-  icon: React.ReactNode;
-  trend?: number;
-  description?: string;
-  className?: string;
-}
-
 export interface AggregatedMetrics {
   totalExecutions: number;
   totalSuccessful: number;
