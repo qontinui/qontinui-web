@@ -110,6 +110,7 @@ from app.models.runner_connection import RunnerConnection
 from app.models.runner_device import RunnerDevice
 from app.models.screenshot_input_association import ScreenshotInputAssociation
 from app.models.session_activity import SessionActivity
+from app.models.skill import Skill
 from app.models.snapshot import (
     Pattern,
     Screenshot,
@@ -452,4 +453,6 @@ __all__ = [
     "WorkflowPhaseConfig",
     # Unified Workflows (workflow definitions - source of truth)
     "UnifiedWorkflow",
+    # Skills (user-created parameterized step templates)
+    "Skill",
 ]

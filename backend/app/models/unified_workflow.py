@@ -231,12 +231,27 @@ class UnifiedWorkflow(Base):
         comment="Whether to stop execution if a stage fails verification",
     )
 
+    approval_gate: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+        default=False,
+        comment="Whether to pause for human approval before agentic phase",
+    )
+
     reflection_mode: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
         server_default=text("true"),
         default=True,
         comment="Whether to enable reflection mode during AI iterations",
+    )
+
+    model_overrides: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        default=None,
+        comment="Per-phase model/provider overrides keyed by phase name",
     )
 
     # Provenance

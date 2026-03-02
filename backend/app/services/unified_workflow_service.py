@@ -55,7 +55,9 @@ class UnifiedWorkflowCreate(BaseModel):
     generated_by_task_run_id: str | None = None
     stages: list[Any] | None = None
     stop_on_failure: bool = False
+    approval_gate: bool = False
     reflection_mode: bool = True
+    model_overrides: dict[str, Any] | None = None
     project_id: str | None = None
 
 
@@ -89,7 +91,9 @@ class UnifiedWorkflowUpdate(BaseModel):
     generated_by_task_run_id: str | None = None
     stages: list[Any] | None = None
     stop_on_failure: bool | None = None
+    approval_gate: bool | None = None
     reflection_mode: bool | None = None
+    model_overrides: dict[str, Any] | None = None
     project_id: str | None = None
 
 
@@ -126,7 +130,9 @@ class UnifiedWorkflowResponse(BaseModel):
     generated_by_task_run_id: str | None
     stages: list[Any] | None
     stop_on_failure: bool
+    approval_gate: bool
     reflection_mode: bool
+    model_overrides: dict[str, Any] | None
     created_at: datetime
     modified_at: datetime  # Exposed as modified_at for frontend compat
 
@@ -214,9 +220,13 @@ def _model_to_response(workflow: UnifiedWorkflow) -> UnifiedWorkflowResponse:
         stop_on_failure=(
             workflow.stop_on_failure if workflow.stop_on_failure is not None else False
         ),
+        approval_gate=(
+            workflow.approval_gate if workflow.approval_gate is not None else False
+        ),
         reflection_mode=(
             workflow.reflection_mode if workflow.reflection_mode is not None else True
         ),
+        model_overrides=workflow.model_overrides,
         created_at=workflow.created_at,
         modified_at=workflow.updated_at,
     )
@@ -272,7 +282,9 @@ class UnifiedWorkflowService:
             generated_by_task_run_id=data.generated_by_task_run_id,
             stages=data.stages,
             stop_on_failure=data.stop_on_failure,
+            approval_gate=data.approval_gate,
             reflection_mode=data.reflection_mode,
+            model_overrides=data.model_overrides,
         )
 
         try:
@@ -470,7 +482,11 @@ class UnifiedWorkflowService:
             generated_by_task_run_id=original.generated_by_task_run_id,
             stages=list(original.stages) if original.stages else original.stages,
             stop_on_failure=original.stop_on_failure,
+            approval_gate=original.approval_gate,
             reflection_mode=original.reflection_mode,
+            model_overrides=(
+                dict(original.model_overrides) if original.model_overrides else None
+            ),
         )
 
         created = await self.repo.create(db, clone)
@@ -554,11 +570,17 @@ class UnifiedWorkflowService:
                 if workflow.stop_on_failure is not None
                 else False
             ),
+            "approval_gate": (
+                workflow.approval_gate
+                if workflow.approval_gate is not None
+                else False
+            ),
             "reflection_mode": (
                 workflow.reflection_mode
                 if workflow.reflection_mode is not None
                 else True
             ),
+            "model_overrides": workflow.model_overrides,
         }
 
     async def import_workflow(

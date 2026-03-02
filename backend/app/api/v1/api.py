@@ -63,6 +63,7 @@ from app.api.v1.endpoints import (
     security_endpoints,
     semantic_search,
     settings,
+    skills,
     snapshots,
     state_discovery,
     state_discovery_results,
@@ -236,6 +237,8 @@ api_router.include_router(
     prefix="/workflow-config",
     tags=["workflow-config"],
 )
+# Skills (user-created parameterized step templates)
+api_router.include_router(skills.router, prefix="/skills", tags=["skills"])
 # Unified workflows (workflow definitions - source of truth)
 api_router.include_router(
     unified_workflows.router, prefix="/unified-workflows", tags=["unified-workflows"]
