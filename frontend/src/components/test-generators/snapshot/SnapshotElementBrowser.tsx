@@ -6,6 +6,7 @@
  */
 
 import { useState, useMemo } from "react";
+import { useExpandableSet } from "@/hooks/useExpandableSet";
 import {
   ChevronDown,
   ChevronRight,
@@ -51,9 +52,8 @@ export function SnapshotElementBrowser({
   onSelect,
 }: SnapshotElementBrowserProps) {
   const [search, setSearch] = useState("");
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
-    new Set(TYPE_ORDER)
-  );
+  const { expanded: expandedGroups, toggle: toggleGroup } =
+    useExpandableSet(TYPE_ORDER);
 
   const filtered = useMemo(() => {
     if (!search) return elements;
@@ -75,15 +75,6 @@ export function SnapshotElementBrowser({
       (a, b) => TYPE_ORDER.indexOf(a[0]) - TYPE_ORDER.indexOf(b[0])
     );
   }, [filtered]);
-
-  const toggleGroup = (group: string) => {
-    setExpandedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(group)) next.delete(group);
-      else next.add(group);
-      return next;
-    });
-  };
 
   return (
     <div className="flex flex-col h-full border-r border-neutral-700">

@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
+import { useExpandableSet } from "@/hooks/useExpandableSet";
 import type {
   StateDiscoveryResult,
   DiscoveredState,
@@ -7,7 +8,8 @@ import type {
 
 export function useStateMachineViewer(result: StateDiscoveryResult) {
   const [selectedStateId, setSelectedStateId] = useState<string | null>(null);
-  const [expandedStates, setExpandedStates] = useState<Set<string>>(new Set());
+  const { expanded: expandedStates, toggle: toggleExpanded } =
+    useExpandableSet();
 
   const stateMap = useMemo(() => {
     const map = new Map<string, DiscoveredState>();
@@ -32,18 +34,6 @@ export function useStateMachineViewer(result: StateDiscoveryResult) {
       result.transitions.filter((t) => t.toStateId === stateId),
     [result.transitions]
   );
-
-  const toggleExpanded = useCallback((stateId: string) => {
-    setExpandedStates((prev) => {
-      const next = new Set(prev);
-      if (next.has(stateId)) {
-        next.delete(stateId);
-      } else {
-        next.add(stateId);
-      }
-      return next;
-    });
-  }, []);
 
   const handleStateClick = useCallback(
     (

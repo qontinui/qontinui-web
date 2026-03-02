@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useExpandableSet } from "@/hooks/useExpandableSet";
 import { Badge } from "@/components/ui/badge";
 import {
   CheckCircle2,
@@ -25,9 +25,8 @@ import { formatDateTime } from "../_utils/summary-tab-utils";
 
 export function VerificationSubTab({ runId }: { runId: string }) {
   const { data, isLoading, error } = useTaskRunVerification(runId);
-  const [expandedResults, setExpandedResults] = useState<Set<number>>(
-    new Set()
-  );
+  const { expanded: expandedResults, toggle: toggleResult } =
+    useExpandableSet<number>();
 
   if (isLoading) {
     return (
@@ -71,18 +70,6 @@ export function VerificationSubTab({ runId }: { runId: string }) {
   const failedCount =
     summary?.failed ?? results.filter((r) => !r.passed).length;
   const allPassed = summary?.all_passed ?? failedCount === 0;
-
-  const toggleResult = (index: number) => {
-    setExpandedResults((prev) => {
-      const next = new Set(prev);
-      if (next.has(index)) {
-        next.delete(index);
-      } else {
-        next.add(index);
-      }
-      return next;
-    });
-  };
 
   return (
     <div className="space-y-4">

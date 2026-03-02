@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useExpandableSet } from "@/hooks/useExpandableSet";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,24 +41,13 @@ export function TestStepTimeline({
   taskRunId,
   enableProgressTracking = false,
 }: TestStepTimelineProps) {
-  const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set());
+  const { expanded: expandedSteps, toggle: toggleExpanded } =
+    useExpandableSet();
   const [selectedScreenshot, setSelectedScreenshot] = useState<{
     url: string;
     step: TestStep;
   } | null>(null);
   const currentStepRef = useRef<HTMLDivElement>(null);
-
-  const toggleExpanded = (stepId: string) => {
-    setExpandedSteps((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(stepId)) {
-        newSet.delete(stepId);
-      } else {
-        newSet.add(stepId);
-      }
-      return newSet;
-    });
-  };
 
   useEffect(() => {
     if (autoScroll && currentStepRef.current) {

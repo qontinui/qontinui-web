@@ -1,4 +1,3 @@
-import { useCallback, useEffect } from "react";
 import type { MonitorCanvasBounds } from "../useMonitorCanvas";
 import { drawMonitorBackground, DEFAULT_THEME } from "../useMonitorCanvas";
 import type { Monitor } from "@/lib/schemas/geometry";
@@ -8,6 +7,7 @@ import type {
   ConfigImage,
   StateBound,
 } from "../ActiveStatesCanvas-types";
+import { useCanvasRedrawLoop } from "@/components/common/_hooks/useCanvasRedrawLoop";
 
 interface UseCanvasRendererOptions {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
@@ -40,75 +40,72 @@ export function useCanvasRenderer(options: UseCanvasRendererOptions) {
     monitorOffset,
   } = options;
 
-  // Redraw canvas
-  const redraw = useCallback(() => {
-    const canvasEl = canvasRef.current;
-    if (!canvasEl) return;
+  // No containerRef -- this hook manages its own canvas sizing via
+  // containerSize prop and device pixel ratio scaling.
+  useCanvasRedrawLoop({
+    canvasRef,
+    draw(ctx, canvas) {
+      // Skip rendering if container hasn't been measured yet
+      if (containerSize.width === 0 || containerSize.height === 0) return;
 
-    const ctx = canvasEl.getContext("2d");
-    if (!ctx) return;
+      // Set canvas size to container size (NOT bounds!)
+      // The pan/zoom transforms are calculated based on containerSize,
+      // so the canvas buffer must match for correct rendering.
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = containerSize.width * dpr;
+      canvas.height = containerSize.height * dpr;
 
-    // Skip rendering if container hasn't been measured yet
-    if (containerSize.width === 0 || containerSize.height === 0) {
-      return;
-    }
+      // Clear canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Set canvas size to container size (NOT bounds!)
-    // The pan/zoom transforms are calculated based on containerSize,
-    // so the canvas buffer must match for correct rendering.
-    const dpr = window.devicePixelRatio || 1;
-    canvasEl.width = containerSize.width * dpr;
-    canvasEl.height = containerSize.height * dpr;
+      // Apply transformations
+      ctx.save();
 
-    // Clear canvas
-    ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+      // Scale for high DPI displays
+      ctx.scale(dpr, dpr);
 
-    // Apply transformations
-    ctx.save();
+      // Apply pan and zoom
+      ctx.translate(pan.x, pan.y);
+      ctx.scale(zoom, zoom);
 
-    // Scale for high DPI displays
-    ctx.scale(dpr, dpr);
+      // Draw monitor areas with grey outside (using shared function with light theme)
+      drawMonitorBackground(ctx, bounds, displayedMonitors, DEFAULT_THEME);
 
-    // Apply pan and zoom
-    ctx.translate(pan.x, pan.y);
-    ctx.scale(zoom, zoom);
+      // Draw images based on mode
+      if (mode === "perception") {
+        drawPerceptionMode(
+          ctx,
+          visibleFoundImages,
+          loadedImages,
+          monitorOffset
+        );
+      } else {
+        drawConfigMode(
+          ctx,
+          stateBounds,
+          configImages,
+          loadedImages,
+          monitorOffset
+        );
+      }
 
-    // Draw monitor areas with grey outside (using shared function with light theme)
-    drawMonitorBackground(ctx, bounds, displayedMonitors, DEFAULT_THEME);
-
-    // Draw images based on mode
-    if (mode === "perception") {
-      drawPerceptionMode(ctx, visibleFoundImages, loadedImages, monitorOffset);
-    } else {
-      drawConfigMode(
-        ctx,
-        stateBounds,
-        configImages,
-        loadedImages,
-        monitorOffset
-      );
-    }
-
-    ctx.restore();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    mode,
-    visibleFoundImages,
-    configImages,
-    stateBounds,
-    zoom,
-    pan,
-    bounds,
-    containerSize,
-    displayedMonitors,
-    loadedImages,
-    monitorOffset,
-  ]);
-
-  // Redraw on changes
-  useEffect(() => {
-    redraw();
-  }, [redraw]);
+      ctx.restore();
+    },
+    deps: [
+      mode,
+      visibleFoundImages,
+      configImages,
+      stateBounds,
+      zoom,
+      pan,
+      bounds,
+      containerSize,
+      displayedMonitors,
+      loadedImages,
+      monitorOffset,
+      canvasRef,
+    ],
+  });
 }
 
 function drawPerceptionMode(

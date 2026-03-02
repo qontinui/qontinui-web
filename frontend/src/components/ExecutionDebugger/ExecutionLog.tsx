@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import { useExpandableSet } from "@/hooks/useExpandableSet";
 import {
   Terminal,
   Download,
@@ -129,9 +130,8 @@ const LogEntry: React.FC<LogEntryProps> = ({ entry, isExpanded, onToggle }) => {
 
 export const ExecutionLog: React.FC = () => {
   const { logs, clearLogs, exportLogs } = useExecutionDebugger();
-  const [expandedEntries, setExpandedEntries] = useState<Set<string>>(
-    new Set()
-  );
+  const { expanded: expandedEntries, toggle: toggleExpanded } =
+    useExpandableSet();
   const [levelFilter, setLevelFilter] = useState<
     Set<ExecutionLogEntry["level"]>
   >(new Set(["info", "warning", "error", "debug"]));
@@ -165,18 +165,6 @@ export const ExecutionLog: React.FC = () => {
     container.addEventListener("scroll", handleScroll);
     return () => container.removeEventListener("scroll", handleScroll);
   }, []);
-
-  const toggleExpanded = (entryId: string) => {
-    setExpandedEntries((prev) => {
-      const next = new Set(prev);
-      if (next.has(entryId)) {
-        next.delete(entryId);
-      } else {
-        next.add(entryId);
-      }
-      return next;
-    });
-  };
 
   const toggleLevelFilter = (level: ExecutionLogEntry["level"]) => {
     setLevelFilter((prev) => {

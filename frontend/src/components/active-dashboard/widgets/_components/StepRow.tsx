@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import type { TimelineStep } from "../execution-timeline-types";
 import { STEP_ICONS, STEP_COLORS } from "../execution-timeline-types";
 import { formatDuration } from "../execution-timeline-utils";
-import { StatusIcon } from "./StatusIcon";
+import { StatusIcon } from "@/components/common/_components/StatusIcon";
 
 export function StepRow({ step }: { step: TimelineStep }) {
   const Icon = STEP_ICONS[step.type];
@@ -23,7 +23,7 @@ export function StepRow({ step }: { step: TimelineStep }) {
       )}
     >
       <div className="flex items-center gap-2.5 px-3 py-1.5">
-        <StatusIcon status={step.status} />
+        <StatusIcon status={step.status} variant="compact" />
         <Badge
           variant="outline"
           className={cn(

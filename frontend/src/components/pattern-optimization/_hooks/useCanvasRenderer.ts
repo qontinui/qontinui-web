@@ -1,6 +1,6 @@
-import { useCallback, useEffect } from "react";
 import { Region } from "@/types/pattern-optimization";
 import { Point } from "../types";
+import { useCanvasRedrawLoop } from "@/components/common/_hooks/useCanvasRedrawLoop";
 
 interface UseCanvasRendererOptions {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
@@ -21,103 +21,42 @@ export function useCanvasRenderer({
   pan,
   currentRegion,
 }: UseCanvasRendererOptions) {
-  const draw = useCallback(() => {
-    if (!canvasRef.current || !imageData || !imageDimensions) {
-      console.log(
-        "[AdvancedRegionSelector] Draw skipped - missing requirements:",
-        {
-          hasCanvas: !!canvasRef.current,
-          hasImageData: !!imageData,
-          hasImageDimensions: !!imageDimensions,
-        }
-      );
-      return;
-    }
-
-    console.log(
-      "[AdvancedRegionSelector] Drawing canvas with imageData:",
-      imageData.substring(0, 50) + "..."
-    );
-
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const img = new Image();
-    img.onload = () => {
-      console.log(
-        "[AdvancedRegionSelector] Image loaded in draw(), drawing to canvas"
-      );
-      const container = containerRef.current;
-      if (!container) return;
-
-      canvas.width = container.clientWidth;
-      canvas.height = container.clientHeight;
-
-      ctx.fillStyle = "#f3f4f6";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      ctx.save();
-      ctx.translate(pan.x, pan.y);
-      ctx.scale(zoom, zoom);
-
-      ctx.drawImage(img, 0, 0, img.width, img.height);
-
-      if (currentRegion) {
-        drawRegionOverlay(ctx, currentRegion, zoom);
-      }
-
-      ctx.restore();
-    };
-
-    img.onerror = (e) => {
-      console.error(
-        "[AdvancedRegionSelector] Failed to load image in draw():",
-        e
-      );
-      console.error(
-        "[AdvancedRegionSelector] Image src was:",
-        imageData.substring(0, 100)
-      );
-    };
-
-    img.src = imageData;
-  }, [
+  useCanvasRedrawLoop({
     canvasRef,
     containerRef,
-    imageData,
-    imageDimensions,
-    zoom,
-    pan,
-    currentRegion,
-  ]);
+    draw(ctx, canvas) {
+      if (!imageData || !imageDimensions) return;
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      draw();
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [draw]);
+      const img = new Image();
+      img.onload = () => {
+        ctx.fillStyle = "#f3f4f6";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  useEffect(() => {
-    const handleResize = () => {
-      console.log("[AdvancedRegionSelector] Window resized, redrawing");
-      draw();
-    };
+        ctx.save();
+        ctx.translate(pan.x, pan.y);
+        ctx.scale(zoom, zoom);
 
-    window.addEventListener("resize", handleResize);
+        ctx.drawImage(img, 0, 0, img.width, img.height);
 
-    if (imageData && imageDimensions) {
-      console.log("[AdvancedRegionSelector] Initial draw trigger");
-      const timer = setTimeout(() => draw(), 100);
-      return () => {
-        window.removeEventListener("resize", handleResize);
-        clearTimeout(timer);
+        if (currentRegion) {
+          drawRegionOverlay(ctx, currentRegion, zoom);
+        }
+
+        ctx.restore();
       };
-    }
 
-    return () => window.removeEventListener("resize", handleResize);
-  }, [imageData, imageDimensions, draw]);
+      img.src = imageData;
+    },
+    deps: [
+      canvasRef,
+      containerRef,
+      imageData,
+      imageDimensions,
+      zoom,
+      pan,
+      currentRegion,
+    ],
+  });
 }
 
 function drawRegionOverlay(
@@ -190,7 +129,7 @@ function drawRegionOverlay(
   // Dimensions text
   ctx.fillStyle = "#3B82F6";
   ctx.font = `${12 / zoom}px monospace`;
-  const text = `${Math.round(region.width)} × ${Math.round(region.height)}`;
+  const text = `${Math.round(region.width)} x ${Math.round(region.height)}`;
   const textWidth = ctx.measureText(text).width;
   ctx.fillText(
     text,

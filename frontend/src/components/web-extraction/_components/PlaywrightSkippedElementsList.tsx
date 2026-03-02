@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
+import { useExpandableSet } from "@/hooks/useExpandableSet";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +19,7 @@ export function PlaywrightSkippedElementsList({
 }: {
   elements: SkippedElement[];
 }) {
-  const [expandedUrls, setExpandedUrls] = useState<Set<string>>(new Set());
+  const { expanded: expandedUrls, toggle: toggleUrl } = useExpandableSet();
 
   const groupedByUrl = useMemo(() => {
     const groups: Record<string, SkippedElement[]> = {};
@@ -30,18 +31,6 @@ export function PlaywrightSkippedElementsList({
     }
     return groups;
   }, [elements]);
-
-  const toggleUrl = (url: string) => {
-    setExpandedUrls((prev) => {
-      const next = new Set(prev);
-      if (next.has(url)) {
-        next.delete(url);
-      } else {
-        next.add(url);
-      }
-      return next;
-    });
-  };
 
   return (
     <ScrollArea className="h-[500px]">

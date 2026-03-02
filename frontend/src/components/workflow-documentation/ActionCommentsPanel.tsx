@@ -9,7 +9,7 @@ import { useActionComments } from "./_hooks/useActionComments";
 import { CommentsPanelHeader } from "./_components/CommentsPanelHeader";
 import { SelectedActionView } from "./_components/SelectedActionView";
 import { AllCommentsView } from "./_components/AllCommentsView";
-import { DeleteConfirmDialog } from "./_components/DeleteConfirmDialog";
+import { DeleteConfirmDialog } from "@/components/common/_components/DeleteConfirmDialog";
 
 export type { ActionCommentsPanelProps } from "./types";
 
@@ -123,8 +123,10 @@ export function ActionCommentsPanel({
 
       <DeleteConfirmDialog
         open={deleteConfirmId !== null}
-        onOpenChange={dismissDelete}
+        onOpenChange={() => dismissDelete()}
         onConfirm={confirmDelete}
+        title="Delete Comment"
+        description="Are you sure you want to delete this comment? This action cannot be undone."
       />
     </div>
   );

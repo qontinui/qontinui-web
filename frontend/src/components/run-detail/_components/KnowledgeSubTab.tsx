@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useExpandableSet } from "@/hooks/useExpandableSet";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -25,9 +26,8 @@ import {
 
 export function KnowledgeSubTab({ runId }: { runId: string }) {
   const { data, isLoading, error } = useTaskRunKnowledge(runId);
-  const [expandedFindings, setExpandedFindings] = useState<Set<number>>(
-    new Set()
-  );
+  const { expanded: expandedFindings, toggle: toggleFinding } =
+    useExpandableSet<number>();
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
 
   if (isLoading) {
@@ -56,18 +56,6 @@ export function KnowledgeSubTab({ runId }: { runId: string }) {
       </div>
     );
   }
-
-  const toggleFinding = (index: number) => {
-    setExpandedFindings((prev) => {
-      const next = new Set(prev);
-      if (next.has(index)) {
-        next.delete(index);
-      } else {
-        next.add(index);
-      }
-      return next;
-    });
-  };
 
   // Group findings by severity
   const findingsBySeverity = data.findings.reduce(

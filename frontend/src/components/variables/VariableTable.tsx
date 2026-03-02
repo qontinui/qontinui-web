@@ -8,6 +8,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import { useExpandableSet } from "@/hooks/useExpandableSet";
 import {
   Table,
   TableBody,
@@ -62,7 +63,8 @@ export function VariableTable({
 }: VariableTableProps) {
   const [sortField, setSortField] = useState<SortField>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const { expanded: expandedRows, toggle: toggleRowExpansion } =
+    useExpandableSet();
 
   // Handle sorting
   const handleSort = (field: SortField) => {
@@ -115,17 +117,6 @@ export function VariableTable({
     } else {
       onSelectionChange(selectedVariables.filter((n) => n !== name));
     }
-  };
-
-  // Toggle row expansion
-  const toggleRowExpansion = (name: string) => {
-    const newExpanded = new Set(expandedRows);
-    if (newExpanded.has(name)) {
-      newExpanded.delete(name);
-    } else {
-      newExpanded.add(name);
-    }
-    setExpandedRows(newExpanded);
   };
 
   // Render sort icon

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useExpandableSet } from "@/hooks/useExpandableSet";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -13,19 +13,7 @@ import {
 import type { UIBridgeRenderLog } from "@/hooks/useUIBridgeExploration";
 
 export function RenderLogsList({ logs }: { logs: UIBridgeRenderLog[] }) {
-  const [expandedLogs, setExpandedLogs] = useState<Set<string>>(new Set());
-
-  const toggleLog = (id: string) => {
-    setExpandedLogs((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
+  const { expanded: expandedLogs, toggle: toggleLog } = useExpandableSet();
 
   return (
     <ScrollArea className="h-[400px]">

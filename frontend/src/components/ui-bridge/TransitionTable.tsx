@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useExpandableSet } from "@/hooks/useExpandableSet";
 import {
   ArrowRight,
   Check,
@@ -60,7 +61,7 @@ export function TransitionTable({
   rejectedIds = new Set(),
 }: TransitionTableProps) {
   const [search, setSearch] = useState("");
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const { expanded: expandedRows, toggle: toggleRow } = useExpandableSet();
 
   const filteredTransitions = useMemo(() => {
     if (!search) return transitions;
@@ -75,18 +76,6 @@ export function TransitionTable({
         t.triggerAction.toLowerCase().includes(searchLower)
     );
   }, [transitions, search]);
-
-  const toggleRow = (id: string) => {
-    setExpandedRows((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
 
   return (
     <div className="space-y-4">

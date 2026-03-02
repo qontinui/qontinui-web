@@ -14,8 +14,8 @@
  * - Visual connection lines for nesting
  */
 
-import { useState } from "react";
 import type { Workflow, Action } from "@/lib/action-schema/action-types";
+import { useExpandableSet } from "@/hooks/useExpandableSet";
 import { ActionItem } from "./_components/ActionItem";
 import { AddActionButton } from "./_components/AddActionButton";
 import { useSequentialListDragDrop } from "./_hooks/useSequentialListDragDrop";
@@ -50,9 +50,8 @@ export function SequentialListView({
   selectedActionId,
   editable = true,
 }: SequentialListViewProps) {
-  const [expandedActions, setExpandedActions] = useState<Set<string>>(
-    new Set()
-  );
+  const { expanded: expandedActions, toggle: handleToggleExpand } =
+    useExpandableSet();
 
   const {
     draggedIndex,
@@ -65,18 +64,6 @@ export function SequentialListView({
 
   // Build action tree (flatten nested structures)
   const actionTree = buildActionTree(workflow.actions, expandedActions);
-
-  const handleToggleExpand = (actionId: string) => {
-    setExpandedActions((prev) => {
-      const next = new Set(prev);
-      if (next.has(actionId)) {
-        next.delete(actionId);
-      } else {
-        next.add(actionId);
-      }
-      return next;
-    });
-  };
 
   return (
     <div className="sequential-list-view">

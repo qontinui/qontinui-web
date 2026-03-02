@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useExpandableSet } from "@/hooks/useExpandableSet";
 import {
   Card,
   CardContent,
@@ -28,17 +28,7 @@ interface TimelineTabProps {
 }
 
 export function TimelineTab({ transitions, onImageSelect }: TimelineTabProps) {
-  const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set());
-
-  const toggleStep = (stepId: string) => {
-    const newExpanded = new Set(expandedSteps);
-    if (newExpanded.has(stepId)) {
-      newExpanded.delete(stepId);
-    } else {
-      newExpanded.add(stepId);
-    }
-    setExpandedSteps(newExpanded);
-  };
+  const { expanded: expandedSteps, toggle: toggleStep } = useExpandableSet();
 
   return (
     <Card className="bg-muted border-border">

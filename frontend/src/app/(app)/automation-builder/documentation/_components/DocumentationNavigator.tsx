@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
+import { useExpandableSet } from "@/hooks/useExpandableSet";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -41,21 +42,9 @@ export function DocumentationNavigator({
   filter,
   onFilterChange,
 }: DocumentationNavigatorProps) {
-  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(
-    new Set(["workflows"])
-  );
-
-  const toggleNode = (nodeId: string) => {
-    setExpandedNodes((prev) => {
-      const next = new Set(prev);
-      if (next.has(nodeId)) {
-        next.delete(nodeId);
-      } else {
-        next.add(nodeId);
-      }
-      return next;
-    });
-  };
+  const { expanded: expandedNodes, toggle: toggleNode } = useExpandableSet([
+    "workflows",
+  ]);
 
   const renderNode = (
     node: DocumentationNode,

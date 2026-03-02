@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useExpandableSet } from "@/hooks/useExpandableSet";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,21 +26,8 @@ export function TransitionTimeline({
   currentTransitionId,
   autoScroll = true,
 }: TransitionTimelineProps) {
-  const [expandedTransitions, setExpandedTransitions] = useState<Set<string>>(
-    new Set()
-  );
-
-  const toggleExpanded = (transitionId: string) => {
-    setExpandedTransitions((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(transitionId)) {
-        newSet.delete(transitionId);
-      } else {
-        newSet.add(transitionId);
-      }
-      return newSet;
-    });
-  };
+  const { expanded: expandedTransitions, toggle: toggleExpanded } =
+    useExpandableSet();
 
   const getStatusIcon = (status: TransitionUpdate["status"]) => {
     switch (status) {

@@ -8,7 +8,7 @@ import {
   type StageData,
 } from "../_types/timeline-types";
 import { formatDuration } from "../_utils/timeline-utils";
-import { StatusIcon } from "./StatusIcon";
+import { StatusIcon } from "@/components/common/_components/StatusIcon";
 import { StepItem } from "./StepItem";
 
 export function StageSection({ stage }: { stage: StageData }) {

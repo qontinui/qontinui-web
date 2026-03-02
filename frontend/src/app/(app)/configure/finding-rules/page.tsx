@@ -16,9 +16,9 @@ import {
   PageHeader,
   CreateCategoryForm,
   CategoryList,
-  DeleteDialog,
   ResetDialog,
 } from "./_components";
+import { DeleteConfirmDialog } from "@/components/common/_components/DeleteConfirmDialog";
 import { slugify } from "./finding-rules-utils";
 
 // ─── Main component ─────────────────────────────────────────────────────────
@@ -298,13 +298,15 @@ export default function FindingRulesPage() {
       </main>
 
       {/* Delete Confirmation Dialog */}
-      <DeleteDialog
+      <DeleteConfirmDialog
         open={deletingId !== null}
         isDeleting={isDeleting}
         onOpenChange={(open) => {
           if (!open) setDeletingId(null);
         }}
         onConfirm={handleDelete}
+        title="Delete Category"
+        description="Are you sure you want to delete this custom category? This action cannot be undone."
       />
 
       {/* Reset Confirmation Dialog */}

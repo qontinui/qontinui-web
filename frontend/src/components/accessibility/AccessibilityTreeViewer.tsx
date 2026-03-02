@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useState, useCallback, useMemo } from "react";
+import { useExpandableSet } from "@/hooks/useExpandableSet";
 import {
   RefreshCw,
   Filter,
@@ -48,42 +49,29 @@ export function AccessibilityTreeViewer({
 }: AccessibilityTreeViewerProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [interactiveOnly, setInteractiveOnly] = useState(true);
-  const [expandedRefs, setExpandedRefs] = useState<Set<string>>(new Set());
+  const {
+    expanded: expandedRefs,
+    toggle: handleToggleExpand,
+    expandAll,
+    collapseAll: handleCollapseAll,
+  } = useExpandableSet();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [roleFilter, setRoleFilter] = useState<AccessibilityRole | null>(null);
-
-  // Toggle node expansion
-  const handleToggleExpand = useCallback((ref: string) => {
-    setExpandedRefs((prev) => {
-      const next = new Set(prev);
-      if (next.has(ref)) {
-        next.delete(ref);
-      } else {
-        next.add(ref);
-      }
-      return next;
-    });
-  }, []);
 
   // Expand all nodes
   const handleExpandAll = useCallback(() => {
     if (!snapshot?.root) return;
 
-    const allRefs = new Set<string>();
+    const allRefs: string[] = [];
     const collectRefs = (node: AccessibilityNode) => {
       if (node.children && node.children.length > 0) {
-        allRefs.add(node.ref);
+        allRefs.push(node.ref);
         node.children.forEach(collectRefs);
       }
     };
     collectRefs(snapshot.root);
-    setExpandedRefs(allRefs);
-  }, [snapshot?.root]);
-
-  // Collapse all nodes
-  const handleCollapseAll = useCallback(() => {
-    setExpandedRefs(new Set());
-  }, []);
+    expandAll(allRefs);
+  }, [snapshot?.root, expandAll]);
 
   // Copy ref to clipboard
   const handleCopyRef = useCallback((ref: string) => {

@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
+import { useExpandableSet } from "@/hooks/useExpandableSet";
 import {
   useTaskRunPlaywright,
   useTaskRunVerificationPhaseResults,
@@ -18,30 +19,11 @@ export function useTestResults(runId: string) {
   const { data: verificationData, isLoading: verLoading } =
     useTaskRunVerificationPhaseResults(runId);
 
-  const [expandedTests, setExpandedTests] = useState<Set<string>>(new Set());
-  const [expandedIterations, setExpandedIterations] = useState<Set<number>>(
-    new Set([0])
-  );
+  const { expanded: expandedTests, toggle: toggleTest } = useExpandableSet();
+  const { expanded: expandedIterations, toggle: toggleIteration } =
+    useExpandableSet<number>([0]);
 
   const isLoading = pwLoading && verLoading;
-
-  const toggleTest = (id: string) => {
-    setExpandedTests((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleIteration = (iteration: number) => {
-    setExpandedIterations((prev) => {
-      const next = new Set(prev);
-      if (next.has(iteration)) next.delete(iteration);
-      else next.add(iteration);
-      return next;
-    });
-  };
 
   const playwrightTests: NormalizedTestResult[] = useMemo(() => {
     if (!playwrightData) return [];

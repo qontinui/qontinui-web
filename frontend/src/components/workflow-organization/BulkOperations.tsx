@@ -8,7 +8,7 @@ import { MoveToFolderDialog } from "./_components/MoveToFolderDialog";
 import { AddTagsDialog } from "./_components/AddTagsDialog";
 import { RemoveTagsDialog } from "./_components/RemoveTagsDialog";
 import { ChangeCategoryDialog } from "./_components/ChangeCategoryDialog";
-import { DeleteWorkflowsDialog } from "./_components/DeleteWorkflowsDialog";
+import { DeleteConfirmDialog } from "@/components/common/_components/DeleteConfirmDialog";
 
 export interface BulkOperationsProps {
   selectedWorkflows: Workflow[];
@@ -118,11 +118,13 @@ export function BulkOperations({
         workflowCount={workflowCount}
       />
 
-      <DeleteWorkflowsDialog
+      <DeleteConfirmDialog
         open={bulk.dialogs.showDeleteDialog}
         onOpenChange={bulk.dialogs.setShowDeleteDialog}
         onConfirm={bulk.handleDelete}
-        workflowCount={workflowCount}
+        title="Delete Workflows"
+        count={workflowCount}
+        description={`Are you sure you want to delete ${workflowCount} workflow(s)? This action cannot be undone.`}
       />
     </>
   );

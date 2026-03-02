@@ -4,7 +4,7 @@ import {
   getStepTypeIcon,
   parseStepData,
 } from "../_utils/timeline-utils";
-import { StatusIcon } from "./StatusIcon";
+import { StatusIcon } from "@/components/common/_components/StatusIcon";
 import { InlineProgressBar } from "./InlineProgressBar";
 
 export function StepItem({ step }: { step: Checkpoint }) {

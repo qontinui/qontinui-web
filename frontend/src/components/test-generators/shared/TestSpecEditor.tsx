@@ -7,6 +7,7 @@
  */
 
 import { useState, useMemo, useCallback } from "react";
+import { useExpandableSet } from "@/hooks/useExpandableSet";
 import {
   ChevronDown,
   ChevronRight,
@@ -35,7 +36,7 @@ export function TestSpecEditor({
   additionalActions,
   isGenerating = false,
 }: TestSpecEditorProps) {
-  const [expandedSpecs, setExpandedSpecs] = useState<Set<string>>(new Set());
+  const { expanded: expandedSpecs, toggle: toggleSpec } = useExpandableSet();
   const [categoryFilter, setCategoryFilter] = useState<SpecCategory | "all">(
     "all"
   );
@@ -58,15 +59,6 @@ export function TestSpecEditor({
       ),
     [specs]
   );
-
-  const toggleSpec = useCallback((specId: string) => {
-    setExpandedSpecs((prev) => {
-      const next = new Set(prev);
-      if (next.has(specId)) next.delete(specId);
-      else next.add(specId);
-      return next;
-    });
-  }, []);
 
   const toggleAssertion = useCallback(
     (specId: string, assertionId: string) => {

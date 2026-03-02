@@ -1,8 +1,7 @@
 "use client";
 
 import { DeleteCategoryDialog } from "@/components/delete-category-dialog";
-import { DeleteWorkflowDialog } from "@/components/delete-process-dialog";
-import { BatchDeleteWorkflowsDialog } from "@/components/batch-delete-workflows-dialog";
+import { DeleteConfirmDialog } from "@/components/common/_components/DeleteConfirmDialog";
 import type { Workflow } from "@/lib/action-schema/action-types";
 import type { LibraryItem } from "../types";
 import { getItemName } from "../utils";
@@ -41,6 +40,8 @@ export function DeleteDialogs({
   onCloseBatchDialog,
   onConfirmBatchDelete,
 }: DeleteDialogsProps) {
+  const batchNames = selectedItems.map((item) => getItemName(item));
+
   return (
     <>
       <DeleteCategoryDialog
@@ -53,20 +54,25 @@ export function DeleteDialogs({
         onMoveToMain={onMoveToMain}
       />
 
-      <DeleteWorkflowDialog
+      <DeleteConfirmDialog
         open={deleteItemDialog.open}
-        workflowName={
-          deleteItemDialog.item ? getItemName(deleteItemDialog.item) : ""
-        }
-        onClose={onCloseItemDialog}
+        onOpenChange={() => onCloseItemDialog()}
         onConfirm={onConfirmDelete}
+        title="Delete Workflow"
+        itemNames={
+          deleteItemDialog.item
+            ? [getItemName(deleteItemDialog.item)]
+            : undefined
+        }
       />
 
-      <BatchDeleteWorkflowsDialog
+      <DeleteConfirmDialog
         open={batchDeleteDialog}
-        workflowNames={selectedItems.map((item) => getItemName(item))}
-        onClose={onCloseBatchDialog}
+        onOpenChange={() => onCloseBatchDialog()}
         onConfirm={onConfirmBatchDelete}
+        title={`Delete ${batchNames.length} Workflow${batchNames.length !== 1 ? "s" : ""}`}
+        itemNames={batchNames}
+        count={batchNames.length}
       />
     </>
   );

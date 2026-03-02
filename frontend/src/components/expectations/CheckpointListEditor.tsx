@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { useExpandableSet } from "@/hooks/useExpandableSet";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -35,22 +36,14 @@ export function CheckpointListEditor({
   onChange,
 }: CheckpointListEditorProps) {
   const [newCheckpointName, setNewCheckpointName] = useState("");
-  const [expandedCheckpoints, setExpandedCheckpoints] = useState<Set<string>>(
-    new Set()
-  );
+  const {
+    expanded: expandedCheckpoints,
+    toggle: toggleExpanded,
+    setExpanded: setExpandedCheckpoints,
+  } = useExpandableSet();
 
   const current = checkpoints || {};
   const checkpointNames = Object.keys(current);
-
-  const toggleExpanded = (name: string) => {
-    const newExpanded = new Set(expandedCheckpoints);
-    if (newExpanded.has(name)) {
-      newExpanded.delete(name);
-    } else {
-      newExpanded.add(name);
-    }
-    setExpandedCheckpoints(newExpanded);
-  };
 
   const addCheckpoint = () => {
     if (!newCheckpointName.trim()) return;
@@ -64,9 +57,7 @@ export function CheckpointListEditor({
         retry_interval_ms: 500,
       },
     });
-    setExpandedCheckpoints(
-      new Set([...expandedCheckpoints, newCheckpointName])
-    );
+    setExpandedCheckpoints((prev) => new Set([...prev, newCheckpointName]));
     setNewCheckpointName("");
   };
 
@@ -74,9 +65,11 @@ export function CheckpointListEditor({
     const updated = { ...current };
     delete updated[name];
     onChange(updated);
-    const newExpanded = new Set(expandedCheckpoints);
-    newExpanded.delete(name);
-    setExpandedCheckpoints(newExpanded);
+    setExpandedCheckpoints((prev) => {
+      const next = new Set(prev);
+      next.delete(name);
+      return next;
+    });
   };
 
   const updateCheckpoint = (

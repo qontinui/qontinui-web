@@ -22,7 +22,7 @@ import {
 import { toast } from "sonner";
 import { useAutomation } from "@/contexts/automation-context";
 import { DeleteCategoryDialog } from "@/components/delete-category-dialog";
-import { DeleteWorkflowDialog } from "@/components/delete-process-dialog";
+import { DeleteConfirmDialog } from "@/components/common/_components/DeleteConfirmDialog";
 
 interface Process {
   id: string;
@@ -441,10 +441,9 @@ export function ProcessList({
           onMoveToMain={handleMoveToMain}
         />
 
-        <DeleteWorkflowDialog
+        <DeleteConfirmDialog
           open={deleteWorkflowDialog.open}
-          workflowName={deleteWorkflowDialog.processName}
-          onClose={() =>
+          onOpenChange={() =>
             setDeleteWorkflowDialog({
               open: false,
               processId: "",
@@ -452,6 +451,12 @@ export function ProcessList({
             })
           }
           onConfirm={handleConfirmDelete}
+          title="Delete Workflow"
+          itemNames={
+            deleteWorkflowDialog.processName
+              ? [deleteWorkflowDialog.processName]
+              : undefined
+          }
         />
       </div>
     </TooltipProvider>
