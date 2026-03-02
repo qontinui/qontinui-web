@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
+import { createLogger } from "@/lib/logger";
 import { useProjectLoader } from "@/hooks/use-project-loader";
 import {
   useExtractions,
@@ -44,6 +45,8 @@ type ResultsSubTab =
 const DEFAULT_VIEWPORT: [number, number] = [1920, 1080];
 
 export type { MainTab, ConfigSubTab, ResultsSubTab };
+
+const logger = createLogger("WebExtraction");
 
 export function useWebExtractionState() {
   const { projectId } = useProjectLoader();
@@ -101,18 +104,21 @@ export function useWebExtractionState() {
 
   useEffect(() => {
     const logHeights = () => {
-      console.log("--- WebExtraction Layout Debug REFACTORED ---");
-      console.log("Window height:", window.innerHeight);
-      console.log("Root content height:", rootRef.current?.clientHeight);
-      console.log("Main container height:", containerRef.current?.clientHeight);
-      console.log("Tabs height:", tabsRef.current?.clientHeight);
-      console.log("Content height:", contentRef.current?.clientHeight);
+      logger.debug("Layout Debug REFACTORED", {
+        windowHeight: window.innerHeight,
+        rootContentHeight: rootRef.current?.clientHeight,
+        mainContainerHeight: containerRef.current?.clientHeight,
+        tabsHeight: tabsRef.current?.clientHeight,
+        contentHeight: contentRef.current?.clientHeight,
+      });
 
       if (contentRef.current) {
         const style = window.getComputedStyle(contentRef.current);
-        console.log("Content computed height:", style.height);
-        console.log("Content overflow:", style.overflow);
-        console.log("Content display:", style.display);
+        logger.debug("Content computed styles:", {
+          height: style.height,
+          overflow: style.overflow,
+          display: style.display,
+        });
       }
     };
 
@@ -188,9 +194,9 @@ export function useWebExtractionState() {
       if (detail.status === "completed") {
         const annots = await extractionService.getAnnotations(extractionId);
         // Debug: log annotation screenshot_ids
-        console.log("[WebExtractionTab] annotations loaded:", annots.length);
-        console.log(
-          "[WebExtractionTab] annotation screenshot_ids:",
+        logger.debug("annotations loaded:", annots.length);
+        logger.debug(
+          "annotation screenshot_ids:",
           annots.map((a) => a.screenshot_id)
         );
         setAnnotations(annots);
@@ -198,7 +204,7 @@ export function useWebExtractionState() {
         setTransitions(detail.transitions || []);
       }
     } catch (error) {
-      console.error("Failed to load extraction detail:", error);
+      logger.error("Failed to load extraction detail:", error);
       if (!silent) {
         toast.error("Failed to load extraction details");
       }
@@ -237,10 +243,7 @@ export function useWebExtractionState() {
 
       // Now trigger the actual extraction on the runner
       const extractionCfg = config.config ?? {};
-      console.log(
-        "[WebExtractionTab] Starting extraction with config:",
-        extractionCfg
-      );
+      logger.debug("Starting extraction with config:", extractionCfg);
       const authToken = await getAccessToken();
       const runnerResult = await runnerClient.startExtraction({
         urls: config.source_urls,
@@ -255,7 +258,7 @@ export function useWebExtractionState() {
       });
 
       if (!runnerResult.success) {
-        console.error("Runner extraction failed:", runnerResult.error);
+        logger.error("Runner extraction failed:", runnerResult.error);
         toast.error(
           `Failed to start extraction on runner: ${runnerResult.error || "Unknown error"}`
         );
@@ -267,14 +270,14 @@ export function useWebExtractionState() {
               runnerResult.error || "Failed to start extraction on runner",
           });
         } catch (updateError) {
-          console.error("Failed to update extraction status:", updateError);
+          logger.error("Failed to update extraction status:", updateError);
         }
         return;
       }
 
       toast.success("Extraction started successfully");
     } catch (error) {
-      console.error("Failed to start extraction:", error);
+      logger.error("Failed to start extraction:", error);
       toast.error("Failed to start extraction");
     }
   };
@@ -345,7 +348,7 @@ export function useWebExtractionState() {
         setTransitions([]);
       }
     } catch (error) {
-      console.error("Failed to delete extraction:", error);
+      logger.error("Failed to delete extraction:", error);
       toast.error("Failed to delete extraction");
     }
   };
@@ -371,7 +374,7 @@ export function useWebExtractionState() {
       setAnnotations([]);
       setTransitions([]);
     } catch (error) {
-      console.error("Failed to delete all extractions:", error);
+      logger.error("Failed to delete all extractions:", error);
       toast.error("Failed to delete some extractions");
     } finally {
       setIsDeletingAll(false);
@@ -409,7 +412,7 @@ export function useWebExtractionState() {
       setMainTab("results");
       setResultsSubTab("playwright");
     } catch (error) {
-      console.error("Failed to start Playwright extraction:", error);
+      logger.error("Failed to start Playwright extraction:", error);
       toast.error(
         "Failed to start Playwright extraction. Make sure the runner is running."
       );
@@ -431,7 +434,7 @@ export function useWebExtractionState() {
         `Vision extraction complete: ${results.edge_results.length} edges, ${results.sam3_results.length} segments, ${results.ocr_results.length} text regions`
       );
     } catch (error) {
-      console.error("Vision extraction failed:", error);
+      logger.error("Vision extraction failed:", error);
       toast.error(
         "Vision extraction failed. Re-run the extraction with Desktop Runner for automatic vision processing."
       );

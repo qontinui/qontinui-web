@@ -13,6 +13,7 @@ import { getDefaultConfig } from "@/lib/action-schema/default-configs";
 import type { PermissionLevel } from "@/types/collaboration";
 import type { ProjectValidationResult } from "@/lib/project-validator";
 import { validateProject } from "@/lib/project-validator";
+import { createLogger } from "@/lib/logger";
 import { runnerClient } from "@/lib/runner-client";
 import {
   BuilderMode,
@@ -23,6 +24,8 @@ import {
   useFormatConversion,
 } from "../index";
 import { useProjectSharing } from "./useProjectSharing";
+
+const logger = createLogger("AutomationBuilder");
 
 export function useBuilderState() {
   // Core selection state
@@ -159,7 +162,7 @@ export function useBuilderState() {
 
   const handleUpdateWorkflow = useCallback(
     (workflow: Workflow) => {
-      console.log("[AutomationBuilder] handleUpdateWorkflow called:", {
+      logger.debug("handleUpdateWorkflow called:", {
         id: workflow.id,
         name: workflow.name,
         actionsCount: workflow.actions.length,
@@ -169,7 +172,7 @@ export function useBuilderState() {
       if (selectedItem?.id === workflow.id) {
         setSelectedItem(workflow);
       }
-      console.log("[AutomationBuilder] handleUpdateWorkflow completed");
+      logger.debug("handleUpdateWorkflow completed");
     },
     [updateWorkflow, selectedItem]
   );
@@ -248,24 +251,12 @@ export function useBuilderState() {
   const handleAddNode = useCallback(
     (nodeType: ActionType) => {
       const callId = Date.now();
-      console.log(
-        "[AutomationBuilder] handleAddNode called with:",
-        nodeType,
-        "callId:",
-        callId
-      );
-      console.log(
-        "[AutomationBuilder] selectedItem:",
-        selectedItem?.id,
-        selectedItem?.name
-      );
-      console.log(
-        "[AutomationBuilder] Current actions:",
-        selectedItem?.actions
-      );
+      logger.debug("handleAddNode called with:", nodeType, "callId:", callId);
+      logger.debug("selectedItem:", selectedItem?.id, selectedItem?.name);
+      logger.debug("Current actions:", selectedItem?.actions);
 
       if (!selectedItem) {
-        console.warn("[AutomationBuilder] No selectedItem, cannot add node");
+        logger.warn("No selectedItem, cannot add node");
         return;
       }
 
@@ -276,26 +267,20 @@ export function useBuilderState() {
         position: [100, 100],
       };
 
-      console.log("[AutomationBuilder] Created new action:", newAction);
+      logger.debug("Created new action:", newAction);
 
       const updatedWorkflow = {
         ...selectedItem,
         actions: [...selectedItem.actions, newAction],
       };
 
-      console.log(
-        "[AutomationBuilder] Updated workflow actions count:",
+      logger.debug(
+        "Updated workflow actions count:",
         updatedWorkflow.actions.length
       );
-      console.log(
-        "[AutomationBuilder] Calling handleUpdateWorkflow with callId:",
-        callId
-      );
+      logger.debug("Calling handleUpdateWorkflow with callId:", callId);
       handleUpdateWorkflow(updatedWorkflow);
-      console.log(
-        "[AutomationBuilder] handleUpdateWorkflow completed for callId:",
-        callId
-      );
+      logger.debug("handleUpdateWorkflow completed for callId:", callId);
     },
     [selectedItem, handleUpdateWorkflow]
   );

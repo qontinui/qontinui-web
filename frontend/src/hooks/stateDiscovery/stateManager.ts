@@ -3,7 +3,10 @@
  * Single Responsibility: Manage local state for state images and discovered states
  */
 
+import { createLogger } from "@/lib/logger";
 import { StateImage, DiscoveredState } from "@/types/stateDiscovery";
+
+const logger = createLogger("StateManager");
 
 export class StateDiscoveryStateManager {
   private stateImages: StateImage[] = [];
@@ -11,7 +14,7 @@ export class StateDiscoveryStateManager {
   private listeners: Set<(type: string, data: unknown) => void> = new Set();
 
   constructor() {
-    console.log("[StateManager] Initialized");
+    logger.debug("Initialized");
   }
 
   // Subscribe to state changes
@@ -30,19 +33,19 @@ export class StateDiscoveryStateManager {
   }
 
   setStateImages(stateImages: StateImage[]): void {
-    console.log("[StateManager] Setting state images:", stateImages.length);
+    logger.debug("Setting state images:", stateImages.length);
     this.stateImages = stateImages;
     this.notify("stateImages", this.stateImages);
   }
 
   addStateImage(stateImage: StateImage): void {
-    console.log("[StateManager] Adding state image:", stateImage.id);
+    logger.debug("Adding state image:", stateImage.id);
     this.stateImages.push(stateImage);
     this.notify("stateImages", this.stateImages);
   }
 
   updateStateImage(stateImageId: string, updates: Partial<StateImage>): void {
-    console.log("[StateManager] Updating state image:", {
+    logger.debug("Updating state image:", {
       id: stateImageId,
       updates,
     });
@@ -54,12 +57,12 @@ export class StateDiscoveryStateManager {
   }
 
   removeStateImage(stateImageId: string): void {
-    console.log("[StateManager] Removing state image:", stateImageId);
+    logger.debug("Removing state image:", stateImageId);
 
     const before = this.stateImages.length;
     this.stateImages = this.stateImages.filter((si) => si.id !== stateImageId);
 
-    console.log("[StateManager] State images after removal:", {
+    logger.debug("State images after removal:", {
       before,
       after: this.stateImages.length,
     });
@@ -71,14 +74,14 @@ export class StateDiscoveryStateManager {
   }
 
   bulkRemoveStateImages(ids: string[]): void {
-    console.log("[StateManager] Bulk removing state images:", ids.length);
+    logger.debug("Bulk removing state images:", ids.length);
 
     const idsSet = new Set(ids);
     const before = this.stateImages.length;
 
     this.stateImages = this.stateImages.filter((si) => !idsSet.has(si.id));
 
-    console.log("[StateManager] State images after bulk removal:", {
+    logger.debug("State images after bulk removal:", {
       before,
       after: this.stateImages.length,
       removed: before - this.stateImages.length,
@@ -96,7 +99,7 @@ export class StateDiscoveryStateManager {
   }
 
   setStates(states: DiscoveredState[]): void {
-    console.log("[StateManager] Setting states:", states.length);
+    logger.debug("Setting states:", states.length);
     this.states = states;
     this.notify("states", this.states);
   }
@@ -113,7 +116,7 @@ export class StateDiscoveryStateManager {
 
     const after = this.states.length;
     if (before !== after) {
-      console.log("[StateManager] States after state image removal:", {
+      logger.debug("States after state image removal:", {
         before,
         after,
         removedStates: before - after,
@@ -124,7 +127,7 @@ export class StateDiscoveryStateManager {
 
   // Clear all state
   clear(): void {
-    console.log("[StateManager] Clearing all state");
+    logger.debug("Clearing all state");
     this.stateImages = [];
     this.states = [];
     this.notify("clear", null);

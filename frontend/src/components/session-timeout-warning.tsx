@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { createLogger } from "@/lib/logger";
 import {
   Dialog,
   DialogContent,
@@ -13,6 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Clock, LogOut } from "lucide-react";
 import { authService } from "@/services/service-factory";
 
+const logger = createLogger("SessionTimeoutWarning");
+
 export function SessionTimeoutWarning() {
   const [showWarning, setShowWarning] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState(180); // 3 minutes in seconds
@@ -22,7 +25,7 @@ export function SessionTimeoutWarning() {
   useEffect(() => {
     const handleSessionExpiring = (event: CustomEvent) => {
       const minutes = event.detail?.minutesRemaining || 3;
-      console.log("[SessionTimeoutWarning] Session expiring event received:", {
+      logger.debug("Session expiring event received:", {
         timestamp: new Date().toISOString(),
         minutesRemaining: minutes,
         secondsRemaining: minutes * 60,
@@ -31,21 +34,17 @@ export function SessionTimeoutWarning() {
       setTimeRemaining(minutes * 60);
       setIsLoggedOut(false); // Reset logged out state when showing new warning
       setShowWarning(true);
-      console.log("[SessionTimeoutWarning] Warning dialog displayed");
+      logger.debug("Warning dialog displayed");
     };
 
-    console.log(
-      "[SessionTimeoutWarning] Registering session-expiring event listener"
-    );
+    logger.debug("Registering session-expiring event listener");
     window.addEventListener(
       "session-expiring",
       handleSessionExpiring as EventListener
     );
 
     return () => {
-      console.log(
-        "[SessionTimeoutWarning] Removing session-expiring event listener"
-      );
+      logger.debug("Removing session-expiring event listener");
       window.removeEventListener(
         "session-expiring",
         handleSessionExpiring as EventListener
@@ -72,30 +71,24 @@ export function SessionTimeoutWarning() {
   }, [showWarning, timeRemaining, isLoggedOut]);
 
   const handleExtendSession = async () => {
-    console.log('[SessionTimeoutWarning] User clicked "Continue Working"');
+    logger.debug('User clicked "Continue Working"');
     setIsRefreshing(true);
     try {
-      console.log(
-        "[SessionTimeoutWarning] Attempting to refresh access token..."
-      );
+      logger.debug("Attempting to refresh access token...");
       const refreshed = await authService.refreshAccessToken();
-      console.log("[SessionTimeoutWarning] Token refresh result:", refreshed);
+      logger.debug("Token refresh result:", refreshed);
 
       if (refreshed) {
-        console.log(
-          "[SessionTimeoutWarning] Session extended successfully, hiding warning dialog"
-        );
+        logger.debug("Session extended successfully, hiding warning dialog");
         setShowWarning(false);
         setTimeRemaining(180);
         setIsLoggedOut(false);
       } else {
-        console.error(
-          "[SessionTimeoutWarning] Token refresh returned false - user is logged out"
-        );
+        logger.error("Token refresh returned false - user is logged out");
         setIsLoggedOut(true);
       }
     } catch (error) {
-      console.error("[SessionTimeoutWarning] Failed to extend session:", error);
+      logger.error("Failed to extend session:", error);
       setIsLoggedOut(true);
     } finally {
       setIsRefreshing(false);
@@ -103,9 +96,9 @@ export function SessionTimeoutWarning() {
   };
 
   const handleLogout = async () => {
-    console.log('[SessionTimeoutWarning] User clicked "Logout"');
+    logger.debug('User clicked "Logout"');
     await authService.logout();
-    console.log("[SessionTimeoutWarning] Redirecting to landing page");
+    logger.debug("Redirecting to landing page");
     window.location.href = "/";
   };
 

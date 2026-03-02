@@ -4,6 +4,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import { createLogger } from "@/lib/logger";
 import {
   StateImage,
   DiscoveredState,
@@ -13,6 +14,8 @@ import {
 import { StateDiscoveryAPIClient } from "./stateDiscovery/apiClient";
 import { StateDiscoveryWebSocketManager } from "./stateDiscovery/websocketManager";
 import { StateDiscoveryStateManager } from "./stateDiscovery/stateManager";
+
+const logger = createLogger("useStateDiscovery");
 
 // Use the main backend URL for State Discovery endpoints
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -39,7 +42,7 @@ export function useStateDiscovery() {
 
   // Initialize modules
   useEffect(() => {
-    console.log("[useStateDiscovery] Initializing modules");
+    logger.debug("Initializing modules");
 
     // Create module instances
     apiClientRef.current = new StateDiscoveryAPIClient(API_BASE_URL, API_PATH);
@@ -48,7 +51,7 @@ export function useStateDiscovery() {
 
     // Subscribe to state manager changes
     const unsubscribe = stateManagerRef.current.subscribe((type, data) => {
-      console.log("[useStateDiscovery] State change:", type);
+      logger.debug("State change:", type);
 
       switch (type) {
         case "stateImages":
@@ -66,7 +69,7 @@ export function useStateDiscovery() {
 
     // Cleanup
     return () => {
-      console.log("[useStateDiscovery] Cleaning up");
+      logger.debug("Cleaning up");
       unsubscribe();
       wsManagerRef.current?.disconnect();
     };
@@ -74,7 +77,7 @@ export function useStateDiscovery() {
 
   // Upload screenshots
   const uploadScreenshots = useCallback(async (files: File[]) => {
-    console.log("[useStateDiscovery] Uploading screenshots:", files.length);
+    logger.debug("Uploading screenshots:", files.length);
     setError(null);
     setIsLoading(true);
 
@@ -86,11 +89,11 @@ export function useStateDiscovery() {
       const data = await apiClientRef.current.uploadScreenshots(files);
       const typedData = data as { upload_id: string };
       setUploadId(typedData.upload_id);
-      console.log("[useStateDiscovery] Upload complete:", typedData.upload_id);
+      logger.debug("Upload complete:", typedData.upload_id);
       return data;
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Upload failed";
-      console.error("[useStateDiscovery] Upload failed:", errorMsg);
+      logger.error("Upload failed:", errorMsg);
       setError(errorMsg);
       throw err;
     } finally {
@@ -105,7 +108,7 @@ export function useStateDiscovery() {
       onProgress?: (progress: unknown) => void,
       onComplete?: () => void
     ) => {
-      console.log("[useStateDiscovery] Starting analysis:", {
+      logger.debug("Starting analysis:", {
         uploadId,
         config,
         timestamp: new Date().toISOString(),
@@ -137,7 +140,7 @@ export function useStateDiscovery() {
 
         // Connect WebSocket for progress updates
         if (typedData.websocket_url) {
-          console.log("[useStateDiscovery] Setting up WebSocket connection");
+          logger.debug("Setting up WebSocket connection");
 
           wsManagerRef.current.connect(
             typedData.analysis_id,
@@ -145,14 +148,11 @@ export function useStateDiscovery() {
             API_PATH,
             {
               onProgress: (progress) => {
-                console.log("[useStateDiscovery] Progress:", progress);
+                logger.debug("Progress:", progress);
                 if (onProgress) onProgress(progress);
               },
               onStateImageFound: (stateImage) => {
-                console.log(
-                  "[useStateDiscovery] State image found:",
-                  stateImage
-                );
+                logger.debug("State image found:", stateImage);
                 stateManagerRef.current?.addStateImage(
                   stateImage as StateImage
                 );
@@ -162,7 +162,7 @@ export function useStateDiscovery() {
                   states?: DiscoveredState[];
                   state_images?: StateImage[];
                 };
-                console.log("[useStateDiscovery] Analysis complete:", {
+                logger.debug("Analysis complete:", {
                   states: typedCompleteData.states?.length || 0,
                   stateImages: typedCompleteData.state_images?.length || 0,
                 });
@@ -182,7 +182,7 @@ export function useStateDiscovery() {
                 if (onComplete) onComplete();
               },
               onError: (errorMsg) => {
-                console.error("[useStateDiscovery] WebSocket error:", errorMsg);
+                logger.error("WebSocket error:", errorMsg);
                 setError(errorMsg);
                 setIsLoading(false);
               },
@@ -193,7 +193,7 @@ export function useStateDiscovery() {
         return data;
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : "Analysis failed";
-        console.error("[useStateDiscovery] Analysis failed:", errorMsg);
+        logger.error("Analysis failed:", errorMsg);
         setError(errorMsg);
         setIsLoading(false);
         throw err;
@@ -205,7 +205,7 @@ export function useStateDiscovery() {
   // Get deletion impact
   const getDeleteImpact = useCallback(
     async (stateImageId: string): Promise<DeletionImpact> => {
-      console.log("[useStateDiscovery] Getting deletion impact:", stateImageId);
+      logger.debug("Getting deletion impact:", stateImageId);
 
       if (!apiClientRef.current) {
         throw new Error("API client not initialized");
@@ -222,7 +222,7 @@ export function useStateDiscovery() {
       stateImageId: string,
       options?: { cascade?: boolean; force?: boolean }
     ) => {
-      console.log("[useStateDiscovery] Deleting state image:", stateImageId);
+      logger.debug("Deleting state image:", stateImageId);
 
       if (!apiClientRef.current || !stateManagerRef.current) {
         throw new Error("Modules not initialized");
@@ -242,10 +242,7 @@ export function useStateDiscovery() {
   // Bulk delete StateImages
   const bulkDeleteStateImages = useCallback(
     async (ids: string[], options?: unknown) => {
-      console.log(
-        "[useStateDiscovery] Bulk deleting state images:",
-        ids.length
-      );
+      logger.debug("Bulk deleting state images:", ids.length);
 
       if (!apiClientRef.current || !stateManagerRef.current) {
         throw new Error("Modules not initialized");
@@ -269,7 +266,7 @@ export function useStateDiscovery() {
   // Update StateImage
   const updateStateImage = useCallback(
     async (stateImageId: string, updates: Partial<StateImage>) => {
-      console.log("[useStateDiscovery] Updating state image:", stateImageId);
+      logger.debug("Updating state image:", stateImageId);
 
       if (!apiClientRef.current || !stateManagerRef.current) {
         throw new Error("Modules not initialized");
@@ -293,10 +290,7 @@ export function useStateDiscovery() {
       targetName: string,
       strategy: string = "union"
     ) => {
-      console.log(
-        "[useStateDiscovery] Merging state images:",
-        sourceIds.length
-      );
+      logger.debug("Merging state images:", sourceIds.length);
 
       if (!apiClientRef.current) {
         throw new Error("API client not initialized");
@@ -314,7 +308,7 @@ export function useStateDiscovery() {
   // Save state structure
   const saveStructure = useCallback(
     async (name: string, description?: string) => {
-      console.log("[useStateDiscovery] Saving structure:", name);
+      logger.debug("Saving structure:", name);
 
       if (!analysisId) {
         throw new Error("No analysis to save");
@@ -332,7 +326,7 @@ export function useStateDiscovery() {
   // Export state structure
   const exportStructure = useCallback(
     async (structureId: string, format: string = "json") => {
-      console.log("[useStateDiscovery] Exporting structure:", structureId);
+      logger.debug("Exporting structure:", structureId);
 
       if (!apiClientRef.current) {
         throw new Error("API client not initialized");
@@ -345,7 +339,7 @@ export function useStateDiscovery() {
 
   // Cleanup on unmount
   const cleanup = useCallback(() => {
-    console.log("[useStateDiscovery] Manual cleanup");
+    logger.debug("Manual cleanup");
     wsManagerRef.current?.disconnect();
     stateManagerRef.current?.clear();
   }, []);

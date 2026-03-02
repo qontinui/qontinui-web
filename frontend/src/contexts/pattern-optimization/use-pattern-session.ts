@@ -1,10 +1,13 @@
 import { useState, useCallback, useEffect } from "react";
 import { patternOptimizationStorage } from "@/lib/pattern-optimization-storage";
+import { createLogger } from "@/lib/logger";
 import type {
   Screenshot,
   Region,
   PatternSession,
 } from "@/types/pattern-optimization";
+
+const logger = createLogger("PatternSession");
 
 const STORAGE_KEY = "pattern-optimization-session";
 
@@ -25,7 +28,7 @@ export function usePatternSession() {
         });
         setSession(parsed);
       } catch (error) {
-        console.error("Failed to parse stored session:", error);
+        logger.error("Failed to parse stored session:", error);
       }
     }
   }, []);
@@ -36,7 +39,7 @@ export function usePatternSession() {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
       } catch (error) {
-        console.error("Failed to save session:", error);
+        logger.error("Failed to save session:", error);
       }
     } else {
       localStorage.removeItem(STORAGE_KEY);
@@ -52,7 +55,7 @@ export function usePatternSession() {
       updatedAt: new Date(),
     };
     setSession(newSession);
-    console.log("[PatternOptimization] Created new session:", newSession.id);
+    logger.debug("Created new session:", newSession.id);
   }, []);
 
   const clearSession = useCallback(async () => {
@@ -62,17 +65,17 @@ export function usePatternSession() {
         try {
           await patternOptimizationStorage.deleteImage(screenshot.id);
         } catch (error) {
-          console.error("Failed to delete image:", error);
+          logger.error("Failed to delete image:", error);
         }
       }
     }
     setSession(null);
-    console.log("[PatternOptimization] Cleared session");
+    logger.debug("Cleared session");
   }, [session]);
 
   const addScreenshots = useCallback(
     async (files: File[]) => {
-      console.log("[PatternOptimization] Adding screenshots:", files.length);
+      logger.debug("Adding screenshots:", files.length);
 
       // Create session if it doesn't exist
       let currentSession = session;
@@ -117,10 +120,7 @@ export function usePatternSession() {
       };
 
       setSession(updatedSession);
-      console.log(
-        "[PatternOptimization] Added screenshots:",
-        newScreenshots.length
-      );
+      logger.debug("Added screenshots:", newScreenshots.length);
     },
     [session]
   );
@@ -130,7 +130,9 @@ export function usePatternSession() {
       if (!prev) return prev;
 
       // Delete from IndexedDB
-      patternOptimizationStorage.deleteImage(id).catch(console.error);
+      patternOptimizationStorage
+        .deleteImage(id)
+        .catch((err) => logger.error("Failed to delete image:", err));
 
       return {
         ...prev,
@@ -138,7 +140,7 @@ export function usePatternSession() {
         updatedAt: new Date(),
       };
     });
-    console.log("[PatternOptimization] Removed screenshot:", id);
+    logger.debug("Removed screenshot:", id);
   }, []);
 
   const setScreenshotRegion = useCallback((id: string, region: Region) => {
@@ -153,7 +155,7 @@ export function usePatternSession() {
         updatedAt: new Date(),
       };
     });
-    console.log("[PatternOptimization] Set region for screenshot:", id, region);
+    logger.debug("Set region for screenshot:", id, region);
   }, []);
 
   const setAllScreenshotRegions = useCallback((region: Region) => {
@@ -166,10 +168,7 @@ export function usePatternSession() {
         updatedAt: new Date(),
       };
     });
-    console.log(
-      "[PatternOptimization] Set region for all screenshots:",
-      region
-    );
+    logger.debug("Set region for all screenshots:", region);
   }, []);
 
   const copyRegionToAll = useCallback((sourceId: string) => {
@@ -188,7 +187,7 @@ export function usePatternSession() {
         updatedAt: new Date(),
       };
     });
-    console.log("[PatternOptimization] Copied region from:", sourceId);
+    logger.debug("Copied region from:", sourceId);
   }, []);
 
   const clearAllRegions = useCallback(() => {
@@ -204,7 +203,7 @@ export function usePatternSession() {
         updatedAt: new Date(),
       };
     });
-    console.log("[PatternOptimization] Cleared all regions");
+    logger.debug("Cleared all regions");
   }, []);
 
   return {

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { createLogger } from "@/lib/logger";
 import {
   PatternOptimizationProvider,
   usePatternOptimization,
@@ -26,6 +27,8 @@ import { useStateImageCreation } from "./_hooks/useStateImageCreation";
  * Pattern Optimization Component - Simplified
  * Single Responsibility: UI for pattern extraction from screenshots
  */
+const logger = createLogger("PatternOptimization");
+
 const PatternOptimizationContent: React.FC = () => {
   const {
     session,
@@ -122,18 +125,16 @@ const PatternOptimizationContent: React.FC = () => {
   const canExtract = hasRequirements && !isExtracting;
 
   const handleExtract = async () => {
-    console.log("[PatternOptimization] Extract clicked");
-    console.log("[PatternOptimization] Session:", session);
-    console.log(
-      "[PatternOptimization] Screenshots with regions:",
+    logger.debug("Extract clicked");
+    logger.debug("Session:", session);
+    logger.debug(
+      "Screenshots with regions:",
       session?.screenshots.filter((s) => s.region)
     );
-    console.log("[PatternOptimization] Can extract?", canExtract);
+    logger.debug("Can extract?", canExtract);
 
     if (!canExtract) {
-      console.log(
-        "[PatternOptimization] Cannot extract - missing requirements"
-      );
+      logger.debug("Cannot extract - missing requirements");
       return;
     }
 
@@ -144,34 +145,31 @@ const PatternOptimizationContent: React.FC = () => {
       };
       await extractPattern(fullConfig);
     } catch (error) {
-      console.error("Pattern extraction failed:", error);
+      logger.error("Pattern extraction failed:", error);
     }
   };
 
   const handleRegionChange = (region: Region) => {
-    console.log("[PatternOptimization] Region changed:", region);
+    logger.debug("Region changed:", region);
     setAllScreenshotRegions(region);
 
     setTimeout(() => {
-      console.log("[PatternOptimization] After region update - checking state");
-      console.log(
-        "[PatternOptimization] Session screenshots:",
-        session?.screenshots
-      );
+      logger.debug("After region update - checking state");
+      logger.debug("Session screenshots:", session?.screenshots);
     }, 100);
   };
 
   // Debug logging
   useEffect(() => {
     if (session) {
-      console.log("[PatternOptimization] Session updated, checking regions:");
+      logger.debug("Session updated, checking regions:");
       session.screenshots.forEach((s) => {
-        console.log(
+        logger.debug(
           `  - ${s.id}: ${s.region ? "has region" : "no region"}`,
           s.region
         );
       });
-      console.log("[PatternOptimization] Can extract?", canExtract);
+      logger.debug("Can extract?", canExtract);
     }
   }, [session, canExtract]);
 

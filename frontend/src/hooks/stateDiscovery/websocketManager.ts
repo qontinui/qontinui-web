@@ -3,6 +3,10 @@
  * Single Responsibility: Manage WebSocket connections and message handling
  */
 
+import { createLogger } from "@/lib/logger";
+
+const logger = createLogger("WebSocketManager");
+
 export interface WebSocketCallbacks {
   onProgress?: (progress: unknown) => void;
   onStateImageFound?: (stateImage: unknown) => void;
@@ -16,7 +20,7 @@ export class StateDiscoveryWebSocketManager {
   private analysisId: string | null = null;
 
   constructor() {
-    console.log("[WebSocketManager] Initialized");
+    logger.debug("Initialized");
   }
 
   connect(
@@ -36,7 +40,7 @@ export class StateDiscoveryWebSocketManager {
     const wsHost = apiBaseUrl.replace(/^https?:\/\//, "");
     const wsUrl = `${wsProtocol}://${wsHost}${apiPath}/state-discovery/ws/${analysisId}`;
 
-    console.log("[WebSocketManager] Connecting:", {
+    logger.debug("Connecting:", {
       url: wsUrl,
       analysisId,
       timestamp: new Date().toISOString(),
@@ -50,7 +54,7 @@ export class StateDiscoveryWebSocketManager {
     if (!this.ws) return;
 
     this.ws.onopen = () => {
-      console.log("[WebSocketManager] Connected:", {
+      logger.debug("Connected:", {
         analysisId: this.analysisId,
         readyState: this.ws?.readyState,
         timestamp: new Date().toISOString(),
@@ -58,7 +62,7 @@ export class StateDiscoveryWebSocketManager {
     };
 
     this.ws.onmessage = (event) => {
-      console.log("[WebSocketManager] Message received:", {
+      logger.debug("Message received:", {
         rawData: event.data,
         analysisId: this.analysisId,
         timestamp: new Date().toISOString(),
@@ -68,12 +72,12 @@ export class StateDiscoveryWebSocketManager {
         const message = JSON.parse(event.data);
         this.handleMessage(message);
       } catch (error) {
-        console.error("[WebSocketManager] Failed to parse message:", error);
+        logger.error("Failed to parse message:", error);
       }
     };
 
     this.ws.onerror = (error) => {
-      console.error("[WebSocketManager] Error:", {
+      logger.error("Error:", {
         error,
         analysisId: this.analysisId,
         readyState: this.ws?.readyState,
@@ -86,7 +90,7 @@ export class StateDiscoveryWebSocketManager {
     };
 
     this.ws.onclose = (event) => {
-      console.log("[WebSocketManager] Disconnected:", {
+      logger.debug("Disconnected:", {
         code: event.code,
         reason: event.reason,
         wasClean: event.wasClean,
@@ -99,7 +103,7 @@ export class StateDiscoveryWebSocketManager {
   private handleMessage(message: unknown): void {
     // Type guard to ensure message has the expected structure
     if (!message || typeof message !== "object" || !("type" in message)) {
-      console.error("[WebSocketManager] Invalid message format:", message);
+      logger.error("Invalid message format:", message);
       return;
     }
 
@@ -108,7 +112,7 @@ export class StateDiscoveryWebSocketManager {
       data?: unknown;
     };
 
-    console.log("[WebSocketManager] Handling message:", {
+    logger.debug("Handling message:", {
       type: typedMessage.type,
       analysisId: this.analysisId,
     });
@@ -133,7 +137,7 @@ export class StateDiscoveryWebSocketManager {
         break;
 
       case "error":
-        console.error("[WebSocketManager] Error message:", typedMessage.data);
+        logger.error("Error message:", typedMessage.data);
         if (this.callbacks.onError) {
           const errorData = typedMessage.data as
             | { message?: string }
@@ -143,14 +147,11 @@ export class StateDiscoveryWebSocketManager {
         break;
 
       case "pong":
-        console.log("[WebSocketManager] Pong received");
+        logger.debug("Pong received");
         break;
 
       default:
-        console.log(
-          "[WebSocketManager] Unhandled message type:",
-          typedMessage.type
-        );
+        logger.debug("Unhandled message type:", typedMessage.type);
         break;
     }
   }
@@ -158,11 +159,9 @@ export class StateDiscoveryWebSocketManager {
   sendMessage(message: unknown): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
-      console.log("[WebSocketManager] Sent message:", message);
+      logger.debug("Sent message:", message);
     } else {
-      console.warn(
-        "[WebSocketManager] Cannot send message, WebSocket not connected"
-      );
+      logger.warn("Cannot send message, WebSocket not connected");
     }
   }
 
@@ -172,10 +171,7 @@ export class StateDiscoveryWebSocketManager {
 
   disconnect(): void {
     if (this.ws) {
-      console.log(
-        "[WebSocketManager] Closing connection for:",
-        this.analysisId
-      );
+      logger.debug("Closing connection for:", this.analysisId);
       this.ws.close();
       this.ws = null;
       this.analysisId = null;

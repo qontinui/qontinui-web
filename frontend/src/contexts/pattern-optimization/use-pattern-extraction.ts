@@ -1,5 +1,8 @@
 import { useState, useCallback } from "react";
+import { createLogger } from "@/lib/logger";
 import { patternOptimizationStorage } from "@/lib/pattern-optimization-storage";
+
+const logger = createLogger("PatternExtraction");
 import type {
   Region,
   ExtractedPattern,
@@ -55,10 +58,7 @@ export function usePatternExtraction(
         throw new Error("No regions selected for pattern extraction");
       }
 
-      console.log(
-        "[PatternOptimization] Extracting pattern with config:",
-        config
-      );
+      logger.debug("Extracting pattern with config:", config);
       setIsExtracting(true);
 
       setSession((prev) => (prev ? { ...prev, status: "extracting" } : prev));
@@ -97,14 +97,10 @@ export function usePatternExtraction(
           }
         }
 
-        console.log(
-          `[PatternOptimization] Sending ${screenshots.length} cropped regions`
-        );
+        logger.debug(`Sending ${screenshots.length} cropped regions`);
 
         // Call API for pattern extraction
-        console.log(
-          "[PatternOptimization] Sending API request to extract pattern..."
-        );
+        logger.debug("Sending API request to extract pattern...");
         const requestBody = {
           state_image_id: "temp", // Not used in our simplified version
           pattern_name: `Pattern_${session.id}`,
@@ -119,12 +115,12 @@ export function usePatternExtraction(
         };
         // Calculate request size
         const requestSize = JSON.stringify(requestBody).length;
-        console.log(
-          "[PatternOptimization] Request size:",
+        logger.debug(
+          "Request size:",
           (requestSize / 1024 / 1024).toFixed(2),
           "MB"
         );
-        console.log("[PatternOptimization] Request body summary:", {
+        logger.debug("Request body summary:", {
           screenshots: requestBody.screenshots.length,
           screenshotSizes: requestBody.screenshots.map(
             (s) => (s.length / 1024).toFixed(1) + "KB"
@@ -135,21 +131,19 @@ export function usePatternExtraction(
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => {
-          console.error(
-            "[PatternOptimization] Aborting request due to timeout"
-          );
+          logger.error("Aborting request due to timeout");
           controller.abort();
         }, 60000); // 60 second timeout
 
         let response;
         try {
-          console.log(
-            "[PatternOptimization] Sending fetch request to:",
+          logger.debug(
+            "Sending fetch request to:",
             "http://localhost:8000/api/masked-patterns/extract-masked"
           );
 
           // Now send the actual request (using relative path through proxy)
-          console.log("[PatternOptimization] Sending actual POST request...");
+          logger.debug("Sending actual POST request...");
           response = await fetch("/api/masked-patterns/extract-masked", {
             method: "POST",
             headers: {
@@ -158,12 +152,12 @@ export function usePatternExtraction(
             body: JSON.stringify(requestBody),
             signal: controller.signal,
           });
-          console.log("[PatternOptimization] Fetch completed successfully");
+          logger.debug("Fetch completed successfully");
         } catch (fetchError: unknown) {
           clearTimeout(timeoutId);
-          console.error("[PatternOptimization] Fetch error:", fetchError);
-          console.error(
-            "[PatternOptimization] Error stack:",
+          logger.error("Fetch error:", fetchError);
+          logger.error(
+            "Error stack:",
             fetchError instanceof Error ? fetchError.stack : ""
           );
           if (fetchError instanceof Error && fetchError.name === "AbortError") {
@@ -174,19 +168,16 @@ export function usePatternExtraction(
           clearTimeout(timeoutId);
         }
 
-        console.log(
-          "[PatternOptimization] API response status:",
+        logger.debug(
+          "API response status:",
           response.status,
           response.statusText
         );
-        console.log(
-          "[PatternOptimization] Response headers:",
-          response.headers
-        );
+        logger.debug("Response headers:", response.headers);
 
         if (!response.ok) {
           const errorText = await response.text();
-          console.error("[PatternOptimization] API error response:", errorText);
+          logger.error("API error response:", errorText);
           throw new Error(
             `API request failed: ${response.status} ${response.statusText} - ${errorText}`
           );
@@ -195,20 +186,11 @@ export function usePatternExtraction(
         let result;
         try {
           const responseText = await response.text();
-          console.log(
-            "[PatternOptimization] Raw response text length:",
-            responseText.length
-          );
+          logger.debug("Raw response text length:", responseText.length);
           result = JSON.parse(responseText);
-          console.log(
-            "[PatternOptimization] Pattern extracted successfully:",
-            result
-          );
+          logger.info("Pattern extracted successfully:", result);
         } catch (parseError) {
-          console.error(
-            "[PatternOptimization] Failed to parse response:",
-            parseError
-          );
+          logger.error("Failed to parse response:", parseError);
           throw new Error("Failed to parse API response");
         }
 
@@ -222,7 +204,7 @@ export function usePatternExtraction(
           );
         }
         const details = await detailsResponse.json();
-        console.log("[PatternOptimization] Pattern details:", details);
+        logger.debug("Pattern details:", details);
 
         // Create ExtractedPattern object
         const extractedPattern: ExtractedPattern = {
@@ -256,20 +238,18 @@ export function usePatternExtraction(
             : prev
         );
 
-        console.log(
-          "[PatternOptimization] Extraction successful! Pattern saved to session:",
+        logger.info(
+          "Extraction successful! Pattern saved to session:",
           extractedPattern
         );
       } catch (error: unknown) {
-        console.error("[PatternOptimization] Extraction failed:", error);
+        logger.error("Extraction failed:", error);
 
         if (error instanceof Error && error.name === "AbortError") {
-          console.error(
-            "[PatternOptimization] Request timed out after 60 seconds"
-          );
+          logger.error("Request timed out after 60 seconds");
         }
 
-        console.error("[PatternOptimization] Error details:", {
+        logger.error("Error details:", {
           name: error instanceof Error ? error.name : "unknown",
           message: error instanceof Error ? error.message : String(error),
           stack: error instanceof Error ? error.stack : "",
@@ -278,9 +258,7 @@ export function usePatternExtraction(
         throw error;
       } finally {
         setIsExtracting(false);
-        console.log(
-          "[PatternOptimization] Extraction finished, isExtracting set to false"
-        );
+        logger.debug("Extraction finished, isExtracting set to false");
       }
     },
     [session, setSession]

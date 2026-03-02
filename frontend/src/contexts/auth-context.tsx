@@ -8,6 +8,7 @@ import React, {
   ReactNode,
   useRef,
 } from "react";
+import { createLogger } from "@/lib/logger";
 import { authService } from "@/services/service-factory";
 import { User } from "@/types/auth-types";
 import { pageStateDB } from "@/stores/page-state";
@@ -31,6 +32,8 @@ interface AuthContextType {
   updateUser: (data: Partial<User>) => Promise<void>;
   getAccessToken: () => Promise<string | null>;
 }
+
+const logger = createLogger("AuthContext");
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -57,8 +60,8 @@ function shouldSkipDevAutoLogin(): boolean {
 
   // Skip if running in Playwright/automated browser (webdriver flag)
   if (navigator.webdriver) {
-    console.log(
-      "[AuthContext] Dev auto-login skipped: Running in automated browser (Playwright/Selenium)"
+    logger.debug(
+      "Dev auto-login skipped: Running in automated browser (Playwright/Selenium)"
     );
     return true;
   }
@@ -66,9 +69,7 @@ function shouldSkipDevAutoLogin(): boolean {
   // Skip if URL has skip_auto_login param (useful for testing login flow)
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.has("skip_auto_login")) {
-    console.log(
-      "[AuthContext] Dev auto-login skipped: skip_auto_login URL param present"
-    );
+    logger.debug("Dev auto-login skipped: skip_auto_login URL param present");
     return true;
   }
 
@@ -98,18 +99,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Listen for auth events from other tabs
       channel.onmessage = (event: MessageEvent<AuthBroadcastMessage>) => {
-        console.log("[AuthContext] Received broadcast message:", event.data);
+        logger.debug("Received broadcast message:", event.data);
 
         switch (event.data.type) {
           case "LOGIN":
             // Another tab logged in - update local state
-            console.log("[AuthContext] Syncing login from another tab");
+            logger.debug("Syncing login from another tab");
             setUser(event.data.user);
             break;
 
           case "LOGOUT":
             // Another tab logged out - clear local state
-            console.log("[AuthContext] Syncing logout from another tab");
+            logger.debug("Syncing logout from another tab");
             authService.logout(); // Clear tokens
             setUser(null);
             if (window.location.pathname !== "/") {
@@ -119,45 +120,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
           case "USER_UPDATE":
             // Another tab updated user - sync changes
-            console.log("[AuthContext] Syncing user update from another tab");
+            logger.debug("Syncing user update from another tab");
             setUser(event.data.user);
             break;
 
           case "TOKEN_REFRESH":
             // Another tab refreshed token - reload user data
-            console.log(
-              "[AuthContext] Token refreshed in another tab, reloading user"
-            );
+            logger.debug("Token refreshed in another tab, reloading user");
             checkAuth();
             break;
         }
       };
 
-      console.log(
-        "[AuthContext] BroadcastChannel initialized for cross-tab sync"
-      );
+      logger.debug("BroadcastChannel initialized for cross-tab sync");
     }
 
     // Listen for session expiry (only in browser)
     if (typeof window !== "undefined") {
       const handleSessionExpired = () => {
-        console.log("[AuthContext] Session expired event received:", {
+        logger.info("Session expired event received:", {
           timestamp: new Date().toISOString(),
           currentUser: user?.username || "none",
         });
 
         setUser(null);
-        console.log(
-          "[AuthContext] Redirecting to home page due to session expiry"
-        );
+        logger.info("Redirecting to home page due to session expiry");
         window.location.href = "/";
       };
 
-      console.log("[AuthContext] Registering session-expired event listener");
+      logger.debug("Registering session-expired event listener");
       window.addEventListener("session-expired", handleSessionExpired);
 
       return () => {
-        console.log("[AuthContext] Cleaning up event listeners");
+        logger.debug("Cleaning up event listeners");
         window.removeEventListener("session-expired", handleSessionExpired);
 
         // Close BroadcastChannel
@@ -172,42 +167,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const checkAuth = async () => {
-    console.log("[AuthContext] Checking authentication...");
+    logger.debug("Checking authentication...");
     try {
       const isAuth = authService.isAuthenticated();
-      console.log("[AuthContext] Is authenticated:", isAuth);
+      logger.debug("Is authenticated:", isAuth);
 
       if (isAuth) {
         // Check if access token is expired - if so, try to refresh it first
         if (authService.isAccessTokenExpired()) {
-          console.log(
-            "[AuthContext] Access token is expired, attempting refresh..."
-          );
+          logger.debug("Access token is expired, attempting refresh...");
           const refreshSuccess = await authService.refreshAccessToken();
 
           if (!refreshSuccess) {
-            console.log(
-              "[AuthContext] Token refresh failed, user needs to re-login"
-            );
+            logger.info("Token refresh failed, user needs to re-login");
             authService.logout();
             return;
           }
 
-          console.log("[AuthContext] Token refresh successful");
+          logger.debug("Token refresh successful");
         }
 
-        console.log("[AuthContext] Fetching current user...");
+        logger.debug("Fetching current user...");
         const currentUser = await authService.getCurrentUser();
-        console.log("[AuthContext] Current user:", currentUser);
+        logger.debug("Current user:", currentUser);
         setUser(currentUser);
       } else {
-        console.log("[AuthContext] No valid auth token found");
+        logger.debug("No valid auth token found");
       }
     } catch (error) {
-      console.error("[AuthContext] Auth check failed:", error);
+      logger.error("Auth check failed:", error);
       authService.logout();
     } finally {
-      console.log("[AuthContext] Setting loading to false");
+      logger.debug("Setting loading to false");
       setLoading(false);
     }
   };
@@ -235,9 +226,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // If already authenticated, redirect away from landing page
     if (user) {
-      console.log(
-        "[AuthContext] Dev mode: Already authenticated, skipping auto-login"
-      );
+      logger.debug("Dev mode: Already authenticated, skipping auto-login");
       if (window.location.pathname === "/") {
         const dest = user.is_superuser ? "/admin" : "/build/workflows";
         window.location.href = dest;
@@ -253,15 +242,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Check if dev credentials are configured via environment variables
     if (!DEV_AUTO_LOGIN.username || !DEV_AUTO_LOGIN.password) {
-      console.log(
-        "[AuthContext] Dev mode: No auto-login credentials configured (set NEXT_PUBLIC_DEV_EMAIL and NEXT_PUBLIC_DEV_PASSWORD in .env.local)"
+      logger.debug(
+        "Dev mode: No auto-login credentials configured (set NEXT_PUBLIC_DEV_EMAIL and NEXT_PUBLIC_DEV_PASSWORD in .env.local)"
       );
       return;
     }
 
     // Auto-login in development
-    console.log(
-      "[AuthContext] Dev mode: Not authenticated, attempting auto-login with",
+    logger.info(
+      "Dev mode: Not authenticated, attempting auto-login with",
       DEV_AUTO_LOGIN.username
     );
     hasAttemptedDevLogin.current = true;
@@ -272,7 +261,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         password: DEV_AUTO_LOGIN.password,
       })
       .then((loggedInUser) => {
-        console.log("[AuthContext] Dev mode auto-login successful");
+        logger.info("Dev mode auto-login successful");
         setUser(loggedInUser);
         // Redirect to dashboard after dev auto-login
         if (window.location.pathname === "/") {
@@ -290,10 +279,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             : typeof err === "object" && err !== null
               ? JSON.stringify(err)
               : String(err);
-        console.error(
-          "[AuthContext] Dev mode auto-login failed:",
-          errorMessage
-        );
+        logger.error("Dev mode auto-login failed:", errorMessage);
       });
   }, [loading, user]);
 
@@ -316,12 +302,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           type: "LOGIN",
           user: loggedInUser,
         } as AuthBroadcastMessage);
-        console.log("[AuthContext] Broadcasted LOGIN event to other tabs");
+        logger.debug("Broadcasted LOGIN event to other tabs");
       }
 
       return loggedInUser;
     } catch (error) {
-      console.error("Login failed:", error);
+      logger.error("Login failed:", error);
       throw error;
     }
   };
@@ -342,7 +328,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // After registration, log the user in
       await login(username, password);
     } catch (error) {
-      console.error("Registration failed:", error);
+      logger.error("Registration failed:", error);
       throw error;
     }
   };
@@ -351,18 +337,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Clear page state from IndexedDB before logout
     if (user?.id) {
       try {
-        console.log("[AuthContext] Clearing page state for user:", user.id);
+        logger.debug("Clearing page state for user:", user.id);
         await pageStateDB.clearUserData(user.id);
-        console.log("[AuthContext] Page state cleared successfully");
+        logger.debug("Page state cleared successfully");
       } catch (error) {
-        console.error("[AuthContext] Failed to clear page state:", error);
+        logger.error("Failed to clear page state:", error);
         // Continue with logout even if page state cleanup fails
       }
     }
 
     // Clear extraction config from localStorage
     clearExtractionConfig();
-    console.log("[AuthContext] Extraction config cleared");
+    logger.debug("Extraction config cleared");
 
     authService.logout();
     setUser(null);
@@ -372,7 +358,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       channelRef.current.postMessage({
         type: "LOGOUT",
       } as AuthBroadcastMessage);
-      console.log("[AuthContext] Broadcasted LOGOUT event to other tabs");
+      logger.debug("Broadcasted LOGOUT event to other tabs");
     }
 
     if (typeof window !== "undefined") {
@@ -393,12 +379,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           type: "USER_UPDATE",
           user: updatedUser,
         } as AuthBroadcastMessage);
-        console.log(
-          "[AuthContext] Broadcasted USER_UPDATE event to other tabs"
-        );
+        logger.debug("Broadcasted USER_UPDATE event to other tabs");
       }
     } catch (error) {
-      console.error("User update failed:", error);
+      logger.error("User update failed:", error);
       throw error;
     }
   };
@@ -407,7 +391,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       // Check if user is authenticated
       if (!authService.isAuthenticated()) {
-        console.log("[AuthContext] Not authenticated, cannot get runner token");
+        logger.debug("Not authenticated, cannot get runner token");
         return null;
       }
 
@@ -425,22 +409,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (!response.ok) {
-        console.error(
-          "[AuthContext] Failed to get runner token:",
-          response.status
-        );
+        logger.error("Failed to get runner token:", response.status);
         return null;
       }
 
       const data = await response.json();
-      console.log(
-        "[AuthContext] Got runner token, expires in",
-        data.expires_in,
-        "seconds"
-      );
+      logger.debug("Got runner token, expires in", data.expires_in, "seconds");
       return data.token;
     } catch (error) {
-      console.error("[AuthContext] Failed to get access token:", error);
+      logger.error("Failed to get access token:", error);
       return null;
     }
   };

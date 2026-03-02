@@ -3,11 +3,14 @@
  * Single Responsibility: Handle all HTTP API calls to the backend
  */
 
+import { createLogger } from "@/lib/logger";
 import {
   AnalysisConfig,
   DeletionImpact,
   StateImage,
 } from "@/types/stateDiscovery";
+
+const logger = createLogger("APIClient");
 
 export class StateDiscoveryAPIClient {
   private apiBaseUrl: string;
@@ -16,7 +19,7 @@ export class StateDiscoveryAPIClient {
   constructor(apiBaseUrl: string, apiPath: string) {
     this.apiBaseUrl = apiBaseUrl;
     this.apiPath = apiPath;
-    console.log("[APIClient] Initialized with:", { apiBaseUrl, apiPath });
+    logger.debug(" Initialized with:", { apiBaseUrl, apiPath });
   }
 
   private getUrl(endpoint: string): string {
@@ -27,7 +30,7 @@ export class StateDiscoveryAPIClient {
     files: File[],
     projectId: string = "default"
   ): Promise<unknown> {
-    console.log("[APIClient] Uploading screenshots:", {
+    logger.debug(" Uploading screenshots:", {
       filesCount: files.length,
       projectId,
       timestamp: new Date().toISOString(),
@@ -50,7 +53,7 @@ export class StateDiscoveryAPIClient {
     }
 
     const data = await response.json();
-    console.log("[APIClient] Upload successful:", {
+    logger.debug(" Upload successful:", {
       uploadId: data.upload_id,
       count: data.count,
     });
@@ -61,7 +64,7 @@ export class StateDiscoveryAPIClient {
     uploadId: string,
     config: AnalysisConfig
   ): Promise<unknown> {
-    console.log("[APIClient] Starting analysis:", {
+    logger.debug(" Starting analysis:", {
       uploadId,
       config,
       timestamp: new Date().toISOString(),
@@ -97,7 +100,7 @@ export class StateDiscoveryAPIClient {
       body: JSON.stringify(requestBody),
     });
 
-    console.log("[APIClient] Analysis response:", {
+    logger.debug(" Analysis response:", {
       status: response.status,
       statusText: response.statusText,
     });
@@ -108,7 +111,7 @@ export class StateDiscoveryAPIClient {
     }
 
     const data = await response.json();
-    console.log("[APIClient] Analysis started:", {
+    logger.debug(" Analysis started:", {
       analysisId: data.analysis_id,
       websocketUrl: data.websocket_url,
     });
@@ -116,7 +119,7 @@ export class StateDiscoveryAPIClient {
   }
 
   async getDeleteImpact(stateImageId: string): Promise<DeletionImpact> {
-    console.log("[APIClient] Getting deletion impact:", stateImageId);
+    logger.debug(" Getting deletion impact:", stateImageId);
 
     const response = await fetch(
       this.getUrl(`/state-image/${stateImageId}/delete-impact`)
@@ -133,7 +136,7 @@ export class StateDiscoveryAPIClient {
     stateImageId: string,
     options?: { cascade?: boolean; force?: boolean }
   ): Promise<unknown> {
-    console.log("[APIClient] Deleting state image:", {
+    logger.debug(" Deleting state image:", {
       stateImageId,
       options,
     });
@@ -158,7 +161,7 @@ export class StateDiscoveryAPIClient {
     ids: string[],
     options?: unknown
   ): Promise<unknown> {
-    console.log("[APIClient] Bulk deleting state images:", {
+    logger.debug(" Bulk deleting state images:", {
       count: ids.length,
       options,
     });
@@ -180,7 +183,7 @@ export class StateDiscoveryAPIClient {
     stateImageId: string,
     updates: Partial<StateImage>
   ): Promise<unknown> {
-    console.log("[APIClient] Updating state image:", {
+    logger.debug(" Updating state image:", {
       stateImageId,
       updates,
     });
@@ -203,7 +206,7 @@ export class StateDiscoveryAPIClient {
     targetName: string,
     strategy: string = "union"
   ): Promise<unknown> {
-    console.log("[APIClient] Merging state images:", {
+    logger.debug(" Merging state images:", {
       sourceCount: sourceIds.length,
       targetName,
       strategy,
@@ -232,7 +235,7 @@ export class StateDiscoveryAPIClient {
     description?: string,
     projectId: string = "default"
   ): Promise<unknown> {
-    console.log("[APIClient] Saving structure:", {
+    logger.debug(" Saving structure:", {
       analysisId,
       name,
       projectId,
@@ -260,7 +263,7 @@ export class StateDiscoveryAPIClient {
     structureId: string,
     format: string = "json"
   ): Promise<unknown> {
-    console.log("[APIClient] Exporting structure:", {
+    logger.debug(" Exporting structure:", {
       structureId,
       format,
     });
@@ -287,7 +290,7 @@ export class StateDiscoveryAPIClient {
       if (errorData) errorMessage = errorData;
     }
 
-    console.error("[APIClient] Error response:", {
+    logger.error(" Error response:", {
       status: response.status,
       message: errorMessage,
     });

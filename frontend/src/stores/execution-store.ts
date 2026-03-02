@@ -12,6 +12,7 @@
 
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
+import { createLogger } from "@/lib/logger";
 import { toast } from "sonner";
 import type { Workflow } from "@/lib/action-schema/action-types";
 import {
@@ -258,6 +259,8 @@ function handleWebSocketError(error: ClassifiedError | Error): void {
 // Initial State
 // ============================================================================
 
+const logger = createLogger("ExecutionStore");
+
 const initialState: ExecutionState = {
   currentExecution: null,
   executionStatus: null,
@@ -328,12 +331,9 @@ export const useExecutionStore = create<ExecutionStore>()(
           // Start polling status updates
           get().startPolling(handle.executionId);
 
-          console.log(
-            "[ExecutionStore] Execution started:",
-            handle.executionId
-          );
+          logger.debug("Execution started:", handle.executionId);
         } catch (error) {
-          console.error("[ExecutionStore] Failed to start execution:", error);
+          logger.error("Failed to start execution:", error);
           set({
             lastError: error as Error,
             isExecuting: false,
@@ -350,9 +350,9 @@ export const useExecutionStore = create<ExecutionStore>()(
 
         try {
           await backendAPI.pauseExecution(currentExecution.executionId);
-          console.log("[ExecutionStore] Execution paused");
+          logger.debug("Execution paused");
         } catch (error) {
-          console.error("[ExecutionStore] Failed to pause execution:", error);
+          logger.error("Failed to pause execution:", error);
           set({ lastError: error as Error });
           throw error;
         }
@@ -366,9 +366,9 @@ export const useExecutionStore = create<ExecutionStore>()(
 
         try {
           await backendAPI.resumeExecution(currentExecution.executionId);
-          console.log("[ExecutionStore] Execution resumed");
+          logger.debug("Execution resumed");
         } catch (error) {
-          console.error("[ExecutionStore] Failed to resume execution:", error);
+          logger.error("Failed to resume execution:", error);
           set({ lastError: error as Error });
           throw error;
         }
@@ -382,9 +382,9 @@ export const useExecutionStore = create<ExecutionStore>()(
 
         try {
           await backendAPI.stepExecution(currentExecution.executionId);
-          console.log("[ExecutionStore] Execution stepped");
+          logger.debug("Execution stepped");
         } catch (error) {
-          console.error("[ExecutionStore] Failed to step execution:", error);
+          logger.error("Failed to step execution:", error);
           set({ lastError: error as Error });
           throw error;
         }
@@ -418,9 +418,9 @@ export const useExecutionStore = create<ExecutionStore>()(
             pollTimeoutId: null,
           });
 
-          console.log("[ExecutionStore] Execution cancelled");
+          logger.debug("Execution cancelled");
         } catch (error) {
-          console.error("[ExecutionStore] Failed to cancel execution:", error);
+          logger.error("Failed to cancel execution:", error);
           set({ lastError: error as Error });
           throw error;
         }
@@ -554,7 +554,7 @@ export const useExecutionStore = create<ExecutionStore>()(
           );
           set({ executionHistory: history });
         } catch (error) {
-          console.error("[ExecutionStore] Failed to load history:", error);
+          logger.error("Failed to load history:", error);
           set({ lastError: error as Error });
         }
       },
@@ -654,13 +654,13 @@ export const useExecutionStore = create<ExecutionStore>()(
             get().addExecutionEvent(event);
           },
           (error) => {
-            console.error("[ExecutionStore] Stream error:", error);
+            logger.error("Stream error:", error);
             set({ lastError: error });
             // Show user-friendly error notification
             handleWebSocketError(error);
           },
           () => {
-            console.log("[ExecutionStore] Stream closed");
+            logger.debug("Stream closed");
             set({ isStreaming: false, streamCleanup: null });
           }
         );
@@ -713,7 +713,7 @@ export const useExecutionStore = create<ExecutionStore>()(
             const timeoutId = setTimeout(poll, pollInterval);
             set({ pollTimeoutId: timeoutId });
           } catch (error) {
-            console.error("[ExecutionStore] Polling error:", error);
+            logger.error("Polling error:", error);
             // On error, backoff more aggressively (2x multiplier)
             pollInterval = Math.min(pollInterval * 2, maxInterval);
             const timeoutId = setTimeout(poll, pollInterval);
@@ -740,7 +740,7 @@ export const useExecutionStore = create<ExecutionStore>()(
       processExecutionEvent: (event: ExecutionEvent) => {
         switch (event.type) {
           case "workflow_start":
-            console.log("[ExecutionStore] Workflow started");
+            logger.debug("Workflow started");
             break;
 
           case "action_start":
@@ -788,15 +788,12 @@ export const useExecutionStore = create<ExecutionStore>()(
             break;
 
           case "workflow_complete":
-            console.log("[ExecutionStore] Workflow completed");
+            logger.debug("Workflow completed");
             set({ isExecuting: false });
             break;
 
           case "workflow_error":
-            console.error(
-              "[ExecutionStore] Workflow error:",
-              event.data?.error
-            );
+            logger.error("Workflow error:", event.data?.error);
             set({
               isExecuting: false,
               lastError: new Error(event.data?.error || "Workflow error"),
@@ -804,11 +801,11 @@ export const useExecutionStore = create<ExecutionStore>()(
             break;
 
           case "breakpoint":
-            console.log("[ExecutionStore] Breakpoint hit:", event.actionId);
+            logger.debug("Breakpoint hit:", event.actionId);
             break;
 
           case "log":
-            console.log(`[Workflow] ${event.data?.message}`);
+            logger.debug(event.data?.message);
             break;
         }
       },

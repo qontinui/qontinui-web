@@ -1,5 +1,6 @@
 import { HttpClient } from "./http-client";
 import { ApiConfig } from "./api-config";
+import { createLogger } from "@/lib/logger";
 import type {
   Recording,
   RecordingListResponse,
@@ -11,6 +12,8 @@ import type {
   AcceptanceResponse,
   RecordingStatus,
 } from "@/types/recording";
+
+const logger = createLogger("RecordingService");
 
 export class RecordingService {
   private httpClient: HttpClient;
@@ -43,7 +46,7 @@ export class RecordingService {
       formData.append("tags", JSON.stringify(tags));
     }
 
-    console.log("[RecordingService] Uploading recording:", {
+    logger.debug("Uploading recording:", {
       projectId,
       fileName: file.name,
       fileSize: file.size,
@@ -64,7 +67,7 @@ export class RecordingService {
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
             const response = JSON.parse(xhr.responseText);
-            console.log("[RecordingService] Upload successful:", response);
+            logger.debug("Upload successful:", response);
             resolve(response);
           } catch (_error) {
             reject(new Error("Failed to parse response"));
@@ -122,10 +125,7 @@ export class RecordingService {
       params.append("status", status);
     }
 
-    console.log(
-      "[RecordingService] Listing recordings:",
-      Object.fromEntries(params)
-    );
+    logger.debug("Listing recordings:", Object.fromEntries(params));
 
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/recordings/?${params.toString()}`
@@ -133,7 +133,7 @@ export class RecordingService {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      console.error("[RecordingService] Failed to list recordings:", {
+      logger.error("Failed to list recordings:", {
         status: response.status,
         statusText: response.statusText,
         errorData,
@@ -148,7 +148,7 @@ export class RecordingService {
    * Get a single recording by ID
    */
   async getRecording(recordingId: string): Promise<Recording> {
-    console.log("[RecordingService] Getting recording:", recordingId);
+    logger.debug("Getting recording:", recordingId);
 
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/recordings/${recordingId}`
@@ -174,7 +174,7 @@ export class RecordingService {
       limit: limit.toString(),
     });
 
-    console.log("[RecordingService] Getting frames:", {
+    logger.debug("Getting frames:", {
       recordingId,
       skip,
       limit,
@@ -197,7 +197,7 @@ export class RecordingService {
   async startProcessing(
     recordingId: string
   ): Promise<{ success: boolean; message: string }> {
-    console.log("[RecordingService] Starting processing:", recordingId);
+    logger.debug("Starting processing:", recordingId);
 
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/recordings/${recordingId}/process`,
@@ -293,7 +293,7 @@ export class RecordingService {
   async getStateStructure(
     recordingId: string
   ): Promise<DiscoveredStateStructure> {
-    console.log("[RecordingService] Getting state structure:", recordingId);
+    logger.debug("Getting state structure:", recordingId);
 
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/recordings/${recordingId}/state-structure`
@@ -314,7 +314,7 @@ export class RecordingService {
     recordingId: string,
     request: AcceptanceRequest
   ): Promise<AcceptanceResponse> {
-    console.log("[RecordingService] Accepting state structure:", {
+    logger.debug("Accepting state structure:", {
       recordingId,
       request,
     });
@@ -339,7 +339,7 @@ export class RecordingService {
    * Delete a recording
    */
   async deleteRecording(recordingId: string): Promise<void> {
-    console.log("[RecordingService] Deleting recording:", recordingId);
+    logger.debug("Deleting recording:", recordingId);
 
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/recordings/${recordingId}`,

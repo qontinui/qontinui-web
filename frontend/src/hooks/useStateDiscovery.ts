@@ -3,12 +3,15 @@
  */
 
 import { useState, useCallback, useRef } from "react";
+import { createLogger } from "@/lib/logger";
 import {
   StateImage,
   DiscoveredState,
   AnalysisConfig,
   DeletionImpact,
 } from "@/types/stateDiscovery";
+
+const logger = createLogger("useStateDiscovery");
 
 // Use the main backend URL for State Discovery endpoints
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -80,7 +83,7 @@ export function useStateDiscovery() {
         throw new Error("No screenshots uploaded");
       }
 
-      console.log("[useStateDiscovery] Starting analysis:", {
+      logger.debug("Starting analysis:", {
         uploadId,
         config,
         apiUrl: `${API_BASE_URL}${API_PATH}/state-discovery/analyze`,
@@ -106,10 +109,7 @@ export function useStateDiscovery() {
             similarity_threshold: config.similarityThreshold || 0.95,
           },
         };
-        console.log(
-          "[useStateDiscovery] Sending analysis request:",
-          requestBody
-        );
+        logger.debug("Sending analysis request:", requestBody);
 
         const response = await fetch(
           `${API_BASE_URL}${API_PATH}/state-discovery/analyze`,
@@ -120,7 +120,7 @@ export function useStateDiscovery() {
           }
         );
 
-        console.log("[useStateDiscovery] Analysis response received:", {
+        logger.debug("Analysis response received:", {
           status: response.status,
           statusText: response.statusText,
           headers: Object.fromEntries(response.headers.entries()),
@@ -140,7 +140,7 @@ export function useStateDiscovery() {
         }
 
         const data = await response.json();
-        console.log("[useStateDiscovery] Analysis started successfully:", {
+        logger.debug("Analysis started successfully:", {
           analysisId: data.analysis_id,
           websocketUrl: data.websocket_url,
           data,
@@ -149,19 +149,17 @@ export function useStateDiscovery() {
 
         // Connect to WebSocket for progress updates
         if (data.websocket_url) {
-          console.log(
-            "[useStateDiscovery] Connecting to WebSocket for progress updates"
-          );
+          logger.debug("Connecting to WebSocket for progress updates");
           connectWebSocket(data.analysis_id, onProgress, onComplete);
         } else {
-          console.log(
-            "[useStateDiscovery] No WebSocket URL provided, will use polling or wait for completion"
+          logger.debug(
+            "No WebSocket URL provided, will use polling or wait for completion"
           );
         }
 
         return data;
       } catch (err) {
-        console.error("[useStateDiscovery] Analysis failed:", {
+        logger.error("Analysis failed:", {
           error: err,
           message: err instanceof Error ? err.message : "Unknown error",
           timestamp: new Date().toISOString(),
@@ -183,9 +181,7 @@ export function useStateDiscovery() {
     ) => {
       // Close existing connection
       if (wsRef.current) {
-        console.log(
-          "[useStateDiscovery] Closing existing WebSocket connection"
-        );
+        logger.debug("Closing existing WebSocket connection");
         wsRef.current.close();
       }
 
@@ -193,7 +189,7 @@ export function useStateDiscovery() {
       const wsProtocol = API_BASE_URL.startsWith("https") ? "wss" : "ws";
       const wsHost = API_BASE_URL.replace(/^https?:\/\//, "");
       const wsUrl = `${wsProtocol}://${wsHost}${API_PATH}/state-discovery/ws/${analysisId}`;
-      console.log("[useStateDiscovery] Creating WebSocket connection:", {
+      logger.debug("Creating WebSocket connection:", {
         url: wsUrl,
         analysisId,
         timestamp: new Date().toISOString(),
@@ -201,56 +197,47 @@ export function useStateDiscovery() {
       const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
-        console.log("[useStateDiscovery] WebSocket connected:", {
+        logger.debug("WebSocket connected:", {
           readyState: ws.readyState,
           timestamp: new Date().toISOString(),
         });
       };
 
       ws.onmessage = (event) => {
-        console.log("[useStateDiscovery] WebSocket message received:", {
+        logger.debug("WebSocket message received:", {
           rawData: event.data,
           timestamp: new Date().toISOString(),
         });
         const message = JSON.parse(event.data);
-        console.log("[useStateDiscovery] Parsed message:", message);
+        logger.debug("Parsed message:", message);
 
         switch (message.type) {
           case "progress":
-            console.log("[useStateDiscovery] Progress update:", message.data);
+            logger.debug("Progress update:", message.data);
             if (onProgress) {
               onProgress(message.data);
             }
             break;
 
           case "state_image_found":
-            console.log(
-              "[useStateDiscovery] New state image found:",
-              message.data
-            );
+            logger.debug("New state image found:", message.data);
             setStateImages((prev) => {
               const updated = [...prev, message.data];
-              console.log(
-                "[useStateDiscovery] State images count:",
-                updated.length
-              );
+              logger.debug("State images count:", updated.length);
               return updated;
             });
             break;
 
           case "complete":
             // Analysis complete
-            console.log(
-              "[useStateDiscovery] Analysis complete, updating states:",
-              {
-                newStates: message.data.states?.length || 0,
-                newStateImages: message.data.state_images?.length || 0,
-              }
-            );
+            logger.info("Analysis complete, updating states:", {
+              newStates: message.data.states?.length || 0,
+              newStateImages: message.data.state_images?.length || 0,
+            });
             setAnalysisResult(message.data);
             setStateImages(message.data.state_images || []);
             setStates(message.data.states || []);
-            console.log("[useStateDiscovery] States updated");
+            logger.debug("States updated");
             setIsLoading(false);
             if (onComplete) {
               onComplete();
@@ -258,10 +245,7 @@ export function useStateDiscovery() {
             break;
 
           case "error":
-            console.error(
-              "[useStateDiscovery] Error received via WebSocket:",
-              message.data
-            );
+            logger.error("Error received via WebSocket:", message.data);
             const errorMessage =
               message.data?.message ||
               message.data?.error ||
@@ -271,17 +255,13 @@ export function useStateDiscovery() {
             break;
 
           default:
-            console.log(
-              "[useStateDiscovery] Unhandled message type:",
-              message.type,
-              message
-            );
+            logger.debug("Unhandled message type:", message.type, message);
             break;
         }
       };
 
       ws.onerror = (error) => {
-        console.error("[useStateDiscovery] WebSocket error:", {
+        logger.error("WebSocket error:", {
           error,
           readyState: ws.readyState,
           timestamp: new Date().toISOString(),
@@ -291,7 +271,7 @@ export function useStateDiscovery() {
       };
 
       ws.onclose = (event) => {
-        console.log("[useStateDiscovery] WebSocket disconnected:", {
+        logger.debug("WebSocket disconnected:", {
           code: event.code,
           reason: event.reason,
           wasClean: event.wasClean,
@@ -342,10 +322,10 @@ export function useStateDiscovery() {
       const result = await response.json();
 
       // Update local state
-      console.log("[useStateDiscovery] Deleting state image:", stateImageId);
+      logger.debug("Deleting state image:", stateImageId);
       setStateImages((prev) => {
         const newStateImages = prev.filter((si) => si.id !== stateImageId);
-        console.log("[useStateDiscovery] StateImages after delete:", {
+        logger.debug("StateImages after delete:", {
           before: prev.length,
           after: newStateImages.length,
         });
@@ -363,7 +343,7 @@ export function useStateDiscovery() {
           }))
           .filter((state) => state.stateImageIds.length > 0); // Remove states with no images
 
-        console.log("[useStateDiscovery] States after stateImage delete:", {
+        logger.debug("States after stateImage delete:", {
           before: prev.length,
           after: newStates.length,
           removedStates: prev.length - newStates.length,
@@ -395,12 +375,12 @@ export function useStateDiscovery() {
       const result = await response.json();
 
       // Update local state
-      console.log("[useStateDiscovery] Bulk deleting state images:", ids);
+      logger.debug("Bulk deleting state images:", ids);
       setStateImages((prev) => {
         const newStateImages = prev.filter(
           (si) => !result.deleted.includes(si.id)
         );
-        console.log("[useStateDiscovery] StateImages after bulk delete:", {
+        logger.debug("StateImages after bulk delete:", {
           before: prev.length,
           after: newStateImages.length,
           deleted: result.deleted.length,
@@ -420,14 +400,11 @@ export function useStateDiscovery() {
           }))
           .filter((state) => state.stateImageIds.length > 0); // Remove states with no images
 
-        console.log(
-          "[useStateDiscovery] States after bulk stateImage delete:",
-          {
-            before: prev.length,
-            after: newStates.length,
-            removedStates: prev.length - newStates.length,
-          }
-        );
+        logger.debug("States after bulk stateImage delete:", {
+          before: prev.length,
+          after: newStates.length,
+          removedStates: prev.length - newStates.length,
+        });
         return newStates;
       });
 
