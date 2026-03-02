@@ -110,7 +110,9 @@ class SkillListResponse(BaseModel):
 def _model_to_response(skill: Skill) -> SkillResponse:
     return SkillResponse(
         id=str(skill.id),
-        created_by_user_id=str(skill.created_by_user_id) if skill.created_by_user_id else None,
+        created_by_user_id=str(skill.created_by_user_id)
+        if skill.created_by_user_id
+        else None,
         name=skill.name,
         slug=skill.slug,
         description=skill.description or "",
@@ -212,9 +214,11 @@ class SkillService:
         total_result = await db.execute(count_query)
         total = total_result.scalar() or 0
 
-        query = query.order_by(
-            Skill.usage_count.desc(), Skill.updated_at.desc()
-        ).offset(offset).limit(limit)
+        query = (
+            query.order_by(Skill.usage_count.desc(), Skill.updated_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
         result = await db.execute(query)
         skills = list(result.scalars().all())
 

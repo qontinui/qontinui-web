@@ -571,9 +571,7 @@ class UnifiedWorkflowService:
                 else False
             ),
             "approval_gate": (
-                workflow.approval_gate
-                if workflow.approval_gate is not None
-                else False
+                workflow.approval_gate if workflow.approval_gate is not None else False
             ),
             "reflection_mode": (
                 workflow.reflection_mode
