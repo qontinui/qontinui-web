@@ -15,7 +15,16 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { GENERATE_PROVIDER_OPTIONS as PROVIDERS } from "@qontinui/workflow-utils";
+import {
+  GENERATE_PROVIDER_OPTIONS as PROVIDERS,
+  MODELS_BY_PROVIDER,
+  MODEL_OVERRIDE_PHASES,
+  PROVIDER_OPTIONS,
+} from "@qontinui/workflow-utils";
+import type {
+  ModelOverrideConfig,
+  ModelOverrides,
+} from "@/types/unified-workflow";
 import type { AdvancedOptionsState } from "../_hooks/useAdvancedOptions";
 import { AdvancedCheckboxOptions } from "./AdvancedCheckboxOptions";
 
@@ -49,7 +58,38 @@ export function AdvancedOptionsSection({
   discoveryMode,
   setDiscoveryMode,
   modelsForProvider,
+  generationModelOverrides,
+  setGenerationModelOverrides,
 }: AdvancedOptionsSectionProps) {
+  const overrides: ModelOverrides = generationModelOverrides ?? {};
+  const hasPhaseOverrides = MODEL_OVERRIDE_PHASES.some((phase) => {
+    const cfg = overrides[phase.key as keyof ModelOverrides];
+    return cfg?.provider || cfg?.model;
+  });
+
+  const updatePhaseOverride = (
+    phaseKey: string,
+    field: "provider" | "model",
+    value: string
+  ) => {
+    const current = { ...overrides };
+    const phaseCfg: ModelOverrideConfig = {
+      ...(current[phaseKey as keyof ModelOverrides] ?? {}),
+    };
+    if (value) {
+      phaseCfg[field] = value;
+    } else {
+      delete phaseCfg[field];
+    }
+    if (!phaseCfg.provider && !phaseCfg.model) {
+      delete current[phaseKey as keyof ModelOverrides];
+    } else {
+      (current as Record<string, ModelOverrideConfig>)[phaseKey] = phaseCfg;
+    }
+    setGenerationModelOverrides(
+      Object.keys(current).length > 0 ? current : undefined
+    );
+  };
   return (
     <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
       <CollapsibleTrigger className="flex items-center gap-2 text-sm text-zinc-400 hover:text-zinc-200 transition-colors">
@@ -220,6 +260,82 @@ export function AdvancedOptionsSection({
             setIncludeDesignGuidance={setIncludeDesignGuidance}
           />
         </div>
+
+        {/* Per-Phase Model Overrides */}
+        <Collapsible>
+          <CollapsibleTrigger className="flex items-center gap-2 text-xs text-zinc-400 hover:text-zinc-200 transition-colors">
+            <ChevronRight className="w-3.5 h-3.5 [[data-state=open]>&]:rotate-90 transition-transform" />
+            Per-Phase Model Overrides
+            {hasPhaseOverrides && (
+              <span className="px-1.5 py-0.5 text-[10px] font-medium bg-purple-500/20 text-purple-400 rounded">
+                Active
+              </span>
+            )}
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-2 space-y-2 pl-1">
+            <p className="text-[10px] text-zinc-500">
+              Override provider/model for investigation and generation phases.
+              Empty = inherit from the provider/model above.
+            </p>
+            {MODEL_OVERRIDE_PHASES.filter((p) =>
+              ["investigation", "generation"].includes(p.key)
+            ).map((phase) => {
+              const cfg = overrides[phase.key as keyof ModelOverrides];
+              const phaseProvider = cfg?.provider ?? "";
+              const phaseModel = cfg?.model ?? "";
+              return (
+                <div key={phase.key} className="flex items-center gap-2">
+                  <span
+                    className="text-[11px] text-zinc-400 w-24 flex-shrink-0 truncate"
+                    title={phase.label}
+                  >
+                    {phase.label}
+                  </span>
+                  <select
+                    className="flex-1 h-7 px-2 rounded bg-zinc-800 border border-zinc-700 text-zinc-200 text-[11px] focus:outline-none focus:ring-1 focus:ring-zinc-600"
+                    value={phaseProvider}
+                    onChange={(e) => {
+                      updatePhaseOverride(
+                        phase.key,
+                        "provider",
+                        e.target.value
+                      );
+                      if (e.target.value !== phaseProvider) {
+                        updatePhaseOverride(phase.key, "model", "");
+                      }
+                    }}
+                  >
+                    <option value="">Inherit</option>
+                    {PROVIDER_OPTIONS.filter((p) => p.value !== "").map(
+                      (opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      )
+                    )}
+                  </select>
+                  {phaseProvider && MODELS_BY_PROVIDER[phaseProvider] ? (
+                    <select
+                      className="flex-1 h-7 px-2 rounded bg-zinc-800 border border-zinc-700 text-zinc-200 text-[11px] focus:outline-none focus:ring-1 focus:ring-zinc-600"
+                      value={phaseModel}
+                      onChange={(e) =>
+                        updatePhaseOverride(phase.key, "model", e.target.value)
+                      }
+                    >
+                      {MODELS_BY_PROVIDER[phaseProvider]!.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="flex-1" />
+                  )}
+                </div>
+              );
+            })}
+          </CollapsibleContent>
+        </Collapsible>
       </CollapsibleContent>
     </Collapsible>
   );

@@ -6,63 +6,17 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  CheckCircle2,
-  XCircle,
-  AlertTriangle,
-  Clock,
-  PlayCircle,
-  Download,
-  ZoomIn,
-  ChevronDown,
-  ChevronUp,
-} from "lucide-react";
+import { Download } from "lucide-react";
 import { useTestRun } from "@/hooks/useTesting";
 import { RequireProject } from "@/components/require-project";
-import { format } from "date-fns";
-import Image from "next/image";
 import { ApiConfig } from "@/services/api-config";
-
-interface WebSocketMessage {
-  type: string;
-  data?: {
-    status?: string;
-    current_step?: number;
-    total_steps?: number;
-    transition?: {
-      from_state: string;
-      to_state: string;
-      action_type: string;
-      success: boolean;
-      duration_ms: number;
-      error_message?: string;
-      screenshot_url?: string;
-    };
-    coverage_percentage?: number;
-    states_covered?: number;
-    deficiency?: {
-      severity: string;
-      title: string;
-      description: string;
-    };
-  };
-}
+import { useTestRunWebSocket } from "./_hooks/useTestRunWebSocket";
+import { RunSummaryCard } from "./_components/RunSummaryCard";
+import { TimelineTab } from "./_components/TimelineTab";
+import { CoverageTab } from "./_components/CoverageTab";
+import { DeficienciesTab } from "./_components/DeficienciesTab";
+import { ScreenshotDialog } from "./_components/ScreenshotDialog";
 
 export default function TestRunDetailPage() {
   const { user, loading: authLoading } = useAuth();
@@ -72,82 +26,13 @@ export default function TestRunDetailPage() {
 
   const { data: run, isLoading, refetch } = useTestRun(runId);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set());
-  const [liveStatus, setLiveStatus] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!run || run.status === "completed" || run.status === "failed") {
-      return;
-    }
-
-    const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
-    const wsHost = ApiConfig.getBaseUrl().replace(/^https?:\/\//, "");
-    const wsUrl = `${wsProtocol}://${wsHost}/api/v1/testing/runs/${runId}/ws`;
-
-    const websocket = new WebSocket(wsUrl);
-
-    websocket.onopen = () => {
-      console.log("[TestRunDetail] WebSocket connected");
-    };
-
-    websocket.onmessage = (event) => {
-      try {
-        const message: WebSocketMessage = JSON.parse(event.data);
-
-        switch (message.type) {
-          case "status_update":
-            if (message.data?.status) {
-              setLiveStatus(message.data.status);
-            }
-            break;
-
-          case "transition_complete":
-          case "deficiency_found":
-          case "coverage_update":
-            refetch();
-            break;
-
-          case "run_complete":
-            refetch();
-            websocket.close();
-            break;
-        }
-      } catch (error) {
-        console.error(
-          "[TestRunDetail] Failed to parse WebSocket message:",
-          error
-        );
-      }
-    };
-
-    websocket.onerror = (error) => {
-      console.error("[TestRunDetail] WebSocket error:", error);
-    };
-
-    websocket.onclose = () => {
-      console.log("[TestRunDetail] WebSocket disconnected");
-    };
-
-    return () => {
-      websocket.close();
-    };
-  }, [run, runId, refetch]);
+  const liveStatus = useTestRunWebSocket(runId, run?.status, refetch);
 
   useEffect(() => {
     if (!authLoading && !user) {
       router.push("/");
     }
   }, [user, authLoading, router]);
-
-  const toggleStep = (stepId: string) => {
-    const newExpanded = new Set(expandedSteps);
-    if (newExpanded.has(stepId)) {
-      newExpanded.delete(stepId);
-    } else {
-      newExpanded.add(stepId);
-    }
-    setExpandedSteps(newExpanded);
-  };
 
   const handleExport = () => {
     if (!run) return;
@@ -177,11 +62,6 @@ export default function TestRunDetailPage() {
     );
   }
 
-  const successRate =
-    run.total_transitions > 0
-      ? ((run.successful_transitions / run.total_transitions) * 100).toFixed(1)
-      : "0";
-
   const displayStatus = liveStatus || run.status;
 
   return (
@@ -199,95 +79,7 @@ export default function TestRunDetailPage() {
 
         <main className="flex-1 overflow-y-auto p-6">
           <div className="space-y-6">
-            <Card className="bg-muted border-border">
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <CardTitle className="text-2xl mb-2">
-                      {run.workflow_name}
-                    </CardTitle>
-                    <CardDescription className="text-muted-foreground">
-                      Run ID: {run.id} &bull; Started{" "}
-                      {format(
-                        new Date(run.start_time),
-                        "MMM dd, yyyy HH:mm:ss"
-                      )}
-                    </CardDescription>
-                  </div>
-                  <Badge
-                    variant={
-                      displayStatus === "completed"
-                        ? "success"
-                        : displayStatus === "failed"
-                          ? "destructive"
-                          : "default"
-                    }
-                    className={
-                      displayStatus === "running"
-                        ? "bg-blue-500/20 text-blue-400 border-blue-500/30"
-                        : ""
-                    }
-                  >
-                    {displayStatus === "running" && (
-                      <PlayCircle className="w-3 h-3 mr-1 animate-pulse" />
-                    )}
-                    {displayStatus}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
-                  <div className="space-y-2">
-                    <div className="text-sm text-muted-foreground flex items-center gap-2">
-                      <Clock className="w-4 h-4" />
-                      Duration
-                    </div>
-                    <div className="text-2xl font-bold">
-                      {run.duration_seconds
-                        ? `${Math.floor(run.duration_seconds / 60)}m ${run.duration_seconds % 60}s`
-                        : "-"}
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="text-sm text-muted-foreground">
-                      Coverage
-                    </div>
-                    <div className="text-2xl font-bold text-primary">
-                      {run.coverage_percentage.toFixed(1)}%
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {run.states_covered} / {run.total_states} states
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="text-sm text-muted-foreground">
-                      Success Rate
-                    </div>
-                    <div className="text-2xl font-bold text-green-500">
-                      {successRate}%
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {run.successful_transitions} / {run.total_transitions}{" "}
-                      transitions
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="text-sm text-muted-foreground">
-                      Deficiencies
-                    </div>
-                    <div className="text-2xl font-bold text-red-400">
-                      {run.deficiencies_found}
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="text-sm text-muted-foreground">Runner</div>
-                    <div className="text-sm font-mono truncate">
-                      {run.runner_id.slice(0, 8)}...
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <RunSummaryCard run={run} displayStatus={displayStatus} />
 
             <Tabs defaultValue="timeline" className="w-full">
               <TabsList>
@@ -299,389 +91,30 @@ export default function TestRunDetailPage() {
               </TabsList>
 
               <TabsContent value="timeline">
-                <Card className="bg-muted border-border">
-                  <CardHeader>
-                    <CardTitle>Execution Timeline</CardTitle>
-                    <CardDescription>
-                      Step-by-step breakdown of all transitions
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ScrollArea className="h-[600px] pr-4">
-                      <div className="space-y-2">
-                        {run.transitions.map((transition, index) => {
-                          const isExpanded = expandedSteps.has(transition.id);
-                          return (
-                            <div
-                              key={transition.id}
-                              className={`rounded-lg border ${
-                                transition.success
-                                  ? "border-green-500/30 bg-green-500/5"
-                                  : "border-red-500/30 bg-red-500/5"
-                              }`}
-                            >
-                              <div
-                                className="flex items-center gap-4 p-4 cursor-pointer hover:bg-white/5"
-                                onClick={() => toggleStep(transition.id)}
-                              >
-                                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-background/50 flex items-center justify-center text-xs font-bold">
-                                  {index + 1}
-                                </div>
-                                <div className="flex-shrink-0">
-                                  {transition.success ? (
-                                    <CheckCircle2 className="w-5 h-5 text-green-500" />
-                                  ) : (
-                                    <XCircle className="w-5 h-5 text-red-500" />
-                                  )}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <span className="font-medium text-sm">
-                                      {transition.from_state}
-                                    </span>
-                                    <span className="text-muted-foreground">
-                                      &rarr;
-                                    </span>
-                                    <span className="font-medium text-sm">
-                                      {transition.to_state}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                                    <Badge
-                                      variant="outline"
-                                      className="text-xs"
-                                    >
-                                      {transition.action_type}
-                                    </Badge>
-                                    <span>{transition.duration_ms}ms</span>
-                                    <span>
-                                      {format(
-                                        new Date(transition.executed_at),
-                                        "HH:mm:ss.SSS"
-                                      )}
-                                    </span>
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  {transition.screenshot_url && (
-                                    <div className="flex-shrink-0">
-                                      <Image
-                                        src={transition.screenshot_url}
-                                        alt="Transition screenshot"
-                                        width={60}
-                                        height={45}
-                                        className="rounded border border-border cursor-pointer hover:border-primary"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setSelectedImage(
-                                            transition.screenshot_url
-                                          );
-                                        }}
-                                      />
-                                    </div>
-                                  )}
-                                  {isExpanded ? (
-                                    <ChevronUp className="w-4 h-4 text-muted-foreground" />
-                                  ) : (
-                                    <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                                  )}
-                                </div>
-                              </div>
-
-                              {isExpanded && (
-                                <div className="px-4 pb-4 space-y-3 border-t border-border">
-                                  <div className="grid grid-cols-2 gap-4 pt-3">
-                                    <div>
-                                      <div className="text-xs text-muted-foreground mb-1">
-                                        From State
-                                      </div>
-                                      <div className="text-sm font-mono">
-                                        {transition.from_state}
-                                      </div>
-                                    </div>
-                                    <div>
-                                      <div className="text-xs text-muted-foreground mb-1">
-                                        To State
-                                      </div>
-                                      <div className="text-sm font-mono">
-                                        {transition.to_state}
-                                      </div>
-                                    </div>
-                                    <div>
-                                      <div className="text-xs text-muted-foreground mb-1">
-                                        Action Type
-                                      </div>
-                                      <div className="text-sm">
-                                        {transition.action_type}
-                                      </div>
-                                    </div>
-                                    <div>
-                                      <div className="text-xs text-muted-foreground mb-1">
-                                        Duration
-                                      </div>
-                                      <div className="text-sm">
-                                        {transition.duration_ms}ms
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  {transition.error_message && (
-                                    <div className="bg-red-500/10 border border-red-500/30 rounded p-3">
-                                      <div className="text-xs text-red-400 mb-1 font-semibold">
-                                        Error
-                                      </div>
-                                      <pre className="text-xs text-red-300 font-mono whitespace-pre-wrap">
-                                        {transition.error_message}
-                                      </pre>
-                                    </div>
-                                  )}
-
-                                  {transition.screenshot_url && (
-                                    <div>
-                                      <div className="text-xs text-muted-foreground mb-2">
-                                        Screenshot
-                                      </div>
-                                      <div className="relative">
-                                        <Image
-                                          src={transition.screenshot_url}
-                                          alt="Transition screenshot"
-                                          width={400}
-                                          height={300}
-                                          className="rounded border border-border cursor-pointer hover:border-primary"
-                                          onClick={() =>
-                                            setSelectedImage(
-                                              transition.screenshot_url
-                                            )
-                                          }
-                                        />
-                                        <Button
-                                          size="sm"
-                                          variant="secondary"
-                                          className="absolute top-2 right-2"
-                                          onClick={() =>
-                                            setSelectedImage(
-                                              transition.screenshot_url
-                                            )
-                                          }
-                                        >
-                                          <ZoomIn className="w-4 h-4" />
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-
-                        {run.transitions.length === 0 && (
-                          <div className="text-center py-12 text-muted-foreground">
-                            No transitions recorded yet
-                          </div>
-                        )}
-                      </div>
-                    </ScrollArea>
-                  </CardContent>
-                </Card>
+                <TimelineTab
+                  transitions={run.transitions}
+                  onImageSelect={setSelectedImage}
+                />
               </TabsContent>
 
               <TabsContent value="coverage">
-                <Card className="bg-muted border-border">
-                  <CardHeader>
-                    <CardTitle>State Coverage Summary</CardTitle>
-                    <CardDescription>
-                      How many times each state was visited
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ScrollArea className="h-[600px] pr-4">
-                      <div className="space-y-3">
-                        {run.state_coverage.map((state) => {
-                          const stateSuccessRate =
-                            state.times_visited > 0
-                              ? (
-                                  (state.successful_visits /
-                                    state.times_visited) *
-                                  100
-                                ).toFixed(0)
-                              : "0";
-
-                          return (
-                            <div
-                              key={state.state_name}
-                              className="flex items-center justify-between p-4 rounded-lg bg-background/50 border border-border"
-                            >
-                              <div className="flex-1">
-                                <div className="font-medium mb-2">
-                                  {state.state_name}
-                                </div>
-                                <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                                  <span>
-                                    Visited: {state.times_visited} times
-                                  </span>
-                                  <span className="text-green-500">
-                                    Success: {state.successful_visits}
-                                  </span>
-                                  <span className="text-red-400">
-                                    Failed: {state.failed_visits}
-                                  </span>
-                                  <span>
-                                    Avg: {state.average_duration_ms.toFixed(0)}
-                                    ms
-                                  </span>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-3">
-                                <div className="w-24 h-2 bg-border rounded-full overflow-hidden">
-                                  <div
-                                    className="h-full bg-green-500"
-                                    style={{
-                                      width: `${stateSuccessRate}%`,
-                                    }}
-                                  />
-                                </div>
-                                <span className="text-sm font-medium w-12 text-right">
-                                  {stateSuccessRate}%
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
-
-                        {run.state_coverage.length === 0 && (
-                          <div className="text-center py-12 text-muted-foreground">
-                            No state coverage data yet
-                          </div>
-                        )}
-                      </div>
-                    </ScrollArea>
-                  </CardContent>
-                </Card>
+                <CoverageTab stateCoverage={run.state_coverage} />
               </TabsContent>
 
               <TabsContent value="deficiencies">
-                <Card className="bg-muted border-border">
-                  <CardHeader>
-                    <CardTitle>Deficiencies Found</CardTitle>
-                    <CardDescription>
-                      Issues discovered during this test run
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ScrollArea className="h-[600px] pr-4">
-                      {run.deficiencies.length === 0 ? (
-                        <div className="text-center py-12 text-muted-foreground">
-                          <CheckCircle2 className="w-12 h-12 mx-auto mb-3 text-green-500" />
-                          No deficiencies found in this test run
-                        </div>
-                      ) : (
-                        <div className="space-y-4">
-                          {run.deficiencies.map((deficiency) => (
-                            <div
-                              key={deficiency.id}
-                              className="p-4 rounded-lg bg-background/50 border border-red-500/30"
-                            >
-                              <div className="flex items-start justify-between mb-3">
-                                <div className="flex items-center gap-2">
-                                  <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0" />
-                                  <span className="font-medium">
-                                    {deficiency.title}
-                                  </span>
-                                </div>
-                                <Badge
-                                  variant={
-                                    deficiency.severity === "critical" ||
-                                    deficiency.severity === "high"
-                                      ? "destructive"
-                                      : "outline"
-                                  }
-                                  className={
-                                    deficiency.severity === "medium"
-                                      ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
-                                      : deficiency.severity === "low"
-                                        ? "bg-blue-500/20 text-blue-400 border-blue-500/30"
-                                        : ""
-                                  }
-                                >
-                                  {deficiency.severity}
-                                </Badge>
-                              </div>
-                              <p className="text-sm text-muted-foreground mb-3">
-                                {deficiency.description}
-                              </p>
-                              <div className="text-xs text-muted-foreground space-y-1">
-                                <div>State: {deficiency.state_name}</div>
-                                {deficiency.transition_from &&
-                                  deficiency.transition_to && (
-                                    <div>
-                                      Transition: {deficiency.transition_from}{" "}
-                                      &rarr; {deficiency.transition_to}
-                                    </div>
-                                  )}
-                              </div>
-                              {deficiency.error_message && (
-                                <div className="mt-3 bg-red-500/10 border border-red-500/30 rounded p-3">
-                                  <div className="text-xs text-red-400 mb-1 font-semibold">
-                                    Stack Trace
-                                  </div>
-                                  <pre className="text-xs text-red-300 font-mono whitespace-pre-wrap max-h-40 overflow-y-auto">
-                                    {deficiency.error_message}
-                                  </pre>
-                                </div>
-                              )}
-                              {deficiency.screenshot_url && (
-                                <div className="mt-3">
-                                  <div className="text-xs text-muted-foreground mb-2">
-                                    Screenshot
-                                  </div>
-                                  <Image
-                                    src={deficiency.screenshot_url}
-                                    alt="Deficiency screenshot"
-                                    width={200}
-                                    height={150}
-                                    className="rounded border border-border cursor-pointer hover:border-primary"
-                                    onClick={() =>
-                                      setSelectedImage(
-                                        deficiency.screenshot_url
-                                      )
-                                    }
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </ScrollArea>
-                  </CardContent>
-                </Card>
+                <DeficienciesTab
+                  deficiencies={run.deficiencies}
+                  onImageSelect={setSelectedImage}
+                />
               </TabsContent>
             </Tabs>
           </div>
         </main>
 
-        <Dialog
-          open={selectedImage !== null}
-          onOpenChange={() => setSelectedImage(null)}
-        >
-          <DialogContent className="max-w-4xl">
-            <DialogHeader>
-              <DialogTitle>Screenshot</DialogTitle>
-            </DialogHeader>
-            {selectedImage && (
-              <div className="relative w-full">
-                <Image
-                  src={selectedImage}
-                  alt="Full size screenshot"
-                  width={1200}
-                  height={800}
-                  className="rounded border border-border w-full h-auto"
-                />
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
+        <ScreenshotDialog
+          selectedImage={selectedImage}
+          onClose={() => setSelectedImage(null)}
+        />
       </div>
     </RequireProject>
   );

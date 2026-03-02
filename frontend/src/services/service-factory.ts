@@ -27,6 +27,7 @@ import { DiscoveriesService } from "./discoveries-service";
 import { TaskRunsService } from "./task-runs-service";
 import { TemplateCaptureService } from "./template-capture-service";
 import { StateMachineConfigService } from "./state-machine-config-service";
+import { SkillSharingService } from "./skill-sharing-service";
 
 /**
  * ServiceFactory - Single Responsibility: Create and wire up services
@@ -64,6 +65,7 @@ export class ServiceFactory {
   public readonly taskRunsService: TaskRunsService;
   public readonly templateCaptureService: TemplateCaptureService;
   public readonly stateMachineConfigService: StateMachineConfigService;
+  public readonly skillSharingService: SkillSharingService;
 
   private constructor() {
     // Initialize auth services in dependency order
@@ -131,6 +133,9 @@ export class ServiceFactory {
       this.httpClient
     );
 
+    // Initialize skill sharing service
+    this.skillSharingService = new SkillSharingService(this.httpClient);
+
     // Wire up session expiry handling for 401 responses
     this.httpClient.setSessionExpiredHandler(() => {
       this.authService.logout();
@@ -180,3 +185,4 @@ export const discoveriesService = factory.discoveriesService;
 export const taskRunsService = factory.taskRunsService;
 export const templateCaptureService = factory.templateCaptureService;
 export const stateMachineConfigService = factory.stateMachineConfigService;
+export const skillSharingService = factory.skillSharingService;

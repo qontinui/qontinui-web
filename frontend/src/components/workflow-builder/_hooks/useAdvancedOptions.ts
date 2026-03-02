@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useAiSettings } from "@/lib/runner-api";
 import { getGenerateModels } from "@qontinui/workflow-utils";
+import type { ModelOverrides } from "@/types/unified-workflow";
 
 export interface AdvancedOptionsState {
   showAdvanced: boolean;
@@ -30,6 +31,8 @@ export interface AdvancedOptionsState {
   discoveryMode: "auto" | "enabled" | "disabled";
   setDiscoveryMode: (value: "auto" | "enabled" | "disabled") => void;
   modelsForProvider: readonly { value: string; label: string }[];
+  generationModelOverrides: ModelOverrides | undefined;
+  setGenerationModelOverrides: (value: ModelOverrides | undefined) => void;
 }
 
 export function useAdvancedOptions(): AdvancedOptionsState {
@@ -55,6 +58,9 @@ export function useAdvancedOptions(): AdvancedOptionsState {
   const [discoveryMode, setDiscoveryMode] = useState<
     "auto" | "enabled" | "disabled"
   >("auto");
+  const [generationModelOverrides, setGenerationModelOverrides] = useState<
+    ModelOverrides | undefined
+  >(undefined);
 
   // AI settings (for provider/model defaults)
   const { data: aiSettings } = useAiSettings();
@@ -109,5 +115,7 @@ export function useAdvancedOptions(): AdvancedOptionsState {
     discoveryMode,
     setDiscoveryMode,
     modelsForProvider,
+    generationModelOverrides,
+    setGenerationModelOverrides,
   };
 }

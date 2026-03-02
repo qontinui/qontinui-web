@@ -33,6 +33,9 @@ interface UseGenerateRequestsParams {
   reflectionMode: boolean;
   investigateCodebase: boolean;
   includeDesignGuidance: boolean;
+  generationModelOverrides:
+    | Record<string, { provider?: string; model?: string }>
+    | undefined;
 
   // Actions
   setSubmittingAction: (value: SubmittingAction) => void;
@@ -59,6 +62,7 @@ export function useGenerateRequests(params: UseGenerateRequestsParams) {
     reflectionMode,
     investigateCodebase,
     includeDesignGuidance,
+    generationModelOverrides,
     setSubmittingAction,
     onNavigateToActiveRuns,
   } = params;
@@ -97,6 +101,7 @@ export function useGenerateRequests(params: UseGenerateRequestsParams) {
       reflection_mode: reflectionMode,
       investigate_codebase: investigateCodebase,
       include_design_guidance: includeDesignGuidance || undefined,
+      model_overrides: generationModelOverrides,
     };
   }, [
     tagsInput,
@@ -114,6 +119,7 @@ export function useGenerateRequests(params: UseGenerateRequestsParams) {
     reflectionMode,
     investigateCodebase,
     includeDesignGuidance,
+    generationModelOverrides,
   ]);
 
   /** Build a single request (non-batch or fallback). */
@@ -200,6 +206,16 @@ export function useGenerateRequests(params: UseGenerateRequestsParams) {
       if (description.trim()) {
         autoSaveGenerationPrompt(description); // fire-and-forget
       }
+      // Persist generation overrides for "Copy from Last Generation" in workflow builder
+      if (
+        generationModelOverrides &&
+        Object.keys(generationModelOverrides).length > 0
+      ) {
+        localStorage.setItem(
+          "last-generation-model-overrides",
+          JSON.stringify(generationModelOverrides)
+        );
+      }
       onNavigateToActiveRuns(firstTaskRunId);
     } catch (err) {
       toast.error(
@@ -253,6 +269,16 @@ export function useGenerateRequests(params: UseGenerateRequestsParams) {
       }
       if (description.trim()) {
         autoSaveGenerationPrompt(description); // fire-and-forget
+      }
+      // Persist generation overrides for "Copy from Last Generation" in workflow builder
+      if (
+        generationModelOverrides &&
+        Object.keys(generationModelOverrides).length > 0
+      ) {
+        localStorage.setItem(
+          "last-generation-model-overrides",
+          JSON.stringify(generationModelOverrides)
+        );
       }
       onNavigateToActiveRuns(firstTaskRunId);
     } catch (err) {

@@ -38,6 +38,8 @@ export type {
   CompletionStep,
   WorkflowStage,
   UnifiedWorkflow,
+  ModelOverrideConfig,
+  ModelOverrides,
   WorkflowExportManifest,
   WorkflowExport,
   WorkflowImportResult,

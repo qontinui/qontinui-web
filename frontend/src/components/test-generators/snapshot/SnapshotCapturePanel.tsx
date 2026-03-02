@@ -14,7 +14,7 @@ import {
   Monitor,
   ChevronDown,
 } from "lucide-react";
-import type { BrowserTab } from "../SnapshotTestGenerator";
+import type { BrowserTab } from "../_hooks/useExtensionConnection";
 
 interface SnapshotCapturePanelProps {
   isConnected: boolean;

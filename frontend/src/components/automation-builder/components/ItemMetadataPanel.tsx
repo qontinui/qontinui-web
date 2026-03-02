@@ -1,40 +1,21 @@
-/**
- * ItemMetadataPanel Component
- *
- * Displays and allows editing of workflow metadata (name, description, category, view mode)
- * All items are now Workflows - sequential workflows are just linear graphs.
- */
-
-import React, { useState, useEffect, useCallback } from "react";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import React from "react";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
-import {
-  Collapsible,
-  CollapsibleTrigger,
-  CollapsibleContent,
-} from "@/components/ui/collapsible";
-import { Check, X, Users, ChevronDown, Play, AlertCircle } from "lucide-react";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  getSuggestedMode,
   isLinearWorkflow,
+  getSuggestedMode,
   type BuilderMode,
   type LibraryItem,
 } from "../types";
-import { PermissionBadge } from "./PermissionBadge";
 import type { PermissionLevel } from "@/types/collaboration";
-import { ExpectationsPanel } from "@/components/expectations/ExpectationsPanel";
-import type { WorkflowExpectations } from "@/lib/expectations/types";
 import type { State } from "@/contexts/automation-context/types";
+import { useMetadataEditing } from "./_hooks/useMetadataEditing";
+import { useInitialStates } from "./_hooks/useInitialStates";
+import { TypeBadge } from "./_components/TypeBadge";
+import { SharingInfo } from "./_components/SharingInfo";
+import { EditableField } from "./_components/EditableField";
+import { EditActions } from "./_components/EditActions";
+import { InitialStatesSection } from "./_components/InitialStatesSection";
+import { ExpectationsSection } from "./_components/ExpectationsSection";
+import { MetadataInfo } from "./_components/MetadataInfo";
 
 export interface ItemMetadataPanelProps {
   item: LibraryItem;
@@ -43,11 +24,9 @@ export interface ItemMetadataPanelProps {
   collaboratorCount?: number;
   onOpenShare?: () => void;
   className?: string;
-  /** Available states for initial state selection (required for Main category workflows) */
   states?: State[];
 }
 
-// Workflow categories (unified for all workflows)
 const WORKFLOW_CATEGORIES = [
   "Main",
   "UI Automation",
@@ -58,6 +37,16 @@ const WORKFLOW_CATEGORIES = [
   "Utilities",
   "Custom",
 ] as const;
+
+const CATEGORY_OPTIONS = WORKFLOW_CATEGORIES.map((cat) => ({
+  value: cat,
+  label: cat,
+}));
+
+const VIEW_MODE_OPTIONS = [
+  { value: "sequential", label: "Sequential (Timeline)" },
+  { value: "graph", label: "Graph (Visual)" },
+];
 
 const DEFAULT_STATES: State[] = [];
 
@@ -70,550 +59,110 @@ export function ItemMetadataPanel({
   className,
   states = DEFAULT_STATES,
 }: ItemMetadataPanelProps) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [tempName, setTempName] = useState(item.name);
-  const [tempDescription, setTempDescription] = useState(
-    item.description || ""
-  );
-  const [tempCategory, setTempCategory] = useState(item.category || "Main");
-  const [tempViewMode, setTempViewMode] = useState<BuilderMode>(
-    item.metadata?.viewMode || getSuggestedMode(item)
-  );
-  const [expectationsOpen, setExpectationsOpen] = useState(false);
-  const [initialStatesOpen, setInitialStatesOpen] = useState(false);
-
-  // Reset temp values when item changes
-  useEffect(() => {
-    setTempName(item.name);
-    setTempDescription(item.description || "");
-    setTempCategory(item.category || "Main");
-    setTempViewMode(item.metadata?.viewMode || getSuggestedMode(item));
-    setIsEditing(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- Only reset when item.id changes, not on every item property change
-  }, [item.id]);
-
-  /**
-   * Save changes
-   */
-  const handleSave = useCallback(() => {
-    if (!tempName.trim()) {
-      // Don't allow empty names
-      return;
-    }
-
-    // Update workflow with all fields
-    onUpdate({
-      ...item,
-      name: tempName.trim(),
-      description: tempDescription.trim(),
-      category: tempCategory,
-      metadata: {
-        ...item.metadata,
-        viewMode: tempViewMode,
-        updated: new Date().toISOString(),
-      },
-    });
-
-    setIsEditing(false);
-  }, [item, tempName, tempDescription, tempCategory, tempViewMode, onUpdate]);
-
-  /**
-   * Cancel editing
-   */
-  const handleCancel = useCallback(() => {
-    setTempName(item.name);
-    setTempDescription(item.description || "");
-    setTempCategory(item.category || "Main");
-    setTempViewMode(item.metadata?.viewMode || getSuggestedMode(item));
-    setIsEditing(false);
-  }, [item]);
-
-  /**
-   * Handle Enter key to save
-   */
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        handleSave();
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        handleCancel();
-      }
-    },
-    [handleSave, handleCancel]
-  );
-
-  /**
-   * Handle expectations change
-   */
-  const handleExpectationsChange = useCallback(
-    (expectations: WorkflowExpectations) => {
-      onUpdate({
-        ...item,
-        expectations,
-        metadata: {
-          ...item.metadata,
-          updated: new Date().toISOString(),
-        },
-      });
-    },
-    [item, onUpdate]
-  );
-
-  /**
-   * Handle initial state toggle
-   */
-  const handleInitialStateToggle = useCallback(
-    (stateId: string, checked: boolean) => {
-      const currentIds =
-        (item as { initialStateIds?: string[] }).initialStateIds || [];
-      const newIds = checked
-        ? [...currentIds, stateId]
-        : currentIds.filter((id: string) => id !== stateId);
-
-      onUpdate({
-        ...item,
-        initialStateIds: newIds,
-        metadata: {
-          ...item.metadata,
-          updated: new Date().toISOString(),
-        },
-      } as LibraryItem);
-    },
-    [item, onUpdate]
-  );
-
-  // Check if this is a Main category workflow
-  const isMainCategory = (item.category || "Main") === "Main";
-  const initialStateIds: string[] =
-    (item as { initialStateIds?: string[] }).initialStateIds || [];
+  const editing = useMetadataEditing(item, onUpdate);
+  const initialStates = useInitialStates(item, onUpdate);
 
   const isLinear = isLinearWorkflow(item);
   const currentViewMode = item.metadata?.viewMode || getSuggestedMode(item);
+  const isMainCategory = (item.category || "Main") === "Main";
 
   return (
     <div className={`pb-8 ${className || ""}`}>
-      {/* Type Badge */}
-      <div className="mb-4 flex items-center justify-between gap-2">
-        <span
-          className={
-            currentViewMode === "sequential"
-              ? "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-primary/10 text-brand-primary border border-brand-primary/30"
-              : "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-success/10 text-brand-success border border-brand-success/30"
-          }
-        >
-          {isLinear ? "Sequential Workflow" : "Graph Workflow"}
-        </span>
-        {currentPermission && (
-          <PermissionBadge permission={currentPermission} size="sm" />
-        )}
-      </div>
+      <TypeBadge
+        currentViewMode={currentViewMode}
+        isLinear={isLinear}
+        currentPermission={currentPermission}
+      />
 
-      {/* Sharing Info */}
-      {(currentPermission || collaboratorCount) && (
-        <div className="mb-4 p-3 bg-surface-canvas/50 border border-border-subtle rounded-lg">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm text-text-muted">
-              <Users className="h-4 w-4" />
-              <span>
-                {collaboratorCount !== undefined && collaboratorCount > 0
-                  ? `${collaboratorCount} collaborator${collaboratorCount !== 1 ? "s" : ""}`
-                  : "Not shared"}
-              </span>
-            </div>
-            {onOpenShare && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onOpenShare}
-                className="text-xs text-text-muted hover:text-white h-auto py-1 px-2"
-              >
-                Manage
-              </Button>
-            )}
-          </div>
-        </div>
+      <SharingInfo
+        currentPermission={currentPermission}
+        collaboratorCount={collaboratorCount}
+        onOpenShare={onOpenShare}
+      />
+
+      <EditableField
+        type="text"
+        label="Name"
+        htmlFor="item-name"
+        isEditing={editing.isEditing}
+        value={editing.tempName}
+        onChange={editing.setTempName}
+        displayValue={item.name}
+        onStartEditing={editing.startEditing}
+        onKeyDown={editing.handleKeyDown}
+        placeholder="Enter name..."
+        dataTutorialId="workflow-name-input"
+        dataUiId="automation-metadata-name-input"
+      />
+
+      <EditableField
+        type="textarea"
+        label="Description"
+        htmlFor="item-description"
+        isEditing={editing.isEditing}
+        value={editing.tempDescription}
+        onChange={editing.setTempDescription}
+        displayValue={item.description || "No description"}
+        onStartEditing={editing.startEditing}
+        onKeyDown={editing.handleKeyDown}
+        placeholder="Enter description..."
+        dataUiId="automation-metadata-description-input"
+      />
+
+      <EditableField
+        type="select"
+        label="Category"
+        htmlFor="item-category"
+        isEditing={editing.isEditing}
+        value={editing.tempCategory}
+        onChange={editing.setTempCategory}
+        displayValue={item.category || "Main"}
+        onStartEditing={editing.startEditing}
+        onKeyDown={editing.handleKeyDown}
+        options={CATEGORY_OPTIONS}
+        dataUiId="automation-metadata-category-select"
+      />
+
+      <EditableField
+        type="select"
+        label="Preferred Editor"
+        htmlFor="item-viewMode"
+        isEditing={editing.isEditing}
+        value={editing.tempViewMode}
+        onChange={(v) => editing.setTempViewMode(v as BuilderMode)}
+        displayValue={
+          currentViewMode === "sequential"
+            ? "Sequential (Timeline)"
+            : "Graph (Visual)"
+        }
+        onStartEditing={editing.startEditing}
+        onKeyDown={editing.handleKeyDown}
+        options={VIEW_MODE_OPTIONS}
+        dataUiId="automation-metadata-viewmode-select"
+      />
+
+      {editing.isEditing && (
+        <EditActions
+          onSave={editing.handleSave}
+          onCancel={editing.handleCancel}
+          saveDisabled={!editing.tempName.trim()}
+        />
       )}
 
-      {/* Name Field */}
-      <div className="mb-4">
-        <Label
-          htmlFor="item-name"
-          className="text-sm font-medium text-text-muted mb-1.5"
-        >
-          Name
-        </Label>
-        {isEditing ? (
-          <Input
-            id="item-name"
-            value={tempName}
-            onChange={(e) => setTempName(e.target.value)}
-            onKeyDown={handleKeyDown}
-            data-tutorial-id="workflow-name-input"
-            data-ui-id="automation-metadata-name-input"
-            className="bg-surface-canvas border-border-default text-white"
-            placeholder="Enter name..."
-          />
-        ) : (
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => setIsEditing(true)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                setIsEditing(true);
-              }
-            }}
-            className="px-3 py-2 bg-surface-canvas border border-border-subtle rounded-md cursor-pointer hover:border-border-default transition-colors"
-          >
-            <span className="text-white">{item.name}</span>
-          </div>
-        )}
-      </div>
-
-      {/* Description Field */}
-      <div className="mb-4">
-        <Label
-          htmlFor="item-description"
-          className="text-sm font-medium text-text-muted mb-1.5"
-        >
-          Description
-        </Label>
-        {isEditing ? (
-          <Textarea
-            id="item-description"
-            value={tempDescription}
-            onChange={(e) => setTempDescription(e.target.value)}
-            onKeyDown={handleKeyDown}
-            className="bg-surface-canvas border-border-default text-white min-h-[80px]"
-            placeholder="Enter description..."
-            data-ui-id="automation-metadata-description-input"
-          />
-        ) : (
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => setIsEditing(true)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                setIsEditing(true);
-              }
-            }}
-            className="px-3 py-2 bg-surface-canvas border border-border-subtle rounded-md cursor-pointer hover:border-border-default transition-colors min-h-[80px]"
-          >
-            <span className="text-text-muted text-sm">
-              {item.description || "No description"}
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* Category Field */}
-      <div className="mb-4">
-        <Label
-          htmlFor="item-category"
-          className="text-sm font-medium text-text-muted mb-1.5"
-        >
-          Category
-        </Label>
-        {isEditing ? (
-          <Select value={tempCategory} onValueChange={setTempCategory}>
-            <SelectTrigger
-              className="bg-surface-canvas border-border-default text-white"
-              data-ui-id="automation-metadata-category-select"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {WORKFLOW_CATEGORIES.map((cat) => (
-                <SelectItem key={cat} value={cat}>
-                  {cat}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ) : (
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => setIsEditing(true)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                setIsEditing(true);
-              }
-            }}
-            className="px-3 py-2 bg-surface-canvas border border-border-subtle rounded-md cursor-pointer hover:border-border-default transition-colors"
-          >
-            <span className="text-white">{item.category || "Main"}</span>
-          </div>
-        )}
-      </div>
-
-      {/* View Mode Field */}
-      <div className="mb-4">
-        <Label
-          htmlFor="item-viewMode"
-          className="text-sm font-medium text-text-muted mb-1.5"
-        >
-          Preferred Editor
-        </Label>
-        {isEditing ? (
-          <Select
-            value={tempViewMode}
-            onValueChange={(v) => setTempViewMode(v as BuilderMode)}
-          >
-            <SelectTrigger
-              className="bg-surface-canvas border-border-default text-white"
-              data-ui-id="automation-metadata-viewmode-select"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="sequential">Sequential (Timeline)</SelectItem>
-              <SelectItem value="graph">Graph (Visual)</SelectItem>
-            </SelectContent>
-          </Select>
-        ) : (
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => setIsEditing(true)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                setIsEditing(true);
-              }
-            }}
-            className="px-3 py-2 bg-surface-canvas border border-border-subtle rounded-md cursor-pointer hover:border-border-default transition-colors"
-          >
-            <span className="text-white">
-              {currentViewMode === "sequential"
-                ? "Sequential (Timeline)"
-                : "Graph (Visual)"}
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* Edit Actions */}
-      {isEditing && (
-        <div className="flex gap-2 mt-6">
-          <Button
-            onClick={handleSave}
-            disabled={!tempName.trim()}
-            className="flex-1 bg-green-600 hover:bg-green-700 text-white"
-            data-ui-id="automation-metadata-save-btn"
-          >
-            <Check className="w-4 h-4 mr-2" />
-            Save
-          </Button>
-          <Button
-            onClick={handleCancel}
-            variant="outline"
-            className="flex-1 border-border-default text-text-muted hover:bg-surface-raised"
-            data-ui-id="automation-metadata-cancel-btn"
-          >
-            <X className="w-4 h-4 mr-2" />
-            Cancel
-          </Button>
-        </div>
-      )}
-
-      {/* Initial States Section - Only for Main category workflows */}
       {isMainCategory && (
-        <div className="mt-6 pt-6 border-t border-border-subtle">
-          <Collapsible
-            open={initialStatesOpen}
-            onOpenChange={setInitialStatesOpen}
-          >
-            <CollapsibleTrigger className="w-full flex items-center justify-between py-2 hover:bg-surface-canvas/50 rounded-md px-2 transition-colors">
-              <div className="flex items-center gap-2">
-                <Play className="h-4 w-4 text-brand-success" />
-                <span className="text-sm font-medium text-text-muted">
-                  Initial States
-                </span>
-                {initialStateIds.length > 0 ? (
-                  <span className="text-xs text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded">
-                    {initialStateIds.length} custom
-                  </span>
-                ) : (
-                  <span className="text-xs text-text-muted bg-text-muted/10 px-1.5 py-0.5 rounded">
-                    {states.filter((s) => s.initial).length} defaults
-                  </span>
-                )}
-              </div>
-              <ChevronDown
-                className={`h-4 w-4 text-text-muted transition-transform duration-200 ${
-                  initialStatesOpen ? "rotate-180" : ""
-                }`}
-              />
-            </CollapsibleTrigger>
-            <CollapsibleContent className="mt-2">
-              <div className="bg-surface-canvas/30 border border-border-subtle rounded-lg p-3">
-                {/* Inheritance indicator */}
-                {initialStateIds.length === 0 ? (
-                  <div className="flex items-center gap-2 text-xs text-text-muted mb-3 p-2 bg-surface-raised/50 rounded">
-                    <Play className="h-3 w-3" />
-                    <span>
-                      Using {states.filter((s) => s.initial).length} default
-                      initial states from State Machine
-                    </span>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between gap-2 text-xs mb-3 p-2 bg-amber-500/10 border border-amber-500/30 rounded">
-                    <div className="flex items-center gap-2 text-amber-500">
-                      <AlertCircle className="h-3 w-3" />
-                      <span>
-                        Overriding defaults with {initialStateIds.length} custom
-                        state{initialStateIds.length !== 1 ? "s" : ""}
-                      </span>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 px-2 text-xs text-amber-500 hover:text-amber-400 hover:bg-amber-500/10"
-                      onClick={() => {
-                        onUpdate({
-                          ...item,
-                          initialStateIds: undefined,
-                          metadata: {
-                            ...item.metadata,
-                            updated: new Date().toISOString(),
-                          },
-                        } as LibraryItem);
-                      }}
-                      data-ui-id="automation-metadata-resetstates-btn"
-                    >
-                      Reset to defaults
-                    </Button>
-                  </div>
-                )}
-
-                <p className="text-xs text-text-muted mb-3">
-                  Select which states should be active when this workflow
-                  starts. States marked as &quot;Initial&quot; in the State
-                  Machine are used by default.
-                </p>
-                {states.length === 0 ? (
-                  <div className="flex items-center gap-2 text-sm text-amber-500">
-                    <AlertCircle className="h-4 w-4" />
-                    <span>No states defined in this project</span>
-                  </div>
-                ) : (
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {states.map((state) => {
-                      const isDefaultInitial = state.initial === true;
-                      const isSelected =
-                        initialStateIds.length > 0
-                          ? initialStateIds.includes(state.id)
-                          : isDefaultInitial;
-
-                      return (
-                        <div
-                          key={state.id}
-                          className="flex items-center gap-2 p-2 rounded hover:bg-surface-raised/50 cursor-pointer transition-colors"
-                          onClick={() =>
-                            handleInitialStateToggle(state.id, !isSelected)
-                          }
-                        >
-                          <Checkbox
-                            checked={isSelected}
-                            onCheckedChange={(checked) =>
-                              handleInitialStateToggle(
-                                state.id,
-                                checked === true
-                              )
-                            }
-                            className="border-border-default data-[state=checked]:bg-brand-success data-[state=checked]:border-brand-success"
-                            data-ui-id={`automation-metadata-initialstate-${state.id}-checkbox`}
-                          />
-                          <span className="text-sm text-text-muted flex-1">
-                            {state.name}
-                          </span>
-                          {isDefaultInitial && (
-                            <span className="text-xs text-text-muted bg-surface-raised/50 px-1.5 py-0.5 rounded">
-                              default
-                            </span>
-                          )}
-                          {state.description && (
-                            <span className="text-xs text-text-muted truncate max-w-[100px]">
-                              {state.description}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-        </div>
+        <InitialStatesSection
+          states={states}
+          initialStateIds={initialStates.initialStateIds}
+          open={initialStates.initialStatesOpen}
+          onOpenChange={initialStates.setInitialStatesOpen}
+          onToggle={initialStates.handleInitialStateToggle}
+          onResetToDefaults={initialStates.handleResetToDefaults}
+        />
       )}
 
-      {/* Workflow Expectations Section */}
-      <div className="mt-6 pt-6 border-t border-border-subtle">
-        <Collapsible open={expectationsOpen} onOpenChange={setExpectationsOpen}>
-          <CollapsibleTrigger className="w-full flex items-center justify-between py-2 hover:bg-surface-canvas/50 rounded-md px-2 transition-colors">
-            <span className="text-sm font-medium text-text-muted">
-              Workflow Expectations
-            </span>
-            <ChevronDown
-              className={`h-4 w-4 text-text-muted transition-transform duration-200 ${
-                expectationsOpen ? "rotate-180" : ""
-              }`}
-            />
-          </CollapsibleTrigger>
-          <CollapsibleContent className="mt-2">
-            <div className="bg-surface-canvas/30 border border-border-subtle rounded-lg overflow-hidden">
-              <ExpectationsPanel
-                expectations={item.expectations}
-                onChange={handleExpectationsChange}
-                availableCheckpoints={[]}
-                availableStates={[]}
-              />
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
-      </div>
+      <ExpectationsSection item={item} onUpdate={onUpdate} />
 
-      {/* Metadata Info */}
-      <div className="mt-6 pt-6 border-t border-border-subtle">
-        <div className="text-xs text-text-muted space-y-1">
-          <div>
-            <span className="font-medium">ID:</span> {item.id}
-          </div>
-          <div>
-            <span className="font-medium">Format:</span> {item.format}
-          </div>
-          <div>
-            <span className="font-medium">Version:</span> {item.version}
-          </div>
-          {item.metadata?.created && (
-            <div>
-              <span className="font-medium">Created:</span>{" "}
-              {new Date(item.metadata.created).toLocaleDateString()}
-            </div>
-          )}
-          {item.metadata?.updated && (
-            <div>
-              <span className="font-medium">Updated:</span>{" "}
-              {new Date(item.metadata.updated).toLocaleDateString()}
-            </div>
-          )}
-          <div>
-            <span className="font-medium">Actions:</span> {item.actions.length}
-          </div>
-          <div>
-            <span className="font-medium">Type:</span>{" "}
-            {isLinear ? "Linear (no branching)" : "Graph (branching)"}
-          </div>
-        </div>
-      </div>
+      <MetadataInfo item={item} isLinear={isLinear} />
     </div>
   );
 }

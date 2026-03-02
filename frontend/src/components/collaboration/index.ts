@@ -45,7 +45,7 @@ export type {
 
 // Conflict Resolution and Reviews
 export { ConflictResolutionDialog } from "./ConflictResolutionDialog";
-export type { Conflict, ConflictChange } from "./ConflictResolutionDialog";
+export type { Conflict, ConflictChange } from "./_types/conflict";
 
 export { ReviewRequestPanel } from "./ReviewRequestPanel";
 export type {

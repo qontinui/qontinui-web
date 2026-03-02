@@ -7,7 +7,10 @@
  */
 
 import type { WorkflowDataAdapter } from "@qontinui/workflow-ui";
-import type { UnifiedWorkflow } from "@qontinui/shared-types/workflow";
+import type {
+  UnifiedWorkflow,
+  SkillDefinition,
+} from "@qontinui/shared-types/workflow";
 import type { LibraryItem } from "@qontinui/shared-types/library";
 import { runnerFetch } from "@/lib/runner/api-client";
 import * as workflowApi from "@/lib/api/unified-workflows";
@@ -46,6 +49,15 @@ export function createWebDataAdapter(): WorkflowDataAdapter {
 
     async fetchContexts(): Promise<LibraryItem[]> {
       return runnerFetch<LibraryItem[]>("/contexts");
+    },
+
+    async fetchSkills(): Promise<SkillDefinition[]> {
+      try {
+        const skills = await runnerFetch<SkillDefinition[]>("/skills");
+        return (skills ?? []).filter((s) => s.source !== "builtin");
+      } catch {
+        return [];
+      }
     },
 
     async saveWorkflow(workflow: UnifiedWorkflow): Promise<UnifiedWorkflow> {

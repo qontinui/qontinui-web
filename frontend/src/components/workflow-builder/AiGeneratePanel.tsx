@@ -59,6 +59,7 @@ export function AiGeneratePanel({
       reflectionMode: advancedOptions.reflectionMode,
       investigateCodebase: advancedOptions.investigateCodebase,
       includeDesignGuidance: advancedOptions.includeDesignGuidance,
+      generationModelOverrides: advancedOptions.generationModelOverrides,
 
       // Actions
       setSubmittingAction: formState.setSubmittingAction,

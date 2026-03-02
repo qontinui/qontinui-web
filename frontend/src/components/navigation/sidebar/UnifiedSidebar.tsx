@@ -1,30 +1,24 @@
 "use client";
 
 import * as React from "react";
-import { useState, useCallback, useMemo } from "react";
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import nextDynamic from "next/dynamic";
-import Image from "next/image";
-import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { OrganizationSwitcher } from "@/components/collaboration/OrganizationSwitcher";
-import { useOrganization } from "@/contexts/organization-context";
-import { useSidebar } from "@/contexts/sidebar-context";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/contexts/auth-context";
-import { useAutomation } from "@/contexts/automation-context";
-import { useAutomationStore } from "@/stores/automation";
-import { useProjects, useCreateProject } from "@/hooks/use-projects";
+import { useSidebar } from "@/contexts/sidebar-context";
 import { STORAGE_KEYS } from "qontinui-navigation";
 import { toast } from "sonner";
-import { ConfigImporter } from "@/lib/config-importer";
-import { getProjectLoader } from "@/lib/project";
+import { useSidebarNavigation } from "./_hooks/use-sidebar-navigation";
+import { useSidebarProjects } from "./_hooks/use-sidebar-projects";
+import { useSidebarOrganizations } from "./_hooks/use-sidebar-organizations";
+import { useImportExport } from "./_hooks/use-import-export";
+import { SearchTrigger } from "./_components/SearchTrigger";
+import { SidebarHeader } from "./_components/SidebarHeader";
+import { SidebarNav } from "./_components/SidebarNav";
+import { SidebarFooter } from "./_components/SidebarFooter";
+import { ProjectSwitcher } from "./ProjectSwitcher";
 
 const CreateOrganizationDialog = nextDynamic(
   () =>
@@ -43,53 +37,6 @@ const ProjectExportDialog = nextDynamic(
     ),
   { ssr: false }
 );
-import type { NavItem } from "./types";
-import { getWebNavItems } from "./shared-nav-adapter";
-import { devNavItems } from "./nav-items";
-import { ProjectSwitcher } from "./ProjectSwitcher";
-import { NavItemButton } from "./NavItemButton";
-import { CollapsibleNavItem } from "./CollapsibleNavItem";
-import { UserMenu } from "./UserMenu";
-import { CollapseToggle } from "./CollapseToggle";
-import { HelpButton } from "./HelpButton";
-import { createLogger } from "@/lib/logger";
-const logger = createLogger("UnifiedSidebar");
-
-// =============================================================================
-// Search Trigger Component
-// =============================================================================
-
-function SearchTrigger({ isCollapsed }: { isCollapsed: boolean }) {
-  if (isCollapsed) {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button className="flex size-10 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary">
-            <Search className="size-4" />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="right">Search</TooltipContent>
-      </Tooltip>
-    );
-  }
-
-  return (
-    <button
-      data-tutorial-id="sidebar-search"
-      className="flex h-8 w-full items-center gap-2 rounded-md border border-border-subtle bg-surface-canvas px-2.5 text-sm text-text-muted transition-colors hover:border-border-default hover:bg-surface-hover"
-    >
-      <Search className="size-3.5" />
-      <span className="text-xs">Search...</span>
-      <kbd className="pointer-events-none ml-auto hidden h-5 select-none items-center gap-1 rounded border border-border-subtle bg-surface-canvas px-1.5 font-mono text-[10px] font-medium text-text-muted sm:flex">
-        <span className="text-xs">&#8984;</span>K
-      </kbd>
-    </button>
-  );
-}
-
-// =============================================================================
-// Main Unified Sidebar Component
-// =============================================================================
 
 interface UnifiedSidebarProps {
   className?: string;
@@ -112,99 +59,44 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
   className,
   projectId: propProjectId,
 }) => {
-  const { user, logout, loading: authLoading } = useAuth();
+  const { user, logout } = useAuth();
   const { isCollapsed, setIsCollapsed } = useSidebar();
-  const [showCreateOrgDialog, setShowCreateOrgDialog] = useState(false);
-  const [showExportDialog, setShowExportDialog] = useState(false);
-  const [mounted, setMounted] = useState(false);
   const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
 
-  // Prevent hydration mismatch
-  React.useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  const { currentOrganization, organizations, loading, switchOrganization } =
-    useOrganization();
-
-  // Project management
   const {
-    projectId: contextProjectId,
-    setProjectId: setContextProjectId,
-    setProjectName,
-    loadConfiguration,
-  } = useAutomation();
-  const { data: projects = [], isLoading: projectsLoading } = useProjects();
-  const createProject = useCreateProject();
+    mounted,
+    setMounted,
+    visibleNavItems,
+    isRouteActive,
+    handleNavigation,
+    handleDocs,
+  } = useSidebarNavigation();
 
-  // Import handler
-  const importer = useMemo(() => new ConfigImporter(), []);
+  const {
+    projectId,
+    projects,
+    currentProject,
+    projectsLoading,
+    handleProjectChange,
+    handleCreateProject,
+  } = useSidebarProjects(propProjectId);
 
-  const handleExport = useCallback(() => {
-    if (!user) {
-      toast.error("Please log in to export your project");
-      return;
-    }
-    setShowExportDialog(true);
-  }, [user]);
+  const {
+    loading: orgLoading,
+    showCreateOrgDialog,
+    setShowCreateOrgDialog,
+    switcherOrganizations,
+    switcherCurrentOrg,
+    handleOrganizationChange,
+    handleCreateOrganization,
+  } = useSidebarOrganizations();
 
-  const handleImport = useCallback(async () => {
-    if (!user) {
-      toast.error("Please log in to import a project");
-      return;
-    }
+  const { showExportDialog, setShowExportDialog, handleExport, handleImport } =
+    useImportExport();
 
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".json";
-
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-
-      try {
-        const result = await importer.loadFromFile(file);
-
-        if (result.errors.length > 0) {
-          toast.error("Import failed", {
-            description: result.errors.join(", "),
-          });
-          return;
-        }
-
-        if (result.warnings.length > 0) {
-          result.warnings.forEach((warning) => {
-            toast.warning("Import warning", { description: warning });
-          });
-        }
-
-        loadConfiguration(result);
-
-        const zustandStore = useAutomationStore.getState();
-        await zustandStore.loadConfiguration({
-          name: result.name,
-          workflows: result.workflows,
-          states: result.states,
-          transitions: result.transitions,
-          images: result.images,
-          categories: result.categories,
-          settings: result.settings,
-        });
-
-        toast.success("Import successful", {
-          description: `Loaded ${result.states.length} states, ${result.workflows?.length || 0} workflows`,
-        });
-      } catch (error) {
-        toast.error("Import failed", {
-          description: error instanceof Error ? error.message : "Unknown error",
-        });
-      }
-    };
-
-    input.click();
-  }, [user, importer, loadConfiguration]);
+  useEffect(() => {
+    setMounted(true);
+  }, [setMounted]);
 
   const handleLogout = useCallback(async () => {
     logout();
@@ -212,196 +104,11 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
     toast.success("Logged out successfully");
   }, [logout, router]);
 
-  const handleDocs = useCallback(() => {
-    router.push("/docs");
-  }, [router]);
-
-  // Get project ID from prop, URL params, or context
-  const projectId =
-    propProjectId ?? searchParams?.get("project") ?? contextProjectId ?? null;
-
-  const currentProject = projects.find((p) => p.id === projectId) ?? null;
-
-  const handleProjectChange = useCallback(
-    async (newProjectId: string) => {
-      const loader = getProjectLoader();
-      const success = await loader.load(newProjectId, {
-        currentProjectId: contextProjectId,
-      });
-
-      if (!success) {
-        toast.error("Failed to load project");
-        return;
-      }
-
-      const newProject = projects.find((p) => p.id === newProjectId);
-      setContextProjectId(newProjectId);
-      if (newProject) {
-        setProjectName(newProject.name);
-      }
-      const url = new URL(window.location.href);
-      url.searchParams.set("project", newProjectId);
-      router.push(url.pathname + url.search);
-    },
-    [contextProjectId, projects, setContextProjectId, setProjectName, router]
-  );
-
-  const handleCreateProject = useCallback(async () => {
-    try {
-      const newProject = await createProject.mutateAsync({
-        name: `New Automation ${new Date().toLocaleDateString()}`,
-        description: "A new automation workflow",
-        configuration: {},
-      });
-      handleProjectChange(newProject.id);
-      toast.success("Project created successfully");
-    } catch (error: unknown) {
-      logger.error("Failed to create project:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Failed to create project"
-      );
-    }
-  }, [createProject, handleProjectChange]);
-
-  // Filter nav items based on admin status and hiddenInProd flag
-  const isDevelopment = process.env.NODE_ENV === "development";
-  const filterNavItems = useCallback(
-    (items: NavItem[]): NavItem[] => {
-      return items
-        .filter((item) => {
-          // hiddenInProd items only show in development
-          if (item.hiddenInProd && (!mounted || !isDevelopment)) return false;
-          if (authLoading || !user) return !item.adminOnly;
-          return !item.adminOnly || user.is_superuser === true;
-        })
-        .map((item) => ({
-          ...item,
-          children: item.children ? filterNavItems(item.children) : undefined,
-        }))
-        .filter((item) => !item.children || item.children.length > 0);
-    },
-    [mounted, isDevelopment, authLoading, user]
-  );
-
-  const allItems = useMemo(() => {
-    const shared = getWebNavItems();
-    return isDevelopment ? [...shared, ...devNavItems] : shared;
-  }, [isDevelopment]);
-
-  const visibleNavItems = useMemo(() => {
-    return filterNavItems(allItems);
-  }, [filterNavItems, allItems]);
-
   const toggleCollapse = useCallback(() => {
     const newState = !isCollapsed;
     setIsCollapsed(newState);
     localStorage.setItem(STORAGE_KEYS.collapsed, JSON.stringify(newState));
   }, [isCollapsed, setIsCollapsed]);
-
-  const isRouteActive = useCallback(
-    (route: string, item: NavItem): boolean => {
-      const checkRouteMatch = (routeToCheck: string): boolean => {
-        if (routeToCheck.includes("?")) {
-          const [basePath, query] = routeToCheck.split("?");
-          const queryParams = new URLSearchParams(query);
-          const currentParams = searchParams;
-          const baseMatch = pathname === basePath;
-          const categoryMatch =
-            queryParams.get("category") === currentParams.get("category");
-          const tabMatch = queryParams.get("tab") === currentParams.get("tab");
-          return baseMatch && categoryMatch && tabMatch;
-        } else {
-          const currentHasParams = searchParams.toString().length > 0;
-          return pathname === routeToCheck && !currentHasParams;
-        }
-      };
-
-      if (item.children && item.children.length > 0) {
-        return item.children.some(
-          (child) =>
-            checkRouteMatch(child.route) ||
-            (child.children &&
-              child.children.some((gc) => checkRouteMatch(gc.route)))
-        );
-      }
-
-      return checkRouteMatch(route);
-    },
-    [pathname, searchParams]
-  );
-
-  const buildRoute = useCallback(
-    (route: string): string => {
-      if (route.includes(":projectId")) {
-        if (!projectId) return "/build/workflows";
-        return route.replace(":projectId", projectId);
-      }
-
-      if (!projectId) return route;
-
-      if (route.includes("?")) {
-        return `${route}&project=${projectId}`;
-      } else {
-        return `${route}?project=${projectId}`;
-      }
-    },
-    [projectId]
-  );
-
-  const handleNavigation = useCallback(
-    (route: string) => {
-      router.push(buildRoute(route));
-    },
-    [router, buildRoute]
-  );
-
-  const handleOrganizationChange = useCallback(
-    async (orgId: string) => {
-      try {
-        await switchOrganization(orgId);
-      } catch (error) {
-        logger.error("[UnifiedSidebar] Failed to switch organization:", error);
-      }
-    },
-    [switchOrganization]
-  );
-
-  const handleCreateOrganization = useCallback(() => {
-    setShowCreateOrgDialog(true);
-  }, []);
-
-  // Convert organizations to expected format
-  const switcherOrganizations = useMemo(
-    () =>
-      organizations.map((org) => ({
-        id: org.id,
-        name: org.name,
-        avatar_url: undefined,
-        member_count: org.member_count,
-        role: (org.owner_id === user?.id ? "owner" : "member") as
-          | "owner"
-          | "admin"
-          | "member"
-          | "viewer",
-      })),
-    [organizations, user?.id]
-  );
-
-  const switcherCurrentOrg = useMemo(
-    () =>
-      currentOrganization
-        ? {
-            id: currentOrganization.id,
-            name: currentOrganization.name,
-            avatar_url: undefined,
-            member_count: currentOrganization.member_count,
-            role: (currentOrganization.owner_id === user?.id
-              ? "owner"
-              : "member") as "owner" | "admin" | "member" | "viewer",
-          }
-        : null,
-    [currentOrganization, user?.id]
-  );
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -414,56 +121,16 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
           className
         )}
       >
-        {/* Header - Logo */}
-        <div
-          className={cn(
-            "relative flex flex-col p-2 border-b border-border-subtle",
-            isCollapsed && "items-center"
-          )}
-        >
-          {isCollapsed ? (
-            <Image
-              src="/q-logo.png"
-              alt="Qontinui"
-              width={32}
-              height={32}
-              className="h-8 w-auto"
-            />
-          ) : (
-            <div className="flex items-center gap-1">
-              <Image
-                src="/q-logo.png"
-                alt="Qontinui"
-                width={28}
-                height={28}
-                className="h-7 w-auto"
-              />
-              <span className="text-xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
-                ontinui
-              </span>
-            </div>
-          )}
-        </div>
+        <SidebarHeader
+          isCollapsed={isCollapsed}
+          mounted={mounted}
+          loading={orgLoading}
+          switcherOrganizations={switcherOrganizations}
+          switcherCurrentOrg={switcherCurrentOrg}
+          onOrganizationChange={handleOrganizationChange}
+          onCreateOrganization={handleCreateOrganization}
+        />
 
-        {/* Organization Switcher */}
-        {!isCollapsed && (
-          <div className="px-2 py-1.5 border-b border-border-subtle">
-            {mounted ? (
-              <OrganizationSwitcher
-                organizations={switcherOrganizations}
-                currentOrganization={switcherCurrentOrg}
-                onOrganizationChange={handleOrganizationChange}
-                onCreateOrganization={handleCreateOrganization}
-                loading={loading}
-                className="bg-surface-raised/50 border-border-default hover:bg-surface-raised hover:border-border-default"
-              />
-            ) : (
-              <div className="h-8 w-full rounded-md bg-surface-raised/50 border border-border-default animate-pulse" />
-            )}
-          </div>
-        )}
-
-        {/* Project Switcher + Search */}
         <div
           className={cn(
             "flex flex-col gap-2 p-2 border-b border-border-subtle",
@@ -490,71 +157,26 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
           <SearchTrigger isCollapsed={isCollapsed} />
         </div>
 
-        {/* Navigation Area */}
-        <ScrollArea className="flex-1 px-2">
-          <nav
-            data-tutorial-id="sidebar-nav"
-            className={cn(
-              "flex flex-col gap-0.5 py-2",
-              isCollapsed && "items-center"
-            )}
-          >
-            {visibleNavItems.map((item) => (
-              <React.Fragment key={item.id}>
-                {item.group &&
-                  (isCollapsed ? (
-                    <div className="my-1.5 h-px w-6 bg-border-subtle" />
-                  ) : (
-                    <div className="flex items-center gap-2 px-2 pt-3 pb-0.5 first:pt-0">
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">
-                        {item.group}
-                      </span>
-                      <div className="h-px flex-1 bg-border-subtle/50" />
-                    </div>
-                  ))}
-                {item.children ? (
-                  <CollapsibleNavItem
-                    item={item}
-                    isCollapsed={isCollapsed}
-                    onNavigate={handleNavigation}
-                    isRouteActive={isRouteActive}
-                    mounted={mounted}
-                  />
-                ) : (
-                  <NavItemButton
-                    item={item}
-                    isCollapsed={isCollapsed}
-                    isActive={isRouteActive(item.route, item)}
-                    onClick={() => handleNavigation(item.route)}
-                    mounted={mounted}
-                  />
-                )}
-              </React.Fragment>
-            ))}
-          </nav>
-        </ScrollArea>
+        <SidebarNav
+          isCollapsed={isCollapsed}
+          mounted={mounted}
+          visibleNavItems={visibleNavItems}
+          projectId={projectId}
+          isRouteActive={isRouteActive}
+          onNavigate={handleNavigation}
+        />
 
-        {/* Footer */}
-        <div
-          className={cn(
-            "relative flex flex-col gap-1 border-t border-border-subtle p-2",
-            isCollapsed && "items-center"
-          )}
-        >
-          <HelpButton isCollapsed={isCollapsed} />
-          <UserMenu
-            isCollapsed={isCollapsed}
-            user={user}
-            onLogout={handleLogout}
-            onExport={handleExport}
-            onImport={handleImport}
-            onDocs={handleDocs}
-          />
-          <CollapseToggle isCollapsed={isCollapsed} onToggle={toggleCollapse} />
-        </div>
+        <SidebarFooter
+          isCollapsed={isCollapsed}
+          user={user}
+          onLogout={handleLogout}
+          onExport={handleExport}
+          onImport={handleImport}
+          onDocs={handleDocs}
+          onToggleCollapse={toggleCollapse}
+        />
       </aside>
 
-      {/* Dialogs */}
       <CreateOrganizationDialog
         open={showCreateOrgDialog}
         onOpenChange={setShowCreateOrgDialog}

@@ -37,6 +37,8 @@ export interface GenerateWorkflowRequest {
   investigate_codebase?: boolean;
   /** Whether to include frontend design quality guidance in the builder prompt (default: false) */
   include_design_guidance?: boolean;
+  /** Per-phase model overrides for generation (investigation, generation phases) */
+  model_overrides?: Record<string, { provider?: string; model?: string }>;
 }
 
 /** One pass of the verification->fix loop during workflow generation. */

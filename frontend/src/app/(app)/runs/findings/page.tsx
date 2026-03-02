@@ -1,251 +1,59 @@
 "use client";
 
-import { useState, useMemo } from "react";
 import { usePageSpecs } from "@/hooks/usePageSpecs";
 import type { SpecConfig } from "@qontinui/ui-bridge/specs";
 import pageSpecJson from "./findings.spec.uibridge.json";
 import { useFindingsSummary } from "@/hooks/useTaskRunData";
-import type { FindingView } from "@/lib/task-run-mappers";
-import { runnerApi } from "@/lib/runner";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  RefreshCw,
-  ShieldAlert,
-  ArrowUpCircle,
-  ArrowDownCircle,
-  AlertCircle,
-  Info,
-  FileCode,
-  Tag,
-  Inbox,
-  Wrench,
-  Trash2,
-  Loader2,
-  ChevronDown,
-  ChevronRight,
-  Code,
-  CheckCircle2,
-} from "lucide-react";
-import { toast } from "sonner";
+import { Card, CardContent } from "@/components/ui/card";
+import { RefreshCw, Inbox } from "lucide-react";
+
+import { useFindingsFilters } from "./_hooks/useFindingsFilters";
+import { useFindingsActions } from "./_hooks/useFindingsActions";
+import { FindingsHeader } from "./_components/FindingsHeader";
+import { FindingsSummaryCards } from "./_components/FindingsSummaryCards";
+import { CategoryBreakdown } from "./_components/CategoryBreakdown";
+import { FindingsFilters } from "./_components/FindingsFilters";
+import { FindingsList } from "./_components/FindingsList";
 
 const pageSpec = pageSpecJson as unknown as SpecConfig;
-
-function getSeverityIcon(severity: string) {
-  switch (severity.toLowerCase()) {
-    case "critical":
-      return <ShieldAlert className="size-4 text-red-500" />;
-    case "high":
-      return <ArrowUpCircle className="size-4 text-orange-500" />;
-    case "medium":
-      return <AlertCircle className="size-4 text-yellow-500" />;
-    case "low":
-      return <ArrowDownCircle className="size-4 text-blue-400" />;
-    default:
-      return <Info className="size-4 text-muted-foreground" />;
-  }
-}
-
-function getSeverityBadge(severity: string) {
-  switch (severity.toLowerCase()) {
-    case "critical":
-      return <Badge variant="destructive">Critical</Badge>;
-    case "high":
-      return (
-        <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30">
-          High
-        </Badge>
-      );
-    case "medium":
-      return <Badge variant="warning">Medium</Badge>;
-    case "low":
-      return <Badge variant="info">Low</Badge>;
-    default:
-      return <Badge variant="outline">{severity}</Badge>;
-  }
-}
 
 export default function FindingsPage() {
   usePageSpecs({ findings: pageSpec });
   const { data, isLoading, error, isRunnerOffline, refetch } =
     useFindingsSummary();
-  const [severityFilter, setSeverityFilter] = useState("all");
-  const [categoryFilter, setCategoryFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [autoFixEnabled, setAutoFixEnabled] = useState(false);
-  const [isFixing, setIsFixing] = useState(false);
-  const [expandedFinding, setExpandedFinding] = useState<string | null>(null);
 
-  const categories = useMemo(() => {
-    if (!data?.by_category) return [];
-    return Object.keys(data.by_category).sort();
-  }, [data]);
+  const {
+    severityFilter,
+    setSeverityFilter,
+    categoryFilter,
+    setCategoryFilter,
+    statusFilter,
+    setStatusFilter,
+    categories,
+    filteredFindings,
+  } = useFindingsFilters(data);
 
-  const filteredFindings = useMemo(() => {
-    if (!data?.recent) return [];
-    return data.recent.filter((finding: FindingView) => {
-      const matchesSeverity =
-        severityFilter === "all" ||
-        finding.severity.toLowerCase() === severityFilter;
-      const matchesCategory =
-        categoryFilter === "all" || finding.category === categoryFilter;
-      const matchesStatus =
-        statusFilter === "all" || finding.status.toLowerCase() === statusFilter;
-      return matchesSeverity && matchesCategory && matchesStatus;
-    });
-  }, [data, severityFilter, categoryFilter, statusFilter]);
-
-  const handleFixAll = async () => {
-    if (isRunnerOffline) {
-      toast.error("Cannot fix findings while runner is offline");
-      return;
-    }
-    if (!data?.recent || data.recent.length === 0) return;
-    setIsFixing(true);
-    try {
-      const autoFixFindings = data.recent.filter(
-        (f) => f.status !== "resolved"
-      );
-      if (autoFixFindings.length === 0) {
-        toast.info("No unresolved findings to fix");
-        return;
-      }
-      let successCount = 0;
-      for (const finding of autoFixFindings) {
-        try {
-          await runnerApi.updateFindingStatus(
-            String(finding.id),
-            "in_progress"
-          );
-          successCount++;
-        } catch {
-          // Continue with remaining findings
-        }
-      }
-      toast.success(
-        `Started fixing ${successCount} of ${autoFixFindings.length} findings`
-      );
-      await refetch();
-    } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to fix findings"
-      );
-    } finally {
-      setIsFixing(false);
-    }
-  };
-
-  const handleClearAll = async () => {
-    if (isRunnerOffline) {
-      toast.error("Cannot clear findings while runner is offline");
-      return;
-    }
-    if (!data?.recent || data.recent.length === 0) return;
-    try {
-      const taskRunId = data.recent[0]?.task_run_id;
-      if (!taskRunId) {
-        toast.error("No task run ID found in findings");
-        return;
-      }
-      await runnerApi.clearAllFindings(taskRunId);
-      toast.success("All findings cleared");
-      await refetch();
-    } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to clear findings"
-      );
-    }
-  };
-
-  const handleResolveFinding = async (
-    findingId: string,
-    e: React.MouseEvent
-  ) => {
-    e.stopPropagation();
-    if (isRunnerOffline) {
-      toast.error("Cannot resolve findings while runner is offline");
-      return;
-    }
-    try {
-      await runnerApi.resolveFinding(findingId, "Resolved by user");
-      toast.success("Finding resolved");
-      await refetch();
-    } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to resolve finding"
-      );
-    }
-  };
+  const {
+    autoFixEnabled,
+    isFixing,
+    toggleAutoFix,
+    handleFixAll,
+    handleClearAll,
+    handleResolveFinding,
+  } = useFindingsActions(data, isRunnerOffline, refetch);
 
   return (
     <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
-      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
-        <h1 className="text-lg font-semibold">Findings</h1>
-        <div className="flex items-center gap-2">
-          <Button
-            variant={autoFixEnabled ? "default" : "outline"}
-            size="sm"
-            onClick={() => {
-              setAutoFixEnabled(!autoFixEnabled);
-              toast.info(
-                autoFixEnabled ? "Auto-fix disabled" : "Auto-fix enabled"
-              );
-            }}
-            className={
-              autoFixEnabled
-                ? "bg-green-600 hover:bg-green-700"
-                : "border-border"
-            }
-          >
-            <Wrench className="size-4 mr-1" />
-            Auto-Fix {autoFixEnabled ? "On" : "Off"}
-          </Button>
-          {data && data.total > 0 && (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleFixAll}
-                disabled={isFixing}
-              >
-                {isFixing ? (
-                  <Loader2 className="size-4 animate-spin mr-1" />
-                ) : (
-                  <Wrench className="size-4 mr-1" />
-                )}
-                Fix All
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleClearAll}
-                className="text-red-400 border-red-500/30"
-              >
-                <Trash2 className="size-4 mr-1" />
-                Clear All
-              </Button>
-            </>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refetch()}
-            className="border-border"
-          >
-            <RefreshCw className="size-4 mr-2" />
-            Refresh
-          </Button>
-        </div>
-      </header>
+      <FindingsHeader
+        autoFixEnabled={autoFixEnabled}
+        isFixing={isFixing}
+        hasFindings={!!data && data.total > 0}
+        onToggleAutoFix={toggleAutoFix}
+        onFixAll={handleFixAll}
+        onClearAll={handleClearAll}
+        onRefresh={refetch}
+      />
 
       <main className="flex-1 overflow-y-auto p-6 space-y-6">
         <p className="text-muted-foreground text-sm">
@@ -283,247 +91,28 @@ export default function FindingsPage() {
           </Card>
         ) : (
           <>
-            {/* Summary Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              <Card className="bg-muted">
-                <CardContent className="pt-6 text-center">
-                  <div
-                    className="text-3xl font-bold text-foreground"
-                    data-content-role="metric"
-                    data-content-label="total-findings"
-                  >
-                    {data.total}
-                  </div>
-                  <div
-                    className="text-xs text-muted-foreground mt-1"
-                    data-content-role="label"
-                  >
-                    Total
-                  </div>
-                </CardContent>
-              </Card>
-              {["critical", "high", "medium", "low"].map((severity) => {
-                const count = data.by_severity[severity] || 0;
-                const colorMap: Record<string, string> = {
-                  critical: "text-red-500",
-                  high: "text-orange-500",
-                  medium: "text-yellow-500",
-                  low: "text-blue-400",
-                };
-                return (
-                  <Card key={severity} className="bg-muted">
-                    <CardContent className="pt-6 text-center">
-                      <div
-                        className={`text-3xl font-bold ${colorMap[severity]}`}
-                        data-content-role="metric"
-                        data-content-label={`${severity}-findings-count`}
-                      >
-                        {count}
-                      </div>
-                      <div
-                        className="text-xs text-muted-foreground mt-1 capitalize"
-                        data-content-role="label"
-                      >
-                        {severity}
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
+            <FindingsSummaryCards data={data} />
 
-            {/* Category Breakdown */}
-            {Object.keys(data.by_category).length > 0 && (
-              <Card className="bg-muted">
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Tag className="size-4" />
-                    Categories
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-2">
-                    {Object.entries(data.by_category).map(
-                      ([category, count]) => (
-                        <Badge
-                          key={category}
-                          variant="outline"
-                          className="cursor-pointer hover:bg-muted"
-                          onClick={() =>
-                            setCategoryFilter(
-                              categoryFilter === category ? "all" : category
-                            )
-                          }
-                        >
-                          {category}: {count as number}
-                        </Badge>
-                      )
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+            <CategoryBreakdown
+              byCategory={data.by_category}
+              categoryFilter={categoryFilter}
+              onCategoryFilterChange={setCategoryFilter}
+            />
 
-            {/* Filters */}
-            <div className="flex gap-4 flex-wrap">
-              <Select value={severityFilter} onValueChange={setSeverityFilter}>
-                <SelectTrigger className="w-[160px] bg-muted">
-                  <SelectValue placeholder="Severity" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Severities</SelectItem>
-                  <SelectItem value="critical">Critical</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="low">Low</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-[200px] bg-muted">
-                  <SelectValue placeholder="Category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Categories</SelectItem>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat} value={cat}>
-                      {cat}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <div className="flex gap-1">
-                {[
-                  "all",
-                  "identified",
-                  "actionable",
-                  "needs_input",
-                  "resolved",
-                ].map((status) => (
-                  <Button
-                    key={status}
-                    variant={statusFilter === status ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setStatusFilter(status)}
-                    className={`text-xs ${statusFilter === status ? "bg-primary text-primary-foreground" : "border-border text-muted-foreground"}`}
-                  >
-                    {status === "all"
-                      ? "All"
-                      : status
-                          .replace("_", " ")
-                          .replace(/\b\w/g, (l) => l.toUpperCase())}
-                  </Button>
-                ))}
-              </div>
-            </div>
+            <FindingsFilters
+              severityFilter={severityFilter}
+              onSeverityChange={setSeverityFilter}
+              categoryFilter={categoryFilter}
+              onCategoryChange={setCategoryFilter}
+              statusFilter={statusFilter}
+              onStatusChange={setStatusFilter}
+              categories={categories}
+            />
 
-            {/* Findings List */}
-            <div className="space-y-3">
-              {filteredFindings.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  No findings match the current filters.
-                </div>
-              ) : (
-                filteredFindings.map((finding: FindingView) => {
-                  const isExpanded = expandedFinding === finding.id;
-                  return (
-                    <Card
-                      key={finding.id}
-                      className="bg-muted/50 border-border cursor-pointer transition-all hover:bg-muted"
-                      onClick={() =>
-                        setExpandedFinding(isExpanded ? null : finding.id)
-                      }
-                    >
-                      <CardContent className="py-4 px-5">
-                        <div className="flex items-start gap-3">
-                          <div className="pt-0.5">
-                            {getSeverityIcon(finding.severity)}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              {isExpanded ? (
-                                <ChevronDown className="size-3.5 text-muted-foreground" />
-                              ) : (
-                                <ChevronRight className="size-3.5 text-muted-foreground" />
-                              )}
-                              <span
-                                className="font-medium text-foreground text-sm"
-                                data-content-role="label"
-                                data-content-label="finding-title"
-                              >
-                                {finding.title}
-                              </span>
-                              {getSeverityBadge(finding.severity)}
-                              <Badge variant="outline" className="text-xs">
-                                {finding.category}
-                              </Badge>
-                              <Badge variant="secondary" className="text-xs">
-                                {finding.status}
-                              </Badge>
-                            </div>
-                            <p className="text-sm text-muted-foreground mt-1.5">
-                              {finding.description}
-                            </p>
-
-                            {isExpanded && (
-                              <div className="mt-3 space-y-3 border-t border-border pt-3">
-                                {finding.file_path && (
-                                  <div className="bg-background rounded-lg p-3">
-                                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-mono mb-1">
-                                      <Code className="size-3" />
-                                      {finding.file_path}
-                                      {finding.line_number
-                                        ? `:${finding.line_number}`
-                                        : ""}
-                                    </div>
-                                  </div>
-                                )}
-                                <div className="flex items-center justify-between">
-                                  <div className="text-xs text-muted-foreground">
-                                    Run #{finding.task_run_id} &middot;{" "}
-                                    {new Date(
-                                      finding.created_at
-                                    ).toLocaleString()}
-                                  </div>
-                                  {finding.status !== "resolved" && (
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={(e) =>
-                                        handleResolveFinding(finding.id, e)
-                                      }
-                                      className="text-xs text-green-400 border-green-500/30 hover:bg-green-950/50"
-                                    >
-                                      <CheckCircle2 className="size-3 mr-1" />
-                                      Resolve
-                                    </Button>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-
-                            {!isExpanded && finding.file_path && (
-                              <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground font-mono">
-                                <FileCode className="size-3" />
-                                {finding.file_path}
-                                {finding.line_number
-                                  ? `:${finding.line_number}`
-                                  : ""}
-                              </div>
-                            )}
-                            {!isExpanded && (
-                              <div className="text-xs text-muted-foreground mt-1.5">
-                                Run #{finding.task_run_id} &middot;{" "}
-                                {new Date(finding.created_at).toLocaleString()}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })
-              )}
-            </div>
+            <FindingsList
+              findings={filteredFindings}
+              onResolveFinding={handleResolveFinding}
+            />
           </>
         )}
       </main>

@@ -5,3 +5,6 @@ export type {
   ConfigSubTab,
   ResultsSubTab,
 } from "./useWebExtractionState";
+export { usePlaywrightExplorerState } from "./usePlaywrightExplorerState";
+export { useUIBridgeTransitions } from "./useUIBridgeTransitions";
+export { useStateDetailsImage } from "./useStateDetailsImage";
