@@ -38,6 +38,7 @@ class RunnerStateRepository:
         connected_at: str,
         runner_name: str | None = None,
         ip_address: str | None = None,
+        runner_port: int | None = None,
     ) -> None:
         """
         Save connection state to Redis.
@@ -48,6 +49,7 @@ class RunnerStateRepository:
             connected_at: ISO format timestamp
             runner_name: Optional runner name
             ip_address: Optional IP address
+            runner_port: Optional HTTP API port the runner is listening on
         """
         active_key = f"runner:connection:{connection_id}:active"
         metadata_key = f"runner:connection:{connection_id}:metadata"
@@ -61,6 +63,7 @@ class RunnerStateRepository:
             "connected_at": connected_at,
             "runner_name": runner_name,
             "ip_address": ip_address,
+            "runner_port": runner_port,
         }
         await self._redis.set(
             metadata_key, json.dumps(metadata), ex=REDIS_CONNECTION_TTL

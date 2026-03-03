@@ -83,6 +83,36 @@ async def update_connection_runner_name(
     return connection
 
 
+async def update_connection_runner_port(
+    db: AsyncSession,
+    connection_id: int,
+    runner_port: int,
+) -> RunnerConnection | None:
+    """
+    Update the runner_port for a connection record.
+
+    Args:
+        db: Database session
+        connection_id: ID of the connection record
+        runner_port: HTTP API port the runner is listening on
+
+    Returns:
+        Updated RunnerConnection or None if not found
+    """
+    query = select(RunnerConnection).where(RunnerConnection.id == connection_id)
+    result = await db.execute(query)
+    connection = result.scalar_one_or_none()
+
+    if not connection:
+        return None
+
+    connection.runner_port = runner_port
+    await db.commit()
+    await db.refresh(connection)
+
+    return connection
+
+
 async def close_connection_record(
     db: AsyncSession,
     connection_id: int,

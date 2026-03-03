@@ -25,6 +25,10 @@ class RunnerConnectionResponse(BaseModel):
     ip_address: str | None
     project_id: str | None
     project_name: str | None = None
+    runner_port: int | None = Field(
+        default=None,
+        description="HTTP API port the runner is listening on",
+    )
     ws_connected: bool = Field(
         default=False,
         description="Whether the runner is currently WebSocket-connected",

@@ -5,6 +5,7 @@ import nextDynamic from "next/dynamic";
 import { AutomationProvider } from "@/contexts/automation-context/AutomationProviderV2";
 import { OrganizationProvider } from "@/contexts/organization-context";
 import { RealtimeConnectionsProvider } from "@/contexts/realtime-connections-context";
+import { ActiveRunnerProvider } from "@/contexts/active-runner-context";
 import { SidebarProvider, useSidebar } from "@/contexts/sidebar-context";
 import { TabStateProvider } from "@/contexts/tab-state-context";
 import { AppInitializer } from "@/components/offline/AppInitializer";
@@ -81,15 +82,17 @@ export default function AppLayout({
   return (
     <OrganizationProvider>
       <RealtimeConnectionsProvider>
-        <SidebarProvider>
-          <AutomationProvider>
-            <TabStateProvider>
-              <AppInitializer>
-                <AppLayoutContent>{children}</AppLayoutContent>
-              </AppInitializer>
-            </TabStateProvider>
-          </AutomationProvider>
-        </SidebarProvider>
+        <ActiveRunnerProvider>
+          <SidebarProvider>
+            <AutomationProvider>
+              <TabStateProvider>
+                <AppInitializer>
+                  <AppLayoutContent>{children}</AppLayoutContent>
+                </AppInitializer>
+              </TabStateProvider>
+            </AutomationProvider>
+          </SidebarProvider>
+        </ActiveRunnerProvider>
       </RealtimeConnectionsProvider>
     </OrganizationProvider>
   );

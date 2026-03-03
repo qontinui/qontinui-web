@@ -185,18 +185,30 @@ class MessageRouter:
         runner_name = message.data.get("runner_name")
         if runner_name:
             await self.connection.update_runner_name(runner_name)
-            logger.info(
-                "runner_info_received",
-                connection_id=(
-                    self.connection.connection_record.id
-                    if self.connection.connection_record
-                    else None
-                ),
-                runner_name=runner_name,
-                runner_hostname=message.data.get("runner_hostname"),
-                runner_os=message.data.get("runner_os"),
-                runner_version=message.data.get("runner_version"),
-            )
+
+        runner_port = message.data.get("runner_port")
+        if runner_port is not None:
+            try:
+                await self.connection.update_runner_port(int(runner_port))
+            except (ValueError, TypeError):
+                logger.warning(
+                    "invalid_runner_port",
+                    runner_port=runner_port,
+                )
+
+        logger.info(
+            "runner_info_received",
+            connection_id=(
+                self.connection.connection_record.id
+                if self.connection.connection_record
+                else None
+            ),
+            runner_name=runner_name,
+            runner_port=runner_port,
+            runner_hostname=message.data.get("runner_hostname"),
+            runner_os=message.data.get("runner_os"),
+            runner_version=message.data.get("runner_version"),
+        )
 
         return {
             "type": "runner_info_ack",

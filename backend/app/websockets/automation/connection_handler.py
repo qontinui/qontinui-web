@@ -383,6 +383,56 @@ class ConnectionHandler:
                 error=str(e),
             )
 
+    async def update_runner_port(self, runner_port: int) -> None:
+        """Update runner port in connection record and Redis.
+
+        Args:
+            runner_port: HTTP API port the runner is listening on.
+        """
+        if not self.connection_record or not self.db or not self.user:
+            return
+
+        try:
+            await runner_crud.update_connection_runner_port(
+                db=self.db,
+                connection_id=self.connection_record.id,
+                runner_port=runner_port,
+            )
+
+            # Update Redis metadata
+            if self.runner_manager and self.redis_client:
+                metadata = await self.runner_manager.get_connection_metadata(
+                    self.connection_record.id
+                )
+                if metadata:
+                    metadata["runner_port"] = runner_port
+                    metadata_key = (
+                        f"runner:connection:{self.connection_record.id}:metadata"
+                    )
+                    await self.redis_client.set(
+                        metadata_key, json.dumps(metadata), ex=300
+                    )
+
+                # Publish runner_port_updated event to frontend
+                await self.runner_manager.publish_runner_port_update(
+                    connection_id=self.connection_record.id,
+                    runner_port=runner_port,
+                    user_id=self.user.id,
+                )
+
+            logger.info(
+                "runner_port_updated",
+                connection_id=self.connection_record.id,
+                runner_port=runner_port,
+            )
+
+        except Exception as e:
+            logger.error(
+                "runner_port_update_failed",
+                connection_id=self.connection_record.id,
+                error=str(e),
+            )
+
     async def cleanup(self) -> None:
         """Clean up resources on disconnect."""
         # Clean up rate limiting state

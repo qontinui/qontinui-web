@@ -37,6 +37,7 @@ class RunnerEventPublisher:
         connected_at: datetime,
         ip_address: str | None = None,
         project_id: UUID | None = None,
+        runner_port: int | None = None,
     ) -> None:
         """
         Publish a runner connected event.
@@ -48,6 +49,7 @@ class RunnerEventPublisher:
             connected_at: Connection timestamp
             ip_address: Optional IP address
             project_id: Optional project ID
+            runner_port: Optional HTTP API port the runner is listening on
         """
         connection_data = {
             "id": connection_id,
@@ -57,6 +59,7 @@ class RunnerEventPublisher:
             "duration_seconds": None,
             "ip_address": ip_address,
             "project_id": str(project_id) if project_id else None,
+            "runner_port": runner_port,
             "ws_connected": True,
         }
 
@@ -132,6 +135,53 @@ class RunnerEventPublisher:
         except Exception as e:
             logger.error(
                 "runner_name_update_publish_error",
+                connection_id=connection_id,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+
+    async def publish_runner_port_updated(
+        self,
+        user_id: UUID,
+        connection_id: int,
+        runner_port: int,
+    ) -> None:
+        """
+        Publish a runner port update event.
+
+        Called when the runner sends its runner_info message after connection,
+        which contains the HTTP API port.
+
+        Args:
+            user_id: User ID to send the update to
+            connection_id: Database connection record ID
+            runner_port: The HTTP API port the runner is listening on
+        """
+        logger.info(
+            "runner_port_update_publishing",
+            connection_id=connection_id,
+            runner_port=runner_port,
+            user_id=str(user_id),
+        )
+        try:
+            await self._publish_status_update(
+                user_id=user_id,
+                message={
+                    "type": "runner_port_updated",
+                    "connection_id": connection_id,
+                    "runner_port": runner_port,
+                    "timestamp": utc_now().isoformat(),
+                },
+            )
+            logger.info(
+                "runner_port_update_published",
+                connection_id=connection_id,
+                runner_port=runner_port,
+                user_id=str(user_id),
+            )
+        except Exception as e:
+            logger.error(
+                "runner_port_update_publish_error",
                 connection_id=connection_id,
                 error=str(e),
                 error_type=type(e).__name__,

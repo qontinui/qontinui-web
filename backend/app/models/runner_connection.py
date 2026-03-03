@@ -74,6 +74,13 @@ class RunnerConnection(Base):
         comment="Custom user-defined name for this runner (e.g., 'My Laptop')",
     )
 
+    # HTTP API port the runner is listening on
+    runner_port: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="HTTP API port the runner is listening on",
+    )
+
     # Session metadata
     project_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),

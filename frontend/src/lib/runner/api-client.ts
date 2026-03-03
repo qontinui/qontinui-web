@@ -10,6 +10,34 @@ export const RUNNER_API_BASE = "http://localhost:9876";
 export const DEFAULT_POLL_INTERVAL = 5000;
 export const HEALTH_POLL_INTERVAL = 10000;
 
+// Mutable base URL for multi-runner support.
+// Defaults to RUNNER_API_BASE but can be changed at runtime
+// when the user selects a different runner instance.
+let _runnerApiBase = RUNNER_API_BASE;
+
+type BaseUrlChangeListener = (newBase: string) => void;
+const _baseUrlListeners = new Set<BaseUrlChangeListener>();
+
+export function setRunnerApiBase(url: string) {
+  if (url === _runnerApiBase) return;
+  _runnerApiBase = url;
+  _baseUrlListeners.forEach((l) => l(url));
+}
+
+export function getRunnerApiBase(): string {
+  return _runnerApiBase;
+}
+
+/** Register a callback that fires when the runner API base URL changes. Returns an unsubscribe function. */
+export function onRunnerApiBaseChange(
+  listener: BaseUrlChangeListener
+): () => void {
+  _baseUrlListeners.add(listener);
+  return () => {
+    _baseUrlListeners.delete(listener);
+  };
+}
+
 // =============================================================================
 // Fetch Wrapper
 // =============================================================================
@@ -28,7 +56,7 @@ export async function runnerFetch<T>(
   path: string,
   options?: RequestInit & { timeoutMs?: number }
 ): Promise<T> {
-  const url = `${RUNNER_API_BASE}${path}`;
+  const url = `${_runnerApiBase}${path}`;
   const controller = new AbortController();
   const timeoutMs = options?.timeoutMs ?? 5000;
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -53,7 +81,7 @@ export async function runnerFetch<T>(
     if (error instanceof TypeError) {
       throw new RunnerApiError(
         0,
-        "Runner not reachable — is qontinui-runner running on port 9876?"
+        `Runner not reachable — is qontinui-runner running at ${_runnerApiBase}?`
       );
     }
     throw error;

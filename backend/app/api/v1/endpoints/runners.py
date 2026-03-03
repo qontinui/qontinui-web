@@ -71,6 +71,7 @@ async def get_connection_history(
                 duration_seconds=conn.duration_seconds,
                 ip_address=conn.ip_address,
                 project_id=str(conn.project_id) if conn.project_id else None,
+                runner_port=conn.runner_port,
             )
             for conn in connections
         ],
@@ -112,6 +113,7 @@ async def get_active_connections(
             duration_seconds=conn.duration_seconds,
             ip_address=conn.ip_address,
             project_id=str(conn.project_id) if conn.project_id else None,
+            runner_port=conn.runner_port,
             ws_connected=conn.id in ws_connected_ids,
         )
         for conn in active_connections

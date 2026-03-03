@@ -396,6 +396,26 @@ class RunnerConnectionManager:
             runner_name=runner_name,
         )
 
+    async def publish_runner_port_update(
+        self, connection_id: int, runner_port: int, user_id: UUID
+    ) -> None:
+        """
+        Publish a runner port update event to the frontend.
+
+        Called when the runner sends its runner_info message after connection,
+        which contains the HTTP API port.
+
+        Args:
+            connection_id: Database connection record ID
+            runner_port: The HTTP API port the runner is listening on
+            user_id: User ID to send the update to
+        """
+        await self._publisher.publish_runner_port_updated(
+            user_id=user_id,
+            connection_id=connection_id,
+            runner_port=runner_port,
+        )
+
     # ========================================================================
     # Connection State Queries
     # ========================================================================

@@ -2,6 +2,7 @@ import { cn } from "@/lib/utils";
 import { HelpButton } from "../HelpButton";
 import { UserMenu, type UserMenuProps } from "../UserMenu";
 import { CollapseToggle } from "../CollapseToggle";
+import { RunnerSelector } from "./RunnerSelector";
 
 interface SidebarFooterProps extends Omit<UserMenuProps, "isCollapsed"> {
   isCollapsed: boolean;
@@ -24,6 +25,7 @@ export function SidebarFooter({
         isCollapsed && "items-center"
       )}
     >
+      <RunnerSelector isCollapsed={isCollapsed} />
       <HelpButton isCollapsed={isCollapsed} />
       <UserMenu
         isCollapsed={isCollapsed}

@@ -1,9 +1,23 @@
 "use client";
 
 import { useRef, useCallback, useEffect } from "react";
+import {
+  getRunnerApiBase,
+  onRunnerApiBaseChange,
+} from "@/lib/runner/api-client";
 
-// Use 127.0.0.1 to force IPv4 (runner only listens on IPv4)
-const RUNNER_WS_URL = "ws://127.0.0.1:9876/ws/events";
+// Derive the runner WebSocket URL from the current API base.
+// Uses 127.0.0.1 to force IPv4 (runner only listens on IPv4).
+function getRunnerWsUrl(): string {
+  const base = getRunnerApiBase(); // e.g. "http://localhost:9876"
+  // Extract port from the base URL
+  try {
+    const url = new URL(base);
+    return `ws://127.0.0.1:${url.port}/ws/events`;
+  } catch {
+    return "ws://127.0.0.1:9876/ws/events";
+  }
+}
 
 export type EventCallback = (data: unknown) => void;
 
@@ -79,7 +93,7 @@ export function useRunnerEventStream(enabled: boolean = true) {
     reconnectAttemptsRef.current = 0;
 
     try {
-      const ws = new WebSocket(RUNNER_WS_URL);
+      const ws = new WebSocket(getRunnerWsUrl());
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -194,6 +208,18 @@ export function useRunnerEventStream(enabled: boolean = true) {
       disconnect();
     };
   }, [enabled, connect, disconnect]);
+
+  // Reconnect when the active runner's API base URL changes
+  useEffect(() => {
+    const unsubscribe = onRunnerApiBaseChange(() => {
+      if (enabledRef.current) {
+        disconnect();
+        // Brief delay so the new base URL is fully settled before connecting
+        setTimeout(() => connect(), 50);
+      }
+    });
+    return unsubscribe;
+  }, [connect, disconnect]);
 
   return { subscribe };
 }

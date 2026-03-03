@@ -12,6 +12,7 @@ export interface RunnerConnection {
   ip_address: string | null;
   project_id: string | null;
   project_name?: string | null;
+  runner_port: number | null;
   ws_connected: boolean;
 }
 

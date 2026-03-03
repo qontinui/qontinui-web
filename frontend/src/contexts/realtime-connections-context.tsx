@@ -210,6 +210,22 @@ export function RealtimeConnectionsProvider({
             setConnections((prev) =>
               prev.filter((c) => c.id !== message.connection_id)
             );
+          } else if (message.type === "runner_name_updated") {
+            setConnections((prev) =>
+              prev.map((c) =>
+                c.id === message.connection_id
+                  ? { ...c, runner_name: message.runner_name }
+                  : c
+              )
+            );
+          } else if (message.type === "runner_port_updated") {
+            setConnections((prev) =>
+              prev.map((c) =>
+                c.id === message.connection_id
+                  ? { ...c, runner_port: message.runner_port }
+                  : c
+              )
+            );
           } else if (message.type === "error") {
             console.error("[RealtimeConnections] Server error:", message.error);
           }
