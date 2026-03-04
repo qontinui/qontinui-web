@@ -4,10 +4,10 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Bot, User, ArrowDown } from "lucide-react";
-import type { ChatMessage } from "@/hooks/useChatWebSocket";
+import type { AiMessage } from "@/hooks/useChatWebSocket";
 
 interface ChatMessageAreaProps {
-  messages: ChatMessage[];
+  messages: AiMessage[];
   streamingContent: string;
   isStreaming: boolean;
 }
@@ -127,7 +127,7 @@ function MessageBubble({
   message,
   index,
 }: {
-  message: ChatMessage;
+  message: AiMessage;
   index: number;
 }) {
   if (message.role === "user") {

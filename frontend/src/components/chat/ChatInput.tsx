@@ -3,10 +3,10 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Send, Square, Sparkles, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { ChatSessionState } from "@/hooks/useChatWebSocket";
+import type { AiSessionState } from "@/hooks/useChatWebSocket";
 
 interface ChatInputProps {
-  sessionState: ChatSessionState;
+  sessionState: AiSessionState;
   onSendMessage: (content: string) => void;
   onInterrupt: () => void;
   onGenerateWorkflow: (includeUIBridge: boolean) => void;

@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import type { ChatSessionState, ChatMessage } from "@qontinui/shared-types";
+import type { AiSessionState, AiMessage } from "@qontinui/shared-types";
 import { parseOutputLog } from "@qontinui/workflow-utils";
 
-export type { ChatSessionState, ChatMessage };
+export type { AiSessionState, AiMessage };
 
 interface ChatWebSocketOptions {
   connectionId: number | null;
@@ -17,8 +17,8 @@ interface ChatWebSocketOptions {
 
 interface ChatWebSocketReturn {
   isConnected: boolean;
-  sessionState: ChatSessionState;
-  messages: ChatMessage[];
+  sessionState: AiSessionState;
+  messages: AiMessage[];
   streamingContent: string;
   createSession: (taskName?: string) => boolean;
   sendMessage: (content: string) => void;
@@ -47,8 +47,8 @@ export function useChatWebSocket({
 }: ChatWebSocketOptions): ChatWebSocketReturn {
   const [isConnected, setIsConnected] = useState(false);
   const [sessionState, setSessionState] =
-    useState<ChatSessionState>("disconnected");
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+    useState<AiSessionState>("disconnected");
+  const [messages, setMessages] = useState<AiMessage[]>([]);
   const [streamingContent, setStreamingContent] = useState("");
   const [isGeneratingWorkflow, setIsGeneratingWorkflow] = useState(false);
 
@@ -229,7 +229,7 @@ export function useChatWebSocket({
             ]);
           }
 
-          setSessionState(state as ChatSessionState);
+          setSessionState(state as AiSessionState);
 
           // Also use can_send/can_interrupt for more precise state
           if (canSend && state !== "closed") {
@@ -247,7 +247,7 @@ export function useChatWebSocket({
           }
           const ackState = msg.state as string;
           if (ackState) {
-            setSessionState(ackState as ChatSessionState);
+            setSessionState(ackState as AiSessionState);
           }
           break;
         }

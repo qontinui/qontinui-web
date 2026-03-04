@@ -4,11 +4,11 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { MessageSquare, X, Check, Pencil, Wifi, WifiOff } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { ChatSessionState } from "@/hooks/useChatWebSocket";
+import type { AiSessionState } from "@/hooks/useChatWebSocket";
 
 interface ChatHeaderProps {
   sessionName: string;
-  sessionState: ChatSessionState;
+  sessionState: AiSessionState;
   isRunnerConnected: boolean;
   onRename: (name: string) => void;
   onClose: () => void;
