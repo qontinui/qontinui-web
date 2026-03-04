@@ -79,6 +79,60 @@ export function ChatHeader({
             Processing
           </Badge>
         );
+      case "connecting":
+        return (
+          <Badge
+            variant="outline"
+            className="bg-amber-900/30 border-amber-800/50 text-amber-400 text-[10px]"
+          >
+            Connecting
+          </Badge>
+        );
+      case "initializing":
+        return (
+          <Badge
+            variant="outline"
+            className="bg-amber-900/30 border-amber-800/50 text-amber-400 text-[10px]"
+          >
+            Initializing
+          </Badge>
+        );
+      case "restoring":
+        return (
+          <Badge
+            variant="outline"
+            className="bg-amber-900/30 border-amber-800/50 text-amber-400 text-[10px]"
+          >
+            Restoring
+          </Badge>
+        );
+      case "interrupting":
+        return (
+          <Badge
+            variant="outline"
+            className="bg-orange-900/30 border-orange-800/50 text-orange-400 text-[10px]"
+          >
+            Interrupting
+          </Badge>
+        );
+      case "error":
+        return (
+          <Badge
+            variant="outline"
+            className="bg-red-900/30 border-red-800/50 text-red-400 text-[10px]"
+          >
+            Error
+          </Badge>
+        );
+      case "not_found":
+        return (
+          <Badge
+            variant="outline"
+            className="bg-red-900/30 border-red-800/50 text-red-400 text-[10px]"
+          >
+            Not Found
+          </Badge>
+        );
       case "disconnected":
         return (
           <Badge

@@ -60,8 +60,18 @@ export class ErrorBoundary extends Component<Props, State> {
         });
 
       // Report to UI Bridge browser event capture
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const bridge = (window as any).__UI_BRIDGE__;
+      const bridge = (
+        window as unknown as Record<string, unknown>
+      ).__UI_BRIDGE__ as
+        | {
+            browserCapture?: {
+              reportReactError?: (
+                error: Error,
+                info: { componentStack?: string }
+              ) => void;
+            };
+          }
+        | undefined;
       bridge?.browserCapture?.reportReactError?.(error, {
         componentStack: errorInfo.componentStack || undefined,
       });

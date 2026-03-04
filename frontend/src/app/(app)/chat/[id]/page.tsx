@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
@@ -70,7 +70,7 @@ export default function ChatSessionPage() {
   });
 
   // Load session on mount (for existing sessions)
-  useMemo(() => {
+  useEffect(() => {
     if (taskRunId && activeConnection) {
       loadSession(taskRunId);
     }
