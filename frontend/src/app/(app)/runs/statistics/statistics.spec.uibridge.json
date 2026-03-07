@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "description": "Specs for the Statistics page — execution performance analytics and metrics dashboard",
+  "description": "Statistics page — execution performance analytics and metrics dashboard",
   "groups": [
     {
       "id": "stats-page-structure",
@@ -15,7 +15,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "heading", "textContent": "Statistics" },
+            "criteria": {
+              "role": "heading",
+              "textContent": "Statistics"
+            },
             "label": "Statistics heading"
           },
           "assertionType": "exists",
@@ -30,7 +33,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Total Runs" },
+            "criteria": {
+              "textContent": "Total Runs"
+            },
             "label": "Total Runs metric card"
           },
           "assertionType": "exists",
@@ -45,7 +50,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Avg Duration" },
+            "criteria": {
+              "textContent": "Avg Duration"
+            },
             "label": "Avg Duration metric card"
           },
           "assertionType": "exists",
@@ -60,7 +67,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Success Rate" },
+            "criteria": {
+              "textContent": "Success Rate"
+            },
             "label": "Success Rate metric card"
           },
           "assertionType": "exists",
@@ -75,7 +84,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Status Breakdown" },
+            "criteria": {
+              "textContent": "Status Breakdown"
+            },
             "label": "Status Breakdown section"
           },
           "assertionType": "exists",
@@ -99,7 +110,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Total Runs" },
+            "criteria": {
+              "textContent": "Total Runs"
+            },
             "label": "Total Runs metric card"
           },
           "assertionType": "containsText",
@@ -116,7 +129,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Success Rate" },
+            "criteria": {
+              "textContent": "Success Rate"
+            },
             "label": "Success Rate metric card"
           },
           "assertionType": "containsText",
@@ -133,7 +148,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Recent Runs" },
+            "criteria": {
+              "textContent": "Recent Runs"
+            },
             "label": "Recent Runs table header"
           },
           "assertionType": "exists",
@@ -157,7 +174,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Statistics" },
+            "criteria": {
+              "textContent": "Statistics"
+            },
             "label": "Statistics heading"
           },
           "assertionType": "exists",
@@ -172,7 +191,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Status Breakdown" },
+            "criteria": {
+              "textContent": "Status Breakdown"
+            },
             "label": "Status Breakdown section"
           },
           "assertionType": "exists",
@@ -187,7 +208,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Recent Runs" },
+            "criteria": {
+              "textContent": "Recent Runs"
+            },
             "label": "Recent Runs table"
           },
           "assertionType": "exists",

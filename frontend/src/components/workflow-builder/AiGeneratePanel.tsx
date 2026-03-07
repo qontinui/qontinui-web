@@ -108,8 +108,10 @@ export function AiGeneratePanel({
             onDeleteTemplate={templates.handleDeleteSavedTemplate}
           />
 
-          {/* Page Specs Section */}
-          <SpecSourceSection onSpecsChanged={formState.setSpecState} />
+          {/* Page Specs Section (dev only) */}
+          {process.env.NODE_ENV === "development" && (
+            <SpecSourceSection onSpecsChanged={formState.setSpecState} />
+          )}
 
           {/* Context Section */}
           <ContextSection

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -40,6 +39,17 @@ import type { UIBridgeTransitionCreate } from "../_types";
 import { useAutomationStore } from "@/stores/automation";
 import { useStateMachineDiscovery } from "../_hooks/useStateMachineDiscovery";
 
+const TABS = [
+  { value: "discovery", label: "Discovery", icon: Search },
+  { value: "graph", label: "Graph Editor", icon: GitBranch },
+  { value: "states", label: "State View", icon: Layers },
+  { value: "transitions", label: "Transitions", icon: ArrowRightLeft },
+  { value: "pathfinding", label: "Pathfinding", icon: Route },
+  { value: "export", label: "Export", icon: Download },
+] as const;
+
+type TabValue = (typeof TABS)[number]["value"];
+
 export function UIBridgeStateMachinePage() {
   const sm = useUIBridgeStateMachine();
   const transitions = useUIBridgeTransitions(sm.selectedConfigId);
@@ -48,7 +58,7 @@ export function UIBridgeStateMachinePage() {
   const projectId = useAutomationStore((s) => s.projectId);
   const discovery = useStateMachineDiscovery(sm.projectId);
 
-  const [activeTab, setActiveTab] = useState("discovery");
+  const [activeTab, setActiveTab] = useState<TabValue>("discovery");
   const [showNewTransition, setShowNewTransition] = useState(false);
   const [hasMounted, setHasMounted] = useState(false);
 
@@ -137,18 +147,16 @@ export function UIBridgeStateMachinePage() {
     [sm]
   );
 
-  // Show consistent empty state for SSR and when no project is selected
-  if (!hasMounted || !sm.projectId) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px] text-text-muted">
-        {hasMounted ? "Select a project to manage state machines." : ""}
-      </div>
-    );
+  const noProject = !sm.projectId;
+
+  // SSR guard only — page structure always renders once mounted
+  if (!hasMounted) {
+    return <div className="flex items-center justify-center min-h-[400px]" />;
   }
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
+      {/* Header — always visible */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-border-primary bg-surface-primary">
         <div className="flex items-center gap-3">
           <Network className="size-5 text-brand-primary" />
@@ -189,209 +197,234 @@ export function UIBridgeStateMachinePage() {
             disabled={sm.isLoading}
           >
             <RefreshCw
-              className={`size-3.5 ${sm.isLoading ? "animate-spin" : ""}`}
+              className={`size-3.5 mr-1.5 ${sm.isLoading ? "animate-spin" : ""}`}
             />
+            Refresh
           </Button>
         </div>
       </div>
 
-      {/* Main Content */}
-      <Tabs
-        value={activeTab}
-        onValueChange={setActiveTab}
-        className="flex-1 flex flex-col"
-      >
-        <div className="border-b border-border-primary bg-surface-primary px-6">
-          <TabsList className="bg-transparent">
-            <TabsTrigger value="discovery" className="gap-1.5">
-              <Search className="size-3.5" />
-              Discovery
-            </TabsTrigger>
-            <TabsTrigger value="graph" className="gap-1.5">
-              <GitBranch className="size-3.5" />
-              Graph Editor
-            </TabsTrigger>
-            <TabsTrigger value="states" className="gap-1.5">
-              <Layers className="size-3.5" />
-              State View
-            </TabsTrigger>
-            <TabsTrigger value="transitions" className="gap-1.5">
-              <ArrowRightLeft className="size-3.5" />
-              Transitions
-            </TabsTrigger>
-            <TabsTrigger value="pathfinding" className="gap-1.5">
-              <Route className="size-3.5" />
-              Pathfinding
-            </TabsTrigger>
-            <TabsTrigger value="export" className="gap-1.5">
-              <Download className="size-3.5" />
-              Export
-            </TabsTrigger>
-          </TabsList>
+      {/* Tab Navigation — regular buttons for correct role="button" */}
+      <div className="border-b border-border-primary bg-surface-primary px-6">
+        <div className="inline-flex h-9 w-fit items-center justify-center rounded-lg p-[3px]">
+          {TABS.map(({ value, label, icon: Icon }) => (
+            <button
+              key={value}
+              onClick={() => setActiveTab(value)}
+              className={`inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] ${
+                activeTab === value
+                  ? "bg-background shadow-sm text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Icon className="size-3.5" />
+              {label}
+            </button>
+          ))}
         </div>
+      </div>
 
-        {/* Discovery Tab */}
-        <TabsContent value="discovery" className="flex-1 overflow-y-auto">
+      {/* Tab Content — all panels stay in DOM (hidden when inactive) */}
+
+      {/* Discovery Tab */}
+      <div
+        className={`flex-1 overflow-y-auto ${activeTab !== "discovery" ? "hidden" : ""}`}
+      >
+        {noProject ? (
+          <div className="flex items-center justify-center h-full min-h-[200px] text-text-muted">
+            Select a project to manage state machines
+          </div>
+        ) : (
           <DiscoveryPanel
             discovery={discovery}
             onConfigCreated={handleConfigCreated}
           />
-        </TabsContent>
+        )}
+      </div>
 
-        {/* Graph Editor Tab */}
-        <TabsContent value="graph" className="flex-1 flex min-h-0">
-          {sm.isLoading ? (
-            <div className="flex-1 flex items-center justify-center">
-              <Loader2 className="size-8 animate-spin text-brand-primary" />
-            </div>
-          ) : !sm.selectedConfigId ? (
-            <div className="flex-1 flex items-center justify-center text-text-muted">
-              Select a configuration to view the state graph.
-            </div>
-          ) : (
-            <>
-              {/* Graph */}
-              <div className="flex-1 relative">
-                {/* Add Transition FAB */}
-                <div className="absolute top-4 left-4 z-10">
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      sm.setSelectedStateId(null);
-                      sm.setSelectedTransitionId(null);
-                      setShowNewTransition(true);
-                    }}
-                  >
-                    <Plus className="size-3.5 mr-1.5" />
-                    Add Transition
-                  </Button>
-                </div>
-
-                <UIBridgeStateGraph
-                  states={sm.fullConfig?.states ?? []}
-                  transitions={sm.fullConfig?.transitions ?? []}
-                  selectedStateId={sm.selectedStateId}
-                  selectedTransitionId={sm.selectedTransitionId}
-                  onSelectState={(id) => {
-                    sm.setSelectedStateId(id);
-                    sm.setSelectedTransitionId(null);
-                    setShowNewTransition(false);
-                  }}
-                  onSelectTransition={(id) => {
-                    sm.setSelectedTransitionId(id);
+      {/* Graph Editor Tab */}
+      <div
+        className={`flex-1 flex min-h-0 ${activeTab !== "graph" ? "hidden" : ""}`}
+      >
+        {noProject ? (
+          <div className="flex-1 flex items-center justify-center text-text-muted">
+            Select a project to manage state machines
+          </div>
+        ) : sm.isLoading ? (
+          <div className="flex-1 flex items-center justify-center">
+            <Loader2 className="size-8 animate-spin text-brand-primary" />
+          </div>
+        ) : !sm.selectedConfigId ? (
+          <div className="flex-1 flex items-center justify-center text-text-muted">
+            Select a configuration to view the state graph
+          </div>
+        ) : (
+          <>
+            {/* Graph */}
+            <div className="flex-1 relative">
+              {/* Add Transition FAB */}
+              <div className="absolute top-4 left-4 z-10">
+                <Button
+                  size="sm"
+                  onClick={() => {
                     sm.setSelectedStateId(null);
-                    setShowNewTransition(false);
+                    sm.setSelectedTransitionId(null);
+                    setShowNewTransition(true);
                   }}
-                  highlightedPath={pathfinding.result?.steps}
-                  onStartElementDrag={elementDrag.handleStartElementDrag}
-                  onDragOver={elementDrag.handleDragOver}
-                  onDrop={elementDrag.handleDrop}
-                  isDragging={elementDrag.isDragging}
-                  dropTargetStateId={elementDrag.dropTargetStateId}
-                  onDeleteTransition={handleDeleteTransition}
-                />
+                >
+                  <Plus className="size-3.5 mr-1.5" />
+                  Add Transition
+                </Button>
               </div>
 
-              {/* Side Panel */}
-              {showStatePanel && sm.selectedState && (
-                <UIBridgeStatePanel
-                  state={sm.selectedState}
-                  configId={sm.selectedConfigId!}
-                  onClose={() => sm.setSelectedStateId(null)}
-                  onUpdate={() => sm.refresh()}
-                />
-              )}
-
-              {showTransitionPanel && (
-                <UIBridgeTransitionEditor
-                  transition={sm.selectedTransition}
-                  states={sm.fullConfig?.states ?? []}
-                  onSave={handleCreateTransition}
-                  onUpdate={handleUpdateTransition}
-                  onDelete={handleDeleteTransition}
-                  onClose={() => {
-                    sm.setSelectedTransitionId(null);
-                    setShowNewTransition(false);
-                  }}
-                />
-              )}
-            </>
-          )}
-        </TabsContent>
-
-        {/* State View Tab */}
-        <TabsContent value="states" className="flex-1 flex min-h-0">
-          {!sm.selectedConfigId ? (
-            <div className="flex-1 flex items-center justify-center text-text-muted">
-              Select a configuration to view states.
+              <UIBridgeStateGraph
+                states={sm.fullConfig?.states ?? []}
+                transitions={sm.fullConfig?.transitions ?? []}
+                selectedStateId={sm.selectedStateId}
+                selectedTransitionId={sm.selectedTransitionId}
+                onSelectState={(id) => {
+                  sm.setSelectedStateId(id);
+                  sm.setSelectedTransitionId(null);
+                  setShowNewTransition(false);
+                }}
+                onSelectTransition={(id) => {
+                  sm.setSelectedTransitionId(id);
+                  sm.setSelectedStateId(null);
+                  setShowNewTransition(false);
+                }}
+                highlightedPath={pathfinding.result?.steps}
+                onStartElementDrag={elementDrag.handleStartElementDrag}
+                onDragOver={elementDrag.handleDragOver}
+                onDrop={elementDrag.handleDrop}
+                isDragging={elementDrag.isDragging}
+                dropTargetStateId={elementDrag.dropTargetStateId}
+                onDeleteTransition={handleDeleteTransition}
+              />
             </div>
-          ) : (
-            <StateViewPanel
-              states={sm.fullConfig?.states ?? []}
-              transitions={sm.fullConfig?.transitions ?? []}
-              selectedStateId={sm.selectedStateId}
-              onSelectState={(id) => {
-                sm.setSelectedStateId(id);
-                sm.setSelectedTransitionId(null);
-              }}
-            />
-          )}
-        </TabsContent>
 
-        {/* Transitions Tab */}
-        <TabsContent value="transitions" className="flex-1 flex min-h-0">
-          {!sm.selectedConfigId ? (
-            <div className="flex-1 flex items-center justify-center text-text-muted">
-              Select a configuration to view transitions.
-            </div>
-          ) : (
-            <TransitionsPanel
-              states={sm.fullConfig?.states ?? []}
-              transitions={sm.fullConfig?.transitions ?? []}
-              onSelectTransition={(id) => {
-                sm.setSelectedTransitionId(id);
-                sm.setSelectedStateId(null);
-              }}
-            />
-          )}
-        </TabsContent>
+            {/* Side Panel */}
+            {showStatePanel && sm.selectedState && (
+              <UIBridgeStatePanel
+                state={sm.selectedState}
+                configId={sm.selectedConfigId!}
+                onClose={() => sm.setSelectedStateId(null)}
+                onUpdate={() => sm.refresh()}
+              />
+            )}
 
-        {/* Pathfinding Tab */}
-        <TabsContent value="pathfinding" className="flex-1 overflow-y-auto">
-          {!sm.selectedConfigId ? (
-            <div className="flex items-center justify-center h-full text-text-muted">
-              Select a configuration to use pathfinding.
-            </div>
-          ) : (
-            <PathfindingPanel
-              states={sm.fullConfig?.states ?? []}
-              result={pathfinding.result}
-              isLoading={pathfinding.isLoading}
-              onFindPath={pathfinding.findPath}
-              onClear={pathfinding.clearResult}
-            />
-          )}
-        </TabsContent>
+            {showTransitionPanel && (
+              <UIBridgeTransitionEditor
+                transition={sm.selectedTransition}
+                states={sm.fullConfig?.states ?? []}
+                onSave={handleCreateTransition}
+                onUpdate={handleUpdateTransition}
+                onDelete={handleDeleteTransition}
+                onClose={() => {
+                  sm.setSelectedTransitionId(null);
+                  setShowNewTransition(false);
+                }}
+              />
+            )}
+          </>
+        )}
+      </div>
 
-        {/* Export Tab */}
-        <TabsContent value="export" className="flex-1 overflow-y-auto">
-          {!sm.selectedConfigId ? (
-            <div className="flex items-center justify-center h-full text-text-muted">
-              Select a configuration to export.
-            </div>
-          ) : (
-            <ExportPanel
-              isExporting={exporter.isExporting}
-              isPushing={exporter.isPushing}
-              onDownload={exporter.downloadExport}
-              onPushToRunner={exporter.pushToRunner}
-              configName={sm.fullConfig?.name ?? null}
-              stateCount={sm.fullConfig?.states.length ?? 0}
-              transitionCount={sm.fullConfig?.transitions.length ?? 0}
-            />
-          )}
-        </TabsContent>
-      </Tabs>
+      {/* State View Tab */}
+      <div
+        className={`flex-1 flex min-h-0 ${activeTab !== "states" ? "hidden" : ""}`}
+      >
+        {noProject ? (
+          <div className="flex-1 flex items-center justify-center text-text-muted">
+            Select a project to manage state machines
+          </div>
+        ) : !sm.selectedConfigId ? (
+          <div className="flex-1 flex items-center justify-center text-text-muted">
+            Select a configuration to view states
+          </div>
+        ) : (
+          <StateViewPanel
+            states={sm.fullConfig?.states ?? []}
+            transitions={sm.fullConfig?.transitions ?? []}
+            selectedStateId={sm.selectedStateId}
+            onSelectState={(id) => {
+              sm.setSelectedStateId(id);
+              sm.setSelectedTransitionId(null);
+            }}
+          />
+        )}
+      </div>
+
+      {/* Transitions Tab */}
+      <div
+        className={`flex-1 flex min-h-0 ${activeTab !== "transitions" ? "hidden" : ""}`}
+      >
+        {noProject ? (
+          <div className="flex-1 flex items-center justify-center text-text-muted">
+            Select a project to manage state machines
+          </div>
+        ) : !sm.selectedConfigId ? (
+          <div className="flex-1 flex items-center justify-center text-text-muted">
+            Select a configuration to view transitions
+          </div>
+        ) : (
+          <TransitionsPanel
+            states={sm.fullConfig?.states ?? []}
+            transitions={sm.fullConfig?.transitions ?? []}
+            onSelectTransition={(id) => {
+              sm.setSelectedTransitionId(id);
+              sm.setSelectedStateId(null);
+            }}
+          />
+        )}
+      </div>
+
+      {/* Pathfinding Tab */}
+      <div
+        className={`flex-1 overflow-y-auto ${activeTab !== "pathfinding" ? "hidden" : ""}`}
+      >
+        {noProject ? (
+          <div className="flex items-center justify-center h-full text-text-muted">
+            Select a project to manage state machines
+          </div>
+        ) : !sm.selectedConfigId ? (
+          <div className="flex items-center justify-center h-full text-text-muted">
+            Select a configuration to use pathfinding
+          </div>
+        ) : (
+          <PathfindingPanel
+            states={sm.fullConfig?.states ?? []}
+            result={pathfinding.result}
+            isLoading={pathfinding.isLoading}
+            onFindPath={pathfinding.findPath}
+            onClear={pathfinding.clearResult}
+          />
+        )}
+      </div>
+
+      {/* Export Tab */}
+      <div
+        className={`flex-1 overflow-y-auto ${activeTab !== "export" ? "hidden" : ""}`}
+      >
+        {noProject ? (
+          <div className="flex items-center justify-center h-full text-text-muted">
+            Select a project to manage state machines
+          </div>
+        ) : !sm.selectedConfigId ? (
+          <div className="flex items-center justify-center h-full text-text-muted">
+            Select a configuration to export
+          </div>
+        ) : (
+          <ExportPanel
+            isExporting={exporter.isExporting}
+            isPushing={exporter.isPushing}
+            onDownload={exporter.downloadExport}
+            onPushToRunner={exporter.pushToRunner}
+            configName={sm.fullConfig?.name ?? null}
+            stateCount={sm.fullConfig?.states.length ?? 0}
+            transitionCount={sm.fullConfig?.transitions.length ?? 0}
+          />
+        )}
+      </div>
     </div>
   );
 }

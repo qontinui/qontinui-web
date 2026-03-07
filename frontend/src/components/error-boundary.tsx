@@ -60,9 +60,8 @@ export class ErrorBoundary extends Component<Props, State> {
         });
 
       // Report to UI Bridge browser event capture
-      const bridge = (
-        window as unknown as Record<string, unknown>
-      ).__UI_BRIDGE__ as
+      const bridge = (window as unknown as Record<string, unknown>)
+        .__UI_BRIDGE__ as
         | {
             browserCapture?: {
               reportReactError?: (

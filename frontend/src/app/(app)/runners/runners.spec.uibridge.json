@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "description": "Specs for the Runners page — desktop runner connection management and monitoring",
+  "description": "Runners page — desktop runner connection management and monitoring",
   "groups": [
     {
       "id": "runners-page-structure",
@@ -15,7 +15,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "heading", "textContent": "Runners" },
+            "criteria": {
+              "role": "heading",
+              "textContent": "Runners"
+            },
             "label": "Runners page heading"
           },
           "assertionType": "exists",
@@ -30,7 +33,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "tab", "textContent": "Active Connections" },
+            "criteria": {
+              "role": "tab",
+              "textContent": "Active Connections"
+            },
             "label": "Active Connections tab"
           },
           "assertionType": "exists",
@@ -45,7 +51,10 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "role": "tab", "textContent": "Connection History" },
+            "criteria": {
+              "role": "tab",
+              "textContent": "Connection History"
+            },
             "label": "Connection History tab"
           },
           "assertionType": "exists",
@@ -70,7 +79,10 @@
           "precondition": "Page has just loaded with no tab query parameter",
           "target": {
             "type": "search",
-            "criteria": { "role": "tab", "textContent": "Active Connections" },
+            "criteria": {
+              "role": "tab",
+              "textContent": "Active Connections"
+            },
             "label": "Active Connections tab"
           },
           "assertionType": "containsText",
@@ -86,7 +98,10 @@
           "severity": "info",
           "target": {
             "type": "search",
-            "criteria": { "role": "tab", "textContent": "Connection History" },
+            "criteria": {
+              "role": "tab",
+              "textContent": "Connection History"
+            },
             "label": "Connection History tab"
           },
           "assertionType": "enabled",
@@ -110,7 +125,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Active Connections" },
+            "criteria": {
+              "textContent": "Active Connections"
+            },
             "label": "Active Connections tab"
           },
           "assertionType": "exists",
@@ -125,7 +142,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Connection History" },
+            "criteria": {
+              "textContent": "Connection History"
+            },
             "label": "Connection History tab"
           },
           "assertionType": "exists",

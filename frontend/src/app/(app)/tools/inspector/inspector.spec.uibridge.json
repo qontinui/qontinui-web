@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "description": "Specs for the Inspector page — verifies page structure, SDK connection panel, inspector tabs, element discovery, and semantic page overview for inspecting connected applications",
+  "description": "Inspector page — verifies page structure, SDK connection panel, inspector tabs, element discovery, and semantic page overview for inspecting connected applications",
   "groups": [
     {
       "id": "insp-page-structure",
@@ -33,7 +33,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Runner Connected" },
+            "criteria": {
+              "textContent": "Runner Connected"
+            },
             "label": "Runner status badge"
           },
           "assertionType": "exists",
@@ -57,7 +59,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "combobox" },
+            "criteria": {
+              "role": "combobox"
+            },
             "label": "App selector dropdown"
           },
           "assertionType": "exists",
@@ -72,7 +76,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Disconnect" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Disconnect"
+            },
             "label": "Disconnect button"
           },
           "assertionType": "exists",
@@ -87,7 +94,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Connect New App" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Connect New App"
+            },
             "label": "Connect New App button"
           },
           "assertionType": "exists",
@@ -129,7 +139,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Elements" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Elements"
+            },
             "label": "Elements tab"
           },
           "assertionType": "exists",
@@ -144,7 +157,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Actions" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Actions"
+            },
             "label": "Actions tab"
           },
           "assertionType": "exists",
@@ -159,7 +175,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Accessibility" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Accessibility"
+            },
             "label": "Accessibility tab"
           },
           "assertionType": "exists",
@@ -174,7 +193,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Search" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Search"
+            },
             "label": "Search tab"
           },
           "assertionType": "exists",
@@ -189,7 +211,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Specs" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Specs"
+            },
             "label": "Specs tab"
           },
           "assertionType": "exists",
@@ -204,7 +229,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "API" },
+            "criteria": {
+              "role": "button",
+              "textContent": "API"
+            },
             "label": "API tab"
           },
           "assertionType": "exists",
@@ -228,7 +256,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Connected Apps" },
+            "criteria": {
+              "textContent": "Connected Apps"
+            },
             "label": "Connection panel heading"
           },
           "assertionType": "exists",
@@ -261,7 +291,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Element Details" },
+            "criteria": {
+              "textContent": "Element Details"
+            },
             "label": "Element details panel"
           },
           "assertionType": "exists",
@@ -269,7 +301,9 @@
             "type": "hasText",
             "target": {
               "type": "search",
-              "criteria": { "textContent": "elements found" },
+              "criteria": {
+                "textContent": "elements found"
+              },
               "label": "Element count indicator"
             },
             "text": "found"
@@ -285,7 +319,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Page Specs" },
+            "criteria": {
+              "textContent": "Page Specs"
+            },
             "label": "Page Specs panel"
           },
           "assertionType": "exists",
@@ -309,7 +345,10 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "role": "heading", "textContent": "Element Details" },
+            "criteria": {
+              "role": "heading",
+              "textContent": "Element Details"
+            },
             "label": "Element Details heading"
           },
           "assertionType": "exists",
@@ -317,7 +356,9 @@
             "type": "hasText",
             "target": {
               "type": "search",
-              "criteria": { "textContent": "elements found" },
+              "criteria": {
+                "textContent": "elements found"
+              },
               "label": "Element count indicator"
             },
             "text": "found"
@@ -343,7 +384,9 @@
             "type": "hasText",
             "target": {
               "type": "search",
-              "criteria": { "textContent": "elements found" },
+              "criteria": {
+                "textContent": "elements found"
+              },
               "label": "Element count indicator"
             },
             "text": "found"
@@ -368,7 +411,9 @@
           "severity": "info",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "No Elements Loaded" },
+            "criteria": {
+              "textContent": "No Elements Loaded"
+            },
             "label": "No elements empty state"
           },
           "assertionType": "exists",

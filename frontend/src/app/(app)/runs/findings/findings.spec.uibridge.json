@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "description": "Specs for the Findings page — aggregate and prioritize issues discovered across task runs",
+  "description": "Findings page — aggregate and prioritize issues discovered across task runs",
   "groups": [
     {
       "id": "findings-page-structure",
@@ -15,7 +15,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "heading", "textContent": "Findings" },
+            "criteria": {
+              "role": "heading",
+              "textContent": "Findings"
+            },
             "label": "Findings heading"
           },
           "assertionType": "exists",
@@ -30,7 +33,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Critical" },
+            "criteria": {
+              "textContent": "Critical"
+            },
             "label": "Critical severity summary card"
           },
           "assertionType": "exists",
@@ -45,7 +50,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "High" },
+            "criteria": {
+              "textContent": "High"
+            },
             "label": "High severity summary card"
           },
           "assertionType": "exists",
@@ -60,7 +67,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Medium" },
+            "criteria": {
+              "textContent": "Medium"
+            },
             "label": "Medium severity summary card"
           },
           "assertionType": "exists",
@@ -75,7 +84,9 @@
           "severity": "info",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Low" },
+            "criteria": {
+              "textContent": "Low"
+            },
             "label": "Low severity summary card"
           },
           "assertionType": "exists",
@@ -99,7 +110,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Critical" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Critical"
+            },
             "label": "Critical severity filter button"
           },
           "assertionType": "enabled",
@@ -114,7 +128,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "High" },
+            "criteria": {
+              "role": "button",
+              "textContent": "High"
+            },
             "label": "High severity filter button"
           },
           "assertionType": "enabled",
@@ -130,7 +147,10 @@
           "precondition": "No fixable findings are present in the findings list",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Fix All" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Fix All"
+            },
             "label": "Fix All button"
           },
           "assertionType": "disabled",
@@ -138,7 +158,9 @@
             "type": "notExists",
             "target": {
               "type": "search",
-              "criteria": { "textContent": "Open" },
+              "criteria": {
+                "textContent": "Open"
+              },
               "label": "Open (fixable) finding items"
             }
           },
@@ -162,7 +184,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Findings" },
+            "criteria": {
+              "textContent": "Findings"
+            },
             "label": "Findings heading"
           },
           "assertionType": "exists",
@@ -177,7 +201,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Critical" },
+            "criteria": {
+              "textContent": "Critical"
+            },
             "label": "Critical severity count"
           },
           "assertionType": "exists",
@@ -192,7 +218,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Fix All" },
+            "criteria": {
+              "textContent": "Fix All"
+            },
             "label": "Fix All button"
           },
           "assertionType": "exists",

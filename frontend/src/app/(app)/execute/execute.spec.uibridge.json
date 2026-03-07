@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "description": "Specs for the Execute page — batch workflow execution with drag-and-drop sequence building",
+  "description": "Execute page — batch workflow execution with drag-and-drop sequence building",
   "groups": [
     {
       "id": "exec-page-structure",
@@ -15,7 +15,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "heading", "textContent": "Execute" },
+            "criteria": {
+              "role": "heading",
+              "textContent": "Execute"
+            },
             "label": "Execute page heading"
           },
           "assertionType": "exists",
@@ -30,7 +33,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Workflow Library" },
+            "criteria": {
+              "textContent": "Workflow Library"
+            },
             "label": "Workflow Library panel"
           },
           "assertionType": "exists",
@@ -45,7 +50,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Sequence Builder" },
+            "criteria": {
+              "textContent": "Sequence Builder"
+            },
             "label": "Sequence Builder panel"
           },
           "assertionType": "exists",
@@ -70,7 +77,10 @@
           "precondition": "No workflows have been added to the sequence builder",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Run" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Run"
+            },
             "label": "Run sequence button"
           },
           "assertionType": "disabled",
@@ -78,7 +88,9 @@
             "type": "notExists",
             "target": {
               "type": "search",
-              "criteria": { "testId": "sequence-item" },
+              "criteria": {
+                "testId": "sequence-item"
+              },
               "label": "Sequence items"
             }
           },
@@ -93,7 +105,10 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Save" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Save"
+            },
             "label": "Save sequence button"
           },
           "assertionType": "exists",
@@ -117,7 +132,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Workflow Library" },
+            "criteria": {
+              "textContent": "Workflow Library"
+            },
             "label": "Workflow library panel"
           },
           "assertionType": "exists",
@@ -132,7 +149,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Sequence Builder" },
+            "criteria": {
+              "textContent": "Sequence Builder"
+            },
             "label": "Sequence builder panel"
           },
           "assertionType": "exists",
@@ -147,7 +166,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Run" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Run"
+            },
             "label": "Run sequence button"
           },
           "assertionType": "exists",
@@ -162,7 +184,10 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Save" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Save"
+            },
             "label": "Save sequence button"
           },
           "assertionType": "exists",

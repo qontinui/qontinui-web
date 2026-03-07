@@ -1,0 +1,1455 @@
+{
+  "version": "1.0.0",
+  "description": "UI Bridge State Machine page — visual editor for discovering, creating, and managing state machines from UI Bridge-instrumented applications. Covers the full state machine creation lifecycle: SDK connection, state discovery, graph editing, transition creation, pathfinding, and export.",
+  "groups": [
+    {
+      "id": "sm-page-structure",
+      "name": "Page Structure",
+      "description": "Core structural elements of the State Machine page: heading, project selector status, config selector, and tab navigation.",
+      "category": "element-presence",
+      "assertions": [
+        {
+          "id": "sm-struct-heading",
+          "description": "Page heading 'State Machine' is rendered at the top",
+          "category": "element-presence",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "heading",
+              "textContent": "State Machine"
+            },
+            "label": "State Machine heading"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-struct-config-selector",
+          "description": "Configuration selector dropdown is present with placeholder 'Select configuration...'",
+          "category": "element-presence",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Select configuration"
+            },
+            "label": "Config selector"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-struct-refresh-button",
+          "description": "A refresh button is present to reload configurations",
+          "category": "element-presence",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "Refresh"
+            },
+            "label": "Refresh button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "sm-tab-navigation",
+      "name": "Tab Navigation",
+      "description": "The page provides 6 tabs for different aspects of state machine management: Discovery, Graph Editor, State View, Transitions, Pathfinding, and Export.",
+      "category": "navigation",
+      "assertions": [
+        {
+          "id": "sm-tab-discovery",
+          "description": "Discovery tab is present for discovering states from SDK apps",
+          "category": "navigation",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "Discovery"
+            },
+            "label": "Discovery tab"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-tab-graph",
+          "description": "Graph Editor tab is present for visual state/transition editing",
+          "category": "navigation",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "Graph Editor"
+            },
+            "label": "Graph Editor tab"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-tab-states",
+          "description": "State View tab is present for browsing and editing states",
+          "category": "navigation",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "State View"
+            },
+            "label": "State View tab"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-tab-transitions",
+          "description": "Transitions tab is present for managing transition definitions and action sequences",
+          "category": "navigation",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "Transitions"
+            },
+            "label": "Transitions tab"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-tab-pathfinding",
+          "description": "Pathfinding tab is present for finding optimal paths between states",
+          "category": "navigation",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "Pathfinding"
+            },
+            "label": "Pathfinding tab"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-tab-export",
+          "description": "Export tab is present for downloading or pushing the state machine to the runner",
+          "category": "navigation",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "Export"
+            },
+            "label": "Export tab"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "sm-no-project-state",
+      "name": "No Project Selected State",
+      "description": "When no project is selected, the page should show a clear message instructing the user to select a project.",
+      "category": "state-consistency",
+      "assertions": [
+        {
+          "id": "sm-no-project-message",
+          "description": "A message tells the user to select a project to manage state machines",
+          "category": "state-consistency",
+          "severity": "warning",
+          "precondition": "No project is currently selected in the automation store",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Select a project"
+            },
+            "label": "Select project message"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "sm-no-config-state",
+      "name": "No Configuration Selected State",
+      "description": "When a project is selected but no configuration is chosen, tabs that require a config should show instructive empty states.",
+      "category": "state-consistency",
+      "assertions": [
+        {
+          "id": "sm-no-config-graph-message",
+          "description": "Graph Editor tab shows a message to select a configuration to view the state graph",
+          "category": "state-consistency",
+          "severity": "warning",
+          "precondition": "A project is selected but no configuration is chosen, and Graph Editor tab is active",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Select a configuration to view the state graph"
+            },
+            "label": "No config graph message"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-no-config-states-message",
+          "description": "State View tab shows a message to select a configuration to view states",
+          "category": "state-consistency",
+          "severity": "warning",
+          "precondition": "A project is selected but no configuration is chosen, and State View tab is active",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Select a configuration to view states"
+            },
+            "label": "No config states message"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-no-config-transitions-message",
+          "description": "Transitions tab shows a message to select a configuration to view transitions",
+          "category": "state-consistency",
+          "severity": "warning",
+          "precondition": "A project is selected but no configuration is chosen, and Transitions tab is active",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Select a configuration to view transitions"
+            },
+            "label": "No config transitions message"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-no-config-pathfinding-message",
+          "description": "Pathfinding tab shows a message to select a configuration",
+          "category": "state-consistency",
+          "severity": "info",
+          "precondition": "A project is selected but no configuration is chosen, and Pathfinding tab is active",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Select a configuration to use pathfinding"
+            },
+            "label": "No config pathfinding message"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-no-config-export-message",
+          "description": "Export tab shows a message to select a configuration",
+          "category": "state-consistency",
+          "severity": "info",
+          "precondition": "A project is selected but no configuration is chosen, and Export tab is active",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Select a configuration to export"
+            },
+            "label": "No config export message"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "sm-discovery-runner-connection",
+      "name": "Discovery — Runner Connection",
+      "description": "Phase 1 of discovery: connecting to a runner and finding SDK-instrumented apps. The user selects a runner, scans for apps, and connects to one.",
+      "category": "element-presence",
+      "assertions": [
+        {
+          "id": "sm-disc-scan-button",
+          "description": "A 'Scan' button is present to scan for SDK-instrumented apps on the selected runner",
+          "category": "element-presence",
+          "severity": "critical",
+          "precondition": "Discovery tab is active and a project is selected",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "Scan"
+            },
+            "label": "Scan button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-disc-no-runners",
+          "description": "When no runners are detected, a message tells the user to start the qontinui-runner app",
+          "category": "element-presence",
+          "severity": "warning",
+          "precondition": "Discovery tab is active and no runners are connected",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "No runners detected"
+            },
+            "label": "No runners message"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-disc-scan-prompt",
+          "description": "Before scanning, a message prompts the user to click Scan to find apps with the UI Bridge SDK installed",
+          "category": "element-presence",
+          "severity": "info",
+          "precondition": "Discovery tab is active and no scan has been performed yet",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Click Scan"
+            },
+            "label": "Scan prompt message"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "sm-discovery-collection",
+      "name": "Discovery — Data Collection",
+      "description": "Phase 2 of discovery: collecting render snapshots from the connected SDK app via automated exploration or manual recording.",
+      "category": "element-presence",
+      "assertions": [
+        {
+          "id": "sm-disc-explore-tab",
+          "description": "An 'Explore' tab is present for automated UI Bridge exploration",
+          "category": "element-presence",
+          "severity": "critical",
+          "precondition": "Discovery tab is active and an SDK app is connected",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "Explore"
+            },
+            "label": "Explore tab"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-disc-record-tab",
+          "description": "A 'Record' tab is present for manual snapshot recording",
+          "category": "element-presence",
+          "severity": "critical",
+          "precondition": "Discovery tab is active and an SDK app is connected",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "Record"
+            },
+            "label": "Record tab"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-disc-record-start",
+          "description": "A 'Start Recording' button is present to begin manual snapshot capture",
+          "category": "element-presence",
+          "severity": "critical",
+          "precondition": "Discovery tab is active, Record sub-tab is selected, and an SDK app is connected",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "Start Recording"
+            },
+            "label": "Start Recording button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-disc-capture-now",
+          "description": "A 'Capture Now' button is present for taking a single manual snapshot",
+          "category": "element-presence",
+          "severity": "warning",
+          "precondition": "Discovery tab is active, Record sub-tab is selected, and an SDK app is connected",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "Capture Now"
+            },
+            "label": "Capture Now button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-disc-record-instructions",
+          "description": "Recording instructions are shown explaining how to capture UI states",
+          "category": "element-presence",
+          "severity": "info",
+          "precondition": "Discovery tab is active, Record sub-tab is selected",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Capture snapshots"
+            },
+            "label": "Recording instructions"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "sm-discovery-results",
+      "name": "Discovery — State Discovery & Save",
+      "description": "Phase 3 of discovery: running the state discovery algorithm on collected renders, previewing discovered states, naming the configuration, and saving to the project. This is the core creation flow.",
+      "category": "element-presence",
+      "assertions": [
+        {
+          "id": "sm-disc-render-count",
+          "description": "After collection, a card shows the number of render logs collected with a count badge",
+          "category": "element-presence",
+          "severity": "critical",
+          "precondition": "Discovery tab is active and render logs have been collected (via explore or record)",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "render logs"
+            },
+            "label": "Render logs count"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-disc-discover-button",
+          "description": "A 'Discover States' button triggers the co-occurrence analysis algorithm to extract states from renders",
+          "category": "element-presence",
+          "severity": "critical",
+          "precondition": "Discovery tab is active and render logs have been collected",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "Discover States"
+            },
+            "label": "Discover States button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-disc-start-over",
+          "description": "A 'Start Over' button allows the user to discard collected renders and restart the discovery process",
+          "category": "element-presence",
+          "severity": "warning",
+          "precondition": "Discovery tab is active and render logs have been collected",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "Start Over"
+            },
+            "label": "Start Over button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-disc-config-name-input",
+          "description": "After discovery completes, a 'Configuration Name' input field is shown for naming the state machine before saving",
+          "category": "element-presence",
+          "severity": "critical",
+          "precondition": "Discovery has completed successfully and states have been found",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Configuration Name"
+            },
+            "label": "Configuration Name input label"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-disc-save-button",
+          "description": "A 'Save to Project' button persists the discovered state machine configuration to the backend",
+          "category": "element-presence",
+          "severity": "critical",
+          "precondition": "Discovery has completed successfully and a configuration name has been entered",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "Save to Project"
+            },
+            "label": "Save to Project button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "sm-discovery-results-preview",
+      "name": "Discovery — Results Preview",
+      "description": "After discovery completes, the results card shows discovered state count, element count, render count, strategy badge, and a preview list of states with confidence scores.",
+      "category": "state-consistency",
+      "assertions": [
+        {
+          "id": "sm-disc-state-count-badge",
+          "description": "Discovery results show the number of states discovered as a count badge",
+          "category": "state-consistency",
+          "severity": "critical",
+          "precondition": "Discovery has completed successfully",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "state"
+            },
+            "label": "State count in discovery results"
+          },
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-disc-element-count-badge",
+          "description": "Discovery results show the total number of unique elements found",
+          "category": "state-consistency",
+          "severity": "warning",
+          "precondition": "Discovery has completed successfully",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "element"
+            },
+            "label": "Element count in discovery results"
+          },
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "sm-graph-editor",
+      "name": "Graph Editor",
+      "description": "The Graph Editor tab provides a ReactFlow-based visual canvas showing states as nodes and transitions as edges. Users can select, edit, and create transitions by dragging elements between states.",
+      "category": "element-presence",
+      "assertions": [
+        {
+          "id": "sm-graph-fit-button",
+          "description": "A 'Fit to view' button is present to auto-fit the graph in the viewport",
+          "category": "element-presence",
+          "severity": "warning",
+          "precondition": "Graph Editor tab is active and a configuration is selected",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "Fit to view"
+            },
+            "label": "Fit to view button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-graph-relayout-button",
+          "description": "A 'Re-layout' button is present to recalculate the automatic graph layout",
+          "category": "element-presence",
+          "severity": "info",
+          "precondition": "Graph Editor tab is active and a configuration is selected",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "Re-layout"
+            },
+            "label": "Re-layout button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-graph-add-transition-button",
+          "description": "An 'Add Transition' button is present for creating new transitions via the editor panel",
+          "category": "element-presence",
+          "severity": "critical",
+          "precondition": "Graph Editor tab is active and a configuration is selected",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "Add Transition"
+            },
+            "label": "Add Transition button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-graph-stats",
+          "description": "A stats panel shows the count of states, transitions, and the initial (START) state name",
+          "category": "element-presence",
+          "severity": "warning",
+          "precondition": "Graph Editor tab is active and a configuration with states is loaded",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "states"
+            },
+            "label": "Graph stats panel"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "sm-graph-state-nodes",
+      "name": "Graph — State Nodes",
+      "description": "Each state is rendered as a ReactFlow node showing the state name, element grid with type-colored tiles, confidence badge, element count, and connection indicators (START badge for initial state, transition count badges).",
+      "category": "semantic",
+      "assertions": [
+        {
+          "id": "sm-graph-node-elements",
+          "description": "State nodes display element tiles in a grid, color-coded by type (testid=blue, role=green, text=amber, ui=purple, url/nav=cyan). Each tile shows a type icon and truncated label, and tiles are draggable to create transitions.",
+          "category": "semantic",
+          "severity": "critical",
+          "precondition": "Graph Editor tab is active and a configuration with states is loaded",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "states"
+            },
+            "label": "Graph with state nodes"
+          },
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-graph-node-start-badge",
+          "description": "The initial state node displays a gold 'START' badge to identify it as the entry point of the state machine",
+          "category": "semantic",
+          "severity": "warning",
+          "precondition": "Graph Editor tab is active and a configuration with at least one state is loaded",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "START"
+            },
+            "label": "START badge on initial state"
+          },
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "sm-state-panel",
+      "name": "State Detail Panel",
+      "description": "When a state is selected in the Graph Editor, a side panel shows editable state details: name, description, state ID, confidence, elements list, render count, and domain knowledge.",
+      "category": "element-presence",
+      "assertions": [
+        {
+          "id": "sm-state-name-input",
+          "description": "The state detail panel has an editable name input field",
+          "category": "element-presence",
+          "severity": "critical",
+          "precondition": "A state is selected in the Graph Editor",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "textbox"
+            },
+            "label": "State name input"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-state-save-button",
+          "description": "A 'Save Changes' button persists state name/description updates to the backend",
+          "category": "element-presence",
+          "severity": "critical",
+          "precondition": "A state is selected in the Graph Editor",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "Save Changes"
+            },
+            "label": "Save Changes button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "sm-transition-editor",
+      "name": "Transition Editor",
+      "description": "The transition editor panel allows creating and editing transitions with: name, from/activate/exit states (toggle buttons), action sequence (with 19+ action types), path cost, and stays_visible flag.",
+      "category": "element-presence",
+      "assertions": [
+        {
+          "id": "sm-trans-name-input",
+          "description": "The transition editor has a name input with placeholder 'e.g., Open Settings'",
+          "category": "element-presence",
+          "severity": "critical",
+          "precondition": "The transition editor panel is open (via Add Transition or clicking an edge)",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Open Settings"
+            },
+            "label": "Transition name placeholder"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-trans-from-states",
+          "description": "The transition editor shows 'From States' section with toggle buttons for each state (blue when selected)",
+          "category": "element-presence",
+          "severity": "critical",
+          "precondition": "The transition editor panel is open",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "From States"
+            },
+            "label": "From States section"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-trans-activate-states",
+          "description": "The transition editor shows 'Activate States' section with toggle buttons for each state (green when selected)",
+          "category": "element-presence",
+          "severity": "critical",
+          "precondition": "The transition editor panel is open",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Activate States"
+            },
+            "label": "Activate States section"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-trans-exit-states",
+          "description": "The transition editor shows 'Exit States' section with toggle buttons for each state (red when selected)",
+          "category": "element-presence",
+          "severity": "critical",
+          "precondition": "The transition editor panel is open",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Exit States"
+            },
+            "label": "Exit States section"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-trans-add-action",
+          "description": "An 'Add' button allows appending new actions to the transition's action sequence",
+          "category": "element-presence",
+          "severity": "critical",
+          "precondition": "The transition editor panel is open",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "Add"
+            },
+            "label": "Add action button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-trans-create-button",
+          "description": "A 'Create' button submits the new transition to the backend API",
+          "category": "element-presence",
+          "severity": "critical",
+          "precondition": "The transition editor panel is open for a new transition",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "Create"
+            },
+            "label": "Create transition button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "sm-transition-actions",
+      "name": "Transition — Action Types",
+      "description": "Transitions support 19+ action types that define what happens during state changes. Each action type has specific parameters. The action type dropdown should contain all supported types.",
+      "category": "semantic",
+      "assertions": [
+        {
+          "id": "sm-trans-action-types-available",
+          "description": "The action type dropdown includes all core SDK action types: click, doubleClick, rightClick, type, clear, select, focus, blur, hover, scroll, check, uncheck, toggle, setValue, drag, submit, reset — plus workflow actions: wait, navigate. These map to the UIBridgeRuntime action handlers in the qontinui library.",
+          "category": "semantic",
+          "severity": "critical",
+          "precondition": "The transition editor is open and at least one action exists",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "click"
+            },
+            "label": "Click action type option"
+          },
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-trans-action-click-params",
+          "description": "When action type is 'click', the editor shows an element ID input field (target) for specifying which UI Bridge element to click",
+          "category": "semantic",
+          "severity": "critical",
+          "precondition": "The transition editor has a click action configured",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Element ID"
+            },
+            "label": "Element ID input for click action"
+          },
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-trans-action-type-params",
+          "description": "When action type is 'type', the editor shows text input, optional clear_first checkbox, and type_delay fields for typing text into UI elements",
+          "category": "semantic",
+          "severity": "critical",
+          "precondition": "The transition editor has a type action configured",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Text to type"
+            },
+            "label": "Text input for type action"
+          },
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-trans-action-navigate-params",
+          "description": "When action type is 'navigate', the editor shows a URL input field for page navigation",
+          "category": "semantic",
+          "severity": "warning",
+          "precondition": "The transition editor has a navigate action configured",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "URL"
+            },
+            "label": "URL input for navigate action"
+          },
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-trans-action-wait-params",
+          "description": "When action type is 'wait', the editor shows a delay input in milliseconds for timed waits between actions",
+          "category": "semantic",
+          "severity": "warning",
+          "precondition": "The transition editor has a wait action configured",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Delay"
+            },
+            "label": "Delay input for wait action"
+          },
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "sm-transitions-panel",
+      "name": "Transitions List Panel",
+      "description": "The Transitions tab shows a searchable, filterable list of all transitions with action type icons, from/to state labels, and an action playback visualization with play/pause controls.",
+      "category": "element-presence",
+      "assertions": [
+        {
+          "id": "sm-trans-search",
+          "description": "A search input is present for filtering transitions by name",
+          "category": "element-presence",
+          "severity": "warning",
+          "precondition": "Transitions tab is active and a configuration is selected",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Search transitions"
+            },
+            "label": "Transition search input"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-trans-list-heading",
+          "description": "The transitions list header shows 'Transitions' with a count of total transitions",
+          "category": "element-presence",
+          "severity": "warning",
+          "precondition": "Transitions tab is active and a configuration with transitions is selected",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Transitions"
+            },
+            "label": "Transitions heading with count"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-trans-empty-detail",
+          "description": "When no transition is selected, a message says 'Select a transition to view its details'",
+          "category": "element-presence",
+          "severity": "info",
+          "precondition": "Transitions tab is active, a configuration is selected, but no transition is selected",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Select a transition to view its details"
+            },
+            "label": "No transition selected message"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-trans-playback-controls",
+          "description": "When a transition is selected, action playback controls are shown with play/pause, step forward/back, and speed selector (0.5x to 4x)",
+          "category": "element-presence",
+          "severity": "warning",
+          "precondition": "A transition with actions is selected in the Transitions tab",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Action Playback"
+            },
+            "label": "Action Playback controls"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "sm-pathfinding",
+      "name": "Pathfinding",
+      "description": "The Pathfinding tab allows users to select 'from' states (currently active) and 'target' states (to reach), then find the optimal transition path using the multistate library's Dijkstra/BFS/A* algorithms. Results show step-by-step transitions with costs.",
+      "category": "element-presence",
+      "assertions": [
+        {
+          "id": "sm-path-from-label",
+          "description": "A 'From States' section shows toggle buttons for selecting currently active states (blue highlight)",
+          "category": "element-presence",
+          "severity": "critical",
+          "precondition": "Pathfinding tab is active and a configuration with states is selected",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "From States"
+            },
+            "label": "From States selection"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-path-target-label",
+          "description": "A 'Target States' section shows toggle buttons for selecting destination states (green highlight)",
+          "category": "element-presence",
+          "severity": "critical",
+          "precondition": "Pathfinding tab is active and a configuration with states is selected",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Target States"
+            },
+            "label": "Target States selection"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-path-find-button",
+          "description": "A 'Find Path' button triggers the pathfinding algorithm via POST to the backend",
+          "category": "element-presence",
+          "severity": "critical",
+          "precondition": "Pathfinding tab is active and at least one from-state and one target-state are selected",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "Find Path"
+            },
+            "label": "Find Path button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-path-found-result",
+          "description": "When a path is found, a green 'Path found' message is shown with total cost and step-by-step transition sequence",
+          "category": "element-presence",
+          "severity": "critical",
+          "precondition": "A pathfinding query has returned a successful result",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Path found"
+            },
+            "label": "Path found result"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-path-not-found",
+          "description": "When no path exists between selected states, a red error message is shown: 'No path found between the selected states.'",
+          "category": "element-presence",
+          "severity": "warning",
+          "precondition": "A pathfinding query has returned no results",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "No path found"
+            },
+            "label": "No path found error"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "sm-export",
+      "name": "Export",
+      "description": "The Export tab allows downloading the state machine as JSON (compatible with UIBridgeRuntime.from_dict()) or pushing it directly to the qontinui-runner.",
+      "category": "element-presence",
+      "assertions": [
+        {
+          "id": "sm-export-heading",
+          "description": "Export heading is shown with the configuration name",
+          "category": "element-presence",
+          "severity": "warning",
+          "precondition": "Export tab is active and a configuration is selected",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Export"
+            },
+            "label": "Export heading"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-export-download",
+          "description": "A 'Download JSON' button exports the state machine as a JSON file compatible with UIBridgeRuntime.from_dict() in the qontinui library",
+          "category": "element-presence",
+          "severity": "critical",
+          "precondition": "Export tab is active and a configuration is selected",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "Download JSON"
+            },
+            "label": "Download JSON button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-export-push-runner",
+          "description": "A 'Push to Runner' button sends the state machine directly to the qontinui-runner at localhost:9876/state-machine/load",
+          "category": "element-presence",
+          "severity": "warning",
+          "precondition": "Export tab is active and a configuration is selected",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "button",
+              "textContent": "Push to Runner"
+            },
+            "label": "Push to Runner button"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-export-stats",
+          "description": "The export card shows the configuration name, states count, and transitions count",
+          "category": "element-presence",
+          "severity": "info",
+          "precondition": "Export tab is active and a configuration is selected",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "transitions"
+            },
+            "label": "Export stats"
+          },
+          "assertionType": "exists",
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "sm-creation-flow",
+      "name": "State Machine Creation Flow",
+      "description": "End-to-end creation of a state machine: (1) connect to SDK app via runner, (2) collect renders by exploration or recording, (3) run discovery algorithm, (4) preview and name the configuration, (5) save to project. After saving, the configuration appears in the config selector dropdown and can be edited in Graph Editor.",
+      "category": "semantic",
+      "assertions": [
+        {
+          "id": "sm-create-discovery-to-save",
+          "description": "The discovery workflow enables creating a new state machine from scratch: scan for SDK apps, connect to one, collect UI renders (explore or record), run state discovery (co-occurrence analysis extracts states as element groups), name the configuration, and save it to the project. The saved config should appear in the config selector.",
+          "category": "semantic",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Discovery"
+            },
+            "label": "Discovery tab"
+          },
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-create-config-appears",
+          "description": "After saving a discovered configuration, it should appear in the config selector dropdown with the entered name and render count. Selecting it should load all discovered states and allow editing in Graph Editor, State View, and Transitions tabs.",
+          "category": "semantic",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Select configuration"
+            },
+            "label": "Config selector"
+          },
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-create-transition-flow",
+          "description": "After a configuration is loaded, users can create transitions between states by: (1) clicking 'Add Transition' in Graph Editor or Transitions tab, (2) naming the transition, (3) selecting from-states, activate-states, and exit-states, (4) adding action steps (click, type, select, navigate, wait, etc. with element IDs and parameters), (5) setting path cost and stays_visible, (6) clicking 'Create'. The transition should appear as an edge in the Graph Editor.",
+          "category": "semantic",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Add Transition"
+            },
+            "label": "Add Transition button"
+          },
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-create-pathfinding-works",
+          "description": "After states and transitions are defined, users can use the Pathfinding tab to find optimal paths between states. The algorithm (Dijkstra by default) considers path_cost on both states and transitions. Results show the sequence of transitions to execute, their from/activate/exit states, and total cost.",
+          "category": "semantic",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Find Path"
+            },
+            "label": "Find Path button"
+          },
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-create-export-works",
+          "description": "After the state machine is fully configured (states + transitions), users can export it as JSON compatible with UIBridgeRuntime.from_dict() for use in qontinui automation, or push it directly to the runner. The export contains states (id, name, element_ids, blocking, group, path_cost), transitions (from/activate/exit states, actions, path_cost, stays_visible), and config metadata.",
+          "category": "semantic",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Download JSON"
+            },
+            "label": "Download JSON button"
+          },
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    },
+    {
+      "id": "sm-data-model",
+      "name": "State Machine Data Model",
+      "description": "Semantic specification of the state machine data model. Each state has: id, name, element_ids (UI Bridge element identifiers like testid:nav, ui:sidebar), confidence (0-1), acceptance_criteria, domain_knowledge links. Each transition has: from_states, activate_states, exit_states, actions list, path_cost, stays_visible. The backend API is at /api/v1/projects/{project_id}/ui-bridge-configs/ with full CRUD for configs, states, and transitions.",
+      "category": "semantic",
+      "assertions": [
+        {
+          "id": "sm-model-state-elements",
+          "description": "States contain element_ids arrays that reference UI Bridge element identifiers (prefixed by type: testid:, role:, text:, ui:, url:, nav:). Elements that co-occur across renders are grouped into the same state. The element type determines the color coding in the Graph Editor (testid=blue, role=green, text=amber, ui=purple, url/nav=cyan).",
+          "category": "semantic",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "State Machine"
+            },
+            "label": "State Machine page"
+          },
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-model-transition-phases",
+          "description": "Transitions execute in phases: (1) VALIDATE - check preconditions, (2) OUTGOING - execute outgoing action, (3) ACTIVATE - activate target states, (4) INCOMING - execute incoming actions, (5) EXIT - deactivate exit states, (6) VISIBILITY - update visibility, (7) CLEANUP. The from_states define where the transition can fire, activate_states become active, exit_states become inactive.",
+          "category": "semantic",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "State Machine"
+            },
+            "label": "State Machine page"
+          },
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        },
+        {
+          "id": "sm-model-discovery-algorithm",
+          "description": "State discovery uses element co-occurrence analysis: elements that consistently appear together across UI renders are grouped into states. The FingerprintStateDiscovery uses structural fingerprints (DOM path, position zone, ARIA role, accessible name) for cross-page matching. Min co-occurrence rate defaults to 0.95. Discovery produces states with confidence scores based on observation frequency.",
+          "category": "semantic",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "textContent": "Discover States"
+            },
+            "label": "Discovery algorithm"
+          },
+          "source": "manual",
+          "reviewed": true,
+          "enabled": true
+        }
+      ],
+      "source": "manual"
+    }
+  ],
+  "metadata": {
+    "component": "UIBridgeStateMachinePage",
+    "author": "Joshua Spinak",
+    "createdAt": "2026-03-06T00:00:00.000Z",
+    "updatedAt": "2026-03-06T00:00:00.000Z",
+    "pageUrl": "/automation-builder/ui-bridge-states",
+    "elementSource": "sdk",
+    "tags": [
+      "state-machine",
+      "ui-bridge",
+      "discovery",
+      "graph-editor",
+      "transitions",
+      "pathfinding",
+      "automation",
+      "tier-1"
+    ],
+    "specType": "comprehensive"
+  }
+}

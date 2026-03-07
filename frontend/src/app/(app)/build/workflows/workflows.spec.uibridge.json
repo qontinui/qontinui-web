@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "description": "Comprehensive specs for the Workflow Builder page — the primary authoring environment for creating multi-phase AI automation workflows",
+  "description": "Workflow Builder page — the primary authoring environment for creating multi-phase AI automation workflows",
   "groups": [
     {
       "id": "wf-page-structure",
@@ -15,7 +15,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "heading", "textContent": "Workflows" },
+            "criteria": {
+              "role": "heading",
+              "textContent": "Workflows"
+            },
             "label": "Workflows page heading"
           },
           "assertionType": "exists",
@@ -30,7 +33,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "complementary" },
+            "criteria": {
+              "role": "complementary"
+            },
             "label": "Sidebar region"
           },
           "assertionType": "exists",
@@ -45,7 +50,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "main" },
+            "criteria": {
+              "role": "main"
+            },
             "label": "Main content region"
           },
           "assertionType": "exists",
@@ -69,7 +76,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "role": "searchbox" },
+            "criteria": {
+              "role": "searchbox"
+            },
             "label": "Workflow search input"
           },
           "assertionType": "exists",
@@ -84,7 +93,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "New" },
+            "criteria": {
+              "role": "button",
+              "textContent": "New"
+            },
             "label": "New Workflow button"
           },
           "assertionType": "exists",
@@ -108,7 +120,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "New" },
+            "criteria": {
+              "role": "button",
+              "textContent": "New"
+            },
             "label": "New Workflow button"
           },
           "assertionType": "enabled",
@@ -123,7 +138,9 @@
           "severity": "info",
           "target": {
             "type": "search",
-            "criteria": { "role": "searchbox" },
+            "criteria": {
+              "role": "searchbox"
+            },
             "label": "Workflow search input"
           },
           "assertionType": "hasValue",
@@ -148,7 +165,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Generate Workflow with AI" },
+            "criteria": {
+              "textContent": "Generate Workflow with AI"
+            },
             "label": "AI generation heading"
           },
           "assertionType": "exists",
@@ -157,7 +176,10 @@
             "type": "notExists",
             "target": {
               "type": "search",
-              "criteria": { "role": "button", "textContent": "Run" }
+              "criteria": {
+                "role": "button",
+                "textContent": "Run"
+              }
             }
           },
           "source": "manual",
@@ -171,7 +193,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "textbox" },
+            "criteria": {
+              "role": "textbox"
+            },
             "label": "AI prompt textarea"
           },
           "assertionType": "exists",
@@ -180,7 +204,10 @@
             "type": "notExists",
             "target": {
               "type": "search",
-              "criteria": { "role": "button", "textContent": "Run" }
+              "criteria": {
+                "role": "button",
+                "textContent": "Run"
+              }
             }
           },
           "source": "manual",
@@ -203,7 +230,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Generate" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Generate"
+            },
             "label": "Generate button"
           },
           "assertionType": "disabled",
@@ -212,7 +242,10 @@
             "type": "notExists",
             "target": {
               "type": "search",
-              "criteria": { "role": "button", "textContent": "Run" }
+              "criteria": {
+                "role": "button",
+                "textContent": "Run"
+              }
             }
           },
           "source": "manual",
@@ -226,7 +259,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "textbox" },
+            "criteria": {
+              "role": "textbox"
+            },
             "label": "AI prompt textarea"
           },
           "assertionType": "enabled",
@@ -235,7 +270,10 @@
             "type": "notExists",
             "target": {
               "type": "search",
-              "criteria": { "role": "button", "textContent": "Run" }
+              "criteria": {
+                "role": "button",
+                "textContent": "Run"
+              }
             }
           },
           "source": "manual",
@@ -258,7 +296,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Run" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Run"
+            },
             "label": "Run button"
           },
           "assertionType": "exists",
@@ -267,7 +308,10 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "role": "button", "textContent": "Save" }
+              "criteria": {
+                "role": "button",
+                "textContent": "Save"
+              }
             }
           },
           "source": "manual",
@@ -281,7 +325,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Save" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Save"
+            },
             "label": "Save button"
           },
           "assertionType": "exists",
@@ -290,7 +337,10 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "role": "button", "textContent": "Run" }
+              "criteria": {
+                "role": "button",
+                "textContent": "Run"
+              }
             }
           },
           "source": "manual",
@@ -304,7 +354,10 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Export" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Export"
+            },
             "label": "Export button"
           },
           "assertionType": "exists",
@@ -313,7 +366,10 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "role": "button", "textContent": "Run" }
+              "criteria": {
+                "role": "button",
+                "textContent": "Run"
+              }
             }
           },
           "source": "manual",
@@ -336,7 +392,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Run" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Run"
+            },
             "label": "Run button"
           },
           "assertionType": "enabled",
@@ -345,7 +404,10 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "role": "button", "textContent": "Save" }
+              "criteria": {
+                "role": "button",
+                "textContent": "Save"
+              }
             }
           },
           "source": "manual",
@@ -368,7 +430,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Setup" },
+            "criteria": {
+              "textContent": "Setup"
+            },
             "label": "Setup phase heading"
           },
           "assertionType": "exists",
@@ -377,7 +441,10 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "role": "button", "textContent": "Run" }
+              "criteria": {
+                "role": "button",
+                "textContent": "Run"
+              }
             }
           },
           "source": "manual",
@@ -391,7 +458,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Verification" },
+            "criteria": {
+              "textContent": "Verification"
+            },
             "label": "Verification phase heading"
           },
           "assertionType": "exists",
@@ -400,7 +469,10 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "role": "button", "textContent": "Run" }
+              "criteria": {
+                "role": "button",
+                "textContent": "Run"
+              }
             }
           },
           "source": "manual",
@@ -414,7 +486,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Agentic" },
+            "criteria": {
+              "textContent": "Agentic"
+            },
             "label": "Agentic phase heading"
           },
           "assertionType": "exists",
@@ -423,7 +497,10 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "role": "button", "textContent": "Run" }
+              "criteria": {
+                "role": "button",
+                "textContent": "Run"
+              }
             }
           },
           "source": "manual",
@@ -437,7 +514,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Completion" },
+            "criteria": {
+              "textContent": "Completion"
+            },
             "label": "Completion phase heading"
           },
           "assertionType": "exists",
@@ -446,7 +525,10 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "role": "button", "textContent": "Run" }
+              "criteria": {
+                "role": "button",
+                "textContent": "Run"
+              }
             }
           },
           "source": "manual",
@@ -469,7 +551,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Workflows" },
+            "criteria": {
+              "textContent": "Workflows"
+            },
             "label": "Workflows sidebar heading"
           },
           "assertionType": "exists",
@@ -484,7 +568,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Setup" },
+            "criteria": {
+              "textContent": "Setup"
+            },
             "label": "Setup phase section"
           },
           "assertionType": "exists",
@@ -499,7 +585,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Run" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Run"
+            },
             "label": "Run button"
           },
           "assertionType": "exists",
@@ -514,7 +603,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Generate Workflow with AI" },
+            "criteria": {
+              "textContent": "Generate Workflow with AI"
+            },
             "label": "AI generation panel"
           },
           "assertionType": "exists",
@@ -529,7 +620,10 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Export" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Export"
+            },
             "label": "Export button"
           },
           "assertionType": "exists",
@@ -553,7 +647,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "role": "main" },
+            "criteria": {
+              "role": "main"
+            },
             "label": "Main landmark"
           },
           "assertionType": "exists",
@@ -568,7 +664,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "role": "complementary" },
+            "criteria": {
+              "role": "complementary"
+            },
             "label": "Sidebar landmark"
           },
           "assertionType": "exists",
@@ -583,7 +681,9 @@
           "severity": "info",
           "target": {
             "type": "search",
-            "criteria": { "role": "searchbox" },
+            "criteria": {
+              "role": "searchbox"
+            },
             "label": "Search input"
           },
           "assertionType": "exists",
@@ -602,6 +702,13 @@
     "updatedAt": "2026-02-26T00:00:00.000Z",
     "pageUrl": "/build/workflows",
     "elementSource": "sdk",
-    "tags": ["workflow-builder", "editor", "multi-phase", "ai-generation", "tier-1"]
+    "tags": [
+      "workflow-builder",
+      "editor",
+      "multi-phase",
+      "ai-generation",
+      "tier-1"
+    ],
+    "specType": "comprehensive"
   }
 }

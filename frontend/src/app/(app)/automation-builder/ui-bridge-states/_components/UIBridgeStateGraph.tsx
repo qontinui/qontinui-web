@@ -416,10 +416,11 @@ function UIBridgeStateGraphInner({
               onClick={() =>
                 reactFlowInstance.fitView({ padding: 0.2, duration: 300 })
               }
-              className="h-7 w-7 p-0"
+              className="h-7 px-2 gap-1.5"
               title="Fit to view (F)"
             >
               <Maximize className="size-3.5" />
+              Fit to view
             </Button>
             <Button
               variant="ghost"

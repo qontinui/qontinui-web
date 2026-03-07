@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "description": "Specs for the Error Monitor page — real-time error aggregation, triage, and auto-fix generation",
+  "description": "Error Monitor page — real-time error aggregation, triage, and auto-fix generation",
   "groups": [
     {
       "id": "errmon-page-structure",
@@ -15,7 +15,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "heading", "textContent": "Error Monitor" },
+            "criteria": {
+              "role": "heading",
+              "textContent": "Error Monitor"
+            },
             "label": "Error Monitor heading"
           },
           "assertionType": "exists",
@@ -30,7 +33,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Critical" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Critical"
+            },
             "label": "Critical severity filter button"
           },
           "assertionType": "exists",
@@ -45,7 +51,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Error" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Error"
+            },
             "label": "Error severity filter button"
           },
           "assertionType": "exists",
@@ -60,7 +69,10 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Warning" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Warning"
+            },
             "label": "Warning severity filter button"
           },
           "assertionType": "exists",
@@ -75,7 +87,10 @@
           "severity": "info",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Info" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Info"
+            },
             "label": "Info severity filter button"
           },
           "assertionType": "exists",
@@ -90,7 +105,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Total" },
+            "criteria": {
+              "textContent": "Total"
+            },
             "label": "Total errors summary card"
           },
           "assertionType": "exists",
@@ -114,7 +131,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Critical" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Critical"
+            },
             "label": "Critical severity filter button"
           },
           "assertionType": "enabled",
@@ -129,7 +149,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Error" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Error"
+            },
             "label": "Error severity filter button"
           },
           "assertionType": "enabled",
@@ -144,7 +167,10 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Warning" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Warning"
+            },
             "label": "Warning severity filter button"
           },
           "assertionType": "enabled",
@@ -159,7 +185,10 @@
           "severity": "info",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Info" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Info"
+            },
             "label": "Info severity filter button"
           },
           "assertionType": "enabled",
@@ -175,7 +204,10 @@
           "precondition": "No unresolved errors are present in the error list",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Fix Errors" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Fix Errors"
+            },
             "label": "Fix Errors button"
           },
           "assertionType": "disabled",
@@ -183,7 +215,9 @@
             "type": "notExists",
             "target": {
               "type": "search",
-              "criteria": { "textContent": "Unresolved" },
+              "criteria": {
+                "textContent": "Unresolved"
+              },
               "label": "Unresolved error items"
             }
           },
@@ -207,7 +241,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Error Monitor" },
+            "criteria": {
+              "textContent": "Error Monitor"
+            },
             "label": "Error Monitor heading"
           },
           "assertionType": "exists",
@@ -222,7 +258,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Critical" },
+            "criteria": {
+              "textContent": "Critical"
+            },
             "label": "Critical severity filter"
           },
           "assertionType": "exists",
@@ -237,7 +275,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Total" },
+            "criteria": {
+              "textContent": "Total"
+            },
             "label": "Total errors summary card"
           },
           "assertionType": "exists",
@@ -252,7 +292,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Fix Errors" },
+            "criteria": {
+              "textContent": "Fix Errors"
+            },
             "label": "Fix Errors button"
           },
           "assertionType": "exists",

@@ -11,7 +11,7 @@ interface StateLike {
   id: string;
   name: string;
   stateImages: Array<{
-    patterns: Array<{ imageId: string }>;
+    patterns: Array<{ imageId?: string }>;
   }>;
 }
 

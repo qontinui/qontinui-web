@@ -24,6 +24,9 @@ import { getGlobalSpecStore, type SpecConfig } from "@qontinui/ui-bridge/specs";
  */
 export function usePageSpecs(specs: Record<string, SpecConfig>): void {
   useEffect(() => {
+    // Specs are a dev-only feature — skip registration in production
+    if (process.env.NODE_ENV !== "development") return;
+
     const store = getGlobalSpecStore();
     const ids = Object.keys(specs);
 

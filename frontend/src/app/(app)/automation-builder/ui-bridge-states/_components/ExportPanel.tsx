@@ -37,15 +37,15 @@ export function ExportPanel({
           </code>
         </p>
 
-        {configName && (
-          <div className="text-xs text-text-muted space-y-1">
+        <div className="text-xs text-text-muted space-y-1">
+          {configName && (
             <div>
               Config: <strong>{configName}</strong>
             </div>
-            <div>States: {stateCount}</div>
-            <div>Transitions: {transitionCount}</div>
-          </div>
-        )}
+          )}
+          <div>{stateCount} states</div>
+          <div>{transitionCount} transitions</div>
+        </div>
 
         <div className="flex gap-2">
           <Button onClick={onDownload} disabled={isExporting || !configName}>

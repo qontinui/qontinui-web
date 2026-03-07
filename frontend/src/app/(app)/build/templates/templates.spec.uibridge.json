@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "description": "Specs for the Step Builders page — navigation hub for specialized workflow step editors",
+  "description": "Step Builders page — navigation hub for specialized workflow step editors",
   "groups": [
     {
       "id": "tmpl-page-structure",
@@ -15,7 +15,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "heading", "textContent": "Step Builders" },
+            "criteria": {
+              "role": "heading",
+              "textContent": "Step Builders"
+            },
             "label": "Step Builders heading"
           },
           "assertionType": "exists",
@@ -30,7 +33,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "link", "textContent": "Tests" },
+            "criteria": {
+              "role": "link",
+              "textContent": "Tests"
+            },
             "label": "Builder card grid (Tests link)"
           },
           "assertionType": "exists",
@@ -54,7 +60,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "link", "textContent": "Tests" },
+            "criteria": {
+              "role": "link",
+              "textContent": "Tests"
+            },
             "label": "Tests builder card link"
           },
           "assertionType": "enabled",
@@ -69,7 +78,10 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "role": "link", "textContent": "Checks" },
+            "criteria": {
+              "role": "link",
+              "textContent": "Checks"
+            },
             "label": "Checks builder card with description"
           },
           "assertionType": "containsText",
@@ -94,7 +106,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Step Builders" },
+            "criteria": {
+              "textContent": "Step Builders"
+            },
             "label": "Page heading"
           },
           "assertionType": "exists",
@@ -109,7 +123,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Tests" },
+            "criteria": {
+              "textContent": "Tests"
+            },
             "label": "Tests builder card"
           },
           "assertionType": "exists",
@@ -128,6 +144,11 @@
     "updatedAt": "2026-02-26T00:00:00.000Z",
     "pageUrl": "/build/templates",
     "elementSource": "sdk",
-    "tags": ["step-builders", "navigation", "hub", "tier-2"]
+    "tags": [
+      "step-builders",
+      "navigation",
+      "hub",
+      "tier-2"
+    ]
   }
 }

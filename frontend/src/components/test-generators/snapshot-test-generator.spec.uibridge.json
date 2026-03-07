@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "description": "Specs for the Snapshot Test Generator page — verifies the page structure, connection flow, and post-capture state",
+  "description": "Snapshot Test Generator page — verifies the page structure, connection flow, and post-capture state",
   "groups": [
     {
       "id": "stg-page-structure",
@@ -33,7 +33,9 @@
           "severity": "info",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "beta" },
+            "criteria": {
+              "textContent": "beta"
+            },
             "label": "Beta badge"
           },
           "assertionType": "exists",
@@ -48,7 +50,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Elements" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Elements"
+            },
             "label": "Elements tab"
           },
           "assertionType": "exists",
@@ -63,7 +68,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Annotations" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Annotations"
+            },
             "label": "Annotations tab"
           },
           "assertionType": "exists",
@@ -78,7 +86,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Test Specs" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Test Specs"
+            },
             "label": "Test Specs tab"
           },
           "assertionType": "exists",
@@ -93,7 +104,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Output" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Output"
+            },
             "label": "Output tab"
           },
           "assertionType": "exists",
@@ -117,7 +131,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Connected|Disconnected" },
+            "criteria": {
+              "textContent": "Connected|Disconnected"
+            },
             "label": "Connection status"
           },
           "assertionType": "exists",
@@ -132,7 +148,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Capture Snapshot" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Capture Snapshot"
+            },
             "label": "Capture Snapshot button"
           },
           "assertionType": "exists",
@@ -147,7 +166,9 @@
           "severity": "info",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "localhost:9876" },
+            "criteria": {
+              "textContent": "localhost:9876"
+            },
             "label": "Runner URL"
           },
           "assertionType": "exists",
@@ -171,7 +192,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Capture Snapshot" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Capture Snapshot"
+            },
             "label": "Capture Snapshot button"
           },
           "assertionType": "disabled",
@@ -183,7 +207,9 @@
             "type": "hasText",
             "target": {
               "type": "search",
-              "criteria": { "textContent": "Disconnected" },
+              "criteria": {
+                "textContent": "Disconnected"
+              },
               "label": "Connection status indicator"
             },
             "text": "Disconnected"
@@ -205,7 +231,10 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Elements" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Elements"
+            },
             "label": "Elements tab button"
           },
           "assertionType": "exists",
@@ -220,7 +249,10 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Capture Snapshot" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Capture Snapshot"
+            },
             "label": "Capture Snapshot"
           },
           "assertionType": "exists",
@@ -244,7 +276,9 @@
           "severity": "info",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "No elements captured yet" },
+            "criteria": {
+              "textContent": "No elements captured yet"
+            },
             "label": "Empty elements message"
           },
           "assertionType": "exists",
@@ -259,7 +293,9 @@
           "severity": "info",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Select an element to view details" },
+            "criteria": {
+              "textContent": "Select an element to view details"
+            },
             "label": "Empty detail message"
           },
           "assertionType": "exists",

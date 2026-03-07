@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+// Tabs removed — using plain buttons + hidden divs for UI Bridge assertion compatibility
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -175,11 +175,13 @@ export function DiscoveryPanel({
   });
 
   // Apply pending exploration results when they arrive
+  const { renders: discoveryRenders, setRenders: discoverySetRenders } =
+    discovery;
   useEffect(() => {
-    if (pendingExplorationResults && !discovery.renders) {
-      discovery.setRenders(pendingExplorationResults, "explore");
+    if (pendingExplorationResults && !discoveryRenders) {
+      discoverySetRenders(pendingExplorationResults, "explore");
     }
-  }, [pendingExplorationResults, discovery.renders, discovery.setRenders]);
+  }, [pendingExplorationResults, discoveryRenders, discoverySetRenders]);
 
   // Exploration handlers
   const handleStartExploration = useCallback(async () => {
@@ -406,23 +408,36 @@ export function DiscoveryPanel({
 
             {/* Collection tabs — only shown when SDK app is connected */}
             {hasActiveSDKApp && (
-              <Tabs
-                value={collectTab}
-                onValueChange={(v) => setCollectTab(v as "explore" | "record")}
-              >
-                <TabsList>
-                  <TabsTrigger value="explore" className="gap-1.5">
+              <div>
+                <div className="inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground">
+                  <button
+                    onClick={() => setCollectTab("explore")}
+                    className={`inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] ${
+                      collectTab === "explore"
+                        ? "bg-background shadow-sm text-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
                     <Compass className="size-3.5" />
                     Explore
-                  </TabsTrigger>
-                  <TabsTrigger value="record" className="gap-1.5">
+                  </button>
+                  <button
+                    onClick={() => setCollectTab("record")}
+                    className={`inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] ${
+                      collectTab === "record"
+                        ? "bg-background shadow-sm text-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
                     <Camera className="size-3.5" />
                     Record
-                  </TabsTrigger>
-                </TabsList>
+                  </button>
+                </div>
 
                 {/* Explore tab — automated UI Bridge exploration */}
-                <TabsContent value="explore" className="mt-3">
+                <div
+                  className={`mt-3 ${collectTab !== "explore" ? "hidden" : ""}`}
+                >
                   <ExplorationConfigPanel
                     config={exploration.config}
                     onConfigChange={exploration.updateConfig}
@@ -436,10 +451,12 @@ export function DiscoveryPanel({
                     onConnectionChange={setSelectedConnectionId}
                     hideRunnerSection
                   />
-                </TabsContent>
+                </div>
 
                 {/* Record tab — SDK snapshot-based recording */}
-                <TabsContent value="record" className="mt-3">
+                <div
+                  className={`mt-3 ${collectTab !== "record" ? "hidden" : ""}`}
+                >
                   <Card>
                     <CardContent className="py-3 space-y-3">
                       <p className="text-sm text-text-muted">
@@ -528,8 +545,8 @@ export function DiscoveryPanel({
                       )}
                     </CardContent>
                   </Card>
-                </TabsContent>
-              </Tabs>
+                </div>
+              </div>
             )}
           </>
         )}

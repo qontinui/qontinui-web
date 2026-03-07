@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "description": "Specs for the Snapshot Test Generator AFTER a successful snapshot capture — verifies that captured data populates correctly, tabs work, and generation flow completes",
+  "description": "Snapshot Test Generator AFTER a successful snapshot capture — verifies that captured data populates correctly, tabs work, and generation flow completes",
   "groups": [
     {
       "id": "stg-post-capture-elements-tab",
@@ -15,7 +15,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "textbox", "idPattern": "search" },
+            "criteria": {
+              "role": "textbox",
+              "idPattern": "search"
+            },
             "label": "Search elements input"
           },
           "assertionType": "exists",
@@ -47,7 +50,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Type|Role|Visible|Enabled" },
+            "criteria": {
+              "textContent": "Type|Role|Visible|Enabled"
+            },
             "label": "Element detail panel"
           },
           "assertionType": "exists",
@@ -72,7 +77,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Connected" },
+            "criteria": {
+              "textContent": "Connected"
+            },
             "label": "Connected status"
           },
           "assertionType": "exists",
@@ -87,7 +94,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Capture Snapshot" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Capture Snapshot"
+            },
             "label": "Capture Snapshot button"
           },
           "assertionType": "enabled",
@@ -102,7 +112,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Tab:" },
+            "criteria": {
+              "textContent": "Tab:"
+            },
             "label": "Tab selector label"
           },
           "assertionType": "exists",
@@ -117,7 +129,10 @@
           "severity": "info",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "idPattern": "refresh" },
+            "criteria": {
+              "role": "button",
+              "idPattern": "refresh"
+            },
             "label": "Refresh tabs button"
           },
           "assertionType": "exists",
@@ -141,7 +156,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Generate Specs" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Generate Specs"
+            },
             "label": "Generate Specs button"
           },
           "assertionType": "exists",
@@ -156,7 +174,10 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Filter" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Filter"
+            },
             "label": "Filter button"
           },
           "assertionType": "exists",
@@ -171,7 +192,10 @@
           "severity": "info",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Enable All" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Enable All"
+            },
             "label": "Enable All button"
           },
           "assertionType": "exists",
@@ -186,7 +210,10 @@
           "severity": "info",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Disable All" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Disable All"
+            },
             "label": "Disable All button"
           },
           "assertionType": "exists",
@@ -201,7 +228,9 @@
           "severity": "info",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "No test specifications yet" },
+            "criteria": {
+              "textContent": "No test specifications yet"
+            },
             "label": "Empty specs message"
           },
           "assertionType": "exists",
@@ -226,7 +255,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Element Presence" },
+            "criteria": {
+              "textContent": "Element Presence"
+            },
             "label": "Element Presence group"
           },
           "assertionType": "exists",
@@ -242,7 +273,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "State Consistency" },
+            "criteria": {
+              "textContent": "State Consistency"
+            },
             "label": "State Consistency group"
           },
           "assertionType": "exists",
@@ -258,7 +291,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "specs.*assertions enabled" },
+            "criteria": {
+              "textContent": "specs.*assertions enabled"
+            },
             "label": "Stats bar"
           },
           "assertionType": "exists",
@@ -282,7 +317,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Export JSON" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Export JSON"
+            },
             "label": "Export JSON button"
           },
           "assertionType": "exists",
@@ -297,7 +335,10 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Copy" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Copy"
+            },
             "label": "Copy button"
           },
           "assertionType": "exists",
@@ -330,7 +371,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "\"version\": \"1.0.0\"" },
+            "criteria": {
+              "textContent": "\"version\": \"1.0.0\""
+            },
             "label": "JSON preview"
           },
           "assertionType": "exists",
@@ -346,7 +389,9 @@
           "severity": "info",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "groups.*assertions" },
+            "criteria": {
+              "textContent": "groups.*assertions"
+            },
             "label": "Output stats"
           },
           "assertionType": "exists",
@@ -399,7 +444,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "% annotated" },
+            "criteria": {
+              "textContent": "% annotated"
+            },
             "label": "Coverage percentage"
           },
           "assertionType": "exists",

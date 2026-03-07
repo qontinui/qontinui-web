@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "description": "Comprehensive specs for the Chat page — a conversational AI interface where users plan features with Claude and generate executable workflows from natural-language discussions. Covers both the /chat landing page and /chat/[id] active session page.",
+  "description": "Chat page — a conversational AI interface where users plan features with Claude and generate executable workflows from natural-language discussions. Covers both the /chat landing page and /chat/[id] active session page.",
   "groups": [
     {
       "id": "chat-page-purpose",
@@ -15,7 +15,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-new-btn" },
+            "criteria": {
+              "idPattern": "chat-new-btn"
+            },
             "label": "New Chat button"
           },
           "assertionType": "exists",
@@ -30,7 +32,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-input-textarea" },
+            "criteria": {
+              "idPattern": "chat-input-textarea"
+            },
             "label": "Chat message input"
           },
           "assertionType": "exists",
@@ -39,7 +43,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-session-page" }
+              "criteria": {
+                "idPattern": "chat-session-page"
+              }
             }
           },
           "source": "manual",
@@ -53,7 +59,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-messages" },
+            "criteria": {
+              "idPattern": "chat-messages"
+            },
             "label": "Conversation message area"
           },
           "assertionType": "exists",
@@ -62,7 +70,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-session-page" }
+              "criteria": {
+                "idPattern": "chat-session-page"
+              }
             }
           },
           "source": "manual",
@@ -76,7 +86,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-input-interrupt-btn" },
+            "criteria": {
+              "idPattern": "chat-input-interrupt-btn"
+            },
             "label": "Interrupt AI button"
           },
           "assertionType": "exists",
@@ -85,7 +97,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-messages-streaming" }
+              "criteria": {
+                "idPattern": "chat-messages-streaming"
+              }
             }
           },
           "source": "manual",
@@ -99,7 +113,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-input-generate-workflow-btn" },
+            "criteria": {
+              "idPattern": "chat-input-generate-workflow-btn"
+            },
             "label": "Generate Workflow button"
           },
           "assertionType": "exists",
@@ -115,7 +131,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-workflow-preview" },
+            "criteria": {
+              "idPattern": "chat-workflow-preview"
+            },
             "label": "Workflow preview panel"
           },
           "assertionType": "exists",
@@ -124,7 +142,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-workflow-panel" }
+              "criteria": {
+                "idPattern": "chat-workflow-panel"
+              }
             }
           },
           "source": "manual",
@@ -138,7 +158,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-workflow-execute-btn" },
+            "criteria": {
+              "idPattern": "chat-workflow-execute-btn"
+            },
             "label": "Execute workflow button"
           },
           "assertionType": "exists",
@@ -147,7 +169,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-workflow-phases" }
+              "criteria": {
+                "idPattern": "chat-workflow-phases"
+              }
             }
           },
           "source": "manual",
@@ -161,7 +185,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-workflow-edit-btn" },
+            "criteria": {
+              "idPattern": "chat-workflow-edit-btn"
+            },
             "label": "Edit in Builder button"
           },
           "assertionType": "exists",
@@ -170,7 +196,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-workflow-phases" }
+              "criteria": {
+                "idPattern": "chat-workflow-phases"
+              }
             }
           },
           "source": "manual",
@@ -184,7 +212,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-workflow-save-btn" },
+            "criteria": {
+              "idPattern": "chat-workflow-save-btn"
+            },
             "label": "Save to Library button"
           },
           "assertionType": "exists",
@@ -193,7 +223,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-workflow-phases" }
+              "criteria": {
+                "idPattern": "chat-workflow-phases"
+              }
             }
           },
           "source": "manual",
@@ -207,7 +239,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-workflow-regenerate-btn" },
+            "criteria": {
+              "idPattern": "chat-workflow-regenerate-btn"
+            },
             "label": "Regenerate workflow button"
           },
           "assertionType": "exists",
@@ -216,7 +250,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-workflow-phases" }
+              "criteria": {
+                "idPattern": "chat-workflow-phases"
+              }
             }
           },
           "source": "manual",
@@ -230,7 +266,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-header-name" },
+            "criteria": {
+              "idPattern": "chat-header-name"
+            },
             "label": "Editable session name"
           },
           "assertionType": "exists",
@@ -239,7 +277,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-session-page" }
+              "criteria": {
+                "idPattern": "chat-session-page"
+              }
             }
           },
           "source": "manual",
@@ -253,7 +293,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-header-close-btn" },
+            "criteria": {
+              "idPattern": "chat-header-close-btn"
+            },
             "label": "Close session button"
           },
           "assertionType": "exists",
@@ -262,7 +304,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-session-page" }
+              "criteria": {
+                "idPattern": "chat-session-page"
+              }
             }
           },
           "source": "manual",
@@ -276,7 +320,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-header-state" },
+            "criteria": {
+              "idPattern": "chat-header-state"
+            },
             "label": "Session state badge"
           },
           "assertionType": "exists",
@@ -285,7 +331,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-session-page" }
+              "criteria": {
+                "idPattern": "chat-session-page"
+              }
             }
           },
           "source": "manual",
@@ -299,7 +347,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-runner-status" },
+            "criteria": {
+              "idPattern": "chat-runner-status"
+            },
             "label": "Runner connection status"
           },
           "assertionType": "exists",
@@ -314,7 +364,9 @@
           "severity": "info",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-input-ui-bridge-toggle" },
+            "criteria": {
+              "idPattern": "chat-input-ui-bridge-toggle"
+            },
             "label": "UI Bridge toggle checkbox"
           },
           "assertionType": "exists",
@@ -339,7 +391,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-page" },
+            "criteria": {
+              "idPattern": "chat-page"
+            },
             "label": "Chat page root"
           },
           "assertionType": "exists",
@@ -354,7 +408,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "heading", "textContent": "Chat" },
+            "criteria": {
+              "role": "heading",
+              "textContent": "Chat"
+            },
             "label": "Chat page heading"
           },
           "assertionType": "exists",
@@ -363,7 +420,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-page" }
+              "criteria": {
+                "idPattern": "chat-page"
+              }
             }
           },
           "source": "manual",
@@ -377,7 +436,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-new-btn" },
+            "criteria": {
+              "idPattern": "chat-new-btn"
+            },
             "label": "New Chat button"
           },
           "assertionType": "exists",
@@ -386,7 +447,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-page" }
+              "criteria": {
+                "idPattern": "chat-page"
+              }
             }
           },
           "source": "manual",
@@ -400,7 +463,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-runner-status" },
+            "criteria": {
+              "idPattern": "chat-runner-status"
+            },
             "label": "Runner status indicator"
           },
           "assertionType": "exists",
@@ -409,7 +474,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-page" }
+              "criteria": {
+                "idPattern": "chat-page"
+              }
             }
           },
           "source": "manual",
@@ -423,7 +490,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-session-list" },
+            "criteria": {
+              "idPattern": "chat-session-list"
+            },
             "label": "Session list container"
           },
           "assertionType": "exists",
@@ -448,7 +517,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-session-page" },
+            "criteria": {
+              "idPattern": "chat-session-page"
+            },
             "label": "Chat session page root"
           },
           "assertionType": "exists",
@@ -464,7 +535,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-panel" },
+            "criteria": {
+              "idPattern": "chat-panel"
+            },
             "label": "Chat panel"
           },
           "assertionType": "exists",
@@ -473,7 +546,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-session-page" }
+              "criteria": {
+                "idPattern": "chat-session-page"
+              }
             }
           },
           "source": "manual",
@@ -487,7 +562,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-workflow-panel" },
+            "criteria": {
+              "idPattern": "chat-workflow-panel"
+            },
             "label": "Workflow panel container"
           },
           "assertionType": "exists",
@@ -496,7 +573,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-workflow-preview" }
+              "criteria": {
+                "idPattern": "chat-workflow-preview"
+              }
             }
           },
           "source": "manual",
@@ -519,7 +598,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-header" },
+            "criteria": {
+              "idPattern": "chat-header"
+            },
             "label": "Chat header"
           },
           "assertionType": "exists",
@@ -528,7 +609,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-session-page" }
+              "criteria": {
+                "idPattern": "chat-session-page"
+              }
             }
           },
           "source": "manual",
@@ -542,7 +625,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-header-name" },
+            "criteria": {
+              "idPattern": "chat-header-name"
+            },
             "label": "Session name"
           },
           "assertionType": "exists",
@@ -551,7 +636,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-header" }
+              "criteria": {
+                "idPattern": "chat-header"
+              }
             }
           },
           "source": "manual",
@@ -565,7 +652,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-header-state" },
+            "criteria": {
+              "idPattern": "chat-header-state"
+            },
             "label": "Session state badge"
           },
           "assertionType": "exists",
@@ -574,7 +663,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-header" }
+              "criteria": {
+                "idPattern": "chat-header"
+              }
             }
           },
           "source": "manual",
@@ -588,7 +679,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-header-runner-status" },
+            "criteria": {
+              "idPattern": "chat-header-runner-status"
+            },
             "label": "Header runner status"
           },
           "assertionType": "exists",
@@ -597,7 +690,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-header" }
+              "criteria": {
+                "idPattern": "chat-header"
+              }
             }
           },
           "source": "manual",
@@ -611,7 +706,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-header-close-btn" },
+            "criteria": {
+              "idPattern": "chat-header-close-btn"
+            },
             "label": "Close session button"
           },
           "assertionType": "exists",
@@ -620,7 +717,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-header" }
+              "criteria": {
+                "idPattern": "chat-header"
+              }
             }
           },
           "source": "manual",
@@ -643,7 +742,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-input" },
+            "criteria": {
+              "idPattern": "chat-input"
+            },
             "label": "Chat input container"
           },
           "assertionType": "exists",
@@ -652,7 +753,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-session-page" }
+              "criteria": {
+                "idPattern": "chat-session-page"
+              }
             }
           },
           "source": "manual",
@@ -666,7 +769,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-input-textarea" },
+            "criteria": {
+              "idPattern": "chat-input-textarea"
+            },
             "label": "Message textarea"
           },
           "assertionType": "exists",
@@ -675,7 +780,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-input" }
+              "criteria": {
+                "idPattern": "chat-input"
+              }
             }
           },
           "source": "manual",
@@ -689,7 +796,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-input-send-btn" },
+            "criteria": {
+              "idPattern": "chat-input-send-btn"
+            },
             "label": "Send button"
           },
           "assertionType": "exists",
@@ -698,7 +807,9 @@
             "type": "notExists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-input-interrupt-btn" }
+              "criteria": {
+                "idPattern": "chat-input-interrupt-btn"
+              }
             }
           },
           "source": "manual",
@@ -712,7 +823,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-input-interrupt-btn" },
+            "criteria": {
+              "idPattern": "chat-input-interrupt-btn"
+            },
             "label": "Interrupt button"
           },
           "assertionType": "exists",
@@ -721,7 +834,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-messages-streaming" }
+              "criteria": {
+                "idPattern": "chat-messages-streaming"
+              }
             }
           },
           "source": "manual",
@@ -735,7 +850,9 @@
           "severity": "info",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-input-state" },
+            "criteria": {
+              "idPattern": "chat-input-state"
+            },
             "label": "Input state label"
           },
           "assertionType": "exists",
@@ -744,7 +861,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-input" }
+              "criteria": {
+                "idPattern": "chat-input"
+              }
             }
           },
           "source": "manual",
@@ -758,7 +877,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-input-generate-workflow-btn" },
+            "criteria": {
+              "idPattern": "chat-input-generate-workflow-btn"
+            },
             "label": "Generate Workflow button"
           },
           "assertionType": "exists",
@@ -774,7 +895,9 @@
           "severity": "info",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-input-ui-bridge-toggle" },
+            "criteria": {
+              "idPattern": "chat-input-ui-bridge-toggle"
+            },
             "label": "UI Bridge toggle"
           },
           "assertionType": "exists",
@@ -783,7 +906,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-input-generate-workflow-btn" }
+              "criteria": {
+                "idPattern": "chat-input-generate-workflow-btn"
+              }
             }
           },
           "source": "manual",
@@ -806,7 +931,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-messages" },
+            "criteria": {
+              "idPattern": "chat-messages"
+            },
             "label": "Messages container"
           },
           "assertionType": "exists",
@@ -815,7 +942,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-session-page" }
+              "criteria": {
+                "idPattern": "chat-session-page"
+              }
             }
           },
           "source": "manual",
@@ -829,7 +958,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-messages-streaming" },
+            "criteria": {
+              "idPattern": "chat-messages-streaming"
+            },
             "label": "Streaming indicator"
           },
           "assertionType": "exists",
@@ -845,7 +976,9 @@
           "severity": "info",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-messages-scroll-btn" },
+            "criteria": {
+              "idPattern": "chat-messages-scroll-btn"
+            },
             "label": "Scroll to bottom button"
           },
           "assertionType": "exists",
@@ -870,7 +1003,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-workflow-preview" },
+            "criteria": {
+              "idPattern": "chat-workflow-preview"
+            },
             "label": "Workflow preview panel"
           },
           "assertionType": "exists",
@@ -879,7 +1014,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-workflow-panel" }
+              "criteria": {
+                "idPattern": "chat-workflow-panel"
+              }
             }
           },
           "source": "manual",
@@ -893,7 +1030,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-workflow-close-btn" },
+            "criteria": {
+              "idPattern": "chat-workflow-close-btn"
+            },
             "label": "Close preview button"
           },
           "assertionType": "exists",
@@ -902,7 +1041,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-workflow-preview" }
+              "criteria": {
+                "idPattern": "chat-workflow-preview"
+              }
             }
           },
           "source": "manual",
@@ -916,7 +1057,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-workflow-phases" },
+            "criteria": {
+              "idPattern": "chat-workflow-phases"
+            },
             "label": "Workflow phases container"
           },
           "assertionType": "exists",
@@ -925,7 +1068,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-workflow-preview" }
+              "criteria": {
+                "idPattern": "chat-workflow-preview"
+              }
             }
           },
           "source": "manual",
@@ -939,7 +1084,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-workflow-execute-btn" },
+            "criteria": {
+              "idPattern": "chat-workflow-execute-btn"
+            },
             "label": "Execute workflow button"
           },
           "assertionType": "exists",
@@ -948,7 +1095,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-workflow-phases" }
+              "criteria": {
+                "idPattern": "chat-workflow-phases"
+              }
             }
           },
           "source": "manual",
@@ -962,7 +1111,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-workflow-edit-btn" },
+            "criteria": {
+              "idPattern": "chat-workflow-edit-btn"
+            },
             "label": "Edit in Builder button"
           },
           "assertionType": "exists",
@@ -971,7 +1122,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-workflow-phases" }
+              "criteria": {
+                "idPattern": "chat-workflow-phases"
+              }
             }
           },
           "source": "manual",
@@ -985,7 +1138,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-workflow-regenerate-btn" },
+            "criteria": {
+              "idPattern": "chat-workflow-regenerate-btn"
+            },
             "label": "Regenerate button"
           },
           "assertionType": "exists",
@@ -994,7 +1149,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-workflow-phases" }
+              "criteria": {
+                "idPattern": "chat-workflow-phases"
+              }
             }
           },
           "source": "manual",
@@ -1008,7 +1165,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-workflow-save-btn" },
+            "criteria": {
+              "idPattern": "chat-workflow-save-btn"
+            },
             "label": "Save to Library button"
           },
           "assertionType": "exists",
@@ -1017,7 +1176,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-workflow-phases" }
+              "criteria": {
+                "idPattern": "chat-workflow-phases"
+              }
             }
           },
           "source": "manual",
@@ -1031,7 +1192,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-workflow-loading" },
+            "criteria": {
+              "idPattern": "chat-workflow-loading"
+            },
             "label": "Workflow loading indicator"
           },
           "assertionType": "exists",
@@ -1056,7 +1219,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-new-btn" },
+            "criteria": {
+              "idPattern": "chat-new-btn"
+            },
             "label": "New Chat button"
           },
           "assertionType": "disabled",
@@ -1072,7 +1237,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-new-btn" },
+            "criteria": {
+              "idPattern": "chat-new-btn"
+            },
             "label": "New Chat button"
           },
           "assertionType": "enabled",
@@ -1097,7 +1264,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-input-send-btn" },
+            "criteria": {
+              "idPattern": "chat-input-send-btn"
+            },
             "label": "Send button"
           },
           "assertionType": "disabled",
@@ -1106,7 +1275,9 @@
             "type": "notExists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-input-interrupt-btn" }
+              "criteria": {
+                "idPattern": "chat-input-interrupt-btn"
+              }
             }
           },
           "source": "manual",
@@ -1120,7 +1291,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-input-textarea" },
+            "criteria": {
+              "idPattern": "chat-input-textarea"
+            },
             "label": "Message textarea"
           },
           "assertionType": "disabled",
@@ -1136,7 +1309,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-input-textarea" },
+            "criteria": {
+              "idPattern": "chat-input-textarea"
+            },
             "label": "Message textarea"
           },
           "assertionType": "enabled",
@@ -1152,7 +1327,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-input-generate-workflow-btn" },
+            "criteria": {
+              "idPattern": "chat-input-generate-workflow-btn"
+            },
             "label": "Generate Workflow button"
           },
           "assertionType": "disabled",
@@ -1161,7 +1338,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-workflow-loading" }
+              "criteria": {
+                "idPattern": "chat-workflow-loading"
+              }
             }
           },
           "source": "manual",
@@ -1184,7 +1363,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-workflow-loading" },
+            "criteria": {
+              "idPattern": "chat-workflow-loading"
+            },
             "label": "Workflow loading state"
           },
           "assertionType": "exists",
@@ -1200,7 +1381,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-workflow-phases" },
+            "criteria": {
+              "idPattern": "chat-workflow-phases"
+            },
             "label": "Workflow phases"
           },
           "assertionType": "exists",
@@ -1209,7 +1392,9 @@
             "type": "notExists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-workflow-loading" }
+              "criteria": {
+                "idPattern": "chat-workflow-loading"
+              }
             }
           },
           "source": "manual",
@@ -1223,7 +1408,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-workflow-execute-btn" },
+            "criteria": {
+              "idPattern": "chat-workflow-execute-btn"
+            },
             "label": "Execute button"
           },
           "assertionType": "visible",
@@ -1232,7 +1419,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-workflow-phases" }
+              "criteria": {
+                "idPattern": "chat-workflow-phases"
+              }
             }
           },
           "source": "manual",
@@ -1246,7 +1435,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-workflow-execute-btn" },
+            "criteria": {
+              "idPattern": "chat-workflow-execute-btn"
+            },
             "label": "Execute button"
           },
           "assertionType": "enabled",
@@ -1255,7 +1446,9 @@
             "type": "exists",
             "target": {
               "type": "search",
-              "criteria": { "idPattern": "chat-workflow-phases" }
+              "criteria": {
+                "idPattern": "chat-workflow-phases"
+              }
             }
           },
           "source": "manual",
@@ -1278,7 +1471,9 @@
           "severity": "info",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Start a conversation with Claude" },
+            "criteria": {
+              "textContent": "Start a conversation with Claude"
+            },
             "label": "Empty state prompt"
           },
           "assertionType": "exists",
@@ -1294,7 +1489,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "idPattern": "chat-messages-streaming" },
+            "criteria": {
+              "idPattern": "chat-messages-streaming"
+            },
             "label": "Streaming indicator"
           },
           "assertionType": "visible",
@@ -1320,6 +1517,7 @@
       "workflow-generation",
       "conversation",
       "tier-1"
-    ]
+    ],
+    "specType": "comprehensive"
   }
 }

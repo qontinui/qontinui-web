@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "description": "Specs for the AI Settings page — configure AI provider selection, credentials, and model settings",
+  "description": "AI Settings page — configure AI provider selection, credentials, and model settings",
   "groups": [
     {
       "id": "aisettings-page-structure",
@@ -15,7 +15,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "heading", "textContent": "AI Providers" },
+            "criteria": {
+              "role": "heading",
+              "textContent": "AI Providers"
+            },
             "label": "AI Providers heading"
           },
           "assertionType": "exists",
@@ -30,7 +33,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Claude CLI" },
+            "criteria": {
+              "textContent": "Claude CLI"
+            },
             "label": "Claude CLI provider option card"
           },
           "assertionType": "exists",
@@ -45,7 +50,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Claude API" },
+            "criteria": {
+              "textContent": "Claude API"
+            },
             "label": "Claude API provider option card"
           },
           "assertionType": "exists",
@@ -60,7 +67,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Save Settings" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Save Settings"
+            },
             "label": "Save Settings button"
           },
           "assertionType": "exists",
@@ -75,7 +85,10 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Test Connection" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Test Connection"
+            },
             "label": "Test Connection button"
           },
           "assertionType": "exists",
@@ -99,7 +112,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Save Settings" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Save Settings"
+            },
             "label": "Save Settings button"
           },
           "assertionType": "enabled",
@@ -114,7 +130,10 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Test Connection" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Test Connection"
+            },
             "label": "Test Connection button"
           },
           "assertionType": "enabled",
@@ -129,7 +148,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Claude CLI" },
+            "criteria": {
+              "textContent": "Claude CLI"
+            },
             "label": "First provider option (Claude CLI)"
           },
           "assertionType": "exists",
@@ -154,7 +175,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Claude CLI" },
+            "criteria": {
+              "textContent": "Claude CLI"
+            },
             "label": "Claude CLI provider option"
           },
           "assertionType": "exists",
@@ -169,7 +192,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "AI Providers" },
+            "criteria": {
+              "textContent": "AI Providers"
+            },
             "label": "AI Providers heading"
           },
           "assertionType": "exists",
@@ -184,7 +209,10 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Test Connection" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Test Connection"
+            },
             "label": "Test Connection button"
           },
           "assertionType": "exists",
@@ -199,7 +227,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "Save Settings" },
+            "criteria": {
+              "role": "button",
+              "textContent": "Save Settings"
+            },
             "label": "Save Settings button"
           },
           "assertionType": "exists",

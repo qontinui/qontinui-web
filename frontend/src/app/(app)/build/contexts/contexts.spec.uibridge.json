@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "description": "Specs for the Contexts page — create and manage AI context documents for workflow prompts",
+  "description": "Contexts page — create and manage AI context documents for workflow prompts",
   "groups": [
     {
       "id": "ctx-page-structure",
@@ -15,7 +15,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "heading", "textContent": "Contexts" },
+            "criteria": {
+              "role": "heading",
+              "textContent": "Contexts"
+            },
             "label": "Contexts heading"
           },
           "assertionType": "exists",
@@ -30,7 +33,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "list" },
+            "criteria": {
+              "role": "list"
+            },
             "label": "Sidebar context list"
           },
           "assertionType": "exists",
@@ -45,7 +50,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "New Context" },
+            "criteria": {
+              "role": "button",
+              "textContent": "New Context"
+            },
             "label": "New Context button"
           },
           "assertionType": "exists",
@@ -69,7 +77,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContent": "New Context" },
+            "criteria": {
+              "role": "button",
+              "textContent": "New Context"
+            },
             "label": "New Context button"
           },
           "assertionType": "enabled",
@@ -85,7 +96,9 @@
           "precondition": "Page has loaded with no prior search state; search input is present",
           "target": {
             "type": "search",
-            "criteria": { "role": "searchbox" },
+            "criteria": {
+              "role": "searchbox"
+            },
             "label": "Context search input"
           },
           "assertionType": "hasValue",
@@ -110,7 +123,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Contexts" },
+            "criteria": {
+              "textContent": "Contexts"
+            },
             "label": "Contexts page heading"
           },
           "assertionType": "exists",
@@ -125,7 +140,9 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Content" },
+            "criteria": {
+              "textContent": "Content"
+            },
             "label": "Content editor section"
           },
           "assertionType": "exists",
@@ -140,7 +157,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "textContent": "Auto-Include Rules" },
+            "criteria": {
+              "textContent": "Auto-Include Rules"
+            },
             "label": "Auto-Include Rules section"
           },
           "assertionType": "exists",
@@ -159,6 +178,12 @@
     "updatedAt": "2026-02-26T00:00:00.000Z",
     "pageUrl": "/build/contexts",
     "elementSource": "sdk",
-    "tags": ["contexts", "knowledge-base", "auto-include", "builder", "tier-2"]
+    "tags": [
+      "contexts",
+      "knowledge-base",
+      "auto-include",
+      "builder",
+      "tier-2"
+    ]
   }
 }
