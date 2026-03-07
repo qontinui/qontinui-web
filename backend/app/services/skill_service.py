@@ -15,7 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.skill import Skill
 
-
 # =============================================================================
 # Pydantic Schemas
 # =============================================================================
@@ -110,9 +109,9 @@ class SkillListResponse(BaseModel):
 def _model_to_response(skill: Skill) -> SkillResponse:
     return SkillResponse(
         id=str(skill.id),
-        created_by_user_id=str(skill.created_by_user_id)
-        if skill.created_by_user_id
-        else None,
+        created_by_user_id=(
+            str(skill.created_by_user_id) if skill.created_by_user_id else None
+        ),
         name=skill.name,
         slug=skill.slug,
         description=skill.description or "",

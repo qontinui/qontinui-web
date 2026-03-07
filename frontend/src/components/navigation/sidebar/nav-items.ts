@@ -41,6 +41,20 @@ import type { NavItem } from "./types";
 
 export const devNavItems: NavItem[] = [
   // ===========================================================================
+  // Dev Dashboard (dev-only, top-level for easy access)
+  // ===========================================================================
+  {
+    id: "dev-dashboard",
+    label: "Dev Dashboard",
+    description: "Fleet monitoring across all runners and machines",
+    icon: React.createElement(LayoutDashboard, { className: "size-5" }),
+    route: "/dev-dashboard",
+    color: "#10B981",
+    hiddenInProd: true,
+    group: "Dev",
+  },
+
+  // ===========================================================================
   // Hidden items (dev-only)
   // ===========================================================================
   {

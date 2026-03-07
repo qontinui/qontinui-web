@@ -2,8 +2,8 @@
 
 from uuid import UUID
 
-from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_active_user, get_async_db

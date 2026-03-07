@@ -39,6 +39,8 @@ export interface GenerateWorkflowRequest {
   include_design_guidance?: boolean;
   /** Per-phase model overrides for generation (investigation, generation phases) */
   model_overrides?: Record<string, { provider?: string; model?: string }>;
+  /** Verification depth: smoke, standard, thorough, or regression */
+  verification_depth?: "smoke" | "standard" | "thorough" | "regression";
 }
 
 /** One pass of the verification->fix loop during workflow generation. */

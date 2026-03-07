@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -60,16 +60,15 @@ export function UIBridgeStateMachinePage() {
 
   const [activeTab, setActiveTab] = useState<TabValue>("discovery");
   const [showNewTransition, setShowNewTransition] = useState(false);
-  const [hasMounted, setHasMounted] = useState(false);
-
-  useEffect(() => {
-    setHasMounted(true);
-  }, []);
 
   // Determine what side panel to show
   const showStatePanel = sm.selectedState && !showNewTransition;
   const showTransitionPanel =
     (sm.selectedTransition || showNewTransition) && !sm.selectedState;
+
+  const noProject = !sm.projectId;
+  const noConfig = !noProject && !sm.selectedConfigId;
+  const hasConfig = !noProject && !!sm.selectedConfigId;
 
   // Handle transition operations
   const handleCreateTransition = useCallback(
@@ -147,20 +146,16 @@ export function UIBridgeStateMachinePage() {
     [sm]
   );
 
-  const noProject = !sm.projectId;
-
-  // SSR guard only — page structure always renders once mounted
-  if (!hasMounted) {
-    return <div className="flex items-center justify-center min-h-[400px]" />;
-  }
-
   return (
     <div className="flex flex-col h-full">
       {/* Header — always visible */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-border-primary bg-surface-primary">
         <div className="flex items-center gap-3">
           <Network className="size-5 text-brand-primary" />
-          <h1 className="text-lg font-semibold text-text-primary">
+          <h1
+            data-ui-id="sm-heading"
+            className="text-lg font-semibold text-text-primary"
+          >
             State Machine
           </h1>
         </div>
@@ -174,7 +169,10 @@ export function UIBridgeStateMachinePage() {
               if (v) discovery.reset();
             }}
           >
-            <SelectTrigger className="w-[220px]">
+            <SelectTrigger
+              data-ui-id="sm-config-selector"
+              className="w-[220px]"
+            >
               <SelectValue placeholder="Select configuration..." />
             </SelectTrigger>
             <SelectContent>
@@ -188,6 +186,7 @@ export function UIBridgeStateMachinePage() {
 
           {/* Refresh */}
           <Button
+            data-ui-id="sm-refresh-button"
             variant="outline"
             size="sm"
             onClick={() => {
@@ -210,6 +209,7 @@ export function UIBridgeStateMachinePage() {
           {TABS.map(({ value, label, icon: Icon }) => (
             <button
               key={value}
+              data-ui-id={`sm-tab-${value}`}
               onClick={() => setActiveTab(value)}
               className={`inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] ${
                 activeTab === value
@@ -230,80 +230,103 @@ export function UIBridgeStateMachinePage() {
       <div
         className={`flex-1 overflow-y-auto ${activeTab !== "discovery" ? "hidden" : ""}`}
       >
-        {noProject ? (
-          <div className="flex items-center justify-center h-full min-h-[200px] text-text-muted">
-            Select a project to manage state machines
-          </div>
-        ) : (
+        <div
+          data-ui-id="sm-no-project-message"
+          className={
+            noProject
+              ? "flex items-center justify-center h-full min-h-[200px] text-text-muted"
+              : "hidden"
+          }
+        >
+          Select a project to manage state machines
+        </div>
+        <div className={noProject ? "hidden" : ""}>
           <DiscoveryPanel
             discovery={discovery}
             onConfigCreated={handleConfigCreated}
           />
-        )}
+        </div>
       </div>
 
       {/* Graph Editor Tab */}
       <div
         className={`flex-1 flex min-h-0 ${activeTab !== "graph" ? "hidden" : ""}`}
       >
-        {noProject ? (
-          <div className="flex-1 flex items-center justify-center text-text-muted">
-            Select a project to manage state machines
-          </div>
-        ) : sm.isLoading ? (
-          <div className="flex-1 flex items-center justify-center">
-            <Loader2 className="size-8 animate-spin text-brand-primary" />
-          </div>
-        ) : !sm.selectedConfigId ? (
-          <div className="flex-1 flex items-center justify-center text-text-muted">
-            Select a configuration to view the state graph
-          </div>
-        ) : (
-          <>
-            {/* Graph */}
-            <div className="flex-1 relative">
-              {/* Add Transition FAB */}
-              <div className="absolute top-4 left-4 z-10">
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    sm.setSelectedStateId(null);
-                    sm.setSelectedTransitionId(null);
-                    setShowNewTransition(true);
-                  }}
-                >
-                  <Plus className="size-3.5 mr-1.5" />
-                  Add Transition
-                </Button>
-              </div>
-
-              <UIBridgeStateGraph
-                states={sm.fullConfig?.states ?? []}
-                transitions={sm.fullConfig?.transitions ?? []}
-                selectedStateId={sm.selectedStateId}
-                selectedTransitionId={sm.selectedTransitionId}
-                onSelectState={(id) => {
-                  sm.setSelectedStateId(id);
-                  sm.setSelectedTransitionId(null);
-                  setShowNewTransition(false);
-                }}
-                onSelectTransition={(id) => {
-                  sm.setSelectedTransitionId(id);
+        <div
+          className={
+            noProject
+              ? "flex-1 flex items-center justify-center text-text-muted"
+              : "hidden"
+          }
+        >
+          Select a project to manage state machines
+        </div>
+        <div
+          className={
+            sm.isLoading && !noProject
+              ? "flex-1 flex items-center justify-center"
+              : "hidden"
+          }
+        >
+          <Loader2 className="size-8 animate-spin text-brand-primary" />
+        </div>
+        <div
+          data-ui-id="sm-no-config-graph"
+          className={
+            noConfig && !sm.isLoading
+              ? "flex-1 flex items-center justify-center text-text-muted"
+              : "hidden"
+          }
+        >
+          Select a configuration to view the state graph
+        </div>
+        <div className={hasConfig && !sm.isLoading ? "flex-1 flex" : "hidden"}>
+          {/* Graph */}
+          <div className="flex-1 relative">
+            {/* Add Transition FAB */}
+            <div className="absolute top-4 left-4 z-10">
+              <Button
+                data-ui-id="sm-add-transition"
+                size="sm"
+                onClick={() => {
                   sm.setSelectedStateId(null);
-                  setShowNewTransition(false);
+                  sm.setSelectedTransitionId(null);
+                  setShowNewTransition(true);
                 }}
-                highlightedPath={pathfinding.result?.steps}
-                onStartElementDrag={elementDrag.handleStartElementDrag}
-                onDragOver={elementDrag.handleDragOver}
-                onDrop={elementDrag.handleDrop}
-                isDragging={elementDrag.isDragging}
-                dropTargetStateId={elementDrag.dropTargetStateId}
-                onDeleteTransition={handleDeleteTransition}
-              />
+              >
+                <Plus className="size-3.5 mr-1.5" />
+                Add Transition
+              </Button>
             </div>
 
-            {/* Side Panel */}
-            {showStatePanel && sm.selectedState && (
+            <UIBridgeStateGraph
+              states={sm.fullConfig?.states ?? []}
+              transitions={sm.fullConfig?.transitions ?? []}
+              selectedStateId={sm.selectedStateId}
+              selectedTransitionId={sm.selectedTransitionId}
+              onSelectState={(id) => {
+                sm.setSelectedStateId(id);
+                sm.setSelectedTransitionId(null);
+                setShowNewTransition(false);
+              }}
+              onSelectTransition={(id) => {
+                sm.setSelectedTransitionId(id);
+                sm.setSelectedStateId(null);
+                setShowNewTransition(false);
+              }}
+              highlightedPath={pathfinding.result?.steps}
+              onStartElementDrag={elementDrag.handleStartElementDrag}
+              onDragOver={elementDrag.handleDragOver}
+              onDrop={elementDrag.handleDrop}
+              isDragging={elementDrag.isDragging}
+              dropTargetStateId={elementDrag.dropTargetStateId}
+              onDeleteTransition={handleDeleteTransition}
+            />
+          </div>
+
+          {/* Side Panel — State */}
+          <div className={showStatePanel && sm.selectedState ? "" : "hidden"}>
+            {sm.selectedState && (
               <UIBridgeStatePanel
                 state={sm.selectedState}
                 configId={sm.selectedConfigId!}
@@ -311,37 +334,49 @@ export function UIBridgeStateMachinePage() {
                 onUpdate={() => sm.refresh()}
               />
             )}
+          </div>
 
-            {showTransitionPanel && (
-              <UIBridgeTransitionEditor
-                transition={sm.selectedTransition}
-                states={sm.fullConfig?.states ?? []}
-                onSave={handleCreateTransition}
-                onUpdate={handleUpdateTransition}
-                onDelete={handleDeleteTransition}
-                onClose={() => {
-                  sm.setSelectedTransitionId(null);
-                  setShowNewTransition(false);
-                }}
-              />
-            )}
-          </>
-        )}
+          {/* Side Panel — Transition Editor */}
+          <div className={showTransitionPanel ? "" : "hidden"}>
+            <UIBridgeTransitionEditor
+              transition={sm.selectedTransition}
+              states={sm.fullConfig?.states ?? []}
+              onSave={handleCreateTransition}
+              onUpdate={handleUpdateTransition}
+              onDelete={handleDeleteTransition}
+              onClose={() => {
+                sm.setSelectedTransitionId(null);
+                setShowNewTransition(false);
+              }}
+            />
+          </div>
+        </div>
       </div>
 
       {/* State View Tab */}
       <div
         className={`flex-1 flex min-h-0 ${activeTab !== "states" ? "hidden" : ""}`}
       >
-        {noProject ? (
-          <div className="flex-1 flex items-center justify-center text-text-muted">
-            Select a project to manage state machines
-          </div>
-        ) : !sm.selectedConfigId ? (
-          <div className="flex-1 flex items-center justify-center text-text-muted">
-            Select a configuration to view states
-          </div>
-        ) : (
+        <div
+          className={
+            noProject
+              ? "flex-1 flex items-center justify-center text-text-muted"
+              : "hidden"
+          }
+        >
+          Select a project to manage state machines
+        </div>
+        <div
+          data-ui-id="sm-no-config-states"
+          className={
+            noConfig && !sm.isLoading
+              ? "flex-1 flex items-center justify-center text-text-muted"
+              : "hidden"
+          }
+        >
+          Select a configuration to view states
+        </div>
+        <div className={hasConfig ? "flex-1 flex" : "hidden"}>
           <StateViewPanel
             states={sm.fullConfig?.states ?? []}
             transitions={sm.fullConfig?.transitions ?? []}
@@ -351,22 +386,33 @@ export function UIBridgeStateMachinePage() {
               sm.setSelectedTransitionId(null);
             }}
           />
-        )}
+        </div>
       </div>
 
       {/* Transitions Tab */}
       <div
         className={`flex-1 flex min-h-0 ${activeTab !== "transitions" ? "hidden" : ""}`}
       >
-        {noProject ? (
-          <div className="flex-1 flex items-center justify-center text-text-muted">
-            Select a project to manage state machines
-          </div>
-        ) : !sm.selectedConfigId ? (
-          <div className="flex-1 flex items-center justify-center text-text-muted">
-            Select a configuration to view transitions
-          </div>
-        ) : (
+        <div
+          className={
+            noProject
+              ? "flex-1 flex items-center justify-center text-text-muted"
+              : "hidden"
+          }
+        >
+          Select a project to manage state machines
+        </div>
+        <div
+          data-ui-id="sm-no-config-transitions"
+          className={
+            noConfig && !sm.isLoading
+              ? "flex-1 flex items-center justify-center text-text-muted"
+              : "hidden"
+          }
+        >
+          Select a configuration to view transitions
+        </div>
+        <div className={hasConfig ? "flex-1 flex" : "hidden"}>
           <TransitionsPanel
             states={sm.fullConfig?.states ?? []}
             transitions={sm.fullConfig?.transitions ?? []}
@@ -375,22 +421,33 @@ export function UIBridgeStateMachinePage() {
               sm.setSelectedStateId(null);
             }}
           />
-        )}
+        </div>
       </div>
 
       {/* Pathfinding Tab */}
       <div
         className={`flex-1 overflow-y-auto ${activeTab !== "pathfinding" ? "hidden" : ""}`}
       >
-        {noProject ? (
-          <div className="flex items-center justify-center h-full text-text-muted">
-            Select a project to manage state machines
-          </div>
-        ) : !sm.selectedConfigId ? (
-          <div className="flex items-center justify-center h-full text-text-muted">
-            Select a configuration to use pathfinding
-          </div>
-        ) : (
+        <div
+          className={
+            noProject
+              ? "flex items-center justify-center h-full text-text-muted"
+              : "hidden"
+          }
+        >
+          Select a project to manage state machines
+        </div>
+        <div
+          data-ui-id="sm-no-config-pathfinding"
+          className={
+            noConfig && !sm.isLoading
+              ? "flex items-center justify-center h-full text-text-muted"
+              : "hidden"
+          }
+        >
+          Select a configuration to use pathfinding
+        </div>
+        <div className={hasConfig ? "" : "hidden"}>
           <PathfindingPanel
             states={sm.fullConfig?.states ?? []}
             result={pathfinding.result}
@@ -398,22 +455,33 @@ export function UIBridgeStateMachinePage() {
             onFindPath={pathfinding.findPath}
             onClear={pathfinding.clearResult}
           />
-        )}
+        </div>
       </div>
 
       {/* Export Tab */}
       <div
         className={`flex-1 overflow-y-auto ${activeTab !== "export" ? "hidden" : ""}`}
       >
-        {noProject ? (
-          <div className="flex items-center justify-center h-full text-text-muted">
-            Select a project to manage state machines
-          </div>
-        ) : !sm.selectedConfigId ? (
-          <div className="flex items-center justify-center h-full text-text-muted">
-            Select a configuration to export
-          </div>
-        ) : (
+        <div
+          className={
+            noProject
+              ? "flex items-center justify-center h-full text-text-muted"
+              : "hidden"
+          }
+        >
+          Select a project to manage state machines
+        </div>
+        <div
+          data-ui-id="sm-no-config-export"
+          className={
+            noConfig && !sm.isLoading
+              ? "flex items-center justify-center h-full text-text-muted"
+              : "hidden"
+          }
+        >
+          Select a configuration to export
+        </div>
+        <div className={hasConfig ? "" : "hidden"}>
           <ExportPanel
             isExporting={exporter.isExporting}
             isPushing={exporter.isPushing}
@@ -423,7 +491,7 @@ export function UIBridgeStateMachinePage() {
             stateCount={sm.fullConfig?.states.length ?? 0}
             transitionCount={sm.fullConfig?.transitions.length ?? 0}
           />
-        )}
+        </div>
       </div>
     </div>
   );

@@ -33,6 +33,7 @@ interface UseGenerateRequestsParams {
   reflectionMode: boolean;
   investigateCodebase: boolean;
   includeDesignGuidance: boolean;
+  verificationDepth: "smoke" | "standard" | "thorough" | "regression";
   generationModelOverrides:
     | Record<string, { provider?: string; model?: string }>
     | undefined;
@@ -62,6 +63,7 @@ export function useGenerateRequests(params: UseGenerateRequestsParams) {
     reflectionMode,
     investigateCodebase,
     includeDesignGuidance,
+    verificationDepth,
     generationModelOverrides,
     setSubmittingAction,
     onNavigateToActiveRuns,
@@ -102,6 +104,8 @@ export function useGenerateRequests(params: UseGenerateRequestsParams) {
       investigate_codebase: investigateCodebase,
       include_design_guidance: includeDesignGuidance || undefined,
       model_overrides: generationModelOverrides,
+      verification_depth:
+        verificationDepth !== "standard" ? verificationDepth : undefined,
     };
   }, [
     tagsInput,
@@ -119,6 +123,7 @@ export function useGenerateRequests(params: UseGenerateRequestsParams) {
     reflectionMode,
     investigateCodebase,
     includeDesignGuidance,
+    verificationDepth,
     generationModelOverrides,
   ]);
 

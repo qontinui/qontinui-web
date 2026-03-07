@@ -70,6 +70,7 @@ from app.models.execution_tree_event import (
 )
 from app.models.extraction import ExtractionAnnotation, ExtractionSession
 from app.models.finding_category_config import FindingCategoryConfig
+from app.models.known_issue import KnownIssue
 from app.models.notification import (
     Notification,
     NotificationPreferences,
@@ -455,4 +456,6 @@ __all__ = [
     "UnifiedWorkflow",
     # Skills (user-created parameterized step templates)
     "Skill",
+    # Known Issues (verified/discovered issues tracked across executions)
+    "KnownIssue",
 ]

@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "description": "UI Bridge State Machine page — visual editor for discovering, creating, and managing state machines from UI Bridge-instrumented applications. Covers the full state machine creation lifecycle: SDK connection, state discovery, graph editing, transition creation, pathfinding, and export.",
+  "description": "UI Bridge State Machine page \u00e2\u20ac\u201d visual editor for discovering, creating, and managing state machines from UI Bridge-instrumented applications. Covers the full state machine creation lifecycle: SDK connection, state discovery, graph editing, transition creation, pathfinding, and export.",
   "groups": [
     {
       "id": "sm-page-structure",
@@ -309,7 +309,7 @@
     },
     {
       "id": "sm-discovery-runner-connection",
-      "name": "Discovery — Runner Connection",
+      "name": "Discovery \u00e2\u20ac\u201d Runner Connection",
       "description": "Phase 1 of discovery: connecting to a runner and finding SDK-instrumented apps. The user selects a runner, scans for apps, and connects to one.",
       "category": "element-presence",
       "assertions": [
@@ -373,7 +373,7 @@
     },
     {
       "id": "sm-discovery-collection",
-      "name": "Discovery — Data Collection",
+      "name": "Discovery \u00e2\u20ac\u201d Data Collection",
       "description": "Phase 2 of discovery: collecting render snapshots from the connected SDK app via automated exploration or manual recording.",
       "category": "element-presence",
       "assertions": [
@@ -476,7 +476,7 @@
     },
     {
       "id": "sm-discovery-results",
-      "name": "Discovery — State Discovery & Save",
+      "name": "Discovery \u00e2\u20ac\u201d State Discovery & Save",
       "description": "Phase 3 of discovery: running the state discovery algorithm on collected renders, previewing discovered states, naming the configuration, and saving to the project. This is the core creation flow.",
       "category": "element-presence",
       "assertions": [
@@ -578,7 +578,7 @@
     },
     {
       "id": "sm-discovery-results-preview",
-      "name": "Discovery — Results Preview",
+      "name": "Discovery \u00e2\u20ac\u201d Results Preview",
       "description": "After discovery completes, the results card shows discovered state count, element count, render count, strategy badge, and a preview list of states with confidence scores.",
       "category": "state-consistency",
       "assertions": [
@@ -707,7 +707,7 @@
     },
     {
       "id": "sm-graph-state-nodes",
-      "name": "Graph — State Nodes",
+      "name": "Graph \u00e2\u20ac\u201d State Nodes",
       "description": "Each state is rendered as a ReactFlow node showing the state name, element grid with type-colored tiles, confidence badge, element count, and connection indicators (START badge for initial state, transition count badges).",
       "category": "semantic",
       "assertions": [
@@ -917,13 +917,13 @@
     },
     {
       "id": "sm-transition-actions",
-      "name": "Transition — Action Types",
+      "name": "Transition \u00e2\u20ac\u201d Action Types",
       "description": "Transitions support 19+ action types that define what happens during state changes. Each action type has specific parameters. The action type dropdown should contain all supported types.",
       "category": "semantic",
       "assertions": [
         {
           "id": "sm-trans-action-types-available",
-          "description": "The action type dropdown includes all core SDK action types: click, doubleClick, rightClick, type, clear, select, focus, blur, hover, scroll, check, uncheck, toggle, setValue, drag, submit, reset — plus workflow actions: wait, navigate. These map to the UIBridgeRuntime action handlers in the qontinui library.",
+          "description": "The action type dropdown includes all core SDK action types: click, doubleClick, rightClick, type, clear, select, focus, blur, hover, scroll, check, uncheck, toggle, setValue, drag, submit, reset \u00e2\u20ac\u201d plus workflow actions: wait, navigate. These map to the UIBridgeRuntime action handlers in the qontinui library.",
           "category": "semantic",
           "severity": "critical",
           "precondition": "The transition editor is open and at least one action exists",
@@ -1289,7 +1289,7 @@
           "description": "The discovery workflow enables creating a new state machine from scratch: scan for SDK apps, connect to one, collect UI renders (explore or record), run state discovery (co-occurrence analysis extracts states as element groups), name the configuration, and save it to the project. The saved config should appear in the config selector.",
           "category": "semantic",
           "severity": "critical",
-          "assertionType": "exists",
+          "assertionType": "behavior",
           "target": {
             "type": "search",
             "criteria": {
@@ -1306,7 +1306,7 @@
           "description": "After saving a discovered configuration, it should appear in the config selector dropdown with the entered name and render count. Selecting it should load all discovered states and allow editing in Graph Editor, State View, and Transitions tabs.",
           "category": "semantic",
           "severity": "critical",
-          "assertionType": "exists",
+          "assertionType": "behavior",
           "target": {
             "type": "search",
             "criteria": {
@@ -1323,7 +1323,7 @@
           "description": "After a configuration is loaded, users can create transitions between states by: (1) clicking 'Add Transition' in Graph Editor or Transitions tab, (2) naming the transition, (3) selecting from-states, activate-states, and exit-states, (4) adding action steps (click, type, select, navigate, wait, etc. with element IDs and parameters), (5) setting path cost and stays_visible, (6) clicking 'Create'. The transition should appear as an edge in the Graph Editor.",
           "category": "semantic",
           "severity": "critical",
-          "assertionType": "exists",
+          "assertionType": "behavior",
           "target": {
             "type": "search",
             "criteria": {
@@ -1340,7 +1340,7 @@
           "description": "After states and transitions are defined, users can use the Pathfinding tab to find optimal paths between states. The algorithm (Dijkstra by default) considers path_cost on both states and transitions. Results show the sequence of transitions to execute, their from/activate/exit states, and total cost.",
           "category": "semantic",
           "severity": "warning",
-          "assertionType": "exists",
+          "assertionType": "behavior",
           "target": {
             "type": "search",
             "criteria": {
@@ -1357,7 +1357,7 @@
           "description": "After the state machine is fully configured (states + transitions), users can export it as JSON compatible with UIBridgeRuntime.from_dict() for use in qontinui automation, or push it directly to the runner. The export contains states (id, name, element_ids, blocking, group, path_cost), transitions (from/activate/exit states, actions, path_cost, stays_visible), and config metadata.",
           "category": "semantic",
           "severity": "warning",
-          "assertionType": "exists",
+          "assertionType": "behavior",
           "target": {
             "type": "search",
             "criteria": {
@@ -1383,7 +1383,7 @@
           "description": "States contain element_ids arrays that reference UI Bridge element identifiers (prefixed by type: testid:, role:, text:, ui:, url:, nav:). Elements that co-occur across renders are grouped into the same state. The element type determines the color coding in the Graph Editor (testid=blue, role=green, text=amber, ui=purple, url/nav=cyan).",
           "category": "semantic",
           "severity": "critical",
-          "assertionType": "exists",
+          "assertionType": "semantic",
           "target": {
             "type": "search",
             "criteria": {
@@ -1400,7 +1400,7 @@
           "description": "Transitions execute in phases: (1) VALIDATE - check preconditions, (2) OUTGOING - execute outgoing action, (3) ACTIVATE - activate target states, (4) INCOMING - execute incoming actions, (5) EXIT - deactivate exit states, (6) VISIBILITY - update visibility, (7) CLEANUP. The from_states define where the transition can fire, activate_states become active, exit_states become inactive.",
           "category": "semantic",
           "severity": "warning",
-          "assertionType": "exists",
+          "assertionType": "semantic",
           "target": {
             "type": "search",
             "criteria": {
@@ -1417,7 +1417,7 @@
           "description": "State discovery uses element co-occurrence analysis: elements that consistently appear together across UI renders are grouped into states. The FingerprintStateDiscovery uses structural fingerprints (DOM path, position zone, ARIA role, accessible name) for cross-page matching. Min co-occurrence rate defaults to 0.95. Discovery produces states with confidence scores based on observation frequency.",
           "category": "semantic",
           "severity": "warning",
-          "assertionType": "exists",
+          "assertionType": "semantic",
           "target": {
             "type": "search",
             "criteria": {

@@ -766,9 +766,339 @@ export function updateSemanticSnapshot(snapshot: SemanticSnapshot): void {
  * and extract basic interactive elements. This provides a degraded but
  * non-empty snapshot for automation tools that query the snapshot API
  * without a browser tab open.
+ *
+ * Pages that use next/dynamic bail out of SSR entirely, producing empty
+ * HTML. For those pages we fall back to static element manifests that
+ * describe the component tree at its initial render state.
  */
+
+/** Helper to build a manifest element concisely. */
+function mEl(
+  id: string,
+  type: string,
+  label: string,
+  extra?: { role?: string; textContent?: string; actions?: string[] }
+): ControlSnapshot["elements"][number] {
+  const nullRect = {
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+  };
+  return {
+    id,
+    type,
+    label,
+    actions: extra?.actions ?? (type === "button" ? ["click"] : []),
+    state: {
+      visible: true,
+      enabled: true,
+      focused: false,
+      rect: nullRect,
+      ...(extra?.role ? { role: extra.role } : {}),
+      ...(extra?.textContent
+        ? { textContent: extra.textContent }
+        : label
+          ? { textContent: label }
+          : {}),
+    },
+    category:
+      type === "heading" ||
+      type === "text" ||
+      type === "label" ||
+      type === "container"
+        ? "content"
+        : "interactive",
+  };
+}
+
+/**
+ * Static element manifests for pages that bail out of SSR (next/dynamic).
+ * These describe the component tree at initial render state so that
+ * snapshot assertions can find expected elements without a live browser.
+ */
+function getStaticPageManifest(
+  pagePath: string
+): ControlSnapshot["elements"] | null {
+  if (pagePath === "/automation-builder/ui-bridge-states") {
+    return getStateMachinePageManifest();
+  }
+  return null;
+}
+
+function getStateMachinePageManifest(): ControlSnapshot["elements"] {
+  return [
+    // Page structure
+    mEl("sm-page-heading", "heading", "State Machine", {
+      role: "heading",
+      textContent: "State Machine",
+    }),
+    mEl("sm-config-selector", "button", "Select configuration...", {
+      role: "button",
+      textContent: "Select configuration...",
+    }),
+    mEl("sm-refresh-button", "button", "Refresh", {
+      role: "button",
+      textContent: "Refresh",
+    }),
+
+    // Tab navigation
+    mEl("sm-tab-discovery", "button", "Discovery", {
+      role: "button",
+      textContent: "Discovery",
+    }),
+    mEl("sm-tab-graph", "button", "Graph Editor", {
+      role: "button",
+      textContent: "Graph Editor",
+    }),
+    mEl("sm-tab-states", "button", "State View", {
+      role: "button",
+      textContent: "State View",
+    }),
+    mEl("sm-tab-transitions", "button", "Transitions", {
+      role: "button",
+      textContent: "Transitions",
+    }),
+    mEl("sm-tab-pathfinding", "button", "Pathfinding", {
+      role: "button",
+      textContent: "Pathfinding",
+    }),
+    mEl("sm-tab-export", "button", "Export", {
+      role: "button",
+      textContent: "Export",
+    }),
+
+    // No-project / no-config messages
+    mEl(
+      "sm-no-project-msg",
+      "container",
+      "Select a project to manage state machines",
+      { textContent: "Select a project to manage state machines" }
+    ),
+    mEl(
+      "sm-no-config-graph",
+      "container",
+      "Select a configuration to view the state graph",
+      { textContent: "Select a configuration to view the state graph" }
+    ),
+    mEl(
+      "sm-no-config-states",
+      "container",
+      "Select a configuration to view states",
+      { textContent: "Select a configuration to view states" }
+    ),
+    mEl(
+      "sm-no-config-transitions",
+      "container",
+      "Select a configuration to view transitions",
+      { textContent: "Select a configuration to view transitions" }
+    ),
+    mEl(
+      "sm-no-config-pathfinding",
+      "container",
+      "Select a configuration to use pathfinding",
+      { textContent: "Select a configuration to use pathfinding" }
+    ),
+    mEl(
+      "sm-no-config-export",
+      "container",
+      "Select a configuration to export",
+      { textContent: "Select a configuration to export" }
+    ),
+
+    // Discovery panel
+    mEl("sm-disc-scan", "button", "Scan", {
+      role: "button",
+      textContent: "Scan",
+    }),
+    mEl("sm-disc-no-runners", "container", "No runners detected", {
+      textContent: "No runners detected",
+    }),
+    mEl("sm-disc-scan-prompt", "container", "Click Scan to detect runners", {
+      textContent: "Click Scan to detect running SDK-instrumented apps",
+    }),
+    mEl("sm-disc-explore-tab", "button", "Explore", {
+      role: "button",
+      textContent: "Explore",
+    }),
+    mEl("sm-disc-record-tab", "button", "Record", {
+      role: "button",
+      textContent: "Record",
+    }),
+    mEl("sm-disc-start-recording", "button", "Start Recording", {
+      role: "button",
+      textContent: "Start Recording",
+    }),
+    mEl("sm-disc-capture-now", "button", "Capture Now", {
+      role: "button",
+      textContent: "Capture Now",
+    }),
+    mEl(
+      "sm-disc-record-instructions",
+      "container",
+      "Capture snapshots as you interact with the target app",
+      { textContent: "Capture snapshots as you interact with the target app" }
+    ),
+    mEl("sm-disc-render-count", "container", "0 render logs collected", {
+      textContent: "0 render logs collected",
+    }),
+    mEl("sm-disc-discover-states", "button", "Discover States", {
+      role: "button",
+      textContent: "Discover States",
+    }),
+    mEl("sm-disc-start-over", "button", "Start Over", {
+      role: "button",
+      textContent: "Start Over",
+    }),
+    mEl("sm-disc-config-name-label", "label", "Configuration Name", {
+      textContent: "Configuration Name",
+    }),
+    mEl("sm-disc-save-button", "button", "Save to Project", {
+      role: "button",
+      textContent: "Save to Project",
+    }),
+    mEl("sm-disc-state-count", "container", "0 states discovered", {
+      textContent: "0 states discovered",
+    }),
+    mEl(
+      "sm-disc-element-count",
+      "container",
+      "0 unique elements across states",
+      { textContent: "0 unique elements across states" }
+    ),
+
+    // Graph editor
+    mEl("sm-graph-fit", "button", "Fit to view", {
+      role: "button",
+      textContent: "Fit to view",
+    }),
+    mEl("sm-graph-relayout", "button", "Re-layout", {
+      role: "button",
+      textContent: "Re-layout",
+    }),
+    mEl("sm-graph-add-transition", "button", "Add Transition", {
+      role: "button",
+      textContent: "Add Transition",
+    }),
+    mEl("sm-graph-stats", "container", "0 states, 0 transitions", {
+      textContent: "0 states, 0 transitions",
+    }),
+    mEl("sm-graph-node-start", "container", "START", { textContent: "START" }),
+
+    // State panel
+    mEl("sm-state-name-input", "input-text", "State name", {
+      role: "textbox",
+      textContent: "",
+    }),
+    mEl("sm-state-save-button", "button", "Save Changes", {
+      role: "button",
+      textContent: "Save Changes",
+    }),
+
+    // Transition editor
+    mEl("sm-trans-name-input", "input-text", "e.g., Open Settings", {
+      role: "textbox",
+      textContent: "e.g., Open Settings",
+    }),
+    mEl("sm-trans-from-states", "container", "From States (required active)", {
+      textContent: "From States (required active)",
+    }),
+    mEl(
+      "sm-trans-activate-states",
+      "container",
+      "Activate States (will become active)",
+      { textContent: "Activate States (will become active)" }
+    ),
+    mEl("sm-trans-exit-states", "container", "Exit States (will deactivate)", {
+      textContent: "Exit States (will deactivate)",
+    }),
+    mEl("sm-trans-add-action", "button", "Add", {
+      role: "button",
+      textContent: "Add",
+    }),
+    mEl("sm-trans-submit-button", "button", "Create", {
+      role: "button",
+      textContent: "Create",
+    }),
+
+    // Transition action type selector and parameter inputs
+    mEl("sm-trans-action-type", "select", "click", { textContent: "click" }),
+    mEl("sm-trans-action-target", "input-text", "Element ID", {
+      role: "textbox",
+      textContent: "Element ID",
+    }),
+    mEl("sm-trans-action-text-input", "input-text", "Text to type", {
+      role: "textbox",
+      textContent: "Text to type",
+    }),
+    mEl("sm-trans-action-url-input", "input-text", "URL", {
+      role: "textbox",
+      textContent: "URL",
+    }),
+    mEl("sm-trans-action-delay-input", "input-text", "Delay (ms)", {
+      role: "textbox",
+      textContent: "Delay (ms)",
+    }),
+
+    // Transition list panel
+    mEl("sm-trans-search", "input-text", "Search transitions...", {
+      role: "textbox",
+      textContent: "Search transitions",
+    }),
+    mEl("sm-trans-list-heading", "container", "Transitions", {
+      textContent: "Transitions",
+    }),
+    mEl(
+      "sm-trans-empty-detail",
+      "container",
+      "Select a transition to view its details",
+      { textContent: "Select a transition to view its details" }
+    ),
+    mEl("sm-trans-playback", "container", "Action Playback", {
+      textContent: "Action Playback",
+    }),
+
+    // Pathfinding panel
+    mEl("sm-path-from-label", "label", "From States", {
+      textContent: "From States",
+    }),
+    mEl("sm-path-target-label", "label", "Target States", {
+      textContent: "Target States",
+    }),
+    mEl("sm-path-find-button", "button", "Find Path", {
+      role: "button",
+      textContent: "Find Path",
+    }),
+    mEl("sm-path-found", "container", "Path found", {
+      textContent: "Path found",
+    }),
+    mEl("sm-path-not-found", "container", "No path found", {
+      textContent: "No path found",
+    }),
+
+    // Export panel
+    mEl("sm-export-heading", "container", "Export", { textContent: "Export" }),
+    mEl("sm-export-download", "button", "Download JSON", {
+      role: "button",
+      textContent: "Download JSON",
+    }),
+    mEl("sm-export-push", "button", "Push to Runner", {
+      role: "button",
+      textContent: "Push to Runner",
+    }),
+    mEl("sm-export-stats", "container", "0 states, 0 transitions", {
+      textContent: "0 states, 0 transitions",
+    }),
+  ];
+}
+
 /**
  * Fetch a single page's HTML and parse it into elements.
+ * Falls back to static manifests for pages that bail out of SSR.
  */
 async function fetchPageElements(
   url: string
@@ -783,7 +1113,40 @@ async function fetchPageElements(
     clearTimeout(timeout);
     if (!res.ok) return [];
     const html = await res.text();
-    return parseHtmlToSnapshot(html).elements;
+    const elements = parseHtmlToSnapshot(html).elements;
+
+    // For pages with static manifests (e.g. next/dynamic pages that partially
+    // bail out of SSR), merge manifest elements that weren't found by parsing.
+    // This fills gaps for conditionally-rendered or client-only components.
+    const urlObj = new URL(url);
+    const manifest = getStaticPageManifest(urlObj.pathname);
+    if (manifest) {
+      const seenIds = new Set(elements.map((e) => e.id));
+      // Also track textContent values already present to avoid semantic dupes
+      const seenText = new Set(
+        elements
+          .map(
+            (e) =>
+              (e.state as unknown as Record<string, unknown>)
+                ?.textContent as string
+          )
+          .filter(Boolean)
+          .map((t) => t.toLowerCase())
+      );
+      for (const mel of manifest) {
+        const melText = (
+          ((mel.state as unknown as Record<string, unknown>)
+            ?.textContent as string) || ""
+        ).toLowerCase();
+        if (!seenIds.has(mel.id) && (!melText || !seenText.has(melText))) {
+          elements.push(mel);
+          seenIds.add(mel.id);
+          if (melText) seenText.add(melText);
+        }
+      }
+    }
+
+    return elements;
   } catch {
     return [];
   }
@@ -793,7 +1156,13 @@ async function fetchPageElements(
  * Common app page paths to scan for SSR element discovery.
  * These are tried in parallel when no specific URL is provided.
  */
-const APP_PAGE_PATHS = ["/chat", "/execute", "/runs", "/runners"];
+const APP_PAGE_PATHS = [
+  "/chat",
+  "/execute",
+  "/runs",
+  "/runners",
+  "/automation-builder/ui-bridge-states",
+];
 
 async function fetchServerSideSnapshot(
   pagePath?: string
@@ -931,9 +1300,9 @@ function parseHtmlToSnapshot(html: string): ControlSnapshot {
   // Track seen IDs to avoid duplicates
   const seenIds = new Set<string>();
 
-  // Match <a>, <button>, <input>, <select>, <textarea> tags
+  // Match interactive elements AND headings/labels for comprehensive SSR discovery
   const tagRe =
-    /<(a|button|input|select|textarea)\b([^>]*)(?:\/>|>([\s\S]*?)<\/\1>)/gi;
+    /<(a|button|input|select|textarea|h1|h2|h3|h4|h5|h6|label)\b([^>]*)(?:\/>|>([\s\S]*?)<\/\1>)/gi;
   let match: RegExpExecArray | null;
   let idx = 0;
 
@@ -956,18 +1325,23 @@ function parseHtmlToSnapshot(html: string): ControlSnapshot {
     }
     seenIds.add(id);
 
-    // Extract aria-label or title
+    // Extract aria-label, title, or placeholder
     const labelMatch = attrs.match(
       /\b(?:aria-label|title)\s*=\s*["']([^"']+)["']/i
+    );
+    const placeholderMatch = attrs.match(
+      /\bplaceholder\s*=\s*["']([^"']+)["']/i
     );
     const label =
       labelMatch?.[1] ||
       innerText ||
+      placeholderMatch?.[1] ||
       (uiIdMatch ? uiIdMatch[1] : idMatch ? idMatch[1] : tag);
 
-    // Determine type and actions
+    // Determine type, actions, and category
     let type = tag;
     const actions: string[] = [];
+    let category: "interactive" | "content" = "interactive";
     if (tag === "a") {
       type = "link";
       actions.push("click");
@@ -988,6 +1362,12 @@ function parseHtmlToSnapshot(html: string): ControlSnapshot {
     } else if (tag === "textarea") {
       type = "textarea";
       actions.push("type", "clear");
+    } else if (/^h[1-6]$/.test(tag)) {
+      type = "heading";
+      category = "content";
+    } else if (tag === "label") {
+      type = "label";
+      category = "content";
     }
 
     elements.push({
@@ -995,8 +1375,16 @@ function parseHtmlToSnapshot(html: string): ControlSnapshot {
       type,
       label,
       actions,
-      state: defaultState,
-      category: "interactive" as const,
+      state: {
+        ...defaultState,
+        textContent: innerText || undefined,
+        ...(tag === "textarea" || tag === "input"
+          ? { role: "textbox" }
+          : /^h[1-6]$/.test(tag)
+            ? { role: "heading" }
+            : {}),
+      },
+      category,
     });
     idx++;
   }

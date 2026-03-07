@@ -30,6 +30,10 @@ export interface AdvancedOptionsState {
   setIncludeDesignGuidance: (value: boolean) => void;
   discoveryMode: "auto" | "enabled" | "disabled";
   setDiscoveryMode: (value: "auto" | "enabled" | "disabled") => void;
+  verificationDepth: "smoke" | "standard" | "thorough" | "regression";
+  setVerificationDepth: (
+    value: "smoke" | "standard" | "thorough" | "regression"
+  ) => void;
   modelsForProvider: readonly { value: string; label: string }[];
   generationModelOverrides: ModelOverrides | undefined;
   setGenerationModelOverrides: (value: ModelOverrides | undefined) => void;
@@ -58,6 +62,9 @@ export function useAdvancedOptions(): AdvancedOptionsState {
   const [discoveryMode, setDiscoveryMode] = useState<
     "auto" | "enabled" | "disabled"
   >("auto");
+  const [verificationDepth, setVerificationDepth] = useState<
+    "smoke" | "standard" | "thorough" | "regression"
+  >("standard");
   const [generationModelOverrides, setGenerationModelOverrides] = useState<
     ModelOverrides | undefined
   >(undefined);
@@ -114,6 +121,8 @@ export function useAdvancedOptions(): AdvancedOptionsState {
     setIncludeDesignGuidance,
     discoveryMode,
     setDiscoveryMode,
+    verificationDepth,
+    setVerificationDepth,
     modelsForProvider,
     generationModelOverrides,
     setGenerationModelOverrides,

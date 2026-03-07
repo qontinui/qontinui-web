@@ -243,443 +243,463 @@ export function DiscoveryPanel({
   return (
     <div className="p-4">
       <div className="max-w-4xl mx-auto space-y-4">
-        {/* Phase 1: Collect Renders */}
-        {!hasRenders && (
-          <>
-            {/* Runner + SDK App Connection — compact when connected */}
-            <Card>
-              <CardContent className="py-3 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Plug className="size-4 text-text-muted" />
-                  <span className="text-sm font-medium">
-                    Connect to SDK App
-                  </span>
-                </div>
+        {/* Phase 1: Collect Renders — hidden when renders collected */}
+        <div className={hasRenders ? "hidden" : "space-y-4"}>
+          {/* Runner + SDK App Connection — compact when connected */}
+          <Card>
+            <CardContent className="py-3 space-y-3">
+              <div className="flex items-center gap-2">
+                <Plug className="size-4 text-text-muted" />
+                <span className="text-sm font-medium">Connect to SDK App</span>
+              </div>
 
-                {/* Compact row: Runner + SDK status */}
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 min-w-0">
-                    <Select
-                      value={selectedConnectionId?.toString() ?? ""}
-                      onValueChange={(v) =>
-                        setSelectedConnectionId(v ? Number(v) : null)
-                      }
-                    >
-                      <SelectTrigger className="h-8 text-sm">
-                        <SelectValue
-                          placeholder={
-                            connectionsLoading && checkingLocalRunner
-                              ? "Loading..."
-                              : "Select a runner..."
-                          }
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {localRunnerAvailable && (
-                          <SelectItem value={DIRECT_CONNECTION_ID.toString()}>
-                            <span className="flex items-center gap-1.5">
-                              <MonitorSmartphone className="size-3.5 text-green-500" />
-                              Local Runner (localhost:9876)
-                            </span>
-                          </SelectItem>
-                        )}
-                        {connections.map((c) => (
-                          <SelectItem key={c.id} value={c.id.toString()}>
-                            {c.runner_name} ({c.ip_address ?? "localhost"})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {runnerUrl && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 shrink-0"
-                      onClick={sdk.scanForApps}
-                      disabled={sdk.isScanning}
-                    >
-                      {sdk.isScanning ? (
-                        <Loader2 className="size-3.5 mr-1.5 animate-spin" />
-                      ) : (
-                        <Scan className="size-3.5 mr-1.5" />
+              {/* Compact row: Runner + SDK status */}
+              <div className="flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <Select
+                    value={selectedConnectionId?.toString() ?? ""}
+                    onValueChange={(v) =>
+                      setSelectedConnectionId(v ? Number(v) : null)
+                    }
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue
+                        placeholder={
+                          connectionsLoading && checkingLocalRunner
+                            ? "Loading..."
+                            : "Select a runner..."
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {localRunnerAvailable && (
+                        <SelectItem value={DIRECT_CONNECTION_ID.toString()}>
+                          <span className="flex items-center gap-1.5">
+                            <MonitorSmartphone className="size-3.5 text-green-500" />
+                            Local Runner (localhost:9876)
+                          </span>
+                        </SelectItem>
                       )}
-                      Scan
-                    </Button>
-                  )}
+                      {connections.map((c) => (
+                        <SelectItem key={c.id} value={c.id.toString()}>
+                          {c.runner_name} ({c.ip_address ?? "localhost"})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
-                {!connectionsLoading &&
+                <Button
+                  data-ui-id="sm-scan-button"
+                  variant="outline"
+                  size="sm"
+                  className={`h-8 shrink-0 ${runnerUrl ? "" : "hidden"}`}
+                  onClick={sdk.scanForApps}
+                  disabled={sdk.isScanning}
+                >
+                  {sdk.isScanning ? (
+                    <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                  ) : (
+                    <Scan className="size-3.5 mr-1.5" />
+                  )}
+                  Scan
+                </Button>
+              </div>
+
+              <p
+                data-ui-id="sm-no-runners-message"
+                className={`text-xs text-text-muted ${
+                  !connectionsLoading &&
                   !checkingLocalRunner &&
                   connections.length === 0 &&
-                  !localRunnerAvailable && (
-                    <p className="text-xs text-text-muted">
-                      No runners detected. Start the qontinui-runner app to
-                      connect.
-                    </p>
-                  )}
+                  !localRunnerAvailable
+                    ? ""
+                    : "hidden"
+                }`}
+              >
+                No runners detected. Start the qontinui-runner app to connect.
+              </p>
 
-                {/* SDK app discovery results */}
-                {runnerUrl && (
-                  <>
-                    {/* Active connection banner */}
-                    {sdk.activeApp && (
-                      <div className="flex items-center gap-2 p-2 bg-green-500/10 border border-green-500/20 rounded-md">
-                        <CheckCircle2 className="size-4 text-green-500 shrink-0" />
-                        <span className="text-sm text-text-primary truncate">
-                          Connected:{" "}
-                          <strong>{sdk.activeApp.app.appName}</strong>
-                        </span>
-                        <Badge
-                          variant="outline"
-                          className="ml-auto text-xs shrink-0"
-                        >
-                          {sdk.activeApp.url}
-                        </Badge>
-                      </div>
-                    )}
-
-                    {/* Discovered apps list — hidden when already connected */}
-                    {!sdk.activeApp && sdk.apps.length > 0 && (
-                      <div className="space-y-2">
-                        {sdk.apps.map((app: SDKApp) => {
-                          const isConnected = sdk.connections.some(
-                            (c) => c.url === app.url
-                          );
-                          const isActive = sdk.activeApp?.url === app.url;
-                          return (
-                            <div
-                              key={app.appId}
-                              className="flex items-center justify-between p-2 border border-border-primary rounded-md"
-                            >
-                              <div className="min-w-0">
-                                <div className="text-sm font-medium text-text-primary truncate">
-                                  {app.appName}
-                                </div>
-                                <div className="text-xs text-text-muted">
-                                  {app.url}{" "}
-                                  {app.framework && `(${app.framework})`}
-                                </div>
-                              </div>
-                              {isActive ? (
-                                <Badge variant="secondary" className="shrink-0">
-                                  Active
-                                </Badge>
-                              ) : isConnected ? (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => sdk.switchActive(app.url)}
-                                >
-                                  Switch
-                                </Button>
-                              ) : (
-                                <Button
-                                  size="sm"
-                                  onClick={() => sdk.connectToApp(app.url)}
-                                  disabled={sdk.isConnecting}
-                                >
-                                  {sdk.isConnecting ? (
-                                    <Loader2 className="size-3.5 animate-spin" />
-                                  ) : (
-                                    "Connect"
-                                  )}
-                                </Button>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {!sdk.activeApp &&
-                      sdk.apps.length === 0 &&
-                      !sdk.isScanning && (
-                        <p className="text-xs text-text-muted">
-                          Click Scan to find apps with the UI Bridge SDK
-                          installed.
-                        </p>
-                      )}
-                  </>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Collection tabs — only shown when SDK app is connected */}
-            {hasActiveSDKApp && (
-              <div>
-                <div className="inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground">
-                  <button
-                    onClick={() => setCollectTab("explore")}
-                    className={`inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] ${
-                      collectTab === "explore"
-                        ? "bg-background shadow-sm text-foreground"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <Compass className="size-3.5" />
-                    Explore
-                  </button>
-                  <button
-                    onClick={() => setCollectTab("record")}
-                    className={`inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] ${
-                      collectTab === "record"
-                        ? "bg-background shadow-sm text-foreground"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <Camera className="size-3.5" />
-                    Record
-                  </button>
+              {/* SDK app discovery results — always in DOM */}
+              <div className={runnerUrl ? "" : "hidden"}>
+                {/* Active connection banner */}
+                <div
+                  className={
+                    sdk.activeApp
+                      ? "flex items-center gap-2 p-2 bg-green-500/10 border border-green-500/20 rounded-md mb-3"
+                      : "hidden"
+                  }
+                >
+                  <CheckCircle2 className="size-4 text-green-500 shrink-0" />
+                  <span className="text-sm text-text-primary truncate">
+                    Connected: <strong>{sdk.activeApp?.app.appName}</strong>
+                  </span>
+                  <Badge variant="outline" className="ml-auto text-xs shrink-0">
+                    {sdk.activeApp?.url}
+                  </Badge>
                 </div>
 
-                {/* Explore tab — automated UI Bridge exploration */}
+                {/* Discovered apps list — hidden when already connected */}
                 <div
-                  className={`mt-3 ${collectTab !== "explore" ? "hidden" : ""}`}
+                  className={
+                    !sdk.activeApp && sdk.apps.length > 0
+                      ? "space-y-2 mb-3"
+                      : "hidden"
+                  }
                 >
-                  <ExplorationConfigPanel
-                    config={exploration.config}
-                    onConfigChange={exploration.updateConfig}
-                    progress={exploration.progress}
-                    isRunning={exploration.isRunning}
-                    onStart={handleStartExploration}
-                    onStop={handleStopExploration}
-                    connections={connections}
-                    connectionsLoading={connectionsLoading}
-                    selectedConnectionId={selectedConnectionId}
-                    onConnectionChange={setSelectedConnectionId}
-                    hideRunnerSection
-                  />
-                </div>
-
-                {/* Record tab — SDK snapshot-based recording */}
-                <div
-                  className={`mt-3 ${collectTab !== "record" ? "hidden" : ""}`}
-                >
-                  <Card>
-                    <CardContent className="py-3 space-y-3">
-                      <p className="text-sm text-text-muted">
-                        Capture snapshots from the connected SDK app. Navigate
-                        the app manually while recording to capture different UI
-                        states.
-                      </p>
-
-                      {/* Recording controls */}
-                      <div className="flex items-center gap-3">
-                        {!sdk.isRecording ? (
+                  {sdk.apps.map((app: SDKApp) => {
+                    const isConnected = sdk.connections.some(
+                      (c) => c.url === app.url
+                    );
+                    const isActive = sdk.activeApp?.url === app.url;
+                    return (
+                      <div
+                        key={app.appId}
+                        className="flex items-center justify-between p-2 border border-border-primary rounded-md"
+                      >
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-text-primary truncate">
+                            {app.appName}
+                          </div>
+                          <div className="text-xs text-text-muted">
+                            {app.url} {app.framework && `(${app.framework})`}
+                          </div>
+                        </div>
+                        {isActive ? (
+                          <Badge variant="secondary" className="shrink-0">
+                            Active
+                          </Badge>
+                        ) : isConnected ? (
                           <Button
-                            onClick={() => sdk.startRecording()}
-                            variant="default"
+                            variant="outline"
                             size="sm"
+                            onClick={() => sdk.switchActive(app.url)}
                           >
-                            <Circle className="size-3.5 mr-1.5 text-red-400" />
-                            Start Recording
+                            Switch
                           </Button>
                         ) : (
                           <Button
-                            onClick={handleStopRecording}
-                            variant="destructive"
                             size="sm"
+                            onClick={() => sdk.connectToApp(app.url)}
+                            disabled={sdk.isConnecting}
                           >
-                            <Square className="size-3.5 mr-1.5" />
-                            Stop Recording
-                          </Button>
-                        )}
-
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={sdk.captureNow}
-                          disabled={
-                            !sdk.isRecording && sdk.snapshots.length === 0
-                          }
-                        >
-                          <Camera className="size-3.5 mr-1.5" />
-                          Capture Now
-                        </Button>
-
-                        {sdk.snapshots.length > 0 && !sdk.isRecording && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={sdk.resetRecording}
-                          >
-                            <RotateCcw className="size-3.5 mr-1.5" />
-                            Reset
-                          </Button>
-                        )}
-                      </div>
-
-                      {/* Recording status */}
-                      {(sdk.isRecording || sdk.snapshots.length > 0) && (
-                        <div className="flex items-center gap-4">
-                          <Badge
-                            variant={
-                              sdk.isRecording ? "destructive" : "secondary"
-                            }
-                          >
-                            {sdk.isRecording && (
-                              <span className="size-2 rounded-full bg-red-400 mr-1.5 animate-pulse" />
+                            {sdk.isConnecting ? (
+                              <Loader2 className="size-3.5 animate-spin" />
+                            ) : (
+                              "Connect"
                             )}
-                            {sdk.snapshots.length} snapshots
-                          </Badge>
-                          {sdk.snapshots.length > 0 && (
-                            <span className="text-xs text-text-muted">
-                              {sdk.snapshots.at(-1)!.elements.length} elements
-                              in last snapshot
-                            </span>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Use snapshots button — shown when not recording and snapshots exist */}
-                      {!sdk.isRecording && sdk.snapshots.length > 0 && (
-                        <Button
-                          onClick={handleUseRecordedSnapshots}
-                          className="w-full"
-                        >
-                          <Sparkles className="size-4 mr-2" />
-                          Use {sdk.snapshots.length} Snapshots for Discovery
-                        </Button>
-                      )}
-                    </CardContent>
-                  </Card>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* Phase 2: Discovery Results */}
-        {hasRenders && (
-          <>
-            {/* Render summary */}
-            <Card>
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Layers className="size-4" />
-                    Render Logs Collected
-                  </CardTitle>
-                  <Button variant="ghost" size="sm" onClick={discovery.reset}>
-                    <RotateCcw className="size-3.5 mr-1.5" />
-                    Start Over
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center gap-4">
-                  <Badge variant="secondary" className="text-sm">
-                    <Hash className="size-3 mr-1" />
-                    {discovery.renders!.length} render logs
-                  </Badge>
-                  <Badge variant="outline" className="text-sm capitalize">
-                    via {discovery.renderSource}
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Discover States */}
-            {!hasDiscoveryResult && (
-              <Card>
-                <CardContent className="py-6 flex flex-col items-center gap-4">
-                  <p className="text-sm text-text-secondary">
-                    Run state discovery on the collected render logs to identify
-                    UI states.
-                  </p>
-                  <Button
-                    onClick={discovery.runDiscovery}
-                    disabled={discovery.isDiscovering}
-                    size="lg"
-                  >
-                    {discovery.isDiscovering ? (
-                      <Loader2 className="size-4 mr-2 animate-spin" />
-                    ) : (
-                      <Sparkles className="size-4 mr-2" />
-                    )}
-                    Discover States
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Discovery Results + Save */}
-            {hasDiscoveryResult && (
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <CheckCircle2 className="size-4 text-green-500" />
-                    Discovery Complete
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center gap-4">
-                    <Badge variant="secondary">
-                      {discovery.discoveryResult!.states.length} states
-                    </Badge>
-                    <Badge variant="secondary">
-                      {discovery.discoveryResult!.unique_element_count} elements
-                    </Badge>
-                    <Badge variant="outline">
-                      {discovery.discoveryResult!.render_count} renders
-                    </Badge>
-                    {discovery.discoveryResult!.strategy_used && (
-                      <Badge variant="outline" className="capitalize">
-                        {discovery.discoveryResult!.strategy_used} strategy
-                      </Badge>
-                    )}
-                  </div>
-
-                  {/* State preview */}
-                  <div className="border border-border-primary rounded-md p-3 space-y-1.5 max-h-40 overflow-y-auto">
-                    {discovery.discoveryResult!.states.map((state) => (
-                      <div
-                        key={state.id}
-                        className="flex items-center justify-between text-sm"
-                      >
-                        <span className="text-text-primary">{state.name}</span>
-                        <span className="text-text-muted">
-                          {(state.confidence * 100).toFixed(0)}% confidence
-                        </span>
+                          </Button>
+                        )}
                       </div>
-                    ))}
+                    );
+                  })}
+                </div>
+
+                <p
+                  data-ui-id="sm-click-scan-message"
+                  className={`text-xs text-text-muted ${
+                    !sdk.activeApp && sdk.apps.length === 0 && !sdk.isScanning
+                      ? ""
+                      : "hidden"
+                  }`}
+                >
+                  Click Scan to find apps with the UI Bridge SDK installed.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Collection tabs — use CSS hidden instead of conditional rendering */}
+          <div className={hasActiveSDKApp ? "" : "hidden"}>
+            <div className="inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground">
+              <button
+                data-ui-id="sm-explore-tab"
+                onClick={() => setCollectTab("explore")}
+                className={`inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] ${
+                  collectTab === "explore"
+                    ? "bg-background shadow-sm text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Compass className="size-3.5" />
+                Explore
+              </button>
+              <button
+                data-ui-id="sm-record-tab"
+                onClick={() => setCollectTab("record")}
+                className={`inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] ${
+                  collectTab === "record"
+                    ? "bg-background shadow-sm text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Camera className="size-3.5" />
+                Record
+              </button>
+            </div>
+
+            {/* Explore tab — automated UI Bridge exploration */}
+            <div className={`mt-3 ${collectTab !== "explore" ? "hidden" : ""}`}>
+              <ExplorationConfigPanel
+                config={exploration.config}
+                onConfigChange={exploration.updateConfig}
+                progress={exploration.progress}
+                isRunning={exploration.isRunning}
+                onStart={handleStartExploration}
+                onStop={handleStopExploration}
+                connections={connections}
+                connectionsLoading={connectionsLoading}
+                selectedConnectionId={selectedConnectionId}
+                onConnectionChange={setSelectedConnectionId}
+                hideRunnerSection
+              />
+            </div>
+
+            {/* Record tab — SDK snapshot-based recording */}
+            <div className={`mt-3 ${collectTab !== "record" ? "hidden" : ""}`}>
+              <Card>
+                <CardContent className="py-3 space-y-3">
+                  <p
+                    data-ui-id="sm-record-instructions"
+                    className="text-sm text-text-muted"
+                  >
+                    Capture snapshots from the connected SDK app. Navigate the
+                    app manually while recording to capture different UI states.
+                  </p>
+
+                  {/* Recording controls — both states in DOM */}
+                  <div className="flex items-center gap-3">
+                    <Button
+                      data-ui-id="sm-start-recording"
+                      onClick={() => sdk.startRecording()}
+                      variant="default"
+                      size="sm"
+                      className={sdk.isRecording ? "hidden" : ""}
+                    >
+                      <Circle className="size-3.5 mr-1.5 text-red-400" />
+                      Start Recording
+                    </Button>
+                    <Button
+                      onClick={handleStopRecording}
+                      variant="destructive"
+                      size="sm"
+                      className={sdk.isRecording ? "" : "hidden"}
+                    >
+                      <Square className="size-3.5 mr-1.5" />
+                      Stop Recording
+                    </Button>
+
+                    <Button
+                      data-ui-id="sm-capture-now"
+                      variant="outline"
+                      size="sm"
+                      onClick={sdk.captureNow}
+                      disabled={!sdk.isRecording && sdk.snapshots.length === 0}
+                    >
+                      <Camera className="size-3.5 mr-1.5" />
+                      Capture Now
+                    </Button>
+
+                    <div
+                      className={
+                        sdk.snapshots.length > 0 && !sdk.isRecording
+                          ? ""
+                          : "hidden"
+                      }
+                    >
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={sdk.resetRecording}
+                      >
+                        <RotateCcw className="size-3.5 mr-1.5" />
+                        Reset
+                      </Button>
+                    </div>
                   </div>
 
-                  {/* Save form */}
-                  <div className="border-t border-border-primary pt-4 space-y-3">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="config-name">Configuration Name</Label>
-                      <Input
-                        id="config-name"
-                        placeholder="e.g., My App States"
-                        value={discovery.configName}
-                        onChange={(e) =>
-                          discovery.setConfigName(e.target.value)
-                        }
-                      />
-                    </div>
+                  {/* Recording status */}
+                  <div
+                    className={
+                      sdk.isRecording || sdk.snapshots.length > 0
+                        ? "flex items-center gap-4"
+                        : "hidden"
+                    }
+                  >
+                    <Badge
+                      variant={sdk.isRecording ? "destructive" : "secondary"}
+                    >
+                      {sdk.isRecording && (
+                        <span className="size-2 rounded-full bg-red-400 mr-1.5 animate-pulse" />
+                      )}
+                      {sdk.snapshots.length} snapshots
+                    </Badge>
+                    {sdk.snapshots.length > 0 && (
+                      <span className="text-xs text-text-muted">
+                        {sdk.snapshots.at(-1)!.elements.length} elements in last
+                        snapshot
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Use snapshots button — shown when not recording and snapshots exist */}
+                  <div
+                    className={
+                      !sdk.isRecording && sdk.snapshots.length > 0
+                        ? ""
+                        : "hidden"
+                    }
+                  >
                     <Button
-                      onClick={handleSave}
-                      disabled={
-                        discovery.isSaving || !discovery.configName.trim()
-                      }
+                      onClick={handleUseRecordedSnapshots}
                       className="w-full"
                     >
-                      {discovery.isSaving ? (
-                        <Loader2 className="size-4 mr-2 animate-spin" />
-                      ) : (
-                        <Save className="size-4 mr-2" />
-                      )}
-                      Save to Project
+                      <Sparkles className="size-4 mr-2" />
+                      Use {sdk.snapshots.length} Snapshots for Discovery
                     </Button>
                   </div>
                 </CardContent>
               </Card>
-            )}
-          </>
-        )}
+            </div>
+          </div>
+        </div>
+
+        {/* Phase 2: Discovery Results — hidden when no renders */}
+        <div className={hasRenders ? "space-y-4" : "hidden"}>
+          {/* Render summary */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Layers className="size-4" />
+                  Render Logs Collected
+                </CardTitle>
+                <Button
+                  data-ui-id="sm-start-over"
+                  variant="ghost"
+                  size="sm"
+                  onClick={discovery.reset}
+                >
+                  <RotateCcw className="size-3.5 mr-1.5" />
+                  Start Over
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-4">
+                <Badge
+                  data-ui-id="sm-render-log-count"
+                  variant="secondary"
+                  className="text-sm"
+                >
+                  <Hash className="size-3 mr-1" />
+                  {discovery.renders?.length ?? 0} render logs
+                </Badge>
+                <Badge variant="outline" className="text-sm capitalize">
+                  via {discovery.renderSource}
+                </Badge>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Discover States — hidden when result exists */}
+          <Card className={hasDiscoveryResult ? "hidden" : ""}>
+            <CardContent className="py-6 flex flex-col items-center gap-4">
+              <p className="text-sm text-text-secondary">
+                Run state discovery on the collected render logs to identify UI
+                states.
+              </p>
+              <Button
+                data-ui-id="sm-discover-states"
+                onClick={discovery.runDiscovery}
+                disabled={discovery.isDiscovering}
+                size="lg"
+              >
+                {discovery.isDiscovering ? (
+                  <Loader2 className="size-4 mr-2 animate-spin" />
+                ) : (
+                  <Sparkles className="size-4 mr-2" />
+                )}
+                Discover States
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Discovery Results + Save — hidden when no result */}
+          <Card className={hasDiscoveryResult ? "" : "hidden"}>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <CheckCircle2 className="size-4 text-green-500" />
+                Discovery Complete
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center gap-4">
+                <Badge variant="secondary">
+                  {discovery.discoveryResult?.states.length ?? 0} states
+                </Badge>
+                <Badge variant="secondary">
+                  {discovery.discoveryResult?.unique_element_count ?? 0}{" "}
+                  elements
+                </Badge>
+                <Badge variant="outline">
+                  {discovery.discoveryResult?.render_count ?? 0} renders
+                </Badge>
+                {discovery.discoveryResult?.strategy_used && (
+                  <Badge variant="outline" className="capitalize">
+                    {discovery.discoveryResult.strategy_used} strategy
+                  </Badge>
+                )}
+              </div>
+
+              {/* State preview */}
+              <div className="border border-border-primary rounded-md p-3 space-y-1.5 max-h-40 overflow-y-auto">
+                {(discovery.discoveryResult?.states ?? []).map((state) => (
+                  <div
+                    key={state.id}
+                    className="flex items-center justify-between text-sm"
+                  >
+                    <span className="text-text-primary">{state.name}</span>
+                    <span className="text-text-muted">
+                      {(state.confidence * 100).toFixed(0)}% confidence
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Save form */}
+              <div className="border-t border-border-primary pt-4 space-y-3">
+                <div className="space-y-1.5">
+                  <Label
+                    data-ui-id="sm-config-name-label"
+                    htmlFor="config-name"
+                  >
+                    Configuration Name
+                  </Label>
+                  <Input
+                    id="config-name"
+                    placeholder="e.g., My App States"
+                    value={discovery.configName}
+                    onChange={(e) => discovery.setConfigName(e.target.value)}
+                  />
+                </div>
+                <Button
+                  data-ui-id="sm-save-to-project"
+                  onClick={handleSave}
+                  disabled={discovery.isSaving || !discovery.configName.trim()}
+                  className="w-full"
+                >
+                  {discovery.isSaving ? (
+                    <Loader2 className="size-4 mr-2 animate-spin" />
+                  ) : (
+                    <Save className="size-4 mr-2" />
+                  )}
+                  Save to Project
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );

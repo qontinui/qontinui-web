@@ -57,6 +57,8 @@ export function AdvancedOptionsSection({
   setIncludeDesignGuidance,
   discoveryMode,
   setDiscoveryMode,
+  verificationDepth,
+  setVerificationDepth,
   modelsForProvider,
   generationModelOverrides,
   setGenerationModelOverrides,
@@ -246,6 +248,66 @@ export function AdvancedOptionsSection({
             <p className="text-[11px] text-zinc-500">
               Scans your system for context before generating.
             </p>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-zinc-400 flex items-center gap-1">
+              Verification Depth
+              <TooltipProvider delayDuration={200}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="w-3 h-3 text-zinc-500 cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-xs space-y-2 p-3">
+                    <p className="font-medium text-xs">
+                      Controls verification step generation
+                    </p>
+                    <div className="text-xs space-y-1 pt-1 border-t border-border">
+                      <p>
+                        <span className="text-zinc-300 font-medium">Smoke</span>{" "}
+                        — Minimal build/render checks
+                      </p>
+                      <p>
+                        <span className="text-zinc-300 font-medium">
+                          Standard
+                        </span>{" "}
+                        — Spec-driven verification
+                      </p>
+                      <p>
+                        <span className="text-zinc-300 font-medium">
+                          Thorough
+                        </span>{" "}
+                        — Standard + anomaly detection + high-severity known
+                        issues
+                      </p>
+                      <p>
+                        <span className="text-zinc-300 font-medium">
+                          Regression
+                        </span>{" "}
+                        — Standard + all known issues as regression checks
+                      </p>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </Label>
+            <select
+              value={verificationDepth}
+              onChange={(e) =>
+                setVerificationDepth(
+                  e.target.value as
+                    | "smoke"
+                    | "standard"
+                    | "thorough"
+                    | "regression"
+                )
+              }
+              className="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm h-8 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="smoke">Smoke</option>
+              <option value="standard">Standard</option>
+              <option value="thorough">Thorough</option>
+              <option value="regression">Regression</option>
+            </select>
           </div>
           <AdvancedCheckboxOptions
             autoIncludeContexts={autoIncludeContexts}

@@ -26,6 +26,7 @@ from app.api.v1.endpoints import (
     collaboration_ws,
     conflicts,
     custom_functions,
+    dev_dashboard,
     discoveries,
     element_annotations,
     error_monitor,
@@ -40,6 +41,7 @@ from app.api.v1.endpoints import (
     images,
     integration_testing,
     issues,
+    known_issues,
     library,
     notifications,
     organizations,
@@ -148,6 +150,10 @@ api_router.include_router(
 )
 api_router.include_router(videos.router, prefix="/videos", tags=["videos"])
 api_router.include_router(runners.router, prefix="/runners", tags=["runners"])
+# Dev dashboard — fleet registry and aggregation (unauthenticated, dev-only)
+api_router.include_router(
+    dev_dashboard.router, prefix="/dev-dashboard", tags=["dev-dashboard"]
+)
 api_router.include_router(
     runner_devices.router, prefix="/runner-devices", tags=["runner-devices"]
 )
@@ -252,6 +258,10 @@ api_router.include_router(library.router, prefix="/library", tags=["library"])
 # Error monitor entries
 api_router.include_router(
     error_monitor.router, prefix="/error-monitor", tags=["error-monitor"]
+)
+# Known issues (verified/discovered issues tracked across executions)
+api_router.include_router(
+    known_issues.router, prefix="/known-issues", tags=["known-issues"]
 )
 # Screenshot proxy (serves verification screenshots from runner's .dev-logs)
 api_router.include_router(
