@@ -70,9 +70,9 @@ export interface GeneratorSpecMetadata {
 }
 
 // Category display labels
-import type { SpecCategory, SpecSeverity } from "@qontinui/ui-bridge/specs";
+import type { SpecSeverity } from "@qontinui/ui-bridge/specs";
 
-export const CATEGORY_LABELS: Record<SpecCategory, string> = {
+export const CATEGORY_LABELS: Record<string, string> = {
   "element-presence": "Element Presence",
   accessibility: "Accessibility",
   "form-validation": "Form Validation",
@@ -80,6 +80,9 @@ export const CATEGORY_LABELS: Record<SpecCategory, string> = {
   "modal-dialog": "Modal / Dialog",
   navigation: "Navigation",
   "cross-page-consistency": "Cross-Page Consistency",
+  semantic: "Semantic",
+  design: "Design",
+  layout: "Layout",
   custom: "Custom",
 };
 
