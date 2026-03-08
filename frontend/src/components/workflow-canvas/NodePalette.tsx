@@ -146,7 +146,6 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
           className="node-palette__expand-btn"
           onClick={() => setIsCollapsed(false)}
           title="Expand palette"
-          data-ui-id="canvas-palette-expand-btn"
         >
           <Maximize2 className="h-5 w-5" />
         </button>
@@ -185,7 +184,6 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
               )}
               onClick={() => setShowSearchPanel(!showSearchPanel)}
               title="Search nodes (Ctrl+K)"
-              data-ui-id="canvas-palette-search-btn"
             >
               <Search className="h-4 w-4" />
             </button>
@@ -195,7 +193,6 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
               className="node-palette__header-btn"
               onClick={() => setIsCollapsed(true)}
               title="Collapse palette"
-              data-ui-id="canvas-palette-collapse-btn"
             >
               <Minimize2 className="h-4 w-4" />
             </button>
@@ -300,14 +297,12 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
             <button
               className="node-palette__control-btn"
               onClick={() => toggleAllCategories(true)}
-              data-ui-id="canvas-palette-expandall-btn"
             >
               Expand All
             </button>
             <button
               className="node-palette__control-btn"
               onClick={() => toggleAllCategories(false)}
-              data-ui-id="canvas-palette-collapseall-btn"
             >
               Collapse All
             </button>
@@ -324,7 +319,6 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
                   className="node-palette__category-header"
                   onClick={() => toggleCategory(category.id)}
                   style={{ borderLeftColor: category.color }}
-                  data-ui-id={`canvas-palette-category-${category.id}-btn`}
                 >
                   <div className="node-palette__category-icon-wrapper">
                     <CategoryIcon

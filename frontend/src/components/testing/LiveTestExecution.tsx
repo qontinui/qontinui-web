@@ -152,7 +152,7 @@ export function LiveTestExecution({
   }
 
   return (
-    <div className="space-y-4" data-ui-id="testing-live-execution">
+    <div className="space-y-4">
       {/* Header Card */}
       <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardHeader>

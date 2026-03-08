@@ -34,30 +34,15 @@ export function SettingsTab() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={exportSettings}
-            data-ui-id="settings-export-btn"
-          >
+          <Button variant="outline" size="sm" onClick={exportSettings}>
             <Download className="w-4 h-4 mr-2" />
             Export
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={resetSettings}
-            data-ui-id="settings-reset-btn"
-          >
+          <Button variant="outline" size="sm" onClick={resetSettings}>
             <RotateCcw className="w-4 h-4 mr-2" />
             Reset
           </Button>
-          <Button
-            size="sm"
-            onClick={saveSettings}
-            disabled={loading}
-            data-ui-id="settings-save-btn"
-          >
+          <Button size="sm" onClick={saveSettings} disabled={loading}>
             <Save className="w-4 h-4 mr-2" />
             Save
           </Button>

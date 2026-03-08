@@ -50,10 +50,7 @@ function CoveragePageContent() {
 
   return (
     <RequireProject pageName="Test Coverage">
-      <div
-        className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden"
-        data-ui-id="qa-coverage-page"
-      >
+      <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
         <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
           <h1 className="text-lg font-semibold text-foreground">
             Test Coverage
@@ -63,7 +60,7 @@ function CoveragePageContent() {
               variant="outline"
               size="sm"
               onClick={() => router.push("/qa-dashboard")}
-              data-ui-id="qa-coverage-runs-btn"
+              data-testid="qa-coverage-runs-btn"
             >
               <BarChart3 className="w-4 h-4 mr-2" />
               Test Runs
@@ -72,7 +69,7 @@ function CoveragePageContent() {
               variant="outline"
               size="sm"
               onClick={() => router.push("/qa-dashboard/deficiencies")}
-              data-ui-id="qa-coverage-deficiencies-btn"
+              data-testid="qa-coverage-deficiencies-btn"
             >
               <AlertTriangle className="w-4 h-4 mr-2" />
               Deficiencies

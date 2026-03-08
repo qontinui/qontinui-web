@@ -79,7 +79,6 @@ export function CreateProjectDialog({
         <form
           onSubmit={handleSubmit}
           data-awas-action="create_project"
-          data-ui-id="create-project-form"
           data-awas-trigger="submit"
         >
           <div className="space-y-4 py-4">
@@ -95,7 +94,6 @@ export function CreateProjectDialog({
                 placeholder="My Automation Project"
                 className="bg-surface-canvas border-border-default text-white placeholder:text-text-muted focus:border-brand-primary"
                 disabled={isLoading}
-                data-ui-id="project-name-input"
                 data-awas-param-name={name}
               />
               {error && <p className="text-sm text-red-400">{error}</p>}
@@ -113,7 +111,6 @@ export function CreateProjectDialog({
                 placeholder="What does this automation do?"
                 className="bg-surface-canvas border-border-default text-white placeholder:text-text-muted focus:border-brand-primary"
                 disabled={isLoading}
-                data-ui-id="project-description-input"
                 data-awas-param-description={description}
               />
             </div>
@@ -134,7 +131,6 @@ export function CreateProjectDialog({
               disabled={isLoading || !name.trim()}
               className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
               data-awas-action="create_project"
-              data-ui-id="submit-create-project"
               data-awas-trigger="click"
             >
               {isLoading ? (

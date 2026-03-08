@@ -86,7 +86,6 @@ export function EditorToolbar({
             onClick={onRun}
             size="sm"
             data-tutorial-id="run-workflow"
-            data-ui-id="automation-toolbar-run-btn"
             style={{
               backgroundColor: `${accentColor}22`,
               borderColor: `${accentColor}44`,
@@ -116,7 +115,6 @@ export function EditorToolbar({
             variant="ghost"
             className="text-text-muted hover:text-white hover:bg-surface-raised"
             title="Verify project configuration"
-            data-ui-id="automation-toolbar-verify-btn"
           >
             <ClipboardCheck className="w-4 h-4 mr-1" />
             <span className="hidden sm:inline">Verify</span>
@@ -130,7 +128,6 @@ export function EditorToolbar({
             variant="ghost"
             className="text-text-muted hover:text-white hover:bg-surface-raised"
             title="Export entire project for qontinui-runner"
-            data-ui-id="automation-toolbar-exportproject-btn"
           >
             <FolderDown className="w-4 h-4 mr-1" />
             <span className="hidden sm:inline">Export</span>
@@ -145,17 +142,13 @@ export function EditorToolbar({
                 size="sm"
                 variant="ghost"
                 className="text-text-muted hover:text-white hover:bg-surface-raised"
-                data-ui-id="automation-toolbar-more-btn"
               >
                 <MoreHorizontal className="w-4 h-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
               {onShare && (
-                <DropdownMenuItem
-                  onClick={onShare}
-                  data-ui-id="automation-toolbar-share-btn"
-                >
+                <DropdownMenuItem onClick={onShare}>
                   <Share2 className="w-4 h-4 mr-2" />
                   Share
                 </DropdownMenuItem>
@@ -164,20 +157,14 @@ export function EditorToolbar({
               {onShare && <DropdownMenuSeparator />}
 
               {onExport && (
-                <DropdownMenuItem
-                  onClick={onExport}
-                  data-ui-id="automation-toolbar-export-btn"
-                >
+                <DropdownMenuItem onClick={onExport}>
                   <Download className="w-4 h-4 mr-2" />
                   Export Workflow
                 </DropdownMenuItem>
               )}
 
               {onImport && (
-                <DropdownMenuItem
-                  onClick={onImport}
-                  data-ui-id="automation-toolbar-import-btn"
-                >
+                <DropdownMenuItem onClick={onImport}>
                   <Upload className="w-4 h-4 mr-2" />
                   Import Workflow
                 </DropdownMenuItem>
@@ -186,10 +173,7 @@ export function EditorToolbar({
               {(onExport || onImport) && <DropdownMenuSeparator />}
 
               {onDuplicate && (
-                <DropdownMenuItem
-                  onClick={onDuplicate}
-                  data-ui-id="automation-toolbar-duplicate-btn"
-                >
+                <DropdownMenuItem onClick={onDuplicate}>
                   <Copy className="w-4 h-4 mr-2" />
                   Duplicate
                 </DropdownMenuItem>
@@ -199,7 +183,6 @@ export function EditorToolbar({
                 <DropdownMenuItem
                   onClick={onDelete}
                   className="text-red-400 focus:text-red-300"
-                  data-ui-id="automation-toolbar-delete-btn"
                 >
                   <Trash2 className="w-4 h-4 mr-2" />
                   Delete

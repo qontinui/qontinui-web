@@ -11,7 +11,8 @@ import { ProfileForm } from "@/components/profile/profile-form";
 import { AvatarUpload } from "@/components/profile/avatar-upload";
 import { StorageUsageCard } from "@/components/profile/storage-usage-card";
 import { ActivityFeed } from "@/components/profile/activity-feed";
-import { Crown, Shield } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Crown, Shield, ArrowLeft, Cable } from "lucide-react";
 import { toast } from "sonner";
 import type {
   StorageUsage,
@@ -95,7 +96,27 @@ export default function ProfilePage() {
     <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
-        <h1 className="text-lg font-semibold">Profile</h1>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => router.push("/build/workflows")}
+            data-testid="profile-back-btn"
+          >
+            <ArrowLeft className="w-4 h-4 mr-1" />
+            Back to Dashboard
+          </Button>
+          <h1 className="text-lg font-semibold">My Profile</h1>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => router.push("/profile/runner")}
+          data-testid="profile-connect-runner-btn"
+        >
+          <Cable className="w-4 h-4 mr-1" />
+          Connect Runner
+        </Button>
       </header>
 
       {/* Main Content */}
@@ -104,7 +125,7 @@ export default function ProfilePage() {
         <div
           className="mb-8"
           data-awas-action="get_current_user"
-          data-ui-id="user-profile-header"
+          data-testid="user-profile-header"
         >
           <div className="flex items-center justify-between mb-2">
             <div>

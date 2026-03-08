@@ -36,7 +36,6 @@ export function MockSettingsCard({
                 parseFloat(e.target.value)
               )
             }
-            data-ui-id="settings-mock-click-duration-input"
           />
         </div>
         <div className="space-y-2">
@@ -49,7 +48,6 @@ export function MockSettingsCard({
             onChange={(e) =>
               updateSetting("mock", "type_duration", parseFloat(e.target.value))
             }
-            data-ui-id="settings-mock-type-duration-input"
           />
         </div>
         <div className="space-y-2">
@@ -62,7 +60,6 @@ export function MockSettingsCard({
             onChange={(e) =>
               updateSetting("mock", "find_duration", parseFloat(e.target.value))
             }
-            data-ui-id="settings-mock-find-duration-input"
           />
         </div>
         <div className="space-y-2">
@@ -75,7 +72,6 @@ export function MockSettingsCard({
             onChange={(e) =>
               updateSetting("mock", "drag_duration", parseFloat(e.target.value))
             }
-            data-ui-id="settings-mock-drag-duration-input"
           />
         </div>
       </CardContent>

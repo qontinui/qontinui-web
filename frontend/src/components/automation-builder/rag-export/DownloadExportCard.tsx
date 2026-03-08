@@ -38,7 +38,6 @@ export function DownloadExportCard({
           disabled={isExporting}
           variant="outline"
           className="w-full border-border-default"
-          data-ui-id="automation-rag-download-btn"
         >
           {isExporting ? (
             <>

@@ -91,7 +91,6 @@ export function SourceSelectionCard({
         <div className="space-y-2">
           <Label className="text-sm text-text-muted">Screenshot Path</Label>
           <Input
-            data-ui-id="extraction-vision-screenshot-path-input"
             value={config.screenshotPath || ""}
             onChange={(e) => updateConfig({ screenshotPath: e.target.value })}
             placeholder="C:\path\to\screenshot.png"
@@ -104,7 +103,6 @@ export function SourceSelectionCard({
         <div className="space-y-2">
           <Label className="text-sm text-text-muted">Window Title</Label>
           <Input
-            data-ui-id="extraction-vision-window-title-input"
             value={config.windowTitle || ""}
             onChange={(e) => updateConfig({ windowTitle: e.target.value })}
             placeholder="e.g., Notepad, Calculator"
@@ -118,7 +116,6 @@ export function SourceSelectionCard({
           <Label className="text-sm text-text-muted">Monitor Index</Label>
           <Input
             type="number"
-            data-ui-id="extraction-vision-monitor-index-input"
             value={config.monitorIndex ?? 0}
             onChange={(e) =>
               updateConfig({ monitorIndex: parseInt(e.target.value) || 0 })

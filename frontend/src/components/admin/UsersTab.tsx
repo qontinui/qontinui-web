@@ -148,7 +148,7 @@ export default function UsersTab() {
   }
 
   return (
-    <div className="space-y-6" data-ui-id="admin-users-tab">
+    <div className="space-y-6">
       {/* Filters */}
       <Card className="bg-card border-border">
         <CardHeader>
@@ -166,14 +166,10 @@ export default function UsersTab() {
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
-                data-ui-id="admin-users-search-input"
               />
             </div>
             <Select value={tierFilter} onValueChange={setTierFilter}>
-              <SelectTrigger
-                className="w-full md:w-[180px]"
-                data-ui-id="admin-users-tier-select"
-              >
+              <SelectTrigger className="w-full md:w-[180px]">
                 <SelectValue placeholder="Subscription Tier" />
               </SelectTrigger>
               <SelectContent>
@@ -184,10 +180,7 @@ export default function UsersTab() {
               </SelectContent>
             </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger
-                className="w-full md:w-[180px]"
-                data-ui-id="admin-users-status-select"
-              >
+              <SelectTrigger className="w-full md:w-[180px]">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
@@ -206,7 +199,7 @@ export default function UsersTab() {
       </Card>
 
       {/* Users List */}
-      <Card className="bg-card border-border" data-ui-id="admin-users-list">
+      <Card className="bg-card border-border">
         <CardContent className="p-0">
           <div className="divide-y divide-border">
             {filteredUsers.map((user) => (
@@ -214,7 +207,6 @@ export default function UsersTab() {
                 key={user.id}
                 className="p-4 hover:bg-muted/50 transition-colors cursor-pointer flex items-center gap-4"
                 onClick={() => setSelectedUser(user)}
-                data-ui-id={`admin-users-item-${user.id}`}
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
@@ -335,11 +327,7 @@ export default function UsersTab() {
                 </div>
               )}
               <div className="flex gap-2 mt-4">
-                <Button
-                  variant="outline"
-                  onClick={() => setSelectedUser(null)}
-                  data-ui-id="admin-users-close-btn"
-                >
+                <Button variant="outline" onClick={() => setSelectedUser(null)}>
                   Close
                 </Button>
                 <Button
@@ -349,7 +337,6 @@ export default function UsersTab() {
                   }
                   disabled={isDeleting}
                   className="ml-auto"
-                  data-ui-id="admin-users-delete-btn"
                 >
                   <Trash2 className="h-4 w-4 mr-2" />
                   {isDeleting ? "Deleting..." : "Delete User"}

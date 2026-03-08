@@ -5,8 +5,10 @@ export const dynamic = "force-dynamic";
 import { useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
+import { Button } from "@/components/ui/button";
 import { DeficiencyList } from "@/components/testing/DeficiencyList";
 import { RequireProject } from "@/components/require-project";
+import { ArrowLeft } from "lucide-react";
 
 function QADeficienciesPageContent() {
   const { user, loading: authLoading } = useAuth();
@@ -35,14 +37,22 @@ function QADeficienciesPageContent() {
 
   return (
     <RequireProject pageName="Deficiencies">
-      <div
-        className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden"
-        data-ui-id="qa-deficiencies-page"
-      >
+      <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
         <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
-          <h1 className="text-lg font-semibold text-foreground">
-            Deficiency Management
-          </h1>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push("/qa-dashboard")}
+              data-testid="qa-deficiencies-page-back-btn"
+            >
+              <ArrowLeft className="w-4 h-4 mr-1" />
+              Back
+            </Button>
+            <h1 className="text-lg font-semibold text-foreground">
+              Deficiency Management
+            </h1>
+          </div>
         </header>
 
         <main className="flex-1 overflow-y-auto p-6">

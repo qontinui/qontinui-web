@@ -176,7 +176,7 @@ export function DatasetImportDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-lg" data-ui-id="dialog-dataset-import">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Import Training Dataset</DialogTitle>
           <DialogDescription>
@@ -211,7 +211,6 @@ export function DatasetImportDialog({
               accept=".zip"
               className="hidden"
               onChange={handleFileSelect}
-              data-ui-id="dialog-dataset-import-file-input"
             />
           </div>
         )}
@@ -239,7 +238,6 @@ export function DatasetImportDialog({
                 value={datasetName}
                 onChange={(e) => setDatasetName(e.target.value)}
                 placeholder="e.g., Login Flow Training Data"
-                data-ui-id="dialog-dataset-import-name-input"
               />
             </div>
 
@@ -251,7 +249,6 @@ export function DatasetImportDialog({
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Optional description of this dataset..."
                 rows={3}
-                data-ui-id="dialog-dataset-import-description-input"
               />
             </div>
           </div>
@@ -379,29 +376,17 @@ export function DatasetImportDialog({
 
         <DialogFooter>
           {step === "select" && (
-            <Button
-              variant="outline"
-              onClick={handleClose}
-              data-ui-id="dialog-dataset-import-cancel-btn"
-            >
+            <Button variant="outline" onClick={handleClose}>
               Cancel
             </Button>
           )}
 
           {step === "configure" && (
             <>
-              <Button
-                variant="outline"
-                onClick={handleReset}
-                data-ui-id="dialog-dataset-import-back-btn"
-              >
+              <Button variant="outline" onClick={handleReset}>
                 Back
               </Button>
-              <Button
-                onClick={handleImport}
-                disabled={!datasetName.trim()}
-                data-ui-id="dialog-dataset-import-confirm-btn"
-              >
+              <Button onClick={handleImport} disabled={!datasetName.trim()}>
                 <Upload className="mr-2 h-4 w-4" />
                 Import Dataset
               </Button>
@@ -416,10 +401,7 @@ export function DatasetImportDialog({
           )}
 
           {step === "complete" && (
-            <Button
-              onClick={handleClose}
-              data-ui-id="dialog-dataset-import-done-btn"
-            >
+            <Button onClick={handleClose}>
               <CheckCircle2 className="mr-2 h-4 w-4" />
               Done
             </Button>
@@ -427,19 +409,10 @@ export function DatasetImportDialog({
 
           {step === "error" && (
             <>
-              <Button
-                variant="outline"
-                onClick={handleReset}
-                data-ui-id="dialog-dataset-import-retry-btn"
-              >
+              <Button variant="outline" onClick={handleReset}>
                 Try Again
               </Button>
-              <Button
-                onClick={handleClose}
-                data-ui-id="dialog-dataset-import-close-btn"
-              >
-                Close
-              </Button>
+              <Button onClick={handleClose}>Close</Button>
             </>
           )}
         </DialogFooter>

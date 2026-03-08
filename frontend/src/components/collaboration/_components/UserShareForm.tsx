@@ -39,7 +39,6 @@ export function UserShareForm({
               onSubmit();
             }
           }}
-          data-ui-id="dialog-project-sharing-email-input"
         />
       </div>
       <div className="flex gap-2">
@@ -48,14 +47,8 @@ export function UserShareForm({
           onValueChange={onPermissionChange}
           disabled={loading}
           triggerClassName="w-[180px]"
-          data-ui-id="dialog-project-sharing-user-permission-select"
         />
-        <Button
-          onClick={onSubmit}
-          disabled={loading}
-          className="flex-1"
-          data-ui-id="dialog-project-sharing-share-user-btn"
-        >
+        <Button onClick={onSubmit} disabled={loading} className="flex-1">
           {loading ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           ) : (

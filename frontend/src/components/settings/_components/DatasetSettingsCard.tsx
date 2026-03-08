@@ -38,7 +38,6 @@ export function DatasetSettingsCard({
             onCheckedChange={(checked) =>
               updateSetting("dataset", "collect", checked)
             }
-            data-ui-id="settings-dataset-collect-toggle"
           />
         </div>
         <div className="space-y-2">
@@ -47,7 +46,6 @@ export function DatasetSettingsCard({
             id="dataset_path"
             value={settings.dataset.path}
             onChange={(e) => updateSetting("dataset", "path", e.target.value)}
-            data-ui-id="settings-dataset-path-input"
           />
         </div>
         <div className="flex items-center justify-between">
@@ -58,7 +56,6 @@ export function DatasetSettingsCard({
             onCheckedChange={(checked) =>
               updateSetting("dataset", "include_screenshots", checked)
             }
-            data-ui-id="settings-dataset-include-screenshots-toggle"
           />
         </div>
         <div className="flex items-center justify-between">
@@ -69,7 +66,6 @@ export function DatasetSettingsCard({
             onCheckedChange={(checked) =>
               updateSetting("dataset", "include_actions", checked)
             }
-            data-ui-id="settings-dataset-include-actions-toggle"
           />
         </div>
         <div className="space-y-2">
@@ -78,10 +74,7 @@ export function DatasetSettingsCard({
             value={settings.dataset.format}
             onValueChange={(value) => updateSetting("dataset", "format", value)}
           >
-            <SelectTrigger
-              id="dataset_format"
-              data-ui-id="settings-dataset-format-select"
-            >
+            <SelectTrigger id="dataset_format">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

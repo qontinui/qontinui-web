@@ -129,7 +129,6 @@ export function SequentialEditor({
             <Button
               size="sm"
               data-tutorial-id="add-action-button"
-              data-ui-id="automation-sequential-addaction-btn"
               className="bg-brand-secondary hover:bg-brand-secondary/80 text-white"
             >
               <Plus className="w-4 h-4 mr-2" />

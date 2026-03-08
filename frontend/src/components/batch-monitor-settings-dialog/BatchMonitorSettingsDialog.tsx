@@ -49,10 +49,7 @@ export function BatchMonitorSettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="sm:max-w-[700px] bg-surface-canvas border-border-subtle"
-        data-ui-id="dialog-batch-monitor-settings"
-      >
+      <DialogContent className="sm:max-w-[700px] bg-surface-canvas border-border-subtle">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Monitor className="w-5 h-5 text-brand-primary" />
@@ -104,7 +101,6 @@ export function BatchMonitorSettingsDialog({
             variant="outline"
             onClick={() => onOpenChange(false)}
             className="border-border-default"
-            data-ui-id="dialog-batch-monitor-settings-cancel-btn"
           >
             Cancel
           </Button>
@@ -112,7 +108,6 @@ export function BatchMonitorSettingsDialog({
             onClick={handleApply}
             disabled={modifiedStates.size === 0}
             className="bg-brand-primary hover:bg-brand-primary/80 text-black"
-            data-ui-id="dialog-batch-monitor-settings-confirm-btn"
           >
             Apply {modifiedStates.size} Change(s)
           </Button>

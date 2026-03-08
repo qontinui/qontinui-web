@@ -120,10 +120,7 @@ export function ComparisonReviewPanel({
   }
 
   return (
-    <div
-      className={cn("space-y-4", className)}
-      data-ui-id="testing-comparison-review-panel"
-    >
+    <div className={cn("space-y-4", className)}>
       {/* Summary */}
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-medium">
@@ -133,13 +130,9 @@ export function ComparisonReviewPanel({
       </div>
 
       {/* Comparison List */}
-      <div className="space-y-3" data-ui-id="testing-comparison-list">
+      <div className="space-y-3">
         {comparisons.map((comparison) => (
-          <Card
-            key={comparison.id}
-            className="overflow-hidden"
-            data-ui-id={`testing-comparison-item-${comparison.id}`}
-          >
+          <Card key={comparison.id} className="overflow-hidden">
             <CardContent className="p-4">
               <div className="flex items-start gap-4">
                 {/* Thumbnail */}
@@ -206,7 +199,6 @@ export function ComparisonReviewPanel({
                       className="text-green-600 hover:text-green-700 hover:bg-green-50"
                       onClick={() => handleReview(comparison, "approved")}
                       disabled={submitting === comparison.id}
-                      data-ui-id="testing-comparison-approve-btn"
                     >
                       {submitting === comparison.id ? (
                         <Loader2 className="h-4 w-4 mr-1 animate-spin" />
@@ -221,7 +213,6 @@ export function ComparisonReviewPanel({
                       className="text-red-600 hover:text-red-700 hover:bg-red-50"
                       onClick={() => handleReview(comparison, "rejected")}
                       disabled={submitting === comparison.id}
-                      data-ui-id="testing-comparison-reject-btn"
                     >
                       <X className="h-4 w-4 mr-1" />
                       Reject
@@ -232,7 +223,6 @@ export function ComparisonReviewPanel({
                       className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                       onClick={() => handleReview(comparison, "new_baseline")}
                       disabled={submitting === comparison.id}
-                      data-ui-id="testing-comparison-baseline-btn"
                     >
                       <RefreshCw className="h-4 w-4 mr-1" />
                       New Baseline
@@ -241,7 +231,6 @@ export function ComparisonReviewPanel({
                       variant="ghost"
                       size="sm"
                       onClick={() => setSelectedComparison(comparison)}
-                      data-ui-id="testing-comparison-view-btn"
                     >
                       <Eye className="h-4 w-4 mr-1" />
                       View Diff
@@ -297,7 +286,6 @@ export function ComparisonReviewPanel({
                   value={reviewNotes}
                   onChange={(e) => setReviewNotes(e.target.value)}
                   rows={2}
-                  data-ui-id="testing-comparison-notes-input"
                 />
               </div>
 

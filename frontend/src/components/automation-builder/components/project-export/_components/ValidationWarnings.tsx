@@ -28,7 +28,6 @@ export function ValidationWarnings({
           onClick={onFixIssues}
           disabled={isFixing}
           className="border-yellow-700 text-yellow-500 hover:bg-yellow-950/50"
-          data-ui-id="automation-export-fix-btn"
         >
           {isFixing ? (
             <>

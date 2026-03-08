@@ -290,7 +290,6 @@ export function DiscoveryPanel({
                 </div>
 
                 <Button
-                  data-ui-id="sm-scan-button"
                   variant="outline"
                   size="sm"
                   className={`h-8 shrink-0 ${runnerUrl ? "" : "hidden"}`}
@@ -307,7 +306,6 @@ export function DiscoveryPanel({
               </div>
 
               <p
-                data-ui-id="sm-no-runners-message"
                 className={`text-xs text-text-muted ${
                   !connectionsLoading &&
                   !checkingLocalRunner &&
@@ -396,7 +394,6 @@ export function DiscoveryPanel({
                 </div>
 
                 <p
-                  data-ui-id="sm-click-scan-message"
                   className={`text-xs text-text-muted ${
                     !sdk.activeApp && sdk.apps.length === 0 && !sdk.isScanning
                       ? ""
@@ -413,7 +410,6 @@ export function DiscoveryPanel({
           <div className={hasActiveSDKApp ? "" : "hidden"}>
             <div className="inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground">
               <button
-                data-ui-id="sm-explore-tab"
                 onClick={() => setCollectTab("explore")}
                 className={`inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] ${
                   collectTab === "explore"
@@ -425,7 +421,6 @@ export function DiscoveryPanel({
                 Explore
               </button>
               <button
-                data-ui-id="sm-record-tab"
                 onClick={() => setCollectTab("record")}
                 className={`inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] ${
                   collectTab === "record"
@@ -459,10 +454,7 @@ export function DiscoveryPanel({
             <div className={`mt-3 ${collectTab !== "record" ? "hidden" : ""}`}>
               <Card>
                 <CardContent className="py-3 space-y-3">
-                  <p
-                    data-ui-id="sm-record-instructions"
-                    className="text-sm text-text-muted"
-                  >
+                  <p className="text-sm text-text-muted">
                     Capture snapshots from the connected SDK app. Navigate the
                     app manually while recording to capture different UI states.
                   </p>
@@ -470,7 +462,6 @@ export function DiscoveryPanel({
                   {/* Recording controls — both states in DOM */}
                   <div className="flex items-center gap-3">
                     <Button
-                      data-ui-id="sm-start-recording"
                       onClick={() => sdk.startRecording()}
                       variant="default"
                       size="sm"
@@ -490,7 +481,6 @@ export function DiscoveryPanel({
                     </Button>
 
                     <Button
-                      data-ui-id="sm-capture-now"
                       variant="outline"
                       size="sm"
                       onClick={sdk.captureNow}
@@ -574,12 +564,7 @@ export function DiscoveryPanel({
                   <Layers className="size-4" />
                   Render Logs Collected
                 </CardTitle>
-                <Button
-                  data-ui-id="sm-start-over"
-                  variant="ghost"
-                  size="sm"
-                  onClick={discovery.reset}
-                >
+                <Button variant="ghost" size="sm" onClick={discovery.reset}>
                   <RotateCcw className="size-3.5 mr-1.5" />
                   Start Over
                 </Button>
@@ -587,11 +572,7 @@ export function DiscoveryPanel({
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-4">
-                <Badge
-                  data-ui-id="sm-render-log-count"
-                  variant="secondary"
-                  className="text-sm"
-                >
+                <Badge variant="secondary" className="text-sm">
                   <Hash className="size-3 mr-1" />
                   {discovery.renders?.length ?? 0} render logs
                 </Badge>
@@ -610,7 +591,6 @@ export function DiscoveryPanel({
                 states.
               </p>
               <Button
-                data-ui-id="sm-discover-states"
                 onClick={discovery.runDiscovery}
                 disabled={discovery.isDiscovering}
                 size="lg"
@@ -670,12 +650,7 @@ export function DiscoveryPanel({
               {/* Save form */}
               <div className="border-t border-border-primary pt-4 space-y-3">
                 <div className="space-y-1.5">
-                  <Label
-                    data-ui-id="sm-config-name-label"
-                    htmlFor="config-name"
-                  >
-                    Configuration Name
-                  </Label>
+                  <Label htmlFor="config-name">Configuration Name</Label>
                   <Input
                     id="config-name"
                     placeholder="e.g., My App States"
@@ -684,7 +659,6 @@ export function DiscoveryPanel({
                   />
                 </div>
                 <Button
-                  data-ui-id="sm-save-to-project"
                   onClick={handleSave}
                   disabled={discovery.isSaving || !discovery.configName.trim()}
                   className="w-full"

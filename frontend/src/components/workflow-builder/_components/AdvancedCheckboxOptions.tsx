@@ -81,10 +81,10 @@ export function AdvancedCheckboxOptions({
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-xs p-3">
                 <p className="text-xs text-muted-foreground">
-                  Includes UI Bridge SDK integration instructions (data-ui-id
-                  attributes, useUIElement hooks, page spec files) in the
-                  builder prompt. Disable for projects that don&apos;t use the
-                  UI Bridge SDK.
+                  Includes UI Bridge SDK integration instructions
+                  (AutoRegisterProvider, useUIElement hooks, page spec files) in
+                  the builder prompt. Disable for projects that don&apos;t use
+                  the UI Bridge SDK.
                 </p>
               </TooltipContent>
             </Tooltip>

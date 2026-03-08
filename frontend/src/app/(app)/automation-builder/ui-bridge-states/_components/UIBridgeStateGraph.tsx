@@ -418,7 +418,6 @@ function UIBridgeStateGraphInner({
               }
               className="h-7 px-2 gap-1.5"
               title="Fit to view (F)"
-              data-ui-id="sm-graph-fit-button"
             >
               <Maximize className="size-3.5" />
               Fit to view
@@ -437,7 +436,6 @@ function UIBridgeStateGraphInner({
               size="sm"
               onClick={handleRelayout}
               title="Re-layout (L)"
-              data-ui-id="sm-graph-relayout-button"
             >
               <LayoutGrid className="size-3.5 mr-1.5" />
               Re-layout

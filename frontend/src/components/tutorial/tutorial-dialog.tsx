@@ -85,7 +85,6 @@ export function TutorialDialog() {
       <DialogContent
         className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col"
         showCloseButton={false}
-        data-ui-id="dialog-tutorial"
       >
         {/* Header with title and progress */}
         <DialogHeader className="border-b pb-4">
@@ -104,7 +103,6 @@ export function TutorialDialog() {
               onClick={closeTutorial}
               className="inline-flex items-center justify-center rounded-md p-2 text-text-muted hover:bg-surface-raised dark:text-text-muted dark:hover:bg-surface-raised transition-colors"
               aria-label="Close tutorial"
-              data-ui-id="dialog-tutorial-close-btn"
             >
               <X className="h-5 w-5" />
             </button>
@@ -141,12 +139,7 @@ export function TutorialDialog() {
         <DialogFooter className="border-t pt-4 flex justify-between gap-2">
           {/* Left buttons */}
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={closeTutorial}
-              className="gap-2"
-              data-ui-id="dialog-tutorial-skip-btn"
-            >
+            <Button variant="outline" onClick={closeTutorial} className="gap-2">
               Skip Tutorial
             </Button>
           </div>
@@ -158,7 +151,6 @@ export function TutorialDialog() {
               onClick={previousStep}
               disabled={isFirstStep}
               className="gap-2"
-              data-ui-id="dialog-tutorial-previous-btn"
             >
               <ChevronLeft className="h-4 w-4" />
               Previous
@@ -172,7 +164,6 @@ export function TutorialDialog() {
                 }
               }}
               className="gap-2 bg-gradient-to-r from-cyan-600 to-green-600 hover:from-cyan-700 hover:to-green-700"
-              data-ui-id="dialog-tutorial-next-btn"
             >
               {isLastStep ? (
                 <>

@@ -335,10 +335,8 @@ export function useUIBridgeTransport(
             throw new Error(`Element ${id} not found`);
           }
 
-          // Get the DOM element
-          const domElement = document.querySelector(
-            `[data-ui-id="${id}"]`
-          ) as HTMLElement | null;
+          // Get the DOM element from the bridge registry
+          const domElement = (element.element ?? null) as HTMLElement | null;
           if (!domElement) {
             throw new Error(`DOM element for ${id} not found`);
           }
@@ -423,9 +421,8 @@ export function useUIBridgeTransport(
 
         case "highlightElement": {
           const { id } = payload;
-          const domElement = document.querySelector(
-            `[data-ui-id="${id}"]`
-          ) as HTMLElement | null;
+          const domElement = (getElement(id as string)?.element ??
+            null) as HTMLElement | null;
           if (domElement) {
             const originalOutline = domElement.style.outline;
             const originalTransition = domElement.style.transition;
@@ -511,9 +508,8 @@ export function useUIBridgeTransport(
           }
 
           const targetElement = firstResult.element;
-          const domElement = document.querySelector(
-            `[data-ui-id="${targetElement.id}"]`
-          ) as HTMLElement | null;
+          const domElement = (getElement(targetElement.id)?.element ??
+            null) as HTMLElement | null;
 
           if (!domElement) {
             throw new Error(`DOM element not found for ${targetElement.id}`);

@@ -37,7 +37,6 @@ export function AnalysisSettingsCard({
                 parseInt(e.target.value)
               )
             }
-            data-ui-id="settings-analysis-kmeans-clusters-input"
           />
         </div>
         <div className="space-y-2">
@@ -53,7 +52,6 @@ export function AnalysisSettingsCard({
                 parseInt(e.target.value)
               )
             }
-            data-ui-id="settings-analysis-color-tolerance-input"
           />
         </div>
         <div className="space-y-2">
@@ -69,7 +67,6 @@ export function AnalysisSettingsCard({
                 parseInt(e.target.value)
               )
             }
-            data-ui-id="settings-analysis-min-contour-area-input"
           />
         </div>
         <div className="space-y-2">
@@ -85,7 +82,6 @@ export function AnalysisSettingsCard({
                 parseInt(e.target.value)
               )
             }
-            data-ui-id="settings-analysis-max-contour-area-input"
           />
         </div>
       </CardContent>

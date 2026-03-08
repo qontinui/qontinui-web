@@ -92,7 +92,6 @@ export function UITarsConfigPanel({
               </Label>
               <Textarea
                 id="urls"
-                data-ui-id="extraction-uitars-urls-input"
                 value={config.urls?.join("\n") || ""}
                 onChange={(e) =>
                   updateConfig({
@@ -113,7 +112,6 @@ export function UITarsConfigPanel({
               </Label>
               <Input
                 id="applicationName"
-                data-ui-id="extraction-uitars-app-name-input"
                 value={config.applicationName || ""}
                 onChange={(e) =>
                   updateConfig({ applicationName: e.target.value })
@@ -150,7 +148,6 @@ export function UITarsConfigPanel({
           </div>
 
           <Textarea
-            data-ui-id="extraction-uitars-goal-input"
             value={config.goal}
             onChange={(e) => updateConfig({ goal: e.target.value })}
             placeholder="Default: Explore and discover all clickable UI elements and states..."
@@ -183,7 +180,7 @@ export function UITarsConfigPanel({
                   updateConfig({ provider: value })
                 }
               >
-                <SelectTrigger data-ui-id="extraction-uitars-provider-select">
+                <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -219,7 +216,7 @@ export function UITarsConfigPanel({
                     updateConfig({ modelSize: value })
                   }
                 >
-                  <SelectTrigger data-ui-id="extraction-uitars-model-size-select">
+                  <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -241,7 +238,7 @@ export function UITarsConfigPanel({
                   }
                   disabled={config.provider === "cloud"}
                 >
-                  <SelectTrigger data-ui-id="extraction-uitars-quantization-select">
+                  <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -279,7 +276,6 @@ export function UITarsConfigPanel({
                     HuggingFace Endpoint
                   </Label>
                   <Input
-                    data-ui-id="extraction-uitars-hf-endpoint-input"
                     value={config.huggingfaceEndpoint || ""}
                     onChange={(e) =>
                       updateConfig({ huggingfaceEndpoint: e.target.value })
@@ -292,7 +288,6 @@ export function UITarsConfigPanel({
                   <Label className="text-sm text-text-muted">API Token</Label>
                   <Input
                     type="password"
-                    data-ui-id="extraction-uitars-hf-token-input"
                     value={config.huggingfaceApiToken || ""}
                     onChange={(e) =>
                       updateConfig({ huggingfaceApiToken: e.target.value })
@@ -311,7 +306,6 @@ export function UITarsConfigPanel({
                   vLLM Server URL
                 </Label>
                 <Input
-                  data-ui-id="extraction-uitars-vllm-url-input"
                   value={config.vllmServerUrl || ""}
                   onChange={(e) =>
                     updateConfig({ vllmServerUrl: e.target.value })
@@ -339,7 +333,6 @@ export function UITarsConfigPanel({
                 <Label className="text-sm text-text-muted">Max Steps</Label>
                 <Input
                   type="number"
-                  data-ui-id="extraction-uitars-max-steps-input"
                   value={config.maxSteps}
                   onChange={(e) =>
                     updateConfig({ maxSteps: parseInt(e.target.value) || 50 })
@@ -354,7 +347,6 @@ export function UITarsConfigPanel({
                 </Label>
                 <Input
                   type="number"
-                  data-ui-id="extraction-uitars-timeout-input"
                   value={config.timeoutSeconds}
                   onChange={(e) =>
                     updateConfig({
@@ -375,7 +367,6 @@ export function UITarsConfigPanel({
                 </p>
               </div>
               <Switch
-                data-ui-id="extraction-uitars-save-screenshots-toggle"
                 checked={config.saveScreenshots}
                 onCheckedChange={(checked) =>
                   updateConfig({ saveScreenshots: checked })

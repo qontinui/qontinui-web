@@ -13,7 +13,6 @@ interface PermissionSelectProps {
   disabled?: boolean;
   className?: string;
   triggerClassName?: string;
-  "data-ui-id"?: string;
   children?: React.ReactNode;
 }
 
@@ -22,7 +21,6 @@ export function PermissionSelect({
   onValueChange,
   disabled,
   triggerClassName,
-  "data-ui-id": dataUiId,
   children,
 }: PermissionSelectProps) {
   return (
@@ -31,7 +29,7 @@ export function PermissionSelect({
       onValueChange={(v) => onValueChange(v as PermissionLevel)}
       disabled={disabled}
     >
-      <SelectTrigger className={triggerClassName} data-ui-id={dataUiId}>
+      <SelectTrigger className={triggerClassName}>
         {children ?? <SelectValue />}
       </SelectTrigger>
       <SelectContent>

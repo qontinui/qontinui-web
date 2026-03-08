@@ -1,4 +1,5 @@
 import {
+  LayoutDashboard,
   Users,
   FolderOpen,
   BarChart3,
@@ -10,6 +11,7 @@ import {
 import type { Section } from "../_hooks/useAdminGuard";
 
 const SECTION_TABS = [
+  { key: "overview" as const, label: "Overview", icon: LayoutDashboard },
   { key: "users" as const, label: "Users", icon: Users },
   { key: "projects" as const, label: "Projects", icon: FolderOpen },
   { key: "analytics" as const, label: "Analytics", icon: BarChart3 },
@@ -33,10 +35,7 @@ export function SectionTabs({
   projectCount,
 }: SectionTabsProps) {
   return (
-    <div
-      className="flex items-center gap-1 px-6 py-2 border-b border-border shrink-0"
-      data-ui-id="admin-section-tabs"
-    >
+    <div className="flex items-center gap-1 px-6 py-2 border-b border-border shrink-0">
       {SECTION_TABS.map(({ key, label, icon: Icon }) => {
         let displayLabel = label;
         if (key === "users") displayLabel = `Users (${userCount})`;
@@ -51,7 +50,7 @@ export function SectionTabs({
                 ? "bg-primary text-primary-foreground font-medium"
                 : "text-muted-foreground hover:text-foreground hover:bg-muted"
             }`}
-            data-ui-id={`admin-section-${key}-btn`}
+            data-testid={`admin-page-${key}-tab`}
           >
             <Icon className="h-3.5 w-3.5" />
             {displayLabel}

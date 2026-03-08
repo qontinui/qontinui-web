@@ -76,7 +76,6 @@ export function SpecGroupList({
           ([pageUrl, { groups, appName }]) => {
             const checkState = getPageCheckState(pageUrl);
             const isCollapsed = collapsedPages.has(pageUrl);
-            const slugId = pageUrl.replace(/^\//, "").replace(/\//g, "-");
             return (
               <div key={pageUrl} className="rounded border border-zinc-700/50">
                 {/* Page row */}
@@ -92,7 +91,6 @@ export function SpecGroupList({
                     )}
                   </button>
                   <Checkbox
-                    data-ui-id={`page-checkbox-${slugId}`}
                     checked={
                       checkState === "indeterminate"
                         ? "indeterminate"
@@ -124,13 +122,11 @@ export function SpecGroupList({
                     {groups.map((group) => (
                       <div
                         key={group.id}
-                        data-ui-id={`spec-group-${slugId}`}
                         data-ui-label={`${pageUrl}: ${(group.description || group.name).slice(0, 60)}`}
                         className="flex items-start gap-2 p-1 rounded hover:bg-zinc-700/30 cursor-pointer"
                         onClick={() => onToggleGroup(group.id)}
                       >
                         <Checkbox
-                          data-ui-id={`spec-checkbox-${slugId}`}
                           checked={selectedGroupIds.has(group.id)}
                           onCheckedChange={() => onToggleGroup(group.id)}
                           className="mt-0.5"

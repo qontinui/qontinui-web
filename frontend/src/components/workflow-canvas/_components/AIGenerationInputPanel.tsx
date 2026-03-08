@@ -56,7 +56,6 @@ export function AIGenerationInputPanel({
             placeholder="Example: Create a workflow that logs into Gmail by clicking the login button and typing my credentials..."
             className="w-full h-48 px-4 py-3 border border-border-default dark:border-border-default rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none bg-white dark:bg-surface-raised text-text-primary dark:text-white"
             disabled={state === "generating" || state === "refining"}
-            data-ui-id="dialog-ai-generation-description-input"
           />
           <div className="mt-2 text-xs text-text-muted dark:text-text-muted">
             {description.length} characters
@@ -157,7 +156,6 @@ export function AIGenerationInputPanel({
             state === "refining"
           }
           className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-surface-raised disabled:text-text-muted dark:disabled:bg-surface-raised text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
-          data-ui-id="dialog-ai-generation-generate-btn"
         >
           {state === "generating" ? (
             <>

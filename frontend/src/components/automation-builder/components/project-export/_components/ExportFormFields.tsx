@@ -26,7 +26,6 @@ export function ExportFormFields({
           onChange={(e) => onExportNameChange(e.target.value)}
           placeholder="Enter project name"
           className="bg-surface-canvas border-border-default"
-          data-ui-id="automation-export-name-input"
         />
       </div>
 
@@ -38,7 +37,6 @@ export function ExportFormFields({
           onChange={(e) => onDescriptionChange(e.target.value)}
           placeholder="Add a description for this export..."
           className="bg-surface-canvas border-border-default min-h-[80px]"
-          data-ui-id="automation-export-description-input"
         />
       </div>
     </>

@@ -25,7 +25,7 @@ export function UsersTable({ users, loading }: UsersTableProps) {
   }
 
   return (
-    <table className="w-full text-sm" data-ui-id="admin-users-table">
+    <table className="w-full text-sm">
       <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
         <tr className="text-left text-xs text-muted-foreground uppercase tracking-wider">
           <th className="px-6 py-2 font-medium">User</th>
@@ -38,11 +38,7 @@ export function UsersTable({ users, loading }: UsersTableProps) {
       </thead>
       <tbody className="divide-y divide-border">
         {users.map((user) => (
-          <tr
-            key={user.id}
-            className="hover:bg-muted/30 transition-colors"
-            data-ui-id={`admin-user-row-${user.username}`}
-          >
+          <tr key={user.id} className="hover:bg-muted/30 transition-colors">
             <td className="px-6 py-2.5">
               <div>
                 <span

@@ -21,7 +21,7 @@ const DownloadsSection = lazy(() => import("./DownloadsSection"));
 
 export default function AdminDashboard() {
   const { user, authLoading } = useAdminGuard();
-  const [activeSection, setActiveSection] = useState<Section>("users");
+  const [activeSection, setActiveSection] = useState<Section>("overview");
 
   const {
     data: stats,
@@ -58,10 +58,7 @@ export default function AdminDashboard() {
   };
 
   return (
-    <div
-      className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden"
-      data-ui-id="admin-page"
-    >
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
       <AdminHeader loading={loading} onRefresh={handleRefresh} />
       <MetricsStrip stats={stats} />
 
@@ -73,7 +70,8 @@ export default function AdminDashboard() {
           projectCount={projects.length}
         />
 
-        <div className="flex-1 overflow-y-auto" data-ui-id="admin-table-area">
+        <div className="flex-1 overflow-y-auto">
+          {activeSection === "overview" && <MetricsStrip stats={stats} />}
           {activeSection === "users" && (
             <UsersTable users={users} loading={usersLoading} />
           )}

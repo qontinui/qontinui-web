@@ -168,10 +168,7 @@ export function ClickActionProperties({
       <div className="space-y-2">
         <Label className="text-xs text-text-muted">Target</Label>
         <Select value={targetType} onValueChange={handleTargetTypeChange}>
-          <SelectTrigger
-            className="bg-transparent border-border-default"
-            data-ui-id="action-props-click-target-select"
-          >
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="bg-surface-raised border-border-default">
@@ -216,7 +213,6 @@ export function ClickActionProperties({
                 )
               }
               className="bg-transparent border-border-default"
-              data-ui-id="action-props-click-x-input"
             />
           </div>
           <div className="space-y-2">
@@ -231,7 +227,6 @@ export function ClickActionProperties({
                 )
               }
               className="bg-transparent border-border-default"
-              data-ui-id="action-props-click-y-input"
             />
           </div>
         </>
@@ -243,10 +238,7 @@ export function ClickActionProperties({
           value={action.config.mouseButton as string}
           onValueChange={(value) => updateConfig("mouseButton", value)}
         >
-          <SelectTrigger
-            className="bg-transparent border-border-default"
-            data-ui-id="action-props-click-mousebutton-select"
-          >
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="bg-surface-raised border-border-default">
@@ -267,7 +259,6 @@ export function ClickActionProperties({
             updateConfig("numberOfClicks", Number.parseInt(e.target.value))
           }
           className="bg-transparent border-border-default"
-          data-ui-id="action-props-click-numclicks-input"
         />
       </div>
 
@@ -281,7 +272,6 @@ export function ClickActionProperties({
             updateConfig("hold_duration", Number.parseInt(e.target.value))
           }
           className="bg-transparent border-border-default"
-          data-ui-id="action-props-click-holdduration-input"
         />
       </div>
 

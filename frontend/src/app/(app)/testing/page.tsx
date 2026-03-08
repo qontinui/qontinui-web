@@ -50,10 +50,7 @@ function TestingDashboardContent() {
 
   return (
     <RequireProject pageName="Test Runs">
-      <div
-        className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden"
-        data-ui-id="testing-page-dashboard"
-      >
+      <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
         <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
           <h1 className="text-lg font-semibold text-foreground">
             Testing Dashboard
@@ -63,7 +60,7 @@ function TestingDashboardContent() {
               variant="outline"
               size="sm"
               onClick={() => router.push("/testing/runs")}
-              data-ui-id="testing-page-all-runs-btn"
+              data-testid="testing-page-all-runs-btn"
             >
               <FileText className="w-4 h-4 mr-2" />
               All Runs
@@ -72,7 +69,7 @@ function TestingDashboardContent() {
               variant="outline"
               size="sm"
               onClick={() => router.push("/testing/deficiencies")}
-              data-ui-id="testing-page-deficiencies-btn"
+              data-testid="testing-page-deficiencies-btn"
             >
               <BarChart3 className="w-4 h-4 mr-2" />
               Deficiencies
@@ -90,7 +87,7 @@ function TestingDashboardContent() {
 
           <div
             className="flex items-center gap-2 mb-6"
-            data-ui-id="testing-page-view-selector"
+            data-testid="testing-page-view-selector"
           >
             {(
               [
@@ -107,7 +104,7 @@ function TestingDashboardContent() {
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
-                data-ui-id={`testing-page-${key}-tab`}
+                data-testid={`testing-page-${key}-tab`}
               >
                 <Icon className="w-4 h-4" />
                 {label}

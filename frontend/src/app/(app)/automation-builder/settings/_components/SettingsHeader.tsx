@@ -19,29 +19,15 @@ export function SettingsHeader({
         <h1 className="text-lg font-semibold">Settings</h1>
       </div>
       <div className="flex gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onReset}
-          data-ui-id="automation-settings-reset-btn"
-        >
+        <Button variant="outline" size="sm" onClick={onReset}>
           <RotateCcw className="w-4 h-4 mr-2" />
           Reset
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onExport}
-          data-ui-id="automation-settings-export-btn"
-        >
+        <Button variant="outline" size="sm" onClick={onExport}>
           <Download className="w-4 h-4 mr-2" />
           Export
         </Button>
-        <Button
-          size="sm"
-          onClick={onSave}
-          data-ui-id="automation-settings-save-btn"
-        >
+        <Button size="sm" onClick={onSave}>
           <Save className="w-4 h-4 mr-2" />
           Save Changes
         </Button>

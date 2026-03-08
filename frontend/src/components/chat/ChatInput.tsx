@@ -107,20 +107,14 @@ export function ChatInput({
         : "text-text-muted";
 
   return (
-    <div
-      data-ui-id="chat-input"
-      className="border-t border-border-subtle/50 p-4"
-    >
+    <div className="border-t border-border-subtle/50 p-4">
       {/* State indicator and toolbar */}
       <div className="flex items-center justify-between mb-2">
-        <span data-ui-id="chat-input-state" className={`text-xs ${stateColor}`}>
-          {stateLabel}
-        </span>
+        <span className={`text-xs ${stateColor}`}>{stateLabel}</span>
         <div className="flex items-center gap-2">
           {showGenerateWorkflow && (
             <>
               <label
-                data-ui-id="chat-input-ui-bridge-toggle"
                 className="flex items-center gap-1.5 text-xs text-text-muted cursor-pointer select-none"
                 title="Include UI Bridge SDK integration instructions in the generated workflow"
               >
@@ -134,7 +128,6 @@ export function ChatInput({
                 UI Bridge
               </label>
               <Button
-                data-ui-id="chat-input-generate-workflow-btn"
                 variant="outline"
                 size="sm"
                 onClick={() => onGenerateWorkflow(includeUIBridge)}
@@ -156,7 +149,6 @@ export function ChatInput({
       {/* Input area */}
       <div className="flex items-end gap-2">
         <textarea
-          data-ui-id="chat-input-textarea"
           ref={textareaRef}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
@@ -186,7 +178,6 @@ export function ChatInput({
 
         {canInterrupt ? (
           <Button
-            data-ui-id="chat-input-interrupt-btn"
             variant="outline"
             size="sm"
             onClick={onInterrupt}
@@ -196,7 +187,6 @@ export function ChatInput({
           </Button>
         ) : (
           <Button
-            data-ui-id="chat-input-send-btn"
             size="sm"
             onClick={handleSend}
             disabled={!canSend}

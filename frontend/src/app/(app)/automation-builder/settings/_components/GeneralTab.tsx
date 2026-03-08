@@ -40,7 +40,7 @@ export function GeneralTab({ settings, updateSetting }: GeneralTabProps) {
             <Switch
               checked={settings.autoSave}
               onCheckedChange={(checked) => updateSetting("autoSave", checked)}
-              data-ui-id="automation-settings-auto-save-toggle"
+              data-testid="automation-settings-auto-save-toggle"
             />
           </div>
 
@@ -56,7 +56,6 @@ export function GeneralTab({ settings, updateSetting }: GeneralTabProps) {
                 onChange={(e) =>
                   updateSetting("autoSaveInterval", parseInt(e.target.value))
                 }
-                data-ui-id="automation-settings-auto-save-interval-input"
               />
             </div>
           )}

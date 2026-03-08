@@ -105,7 +105,6 @@ export function ActionCard({
                 e.stopPropagation();
                 onDuplicate(action);
               }}
-              data-ui-id={`automation-sequential-action-${action.id}-duplicate-btn`}
             >
               <Copy className="w-3 h-3" />
             </Button>
@@ -117,7 +116,6 @@ export function ActionCard({
                 e.stopPropagation();
                 onDelete(action.id);
               }}
-              data-ui-id={`automation-sequential-action-${action.id}-delete-btn`}
             >
               <Trash2 className="w-3 h-3" />
             </Button>

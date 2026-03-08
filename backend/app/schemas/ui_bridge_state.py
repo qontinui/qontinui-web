@@ -228,7 +228,7 @@ class UIBridgeTransitionActionCreate(BaseModel):
 
     # drag action
     drag_target: str | None = Field(
-        None, description="Target element ID or data-ui-id to drag to (drag action)"
+        None, description="Target element ID to drag to (drag action)"
     )
     drag_target_position: str | None = Field(
         None,
@@ -371,17 +371,18 @@ class ExportResponse(BaseModel):
 class DiscoveryStrategy(StrEnum):
     """Available discovery strategy types."""
 
-    LEGACY = "legacy"  # ID-based co-occurrence (original)
-    FINGERPRINT = "fingerprint"  # Enhanced with element fingerprints
+    FINGERPRINT = (
+        "fingerprint"  # Enhanced with element fingerprints (supports ID fallback)
+    )
     AUTO = "auto"  # Auto-detect based on available data
 
 
 class UIBridgeDiscoverAndSaveRequest(BaseModel):
     """Request to discover states from renders and save to database.
 
-    Supports two discovery modes:
-    1. Legacy (default): Uses element IDs (data-ui-id, data-testid) with co-occurrence
-    2. Fingerprint: Enhanced discovery using element fingerprints for cross-page matching
+    Uses the fingerprint strategy for all discovery:
+    - With fingerprint data: Enhanced discovery using element fingerprints
+    - Without fingerprint data: Synthesizes fingerprints from element IDs (fallback)
 
     For fingerprint discovery, provide `cooccurrence_export` from the UI Bridge.
     """

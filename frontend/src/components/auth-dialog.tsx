@@ -108,7 +108,7 @@ export function AuthDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]" data-ui-id="dialog-auth">
+      <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Account</DialogTitle>
           <DialogDescription>
@@ -121,19 +121,14 @@ export function AuthDialog({
           className="w-full"
         >
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="login" data-ui-id="auth-signin-tab">
-              Login
-            </TabsTrigger>
-            <TabsTrigger value="register" data-ui-id="auth-signup-tab">
-              Register
-            </TabsTrigger>
+            <TabsTrigger value="login">Login</TabsTrigger>
+            <TabsTrigger value="register">Register</TabsTrigger>
           </TabsList>
 
           <TabsContent value="login">
             <form
               onSubmit={loginForm.handleSubmit(handleLogin)}
               className="space-y-4"
-              data-ui-id="form-login"
             >
               <div className="space-y-2">
                 <Label htmlFor="login-username">Username</Label>
@@ -141,7 +136,6 @@ export function AuthDialog({
                   id="login-username"
                   type="text"
                   placeholder="your_username"
-                  data-ui-id="form-login-username-input"
                   {...loginForm.register("username")}
                   disabled={loading}
                 />
@@ -156,7 +150,6 @@ export function AuthDialog({
                 <Input
                   id="login-password"
                   type="password"
-                  data-ui-id="form-login-password-input"
                   {...loginForm.register("password")}
                   disabled={loading}
                 />
@@ -169,7 +162,6 @@ export function AuthDialog({
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="remember-me"
-                  data-ui-id="form-login-remember-checkbox"
                   checked={loginForm.watch("remember_me")}
                   onCheckedChange={(checked) => {
                     loginForm.setValue("remember_me", checked as boolean);
@@ -183,19 +175,13 @@ export function AuthDialog({
                   Remember me for 90 days
                 </Label>
               </div>
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={loading}
-                data-ui-id="form-login-submit-btn"
-              >
+              <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? "Signing in..." : "Sign In"}
               </Button>
               <div className="text-center mt-4">
                 <Link
                   href="/forgot-password"
                   className="text-sm text-muted-foreground hover:text-primary"
-                  data-ui-id="form-login-forgot-link"
                   onClick={() => onOpenChange(false)}
                 >
                   Forgot your password?
@@ -208,7 +194,6 @@ export function AuthDialog({
             <form
               onSubmit={registerForm.handleSubmit(handleRegister)}
               className="space-y-4"
-              data-ui-id="form-register"
             >
               <div className="space-y-2">
                 <Label htmlFor="register-email">Email</Label>
@@ -216,7 +201,6 @@ export function AuthDialog({
                   id="register-email"
                   type="email"
                   placeholder="you@example.com"
-                  data-ui-id="form-register-email-input"
                   {...registerForm.register("email")}
                   disabled={loading}
                 />
@@ -232,7 +216,6 @@ export function AuthDialog({
                   id="register-username"
                   type="text"
                   placeholder="your_username"
-                  data-ui-id="form-register-username-input"
                   {...registerForm.register("username")}
                   disabled={loading}
                 />
@@ -248,7 +231,6 @@ export function AuthDialog({
                   id="register-fullname"
                   type="text"
                   placeholder="John Doe"
-                  data-ui-id="form-register-fullname-input"
                   {...registerForm.register("full_name")}
                   disabled={loading}
                 />
@@ -263,7 +245,6 @@ export function AuthDialog({
                 <Input
                   id="register-password"
                   type="password"
-                  data-ui-id="form-register-password-input"
                   {...registerForm.register("password")}
                   disabled={loading}
                 />
@@ -280,7 +261,6 @@ export function AuthDialog({
                 <Input
                   id="register-confirm-password"
                   type="password"
-                  data-ui-id="form-register-confirm-password-input"
                   {...registerForm.register("confirmPassword")}
                   disabled={loading}
                 />
@@ -290,12 +270,7 @@ export function AuthDialog({
                   </p>
                 )}
               </div>
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={loading}
-                data-ui-id="form-register-submit-btn"
-              >
+              <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? "Creating account..." : "Create Account"}
               </Button>
             </form>

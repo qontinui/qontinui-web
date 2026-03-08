@@ -22,10 +22,7 @@ export function MetricCell({
   uiId,
 }: MetricCellProps) {
   return (
-    <div
-      className={`bg-background px-4 py-3 ${muted ? "opacity-50" : ""}`}
-      data-ui-id={uiId}
-    >
+    <div className={`bg-background px-4 py-3 ${muted ? "opacity-50" : ""}`}>
       <div className="flex items-center gap-1.5 mb-1">
         <span className="text-muted-foreground">{icon}</span>
         <span

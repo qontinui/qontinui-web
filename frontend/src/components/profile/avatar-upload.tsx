@@ -161,14 +161,12 @@ export function AvatarUpload({
                 accept="image/*"
                 onChange={handleFileInputChange}
                 className="hidden"
-                data-ui-id="profile-avatar-file-input"
               />
               <Button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isUploading}
                 className="bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary border border-brand-primary/30"
-                data-ui-id="profile-avatar-choose-btn"
               >
                 <Upload className="w-4 h-4 mr-2" />
                 Choose File
@@ -184,7 +182,6 @@ export function AvatarUpload({
                 onClick={handleDeleteAvatar}
                 variant="outline"
                 className="w-full border-red-500/30 hover:border-red-500 hover:bg-red-500/10 text-red-400"
-                data-ui-id="profile-avatar-remove-btn"
               >
                 <Trash2 className="w-4 h-4 mr-2" />
                 Remove Avatar

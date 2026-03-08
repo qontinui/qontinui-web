@@ -157,10 +157,7 @@ export function ChatHeader({
   })();
 
   return (
-    <div
-      data-ui-id="chat-header"
-      className="flex items-center justify-between px-4 py-3 border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-sm"
-    >
+    <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle/50 bg-surface-canvas/80 backdrop-blur-sm">
       <div className="flex items-center gap-3">
         <MessageSquare className="size-5 text-purple-400" />
 
@@ -184,7 +181,6 @@ export function ChatHeader({
           </div>
         ) : (
           <button
-            data-ui-id="chat-header-name"
             onClick={() => setIsEditing(true)}
             className="flex items-center gap-1.5 text-sm font-medium text-text-primary hover:text-text-secondary group"
           >
@@ -193,12 +189,9 @@ export function ChatHeader({
           </button>
         )}
 
-        <span data-ui-id="chat-header-state">{stateBadge}</span>
+        <span>{stateBadge}</span>
 
-        <span
-          data-ui-id="chat-header-runner-status"
-          className="flex items-center gap-1 text-[10px]"
-        >
+        <span className="flex items-center gap-1 text-[10px]">
           {isRunnerConnected ? (
             <>
               <Wifi className="size-3 text-green-400" />
@@ -214,7 +207,6 @@ export function ChatHeader({
       </div>
 
       <Button
-        data-ui-id="chat-header-close-btn"
         variant="ghost"
         size="sm"
         onClick={onClose}

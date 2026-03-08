@@ -114,7 +114,6 @@ export function SessionTimeoutWarning() {
         className="sm:max-w-md"
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
-        data-ui-id="dialog-session-timeout"
       >
         <DialogHeader>
           <div className="flex items-center gap-2">

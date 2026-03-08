@@ -38,7 +38,6 @@ export function RecordingSettingsCard({
             onCheckedChange={(checked) =>
               updateSetting("recording", "enabled", checked)
             }
-            data-ui-id="settings-recording-enabled-toggle"
           />
         </div>
         <div className="space-y-2">
@@ -47,7 +46,6 @@ export function RecordingSettingsCard({
             id="recording_path"
             value={settings.recording.path}
             onChange={(e) => updateSetting("recording", "path", e.target.value)}
-            data-ui-id="settings-recording-path-input"
           />
         </div>
         <div className="space-y-2">
@@ -59,7 +57,6 @@ export function RecordingSettingsCard({
             onChange={(e) =>
               updateSetting("recording", "fps", parseInt(e.target.value))
             }
-            data-ui-id="settings-recording-fps-input"
           />
         </div>
         <div className="space-y-2">
@@ -70,10 +67,7 @@ export function RecordingSettingsCard({
               updateSetting("recording", "quality", value)
             }
           >
-            <SelectTrigger
-              id="recording_quality"
-              data-ui-id="settings-recording-quality-select"
-            >
+            <SelectTrigger id="recording_quality">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -96,7 +90,6 @@ export function RecordingSettingsCard({
                 parseInt(e.target.value)
               )
             }
-            data-ui-id="settings-recording-max-duration-minutes-input"
           />
         </div>
       </CardContent>

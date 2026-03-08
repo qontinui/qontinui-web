@@ -157,14 +157,6 @@ export function UIBridgeConfigSection({
               Auto
             </Button>
             <Button
-              variant={discoveryStrategy === "legacy" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setDiscoveryStrategy("legacy")}
-              className="text-xs"
-            >
-              Legacy (ID-based)
-            </Button>
-            <Button
               variant={
                 discoveryStrategy === "fingerprint" ? "default" : "outline"
               }
@@ -177,9 +169,7 @@ export function UIBridgeConfigSection({
           </div>
           <span className="text-xs text-text-muted ml-auto">
             {discoveryStrategy === "auto" &&
-              "Uses fingerprint if available, otherwise legacy"}
-            {discoveryStrategy === "legacy" &&
-              "ID-based co-occurrence (data-ui-id, data-testid)"}
+              "Uses fingerprint if available, otherwise co-occurrence"}
             {discoveryStrategy === "fingerprint" &&
               "Enhanced cross-page element matching"}
           </span>

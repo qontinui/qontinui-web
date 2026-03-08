@@ -27,7 +27,6 @@ export function NavItemButton({
   const content = (
     <button
       onClick={onClick}
-      data-ui-id={`nav-${item.id}`}
       data-nav-id={item.id}
       data-tutorial-id={`nav-${item.id}`}
       data-route={item.route}

@@ -103,10 +103,7 @@ export function RefreshTokenExpiryWarning() {
 
   return (
     <Dialog open={showWarning} onOpenChange={setShowWarning}>
-      <DialogContent
-        className="sm:max-w-md"
-        data-ui-id="dialog-refresh-token-expiry"
-      >
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-2">
             <AlertCircle className="h-5 w-5 text-warning" />

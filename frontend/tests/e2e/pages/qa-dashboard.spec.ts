@@ -35,21 +35,21 @@ test.describe("QA Dashboard - Main Page", () => {
 
     // The view selector has 4 buttons: Test Runs, Live Execution, Coverage Trends, Reliability
     const viewSelector = page.locator(
-      '[data-ui-id="qa-dashboard-view-selector"]'
+      '[data-testid="qa-dashboard-view-selector"]'
     );
     await expect(viewSelector).toBeVisible();
 
     await expect(
-      page.locator('[data-ui-id="qa-dashboard-overview-tab"]')
+      page.locator('[data-testid="qa-dashboard-overview-tab"]')
     ).toBeVisible();
     await expect(
-      page.locator('[data-ui-id="qa-dashboard-live-tab"]')
+      page.locator('[data-testid="qa-dashboard-live-tab"]')
     ).toBeVisible();
     await expect(
-      page.locator('[data-ui-id="qa-dashboard-trends-tab"]')
+      page.locator('[data-testid="qa-dashboard-trends-tab"]')
     ).toBeVisible();
     await expect(
-      page.locator('[data-ui-id="qa-dashboard-reliability-tab"]')
+      page.locator('[data-testid="qa-dashboard-reliability-tab"]')
     ).toBeVisible();
   });
 
@@ -58,12 +58,14 @@ test.describe("QA Dashboard - Main Page", () => {
     await page.waitForLoadState("networkidle");
 
     // All Runs button
-    const allRunsBtn = page.locator('[data-ui-id="qa-dashboard-all-runs-btn"]');
+    const allRunsBtn = page.locator(
+      '[data-testid="qa-dashboard-all-runs-btn"]'
+    );
     await expect(allRunsBtn).toBeVisible();
 
     // Deficiencies button
     const deficienciesBtn = page.locator(
-      '[data-ui-id="qa-dashboard-deficiencies-btn"]'
+      '[data-testid="qa-dashboard-deficiencies-btn"]'
     );
     await expect(deficienciesBtn).toBeVisible();
   });
@@ -85,18 +87,18 @@ test.describe("QA Dashboard - Main Page", () => {
     await page.waitForLoadState("networkidle");
 
     // Click Live Execution tab
-    await page.locator('[data-ui-id="qa-dashboard-live-tab"]').click();
+    await page.locator('[data-testid="qa-dashboard-live-tab"]').click();
     await page.waitForTimeout(500);
 
     // Click Coverage Trends tab (shows project selection message without project param)
-    await page.locator('[data-ui-id="qa-dashboard-trends-tab"]').click();
+    await page.locator('[data-testid="qa-dashboard-trends-tab"]').click();
     await page.waitForTimeout(500);
     await expect(
       page.getByText("Please select a project").first()
     ).toBeVisible();
 
     // Click Reliability tab (shows project selection message without project param)
-    await page.locator('[data-ui-id="qa-dashboard-reliability-tab"]').click();
+    await page.locator('[data-testid="qa-dashboard-reliability-tab"]').click();
     await page.waitForTimeout(500);
     await expect(
       page.getByText("Please select a project").first()
@@ -124,7 +126,7 @@ test.describe("QA Dashboard - Runs Page", () => {
     await page.goto("/qa-dashboard/runs");
     await page.waitForLoadState("networkidle");
 
-    const backBtn = page.locator('[data-ui-id="qa-runs-page-back-btn"]');
+    const backBtn = page.locator('[data-testid="qa-runs-page-back-btn"]');
     await expect(backBtn).toBeVisible();
   });
 
@@ -161,7 +163,7 @@ test.describe("QA Dashboard - Run Detail Page", () => {
 
     await expect(page.locator("h1")).toContainText("Test Run Details");
 
-    const backBtn = page.locator('[data-ui-id="qa-run-details-back-btn"]');
+    const backBtn = page.locator('[data-testid="qa-run-details-back-btn"]');
     await expect(backBtn).toBeVisible();
   });
 });
@@ -208,10 +210,10 @@ test.describe("QA Dashboard - Coverage Page", () => {
 
     // Test Runs and Deficiencies buttons in header
     await expect(
-      page.locator('[data-ui-id="qa-coverage-runs-btn"]')
+      page.locator('[data-testid="qa-coverage-runs-btn"]')
     ).toBeVisible();
     await expect(
-      page.locator('[data-ui-id="qa-coverage-deficiencies-btn"]')
+      page.locator('[data-testid="qa-coverage-deficiencies-btn"]')
     ).toBeVisible();
   });
 });
@@ -252,7 +254,7 @@ test.describe("QA Dashboard - Deficiencies Page", () => {
     await page.waitForLoadState("networkidle");
 
     const backBtn = page.locator(
-      '[data-ui-id="qa-deficiencies-page-back-btn"]'
+      '[data-testid="qa-deficiencies-page-back-btn"]'
     );
     await expect(backBtn).toBeVisible();
   });
@@ -301,7 +303,7 @@ test.describe("QA Dashboard - Compare Page", () => {
 
     // Back to Runs button should be visible
     await expect(
-      page.locator('[data-ui-id="qa-compare-back-btn"]')
+      page.locator('[data-testid="qa-compare-back-btn"]')
     ).toBeVisible();
   });
 });

@@ -37,7 +37,6 @@ export function TestingSettingsCard({
                 parseFloat(e.target.value)
               )
             }
-            data-ui-id="settings-testing-timeout-multiplier-input"
           />
         </div>
         <div className="flex items-center justify-between">
@@ -48,7 +47,6 @@ export function TestingSettingsCard({
             onCheckedChange={(checked) =>
               updateSetting("testing", "retry_failed", checked)
             }
-            data-ui-id="settings-testing-retry-failed-toggle"
           />
         </div>
         <div className="space-y-2">
@@ -60,7 +58,6 @@ export function TestingSettingsCard({
             onChange={(e) =>
               updateSetting("testing", "max_retries", parseInt(e.target.value))
             }
-            data-ui-id="settings-testing-max-retries-input"
           />
         </div>
         <div className="flex items-center justify-between">
@@ -71,7 +68,6 @@ export function TestingSettingsCard({
             onCheckedChange={(checked) =>
               updateSetting("testing", "screenshot_on_failure", checked)
             }
-            data-ui-id="settings-testing-screenshot-on-failure-toggle"
           />
         </div>
         <div className="flex items-center justify-between">
@@ -82,7 +78,6 @@ export function TestingSettingsCard({
             onCheckedChange={(checked) =>
               updateSetting("testing", "verbose_logging", checked)
             }
-            data-ui-id="settings-testing-verbose-logging-toggle"
           />
         </div>
         <div className="flex items-center justify-between">
@@ -93,7 +88,6 @@ export function TestingSettingsCard({
             onCheckedChange={(checked) =>
               updateSetting("testing", "parallel_execution", checked)
             }
-            data-ui-id="settings-testing-parallel-execution-toggle"
           />
         </div>
         <div className="space-y-2">
@@ -105,7 +99,6 @@ export function TestingSettingsCard({
             onChange={(e) =>
               updateSetting("testing", "iteration", parseInt(e.target.value))
             }
-            data-ui-id="settings-testing-iteration-input"
           />
         </div>
         <div className="flex items-center justify-between">
@@ -116,7 +109,6 @@ export function TestingSettingsCard({
             onCheckedChange={(checked) =>
               updateSetting("testing", "send_logs", checked)
             }
-            data-ui-id="settings-testing-send-logs-toggle"
           />
         </div>
       </CardContent>

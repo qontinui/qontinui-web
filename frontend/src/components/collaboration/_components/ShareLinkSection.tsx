@@ -29,7 +29,6 @@ export function ShareLinkSection({
           onClick={onCopyLink}
           disabled={loading}
           variant={linkCopied ? "default" : "outline"}
-          data-ui-id="dialog-project-sharing-copy-link-btn"
         >
           {loading ? (
             <Loader2 className="h-4 w-4 animate-spin" />

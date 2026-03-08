@@ -45,7 +45,6 @@ export function NotificationsTab({
               onCheckedChange={(checked) =>
                 updateSetting("notifyOnSuccess", checked)
               }
-              data-ui-id="automation-settings-notify-on-success-toggle"
             />
           </div>
 
@@ -61,7 +60,6 @@ export function NotificationsTab({
               onCheckedChange={(checked) =>
                 updateSetting("notifyOnFailure", checked)
               }
-              data-ui-id="automation-settings-notify-on-failure-toggle"
             />
           </div>
 
@@ -77,7 +75,6 @@ export function NotificationsTab({
               onCheckedChange={(checked) =>
                 updateSetting("notifyOnStart", checked)
               }
-              data-ui-id="automation-settings-notify-on-start-toggle"
             />
           </div>
 
@@ -95,7 +92,6 @@ export function NotificationsTab({
               onCheckedChange={(checked) =>
                 updateSetting("emailNotifications", checked)
               }
-              data-ui-id="automation-settings-email-notifications-toggle"
             />
           </div>
         </CardContent>

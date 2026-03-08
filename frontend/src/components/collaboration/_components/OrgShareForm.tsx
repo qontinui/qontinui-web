@@ -39,10 +39,7 @@ export function OrgShareForm({
           onValueChange={onOrgChange}
           disabled={loading}
         >
-          <SelectTrigger
-            id="organization"
-            data-ui-id="dialog-project-sharing-organization-select"
-          >
+          <SelectTrigger id="organization">
             <SelectValue placeholder="Select an organization" />
           </SelectTrigger>
           <SelectContent>
@@ -60,14 +57,8 @@ export function OrgShareForm({
           onValueChange={onPermissionChange}
           disabled={loading}
           triggerClassName="w-[180px]"
-          data-ui-id="dialog-project-sharing-org-permission-select"
         />
-        <Button
-          onClick={onSubmit}
-          disabled={loading}
-          className="flex-1"
-          data-ui-id="dialog-project-sharing-share-org-btn"
-        >
+        <Button onClick={onSubmit} disabled={loading} className="flex-1">
           {loading ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           ) : (

@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { toast } from "sonner";
 
 export type Section =
+  | "overview"
   | "users"
   | "projects"
   | "analytics"

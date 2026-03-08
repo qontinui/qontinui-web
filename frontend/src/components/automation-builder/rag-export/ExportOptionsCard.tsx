@@ -49,7 +49,6 @@ export function ExportOptionsCard({
             onCheckedChange={(checked) =>
               setOptions((prev) => ({ ...prev, include_ocr: checked }))
             }
-            data-ui-id="automation-rag-ocr-toggle"
           />
         </div>
 
@@ -68,7 +67,6 @@ export function ExportOptionsCard({
                 include_screenshots: checked,
               }))
             }
-            data-ui-id="automation-rag-screenshots-toggle"
           />
         </div>
 
@@ -82,10 +80,7 @@ export function ExportOptionsCard({
               setOptions((prev) => ({ ...prev, embedding_model: value }))
             }
           >
-            <SelectTrigger
-              className="bg-surface-canvas border-border-default"
-              data-ui-id="automation-rag-model-select"
-            >
+            <SelectTrigger className="bg-surface-canvas border-border-default">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

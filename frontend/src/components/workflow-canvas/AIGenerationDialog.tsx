@@ -48,10 +48,7 @@ export function AIGenerationDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div
-        className="relative w-full max-w-6xl h-[90vh] bg-white dark:bg-surface-canvas rounded-lg shadow-2xl flex flex-col"
-        data-ui-id="dialog-ai-generation"
-      >
+      <div className="relative w-full max-w-6xl h-[90vh] bg-white dark:bg-surface-canvas rounded-lg shadow-2xl flex flex-col">
         <AIGenerationHeader onClose={onClose} />
 
         <div className="flex-1 overflow-hidden flex">

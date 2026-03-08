@@ -44,7 +44,6 @@ export function ImageDeletionDialog({
           onConfirmDelete();
           onOpenChange(false);
         }}
-        data-ui-id="dialog-image-deletion"
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
@@ -146,7 +145,6 @@ export function ImageDeletionDialog({
             variant="outline"
             onClick={() => onOpenChange(false)}
             className="border-border-default hover:bg-surface-raised"
-            data-ui-id="dialog-image-deletion-cancel-btn"
           >
             Cancel
           </Button>
@@ -160,7 +158,6 @@ export function ImageDeletionDialog({
                 ? "bg-red-600 hover:bg-red-700 text-white"
                 : "bg-brand-success hover:bg-brand-success/80 text-black"
             }
-            data-ui-id="dialog-image-deletion-confirm-btn"
           >
             {hasUsage ? "Delete Anyway" : "Delete"}
           </Button>

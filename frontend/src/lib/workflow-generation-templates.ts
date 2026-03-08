@@ -403,7 +403,7 @@ Pick one (or describe your own):
 4. Ensure all original content and functionality is preserved if redesigning
 5. Run sdk_design_evaluate to verify design quality scores
 6. Iterate on any metrics scoring below 70
-7. Add data-ui-id attributes and UI Bridge instrumentation to new elements`,
+7. Verify UI Bridge auto-registration discovers new interactive elements`,
     advancedDefaults: {
       discoveryMode: "enabled",
       category: "design",
@@ -416,7 +416,7 @@ Pick one (or describe your own):
     name: "Add UI Bridge SDK",
     icon: "Plug",
     description:
-      "Instrument a React project with UI Bridge SDK — provider, hooks, data-ui-id attributes, and spec files",
+      "Instrument a React project with UI Bridge SDK — AutoRegisterProvider, hooks, and spec files",
     content: `Instrument an existing React project with the UI Bridge SDK so it can be discovered, inspected, and verified by Qontinui workflows.
 
 ## Project
@@ -432,8 +432,8 @@ Pick one (or describe your own):
 1. Install the UI Bridge SDK package: \`npm install @anthropic/ui-bridge\` (or check if already installed)
 2. Wrap the root layout with \`<UIBridgeProvider>\` — find the top-level layout file and add the provider
 3. For each page/route listed above:
-   a. Add \`data-ui-id\` attributes to all interactive and semantically meaningful elements following the naming convention: \`{feature}-{component}-{element}\` with suffixes like \`-btn\`, \`-input\`, \`-link\`
-   b. Register key interactive elements (buttons, inputs, links, toggles) with the \`useUIElement\` hook
+   a. Verify the AutoRegisterProvider automatically discovers interactive elements — the SDK generates stable semantic IDs at runtime, so manual \`data-ui-id\` attributes are not needed
+   b. Register key interactive elements (buttons, inputs, links, toggles) with the \`useUIElement\` hook for custom actions/state
    c. Register component-level actions with \`useUIComponent\` for forms and complex components
    d. Register important UI states (loading, error, empty) with \`useUIState\`
    e. Create a \`.spec.uibridge.json\` file alongside the page with grouped assertions:

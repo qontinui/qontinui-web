@@ -119,10 +119,7 @@ export function ValidationResultsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="sm:max-w-[600px] bg-surface-canvas border-border-subtle"
-        data-ui-id="dialog-validation-results"
-      >
+      <DialogContent className="sm:max-w-[600px] bg-surface-canvas border-border-subtle">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ClipboardCheck className="w-5 h-5 text-brand-primary" />
@@ -251,7 +248,6 @@ export function ValidationResultsDialog({
                                 onOpenChange(false);
                               }}
                               className="h-7 px-2 text-brand-primary hover:text-brand-primary/80 hover:bg-brand-primary/10"
-                              data-ui-id={`automation-validation-goto-${workflow.workflowId}-btn`}
                             >
                               <ExternalLink className="w-3 h-3 mr-1" />
                               Go to workflow
@@ -319,7 +315,6 @@ export function ValidationResultsDialog({
                 ? "bg-green-600 hover:bg-green-600/80 text-white"
                 : "bg-surface-raised hover:bg-surface-raised/80 text-white"
             }
-            data-ui-id="automation-validation-close-btn"
           >
             {isValid ? "Great!" : "Close"}
           </Button>

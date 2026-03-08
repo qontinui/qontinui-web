@@ -44,7 +44,6 @@ export function BuilderModeSelector({
             : "text-text-muted border border-transparent"
         )}
         title="Sequential mode - Linear, step-by-step processes"
-        data-ui-id="automation-mode-sequential-btn"
       >
         <ListIcon className="w-4 h-4" />
         <span className="text-sm">Sequential</span>
@@ -62,7 +61,6 @@ export function BuilderModeSelector({
             : "text-text-muted border border-transparent"
         )}
         title="Graph mode - Visual workflows with branching and loops"
-        data-ui-id="automation-mode-graph-btn"
       >
         <WorkflowIcon className="w-4 h-4" />
         <span className="text-sm">Graph</span>

@@ -114,7 +114,6 @@ export function ExtractionConfigPanel({
             <Button
               onClick={handleAddUrl}
               size="sm"
-              data-ui-id="extraction-web-add-url-btn"
               className="bg-brand-primary/20 text-brand-primary hover:bg-brand-primary/30 border border-brand-primary/50 transition-all duration-300"
             >
               <Plus className="w-4 h-4 mr-1" />
@@ -122,7 +121,7 @@ export function ExtractionConfigPanel({
             </Button>
           </div>
 
-          <div className="space-y-2" data-ui-id="extraction-web-urls-list">
+          <div className="space-y-2">
             {urls.map((url, index) => (
               <div key={index} className="flex gap-2 group">
                 <div className="relative flex-1">
@@ -131,7 +130,6 @@ export function ExtractionConfigPanel({
                     value={url}
                     onChange={(e) => handleUrlChange(index, e.target.value)}
                     placeholder="https://example.com"
-                    data-ui-id={`extraction-web-url-input-${index}`}
                     className="bg-surface-canvas border-brand-primary/20 text-white font-mono focus:border-brand-primary focus:ring-brand-primary/30 pl-3 h-10 transition-all group-hover:border-brand-primary/40"
                   />
                 </div>
@@ -140,7 +138,6 @@ export function ExtractionConfigPanel({
                     onClick={() => handleRemoveUrl(index)}
                     size="icon"
                     variant="ghost"
-                    data-ui-id={`extraction-web-remove-url-${index}-btn`}
                     className="text-red-400/60 hover:text-red-400 hover:bg-red-500/10 h-10 w-10"
                   >
                     <X className="w-4 h-4" />
@@ -193,7 +190,6 @@ export function ExtractionConfigPanel({
                 </Label>
                 <Switch
                   id="hover"
-                  data-ui-id="extraction-web-hover-toggle"
                   checked={captureHover}
                   onCheckedChange={setCaptureHover}
                   className="data-[state=checked]:bg-brand-success shadow-[0_0_10px_rgba(0,255,136,0.2)]"
@@ -209,7 +205,6 @@ export function ExtractionConfigPanel({
                 </Label>
                 <Switch
                   id="focus"
-                  data-ui-id="extraction-web-focus-toggle"
                   checked={captureFocus}
                   onCheckedChange={setCaptureFocus}
                   className="data-[state=checked]:bg-brand-success shadow-[0_0_10px_rgba(0,255,136,0.2)]"
@@ -233,7 +228,6 @@ export function ExtractionConfigPanel({
                     max={10}
                     value={maxDepth}
                     onChange={(e) => setMaxDepth(parseInt(e.target.value) || 1)}
-                    data-ui-id="extraction-web-max-depth-input"
                     className="bg-surface-canvas border-brand-success/20 text-white font-mono focus:border-brand-success focus:ring-brand-success/30 h-10 transition-all hover:border-brand-success/40"
                   />
                 </div>
@@ -252,7 +246,6 @@ export function ExtractionConfigPanel({
                     max={1000}
                     value={maxPages}
                     onChange={(e) => setMaxPages(parseInt(e.target.value) || 1)}
-                    data-ui-id="extraction-web-max-pages-input"
                     className="bg-surface-canvas border-brand-success/20 text-white font-mono focus:border-brand-success focus:ring-brand-success/30 h-10 transition-all hover:border-brand-success/40"
                   />
                 </div>

@@ -54,14 +54,10 @@ export function PresetManagerDialog({
 
   return (
     <div className="preset-manager-overlay">
-      <div className="preset-manager-dialog" data-ui-id="dialog-preset-manager">
+      <div className="preset-manager-dialog">
         <div className="dialog-header">
           <h2>Manage Layout Presets</h2>
-          <button
-            className="close-button"
-            onClick={onClose}
-            data-ui-id="dialog-preset-manager-close-btn"
-          >
+          <button className="close-button" onClick={onClose}>
             ×
           </button>
         </div>
@@ -73,13 +69,8 @@ export function PresetManagerDialog({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="search-input"
-            data-ui-id="dialog-preset-manager-search-input"
           />
-          <button
-            className="import-button"
-            onClick={handleImport}
-            data-ui-id="dialog-preset-manager-import-btn"
-          >
+          <button className="import-button" onClick={handleImport}>
             📥 Import
           </button>
         </div>

@@ -61,7 +61,7 @@ export function EditPresetDialog({
 
   return (
     <div className="edit-preset-overlay">
-      <div className="edit-preset-dialog" data-ui-id="dialog-edit-preset">
+      <div className="edit-preset-dialog">
         <div className="dialog-header">
           <h3>Edit Preset</h3>
           <button className="close-button" onClick={onClose}>
@@ -79,7 +79,6 @@ export function EditPresetDialog({
               onChange={(e) => setName(e.target.value)}
               placeholder="Preset name"
               className="form-input"
-              data-ui-id="dialog-edit-preset-name-input"
             />
           </div>
 
@@ -92,7 +91,6 @@ export function EditPresetDialog({
               placeholder="Preset description"
               className="form-textarea"
               rows={2}
-              data-ui-id="dialog-edit-preset-description-input"
             />
           </div>
 
@@ -103,7 +101,6 @@ export function EditPresetDialog({
               value={style}
               onChange={(e) => setStyle(e.target.value as LayoutStyle)}
               className="form-select"
-              data-ui-id="dialog-edit-preset-style-select"
             >
               {Object.values(LayoutStyle).map((s) => (
                 <option key={s} value={s}>
@@ -223,18 +220,13 @@ export function EditPresetDialog({
         </div>
 
         <div className="dialog-footer">
-          <button
-            className="cancel-button"
-            onClick={onClose}
-            data-ui-id="dialog-edit-preset-cancel-btn"
-          >
+          <button className="cancel-button" onClick={onClose}>
             Cancel
           </button>
           <button
             className="save-button"
             onClick={handleSave}
             disabled={!name.trim()}
-            data-ui-id="dialog-edit-preset-confirm-btn"
           >
             Save Changes
           </button>

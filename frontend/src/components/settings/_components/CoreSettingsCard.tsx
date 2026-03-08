@@ -31,7 +31,6 @@ export function CoreSettingsCard({
             onChange={(e) =>
               updateSetting("core", "image_path", e.target.value)
             }
-            data-ui-id="settings-core-image-path-input"
           />
         </div>
         <div className="flex items-center justify-between">
@@ -42,7 +41,6 @@ export function CoreSettingsCard({
             onCheckedChange={(checked) =>
               updateSetting("core", "mock", checked)
             }
-            data-ui-id="settings-core-mock-toggle"
           />
         </div>
         <div className="flex items-center justify-between">
@@ -53,7 +51,6 @@ export function CoreSettingsCard({
             onCheckedChange={(checked) =>
               updateSetting("core", "headless", checked)
             }
-            data-ui-id="settings-core-headless-toggle"
           />
         </div>
         <div className="space-y-2">
@@ -69,7 +66,6 @@ export function CoreSettingsCard({
                 parseInt(e.target.value)
               )
             }
-            data-ui-id="settings-core-image-cache-size-input"
           />
         </div>
         <div className="space-y-2">
@@ -86,7 +82,6 @@ export function CoreSettingsCard({
                 parseFloat(e.target.value)
               )
             }
-            data-ui-id="settings-core-auto-wait-timeout-input"
           />
         </div>
       </CardContent>

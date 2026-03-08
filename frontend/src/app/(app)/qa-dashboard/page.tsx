@@ -63,10 +63,7 @@ function QADashboardContent() {
 
   return (
     <RequireProject pageName="QA Dashboard">
-      <div
-        className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden"
-        data-ui-id="qa-dashboard-page"
-      >
+      <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
         <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
           <h1 className="text-lg font-semibold text-foreground">
             QA Dashboard
@@ -76,7 +73,7 @@ function QADashboardContent() {
               variant="outline"
               size="sm"
               onClick={() => router.push("/qa-dashboard/runs")}
-              data-ui-id="qa-dashboard-all-runs-btn"
+              data-testid="qa-dashboard-all-runs-btn"
             >
               <FileText className="w-4 h-4 mr-2" />
               All Runs
@@ -85,7 +82,7 @@ function QADashboardContent() {
               variant="outline"
               size="sm"
               onClick={() => router.push("/qa-dashboard/deficiencies")}
-              data-ui-id="qa-dashboard-deficiencies-btn"
+              data-testid="qa-dashboard-deficiencies-btn"
             >
               <BarChart3 className="w-4 h-4 mr-2" />
               Deficiencies
@@ -103,7 +100,7 @@ function QADashboardContent() {
 
           <div
             className="flex items-center gap-2 mb-6"
-            data-ui-id="qa-dashboard-view-selector"
+            data-testid="qa-dashboard-view-selector"
           >
             {(
               [
@@ -121,7 +118,7 @@ function QADashboardContent() {
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
-                data-ui-id={`qa-dashboard-${key}-tab`}
+                data-testid={`qa-dashboard-${key}-tab`}
               >
                 <Icon className="w-4 h-4" />
                 {label}

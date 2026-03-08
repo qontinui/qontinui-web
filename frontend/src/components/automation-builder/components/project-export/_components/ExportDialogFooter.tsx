@@ -32,7 +32,6 @@ export function ExportDialogFooter({
         onClick={onClose}
         className="border-border-default"
         disabled={isProcessing}
-        data-ui-id="automation-export-cancel-btn"
       >
         {isDone ? "Close" : "Cancel"}
       </Button>
@@ -43,7 +42,6 @@ export function ExportDialogFooter({
             onClick={() => onExport(false)}
             disabled={isExporting || !exportName.trim()}
             className="border-border-default hover:bg-surface-raised"
-            data-ui-id="automation-export-only-btn"
           >
             {isExporting ? (
               <>
@@ -61,7 +59,6 @@ export function ExportDialogFooter({
             onClick={() => onExport(true)}
             disabled={isExporting || !exportName.trim()}
             className="bg-brand-primary hover:bg-brand-primary/80 text-black"
-            data-ui-id="automation-export-load-btn"
           >
             {isExporting ? (
               <>

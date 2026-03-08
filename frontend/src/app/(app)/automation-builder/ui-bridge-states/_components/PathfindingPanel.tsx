@@ -55,10 +55,7 @@ export function PathfindingPanel({
       <div className="grid grid-cols-2 gap-6">
         {/* From States */}
         <div>
-          <p
-            className="text-sm font-medium text-text-primary mb-2 block"
-            data-ui-id="sm-path-from-label"
-          >
+          <p className="text-sm font-medium text-text-primary mb-2 block">
             From States (currently active)
           </p>
           <div className="flex flex-wrap gap-1.5">
@@ -80,10 +77,7 @@ export function PathfindingPanel({
 
         {/* Target States */}
         <div>
-          <p
-            className="text-sm font-medium text-text-primary mb-2 block"
-            data-ui-id="sm-path-target-label"
-          >
+          <p className="text-sm font-medium text-text-primary mb-2 block">
             Target States (to reach)
           </p>
           <div className="flex flex-wrap gap-1.5">
@@ -110,7 +104,6 @@ export function PathfindingPanel({
           disabled={
             isLoading || fromStates.length === 0 || targetStates.length === 0
           }
-          data-ui-id="sm-path-find-button"
         >
           {isLoading ? (
             <Loader2 className="size-4 mr-1.5 animate-spin" />
@@ -132,10 +125,7 @@ export function PathfindingPanel({
           {result.found ? (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span
-                  className="text-sm font-medium text-green-600"
-                  data-ui-id="sm-path-found-result"
-                >
+                <span className="text-sm font-medium text-green-600">
                   Path found
                 </span>
                 <span className="text-xs text-text-muted">
@@ -164,10 +154,7 @@ export function PathfindingPanel({
               </div>
             </div>
           ) : (
-            <div
-              className="text-sm text-red-500"
-              data-ui-id="sm-path-not-found"
-            >
+            <div className="text-sm text-red-500">
               {result.error || "No path found between the selected states."}
             </div>
           )}

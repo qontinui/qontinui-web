@@ -200,7 +200,6 @@ export function RAGSetupDialog({
       <DialogContent
         className="sm:max-w-md"
         showCloseButton={state !== "processing"}
-        data-ui-id="dialog-rag-setup"
       >
         {state === "checking" && (
           <>

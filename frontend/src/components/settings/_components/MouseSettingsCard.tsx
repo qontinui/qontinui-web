@@ -32,7 +32,6 @@ export function MouseSettingsCard({
             onChange={(e) =>
               updateSetting("mouse", "move_delay", parseFloat(e.target.value))
             }
-            data-ui-id="settings-mouse-move-delay-input"
           />
         </div>
         <div className="space-y-2">
@@ -51,7 +50,6 @@ export function MouseSettingsCard({
                 parseFloat(e.target.value)
               )
             }
-            data-ui-id="settings-mouse-pause-before-down-input"
           />
         </div>
         <div className="space-y-2">
@@ -70,7 +68,6 @@ export function MouseSettingsCard({
                 parseFloat(e.target.value)
               )
             }
-            data-ui-id="settings-mouse-pause-after-down-input"
           />
         </div>
         <div className="space-y-2">
@@ -83,7 +80,6 @@ export function MouseSettingsCard({
             onChange={(e) =>
               updateSetting("mouse", "click_delay", parseFloat(e.target.value))
             }
-            data-ui-id="settings-mouse-click-delay-input"
           />
         </div>
         <div className="space-y-2">
@@ -96,7 +92,6 @@ export function MouseSettingsCard({
             onChange={(e) =>
               updateSetting("mouse", "drag_delay", parseFloat(e.target.value))
             }
-            data-ui-id="settings-mouse-drag-delay-input"
           />
         </div>
       </CardContent>

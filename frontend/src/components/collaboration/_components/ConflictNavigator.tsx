@@ -23,7 +23,6 @@ export function ConflictNavigator({
         size="sm"
         onClick={() => onNavigate(Math.max(0, selectedIndex - 1))}
         disabled={selectedIndex === 0}
-        data-ui-id="dialog-conflict-resolution-previous-btn"
       >
         <ChevronLeft className="h-4 w-4 mr-1" />
         Previous
@@ -38,7 +37,6 @@ export function ConflictNavigator({
           onNavigate(Math.min(totalConflicts - 1, selectedIndex + 1))
         }
         disabled={selectedIndex === totalConflicts - 1}
-        data-ui-id="dialog-conflict-resolution-next-btn"
       >
         Next
         <ChevronRight className="h-4 w-4 ml-1" />

@@ -255,7 +255,6 @@ class UIBridgeDiscoveryStrategy(StrEnum):
     """Discovery strategy options."""
 
     AUTO = "auto"
-    LEGACY = "legacy"
     FINGERPRINT = "fingerprint"
 
 
@@ -274,7 +273,7 @@ class UIBridgeDiscoverRequest(BaseModel):
     )
     strategy: UIBridgeDiscoveryStrategy = Field(
         default=UIBridgeDiscoveryStrategy.AUTO,
-        description="Discovery strategy: auto, legacy, or fingerprint",
+        description="Discovery strategy: auto or fingerprint",
     )
 
 
@@ -336,9 +335,8 @@ async def discover_ui_bridge_states(
     before saving.
 
     **Strategies:**
-    - `auto` (default): Uses fingerprint if fingerprint data provided, else legacy
-    - `legacy`: ID-based co-occurrence analysis (data-ui-id, data-testid)
-    - `fingerprint`: Enhanced discovery with element fingerprints
+    - `auto` (default): Uses fingerprint strategy (with ID fallback if no fingerprint data)
+    - `fingerprint`: Enhanced discovery with element fingerprints (supports ID fallback)
 
     For fingerprint discovery, provide `cooccurrence_export` with fingerprint data.
     """
@@ -351,7 +349,6 @@ async def discover_ui_bridge_states(
     # Map request strategy to library strategy type
     strategy_map = {
         "auto": DiscoveryStrategyType.AUTO,
-        "legacy": DiscoveryStrategyType.LEGACY,
         "fingerprint": DiscoveryStrategyType.FINGERPRINT,
     }
     strategy = strategy_map.get(request.strategy.value, DiscoveryStrategyType.AUTO)

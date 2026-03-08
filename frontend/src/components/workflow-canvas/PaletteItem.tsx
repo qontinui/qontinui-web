@@ -90,7 +90,6 @@ export const PaletteItem: React.FC<PaletteItemProps> = ({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       data-node-type={metadata.type}
-      data-ui-id={`canvas-palette-item-${metadata.type.toLowerCase()}`}
     >
       {/* Drag Handle */}
       <div className="palette-item__drag-handle">
@@ -158,7 +157,6 @@ export const PaletteItem: React.FC<PaletteItemProps> = ({
           )}
           onClick={handleToggleFavorite}
           title={isFavorite ? "Remove from favorites" : "Add to favorites"}
-          data-ui-id={`canvas-palette-item-${metadata.type.toLowerCase()}-favorite-btn`}
         >
           <Star className={cn("h-4 w-4", isFavorite && "fill-current")} />
         </button>
@@ -168,7 +166,6 @@ export const PaletteItem: React.FC<PaletteItemProps> = ({
           className="palette-item__action-btn palette-item__add-btn"
           onClick={handleClick}
           title="Add to canvas"
-          data-ui-id={`canvas-palette-item-${metadata.type.toLowerCase()}-add-btn`}
         >
           <Plus className="h-4 w-4" />
         </button>

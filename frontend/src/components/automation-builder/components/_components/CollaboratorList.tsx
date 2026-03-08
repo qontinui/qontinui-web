@@ -105,7 +105,6 @@ function CollaboratorRow({
                   "w-[120px] h-8 text-xs",
                   permissionColors[collaborator.permission]
                 )}
-                data-ui-id={`automation-share-collaborator-${collaborator.id}-permission-select`}
               >
                 <div className="flex items-center gap-1.5">
                   <PermissionIcon className="h-3 w-3" />
@@ -126,7 +125,6 @@ function CollaboratorRow({
               onClick={() => onRevoke(collaborator.id, collaborator.email)}
               disabled={isUpdating}
               aria-label={`Remove ${collaborator.name || collaborator.email}`}
-              data-ui-id={`automation-share-collaborator-${collaborator.id}-revoke-btn`}
             >
               {isUpdating ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

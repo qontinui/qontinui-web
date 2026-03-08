@@ -270,7 +270,6 @@ export function AlignmentTools({
             onClick={() => handleAlign("left")}
             className="p-2 bg-surface-raised hover:bg-surface-raised/80 rounded transition-colors"
             title="Align Left (Ctrl+Shift+L)"
-            data-ui-id="canvas-align-left-btn"
           >
             <svg
               className="w-4 h-4 text-white"
@@ -290,7 +289,6 @@ export function AlignmentTools({
             onClick={() => handleAlign("center-horizontal")}
             className="p-2 bg-surface-raised hover:bg-surface-raised/80 rounded transition-colors"
             title="Align Center Horizontal"
-            data-ui-id="canvas-align-center-h-btn"
           >
             <svg
               className="w-4 h-4 text-white"
@@ -310,7 +308,6 @@ export function AlignmentTools({
             onClick={() => handleAlign("right")}
             className="p-2 bg-surface-raised hover:bg-surface-raised/80 rounded transition-colors"
             title="Align Right (Ctrl+Shift+R)"
-            data-ui-id="canvas-align-right-btn"
           >
             <svg
               className="w-4 h-4 text-white"
@@ -330,7 +327,6 @@ export function AlignmentTools({
             onClick={() => handleAlign("top")}
             className="p-2 bg-surface-raised hover:bg-surface-raised/80 rounded transition-colors"
             title="Align Top (Ctrl+Shift+T)"
-            data-ui-id="canvas-align-top-btn"
           >
             <svg
               className="w-4 h-4 text-white"
@@ -350,7 +346,6 @@ export function AlignmentTools({
             onClick={() => handleAlign("center-vertical")}
             className="p-2 bg-surface-raised hover:bg-surface-raised/80 rounded transition-colors"
             title="Align Center Vertical"
-            data-ui-id="canvas-align-center-v-btn"
           >
             <svg
               className="w-4 h-4 text-white"
@@ -370,7 +365,6 @@ export function AlignmentTools({
             onClick={() => handleAlign("bottom")}
             className="p-2 bg-surface-raised hover:bg-surface-raised/80 rounded transition-colors"
             title="Align Bottom (Ctrl+Shift+B)"
-            data-ui-id="canvas-align-bottom-btn"
           >
             <svg
               className="w-4 h-4 text-white"
@@ -400,7 +394,6 @@ export function AlignmentTools({
               onClick={() => handleDistribute("horizontal")}
               className="p-2 bg-surface-raised hover:bg-surface-raised/80 rounded transition-colors"
               title="Distribute Horizontally (Ctrl+Shift+H)"
-              data-ui-id="canvas-distribute-h-btn"
             >
               <svg
                 className="w-4 h-4 text-white"
@@ -420,7 +413,6 @@ export function AlignmentTools({
               onClick={() => handleDistribute("vertical")}
               className="p-2 bg-surface-raised hover:bg-surface-raised/80 rounded transition-colors"
               title="Distribute Vertically (Ctrl+Shift+V)"
-              data-ui-id="canvas-distribute-v-btn"
             >
               <svg
                 className="w-4 h-4 text-white"
@@ -440,7 +432,6 @@ export function AlignmentTools({
               onClick={() => handleDistribute("even")}
               className="p-2 bg-surface-raised hover:bg-surface-raised/80 rounded transition-colors"
               title="Distribute Evenly"
-              data-ui-id="canvas-distribute-even-btn"
             >
               <svg
                 className="w-4 h-4 text-white"

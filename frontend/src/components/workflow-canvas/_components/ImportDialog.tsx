@@ -43,7 +43,6 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
                   key={value}
                   onClick={() => setImportMethod(value)}
                   className={`flex-1 px-3 py-2 rounded-md text-sm font-medium ${importMethod === value ? "bg-brand-primary text-black" : "bg-surface-raised text-text-secondary hover:bg-surface-raised/80"}`}
-                  data-ui-id={`canvas-import-method-${value}-btn`}
                 >
                   {label}
                 </button>
@@ -66,7 +65,6 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
                 onChange={(e) => setUrl(e.target.value)}
                 className="w-full bg-surface-canvas border border-border-default text-white rounded-md px-3 py-2 focus:border-brand-primary focus:ring-1 focus:ring-brand-primary placeholder:text-text-muted"
                 placeholder="https://example.com/workflow.json"
-                data-ui-id="canvas-import-url-input"
               />
             </div>
           )}
@@ -107,7 +105,6 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
             onClick={onClose}
             className="px-4 py-2 border border-border-default text-text-secondary rounded-md hover:bg-surface-raised"
             disabled={loading}
-            data-ui-id="canvas-import-cancel-btn"
           >
             Cancel
           </button>
@@ -115,7 +112,6 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
             onClick={handleImport}
             className="px-4 py-2 bg-brand-primary text-black rounded-md hover:bg-brand-primary/80 disabled:opacity-50"
             disabled={loading || (importMethod === "url" && !url)}
-            data-ui-id="canvas-import-submit-btn"
           >
             {loading ? "Importing..." : "Import"}
           </button>

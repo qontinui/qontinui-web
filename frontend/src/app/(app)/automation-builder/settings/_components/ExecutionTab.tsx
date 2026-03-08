@@ -45,7 +45,6 @@ export function ExecutionTab({ settings, updateSetting }: ExecutionTabProps) {
                   parseInt(e.target.value)
                 )
               }
-              data-ui-id="automation-settings-max-concurrent-workflows-input"
             />
             <p className="text-xs text-muted-foreground">
               Maximum number of workflows that can run simultaneously
@@ -61,7 +60,6 @@ export function ExecutionTab({ settings, updateSetting }: ExecutionTabProps) {
               onChange={(e) =>
                 updateSetting("defaultTimeout", parseInt(e.target.value))
               }
-              data-ui-id="automation-settings-default-timeout-input"
             />
           </div>
 
@@ -79,7 +77,6 @@ export function ExecutionTab({ settings, updateSetting }: ExecutionTabProps) {
               onCheckedChange={(checked) =>
                 updateSetting("retryOnFailure", checked)
               }
-              data-ui-id="automation-settings-retry-on-failure-toggle"
             />
           </div>
 
@@ -95,7 +92,6 @@ export function ExecutionTab({ settings, updateSetting }: ExecutionTabProps) {
                 onChange={(e) =>
                   updateSetting("maxRetries", parseInt(e.target.value))
                 }
-                data-ui-id="automation-settings-max-retries-input"
               />
             </div>
           )}

@@ -31,10 +31,7 @@ export function ScrollActionProperties({
           value={(config.direction as string) || "down"}
           onValueChange={(value) => updateConfig("direction", value)}
         >
-          <SelectTrigger
-            className="bg-transparent border-border-default"
-            data-ui-id="action-props-scroll-direction-select"
-          >
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="bg-surface-raised border-border-default">
@@ -56,7 +53,6 @@ export function ScrollActionProperties({
             updateConfig("clicks", Number.parseInt(e.target.value))
           }
           className="bg-transparent border-border-default"
-          data-ui-id="action-props-scroll-amount-input"
         />
       </div>
 
@@ -73,7 +69,6 @@ export function ScrollActionProperties({
             updateConfig("scroll_duration", Number.parseInt(e.target.value))
           }
           className="bg-transparent border-border-default"
-          data-ui-id="action-props-scroll-duration-input"
         />
       </div>
 
@@ -85,7 +80,6 @@ export function ScrollActionProperties({
               .smooth_scroll as boolean) || false
           }
           onCheckedChange={(checked) => updateConfig("smooth_scroll", checked)}
-          data-ui-id="action-props-scroll-smooth-checkbox"
         />
         <Label htmlFor="smooth_scroll" className="text-xs text-text-muted">
           Smooth scroll

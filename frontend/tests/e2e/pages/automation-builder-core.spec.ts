@@ -622,9 +622,9 @@ test.describe("Automation Builder - Core Pages", () => {
         fullPage: true,
       });
 
-      // Look for auto-save toggle by its data-ui-id or label
+      // Look for auto-save toggle by its data-testid or label
       const autoSaveToggle = page.locator(
-        '[data-ui-id="automation-settings-auto-save-toggle"]'
+        '[data-testid="automation-settings-auto-save-toggle"]'
       );
       const autoSaveByLabel = page.getByText("Auto-save", { exact: false });
 
@@ -682,7 +682,7 @@ test.describe("Automation Builder - Core Pages", () => {
 
         // Verify Editor tab content (Theme selector, font size, etc.)
         const themeSelect = page.locator(
-          '[data-ui-id="automation-settings-theme-select"]'
+          '[data-testid="automation-settings-theme-select"]'
         );
         const themeVisible = await themeSelect
           .isVisible({ timeout: 3000 })
@@ -726,7 +726,7 @@ test.describe("Automation Builder - Core Pages", () => {
 
         // Advanced tab should show Debug Mode toggle
         const debugToggle = page.locator(
-          '[data-ui-id="automation-settings-enable-debug-mode-toggle"]'
+          '[data-testid="automation-settings-enable-debug-mode-toggle"]'
         );
         const debugVisible = await debugToggle
           .isVisible({ timeout: 3000 })

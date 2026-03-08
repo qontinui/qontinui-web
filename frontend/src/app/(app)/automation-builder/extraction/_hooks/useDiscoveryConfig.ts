@@ -149,11 +149,7 @@ export function useDiscoveryConfig({
       stateRef.current.setStateUuidMap({});
 
       const strategyLabel =
-        result.strategy_used === "fingerprint"
-          ? " (fingerprint)"
-          : result.strategy_used === "legacy"
-            ? " (legacy)"
-            : "";
+        result.strategy_used === "fingerprint" ? " (fingerprint)" : "";
       toast.success(
         `Discovered ${result.states.length} states from ${result.render_count} renders${strategyLabel}`
       );

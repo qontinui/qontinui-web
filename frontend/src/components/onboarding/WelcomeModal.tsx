@@ -133,7 +133,6 @@ export function WelcomeModal() {
           isClosing && "animate-out fade-out-0 zoom-out-95"
         )}
         showCloseButton={false}
-        data-ui-id="dialog-welcome"
       >
         {/* Neon Glow Background Effects */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
@@ -202,7 +201,6 @@ export function WelcomeModal() {
                 "transition-all duration-300"
               )}
               aria-label="Take the interactive tour"
-              data-ui-id="dialog-welcome-tour-btn"
             >
               Take Tour
             </Button>
@@ -217,7 +215,6 @@ export function WelcomeModal() {
                 "transition-all duration-300"
               )}
               aria-label="Skip tour and go to dashboard"
-              data-ui-id="dialog-welcome-skip-btn"
             >
               Skip to Dashboard
             </Button>
@@ -231,7 +228,6 @@ export function WelcomeModal() {
               onCheckedChange={handleDontShowAgainChange}
               className="border-border-default data-[state=checked]:bg-brand-primary data-[state=checked]:border-brand-primary"
               aria-label="Don't show this welcome message again"
-              data-ui-id="dialog-welcome-dont-show-checkbox"
             />
             <Label
               htmlFor="dontShowAgain"

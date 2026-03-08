@@ -28,7 +28,7 @@ const TARGET_TYPE_REQUIREMENTS: Record<TargetType, TargetTypeRequirement> = {
     requirements: [
       "Qontinui DevTools extension must be installed in Chrome",
       "Extension must be connected to the runner (check popup)",
-      "Target page should have elements with data-ui-id attributes",
+      "Target page should use the UI Bridge SDK (AutoRegisterProvider)",
     ],
   },
   web: {

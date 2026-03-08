@@ -274,10 +274,7 @@ export function MissingMonitorsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="sm:max-w-[700px] max-h-[90vh] bg-surface-canvas border-border-subtle"
-        data-ui-id="dialog-missing-monitors"
-      >
+      <DialogContent className="sm:max-w-[700px] max-h-[90vh] bg-surface-canvas border-border-subtle">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 text-amber-500" />
@@ -373,7 +370,6 @@ export function MissingMonitorsDialog({
             variant="outline"
             onClick={() => onOpenChange(false)}
             className="border-border-default"
-            data-ui-id="dialog-missing-monitors-cancel-btn"
           >
             Cancel
           </Button>
@@ -381,7 +377,6 @@ export function MissingMonitorsDialog({
             onClick={handleApply}
             disabled={selectedCount === 0 || monitors.length === 0}
             className="bg-brand-primary hover:bg-brand-primary/80 text-black"
-            data-ui-id="dialog-missing-monitors-confirm-btn"
           >
             <Monitor className="w-4 h-4 mr-2" />
             Apply to {selectedCount} Element(s)

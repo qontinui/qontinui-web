@@ -55,10 +55,7 @@ export function VisualDiffViewer({
   }
 
   return (
-    <div
-      className={cn("flex flex-col gap-4", className)}
-      data-ui-id="testing-visual-diff-viewer"
-    >
+    <div className={cn("flex flex-col gap-4", className)}>
       <ControlsBar
         mode={mode}
         setMode={setMode}

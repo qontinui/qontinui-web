@@ -58,7 +58,6 @@ export function ExportDialog({
               value={format}
               onChange={(e) => setFormat(e.target.value as ExportFormat)}
               className="w-full bg-surface-canvas border border-border-default text-white rounded-md px-3 py-2 focus:border-brand-primary focus:ring-1 focus:ring-brand-primary"
-              data-ui-id="canvas-export-format-select"
             >
               <option value="json">JSON (Workflow Data)</option>
               <option value="png">PNG (Image)</option>
@@ -81,7 +80,6 @@ export function ExportDialog({
               onChange={(e) => setFilename(e.target.value)}
               className="w-full bg-surface-canvas border border-border-default text-white rounded-md px-3 py-2 focus:border-brand-primary focus:ring-1 focus:ring-brand-primary placeholder:text-text-muted"
               placeholder="workflow-name"
-              data-ui-id="canvas-export-filename-input"
             />
           </div>
 
@@ -102,7 +100,6 @@ export function ExportDialog({
                 value={quality}
                 onChange={(e) => setQuality(parseFloat(e.target.value))}
                 className="w-full accent-brand-primary"
-                data-ui-id="canvas-export-quality-input"
               />
             </div>
           )}
@@ -124,7 +121,6 @@ export function ExportDialog({
                   )
                 }
                 className="w-full bg-surface-canvas border border-border-default text-white rounded-md px-3 py-2 focus:border-brand-primary focus:ring-1 focus:ring-brand-primary"
-                data-ui-id="canvas-export-background-select"
               >
                 <option value="white">White</option>
                 <option value="transparent">Transparent</option>
@@ -141,7 +137,6 @@ export function ExportDialog({
                 checked={includeMetadata}
                 onChange={(e) => setIncludeMetadata(e.target.checked)}
                 className="mr-2 accent-brand-primary"
-                data-ui-id="canvas-export-metadata-checkbox"
               />
               <label
                 htmlFor="includeMetadata"
@@ -158,7 +153,6 @@ export function ExportDialog({
             onClick={onClose}
             className="px-4 py-2 border border-border-default text-text-secondary rounded-md hover:bg-surface-raised"
             disabled={exporting}
-            data-ui-id="canvas-export-cancel-btn"
           >
             Cancel
           </button>
@@ -166,7 +160,6 @@ export function ExportDialog({
             onClick={handleExport}
             className="px-4 py-2 bg-brand-primary text-black rounded-md hover:bg-brand-primary/80 disabled:opacity-50"
             disabled={exporting}
-            data-ui-id="canvas-export-submit-btn"
           >
             {exporting ? "Exporting..." : "Export"}
           </button>

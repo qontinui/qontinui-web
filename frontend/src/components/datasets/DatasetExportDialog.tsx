@@ -209,7 +209,7 @@ export function DatasetExportDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-lg" data-ui-id="dialog-dataset-export">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Export Dataset</DialogTitle>
           <DialogDescription>
@@ -228,7 +228,7 @@ export function DatasetExportDialog({
                 value={format}
                 onValueChange={(v) => setFormat(v as ExportFormat)}
               >
-                <SelectTrigger data-ui-id="dialog-dataset-export-format-select">
+                <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -270,7 +270,6 @@ export function DatasetExportDialog({
                   id="use-split"
                   checked={useSplit}
                   onCheckedChange={(checked) => setUseSplit(checked === true)}
-                  data-ui-id="dialog-dataset-export-split-checkbox"
                 />
                 <Label htmlFor="use-split" className="cursor-pointer">
                   <div className="flex items-center gap-2">
@@ -296,7 +295,6 @@ export function DatasetExportDialog({
                         onChange={(e) =>
                           setTrainPercent(Number(e.target.value))
                         }
-                        data-ui-id="dialog-dataset-export-train-percent-input"
                       />
                     </div>
                     <div className="space-y-1">
@@ -310,7 +308,6 @@ export function DatasetExportDialog({
                         max={100}
                         value={valPercent}
                         onChange={(e) => setValPercent(Number(e.target.value))}
-                        data-ui-id="dialog-dataset-export-val-percent-input"
                       />
                     </div>
                     <div className="space-y-1">
@@ -324,7 +321,6 @@ export function DatasetExportDialog({
                         max={100}
                         value={testPercent}
                         onChange={(e) => setTestPercent(Number(e.target.value))}
-                        data-ui-id="dialog-dataset-export-test-percent-input"
                       />
                     </div>
                   </div>
@@ -351,7 +347,6 @@ export function DatasetExportDialog({
                         )
                       }
                       className="w-32"
-                      data-ui-id="dialog-dataset-export-seed-input"
                     />
                     <p className="text-xs text-muted-foreground">
                       Use a seed for reproducible splits
@@ -392,11 +387,7 @@ export function DatasetExportDialog({
               </p>
             </div>
             <div className="flex justify-center">
-              <Button
-                onClick={handleDownload}
-                size="lg"
-                data-ui-id="dialog-dataset-export-download-btn"
-              >
+              <Button onClick={handleDownload} size="lg">
                 <Download className="mr-2 h-5 w-5" />
                 Download Export
               </Button>
@@ -428,18 +419,10 @@ export function DatasetExportDialog({
         <DialogFooter>
           {step === "configure" && (
             <>
-              <Button
-                variant="outline"
-                onClick={handleClose}
-                data-ui-id="dialog-dataset-export-cancel-btn"
-              >
+              <Button variant="outline" onClick={handleClose}>
                 Cancel
               </Button>
-              <Button
-                onClick={handleExport}
-                disabled={useSplit && !splitValid}
-                data-ui-id="dialog-dataset-export-confirm-btn"
-              >
+              <Button onClick={handleExport} disabled={useSplit && !splitValid}>
                 <Download className="mr-2 h-4 w-4" />
                 Export Dataset
               </Button>
@@ -453,30 +436,14 @@ export function DatasetExportDialog({
             </Button>
           )}
 
-          {step === "complete" && (
-            <Button
-              onClick={handleClose}
-              data-ui-id="dialog-dataset-export-done-btn"
-            >
-              Done
-            </Button>
-          )}
+          {step === "complete" && <Button onClick={handleClose}>Done</Button>}
 
           {step === "error" && (
             <>
-              <Button
-                variant="outline"
-                onClick={handleReset}
-                data-ui-id="dialog-dataset-export-retry-btn"
-              >
+              <Button variant="outline" onClick={handleReset}>
                 Try Again
               </Button>
-              <Button
-                onClick={handleClose}
-                data-ui-id="dialog-dataset-export-close-btn"
-              >
-                Close
-              </Button>
+              <Button onClick={handleClose}>Close</Button>
             </>
           )}
         </DialogFooter>

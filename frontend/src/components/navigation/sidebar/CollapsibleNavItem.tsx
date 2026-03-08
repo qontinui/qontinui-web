@@ -80,7 +80,6 @@ export function CollapsibleNavItem({
           <TooltipTrigger asChild>
             <DropdownMenuTrigger asChild>
               <button
-                data-ui-id={`nav-${item.id}`}
                 data-nav-id={item.id}
                 data-tutorial-id={`nav-${item.id}`}
                 data-route={item.route}
@@ -175,7 +174,6 @@ export function CollapsibleNavItem({
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
       <CollapsibleTrigger asChild>
         <button
-          data-ui-id={`nav-${item.id}`}
           data-nav-id={item.id}
           data-tutorial-id={`nav-${item.id}`}
           data-route={item.route}
@@ -225,7 +223,6 @@ export function CollapsibleNavItem({
             return (
               <button
                 key={child.id}
-                data-ui-id={`nav-${child.id}`}
                 data-route={child.route}
                 onClick={() => onNavigate(child.route)}
                 className={cn(

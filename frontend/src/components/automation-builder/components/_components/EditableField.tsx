@@ -112,7 +112,6 @@ function EditingInput(props: EditableFieldProps) {
         onChange={(e) => props.onChange(e.target.value)}
         onKeyDown={onKeyDown}
         data-tutorial-id={props.dataTutorialId}
-        data-ui-id={props.dataUiId}
         className="bg-surface-canvas border-border-default text-white"
         placeholder={props.placeholder}
       />
@@ -128,17 +127,13 @@ function EditingInput(props: EditableFieldProps) {
         onKeyDown={onKeyDown}
         className="bg-surface-canvas border-border-default text-white min-h-[80px]"
         placeholder={props.placeholder}
-        data-ui-id={props.dataUiId}
       />
     );
   }
 
   return (
     <Select value={props.value} onValueChange={props.onChange}>
-      <SelectTrigger
-        className="bg-surface-canvas border-border-default text-white"
-        data-ui-id={props.dataUiId}
-      >
+      <SelectTrigger className="bg-surface-canvas border-border-default text-white">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

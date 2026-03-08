@@ -458,7 +458,6 @@ function ExtractionPageContentInner() {
         {/* Hidden test helper element */}
         <div
           id="extraction-page-state"
-          data-ui-id="extraction-page-state"
           data-extraction-status={state.webExtractionProgress.status}
           data-states-count={webExtraction.stateMachineStates.length}
           data-history-count={webExtraction.extractionHistory.length}
@@ -482,7 +481,6 @@ function ExtractionPageContentInner() {
                 <TabsTrigger
                   value="configuration"
                   id="extraction-config-tab"
-                  data-ui-id="extraction-config-tab"
                   className="data-[state=active]:bg-opacity-20 font-mono px-6 h-9 transition-all"
                   style={{ "--tw-bg-opacity": "0.2" } as React.CSSProperties}
                 >
@@ -491,7 +489,6 @@ function ExtractionPageContentInner() {
                 <TabsTrigger
                   value="results"
                   id="extraction-results-tab"
-                  data-ui-id="extraction-results-tab"
                   className="data-[state=active]:bg-opacity-20 font-mono px-6 h-9 transition-all"
                 >
                   Results
@@ -504,7 +501,6 @@ function ExtractionPageContentInner() {
                   onClick={handleStartExtraction}
                   disabled={state.isExtracting}
                   id="extraction-start-btn"
-                  data-ui-id="extraction-start-btn"
                   className="font-mono h-11 px-6 transition-all"
                   style={{
                     backgroundColor: `color-mix(in oklch, ${methodColor} 10%, transparent)`,
@@ -916,7 +912,6 @@ function ExtractionPageContentInner() {
               value="results"
               className="mt-0 layout-full-height data-[state=inactive]:hidden flex flex-col"
               id="extraction-results-content"
-              data-ui-id="extraction-results-content"
               data-history-count={webExtraction.extractionHistory.length}
               data-extraction-method={config.method}
               data-extraction-status={state.webExtractionProgress.status}
@@ -1055,7 +1050,6 @@ function ExtractionPageContentInner() {
                             <SelectTrigger
                               className="w-[350px]"
                               id="extraction-history-select"
-                              data-ui-id="extraction-history-select"
                             >
                               <SelectValue
                                 placeholder={
@@ -1433,7 +1427,6 @@ function ExtractionPageContentInner() {
                             <Button
                               variant="outline"
                               size="sm"
-                              data-ui-id="extraction-web-import-btn"
                               className="border-brand-success/50 text-brand-success hover:bg-brand-success/10"
                             >
                               Import to State Machine
@@ -1446,7 +1439,6 @@ function ExtractionPageContentInner() {
                         <div
                           className="flex items-center justify-center py-24"
                           id="extraction-results-loading"
-                          data-ui-id="extraction-results-loading"
                         >
                           <div className="flex flex-col items-center gap-4">
                             <Loader2 className="h-12 w-12 animate-spin text-brand-success" />
@@ -1489,7 +1481,6 @@ function ExtractionPageContentInner() {
                             <div
                               className="flex-1 min-h-[500px]"
                               id="extraction-results-states-container"
-                              data-ui-id="extraction-results-states-container"
                               data-state-count={
                                 webExtraction.stateMachineStates.length
                               }
@@ -1528,7 +1519,6 @@ function ExtractionPageContentInner() {
                         <Alert
                           className="bg-surface-raised/60 border-brand-primary/30 backdrop-blur-sm"
                           id="extraction-results-no-states"
-                          data-ui-id="extraction-results-no-states"
                         >
                           <AlertCircle className="h-4 w-4 text-brand-primary" />
                           <AlertDescription className="text-text-secondary font-mono">
@@ -1576,7 +1566,6 @@ function ExtractionPageContentInner() {
                       </p>
                       <Button
                         variant="outline"
-                        data-ui-id="extraction-uitars-import-btn"
                         className="border-brand-success/50 text-brand-success hover:bg-brand-success/10"
                       >
                         Import to State Machine

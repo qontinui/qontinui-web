@@ -40,7 +40,7 @@ export interface UIBridgeDiscoveryResult {
   strategy_metadata?: Record<string, unknown>;
 }
 
-export type DiscoveryStrategy = "auto" | "legacy" | "fingerprint";
+export type DiscoveryStrategy = "auto" | "fingerprint";
 
 export interface SavedConfig {
   id: string;

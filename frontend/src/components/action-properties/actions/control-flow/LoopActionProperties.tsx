@@ -98,10 +98,7 @@ export function LoopActionProperties({
       <div className="space-y-2">
         <p className="text-xs text-text-muted">Loop Type</p>
         <Select value={loopType} onValueChange={handleLoopTypeChange}>
-          <SelectTrigger
-            className="bg-transparent border-border-default"
-            data-ui-id="action-props-loop-type-select"
-          >
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -141,7 +138,6 @@ export function LoopActionProperties({
                 updateConfig("iterations", Number.parseInt(e.target.value) || 1)
               }
               className="bg-transparent border-border-default"
-              data-ui-id="action-props-loop-iterations-input"
             />
             <p className="text-xs text-text-muted">
               How many times to repeat the loop
@@ -199,10 +195,7 @@ export function LoopActionProperties({
                 })
               }
             >
-              <SelectTrigger
-                className="bg-transparent border-border-default"
-                data-ui-id="action-props-loop-collection-select"
-              >
+              <SelectTrigger className="bg-transparent border-border-default">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -364,7 +357,6 @@ export function LoopActionProperties({
               )
             }
             className="bg-transparent border-border-default"
-            data-ui-id="action-props-loop-maxiterations-input"
           />
           <p className="text-xs text-text-muted">
             Safety limit to prevent infinite loops (default: 1000)
@@ -376,7 +368,6 @@ export function LoopActionProperties({
             id="breakOnError"
             checked={breakOnError}
             onCheckedChange={(checked) => updateConfig("breakOnError", checked)}
-            data-ui-id="action-props-loop-breakonerror-checkbox"
           />
           <label
             htmlFor="breakOnError"

@@ -149,7 +149,6 @@ export function ScreenshotGallery({
           "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4",
           className
         )}
-        data-ui-id="testing-screenshot-gallery"
       >
         {screenshots.map((url, index) => (
           <div
@@ -198,7 +197,6 @@ export function ScreenshotGallery({
                       onClick={handleZoomOut}
                       disabled={zoom <= 0.5}
                       className="h-8 w-8 p-0"
-                      data-ui-id="testing-screenshot-gallery-zoom-out-btn"
                     >
                       <ZoomOut className="h-4 w-4" />
                     </Button>
@@ -211,7 +209,6 @@ export function ScreenshotGallery({
                       onClick={handleZoomIn}
                       disabled={zoom >= 3}
                       className="h-8 w-8 p-0"
-                      data-ui-id="testing-screenshot-gallery-zoom-in-btn"
                     >
                       <ZoomIn className="h-4 w-4" />
                     </Button>
@@ -227,7 +224,6 @@ export function ScreenshotGallery({
                         selectedIndex
                       )
                     }
-                    data-ui-id="testing-screenshot-gallery-download-btn"
                   >
                     <Download className="h-4 w-4" />
                   </Button>
@@ -238,7 +234,6 @@ export function ScreenshotGallery({
                     size="sm"
                     onClick={handleClose}
                     className="h-8 w-8 p-0"
-                    data-ui-id="testing-screenshot-gallery-close-btn"
                   >
                     <X className="h-4 w-4" />
                   </Button>
@@ -272,7 +267,6 @@ export function ScreenshotGallery({
                   size="icon"
                   className="absolute left-4 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full"
                   onClick={handlePrevious}
-                  data-ui-id="testing-screenshot-gallery-prev-btn"
                 >
                   <ChevronLeft className="h-6 w-6" />
                 </Button>
@@ -283,7 +277,6 @@ export function ScreenshotGallery({
                   size="icon"
                   className="absolute right-4 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full"
                   onClick={handleNext}
-                  data-ui-id="testing-screenshot-gallery-next-btn"
                 >
                   <ChevronRight className="h-6 w-6" />
                 </Button>

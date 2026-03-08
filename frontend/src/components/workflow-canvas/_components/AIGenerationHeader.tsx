@@ -24,7 +24,6 @@ export function AIGenerationHeader({ onClose }: AIGenerationHeaderProps) {
       <button
         onClick={onClose}
         className="p-2 hover:bg-surface-raised/50 dark:hover:bg-surface-raised rounded-lg transition-colors"
-        data-ui-id="dialog-ai-generation-close-btn"
       >
         <X className="w-5 h-5" />
       </button>

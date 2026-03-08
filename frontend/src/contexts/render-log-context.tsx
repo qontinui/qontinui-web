@@ -144,7 +144,6 @@ function serializeElement(
     "title",
     "aria-label",
     "data-testid",
-    "data-ui-id", // UI Bridge registered elements
     "name",
     "type",
     "value",

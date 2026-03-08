@@ -159,10 +159,7 @@ export default function ChatSessionPage() {
   const isStreaming = sessionState === "processing";
 
   return (
-    <div
-      data-ui-id="chat-session-page"
-      className="h-screen flex flex-col bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white"
-    >
+    <div className="h-screen flex flex-col bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">
       <ChatHeader
         sessionName={sessionName}
         sessionState={sessionState}
@@ -174,7 +171,6 @@ export default function ChatSessionPage() {
       <div className="flex-1 flex min-h-0">
         {/* Chat panel */}
         <div
-          data-ui-id="chat-panel"
           className={`flex flex-col ${showWorkflowPanel ? "w-1/2" : "w-full"} transition-all duration-300`}
         >
           <div className="flex-1 flex flex-col min-h-0 max-w-3xl mx-auto w-full px-4">
@@ -200,7 +196,7 @@ export default function ChatSessionPage() {
 
         {/* Workflow preview panel */}
         {showWorkflowPanel && (
-          <div data-ui-id="chat-workflow-panel" className="w-1/2 min-w-[360px]">
+          <div className="w-1/2 min-w-[360px]">
             <WorkflowPreviewPanel
               workflow={generatedWorkflow}
               isLoading={isGeneratingWorkflow}

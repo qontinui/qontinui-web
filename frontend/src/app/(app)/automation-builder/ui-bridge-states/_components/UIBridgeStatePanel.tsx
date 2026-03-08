@@ -77,7 +77,6 @@ export function UIBridgeStatePanel({
           </label>
           <Input
             id="ubsp-name"
-            data-ui-id="sm-state-name-input"
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="text-sm"
@@ -107,7 +106,6 @@ export function UIBridgeStatePanel({
           onClick={handleSave}
           disabled={isSaving}
           className="w-full"
-          data-ui-id="sm-state-save-button"
         >
           <Save className="size-3.5 mr-1.5" />
           {isSaving ? "Saving..." : "Save Changes"}

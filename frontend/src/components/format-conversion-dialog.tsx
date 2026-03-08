@@ -104,10 +104,7 @@ export function FormatConversionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="sm:max-w-[500px] bg-surface-overlay border-border-default"
-        data-ui-id="dialog-format-conversion"
-      >
+      <DialogContent className="sm:max-w-[500px] bg-surface-overlay border-border-default">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-brand-primary">
             {isSequentialToGraph ? (
@@ -187,7 +184,6 @@ export function FormatConversionDialog({
             variant="outline"
             onClick={() => onOpenChange(false)}
             className="border-border-default hover:bg-surface-raised"
-            data-ui-id="dialog-format-conversion-cancel-btn"
           >
             Cancel
           </Button>
@@ -199,7 +195,6 @@ export function FormatConversionDialog({
                 ? "bg-brand-success hover:bg-brand-success/80 text-black"
                 : "bg-brand-primary hover:bg-brand-primary/80 text-black"
             }
-            data-ui-id="dialog-format-conversion-confirm-btn"
           >
             {converting ? "Switching..." : "Switch View"}
           </Button>

@@ -792,10 +792,8 @@ async def discover_and_save_states(
     3. Saves all discovered states
 
     **Strategies:**
-    - `auto` (default): Uses fingerprint strategy if fingerprint data provided,
-      otherwise falls back to legacy
-    - `legacy`: ID-based co-occurrence analysis (data-ui-id, data-testid)
-    - `fingerprint`: Enhanced discovery with element fingerprints for cross-page matching
+    - `auto` (default): Uses fingerprint strategy (with ID fallback if no fingerprint data)
+    - `fingerprint`: Enhanced discovery with element fingerprints (supports ID fallback)
 
     Use this to persist discovery results for later use.
     """
@@ -810,7 +808,6 @@ async def discover_and_save_states(
     # Map request strategy to library strategy type
     strategy_map = {
         "auto": DiscoveryStrategyType.AUTO,
-        "legacy": DiscoveryStrategyType.LEGACY,
         "fingerprint": DiscoveryStrategyType.FINGERPRINT,
     }
     strategy = strategy_map.get(request.strategy.value, DiscoveryStrategyType.AUTO)

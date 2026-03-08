@@ -44,10 +44,7 @@ function ComparePageContent() {
   }
 
   return (
-    <div
-      className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden"
-      data-ui-id="qa-compare-page"
-    >
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
       <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
         <h1 className="text-lg font-semibold text-foreground">
           Compare Test Runs
@@ -58,7 +55,7 @@ function ComparePageContent() {
           }
           variant="outline"
           size="sm"
-          data-ui-id="qa-compare-back-btn"
+          data-testid="qa-compare-back-btn"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Runs

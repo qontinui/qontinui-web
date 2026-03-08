@@ -68,7 +68,6 @@ export default function ChatPage() {
   return (
     <div
       id="chat-page"
-      data-ui-id="chat-page"
       className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white"
     >
       {/* Header */}
@@ -79,7 +78,6 @@ export default function ChatPage() {
             <div>
               <h1
                 id="chat-heading"
-                data-ui-id="chat-heading"
                 className="text-2xl font-bold text-text-primary"
               >
                 Chat
@@ -93,7 +91,6 @@ export default function ChatPage() {
           <div className="flex items-center gap-3">
             <span
               id="chat-runner-status"
-              data-ui-id="chat-runner-status"
               className="flex items-center gap-1.5 text-xs"
             >
               {isRunnerConnected ? (
@@ -111,7 +108,6 @@ export default function ChatPage() {
 
             <Button
               id="chat-new-btn"
-              data-ui-id="chat-new-btn"
               size="sm"
               onClick={handleNewChat}
               disabled={!isRunnerConnected || !isChatWsConnected || isCreating}
@@ -130,16 +126,9 @@ export default function ChatPage() {
 
       {/* Main content */}
       <main className="p-6 mx-auto" style={{ maxWidth: "900px" }}>
-        <div
-          id="chat-session-list"
-          data-ui-id="chat-session-list"
-          className="space-y-4"
-        >
+        <div id="chat-session-list" className="space-y-4">
           {!isRunnerConnected ? (
-            <div
-              data-ui-id="chat-offline-state"
-              className="flex flex-col items-center justify-center py-24 text-text-muted"
-            >
+            <div className="flex flex-col items-center justify-center py-24 text-text-muted">
               <WifiOff className="size-16 mb-4 opacity-20" />
               <h2 className="text-lg font-medium text-text-secondary mb-2">
                 Runner Not Connected

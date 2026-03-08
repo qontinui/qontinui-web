@@ -69,10 +69,7 @@ const DeleteConfirmationDialog: React.FC<DeleteConfirmationDialogProps> = ({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent
-        className="max-w-lg"
-        data-ui-id="dialog-delete-state-image"
-      >
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-yellow-500" />
@@ -141,7 +138,6 @@ const DeleteConfirmationDialog: React.FC<DeleteConfirmationDialogProps> = ({
                   id="cascade"
                   checked={cascade}
                   onCheckedChange={(checked) => setCascade(checked as boolean)}
-                  data-ui-id="dialog-delete-state-image-cascade-checkbox"
                 />
                 <Label htmlFor="cascade" className="text-sm">
                   Remove from all states (cascade)
@@ -154,7 +150,6 @@ const DeleteConfirmationDialog: React.FC<DeleteConfirmationDialogProps> = ({
                     id="force"
                     checked={force}
                     onCheckedChange={(checked) => setForce(checked as boolean)}
-                    data-ui-id="dialog-delete-state-image-force-checkbox"
                   />
                   <Label htmlFor="force" className="text-sm text-red-600">
                     Force delete critical StateImage
@@ -172,7 +167,6 @@ const DeleteConfirmationDialog: React.FC<DeleteConfirmationDialogProps> = ({
                     onValueChange={(value) =>
                       setOrphanStrategy(value as "keep" | "delete" | "merge")
                     }
-                    data-ui-id="dialog-delete-state-image-orphan-strategy-radio"
                   >
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="keep" id="keep" />
@@ -206,18 +200,13 @@ const DeleteConfirmationDialog: React.FC<DeleteConfirmationDialogProps> = ({
         )}
 
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={onCancel}
-            data-ui-id="dialog-delete-state-image-cancel-btn"
-          >
+          <Button variant="outline" onClick={onCancel}>
             Cancel
           </Button>
           <Button
             variant="destructive"
             onClick={handleConfirm}
             disabled={isLoading || (impact?.isCritical && !force)}
-            data-ui-id="dialog-delete-state-image-confirm-btn"
           >
             Delete StateImage
           </Button>

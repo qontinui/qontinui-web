@@ -51,10 +51,7 @@ export function DiscoveryReviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent
-        className="bg-surface-raised border-border-subtle sm:max-w-lg"
-        data-ui-id="dialog-discovery-review"
-      >
+      <DialogContent className="bg-surface-raised border-border-subtle sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {isAccepting ? (
@@ -103,7 +100,6 @@ export function DiscoveryReviewDialog({
                   : "Add any notes about why you're rejecting this discovery..."
               }
               className="bg-surface-canvas/50 border-border-default text-white placeholder:text-text-muted min-h-[100px] resize-none"
-              data-ui-id="dialog-discovery-review-notes-input"
             />
           </div>
         </div>
@@ -114,7 +110,6 @@ export function DiscoveryReviewDialog({
             onClick={() => handleClose(false)}
             disabled={isSubmitting}
             className="text-text-muted hover:text-white hover:bg-surface-raised"
-            data-ui-id="dialog-discovery-review-cancel-btn"
           >
             Cancel
           </Button>
@@ -126,7 +121,6 @@ export function DiscoveryReviewDialog({
                 ? "bg-green-600 hover:bg-green-700 text-white"
                 : "bg-red-600 hover:bg-red-700 text-white"
             }
-            data-ui-id="dialog-discovery-review-confirm-btn"
           >
             {isSubmitting ? (
               <>

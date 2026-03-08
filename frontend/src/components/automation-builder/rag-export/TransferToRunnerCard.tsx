@@ -79,10 +79,7 @@ export function TransferToRunnerCard({
                 value={selectedRunnerId || undefined}
                 onValueChange={setSelectedRunnerId}
               >
-                <SelectTrigger
-                  className="bg-surface-canvas border-border-default"
-                  data-ui-id="automation-rag-runner-select"
-                >
+                <SelectTrigger className="bg-surface-canvas border-border-default">
                   <SelectValue placeholder="Choose a runner..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -107,7 +104,6 @@ export function TransferToRunnerCard({
               onClick={onTransfer}
               disabled={isTransferring || !selectedRunnerId}
               className="w-full bg-gradient-to-r from-brand-primary to-brand-secondary hover:opacity-90 text-white"
-              data-ui-id="automation-rag-transfer-btn"
             >
               {isTransferring ? (
                 <>
@@ -160,7 +156,6 @@ function NoRunnersMessage() {
             size="sm"
             className="mt-3 border-border-default"
             onClick={() => (window.location.href = "/connect-runner")}
-            data-ui-id="automation-rag-connect-btn"
           >
             <Monitor className="w-4 h-4 mr-2" />
             Connect Runner

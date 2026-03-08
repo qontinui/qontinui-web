@@ -31,7 +31,6 @@ export function IllustrationSettingsCard({
             onCheckedChange={(checked) =>
               updateSetting("illustration", "enabled", checked)
             }
-            data-ui-id="settings-illustration-enabled-toggle"
           />
         </div>
         <div className="flex items-center justify-between">
@@ -42,7 +41,6 @@ export function IllustrationSettingsCard({
             onCheckedChange={(checked) =>
               updateSetting("illustration", "show_click", checked)
             }
-            data-ui-id="settings-illustration-show-click-toggle"
           />
         </div>
         <div className="flex items-center justify-between">
@@ -53,7 +51,6 @@ export function IllustrationSettingsCard({
             onCheckedChange={(checked) =>
               updateSetting("illustration", "show_drag", checked)
             }
-            data-ui-id="settings-illustration-show-drag-toggle"
           />
         </div>
         <div className="flex items-center justify-between">
@@ -64,7 +61,6 @@ export function IllustrationSettingsCard({
             onCheckedChange={(checked) =>
               updateSetting("illustration", "show_find", checked)
             }
-            data-ui-id="settings-illustration-show-find-toggle"
           />
         </div>
         <div className="space-y-2">
@@ -75,7 +71,6 @@ export function IllustrationSettingsCard({
             onChange={(e) =>
               updateSetting("illustration", "highlight_color", e.target.value)
             }
-            data-ui-id="settings-illustration-highlight-color-input"
           />
         </div>
         <div className="space-y-2">
@@ -95,7 +90,6 @@ export function IllustrationSettingsCard({
                 parseInt(e.target.value)
               )
             }
-            data-ui-id="settings-illustration-highlight-thickness-input"
           />
         </div>
       </CardContent>

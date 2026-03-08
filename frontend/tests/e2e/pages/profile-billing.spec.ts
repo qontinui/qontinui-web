@@ -35,7 +35,7 @@ test.describe("Profile Page", () => {
     await page.waitForTimeout(3000);
 
     // User profile header should display user info (username or full name)
-    const profileHeader = page.locator('[data-ui-id="user-profile-header"]');
+    const profileHeader = page.locator('[data-testid="user-profile-header"]');
     await expect(profileHeader).toBeVisible({ timeout: 15000 });
 
     // "Member since" text should be visible
@@ -70,12 +70,12 @@ test.describe("Profile Page", () => {
     await page.waitForLoadState("networkidle");
 
     // Back to Dashboard button
-    const backBtn = page.locator('[data-ui-id="profile-back-btn"]');
+    const backBtn = page.locator('[data-testid="profile-back-btn"]');
     await expect(backBtn).toBeVisible({ timeout: 15000 });
 
     // Connect Runner button
     const connectBtn = page.locator(
-      '[data-ui-id="profile-connect-runner-btn"]'
+      '[data-testid="profile-connect-runner-btn"]'
     );
     await expect(connectBtn).toBeVisible();
   });
@@ -106,17 +106,17 @@ test.describe("Pricing Page", () => {
     await page.waitForLoadState("networkidle");
 
     // Verify the pricing tiers grid is present
-    const tiersGrid = page.locator('[data-ui-id="pricing-tiers-grid"]');
+    const tiersGrid = page.locator('[data-testid="pricing-tiers-grid"]');
     await expect(tiersGrid).toBeVisible({ timeout: 15000 });
 
     // Verify all three tier cards are visible
-    const freeTier = page.locator('[data-ui-id="pricing-tier-free"]');
+    const freeTier = page.locator('[data-testid="pricing-tier-free"]');
     await expect(freeTier).toBeVisible();
 
-    const hobbyTier = page.locator('[data-ui-id="pricing-tier-hobby"]');
+    const hobbyTier = page.locator('[data-testid="pricing-tier-hobby"]');
     await expect(hobbyTier).toBeVisible();
 
-    const proTier = page.locator('[data-ui-id="pricing-tier-pro"]');
+    const proTier = page.locator('[data-testid="pricing-tier-pro"]');
     await expect(proTier).toBeVisible();
 
     // Verify tier names are displayed

@@ -26,7 +26,6 @@ export function ConflictFooter({
               onClick={() => onResolveAll("local")}
               disabled={loading}
               className="flex-1"
-              data-ui-id="dialog-conflict-resolution-keep-all-mine-btn"
             >
               Keep All Mine
             </Button>
@@ -35,7 +34,6 @@ export function ConflictFooter({
               onClick={() => onResolveAll("remote")}
               disabled={loading}
               className="flex-1"
-              data-ui-id="dialog-conflict-resolution-keep-all-theirs-btn"
             >
               Keep All Theirs
             </Button>
@@ -47,7 +45,6 @@ export function ConflictFooter({
           variant="outline"
           onClick={() => onResolve("local")}
           disabled={loading}
-          data-ui-id="dialog-conflict-resolution-keep-mine-btn"
         >
           <User className="mr-2 h-4 w-4" />
           Keep Mine
@@ -56,16 +53,11 @@ export function ConflictFooter({
           variant="outline"
           onClick={() => onResolve("remote")}
           disabled={loading}
-          data-ui-id="dialog-conflict-resolution-keep-theirs-btn"
         >
           <Users className="mr-2 h-4 w-4" />
           Keep Theirs
         </Button>
-        <Button
-          onClick={() => onResolve("merge")}
-          disabled={loading}
-          data-ui-id="dialog-conflict-resolution-merge-btn"
-        >
+        <Button onClick={() => onResolve("merge")} disabled={loading}>
           {loading ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           ) : (

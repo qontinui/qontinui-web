@@ -32,18 +32,18 @@ test.describe("Testing Dashboard - Main Page", () => {
 
     // The view selector has 3 buttons: Test Runs, Coverage Trends, Reliability
     const viewSelector = page.locator(
-      '[data-ui-id="testing-page-view-selector"]'
+      '[data-testid="testing-page-view-selector"]'
     );
     await expect(viewSelector).toBeVisible();
 
     await expect(
-      page.locator('[data-ui-id="testing-page-overview-tab"]')
+      page.locator('[data-testid="testing-page-overview-tab"]')
     ).toBeVisible();
     await expect(
-      page.locator('[data-ui-id="testing-page-trends-tab"]')
+      page.locator('[data-testid="testing-page-trends-tab"]')
     ).toBeVisible();
     await expect(
-      page.locator('[data-ui-id="testing-page-reliability-tab"]')
+      page.locator('[data-testid="testing-page-reliability-tab"]')
     ).toBeVisible();
   });
 
@@ -53,12 +53,12 @@ test.describe("Testing Dashboard - Main Page", () => {
 
     // All Runs button
     await expect(
-      page.locator('[data-ui-id="testing-page-all-runs-btn"]')
+      page.locator('[data-testid="testing-page-all-runs-btn"]')
     ).toBeVisible();
 
     // Deficiencies button
     await expect(
-      page.locator('[data-ui-id="testing-page-deficiencies-btn"]')
+      page.locator('[data-testid="testing-page-deficiencies-btn"]')
     ).toBeVisible();
   });
 
@@ -77,21 +77,21 @@ test.describe("Testing Dashboard - Main Page", () => {
     await page.waitForLoadState("networkidle");
 
     // Click Coverage Trends tab - without project, shows message
-    await page.locator('[data-ui-id="testing-page-trends-tab"]').click();
+    await page.locator('[data-testid="testing-page-trends-tab"]').click();
     await page.waitForTimeout(500);
     await expect(
       page.getByText("Please select a project").first()
     ).toBeVisible();
 
     // Click Reliability tab - without project, shows message
-    await page.locator('[data-ui-id="testing-page-reliability-tab"]').click();
+    await page.locator('[data-testid="testing-page-reliability-tab"]').click();
     await page.waitForTimeout(500);
     await expect(
       page.getByText("Please select a project").first()
     ).toBeVisible();
 
     // Click back to Test Runs tab
-    await page.locator('[data-ui-id="testing-page-overview-tab"]').click();
+    await page.locator('[data-testid="testing-page-overview-tab"]').click();
     await page.waitForTimeout(500);
   });
 });
@@ -116,7 +116,7 @@ test.describe("Testing - Runs Page", () => {
     await page.goto("/testing/runs");
     await page.waitForLoadState("networkidle");
 
-    const backBtn = page.locator('[data-ui-id="testing-page-runs-back-btn"]');
+    const backBtn = page.locator('[data-testid="testing-page-runs-back-btn"]');
     await expect(backBtn).toBeVisible();
 
     await expect(
@@ -151,7 +151,7 @@ test.describe("Testing - Run Detail Page", () => {
     await expect(page.locator("h1")).toContainText("Test Run Details");
 
     const backBtn = page.locator(
-      '[data-ui-id="testing-page-run-details-back-btn"]'
+      '[data-testid="testing-page-run-details-back-btn"]'
     );
     await expect(backBtn).toBeVisible();
   });
@@ -192,7 +192,7 @@ test.describe("Testing - Deficiencies Page", () => {
     await page.waitForLoadState("networkidle");
 
     const backBtn = page.locator(
-      '[data-ui-id="testing-page-deficiencies-back-btn"]'
+      '[data-testid="testing-page-deficiencies-back-btn"]'
     );
     await expect(backBtn).toBeVisible();
   });

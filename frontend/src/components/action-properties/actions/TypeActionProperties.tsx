@@ -76,10 +76,7 @@ export function TypeActionProperties({
             }
           }}
         >
-          <SelectTrigger
-            className="bg-transparent border-border-default"
-            data-ui-id="action-props-type-textsource-select"
-          >
+          <SelectTrigger className="bg-transparent border-border-default">
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="bg-surface-raised border-border-default">
@@ -107,10 +104,7 @@ export function TypeActionProperties({
                 }
               }}
             >
-              <SelectTrigger
-                className="bg-transparent border-border-default"
-                data-ui-id="action-props-type-state-select"
-              >
+              <SelectTrigger className="bg-transparent border-border-default">
                 <SelectValue placeholder="Select a state" />
               </SelectTrigger>
               <SelectContent className="bg-surface-raised border-border-default">
@@ -224,7 +218,6 @@ export function TypeActionProperties({
             className="bg-transparent border-border-default font-mono text-sm"
             placeholder="Enter text to type..."
             rows={4}
-            data-ui-id="action-props-type-text-input"
           />
           {config.text && (
             <div className="p-2 bg-surface-raised/50 rounded-md border border-border-default">
@@ -247,7 +240,6 @@ export function TypeActionProperties({
             updateConfig("typeDelay", Number.parseInt(e.target.value))
           }
           className="bg-transparent border-border-default"
-          data-ui-id="action-props-type-delay-input"
         />
       </div>
 
@@ -256,7 +248,6 @@ export function TypeActionProperties({
           id="clear_before"
           checked={config.clearBefore || false}
           onCheckedChange={(checked) => updateConfig("clearBefore", checked)}
-          data-ui-id="action-props-type-clearbefore-checkbox"
         />
         <Label htmlFor="clear_before" className="text-xs text-text-muted">
           Clear before typing
@@ -270,7 +261,6 @@ export function TypeActionProperties({
           onCheckedChange={(checked) => {
             updateConfig("pressEnter", checked);
           }}
-          data-ui-id="action-props-type-pressenter-checkbox"
         />
         <Label htmlFor="press_enter" className="text-xs text-text-muted">
           Press Enter after typing

@@ -84,10 +84,7 @@ export function ExecutionTimelineWidget({ runId: _runId }: { runId: string }) {
               />
             ))}
             {phaseGroups.length === 0 && (
-              <div
-                data-ui-id="timeline-empty-state"
-                className="flex flex-col items-center justify-center h-32 text-text-muted"
-              >
+              <div className="flex flex-col items-center justify-center h-32 text-text-muted">
                 <Clock className="size-8 mb-2 opacity-50" />
                 <span className="text-sm">No active workflow steps yet</span>
                 <span className="text-xs mt-1 opacity-70">

@@ -167,7 +167,6 @@ export function UITarsProgressPanel({
               size="sm"
               variant="outline"
               onClick={onStop}
-              data-ui-id="extraction-uitars-stop-btn"
               className="border-red-500/50 text-red-500 hover:bg-red-500/10"
             >
               <Square className="h-3 w-3 mr-1 fill-current" />

@@ -107,10 +107,7 @@ export function DeficiencyWorkflow({
     );
 
   return (
-    <Card
-      className={cn("w-full", className)}
-      data-ui-id="testing-deficiency-workflow"
-    >
+    <Card className={cn("w-full", className)}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <IconComponent className="h-5 w-5" />
@@ -150,10 +147,7 @@ export function DeficiencyWorkflow({
                     setSelectedStatus(value as DeficiencyStatus)
                   }
                 >
-                  <SelectTrigger
-                    className="flex-1"
-                    data-ui-id="testing-deficiency-workflow-status-select"
-                  >
+                  <SelectTrigger className="flex-1">
                     <SelectValue placeholder="Select new status..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -178,7 +172,6 @@ export function DeficiencyWorkflow({
                   onClick={handleStatusChange}
                   disabled={!selectedStatus || isChangingStatus}
                   size="default"
-                  data-ui-id="testing-deficiency-workflow-update-btn"
                 >
                   {isChangingStatus ? (
                     "Updating..."

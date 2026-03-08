@@ -286,7 +286,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
               errorCode,
               message,
               elementId: id,
-              selectorsTried: [`[data-ui-id="${id}"]`],
+              selectorsTried: [`registry:${id}`],
               elementState,
               suggestedActions: getRecoverySuggestions(errorCode),
               retryRecommended: [
@@ -307,10 +307,8 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
             );
           }
 
-          // Get the DOM element
-          const domElement = document.querySelector(
-            `[data-ui-id="${id}"]`
-          ) as HTMLElement | null;
+          // Get the DOM element from the bridge registry
+          const domElement = (element.element ?? null) as HTMLElement | null;
           if (!domElement) {
             return createFailure(
               "ELEMENT_NOT_FOUND",
@@ -522,9 +520,8 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
 
         case "highlightElement": {
           const { id } = payload;
-          const domElement = document.querySelector(
-            `[data-ui-id="${id}"]`
-          ) as HTMLElement | null;
+          const domElement = (getElement(id as string)?.element ??
+            null) as HTMLElement | null;
           if (domElement) {
             const originalOutline = domElement.style.outline;
             const originalTransition = domElement.style.transition;
@@ -692,9 +689,8 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           }
 
           const targetElement = firstResult.element;
-          const domElement = document.querySelector(
-            `[data-ui-id="${targetElement.id}"]`
-          ) as HTMLElement | null;
+          const domElement = (getElement(targetElement.id)?.element ??
+            null) as HTMLElement | null;
 
           if (!domElement) {
             return createAIFailure(

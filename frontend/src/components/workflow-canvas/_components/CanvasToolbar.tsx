@@ -30,7 +30,6 @@ export function CanvasToolbar({
           className="px-3 py-2 bg-surface-raised hover:bg-surface-raised/80 text-white rounded text-sm"
           title="Fit view (Ctrl+F)"
           data-tutorial-id="fit-view"
-          data-ui-id="canvas-fitview-btn"
         >
           Fit View
         </button>
@@ -41,7 +40,6 @@ export function CanvasToolbar({
               className="px-3 py-2 bg-surface-raised hover:bg-surface-raised/80 text-white rounded text-sm"
               title="Auto layout (Ctrl+L)"
               data-tutorial-id="auto-layout"
-              data-ui-id="canvas-autolayout-btn"
             >
               Auto Layout
             </button>

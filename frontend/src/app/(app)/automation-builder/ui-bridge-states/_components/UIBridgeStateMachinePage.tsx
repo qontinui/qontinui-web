@@ -152,10 +152,7 @@ export function UIBridgeStateMachinePage() {
       <div className="flex items-center justify-between px-6 py-4 border-b border-border-primary bg-surface-primary">
         <div className="flex items-center gap-3">
           <Network className="size-5 text-brand-primary" />
-          <h1
-            data-ui-id="sm-heading"
-            className="text-lg font-semibold text-text-primary"
-          >
+          <h1 className="text-lg font-semibold text-text-primary">
             State Machine
           </h1>
         </div>
@@ -169,10 +166,7 @@ export function UIBridgeStateMachinePage() {
               if (v) discovery.reset();
             }}
           >
-            <SelectTrigger
-              data-ui-id="sm-config-selector"
-              className="w-[220px]"
-            >
+            <SelectTrigger className="w-[220px]">
               <SelectValue placeholder="Select configuration..." />
             </SelectTrigger>
             <SelectContent>
@@ -186,7 +180,6 @@ export function UIBridgeStateMachinePage() {
 
           {/* Refresh */}
           <Button
-            data-ui-id="sm-refresh-button"
             variant="outline"
             size="sm"
             onClick={() => {
@@ -209,7 +202,6 @@ export function UIBridgeStateMachinePage() {
           {TABS.map(({ value, label, icon: Icon }) => (
             <button
               key={value}
-              data-ui-id={`sm-tab-${value}`}
               onClick={() => setActiveTab(value)}
               className={`inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] ${
                 activeTab === value
@@ -231,7 +223,6 @@ export function UIBridgeStateMachinePage() {
         className={`flex-1 overflow-y-auto ${activeTab !== "discovery" ? "hidden" : ""}`}
       >
         <div
-          data-ui-id="sm-no-project-message"
           className={
             noProject
               ? "flex items-center justify-center h-full min-h-[200px] text-text-muted"
@@ -271,7 +262,6 @@ export function UIBridgeStateMachinePage() {
           <Loader2 className="size-8 animate-spin text-brand-primary" />
         </div>
         <div
-          data-ui-id="sm-no-config-graph"
           className={
             noConfig && !sm.isLoading
               ? "flex-1 flex items-center justify-center text-text-muted"
@@ -286,7 +276,6 @@ export function UIBridgeStateMachinePage() {
             {/* Add Transition FAB */}
             <div className="absolute top-4 left-4 z-10">
               <Button
-                data-ui-id="sm-add-transition"
                 size="sm"
                 onClick={() => {
                   sm.setSelectedStateId(null);
@@ -367,7 +356,6 @@ export function UIBridgeStateMachinePage() {
           Select a project to manage state machines
         </div>
         <div
-          data-ui-id="sm-no-config-states"
           className={
             noConfig && !sm.isLoading
               ? "flex-1 flex items-center justify-center text-text-muted"
@@ -403,7 +391,6 @@ export function UIBridgeStateMachinePage() {
           Select a project to manage state machines
         </div>
         <div
-          data-ui-id="sm-no-config-transitions"
           className={
             noConfig && !sm.isLoading
               ? "flex-1 flex items-center justify-center text-text-muted"
@@ -438,7 +425,6 @@ export function UIBridgeStateMachinePage() {
           Select a project to manage state machines
         </div>
         <div
-          data-ui-id="sm-no-config-pathfinding"
           className={
             noConfig && !sm.isLoading
               ? "flex items-center justify-center h-full text-text-muted"
@@ -472,7 +458,6 @@ export function UIBridgeStateMachinePage() {
           Select a project to manage state machines
         </div>
         <div
-          data-ui-id="sm-no-config-export"
           className={
             noConfig && !sm.isLoading
               ? "flex items-center justify-center h-full text-text-muted"

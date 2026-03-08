@@ -47,7 +47,7 @@ This module integrates the UI Bridge framework for remote automation of the qont
 │       │                                                                     │
 │       │ Query elements, execute actions                                     │
 │       ▼                                                                     │
-│  DOM (with data-ui-id attributes from SWC plugin)                          │
+│  DOM (elements auto-registered by AutoRegisterProvider)                    │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -126,24 +126,20 @@ let response = client
     .await?;
 ```
 
-## SWC Plugin Integration
+## AutoRegisterProvider
 
-The `@qontinui/ui-bridge-swc-plugin` automatically instruments JSX elements:
+The `AutoRegisterProvider` automatically discovers interactive elements and registers them with the UI Bridge:
 
-```jsx
-// Input (developer code)
-<button onClick={handleSubmit}>Start Extraction</button>
-
-// Output (after SWC transform)
-<button
-  onClick={handleSubmit}
-  data-ui-id="ui-ExtractionPage-start-extraction-button"
-  data-ui-type="button"
-  data-ui-aliases="start extraction,extraction,start"
->
-  Start Extraction
-</button>
+```tsx
+// In your layout or app wrapper
+<UIBridgeProvider>
+  <AutoRegisterProvider>
+    <YourApp />
+  </AutoRegisterProvider>
+</UIBridgeProvider>
 ```
+
+Elements get stable semantic IDs automatically (e.g., `button-start-extraction`, `input-email`). No manual `data-testid` or other attributes needed — though existing `data-testid` values will be used as IDs when present.
 
 ## Configuration
 

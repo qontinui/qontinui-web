@@ -200,11 +200,7 @@ function UIBridgeStateNodeInner({ data }: NodeProps) {
   const hasConnections = (outgoingCount ?? 0) > 0 || (incomingCount ?? 0) > 0;
 
   return (
-    <div
-      style={{ width: cardSize.cardWidth }}
-      data-id={stateId}
-      data-ui-id={`state-node-${stateId}`}
-    >
+    <div style={{ width: cardSize.cardWidth }} data-id={stateId}>
       {/* Target handle - styled with connection indicator */}
       <Handle
         type="target"
@@ -317,7 +313,6 @@ function UIBridgeStateNodeInner({ data }: NodeProps) {
               return (
                 <div
                   key={elementId}
-                  data-ui-id={`element-tile-${elementId}`}
                   className={`
                     relative group rounded-md overflow-hidden
                     ${style.tileBg} border ${style.tileBorder}

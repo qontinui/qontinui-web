@@ -65,10 +65,7 @@ export function ProjectExportDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent
-          className="sm:max-w-[500px] bg-surface-canvas border-border-subtle"
-          data-ui-id="dialog-project-export"
-        >
+        <DialogContent className="sm:max-w-[500px] bg-surface-canvas border-border-subtle">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Upload className="w-5 h-5 text-brand-primary" />

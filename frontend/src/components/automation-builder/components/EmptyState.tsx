@@ -44,7 +44,6 @@ export function EmptyState({ mode, onCreateNew }: EmptyStateProps) {
                   ? "w-full bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
                   : "w-full bg-brand-success hover:bg-brand-success/80 text-black font-medium"
               }
-              data-ui-id="automation-empty-create-btn"
             >
               <Play className="w-4 h-4 mr-2" />
               Create New Workflow

@@ -49,7 +49,7 @@ export function AdvancedTab({ settings, updateSetting }: AdvancedTabProps) {
               onCheckedChange={(checked) =>
                 updateSetting("enableDebugMode", checked)
               }
-              data-ui-id="automation-settings-enable-debug-mode-toggle"
+              data-testid="automation-settings-enable-debug-mode-toggle"
             />
           </div>
 
@@ -59,10 +59,7 @@ export function AdvancedTab({ settings, updateSetting }: AdvancedTabProps) {
               value={settings.logLevel}
               onValueChange={(value) => updateSetting("logLevel", value)}
             >
-              <SelectTrigger
-                id="logLevel"
-                data-ui-id="automation-settings-log-level-select"
-              >
+              <SelectTrigger id="logLevel">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -88,7 +85,6 @@ export function AdvancedTab({ settings, updateSetting }: AdvancedTabProps) {
               onCheckedChange={(checked) =>
                 updateSetting("enableTelemetry", checked)
               }
-              data-ui-id="automation-settings-enable-telemetry-toggle"
             />
           </div>
         </CardContent>
@@ -109,11 +105,7 @@ export function AdvancedTab({ settings, updateSetting }: AdvancedTabProps) {
                 Delete all workflows, settings, and data
               </p>
             </div>
-            <Button
-              variant="destructive"
-              size="sm"
-              data-ui-id="automation-settings-clear-data-btn"
-            >
+            <Button variant="destructive" size="sm">
               <Trash2 className="w-4 h-4 mr-2" />
               Clear Data
             </Button>

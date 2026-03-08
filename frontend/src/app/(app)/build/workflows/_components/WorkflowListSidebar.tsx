@@ -121,7 +121,7 @@ export function WorkflowListSidebar({
   };
 
   return (
-    <nav id="workflow-list-sidebar" data-ui-id="workflow-list-sidebar" data-ui-element className="w-72 shrink-0 border-r border-border-subtle/50 flex flex-col h-full">
+    <nav id="workflow-list-sidebar" data-ui-element className="w-72 shrink-0 border-r border-border-subtle/50 flex flex-col h-full">
       <div className="p-3 space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">

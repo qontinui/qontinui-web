@@ -234,14 +234,12 @@ export function AIGenerationPreviewPanel({
         <button
           onClick={onClose}
           className="flex-1 py-3 border border-border-default dark:border-border-default text-text-secondary dark:text-text-secondary rounded-lg font-medium hover:bg-surface-raised/50 dark:hover:bg-surface-raised transition-colors"
-          data-ui-id="dialog-ai-generation-cancel-btn"
         >
           Cancel
         </button>
         <button
           onClick={onAccept}
           className="flex-1 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
-          data-ui-id="dialog-ai-generation-confirm-btn"
         >
           <Check className="w-5 h-5" />
           Accept Workflow

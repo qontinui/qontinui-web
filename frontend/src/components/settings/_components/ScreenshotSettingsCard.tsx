@@ -40,7 +40,6 @@ export function ScreenshotSettingsCard({
             onCheckedChange={(checked) =>
               updateSetting("screenshot", "save_snapshots", checked)
             }
-            data-ui-id="settings-screenshot-save-snapshots-toggle"
           />
         </div>
         <div className="space-y-2">
@@ -51,7 +50,6 @@ export function ScreenshotSettingsCard({
             onChange={(e) =>
               updateSetting("screenshot", "path", e.target.value)
             }
-            data-ui-id="settings-screenshot-path-input"
           />
         </div>
         <div className="space-y-2">
@@ -67,7 +65,6 @@ export function ScreenshotSettingsCard({
                 parseInt(e.target.value)
               )
             }
-            data-ui-id="settings-screenshot-max-history-input"
           />
         </div>
         <div className="space-y-2">
@@ -78,10 +75,7 @@ export function ScreenshotSettingsCard({
               updateSetting("screenshot", "format", value)
             }
           >
-            <SelectTrigger
-              id="screenshot_format"
-              data-ui-id="settings-screenshot-format-select"
-            >
+            <SelectTrigger id="screenshot_format">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -103,7 +97,6 @@ export function ScreenshotSettingsCard({
             onChange={(e) =>
               updateSetting("screenshot", "quality", parseInt(e.target.value))
             }
-            data-ui-id="settings-screenshot-quality-input"
           />
         </div>
         <div className="flex items-center justify-between">
@@ -114,7 +107,6 @@ export function ScreenshotSettingsCard({
             onCheckedChange={(checked) =>
               updateSetting("screenshot", "include_timestamp", checked)
             }
-            data-ui-id="settings-screenshot-include-timestamp-toggle"
           />
         </div>
         <div className="flex items-center justify-between">
@@ -125,7 +117,6 @@ export function ScreenshotSettingsCard({
             onCheckedChange={(checked) =>
               updateSetting("screenshot", "capture_on_error", checked)
             }
-            data-ui-id="settings-screenshot-capture-on-error-toggle"
           />
         </div>
       </CardContent>

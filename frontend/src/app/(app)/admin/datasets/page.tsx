@@ -132,10 +132,7 @@ export default function DatasetsPage() {
   }
 
   return (
-    <div
-      className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden"
-      data-ui-id="admin-page-datasets"
-    >
+    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
         <div className="flex items-center gap-3">
@@ -149,11 +146,7 @@ export default function DatasetsPage() {
           <span className="text-muted-foreground">/</span>
           <h1 className="text-lg font-semibold">Training Datasets</h1>
         </div>
-        <Button
-          size="sm"
-          onClick={() => setShowImportDialog(true)}
-          data-ui-id="admin-page-datasets-import-btn"
-        >
+        <Button size="sm" onClick={() => setShowImportDialog(true)}>
           <Upload className="mr-2 h-4 w-4" />
           Import Dataset
         </Button>
@@ -203,7 +196,6 @@ export default function DatasetsPage() {
                     key={dataset.id}
                     className="hover:bg-muted/30 transition-colors cursor-pointer"
                     onClick={() => router.push(`/admin/datasets/${dataset.id}`)}
-                    data-ui-id={`admin-page-datasets-item-${dataset.id}`}
                   >
                     <td className="px-6 py-2.5">
                       <div>
@@ -268,7 +260,6 @@ export default function DatasetsPage() {
                             e.stopPropagation();
                             router.push(`/admin/datasets/${dataset.id}`);
                           }}
-                          data-ui-id={`admin-page-datasets-view-btn-${dataset.id}`}
                         >
                           <Eye className="h-3.5 w-3.5" />
                         </Button>
@@ -280,7 +271,6 @@ export default function DatasetsPage() {
                             e.stopPropagation();
                             setExportDataset(dataset);
                           }}
-                          data-ui-id={`admin-page-datasets-export-btn-${dataset.id}`}
                         >
                           <Download className="h-3.5 w-3.5" />
                         </Button>
@@ -292,7 +282,6 @@ export default function DatasetsPage() {
                             e.stopPropagation();
                             setDeleteConfirm(dataset);
                           }}
-                          data-ui-id={`admin-page-datasets-delete-btn-${dataset.id}`}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>

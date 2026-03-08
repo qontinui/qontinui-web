@@ -13,26 +13,11 @@ const withBundleAnalyzer = bundleAnalyzer({
 // Backend URL: Use environment variable in production, localhost in development
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-// Only load the UI Bridge SWC plugin in development (it instruments JSX with data-ui-id attributes)
-const swcPlugins = process.env.NODE_ENV !== 'production'
-  ? [
-      ['@qontinui/ui-bridge/swc-plugin-wasm/ui_bridge_swc_plugin.wasm', {
-        elements: ['button', 'input', 'select', 'textarea', 'a', 'form'],
-        idPrefix: 'ui',
-        includeComponentName: true,
-        generateAliases: true,
-      }]
-    ]
-  : [];
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
   // Handle local symlinked packages with subpath exports
   transpilePackages: ['@qontinui/ui-bridge'],
-  experimental: {
-    swcPlugins,
-  },
   webpack: (config, { dev }) => {
     // Only alias @qontinui/schemas when the local package exists (dev environment).
     // In CI/Vercel builds, the parent directory is not available. All schemas

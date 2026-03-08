@@ -90,7 +90,6 @@ export function InitialStatesSection({
                           onToggle(state.id, checked === true)
                         }
                         className="border-border-default data-[state=checked]:bg-brand-success data-[state=checked]:border-brand-success"
-                        data-ui-id={`automation-metadata-initialstate-${state.id}-checkbox`}
                       />
                       <span className="text-sm text-text-muted flex-1">
                         {state.name}
@@ -152,7 +151,6 @@ function InheritanceIndicator({
         variant="ghost"
         className="h-6 px-2 text-xs text-amber-500 hover:text-amber-400 hover:bg-amber-500/10"
         onClick={onResetToDefaults}
-        data-ui-id="automation-metadata-resetstates-btn"
       >
         Reset to defaults
       </Button>

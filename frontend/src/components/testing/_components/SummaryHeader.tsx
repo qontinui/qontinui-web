@@ -81,7 +81,6 @@ export function SummaryHeader({
               size="sm"
               onClick={onToggleVisualMode}
               className="border-brand-primary/30 text-brand-primary hover:bg-brand-primary/10"
-              data-ui-id="testing-integration-results-visual-btn"
             >
               <Activity className="w-4 h-4 mr-2" />
               Visual Playback

@@ -113,10 +113,7 @@ export function ExtractionSaveOptionsDialog({
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
-      <DialogContent
-        className="max-w-lg"
-        data-ui-id="dialog-extraction-save-options"
-      >
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Info className="h-5 w-5 text-blue-500" />
@@ -136,7 +133,6 @@ export function ExtractionSaveOptionsDialog({
             value={selectedOption}
             onValueChange={(value) => setSelectedOption(value as SaveOption)}
             className="space-y-3"
-            data-ui-id="extraction-save-options-radio-group"
           >
             {(Object.keys(OPTION_DETAILS) as SaveOption[]).map((option) => {
               const {
@@ -154,12 +150,7 @@ export function ExtractionSaveOptionsDialog({
                       : "border-border hover:border-border-hover hover:bg-muted/50"
                   }`}
                 >
-                  <RadioGroupItem
-                    value={option}
-                    id={option}
-                    className="mt-1"
-                    data-ui-id={`extraction-save-option-${option}`}
-                  />
+                  <RadioGroupItem value={option} id={option} className="mt-1" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <Icon className={`h-4 w-4 ${iconColor}`} />
@@ -186,7 +177,6 @@ export function ExtractionSaveOptionsDialog({
                 onChange={(e) => setNewProjectName(e.target.value)}
                 placeholder="Enter project name..."
                 className="h-9"
-                data-ui-id="extraction-new-project-name-input"
               />
             </div>
           )}
@@ -208,12 +198,7 @@ export function ExtractionSaveOptionsDialog({
         </div>
 
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={onClose}
-            disabled={isLoading}
-            data-ui-id="extraction-save-options-cancel-btn"
-          >
+          <Button variant="outline" onClick={onClose} disabled={isLoading}>
             Cancel
           </Button>
           <Button
@@ -222,7 +207,6 @@ export function ExtractionSaveOptionsDialog({
               isLoading ||
               (selectedOption === "new_project" && !newProjectName.trim())
             }
-            data-ui-id="extraction-save-options-confirm-btn"
           >
             {isLoading ? (
               <>

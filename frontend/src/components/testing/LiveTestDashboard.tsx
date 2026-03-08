@@ -171,7 +171,7 @@ export function LiveTestDashboard({
   }
 
   return (
-    <div className="space-y-6" data-ui-id="testing-live-dashboard">
+    <div className="space-y-6">
       {/* Header Card */}
       <Card className="bg-surface-raised/50 border-border-subtle/50">
         <CardHeader>
@@ -211,7 +211,6 @@ export function LiveTestDashboard({
                 variant="ghost"
                 onClick={() => setIsExpanded(!isExpanded)}
                 className="ml-2"
-                data-ui-id="testing-live-dashboard-expand-btn"
               >
                 {isExpanded ? (
                   <Minimize2 className="w-4 h-4" />

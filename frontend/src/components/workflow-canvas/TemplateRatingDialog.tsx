@@ -129,7 +129,7 @@ export function TemplateRatingDialog({
 
   return (
     <div className="rating-dialog-overlay">
-      <div className="rating-dialog" data-ui-id="dialog-template-rating">
+      <div className="rating-dialog">
         <div className="dialog-header">
           <h2>{isUpdate ? "Update Your Rating" : "Rate This Template"}</h2>
           <button
@@ -137,7 +137,6 @@ export function TemplateRatingDialog({
             onClick={onClose}
             disabled={loading}
             aria-label="Close"
-            data-ui-id="dialog-template-rating-close-btn"
           >
             ×
           </button>
@@ -169,7 +168,6 @@ export function TemplateRatingDialog({
               rows={4}
               maxLength={2000}
               disabled={loading}
-              data-ui-id="dialog-template-rating-review-input"
             />
             <span className="char-count">{reviewText.length}/2000</span>
           </div>
@@ -203,7 +201,6 @@ export function TemplateRatingDialog({
             className="cancel-button"
             onClick={onClose}
             disabled={loading}
-            data-ui-id="dialog-template-rating-cancel-btn"
           >
             Cancel
           </button>
@@ -213,7 +210,6 @@ export function TemplateRatingDialog({
               className="delete-button"
               onClick={handleDelete}
               disabled={loading}
-              data-ui-id="dialog-template-rating-delete-btn"
             >
               Delete Rating
             </button>
@@ -223,7 +219,6 @@ export function TemplateRatingDialog({
             className="primary-button"
             onClick={handleSubmit}
             disabled={loading || rating === 0}
-            data-ui-id="dialog-template-rating-confirm-btn"
           >
             {loading
               ? "Submitting..."

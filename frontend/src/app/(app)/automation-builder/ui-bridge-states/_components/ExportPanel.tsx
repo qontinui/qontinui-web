@@ -48,11 +48,7 @@ export function ExportPanel({
         </div>
 
         <div className="flex gap-2">
-          <Button
-            onClick={onDownload}
-            disabled={isExporting || !configName}
-            data-ui-id="sm-export-download"
-          >
+          <Button onClick={onDownload} disabled={isExporting || !configName}>
             {isExporting ? (
               <Loader2 className="size-4 mr-1.5 animate-spin" />
             ) : (
@@ -65,7 +61,6 @@ export function ExportPanel({
             variant="outline"
             onClick={onPushToRunner}
             disabled={isPushing || isExporting || !configName}
-            data-ui-id="sm-export-push-runner"
           >
             {isPushing ? (
               <Loader2 className="size-4 mr-1.5 animate-spin" />

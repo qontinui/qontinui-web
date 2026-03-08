@@ -58,30 +58,33 @@ test.describe("Admin Dashboard", () => {
     if (hasAdminHeading) {
       // Check for all 8 tab triggers
       const hasOverviewTab =
-        (await page.locator('[data-ui-id="admin-page-overview-tab"]').count()) >
-        0;
+        (await page
+          .locator('[data-testid="admin-page-overview-tab"]')
+          .count()) > 0;
       const hasUsersTab =
-        (await page.locator('[data-ui-id="admin-page-users-tab"]').count()) > 0;
-      const hasProjectsTab =
-        (await page.locator('[data-ui-id="admin-page-projects-tab"]').count()) >
+        (await page.locator('[data-testid="admin-page-users-tab"]').count()) >
         0;
+      const hasProjectsTab =
+        (await page
+          .locator('[data-testid="admin-page-projects-tab"]')
+          .count()) > 0;
       const hasAnalyticsTab =
         (await page
-          .locator('[data-ui-id="admin-page-analytics-tab"]')
+          .locator('[data-testid="admin-page-analytics-tab"]')
           .count()) > 0;
       const hasHealthTab =
-        (await page.locator('[data-ui-id="admin-page-health-tab"]').count()) >
+        (await page.locator('[data-testid="admin-page-health-tab"]').count()) >
         0;
       const hasSystemTab =
-        (await page.locator('[data-ui-id="admin-page-system-tab"]').count()) >
+        (await page.locator('[data-testid="admin-page-system-tab"]').count()) >
         0;
       const hasNotificationsTab =
         (await page
-          .locator('[data-ui-id="admin-page-notifications-tab"]')
+          .locator('[data-testid="admin-page-notifications-tab"]')
           .count()) > 0;
       const hasDownloadsTab =
         (await page
-          .locator('[data-ui-id="admin-page-downloads-tab"]')
+          .locator('[data-testid="admin-page-downloads-tab"]')
           .count()) > 0;
 
       expect(hasOverviewTab).toBeTruthy();
@@ -108,10 +111,10 @@ test.describe("Admin Dashboard", () => {
     if (hasAdminHeading) {
       const hasArchitectureBtn =
         (await page
-          .locator('[data-ui-id="admin-page-architecture-btn"]')
+          .locator('[data-testid="admin-page-architecture-btn"]')
           .count()) > 0;
       const hasMobileBtn =
-        (await page.locator('[data-ui-id="admin-page-mobile-btn"]').count()) >
+        (await page.locator('[data-testid="admin-page-mobile-btn"]').count()) >
         0;
 
       expect(hasArchitectureBtn).toBeTruthy();

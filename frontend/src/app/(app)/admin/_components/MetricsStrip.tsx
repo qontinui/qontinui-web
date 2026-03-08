@@ -25,10 +25,7 @@ export function MetricsStrip({ stats }: MetricsStripProps) {
       : "0";
 
   return (
-    <div
-      className="grid grid-cols-6 gap-px bg-border shrink-0"
-      data-ui-id="admin-metrics-strip"
-    >
+    <div className="grid grid-cols-6 gap-px bg-border shrink-0">
       <MetricCell
         icon={<Users className="h-3.5 w-3.5" />}
         label="Users"

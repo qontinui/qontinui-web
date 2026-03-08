@@ -66,7 +66,7 @@ export function UiBridgeStepConfig({
               type="text"
               value={step.target ?? ""}
               onChange={(e) => onUpdate({ target: e.target.value })}
-              placeholder='[data-ui-id="submit-btn"]'
+              placeholder='[data-testid="submit-btn"]'
               className="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 text-sm font-mono focus:ring-2 focus:ring-emerald-500/50"
             />
           </div>

@@ -95,7 +95,6 @@ export function ProfileForm({ user, onUpdate }: ProfileFormProps) {
             <Button
               onClick={() => setIsEditing(true)}
               className="bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary border border-brand-primary/30"
-              data-ui-id="profile-edit-btn"
             >
               Edit Profile
             </Button>
@@ -114,7 +113,6 @@ export function ProfileForm({ user, onUpdate }: ProfileFormProps) {
                 {...register("full_name")}
                 disabled={!isEditing}
                 className="bg-surface-canvas border-border-default text-white disabled:opacity-70"
-                data-ui-id="profile-full-name-input"
               />
               {errors.full_name && (
                 <p className="text-sm text-red-500">
@@ -133,7 +131,6 @@ export function ProfileForm({ user, onUpdate }: ProfileFormProps) {
                 disabled
                 className="bg-surface-canvas border-border-default text-text-muted cursor-not-allowed"
                 title="Username cannot be changed"
-                data-ui-id="profile-username-input"
               />
             </div>
 
@@ -147,7 +144,6 @@ export function ProfileForm({ user, onUpdate }: ProfileFormProps) {
                 {...register("email")}
                 disabled={!isEditing}
                 className="bg-surface-canvas border-border-default text-white disabled:opacity-70"
-                data-ui-id="profile-email-input"
               />
               {errors.email && (
                 <p className="text-sm text-red-500">{errors.email.message}</p>
@@ -164,7 +160,6 @@ export function ProfileForm({ user, onUpdate }: ProfileFormProps) {
                 disabled={!isEditing}
                 className="bg-surface-canvas border-border-default text-white disabled:opacity-70"
                 placeholder="Your company name"
-                data-ui-id="profile-company-input"
               />
               {errors.company && (
                 <p className="text-sm text-red-500">{errors.company.message}</p>
@@ -182,7 +177,6 @@ export function ProfileForm({ user, onUpdate }: ProfileFormProps) {
                 disabled={!isEditing}
                 className="bg-surface-canvas border-border-default text-white disabled:opacity-70"
                 placeholder="+1 (555) 123-4567"
-                data-ui-id="profile-phone-input"
               />
               {errors.phone && (
                 <p className="text-sm text-red-500">{errors.phone.message}</p>
@@ -196,7 +190,6 @@ export function ProfileForm({ user, onUpdate }: ProfileFormProps) {
                 type="submit"
                 disabled={isSubmitting}
                 className="bg-brand-primary hover:bg-brand-primary/80 text-black font-medium"
-                data-ui-id="profile-save-btn"
               >
                 {isSubmitting ? (
                   <>
@@ -216,7 +209,6 @@ export function ProfileForm({ user, onUpdate }: ProfileFormProps) {
                 disabled={isSubmitting}
                 variant="outline"
                 className="border-border-default hover:border-border-default bg-transparent"
-                data-ui-id="profile-cancel-btn"
               >
                 Cancel
               </Button>

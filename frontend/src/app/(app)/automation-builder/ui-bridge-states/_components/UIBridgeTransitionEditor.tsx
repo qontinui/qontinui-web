@@ -200,7 +200,6 @@ export function UIBridgeTransitionEditor({
           </label>
           <Input
             id="ubte-name"
-            data-ui-id="sm-trans-name-input"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g., Open Settings"
@@ -210,10 +209,7 @@ export function UIBridgeTransitionEditor({
 
         {/* From States */}
         <div>
-          <p
-            data-ui-id="sm-trans-from-states"
-            className="text-xs font-medium text-text-muted mb-1 block"
-          >
+          <p className="text-xs font-medium text-text-muted mb-1 block">
             From States (required active)
           </p>
           <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
@@ -237,10 +233,7 @@ export function UIBridgeTransitionEditor({
 
         {/* Activate States */}
         <div>
-          <p
-            data-ui-id="sm-trans-activate-states"
-            className="text-xs font-medium text-text-muted mb-1 block"
-          >
+          <p className="text-xs font-medium text-text-muted mb-1 block">
             Activate States (will become active)
           </p>
           <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
@@ -264,10 +257,7 @@ export function UIBridgeTransitionEditor({
 
         {/* Exit States */}
         <div>
-          <p
-            data-ui-id="sm-trans-exit-states"
-            className="text-xs font-medium text-text-muted mb-1 block"
-          >
+          <p className="text-xs font-medium text-text-muted mb-1 block">
             Exit States (will deactivate)
           </p>
           <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
@@ -338,7 +328,7 @@ export function UIBridgeTransitionEditor({
                       onChange={(e) =>
                         updateAction(i, { drag_target: e.target.value })
                       }
-                      placeholder="Drop target data-ui-id"
+                      placeholder="Drop target element ID"
                       className="h-7 text-[10px]"
                     />
                   </div>
@@ -497,7 +487,6 @@ export function UIBridgeTransitionEditor({
         <div className="flex gap-2">
           <Button
             size="sm"
-            data-ui-id="sm-trans-submit-button"
             onClick={handleSubmit}
             disabled={isSaving || !name.trim()}
             className="flex-1"

@@ -46,7 +46,7 @@ export function EditorTab({ settings, updateSetting }: EditorTabProps) {
             >
               <SelectTrigger
                 id="theme"
-                data-ui-id="automation-settings-theme-select"
+                data-testid="automation-settings-theme-select"
               >
                 <SelectValue />
               </SelectTrigger>
@@ -69,7 +69,6 @@ export function EditorTab({ settings, updateSetting }: EditorTabProps) {
               onChange={(e) =>
                 updateSetting("fontSize", parseInt(e.target.value))
               }
-              data-ui-id="automation-settings-font-size-input"
             />
           </div>
 
@@ -87,7 +86,6 @@ export function EditorTab({ settings, updateSetting }: EditorTabProps) {
               onCheckedChange={(checked) =>
                 updateSetting("showLineNumbers", checked)
               }
-              data-ui-id="automation-settings-show-line-numbers-toggle"
             />
           </div>
 
@@ -103,7 +101,6 @@ export function EditorTab({ settings, updateSetting }: EditorTabProps) {
               onCheckedChange={(checked) =>
                 updateSetting("enableAutoComplete", checked)
               }
-              data-ui-id="automation-settings-enable-auto-complete-toggle"
             />
           </div>
         </CardContent>

@@ -38,7 +38,6 @@ export function MonitorSettingsCard({
                 parseInt(e.target.value)
               )
             }
-            data-ui-id="settings-monitor-default-screen-index-input"
           />
         </div>
         <div className="flex items-center justify-between">
@@ -49,7 +48,6 @@ export function MonitorSettingsCard({
             onCheckedChange={(checked) =>
               updateSetting("monitor", "multi_monitor_enabled", checked)
             }
-            data-ui-id="settings-monitor-multi-monitor-enabled-toggle"
           />
         </div>
         <div className="flex items-center justify-between">
@@ -60,7 +58,6 @@ export function MonitorSettingsCard({
             onCheckedChange={(checked) =>
               updateSetting("monitor", "search_all_monitors", checked)
             }
-            data-ui-id="settings-monitor-search-all-monitors-toggle"
           />
         </div>
         <div className="flex items-center justify-between">
@@ -71,7 +68,6 @@ export function MonitorSettingsCard({
             onCheckedChange={(checked) =>
               updateSetting("monitor", "log_monitor_info", checked)
             }
-            data-ui-id="settings-monitor-log-monitor-info-toggle"
           />
         </div>
       </CardContent>

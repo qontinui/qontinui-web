@@ -62,10 +62,7 @@ export function StateImageModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent
-        className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col"
-        data-ui-id="dialog-state-image"
-      >
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {viewMode === "element" && (

@@ -29,13 +29,11 @@ export function ShareLinkSection({
             value={generatedLink || "Generate a shareable link"}
             readOnly
             className="flex-1 font-mono text-sm"
-            data-ui-id="automation-share-link-input"
           />
           <Button
             onClick={onCopyLink}
             disabled={loading}
             variant={linkCopied ? "default" : "outline"}
-            data-ui-id="automation-share-copylink-btn"
           >
             {loading ? (
               <Loader2 className="h-4 w-4 animate-spin" />

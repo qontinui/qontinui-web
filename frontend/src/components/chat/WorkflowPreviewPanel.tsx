@@ -87,17 +87,13 @@ export function WorkflowPreviewPanel({
   onClose,
 }: WorkflowPreviewPanelProps) {
   return (
-    <div
-      data-ui-id="chat-workflow-preview"
-      className="flex flex-col h-full border-l border-border-subtle/50 bg-surface-canvas/95"
-    >
+    <div className="flex flex-col h-full border-l border-border-subtle/50 bg-surface-canvas/95">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle/50">
         <h3 className="text-sm font-semibold text-text-primary">
           Generated Workflow
         </h3>
         <Button
-          data-ui-id="chat-workflow-close-btn"
           variant="ghost"
           size="sm"
           onClick={onClose}
@@ -110,10 +106,7 @@ export function WorkflowPreviewPanel({
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">
         {isLoading && (
-          <div
-            data-ui-id="chat-workflow-loading"
-            className="flex flex-col items-center justify-center h-48 text-text-muted"
-          >
+          <div className="flex flex-col items-center justify-center h-48 text-text-muted">
             <Loader2 className="size-8 animate-spin mb-3 text-purple-400" />
             <p className="text-sm">Generating workflow...</p>
             <p className="text-xs mt-1 opacity-60">This may take a minute</p>
@@ -131,7 +124,7 @@ export function WorkflowPreviewPanel({
         )}
 
         {workflow && !isLoading && (
-          <div data-ui-id="chat-workflow-phases" className="space-y-3">
+          <div className="space-y-3">
             {/* Workflow name and description */}
             <div className="mb-4">
               <h4 className="text-sm font-medium text-text-primary">
@@ -180,7 +173,6 @@ export function WorkflowPreviewPanel({
         <div className="border-t border-border-subtle/50 p-4 space-y-2">
           <div className="flex gap-2">
             <Button
-              data-ui-id="chat-workflow-execute-btn"
               size="sm"
               onClick={onExecute}
               className="flex-1 bg-green-700 hover:bg-green-600 text-white gap-1.5"
@@ -189,7 +181,6 @@ export function WorkflowPreviewPanel({
               Execute
             </Button>
             <Button
-              data-ui-id="chat-workflow-edit-btn"
               variant="outline"
               size="sm"
               onClick={onEditInBuilder}
@@ -201,7 +192,6 @@ export function WorkflowPreviewPanel({
           </div>
           <div className="flex gap-2">
             <Button
-              data-ui-id="chat-workflow-regenerate-btn"
               variant="outline"
               size="sm"
               onClick={onRegenerate}
@@ -211,7 +201,6 @@ export function WorkflowPreviewPanel({
               Regenerate
             </Button>
             <Button
-              data-ui-id="chat-workflow-save-btn"
               variant="outline"
               size="sm"
               onClick={onSave}

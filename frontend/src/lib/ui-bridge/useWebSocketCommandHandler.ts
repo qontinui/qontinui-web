@@ -156,14 +156,8 @@ export function useWebSocketCommandHandler() {
             timestamp: Date.now(),
             elements: bridge.elements.map((e) => {
               const state = e.getState();
-              // Prefer the developer-assigned data-ui-id over auto-generated IDs.
-              // The AutoRegister may assign semantic IDs if it scans before React
-              // fully applies data-ui-id attributes (timing edge case).
-              const domUiId =
-                e.element?.getAttribute?.("data-ui-id") ?? undefined;
-              const id = domUiId && domUiId !== e.id ? domUiId : e.id;
               return {
-                id,
+                id: e.id,
                 type: e.type,
                 label: e.label,
                 actions: e.actions,
@@ -212,10 +206,8 @@ export function useWebSocketCommandHandler() {
             throw new Error(`Element ${id} not found`);
           }
 
-          // Get the DOM element
-          const domElement = document.querySelector(
-            `[data-ui-id="${id}"]`
-          ) as HTMLElement | null;
+          // Get the DOM element from the bridge registry
+          const domElement = element.element as HTMLElement | null;
           if (!domElement) {
             throw new Error(`DOM element for ${id} not found`);
           }
@@ -344,9 +336,8 @@ export function useWebSocketCommandHandler() {
 
         case "highlightElement": {
           const { id } = payload;
-          const domElement = document.querySelector(
-            `[data-ui-id="${id}"]`
-          ) as HTMLElement | null;
+          const domElement = (bridge.getElement(id as string)?.element ??
+            null) as HTMLElement | null;
           if (domElement) {
             const originalOutline = domElement.style.outline;
             const originalTransition = domElement.style.transition;
@@ -443,9 +434,8 @@ export function useWebSocketCommandHandler() {
           }
 
           const targetElement = searchResponse.results[0]!.element;
-          const domElement = document.querySelector(
-            `[data-ui-id="${targetElement.id}"]`
-          ) as HTMLElement | null;
+          const domElement = (bridge.getElement(targetElement.id)?.element ??
+            null) as HTMLElement | null;
 
           if (!domElement) {
             throw new Error(`DOM element not found for ${targetElement.id}`);

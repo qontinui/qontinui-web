@@ -97,7 +97,6 @@ export function ExtractionMethodSelector({
             <button
               key={option.id}
               onClick={() => onMethodChange(option.id)}
-              data-ui-id={`extraction-method-${option.id}-btn`}
               className={cn(
                 "relative p-4 rounded-lg border-2 transition-all duration-300 text-left group",
                 "hover:shadow-lg hover:scale-[1.02]",

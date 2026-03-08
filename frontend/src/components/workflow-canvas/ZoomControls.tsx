@@ -143,7 +143,6 @@ export function ZoomControls({
           disabled={!canZoomIn}
           className="w-10 h-10 flex items-center justify-center text-white hover:bg-surface-raised/80 disabled:text-text-muted disabled:cursor-not-allowed transition-colors border-b border-border-default"
           title="Zoom In (+)"
-          data-ui-id="canvas-zoom-in-btn"
         >
           <svg
             className="w-5 h-5"
@@ -166,7 +165,6 @@ export function ZoomControls({
             onClick={handleResetZoom}
             className="w-10 h-10 flex items-center justify-center text-xs text-text-secondary hover:bg-surface-raised/80 transition-colors border-b border-border-default"
             title="Reset Zoom (0)"
-            data-ui-id="canvas-zoom-reset-btn"
           >
             {zoomPercentage}%
           </button>
@@ -178,7 +176,6 @@ export function ZoomControls({
           disabled={!canZoomOut}
           className="w-10 h-10 flex items-center justify-center text-white hover:bg-surface-raised/80 disabled:text-text-muted disabled:cursor-not-allowed transition-colors border-b border-border-default"
           title="Zoom Out (-)"
-          data-ui-id="canvas-zoom-out-btn"
         >
           <svg
             className="w-5 h-5"
@@ -200,7 +197,6 @@ export function ZoomControls({
           onClick={handleFitView}
           className="w-10 h-10 flex items-center justify-center text-white hover:bg-surface-raised/80 transition-colors border-b border-border-default"
           title="Fit View (Ctrl+F)"
-          data-ui-id="canvas-zoom-fit-btn"
         >
           <svg
             className="w-5 h-5"
@@ -222,7 +218,6 @@ export function ZoomControls({
           onClick={handleZoomToSelection}
           className="w-10 h-10 flex items-center justify-center text-white hover:bg-surface-raised/80 transition-colors"
           title="Zoom to Selection"
-          data-ui-id="canvas-zoom-selection-btn"
         >
           <svg
             className="w-5 h-5"

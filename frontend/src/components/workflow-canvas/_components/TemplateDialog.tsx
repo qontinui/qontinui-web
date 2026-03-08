@@ -28,7 +28,6 @@ function TemplateCard({
         }
       }}
       className="border border-border-default bg-surface-canvas rounded-lg p-4 hover:border-brand-primary hover:shadow-md cursor-pointer transition"
-      data-ui-id={`canvas-template-item-${template.id}`}
     >
       <div className="flex items-center justify-between mb-2">
         <h3 className="font-semibold text-lg text-white">{template.name}</h3>
@@ -84,19 +83,14 @@ export function TemplateDialog({
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search templates..."
             className="w-full bg-surface-canvas border border-border-default text-white rounded-md px-3 py-2 mb-4 focus:border-brand-primary focus:ring-1 focus:ring-brand-primary placeholder:text-text-muted"
-            data-ui-id="canvas-template-search-input"
           />
 
-          <div
-            className="flex space-x-2 overflow-x-auto"
-            data-ui-id="canvas-template-category-list"
-          >
+          <div className="flex space-x-2 overflow-x-auto">
             {categories.map((category) => (
               <button
                 key={category}
                 onClick={() => setSelectedCategory(category)}
                 className={`px-4 py-2 rounded-md whitespace-nowrap text-sm font-medium ${selectedCategory === category ? "bg-brand-primary text-black" : "bg-surface-raised text-text-secondary hover:bg-surface-raised/80"}`}
-                data-ui-id={`canvas-template-category-${category}-btn`}
               >
                 {category.charAt(0).toUpperCase() + category.slice(1)}
               </button>
@@ -105,10 +99,7 @@ export function TemplateDialog({
         </div>
 
         <div className="flex-1 overflow-y-auto p-6">
-          <div
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
-            data-ui-id="canvas-template-grid-list"
-          >
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {templates.map((template) => (
               <TemplateCard
                 key={template.id}
@@ -129,7 +120,6 @@ export function TemplateDialog({
           <button
             onClick={onClose}
             className="px-4 py-2 border border-border-default text-text-secondary rounded-md hover:bg-surface-raised"
-            data-ui-id="canvas-template-cancel-btn"
           >
             Cancel
           </button>

@@ -51,7 +51,6 @@ export function UserShareForm({
               onSubmit();
             }
           }}
-          data-ui-id="automation-share-email-input"
         />
       </div>
       <div className="grid grid-cols-2 gap-2">
@@ -64,10 +63,7 @@ export function UserShareForm({
             }
             disabled={loading}
           >
-            <SelectTrigger
-              id="permission"
-              data-ui-id="automation-share-permission-select"
-            >
+            <SelectTrigger id="permission">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -89,18 +85,12 @@ export function UserShareForm({
               disabled={loading}
               min={new Date().toISOString().split("T")[0]}
               className="pr-8"
-              data-ui-id="automation-share-expiration-input"
             />
             <Calendar className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted pointer-events-none" />
           </div>
         </div>
       </div>
-      <Button
-        onClick={onSubmit}
-        disabled={loading}
-        className="w-full"
-        data-ui-id="automation-share-user-btn"
-      >
+      <Button onClick={onSubmit} disabled={loading} className="w-full">
         {loading ? (
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
         ) : (

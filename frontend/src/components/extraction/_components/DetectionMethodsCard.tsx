@@ -73,7 +73,6 @@ export function DetectionMethodsCard({
               </Tooltip>
             </div>
             <Switch
-              data-ui-id="extraction-vision-edge-toggle"
               checked={config.edgeDetection.enabled}
               onCheckedChange={(checked) =>
                 updateEdgeDetection({ enabled: checked })
@@ -134,7 +133,6 @@ export function DetectionMethodsCard({
               </Tooltip>
             </div>
             <Switch
-              data-ui-id="extraction-vision-sam3-toggle"
               checked={config.sam3.enabled}
               onCheckedChange={(checked) => updateSam3({ enabled: checked })}
             />
@@ -151,10 +149,7 @@ export function DetectionMethodsCard({
                     updateSam3({ modelType: value })
                   }
                 >
-                  <SelectTrigger
-                    data-ui-id="extraction-vision-sam3-model-select"
-                    className="h-8 text-xs"
-                  >
+                  <SelectTrigger className="h-8 text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -205,7 +200,6 @@ export function DetectionMethodsCard({
               </Tooltip>
             </div>
             <Switch
-              data-ui-id="extraction-vision-ocr-toggle"
               checked={config.ocr.enabled}
               onCheckedChange={(checked) => updateOcr({ enabled: checked })}
             />
@@ -222,10 +216,7 @@ export function DetectionMethodsCard({
                     updateOcr({ engine: value })
                   }
                 >
-                  <SelectTrigger
-                    data-ui-id="extraction-vision-ocr-engine-select"
-                    className="h-8 text-xs"
-                  >
+                  <SelectTrigger className="h-8 text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
