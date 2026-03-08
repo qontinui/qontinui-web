@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { BuilderLayout } from "@/components/builders/BuilderLayout";
 import { DeleteConfirmDialog } from "@/components/builders/DeleteConfirmDialog";
@@ -119,7 +119,7 @@ function getStepLabel(step: MacroStep): string {
   }
 }
 
-export default function MacrosBuilderPage() {
+function MacrosBuilderPageContent() {
   const searchParams = useSearchParams();
   const initialSelectedId = searchParams.get("id");
   const {
@@ -764,5 +764,13 @@ export default function MacrosBuilderPage() {
         </div>
       )}
     />
+  );
+}
+
+export default function MacrosBuilderPage() {
+  return (
+    <Suspense>
+      <MacrosBuilderPageContent />
+    </Suspense>
   );
 }

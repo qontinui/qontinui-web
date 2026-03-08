@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { BuilderLayout } from "@/components/builders/BuilderLayout";
 import { DeleteConfirmDialog } from "@/components/builders/DeleteConfirmDialog";
@@ -52,7 +52,7 @@ function scriptletToForm(scriptlet: Scriptlet): ScriptletForm {
   };
 }
 
-export default function ScriptletsBuilderPage() {
+function ScriptletsBuilderPageContent() {
   const searchParams = useSearchParams();
   const initialSelectedId = searchParams.get("id");
   const {
@@ -401,5 +401,13 @@ export default function ScriptletsBuilderPage() {
         </div>
       )}
     />
+  );
+}
+
+export default function ScriptletsBuilderPage() {
+  return (
+    <Suspense>
+      <ScriptletsBuilderPageContent />
+    </Suspense>
   );
 }

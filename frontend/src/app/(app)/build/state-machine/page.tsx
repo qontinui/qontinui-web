@@ -1,6 +1,6 @@
 "use client";
 
-import { useReducer, useEffect, useCallback, useMemo, useState } from "react";
+import { useReducer, useEffect, useCallback, useMemo, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Network, Undo2, Redo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -36,7 +36,7 @@ import { SaveLoadToolbar } from "@/components/state-machine-builder/SaveLoadTool
 import { useProjects } from "@/hooks/use-projects";
 import { useStateMachineConfig } from "@/hooks/use-state-machine-configs";
 
-export default function StateMachineBuilderPage() {
+function StateMachineBuilderPageContent() {
   const { isOffline } = useRunnerHealth();
   const searchParams = useSearchParams();
   const [state, dispatch] = useReducer(
@@ -395,5 +395,13 @@ export default function StateMachineBuilderPage() {
         />
       </div>
     </TooltipProvider>
+  );
+}
+
+export default function StateMachineBuilderPage() {
+  return (
+    <Suspense>
+      <StateMachineBuilderPageContent />
+    </Suspense>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { BuilderLayout } from "@/components/builders/BuilderLayout";
 import { AiGeneratorPanel } from "@/components/builders/AiGeneratorPanel";
@@ -85,7 +85,7 @@ const defaultForm: Omit<SavedApiRequest, "id"> = {
   follow_redirects: true,
 };
 
-export default function ApiRequestsBuilderPage() {
+function ApiRequestsBuilderPageContent() {
   const searchParams = useSearchParams();
   const initialId = searchParams.get("id");
 
@@ -698,5 +698,13 @@ export default function ApiRequestsBuilderPage() {
         </div>
       )}
     />
+  );
+}
+
+export default function ApiRequestsBuilderPage() {
+  return (
+    <Suspense>
+      <ApiRequestsBuilderPageContent />
+    </Suspense>
   );
 }

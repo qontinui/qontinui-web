@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { BuilderLayout } from "@/components/builders/BuilderLayout";
 import { TagInput } from "@/components/builders/TagInput";
@@ -68,7 +68,7 @@ function promptToForm(p: SavedPrompt): EditForm {
   };
 }
 
-export default function ScriptsBuilderPage() {
+function ScriptsBuilderPageContent() {
   const searchParams = useSearchParams();
   const { data: prompts, isLoading, error, isOffline, refetch } =
     usePromptsDetailed();
@@ -558,5 +558,13 @@ export default function ScriptsBuilderPage() {
         </div>
       )}
     />
+  );
+}
+
+export default function ScriptsBuilderPage() {
+  return (
+    <Suspense>
+      <ScriptsBuilderPageContent />
+    </Suspense>
   );
 }
