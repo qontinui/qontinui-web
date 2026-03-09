@@ -4,9 +4,9 @@ import { useCallback } from "react";
 import { toast } from "sonner";
 import { useAutomationStore } from "@/stores/automation";
 import type {
-  UIBridgeTransitionCreate,
-  UIBridgeTransitionUpdate,
-  UIBridgeTransition,
+  StateMachineTransitionCreate,
+  StateMachineTransitionUpdate,
+  StateMachineTransition,
 } from "../_types";
 
 export function useUIBridgeTransitions(configId: string | null) {
@@ -14,8 +14,8 @@ export function useUIBridgeTransitions(configId: string | null) {
 
   const createTransition = useCallback(
     async (
-      data: UIBridgeTransitionCreate
-    ): Promise<UIBridgeTransition | null> => {
+      data: StateMachineTransitionCreate
+    ): Promise<StateMachineTransition | null> => {
       if (!projectId || !configId) return null;
       try {
         const res = await fetch(
@@ -47,8 +47,8 @@ export function useUIBridgeTransitions(configId: string | null) {
   const updateTransition = useCallback(
     async (
       transitionId: string,
-      data: UIBridgeTransitionUpdate
-    ): Promise<UIBridgeTransition | null> => {
+      data: StateMachineTransitionUpdate
+    ): Promise<StateMachineTransition | null> => {
       if (!projectId || !configId) return null;
       try {
         const res = await fetch(

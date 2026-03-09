@@ -24,18 +24,23 @@ import {
 import { toast } from "sonner";
 import { useUIBridgeStateMachine } from "../_hooks/useUIBridgeStateMachine";
 import { useUIBridgeTransitions } from "../_hooks/useUIBridgeTransitions";
-import { usePathfinding } from "../_hooks/usePathfinding";
 import { useExportStateMachine } from "../_hooks/useExportStateMachine";
 import { useElementDrag } from "../_hooks/useElementDrag";
 import { UIBridgeStateGraph } from "./UIBridgeStateGraph";
-import { UIBridgeStatePanel } from "./UIBridgeStatePanel";
-import { UIBridgeTransitionEditor } from "./UIBridgeTransitionEditor";
-import { PathfindingPanel } from "./PathfindingPanel";
 import { ExportPanel } from "./ExportPanel";
 import { DiscoveryPanel } from "./DiscoveryPanel";
-import { StateViewPanel } from "./StateViewPanel";
-import { TransitionsPanel } from "./TransitionsPanel";
-import type { UIBridgeTransitionCreate } from "../_types";
+import {
+  StateViewPanel,
+  TransitionsPanel,
+  TransitionEditor,
+  StateDetailPanel,
+  PathfindingPanel,
+} from "@qontinui/workflow-ui/state-machine";
+import type { StateMachineTransitionCreate } from "../_types";
+import type {
+  StateMachineStateUpdate,
+  PathfindingResult,
+} from "@qontinui/shared-types";
 import { useAutomationStore } from "@/stores/automation";
 import { useStateMachineDiscovery } from "../_hooks/useStateMachineDiscovery";
 
@@ -53,13 +58,15 @@ type TabValue = (typeof TABS)[number]["value"];
 export function UIBridgeStateMachinePage() {
   const sm = useUIBridgeStateMachine();
   const transitions = useUIBridgeTransitions(sm.selectedConfigId);
-  const pathfinding = usePathfinding(sm.selectedConfigId);
   const exporter = useExportStateMachine(sm.selectedConfigId);
   const projectId = useAutomationStore((s) => s.projectId);
   const discovery = useStateMachineDiscovery(sm.projectId);
 
   const [activeTab, setActiveTab] = useState<TabValue>("discovery");
   const [showNewTransition, setShowNewTransition] = useState(false);
+  const [highlightedPath, setHighlightedPath] = useState<
+    PathfindingResult["steps"] | undefined
+  >();
 
   // Determine what side panel to show
   const showStatePanel = sm.selectedState && !showNewTransition;
@@ -72,7 +79,7 @@ export function UIBridgeStateMachinePage() {
 
   // Handle transition operations
   const handleCreateTransition = useCallback(
-    async (data: UIBridgeTransitionCreate) => {
+    async (data: StateMachineTransitionCreate) => {
       const result = await transitions.createTransition(data);
       if (result) {
         setShowNewTransition(false);
@@ -83,7 +90,7 @@ export function UIBridgeStateMachinePage() {
   );
 
   const handleUpdateTransition = useCallback(
-    async (id: string, data: Partial<UIBridgeTransitionCreate>) => {
+    async (id: string, data: Partial<StateMachineTransitionCreate>) => {
       const result = await transitions.updateTransition(id, data);
       if (result) {
         sm.refresh();
@@ -103,9 +110,9 @@ export function UIBridgeStateMachinePage() {
     [transitions, sm]
   );
 
-  // Handle element update for drag-and-drop reassignment
-  const handleUpdateState = useCallback(
-    async (stateId: string, elementIds: string[]) => {
+  // Save state updates (used by StateDetailPanel and drag-and-drop)
+  const handleSaveState = useCallback(
+    async (stateId: string, updates: StateMachineStateUpdate) => {
       if (!projectId || !sm.selectedConfigId) return;
       try {
         const res = await fetch(
@@ -114,19 +121,32 @@ export function UIBridgeStateMachinePage() {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             credentials: "include",
-            body: JSON.stringify({ element_ids: elementIds }),
+            body: JSON.stringify(updates),
           }
         );
         if (!res.ok) {
-          toast.error("Failed to update state elements");
+          toast.error("Failed to update state");
         }
       } catch {
-        toast.error("Failed to update state elements");
+        toast.error("Failed to update state");
       }
       sm.refresh();
     },
     [projectId, sm]
   );
+
+  // Handle element update for drag-and-drop reassignment
+  const handleUpdateState = useCallback(
+    async (stateId: string, elementIds: string[]) => {
+      await handleSaveState(stateId, { element_ids: elementIds });
+    },
+    [handleSaveState]
+  );
+
+  // Handle pathfinding result for graph highlighting
+  const handlePathFound = useCallback((result: PathfindingResult) => {
+    setHighlightedPath(result.found ? result.steps : undefined);
+  }, []);
 
   // Drag-and-drop hook for element-based transition creation
   const elementDrag = useElementDrag({
@@ -303,7 +323,7 @@ export function UIBridgeStateMachinePage() {
                 sm.setSelectedStateId(null);
                 setShowNewTransition(false);
               }}
-              highlightedPath={pathfinding.result?.steps}
+              highlightedPath={highlightedPath}
               onStartElementDrag={elementDrag.handleStartElementDrag}
               onDragOver={elementDrag.handleDragOver}
               onDrop={elementDrag.handleDrop}
@@ -314,20 +334,31 @@ export function UIBridgeStateMachinePage() {
           </div>
 
           {/* Side Panel — State */}
-          <div className={showStatePanel && sm.selectedState ? "" : "hidden"}>
+          <div
+            className={
+              showStatePanel && sm.selectedState
+                ? "w-80 border-l border-border-primary bg-surface-primary overflow-y-auto"
+                : "hidden"
+            }
+          >
             {sm.selectedState && (
-              <UIBridgeStatePanel
+              <StateDetailPanel
                 state={sm.selectedState}
-                configId={sm.selectedConfigId!}
+                onSave={handleSaveState}
                 onClose={() => sm.setSelectedStateId(null)}
-                onUpdate={() => sm.refresh()}
               />
             )}
           </div>
 
           {/* Side Panel — Transition Editor */}
-          <div className={showTransitionPanel ? "" : "hidden"}>
-            <UIBridgeTransitionEditor
+          <div
+            className={
+              showTransitionPanel
+                ? "w-80 border-l border-border-primary bg-surface-primary overflow-y-auto"
+                : "hidden"
+            }
+          >
+            <TransitionEditor
               transition={sm.selectedTransition}
               states={sm.fullConfig?.states ?? []}
               onSave={handleCreateTransition}
@@ -436,10 +467,8 @@ export function UIBridgeStateMachinePage() {
         <div className={hasConfig ? "" : "hidden"}>
           <PathfindingPanel
             states={sm.fullConfig?.states ?? []}
-            result={pathfinding.result}
-            isLoading={pathfinding.isLoading}
-            onFindPath={pathfinding.findPath}
-            onClear={pathfinding.clearResult}
+            transitions={sm.fullConfig?.transitions ?? []}
+            onPathFound={handlePathFound}
           />
         </div>
       </div>

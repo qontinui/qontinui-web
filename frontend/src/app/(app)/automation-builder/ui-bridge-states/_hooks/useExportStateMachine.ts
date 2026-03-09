@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { useAutomationStore } from "@/stores/automation";
-import type { ExportConfig } from "../_types";
+import type { StateMachineExportFormat } from "../_types";
 
 const RUNNER_URL = "http://localhost:9876";
 
@@ -12,28 +12,29 @@ export function useExportStateMachine(configId: string | null) {
   const [isExporting, setIsExporting] = useState(false);
   const [isPushing, setIsPushing] = useState(false);
 
-  const exportConfig = useCallback(async (): Promise<ExportConfig | null> => {
-    if (!projectId || !configId) return null;
-    setIsExporting(true);
-    try {
-      const res = await fetch(
-        `/api/v1/projects/${projectId}/ui-bridge-configs/${configId}/export`,
-        { credentials: "include" }
-      );
-      if (res.ok) {
-        const data: ExportConfig = await res.json();
-        return data;
+  const exportConfig =
+    useCallback(async (): Promise<StateMachineExportFormat | null> => {
+      if (!projectId || !configId) return null;
+      setIsExporting(true);
+      try {
+        const res = await fetch(
+          `/api/v1/projects/${projectId}/ui-bridge-configs/${configId}/export`,
+          { credentials: "include" }
+        );
+        if (res.ok) {
+          const data: StateMachineExportFormat = await res.json();
+          return data;
+        }
+        toast.error("Failed to export configuration");
+        return null;
+      } catch (err) {
+        console.error("Export failed:", err);
+        toast.error("Failed to export configuration");
+        return null;
+      } finally {
+        setIsExporting(false);
       }
-      toast.error("Failed to export configuration");
-      return null;
-    } catch (err) {
-      console.error("Export failed:", err);
-      toast.error("Failed to export configuration");
-      return null;
-    } finally {
-      setIsExporting(false);
-    }
-  }, [projectId, configId]);
+    }, [projectId, configId]);
 
   const downloadExport = useCallback(async () => {
     const data = await exportConfig();

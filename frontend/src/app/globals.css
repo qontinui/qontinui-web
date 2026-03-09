@@ -81,6 +81,15 @@
   --color-glow-primary: var(--glow-primary);
   --color-glow-secondary: var(--glow-secondary);
   --color-glow-success: var(--glow-success);
+
+  /* Background aliases (shared workflow-ui components use bg-bg-*) */
+  --color-bg-primary: var(--surface-canvas);
+  --color-bg-secondary: var(--surface-raised);
+  --color-bg-tertiary: var(--surface-hover);
+
+  /* Border aliases (shared workflow-ui components use border-border-*) */
+  --color-border-primary: var(--border-subtle);
+  --color-border-secondary: var(--border-default);
 }
 
 :root {

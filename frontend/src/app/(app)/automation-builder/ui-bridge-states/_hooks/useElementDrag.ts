@@ -3,9 +3,9 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import type {
-  SavedStateWithDetails,
-  UIBridgeTransition,
-  UIBridgeTransitionCreate,
+  StateMachineState,
+  StateMachineTransition,
+  StateMachineTransitionCreate,
   TransitionAction,
 } from "../_types";
 
@@ -16,9 +16,9 @@ interface ElementDragData {
 }
 
 interface UseElementDragOptions {
-  states: SavedStateWithDetails[];
-  transitions: UIBridgeTransition[];
-  onCreateTransition: (data: UIBridgeTransitionCreate) => Promise<void>;
+  states: StateMachineState[];
+  transitions: StateMachineTransition[];
+  onCreateTransition: (data: StateMachineTransitionCreate) => Promise<void>;
   onUpdateState: (stateId: string, elementIds: string[]) => Promise<void>;
 }
 
@@ -73,10 +73,10 @@ function deriveAction(elementId: string): {
 
 /** Check if a transition between two states already exists (in either direction) */
 function findExistingTransition(
-  transitions: UIBridgeTransition[],
+  transitions: StateMachineTransition[],
   sourceStateId: string,
   targetStateId: string
-): UIBridgeTransition | undefined {
+): StateMachineTransition | undefined {
   return transitions.find(
     (t) =>
       t.from_states.includes(sourceStateId) &&
@@ -179,7 +179,7 @@ export function useElementDrag({
         const exitStates =
           sourceStateId !== targetStateId ? [sourceStateId] : [];
 
-        const transitionData: UIBridgeTransitionCreate = {
+        const transitionData: StateMachineTransitionCreate = {
           name: transitionName,
           from_states: [sourceStateId],
           activate_states: [targetStateId],
