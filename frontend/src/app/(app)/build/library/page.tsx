@@ -10,7 +10,6 @@ import {
   useScripts,
   useShellCommands,
   usePrompts,
-  useScriptlets,
   useMacros,
   type LibraryItem,
 } from "@/lib/runner-api";
@@ -34,7 +33,6 @@ import {
   FileCode,
   Terminal,
   MessageSquare,
-  Code2,
   Package,
   Zap,
 } from "lucide-react";
@@ -49,7 +47,6 @@ type AssetType =
   | "script"
   | "shell-command"
   | "prompt"
-  | "scriptlet"
   | "macro";
 
 const TYPE_CONFIG: Record<
@@ -64,7 +61,6 @@ const TYPE_CONFIG: Record<
   script: { label: "Script", icon: FileCode, color: "bg-orange-500/20 text-orange-400 border-orange-500/30" },
   "shell-command": { label: "Shell Command", icon: Terminal, color: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30" },
   prompt: { label: "Prompt", icon: MessageSquare, color: "bg-indigo-500/20 text-indigo-400 border-indigo-500/30" },
-  scriptlet: { label: "Scriptlet", icon: Code2, color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
   macro: { label: "Macro", icon: Zap, color: "bg-amber-500/20 text-amber-400 border-amber-500/30" },
 };
 
@@ -91,7 +87,6 @@ function getBuilderRoute(assetType: string): string | null {
     script: "/build/scripts",
     "shell-command": "/build/shell-commands",
     prompt: "/build/scripts",
-    scriptlet: "/build/scriptlets",
     macro: "/build/macros",
   };
   return routes[assetType] ?? null;
@@ -107,7 +102,6 @@ export default function LibraryPage() {
   const scripts = useScripts();
   const shellCommands = useShellCommands();
   const prompts = usePrompts();
-  const scriptlets = useScriptlets();
   const macros = useMacros();
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -129,7 +123,6 @@ export default function LibraryPage() {
     scripts.isLoading &&
     shellCommands.isLoading &&
     prompts.isLoading &&
-    scriptlets.isLoading &&
     macros.isLoading;
 
   const allItems = useMemo(() => {
@@ -160,7 +153,6 @@ export default function LibraryPage() {
       { data: scripts.data, assetType: "script" },
       { data: shellCommands.data?.map(c => ({ ...c, type: "shell-command" })) ?? null, assetType: "shell-command" },
       { data: prompts.data, assetType: "prompt" },
-      { data: scriptlets.data, assetType: "scriptlet" },
       { data: macros.data, assetType: "macro" },
     ];
 
@@ -182,7 +174,6 @@ export default function LibraryPage() {
     scripts.data,
     shellCommands.data,
     prompts.data,
-    scriptlets.data,
     macros.data,
   ]);
 

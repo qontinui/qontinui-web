@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { BuilderLayout } from "@/components/builders/BuilderLayout";
-import { DeleteConfirmDialog } from "@/components/builders/DeleteConfirmDialog";
+import { DeleteConfirmDialog } from "@/components/common/_components/DeleteConfirmDialog";
 import { TagInput } from "@/components/builders/TagInput";
 import {
   type Macro,
