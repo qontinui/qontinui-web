@@ -16,8 +16,9 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
-  // Handle local symlinked packages with subpath exports
-  transpilePackages: ['@qontinui/ui-bridge'],
+  // Note: @qontinui/ui-bridge uses file: reference (junction on Windows).
+  // Do NOT add to transpilePackages — SWC cannot follow Windows junctions.
+  // The package dist is pre-compiled so transpilation is unnecessary.
   webpack: (config, { dev }) => {
     // Only alias @qontinui/schemas when the local package exists (dev environment).
     // In CI/Vercel builds, the parent directory is not available. All schemas

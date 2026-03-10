@@ -14,7 +14,7 @@
 
 import { useEffect, useRef, useCallback } from "react";
 import { useUIBridge } from "@qontinui/ui-bridge/react";
-import type { ControlSnapshot } from "@qontinui/ui-bridge/control";
+import { buildControlSnapshot } from "./buildControlSnapshot";
 
 // API endpoints
 const COMMANDS_RESPONSE_ENDPOINT = "/api/ui-bridge/commands";
@@ -223,67 +223,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
       switch (action) {
         // ========== Control Snapshot ==========
         case "getControlSnapshot": {
-          // Build page context from NavigationTracker if available
-          const w = window as unknown as Record<string, unknown>;
-          const uiBridgeGlobal = w.__UI_BRIDGE__ as
-            | Record<string, unknown>
-            | undefined;
-          const navTracker = uiBridgeGlobal?.navigationTracker as
-            | { getSnapshotPageContext: () => unknown }
-            | undefined;
-          const modalDetector = uiBridgeGlobal?.modalDetector as
-            | { getSnapshotModalContext: () => unknown }
-            | undefined;
-          const toastCap = uiBridgeGlobal?.toastCapture as
-            | { getSnapshotToastContext: () => unknown }
-            | undefined;
-          const relTracker = uiBridgeGlobal?.relationshipTracker as
-            | {
-                getSnapshotRelationshipContext: (
-                  elements?: Array<{ id: string; element: Element }>
-                ) => unknown;
-              }
-            | undefined;
-          const dndDetector = uiBridgeGlobal?.dragDropDetector as
-            | {
-                getSnapshotDragDropContext: (
-                  elements?: Array<{ id: string; element: Element }>
-                ) => unknown;
-              }
-            | undefined;
-
-          const elementPairs = elements.map((e) => ({
-            id: e.id,
-            element: e.element,
-          }));
-          const snapshot: ControlSnapshot = {
-            timestamp: Date.now(),
-            elements: elements.map((e) => {
-              const state = e.getState();
-              return {
-                id: e.id,
-                type: e.type,
-                label: e.label,
-                actions: e.actions,
-                state: state,
-              };
-            }),
-            components: [],
-            workflows: [],
-            activeRuns: [],
-            page: navTracker?.getSnapshotPageContext() as ControlSnapshot["page"],
-            modalStack:
-              modalDetector?.getSnapshotModalContext() as ControlSnapshot["modalStack"],
-            toasts:
-              toastCap?.getSnapshotToastContext() as ControlSnapshot["toasts"],
-            relationships: relTracker?.getSnapshotRelationshipContext(
-              elementPairs
-            ) as ControlSnapshot["relationships"],
-            dragDrop: dndDetector?.getSnapshotDragDropContext(
-              elementPairs
-            ) as ControlSnapshot["dragDrop"],
-          };
-          return snapshot;
+          return buildControlSnapshot(elements);
         }
 
         // ========== Element Actions ==========
