@@ -16,6 +16,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useUIBridge } from "@qontinui/ui-bridge/react";
+import { CompositeIdleDetector } from "@qontinui/ui-bridge";
 
 // Transport configuration
 export type TransportMode = "websocket" | "http" | "auto";
@@ -225,6 +226,25 @@ export function useUIBridgeTransport(
   );
   const isIntentionallyClosed = useRef(false);
   const isTabVisibleRef = useRef(true);
+  const idleDetectorRef = useRef<CompositeIdleDetector | null>(null);
+
+  // Lazy-init idle detector on first access (avoids useEffect timing issues)
+  function getIdleDetector(): CompositeIdleDetector {
+    if (!idleDetectorRef.current) {
+      idleDetectorRef.current = CompositeIdleDetector.create();
+    }
+    return idleDetectorRef.current;
+  }
+
+  // Clean up idle detector on unmount
+  useEffect(() => {
+    return () => {
+      if (idleDetectorRef.current) {
+        idleDetectorRef.current.destroy();
+        idleDetectorRef.current = null;
+      }
+    };
+  }, []);
 
   /**
    * Log helper (only logs if verbose is enabled)
@@ -824,6 +844,60 @@ export function useUIBridgeTransport(
           else if (evtSince) events = capture2.getSince(evtSince);
           else events = capture2.getRecent(evtLimit ?? 100);
           return { events, count: events.length };
+        }
+
+        // ========== Idle Detection ==========
+        case "getIdleStatus": {
+          const detector = getIdleDetector();
+          return detector.getStatus();
+        }
+
+        case "getIdleSignalStatus": {
+          const detector = getIdleDetector();
+          const { signal: sigName } = payload as { signal: string };
+          const sigStatus = detector.getSignalStatus(sigName);
+          if (!sigStatus) {
+            throw new Error(
+              `Signal not found: ${sigName}. Available: ${detector.getSignalNames().join(", ")}`
+            );
+          }
+          return sigStatus;
+        }
+
+        case "waitForIdle": {
+          const detector = getIdleDetector();
+          const idleOpts = payload as {
+            timeout?: number;
+            minStableMs?: number;
+            exclude?: string[];
+          };
+          return detector.waitForIdle(idleOpts);
+        }
+
+        case "waitForSignalIdle": {
+          const detector = getIdleDetector();
+          const sigWait = payload as {
+            signal: string;
+            timeout?: number;
+            minStableMs?: number;
+          };
+          return detector.waitForSignal(sigWait.signal, {
+            timeout: sigWait.timeout,
+            minStableMs: sigWait.minStableMs,
+          });
+        }
+
+        case "waitForTargets": {
+          const detector = getIdleDetector();
+          const tgtOpts = payload as {
+            targets: Array<string | { indicator: string }>;
+            timeout?: number;
+            minStableMs?: number;
+          };
+          return detector.waitFor(tgtOpts.targets, {
+            timeout: tgtOpts.timeout,
+            minStableMs: tgtOpts.minStableMs,
+          });
         }
 
         default:

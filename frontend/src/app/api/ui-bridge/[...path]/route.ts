@@ -5,7 +5,10 @@
  * Uses createNextRouteHandlers from ui-bridge-server to handle routing.
  */
 
-import { createNextRouteHandlers } from "@qontinui/ui-bridge/server/nextjs";
+import {
+  createNextRouteHandlers,
+  type UIBridgeServerHandlers,
+} from "@qontinui/ui-bridge/server";
 import { uiBridgeHandlers } from "@/lib/ui-bridge/handlers";
 import { NextRequest } from "next/server";
 
@@ -36,7 +39,12 @@ import { NextRequest } from "next/server";
  * - GET /api/ui-bridge/debug/metrics - Get metrics
  * - POST /api/ui-bridge/debug/highlight/:id - Highlight element
  */
-const handlers = createNextRouteHandlers(uiBridgeHandlers, {});
+// Cast: uiBridgeHandlers implements a subset of UIBridgeServerHandlers.
+// Unimplemented methods return 501 at runtime (nextjs.ts checks handler existence).
+const handlers = createNextRouteHandlers(
+  uiBridgeHandlers as unknown as UIBridgeServerHandlers,
+  {}
+);
 
 // Wrap handlers to adapt from Next.js 15 async params to the expected sync params
 type NextContext = { params: Promise<{ path: string[] }> };

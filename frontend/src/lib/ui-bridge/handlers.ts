@@ -16,11 +16,15 @@
  */
 
 import type {
-  UIBridgeServerHandlers,
   RenderLogQuery,
   APIResponse,
+  BrowserEventsResponse,
 } from "@qontinui/ui-bridge/server";
 import type { CapturedError } from "@qontinui/ui-bridge";
+import type {
+  CompositeIdleStatus,
+  SignalStatus,
+} from "@qontinui/ui-bridge/idle";
 import type {
   ControlActionRequest,
   ControlActionResponse,
@@ -133,6 +137,14 @@ interface PendingCommand {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timeout: NodeJS.Timeout;
+  /** How many tabs were notified of this command */
+  tabsNotified: number;
+  /** How many tabs have responded with errors */
+  errorResponseCount: number;
+  /** First error received (used when all tabs error) */
+  firstError?: Error;
+  /** Grace timeout for multi-tab error deferral (fallback if some tabs go silent) */
+  graceTimeout?: NodeJS.Timeout;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -166,6 +178,12 @@ const MAX_PENDING_COMMANDS = 200;
 // Command timeout in milliseconds (10 seconds for WebSocket, 30 seconds for SSE/HTTP)
 const WEBSOCKET_COMMAND_TIMEOUT_MS = 10000;
 const SSE_COMMAND_TIMEOUT_MS = 15000;
+
+// When multiple tabs are notified and one responds with an error, wait up to
+// this long for a success from another tab. Acts as a fallback when some tabs
+// go silent (broken SSE, background throttling). If all notified tabs respond
+// with errors before this, rejection is immediate.
+const MULTI_TAB_GRACE_MS = 3000;
 
 /**
  * Subscribe to new commands. Returns an unsubscribe function.
@@ -608,12 +626,15 @@ export function queueCommand<T>(
       }
     }
 
-    // Store the pending command
-    pendingCommands.set(commandId, {
+    // Store the pending command (tabsNotified updated after broadcast)
+    const pending: PendingCommand = {
       resolve: resolve as (value: unknown) => void,
       reject,
       timeout,
-    });
+      tabsNotified: sentViaWebSocket ? 1 : 0,
+      errorResponseCount: 0,
+    };
+    pendingCommands.set(commandId, pending);
 
     // If WebSocket delivery failed, push via SSE listeners
     if (!sentViaWebSocket) {
@@ -631,18 +652,22 @@ export function queueCommand<T>(
           if (listener) {
             try {
               listener.callback(command);
+              pending.tabsNotified = 1;
             } catch {
               /* self-cleaning */
             }
           }
         } else {
+          let notified = 0;
           for (const listener of tabListeners.values()) {
             try {
               listener.callback(command);
+              notified++;
             } catch {
               /* self-cleaning */
             }
           }
+          pending.tabsNotified = notified;
         }
       } else {
         // No SSE listeners connected - add to legacy polling queue as last resort
@@ -679,6 +704,7 @@ export function resolveCommand(commandId: string, result: unknown): boolean {
   }
 
   clearTimeout(pending.timeout);
+  if (pending.graceTimeout) clearTimeout(pending.graceTimeout);
   pendingCommands.delete(commandId);
   pending.resolve(result);
   return true;
@@ -696,9 +722,40 @@ export function rejectCommand(
     return false;
   }
 
-  clearTimeout(pending.timeout);
-  pendingCommands.delete(commandId);
-  pending.reject(new Error(errorMessage));
+  pending.errorResponseCount++;
+  if (!pending.firstError) {
+    pending.firstError = new Error(errorMessage);
+  }
+
+  // All notified tabs have responded with errors — reject immediately
+  if (pending.errorResponseCount >= pending.tabsNotified) {
+    clearTimeout(pending.timeout);
+    if (pending.graceTimeout) clearTimeout(pending.graceTimeout);
+    pendingCommands.delete(commandId);
+    pending.reject(pending.firstError!);
+    return true;
+  }
+
+  // Multiple tabs notified but not all have responded yet. Start a grace
+  // timer (if not already running) as a fallback for tabs that go silent.
+  // A success from any tab will resolve via resolveCommand and cancel this.
+  if (!pending.graceTimeout) {
+    pending.graceTimeout = setTimeout(() => {
+      const stillPending = pendingCommands.get(commandId);
+      if (stillPending) {
+        console.log(
+          `[ui-bridge] rejectCommand: ${commandId} grace timeout — ${stillPending.errorResponseCount}/${stillPending.tabsNotified} tabs responded`
+        );
+        clearTimeout(stillPending.timeout);
+        pendingCommands.delete(commandId);
+        stillPending.reject(stillPending.firstError || new Error(errorMessage));
+      }
+    }, MULTI_TAB_GRACE_MS);
+  }
+
+  console.log(
+    `[ui-bridge] rejectCommand: ${commandId} error ${pending.errorResponseCount}/${pending.tabsNotified}, waiting for other tabs`
+  );
   return true;
 }
 
@@ -774,7 +831,9 @@ export function addRenderLogEntries(entries: RenderLogEntry[]): void {
 // UI Bridge Server Handlers Implementation
 // ============================================================================
 
-export const uiBridgeHandlers: UIBridgeServerHandlers = {
+// The SDK interface grows faster than the web server implementation.
+// Unimplemented handlers return 501 at runtime (see nextjs.ts line 122).
+export const uiBridgeHandlers = {
   // --------------------------------------------------------------------------
   // Render Log Endpoints
   // --------------------------------------------------------------------------
@@ -1695,11 +1754,89 @@ export const uiBridgeHandlers: UIBridgeServerHandlers = {
     type?: string;
     since?: number;
     limit?: number;
-  }): Promise<APIResponse<{ events: unknown[]; count: number }>> {
+    severity?: string;
+    deduplicate?: boolean;
+  }): Promise<APIResponse<BrowserEventsResponse>> {
     try {
-      const result = await queueCommand<{ events: unknown[]; count: number }>(
+      const result = await queueCommand<BrowserEventsResponse>(
         "getBrowserEvents",
         params ?? {}
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // Idle Detection
+  // --------------------------------------------------------------------------
+
+  async getIdleStatus(): Promise<APIResponse<CompositeIdleStatus>> {
+    try {
+      const result = await queueCommand<CompositeIdleStatus>(
+        "getIdleStatus",
+        {}
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getIdleSignalStatus(
+    signal: string
+  ): Promise<APIResponse<SignalStatus>> {
+    try {
+      const result = await queueCommand<SignalStatus>("getIdleSignalStatus", {
+        signal,
+      });
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async waitForIdle(request?: {
+    timeout?: number;
+    minStableMs?: number;
+    exclude?: string[];
+  }): Promise<APIResponse<CompositeIdleStatus>> {
+    try {
+      const result = await queueCommand<CompositeIdleStatus>(
+        "waitForIdle",
+        request ?? {}
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async waitForSignalIdle(
+    signal: string,
+    request?: { timeout?: number; minStableMs?: number }
+  ): Promise<APIResponse<SignalStatus>> {
+    try {
+      const result = await queueCommand<SignalStatus>("waitForSignalIdle", {
+        signal,
+        ...request,
+      });
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async waitForTargets(request: {
+    targets: Array<string | { indicator: string }>;
+    timeout?: number;
+    minStableMs?: number;
+  }): Promise<APIResponse<Record<string, SignalStatus>>> {
+    try {
+      const result = await queueCommand<Record<string, SignalStatus>>(
+        "waitForTargets",
+        request
       );
       return success(result);
     } catch (e) {

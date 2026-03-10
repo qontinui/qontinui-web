@@ -30,8 +30,9 @@
  * ```
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, useEffect } from "react";
 import { useUIBridge } from "@qontinui/ui-bridge/react";
+import { CompositeIdleDetector } from "@qontinui/ui-bridge";
 import type { ControlSnapshot } from "@qontinui/ui-bridge/control";
 
 // Reconnection configuration
@@ -93,6 +94,23 @@ export function useWebSocketCommandHandler() {
   const clientIdRef = useRef<string>(generateClientId());
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isIntentionallyClosed = useRef(false);
+  const idleDetectorRef = useRef<CompositeIdleDetector | null>(null);
+
+  function getIdleDetector(): CompositeIdleDetector {
+    if (!idleDetectorRef.current) {
+      idleDetectorRef.current = CompositeIdleDetector.create();
+    }
+    return idleDetectorRef.current;
+  }
+
+  useEffect(() => {
+    return () => {
+      if (idleDetectorRef.current) {
+        idleDetectorRef.current.destroy();
+        idleDetectorRef.current = null;
+      }
+    };
+  }, []);
 
   /**
    * Read all specs from the global SpecStore
@@ -152,6 +170,15 @@ export function useWebSocketCommandHandler() {
       switch (action) {
         // ========== Control Snapshot ==========
         case "getControlSnapshot": {
+          // Build page context from NavigationTracker if available
+          const w = window as unknown as Record<string, unknown>;
+          const uiBridgeGlobal = w.__UI_BRIDGE__ as
+            | Record<string, unknown>
+            | undefined;
+          const navTracker = uiBridgeGlobal?.navigationTracker as
+            | { getSnapshotPageContext: () => unknown }
+            | undefined;
+
           const snapshot: ControlSnapshot = {
             timestamp: Date.now(),
             elements: bridge.elements.map((e) => {
@@ -167,6 +194,7 @@ export function useWebSocketCommandHandler() {
             components: [],
             workflows: [],
             activeRuns: [],
+            page: navTracker?.getSnapshotPageContext() as ControlSnapshot["page"],
           };
           return snapshot;
         }
@@ -618,6 +646,60 @@ export function useWebSocketCommandHandler() {
             captured: true,
             timestamp: Date.now(),
           };
+        }
+
+        // ========== Idle Detection ==========
+        case "getIdleStatus": {
+          const detector = getIdleDetector();
+          return detector.getStatus();
+        }
+
+        case "getIdleSignalStatus": {
+          const detector = getIdleDetector();
+          const { signal } = payload as { signal: string };
+          const status = detector.getSignalStatus(signal);
+          if (!status) {
+            throw new Error(
+              `Signal not found: ${signal}. Available: ${detector.getSignalNames().join(", ")}`
+            );
+          }
+          return status;
+        }
+
+        case "waitForIdle": {
+          const detector = getIdleDetector();
+          const { timeout, minStableMs, exclude } = payload as {
+            timeout?: number;
+            minStableMs?: number;
+            exclude?: string[];
+          };
+          return detector.waitForIdle({ timeout, minStableMs, exclude });
+        }
+
+        case "waitForSignalIdle": {
+          const detector = getIdleDetector();
+          const waitSignalPayload = payload as {
+            signal: string;
+            timeout?: number;
+            minStableMs?: number;
+          };
+          return detector.waitForSignal(waitSignalPayload.signal, {
+            timeout: waitSignalPayload.timeout,
+            minStableMs: waitSignalPayload.minStableMs,
+          });
+        }
+
+        case "waitForTargets": {
+          const detector = getIdleDetector();
+          const targetsPayload = payload as {
+            targets: Array<string | { indicator: string }>;
+            timeout?: number;
+            minStableMs?: number;
+          };
+          return detector.waitFor(targetsPayload.targets, {
+            timeout: targetsPayload.timeout,
+            minStableMs: targetsPayload.minStableMs,
+          });
         }
 
         default:

@@ -223,6 +223,15 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
       switch (action) {
         // ========== Control Snapshot ==========
         case "getControlSnapshot": {
+          // Build page context from NavigationTracker if available
+          const w = window as unknown as Record<string, unknown>;
+          const uiBridgeGlobal = w.__UI_BRIDGE__ as
+            | Record<string, unknown>
+            | undefined;
+          const navTracker = uiBridgeGlobal?.navigationTracker as
+            | { getSnapshotPageContext: () => unknown }
+            | undefined;
+
           const snapshot: ControlSnapshot = {
             timestamp: Date.now(),
             elements: elements.map((e) => {
@@ -238,6 +247,7 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
             components: [],
             workflows: [],
             activeRuns: [],
+            page: navTracker?.getSnapshotPageContext() as ControlSnapshot["page"],
           };
           return snapshot;
         }

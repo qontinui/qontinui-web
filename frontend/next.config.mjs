@@ -27,6 +27,13 @@ const nextConfig = {
       config.resolve.alias['@qontinui/schemas'] = schemasPath;
     }
 
+    // Prevent duplicate React/library instances from symlinked packages
+    // (e.g. @qontinui/workflow-ui has its own node_modules/react)
+    config.resolve.alias['react'] = path.resolve(__dirname, 'node_modules/react');
+    config.resolve.alias['react-dom'] = path.resolve(__dirname, 'node_modules/react-dom');
+    config.resolve.alias['@xyflow/react'] = path.resolve(__dirname, 'node_modules/@xyflow/react');
+    config.resolve.alias['@xyflow/system'] = path.resolve(__dirname, 'node_modules/@xyflow/system');
+
     // In dev mode, ignore noisy directories to prevent spurious HMR recompilations
     if (dev) {
       config.watchOptions = {

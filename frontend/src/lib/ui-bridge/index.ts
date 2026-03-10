@@ -11,6 +11,7 @@
  */
 
 export { UIBridgeWrapper } from "./provider";
+export { RouteAwarenessProvider } from "./RouteAwarenessProvider";
 export { RenderLogWrapper } from "./RenderLogWrapper";
 export { UIBridgeTransportListener } from "./UIBridgeTransportListener";
 export { uiBridgeHandlers } from "./handlers";

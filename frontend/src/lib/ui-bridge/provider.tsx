@@ -32,6 +32,7 @@ import type {
   AnyCapturedEvent,
 } from "@qontinui/ui-bridge/debug";
 import { UIBridgeTransportListener } from "./UIBridgeTransportListener";
+import { RouteAwarenessProvider } from "./RouteAwarenessProvider";
 import type { TransportMode } from "./useUIBridgeTransport";
 
 const isDev = process.env.NODE_ENV === "development";
@@ -261,7 +262,9 @@ export function UIBridgeWrapper({
           mode={transport}
           wsUrl={wsUrl}
         />
-        {children as Parameters<typeof AutoRegisterProvider>[0]["children"]}
+        <RouteAwarenessProvider>
+          {children as Parameters<typeof AutoRegisterProvider>[0]["children"]}
+        </RouteAwarenessProvider>
       </AutoRegisterProvider>
     </UIBridgeProvider>
   );
