@@ -603,6 +603,8 @@ export function queueCommand<T>(
     }
 
     const timeout = setTimeout(() => {
+      const pending = pendingCommands.get(commandId);
+      if (pending?.graceTimeout) clearTimeout(pending.graceTimeout);
       pendingCommands.delete(commandId);
       reject(
         new Error(
@@ -618,6 +620,7 @@ export function queueCommand<T>(
         const oldest = pendingCommands.get(oldestKey);
         if (oldest) {
           clearTimeout(oldest.timeout);
+          if (oldest.graceTimeout) clearTimeout(oldest.graceTimeout);
           oldest.reject(
             new Error("Command evicted: too many pending commands")
           );
