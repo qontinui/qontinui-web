@@ -37,6 +37,7 @@ import { FolderTreeFooter } from "./_components/FolderTreeFooter";
 import { InlineFolderCreate } from "./_components/InlineFolderCreate";
 import { useFolderTreeState } from "./_hooks/useFolderTreeState";
 import { useFolderTreeHandlers } from "./_hooks/useFolderTreeHandlers";
+import { useDropZone } from "@qontinui/ui-bridge";
 
 // ============================================================================
 // Types
@@ -72,6 +73,7 @@ export function FolderTree({
   className,
 }: FolderTreeProps) {
   const state = useFolderTreeState(folders, workflows);
+  useDropZone("folder-tree", { accepts: ["folder"], effect: "move" });
 
   const handlers = useFolderTreeHandlers({
     folders,

@@ -7,7 +7,7 @@
  */
 
 import { type NextRequest } from "next/server";
-import { subscribeToCommands } from "@/lib/ui-bridge/handlers";
+import { subscribeToCommands, BUILD_ID } from "@/lib/ui-bridge/handlers";
 
 // Heartbeat interval to keep the connection alive (30 seconds)
 const HEARTBEAT_INTERVAL_MS = 30000;
@@ -18,10 +18,10 @@ export async function GET(request: NextRequest) {
 
   const stream = new ReadableStream({
     start(controller) {
-      // Send initial connection event (include tabId so client can confirm)
+      // Send initial connection event (include tabId and buildId for freshness check)
       controller.enqueue(
         encoder.encode(
-          `data: ${JSON.stringify({ type: "connected", tabId, timestamp: Date.now() })}\n\n`
+          `data: ${JSON.stringify({ type: "connected", tabId, buildId: BUILD_ID, timestamp: Date.now() })}\n\n`
         )
       );
 

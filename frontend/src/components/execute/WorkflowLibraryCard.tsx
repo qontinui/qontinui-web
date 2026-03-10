@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Plus, Check } from "lucide-react";
 import { useDraggable } from "@dnd-kit/core";
+import { useDragSource } from "@qontinui/ui-bridge";
 import {
   getTotalStepCount,
   type UnifiedWorkflow,
@@ -25,6 +26,7 @@ export function WorkflowLibraryCard({
     id: `library-${workflow.id}`,
     data: { workflow },
   });
+  useDragSource(`library-${workflow.id}`, { dataType: "workflow" });
 
   return (
     <div

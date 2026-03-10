@@ -19,6 +19,7 @@ import {
 } from "@dnd-kit/sortable";
 import type { TestCase } from "@/services/workflow-testing-service";
 import { SortableTestCaseItem } from "./SortableTestCaseItem";
+import { useDropZone } from "@qontinui/ui-bridge";
 
 interface TestCaseSelectionCardProps {
   selectedTestCaseIds: string[];
@@ -41,6 +42,11 @@ export function TestCaseSelectionCard({
   onRemoveTestCase,
   error,
 }: TestCaseSelectionCardProps) {
+  useDropZone("selected-test-cases", {
+    accepts: ["test-case"],
+    effect: "reorder",
+  });
+
   return (
     <Card>
       <CardHeader>

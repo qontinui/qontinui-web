@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { RUNNER_API_BASE } from "@/lib/runner-api";
 import {
@@ -91,7 +91,7 @@ export function GenerateFromStatesModal({
   });
 
   const hasConfig = configData?.hasConfig ?? false;
-  const states = configData?.states ?? [];
+  const states = useMemo(() => configData?.states ?? [], [configData?.states]);
 
   const handleGenerate = useCallback(() => {
     setIsGenerating(true);

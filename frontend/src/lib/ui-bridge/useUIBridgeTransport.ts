@@ -227,6 +227,10 @@ export function useUIBridgeTransport(
   const isIntentionallyClosed = useRef(false);
   const isTabVisibleRef = useRef(true);
   const idleDetectorRef = useRef<CompositeIdleDetector | null>(null);
+  const serverBuildIdRef = useRef<string | null>(null);
+  const changeTrackerRef = useRef<InstanceType<
+    typeof import("@qontinui/ui-bridge/ai").ChangeTracker
+  > | null>(null);
 
   // Lazy-init idle detector on first access (avoids useEffect timing issues)
   function getIdleDetector(): CompositeIdleDetector {
@@ -900,6 +904,237 @@ export function useUIBridgeTransport(
           });
         }
 
+        // ========== Change Tracking ==========
+        case "saveBookmark":
+        case "getBookmark":
+        case "deleteBookmark":
+        case "listBookmarks":
+        case "diffFromBookmark":
+        case "executeWithDiff":
+        case "waitForChange":
+        case "categorizeLastDiff":
+        case "getScopedDiff":
+        case "summarizeDiff":
+        case "analyzeStructuredChanges":
+        case "enableChangeBuffer":
+        case "disableChangeBuffer":
+        case "drainChangeBuffer":
+        case "getChangeBufferSize": {
+          const {
+            ChangeTracker,
+            createSnapshotManager,
+            analyzeStructuredChanges: analyzeStructured,
+          } = await import("@qontinui/ui-bridge/ai");
+
+          // Lazy-init ChangeTracker singleton
+          if (!changeTrackerRef.current) {
+            const manager = createSnapshotManager({});
+            changeTrackerRef.current = new ChangeTracker(
+              {
+                idleDetector: getIdleDetector(),
+                createControlSnapshot: () => {
+                  const snap = createSnapshot();
+                  return {
+                    timestamp: Date.now(),
+                    elements: snap.elements.map((e) => ({
+                      id: e.id,
+                      type: e.type,
+                      label: e.label,
+                      actions: e.actions,
+                      state: e.state,
+                    })),
+                    components: [],
+                    workflows: [],
+                    activeRuns: [],
+                  };
+                },
+                refreshElements: () => {
+                  // findElements re-scans the DOM but is async; use sync no-op
+                  // as the createControlSnapshot above always does a fresh scan
+                },
+                snapshotManager: manager,
+                executeElementAction: async (
+                  id: string,
+                  request: { action: string; params?: Record<string, unknown> }
+                ) => {
+                  const entry = getElement(id);
+                  if (!entry) throw new Error(`Element ${id} not found`);
+                  const domEl = entry.element as HTMLElement;
+                  const actionName = request.action;
+                  const value = request.params?.value as string | undefined;
+                  switch (actionName) {
+                    case "click":
+                      domEl.click();
+                      break;
+                    case "focus":
+                      domEl.focus();
+                      break;
+                    case "type":
+                      if (
+                        domEl instanceof HTMLInputElement ||
+                        domEl instanceof HTMLTextAreaElement
+                      ) {
+                        setReactInputValue(domEl, value ?? "");
+                      }
+                      break;
+                    default:
+                      domEl.click();
+                  }
+                  return {
+                    success: true,
+                    elementId: id,
+                    action: actionName,
+                    timestamp: Date.now(),
+                  };
+                },
+                resolveScope: (scope: string) => {
+                  const container = document.querySelector(scope);
+                  if (!container) return null;
+                  const ids = new Set<string>();
+                  const freshSnap = createSnapshot();
+                  for (const el of freshSnap.elements) {
+                    const domEl = getElement(el.id)?.element;
+                    if (domEl && container.contains(domEl)) {
+                      ids.add(el.id);
+                    }
+                  }
+                  return ids;
+                },
+              },
+              {
+                defaultSettleTimeout: 3000,
+                defaultSettleMinStable: 300,
+                defaultPollInterval: 200,
+              }
+            );
+          }
+
+          const ct = changeTrackerRef.current;
+
+          switch (action) {
+            case "saveBookmark": {
+              const { name } = payload as { name: string };
+              return ct.saveBookmark(name);
+            }
+            case "getBookmark": {
+              const { name } = payload as { name: string };
+              const bm = ct.getBookmark(name);
+              if (!bm) throw new Error(`Bookmark '${name}' not found`);
+              return bm;
+            }
+            case "deleteBookmark": {
+              const { name } = payload as { name: string };
+              return { deleted: ct.deleteBookmark(name) };
+            }
+            case "listBookmarks":
+              return ct.listBookmarks();
+            case "diffFromBookmark": {
+              const { name } = payload as { name: string };
+              return ct.diffFromBookmark(name);
+            }
+            case "executeWithDiff":
+              return ct.executeWithDiff(
+                payload as Parameters<typeof ct.executeWithDiff>[0]
+              );
+            case "waitForChange": {
+              const { predicate, options: wfcOpts } = payload as {
+                predicate: Parameters<typeof ct.waitForChange>[0];
+                options?: Parameters<typeof ct.waitForChange>[1];
+              };
+              return ct.waitForChange(predicate, wfcOpts);
+            }
+            case "categorizeLastDiff":
+              return ct.categorizeLastDiff();
+            case "getScopedDiff": {
+              const { scope, fromBookmark } = payload as {
+                scope: string;
+                fromBookmark: string;
+              };
+              if (!fromBookmark) {
+                throw new Error(
+                  "getScopedDiff requires a fromBookmark parameter"
+                );
+              }
+              return ct.scopedDiffFromBookmark(fromBookmark, scope);
+            }
+            case "summarizeDiff": {
+              const sdPayload = payload as {
+                budget: number;
+                includeIds?: boolean;
+                includeCategory?: boolean;
+                fromBookmark?: string;
+              };
+              let diff = null as ReturnType<
+                typeof ct.categorizeLastDiff
+              > extends infer R
+                ? R extends { diff: infer D }
+                  ? D
+                  : null
+                : null;
+              if (sdPayload.fromBookmark) {
+                diff = ct.diffFromBookmark(
+                  sdPayload.fromBookmark
+                ) as typeof diff;
+              } else {
+                diff = (ct.categorizeLastDiff()?.diff ?? null) as typeof diff;
+              }
+              if (!diff) {
+                return { summary: "No changes detected" };
+              }
+              const summary = ct.summarizeDiff(diff, {
+                budget: sdPayload.budget,
+                includeIds: sdPayload.includeIds,
+                includeCategory: sdPayload.includeCategory,
+              });
+              return { summary };
+            }
+            case "analyzeStructuredChanges": {
+              const { fromBookmark } = payload as { fromBookmark?: string };
+              if (fromBookmark) {
+                const bm = ct.getBookmark(fromBookmark);
+                if (!bm)
+                  throw new Error(`Bookmark '${fromBookmark}' not found`);
+                const snap = createSnapshot();
+                const manager = createSnapshotManager({});
+                const currentSemantic = manager.createSnapshot({
+                  timestamp: Date.now(),
+                  elements: snap.elements.map((e) => ({
+                    id: e.id,
+                    type: e.type,
+                    label: e.label,
+                    actions: e.actions,
+                    state: e.state,
+                  })),
+                  components: [],
+                  workflows: [],
+                  activeRuns: [],
+                });
+                return analyzeStructured(bm.snapshot, currentSemantic);
+              }
+              return {
+                hasStructuredData: false,
+                tableChanges: [],
+                listChanges: [],
+              };
+            }
+            case "enableChangeBuffer":
+              ct.enableBuffer();
+              return { enabled: true };
+            case "disableChangeBuffer":
+              ct.disableBuffer();
+              return { enabled: false };
+            case "drainChangeBuffer":
+              return ct.drainBuffer();
+            case "getChangeBufferSize":
+              return {
+                size: ct.getBufferSize(),
+                enabled: ct.isBufferEnabled(),
+              };
+            default:
+              throw new Error(`Unknown change tracking action: ${action}`);
+          }
+        }
+
         default:
           throw new Error(`Unknown command action: ${action}`);
       }
@@ -1152,9 +1387,20 @@ export function useUIBridgeTransport(
       try {
         const data = JSON.parse(event.data);
 
-        // Skip the initial connection event
+        // Handle connection event with build ID freshness check
         if (data.type === "connected") {
           log("SSE stream connected");
+          if (data.buildId) {
+            if (!serverBuildIdRef.current) {
+              // First connection — store the server's build ID
+              serverBuildIdRef.current = data.buildId;
+            } else if (data.buildId !== serverBuildIdRef.current) {
+              // Server restarted with new code — reload to get fresh JS
+              log("Server build ID changed, reloading page for fresh code");
+              window.location.reload();
+              return;
+            }
+          }
           return;
         }
 

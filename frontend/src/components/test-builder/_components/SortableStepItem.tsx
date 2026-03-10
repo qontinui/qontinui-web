@@ -2,6 +2,7 @@
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { useDragSource } from "@qontinui/ui-bridge";
 import { ChevronUp, ChevronDown, Trash2, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -45,6 +46,7 @@ export function SortableStepItem({
     transition,
     isDragging,
   } = useSortable({ id: step.id });
+  useDragSource(step.id, { dataType: "spec-step" });
 
   const style = {
     transform: CSS.Transform.toString(transform),

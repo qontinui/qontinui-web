@@ -32,6 +32,7 @@ import {
   DragOverlay,
 } from "@dnd-kit/core";
 import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
+import { useDropZone } from "@qontinui/ui-bridge";
 
 const pageSpec = pageSpecJson as unknown as SpecConfig;
 
@@ -50,6 +51,10 @@ function QueueTabContent({
   const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
   const [stopOnFailure, setStopOnFailure] = useState(true);
   const [isRunning, setIsRunning] = useState(false);
+  useDropZone("execution-queue", {
+    accepts: ["workflow", "queue-item"],
+    effect: "reorder",
+  });
 
   // DnD state
   const [dragActiveId, setDragActiveId] = useState<string | null>(null);

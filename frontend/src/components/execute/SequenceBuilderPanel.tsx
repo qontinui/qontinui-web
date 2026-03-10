@@ -18,6 +18,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { SortableQueueItem } from "./SortableQueueItem";
+import { useDropZone } from "@qontinui/ui-bridge";
 
 export interface QueueItem {
   queueId: string;
@@ -59,6 +60,10 @@ export function SequenceBuilderPanel({
 }: SequenceBuilderPanelProps) {
   const { setNodeRef: setDropRef, isOver } = useDroppable({
     id: "sequence-drop-zone",
+  });
+  useDropZone("sequence-drop-zone", {
+    accepts: ["workflow", "queue-item"],
+    effect: "reorder",
   });
 
   const handleRemove = (queueId: string) => {

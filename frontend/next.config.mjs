@@ -27,10 +27,10 @@ const nextConfig = {
       config.resolve.alias['@qontinui/schemas'] = schemasPath;
     }
 
-    // Prevent duplicate React/library instances from symlinked packages
-    // (e.g. @qontinui/workflow-ui has its own node_modules/react)
-    config.resolve.alias['react'] = path.resolve(__dirname, 'node_modules/react');
-    config.resolve.alias['react-dom'] = path.resolve(__dirname, 'node_modules/react-dom');
+    // Prevent duplicate library instances from symlinked packages
+    // Note: React/react-dom aliases removed — they conflict with Next.js SSR runtime
+    // which uses its own bundled React. Instead, delete react from symlinked packages'
+    // node_modules so they resolve to the host app's copy naturally.
     config.resolve.alias['@xyflow/react'] = path.resolve(__dirname, 'node_modules/@xyflow/react');
     config.resolve.alias['@xyflow/system'] = path.resolve(__dirname, 'node_modules/@xyflow/system');
 

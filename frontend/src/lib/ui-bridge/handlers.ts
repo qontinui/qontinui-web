@@ -65,6 +65,14 @@ import type {
   StructuredDataExtraction,
   CrossAppComparisonReport,
   ComponentInfo,
+  ActionWithDiffRequest,
+  ActionDiffResult,
+  CategorizedDiff,
+  ChangeBufferDrainResult,
+  SnapshotBookmark,
+  ChangePredicate,
+  WaitForChangeOptions,
+  StructuredChangeAnalysis,
 } from "@qontinui/ui-bridge/ai";
 import type {
   UIState,
@@ -185,6 +193,81 @@ const SSE_COMMAND_TIMEOUT_MS = 15000;
 // with errors before this, rejection is immediate.
 const MULTI_TAB_GRACE_MS = 3000;
 
+// ============================================================================
+// Primary Tab Routing
+// ============================================================================
+// Route commands to a single "primary" tab instead of broadcasting to all.
+// The most recently connected tab is automatically promoted to primary.
+// If the primary fails, it's demoted and the next tab is tried.
+
+if (!g.__uiBridgePrimaryTabId) {
+  g.__uiBridgePrimaryTabId = null;
+}
+if (!g.__uiBridgeDemotedTabs) {
+  g.__uiBridgeDemotedTabs = new Set<string>();
+}
+if (!g.__uiBridgeBuildId) {
+  g.__uiBridgeBuildId = Date.now().toString();
+}
+
+let primaryTabId: string | null = g.__uiBridgePrimaryTabId;
+const demotedTabs: Set<string> = g.__uiBridgeDemotedTabs;
+
+/** Server build ID — changes on full server restart, persists across HMR */
+export const BUILD_ID: string = g.__uiBridgeBuildId;
+
+/**
+ * Get the current primary tab ID, validating it's still connected.
+ * If no primary is set, promotes the most recently connected non-demoted tab.
+ */
+function getPrimaryTabId(): string | null {
+  // Validate current primary
+  if (primaryTabId && !demotedTabs.has(primaryTabId)) {
+    if (tabListeners.has(primaryTabId) || wsClients.has(primaryTabId)) {
+      return primaryTabId;
+    }
+    // Primary disconnected
+    primaryTabId = null;
+    g.__uiBridgePrimaryTabId = null;
+  }
+
+  // Auto-promote: pick the most recently connected non-demoted tab
+  // Maps preserve insertion order — iterate in reverse to find newest
+  const tabs = Array.from(tabListeners.keys());
+  for (let i = tabs.length - 1; i >= 0; i--) {
+    const tab = tabs[i]!;
+    if (!demotedTabs.has(tab)) {
+      setPrimaryTab(tab);
+      return primaryTabId;
+    }
+  }
+
+  // Check WebSocket clients as fallback
+  for (const [clientId, entry] of wsClients.entries()) {
+    if (entry.client.isConnected() && !demotedTabs.has(clientId)) {
+      setPrimaryTab(clientId);
+      return primaryTabId;
+    }
+  }
+
+  return null;
+}
+
+function setPrimaryTab(tabId: string): void {
+  primaryTabId = tabId;
+  g.__uiBridgePrimaryTabId = tabId;
+  console.log(`[ui-bridge] Primary tab: ${tabId}`);
+}
+
+function demotePrimaryTab(tabId: string): void {
+  demotedTabs.add(tabId);
+  if (primaryTabId === tabId) {
+    primaryTabId = null;
+    g.__uiBridgePrimaryTabId = null;
+    console.log(`[ui-bridge] Primary tab demoted: ${tabId}`);
+  }
+}
+
 /**
  * Subscribe to new commands. Returns an unsubscribe function.
  * Used by the SSE stream endpoint to push commands to the browser.
@@ -197,6 +280,11 @@ export function subscribeToCommands(
   const id =
     tabId || `anon_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
   tabListeners.set(id, { tabId: id, callback: listener });
+
+  // New tab becomes primary (most recently connected = freshest code)
+  demotedTabs.delete(id);
+  setPrimaryTab(id);
+
   console.log(
     `[ui-bridge] SSE listener connected: ${id} (total: ${tabListeners.size})`
   );
@@ -240,6 +328,7 @@ export function subscribeToCommands(
     clearTimeout(proactiveTimer);
     if (retryTimer) clearTimeout(retryTimer);
     tabListeners.delete(id);
+    demotedTabs.delete(id);
     console.log(
       `[ui-bridge] SSE listener disconnected: ${id} (total: ${tabListeners.size})`
     );
@@ -512,17 +601,53 @@ function generateCommandId(): string {
 const FIRE_AND_FORGET_COMMANDS = new Set(["pageNavigate", "pageRefresh"]);
 
 /**
- * Queue a command to be executed in the browser.
- * Prefers WebSocket delivery when a client is connected, falls back to HTTP polling.
- * Returns a promise that resolves when the browser sends back the response.
+ * Queue a command with primary tab routing and automatic failover.
  *
- * For navigation/refresh commands, resolves immediately after delivery since
- * the page unloads before a response can be sent.
- *
- * If options.targetTabId is provided, the command is sent only to that tab.
- * Otherwise, the command is broadcast to all connected tabs (backward compatible).
+ * When no targetTabId is specified, routes to the primary tab. If the primary
+ * fails, it's demoted and the command is retried once on the next available tab.
+ * Falls back to broadcast if no primary tab is available.
  */
 export function queueCommand<T>(
+  action: string,
+  payload: unknown,
+  options?: { targetTabId?: string }
+): Promise<T> {
+  const targetTabId = options?.targetTabId;
+
+  // Explicit target — send directly, no failover
+  if (targetTabId) {
+    return sendCommand<T>(action, payload, options);
+  }
+
+  // Primary tab routing with automatic failover
+  const primaryId = getPrimaryTabId();
+  if (primaryId) {
+    return sendCommand<T>(action, payload, { targetTabId: primaryId }).catch(
+      (firstError: Error) => {
+        demotePrimaryTab(primaryId);
+        const newPrimaryId = getPrimaryTabId();
+        if (newPrimaryId) {
+          console.log(
+            `[ui-bridge] Primary tab ${primaryId} failed for ${action}, retrying on ${newPrimaryId}`
+          );
+          return sendCommand<T>(action, payload, {
+            targetTabId: newPrimaryId,
+          });
+        }
+        throw firstError;
+      }
+    );
+  }
+
+  // No primary tab — broadcast to all (legacy fallback)
+  return sendCommand<T>(action, payload);
+}
+
+/**
+ * Send a command to a specific tab or broadcast to all.
+ * Low-level function — prefer queueCommand() which adds primary tab routing.
+ */
+function sendCommand<T>(
   action: string,
   payload: unknown,
   options?: { targetTabId?: string }
@@ -771,6 +896,9 @@ export function getTransportDiagnostics() {
     pendingCommandIds: Array.from(pendingCommands.keys()),
     commandListenerCount: tabListeners.size,
     connectedTabs: Array.from(tabListeners.keys()),
+    primaryTabId: getPrimaryTabId(),
+    demotedTabs: Array.from(demotedTabs),
+    buildId: BUILD_ID,
     wsClientCount: wsClients.size,
     wsClientIds: Array.from(wsClients.keys()),
     commandQueueLength: commandQueue.length,
@@ -1840,6 +1968,214 @@ export const uiBridgeHandlers = {
       const result = await queueCommand<Record<string, SignalStatus>>(
         "waitForTargets",
         request
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // Change Tracking
+  // --------------------------------------------------------------------------
+
+  async executeWithDiff(
+    request: ActionWithDiffRequest
+  ): Promise<APIResponse<ActionDiffResult>> {
+    try {
+      const result = await queueCommand<ActionDiffResult>(
+        "executeWithDiff",
+        request
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async waitForChange(request: {
+    predicate: ChangePredicate;
+    options?: WaitForChangeOptions;
+  }): Promise<APIResponse<SemanticDiff>> {
+    try {
+      const result = await queueCommand<SemanticDiff>("waitForChange", request);
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async categorizeLastDiff(): Promise<APIResponse<CategorizedDiff | null>> {
+    try {
+      const result = await queueCommand<CategorizedDiff | null>(
+        "categorizeLastDiff",
+        {}
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getScopedDiff(request: {
+    scope: string;
+    fromBookmark?: string;
+  }): Promise<APIResponse<SemanticDiff | null>> {
+    try {
+      const result = await queueCommand<SemanticDiff | null>(
+        "getScopedDiff",
+        request
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async summarizeDiff(request: {
+    budget: number;
+    includeIds?: boolean;
+    includeCategory?: boolean;
+    fromBookmark?: string;
+  }): Promise<APIResponse<{ summary: string }>> {
+    try {
+      const result = await queueCommand<{ summary: string }>(
+        "summarizeDiff",
+        request
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async analyzeStructuredChanges(request: {
+    fromBookmark?: string;
+  }): Promise<APIResponse<StructuredChangeAnalysis>> {
+    try {
+      const result = await queueCommand<StructuredChangeAnalysis>(
+        "analyzeStructuredChanges",
+        request
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // Change Buffer
+  // --------------------------------------------------------------------------
+
+  async enableChangeBuffer(): Promise<APIResponse<{ enabled: boolean }>> {
+    try {
+      const result = await queueCommand<{ enabled: boolean }>(
+        "enableChangeBuffer",
+        {}
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async disableChangeBuffer(): Promise<APIResponse<{ enabled: boolean }>> {
+    try {
+      const result = await queueCommand<{ enabled: boolean }>(
+        "disableChangeBuffer",
+        {}
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async drainChangeBuffer(): Promise<APIResponse<ChangeBufferDrainResult>> {
+    try {
+      const result = await queueCommand<ChangeBufferDrainResult>(
+        "drainChangeBuffer",
+        {}
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getChangeBufferSize(): Promise<
+    APIResponse<{ size: number; enabled: boolean }>
+  > {
+    try {
+      const result = await queueCommand<{ size: number; enabled: boolean }>(
+        "getChangeBufferSize",
+        {}
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // Snapshot Bookmarks
+  // --------------------------------------------------------------------------
+
+  async saveBookmark(request: {
+    name: string;
+  }): Promise<APIResponse<SnapshotBookmark>> {
+    try {
+      const result = await queueCommand<SnapshotBookmark>(
+        "saveBookmark",
+        request
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getBookmark(name: string): Promise<APIResponse<SnapshotBookmark>> {
+    try {
+      const result = await queueCommand<SnapshotBookmark>("getBookmark", {
+        name,
+      });
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async deleteBookmark(
+    name: string
+  ): Promise<APIResponse<{ deleted: boolean }>> {
+    try {
+      const result = await queueCommand<{ deleted: boolean }>(
+        "deleteBookmark",
+        { name }
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async listBookmarks(): Promise<APIResponse<string[]>> {
+    try {
+      const result = await queueCommand<string[]>("listBookmarks", {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async diffFromBookmark(
+    name: string
+  ): Promise<APIResponse<SemanticDiff | null>> {
+    try {
+      const result = await queueCommand<SemanticDiff | null>(
+        "diffFromBookmark",
+        { name }
       );
       return success(result);
     } catch (e) {

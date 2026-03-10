@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { useDragSource } from "@qontinui/ui-bridge";
 import type {
   UnifiedStep,
   WorkflowPhase,
@@ -88,6 +89,7 @@ export function StepItem({
     transition,
     isDragging,
   } = useSortable({ id: step.id, disabled: !!isSummaryStep });
+  useDragSource(step.id, { dataType: "workflow-step" });
 
   const style = {
     transform: CSS.Transform.toString(transform),

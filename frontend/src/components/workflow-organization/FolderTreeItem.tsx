@@ -32,6 +32,7 @@ import {
 } from "../ui/dropdown-menu";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { useDragSource } from "@qontinui/ui-bridge";
 import { cn } from "../../lib/utils";
 
 export interface FolderTreeItemProps {
@@ -82,6 +83,7 @@ export function FolderTreeItem({
       parentId: node.parentId,
     } as DragItem,
   });
+  useDragSource(node.id, { dataType: "folder" });
 
   const style = {
     transform: CSS.Transform.toString(transform),

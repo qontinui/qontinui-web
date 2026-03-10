@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { GripVertical, X, Calendar } from "lucide-react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { useDragSource } from "@qontinui/ui-bridge";
 import { cn } from "@/lib/utils";
 
 interface SortableQueueItemProps {
@@ -39,6 +40,7 @@ export function SortableQueueItem({
     transition,
     isDragging,
   } = useSortable({ id: queueId });
+  useDragSource(queueId, { dataType: "queue-item" });
 
   const style = {
     transform: CSS.Transform.toString(transform),

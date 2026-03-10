@@ -25,6 +25,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { useDragSource, useDropZone } from "@qontinui/ui-bridge";
 
 export interface ActionListEditorProps {
   /** Current list of action IDs */
@@ -78,6 +79,7 @@ function SortableActionItem({
     transition,
     isDragging,
   } = useSortable({ id: `action-${index}` });
+  useDragSource(`action-${index}`, { dataType: "action" });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -150,6 +152,7 @@ export function ActionListEditor({
 }: ActionListEditorProps) {
   const [newActionId, setNewActionId] = React.useState("");
   const [activeId, setActiveId] = React.useState<string | null>(null);
+  useDropZone("action-list", { accepts: ["action"], effect: "reorder" });
 
   // Configure sensors for drag-and-drop
   const sensors = useSensors(

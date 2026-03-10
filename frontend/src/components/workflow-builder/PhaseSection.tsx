@@ -19,6 +19,7 @@ import {
 import type { UnifiedStep, WorkflowPhase } from "@/types/unified-workflow";
 import { useWorkflowBuilder } from "./WorkflowBuilderContext";
 import { PhaseSectionConcrete } from "@qontinui/workflow-ui/components";
+import { useDropZone } from "@qontinui/ui-bridge";
 
 // =============================================================================
 // Props
@@ -49,6 +50,10 @@ export function PhaseSection({
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
+  useDropZone("workflow-step-list", {
+    accepts: ["workflow-step"],
+    effect: "reorder",
+  });
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;

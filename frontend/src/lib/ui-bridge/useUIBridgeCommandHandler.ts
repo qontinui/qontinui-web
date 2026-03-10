@@ -231,7 +231,31 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
           const navTracker = uiBridgeGlobal?.navigationTracker as
             | { getSnapshotPageContext: () => unknown }
             | undefined;
+          const modalDetector = uiBridgeGlobal?.modalDetector as
+            | { getSnapshotModalContext: () => unknown }
+            | undefined;
+          const toastCap = uiBridgeGlobal?.toastCapture as
+            | { getSnapshotToastContext: () => unknown }
+            | undefined;
+          const relTracker = uiBridgeGlobal?.relationshipTracker as
+            | {
+                getSnapshotRelationshipContext: (
+                  elements?: Array<{ id: string; element: Element }>
+                ) => unknown;
+              }
+            | undefined;
+          const dndDetector = uiBridgeGlobal?.dragDropDetector as
+            | {
+                getSnapshotDragDropContext: (
+                  elements?: Array<{ id: string; element: Element }>
+                ) => unknown;
+              }
+            | undefined;
 
+          const elementPairs = elements.map((e) => ({
+            id: e.id,
+            element: e.element,
+          }));
           const snapshot: ControlSnapshot = {
             timestamp: Date.now(),
             elements: elements.map((e) => {
@@ -248,6 +272,16 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
             workflows: [],
             activeRuns: [],
             page: navTracker?.getSnapshotPageContext() as ControlSnapshot["page"],
+            modalStack:
+              modalDetector?.getSnapshotModalContext() as ControlSnapshot["modalStack"],
+            toasts:
+              toastCap?.getSnapshotToastContext() as ControlSnapshot["toasts"],
+            relationships: relTracker?.getSnapshotRelationshipContext(
+              elementPairs
+            ) as ControlSnapshot["relationships"],
+            dragDrop: dndDetector?.getSnapshotDragDropContext(
+              elementPairs
+            ) as ControlSnapshot["dragDrop"],
           };
           return snapshot;
         }
