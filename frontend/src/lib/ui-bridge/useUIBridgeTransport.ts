@@ -17,6 +17,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useUIBridge } from "@qontinui/ui-bridge/react";
 import { CompositeIdleDetector } from "@qontinui/ui-bridge";
+import { handleChangeTrackingCommand } from "./changeTrackingHandler";
 
 // Transport configuration
 export type TransportMode = "websocket" | "http" | "auto";
@@ -1011,128 +1012,16 @@ export function useUIBridgeTransport(
 
           const ct = changeTrackerRef.current;
 
-          switch (action) {
-            case "saveBookmark": {
-              const { name } = payload as { name: string };
-              return ct.saveBookmark(name);
+          return handleChangeTrackingCommand(
+            ct,
+            action,
+            payload as Record<string, unknown>,
+            {
+              createSnapshot,
+              createSnapshotManager,
+              analyzeStructuredChanges: analyzeStructured,
             }
-            case "getBookmark": {
-              const { name } = payload as { name: string };
-              const bm = ct.getBookmark(name);
-              if (!bm) throw new Error(`Bookmark '${name}' not found`);
-              return bm;
-            }
-            case "deleteBookmark": {
-              const { name } = payload as { name: string };
-              return { deleted: ct.deleteBookmark(name) };
-            }
-            case "listBookmarks":
-              return ct.listBookmarks();
-            case "diffFromBookmark": {
-              const { name } = payload as { name: string };
-              return ct.diffFromBookmark(name);
-            }
-            case "executeWithDiff":
-              return ct.executeWithDiff(
-                payload as Parameters<typeof ct.executeWithDiff>[0]
-              );
-            case "waitForChange": {
-              const { predicate, options: wfcOpts } = payload as {
-                predicate: Parameters<typeof ct.waitForChange>[0];
-                options?: Parameters<typeof ct.waitForChange>[1];
-              };
-              return ct.waitForChange(predicate, wfcOpts);
-            }
-            case "categorizeLastDiff":
-              return ct.categorizeLastDiff();
-            case "getScopedDiff": {
-              const { scope, fromBookmark } = payload as {
-                scope: string;
-                fromBookmark: string;
-              };
-              if (!fromBookmark) {
-                throw new Error(
-                  "getScopedDiff requires a fromBookmark parameter"
-                );
-              }
-              return ct.scopedDiffFromBookmark(fromBookmark, scope);
-            }
-            case "summarizeDiff": {
-              const sdPayload = payload as {
-                budget: number;
-                includeIds?: boolean;
-                includeCategory?: boolean;
-                fromBookmark?: string;
-              };
-              let diff = null as ReturnType<
-                typeof ct.categorizeLastDiff
-              > extends infer R
-                ? R extends { diff: infer D }
-                  ? D
-                  : null
-                : null;
-              if (sdPayload.fromBookmark) {
-                diff = ct.diffFromBookmark(
-                  sdPayload.fromBookmark
-                ) as typeof diff;
-              } else {
-                diff = (ct.categorizeLastDiff()?.diff ?? null) as typeof diff;
-              }
-              if (!diff) {
-                return { summary: "No changes detected" };
-              }
-              const summary = ct.summarizeDiff(diff, {
-                budget: sdPayload.budget,
-                includeIds: sdPayload.includeIds,
-                includeCategory: sdPayload.includeCategory,
-              });
-              return { summary };
-            }
-            case "analyzeStructuredChanges": {
-              const { fromBookmark } = payload as { fromBookmark?: string };
-              if (fromBookmark) {
-                const bm = ct.getBookmark(fromBookmark);
-                if (!bm)
-                  throw new Error(`Bookmark '${fromBookmark}' not found`);
-                const snap = createSnapshot();
-                const manager = createSnapshotManager({});
-                const currentSemantic = manager.createSnapshot({
-                  timestamp: Date.now(),
-                  elements: snap.elements.map((e) => ({
-                    id: e.id,
-                    type: e.type,
-                    label: e.label,
-                    actions: e.actions,
-                    state: e.state,
-                  })),
-                  components: [],
-                  workflows: [],
-                  activeRuns: [],
-                });
-                return analyzeStructured(bm.snapshot, currentSemantic);
-              }
-              return {
-                hasStructuredData: false,
-                tableChanges: [],
-                listChanges: [],
-              };
-            }
-            case "enableChangeBuffer":
-              ct.enableBuffer();
-              return { enabled: true };
-            case "disableChangeBuffer":
-              ct.disableBuffer();
-              return { enabled: false };
-            case "drainChangeBuffer":
-              return ct.drainBuffer();
-            case "getChangeBufferSize":
-              return {
-                size: ct.getBufferSize(),
-                enabled: ct.isBufferEnabled(),
-              };
-            default:
-              throw new Error(`Unknown change tracking action: ${action}`);
-          }
+          );
         }
 
         default:
