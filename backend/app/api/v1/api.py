@@ -25,6 +25,7 @@ from app.api.v1.endpoints import (
     collaboration,
     collaboration_ws,
     conflicts,
+    constraints,
     custom_functions,
     dev_dashboard,
     discoveries,
@@ -266,4 +267,8 @@ api_router.include_router(
 # Screenshot proxy (serves verification screenshots from runner's .dev-logs)
 api_router.include_router(
     screenshots.router, prefix="/screenshots", tags=["screenshots"]
+)
+# Constraint engine proxy (forwards to runner HTTP API)
+api_router.include_router(
+    constraints.router, prefix="/constraints", tags=["constraints"]
 )

@@ -7,6 +7,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { ChevronRight, FileCode } from "lucide-react";
+import { ConstraintOverridesEditor } from "./ConstraintOverridesEditor";
 import type { CustomSettingDef } from "@qontinui/workflow-utils";
 import {
   MODELS_BY_PROVIDER,
@@ -546,6 +547,8 @@ export function CustomSettingItem({
       );
     case "context_management":
       return null;
+    case "constraint_overrides":
+      return <ConstraintOverridesEditor key={def.key} {...props} />;
     case "per_phase_model_select":
       return <PerPhaseModelSelect key={def.key} {...props} />;
     case "resolved_model_preview":

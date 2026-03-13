@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { useWorkflowBuilder } from "@/components/workflow-builder/WorkflowBuilderContext";
 import { StepConfigPanel } from "@/components/workflow-builder/StepConfigPanel";
 import { SettingsPanel } from "@/components/workflow-builder/SettingsPanel";
+import { ConstraintsPanel } from "@/components/workflow-builder/constraints";
 import { ExecutionStatusPanel } from "@/components/workflow-builder/ExecutionStatusPanel";
 import { StageSelector } from "@/components/workflow-builder/StageSelector";
 import { AddStateStepsModal } from "@/components/workflow-builder/AddStateStepsModal";
@@ -20,6 +21,7 @@ import {
   Save,
   Layers,
   Settings2,
+  ShieldCheck,
   Terminal,
   GitBranch,
 } from "lucide-react";
@@ -37,6 +39,7 @@ export function WorkflowEditor({
   const { state, addStep, saveWorkflow, exportWorkflow, importWorkflow, setWorkflow, hasUnsavedChanges, getActiveSteps } =
     useWorkflowBuilder();
   const [showSettings, setShowSettings] = useState(false);
+  const [showConstraints, setShowConstraints] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [showAddStateSteps, setShowAddStateSteps] = useState(false);
   const [showCurlImport, setShowCurlImport] = useState(false);
@@ -262,7 +265,23 @@ export function WorkflowEditor({
             variant="ghost"
             size="sm"
             className="h-8"
-            onClick={() => setShowSettings(!showSettings)}
+            onClick={() => {
+              setShowConstraints(!showConstraints);
+              if (!showConstraints) setShowSettings(false);
+            }}
+            title="Constraints"
+          >
+            <ShieldCheck className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8"
+            onClick={() => {
+              setShowSettings(!showSettings);
+              if (!showSettings) setShowConstraints(false);
+            }}
+            title="Workflow settings"
           >
             <Settings2 className="size-4" />
           </Button>
@@ -270,6 +289,7 @@ export function WorkflowEditor({
       </div>
 
       {showSettings && <SettingsPanel />}
+      {showConstraints && <ConstraintsPanel />}
 
       <ExecutionStatusPanel workflowId={state.workflow.id} />
 

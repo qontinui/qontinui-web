@@ -247,6 +247,13 @@ class UnifiedWorkflow(Base):
         comment="Whether to enable reflection mode during AI iterations",
     )
 
+    constraint_overrides: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        default=None,
+        comment="Per-constraint enable/disable overrides keyed by constraint ID",
+    )
+
     model_overrides: Mapped[dict | None] = mapped_column(
         JSONB,
         nullable=True,
