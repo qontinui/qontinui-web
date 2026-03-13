@@ -9,6 +9,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Tutorial, TutorialStep, TutorialMode } from "@/types/tutorial";
+import { evaluateTutorialCondition } from "@/lib/safe-eval";
 
 // ============================================================================
 // Types
@@ -619,7 +620,7 @@ export const useTutorialStore = create<TutorialStore>()(
 
       validateStep: async (
         stepId: string,
-        context?: unknown
+        _context?: unknown
       ): Promise<boolean> => {
         const currentStep = get().getCurrentStep();
         if (!currentStep || currentStep.id !== stepId) {
@@ -647,13 +648,8 @@ export const useTutorialStore = create<TutorialStore>()(
           let isValid = false;
 
           try {
-            // Create a function from the condition string
-            // The condition should return a boolean
-            const validationFn = new Function(
-              "context",
-              `return ${validation.condition}`
-            );
-            isValid = await validationFn(context);
+            // Evaluate condition by registered name instead of executing arbitrary code
+            isValid = await evaluateTutorialCondition(validation.condition);
           } catch (error) {
             console.error("Validation error:", error);
             isValid = false;

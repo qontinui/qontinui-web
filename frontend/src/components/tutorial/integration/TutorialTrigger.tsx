@@ -14,6 +14,7 @@ const useLocation = () => {
 };
 import { useTutorial } from "./TutorialProvider";
 import { useTutorialStore } from "@/stores/tutorial-store";
+import { evaluateTutorialCondition } from "@/lib/safe-eval";
 import type { Tutorial } from "@/types/tutorial";
 
 // ============================================================================
@@ -182,7 +183,7 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
   );
 
   const evaluateContextualTriggers = useCallback(
-    (tutorial: Tutorial): boolean => {
+    async (tutorial: Tutorial): Promise<boolean> => {
       if (!tutorial.triggers?.contextual) {
         return false;
       }
@@ -190,10 +191,8 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
       // Evaluate each contextual trigger
       for (const trigger of tutorial.triggers.contextual) {
         try {
-          // Create a safe evaluation function
-          // Note: In production, use a safer evaluation method
-          const conditionFunc = new Function("return " + trigger.condition);
-          const result = conditionFunc();
+          // Evaluate trigger condition by registered name
+          const result = await evaluateTutorialCondition(trigger.condition);
 
           if (result) {
             return true;
@@ -241,7 +240,7 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
   // Check Triggers
   // ============================================================================
 
-  const checkTriggers = useCallback(() => {
+  const checkTriggers = useCallback(async () => {
     if (!enabled || hasCheckedRef.current) {
       return;
     }
@@ -258,7 +257,7 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
       // Check contextual triggers
       if (
         shouldTriggerTutorial(tutorial) &&
-        evaluateContextualTriggers(tutorial)
+        (await evaluateContextualTriggers(tutorial))
       ) {
         hasCheckedRef.current = true;
         triggerTutorial(tutorial);

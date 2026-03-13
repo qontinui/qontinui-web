@@ -10,6 +10,7 @@ import {
   ExecutionSpeed,
 } from "../types/debugger/execution-types";
 import type { Action } from "../lib/action-schema/action-types";
+import { evaluateCondition } from "../lib/safe-eval";
 
 interface ExecutionDebuggerStore extends ExecutionDebuggerState {
   // State management
@@ -496,14 +497,11 @@ export const useExecutionDebugger = create<ExecutionDebuggerStore>(
           variableValues[name] = varValue.value;
         }
 
-        // Create a function that evaluates the condition
-        // The condition expression has access to all variables by name
-        const conditionFn = new Function(
-          ...Object.keys(variableValues),
-          `return (${breakpoint.condition});`
+        // Evaluate the condition expression safely with variable access
+        const result = evaluateCondition(
+          breakpoint.condition,
+          variableValues as Record<string, unknown>
         );
-
-        const result = conditionFn(...Object.values(variableValues));
 
         get().addLog(
           "debug",

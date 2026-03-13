@@ -11,6 +11,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { AnimatePresence } from "framer-motion";
 import { useTutorialStore } from "@/stores/tutorial-store";
+import { evaluateTutorialCondition } from "@/lib/safe-eval";
 import { useTutorialEvents } from "@/hooks/tutorial/useTutorialEvents";
 import { useTutorialKeyboard } from "@/hooks/tutorial/useTutorialKeyboard";
 import type { Tutorial, TourState } from "@/types/tutorial";
@@ -204,9 +205,8 @@ export const ContextualTutorialEnhanced: React.FC<
     const { condition, optional = false } = currentStep.validation;
 
     try {
-      const validationFn = new Function("return " + condition)();
-      const isValid =
-        typeof validationFn === "function" ? await validationFn() : false;
+      // Evaluate validation condition by registered name
+      const isValid = await evaluateTutorialCondition(condition);
 
       if (isValid) {
         setValidationStatus("success");

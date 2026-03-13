@@ -16,6 +16,7 @@ import type {
   Action,
   ActionType,
 } from "@/lib/action-schema/action-types";
+import { evaluateCustomAssertion } from "@/lib/safe-eval";
 
 // ============================================================================
 // Test Case Types
@@ -948,17 +949,15 @@ export class WorkflowTestingService {
         case "custom":
           if (assertion.customFunction) {
             try {
-              // Create a function from the string and execute it
-
-              const fn = new Function(
-                "value",
-                "context",
-                assertion.customFunction
+              // Evaluate custom assertion using safe structured checks
+              passed = evaluateCustomAssertion(
+                assertion.customFunction,
+                actualValue,
+                context as Record<string, unknown>
               );
-              passed = Boolean(fn(actualValue, context));
             } catch (err) {
               passed = false;
-              error = `Custom function error: ${err instanceof Error ? err.message : "Unknown error"}`;
+              error = `Custom assertion error: ${err instanceof Error ? err.message : "Unknown error"}`;
             }
           } else {
             passed = false;

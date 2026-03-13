@@ -6,6 +6,7 @@
  */
 
 import type { Workflow, Action } from "@/lib/action-schema/action-types";
+import { evaluateCustomAssertion } from "@/lib/safe-eval";
 import type {
   Assertion,
   AssertionResult,
@@ -540,15 +541,15 @@ export class WorkflowTestingService {
         case "custom":
           if (assertion.customFunction) {
             try {
-              const fn = new Function(
-                "value",
-                "context",
-                assertion.customFunction
+              // Evaluate custom assertion using safe structured checks
+              passed = evaluateCustomAssertion(
+                assertion.customFunction,
+                actualValue,
+                context as Record<string, unknown>
               );
-              passed = Boolean(fn(actualValue, context));
             } catch (err) {
               passed = false;
-              error = `Custom function error: ${err instanceof Error ? err.message : "Unknown error"}`;
+              error = `Custom assertion error: ${err instanceof Error ? err.message : "Unknown error"}`;
             }
           } else {
             passed = false;

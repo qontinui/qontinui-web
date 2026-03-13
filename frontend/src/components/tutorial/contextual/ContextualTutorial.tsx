@@ -11,6 +11,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { AnimatePresence } from "framer-motion";
 import { useTutorialStore } from "../../../stores/tutorial-store";
+import { executeTutorialAction, evaluateTutorialCondition } from "../../../lib/safe-eval";
 import type { Tutorial } from "../../../types/tutorial";
 import { SpotlightOverlay } from "./SpotlightOverlay";
 import { TutorialTooltip } from "./TutorialTooltip";
@@ -99,26 +100,20 @@ export const ContextualTutorial: React.FC<ContextualTutorialProps> = ({
 
     const { before, after } = currentStep.actions;
 
-    // Execute before action
+    // Execute before action (referenced by registered name)
     if (before) {
       try {
-        const beforeFn = new Function("return " + before)();
-        if (typeof beforeFn === "function") {
-          beforeFn();
-        }
+        executeTutorialAction(before);
       } catch (error) {
         console.error("Error executing step before action:", error);
       }
     }
 
-    // Cleanup: execute after action
+    // Cleanup: execute after action (referenced by registered name)
     return () => {
       if (after) {
         try {
-          const afterFn = new Function("return " + after)();
-          if (typeof afterFn === "function") {
-            afterFn();
-          }
+          executeTutorialAction(after);
         } catch (error) {
           console.error("Error executing step after action:", error);
         }
@@ -137,10 +132,8 @@ export const ContextualTutorial: React.FC<ContextualTutorialProps> = ({
     const { type: _type, condition, optional = false } = currentStep.validation;
 
     try {
-      // Execute validation function
-      const validationFn = new Function("return " + condition)();
-      const isValid =
-        typeof validationFn === "function" ? await validationFn() : false;
+      // Evaluate validation condition by registered name
+      const isValid = await evaluateTutorialCondition(condition);
 
       if (isValid) {
         setValidationStatus("success");
