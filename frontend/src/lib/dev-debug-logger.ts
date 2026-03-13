@@ -7,7 +7,7 @@
  * - Unhandled errors and promise rejections
  * - React error boundaries
  *
- * Persists logs to /api/dev-debug/logs endpoint for Claude to read.
+ * Logs are kept in-memory (capped at 500) and available via window.devDebugLogger.getLogs().
  * Only active in development mode.
  */
 
@@ -28,25 +28,10 @@ export interface DevLogEntry {
   duration?: number;
 }
 
-interface NetworkLogData {
-  url: string;
-  method: string;
-  requestHeaders?: Record<string, string>;
-  requestBody?: unknown;
-  status?: number;
-  statusText?: string;
-  responseHeaders?: Record<string, string>;
-  responseBody?: unknown;
-  duration?: number;
-  error?: string;
-}
-
 class DevDebugLogger {
   private enabled: boolean;
   private logs: DevLogEntry[] = [];
   private maxLogs: number = 500;
-  private flushInterval: number = 30000; // 30 seconds
-  private pendingFlush: NodeJS.Timeout | null = null;
   private originalConsole: {
     log: typeof console.log;
     info: typeof console.info;
@@ -55,19 +40,10 @@ class DevDebugLogger {
     debug: typeof console.debug;
   };
   private originalFetch: typeof fetch | null = null;
-  private periodicFlushInterval: ReturnType<typeof setInterval> | null = null;
   // Deduplication for repeated errors
   private recentErrors: Map<string, { count: number; lastTime: number }> =
     new Map();
   private errorDedupeWindow: number = 10000; // 10 seconds
-  // Endpoints to skip response body cloning (high-frequency or internal)
-  private skipBodyClonePatterns: string[] = [
-    "/api/ui-bridge",
-    "/api/dev-debug",
-    "/api/v1/runner-devices",
-    "localhost:9876",
-    "127.0.0.1:9876",
-  ];
   // Endpoints to skip logging entirely (framework internals)
   private skipLogPatterns: string[] = [
     "/_next/",
@@ -99,7 +75,6 @@ class DevDebugLogger {
     this.interceptConsole();
     this.interceptFetch();
     this.interceptErrors();
-    this.startPeriodicFlush();
 
     this.originalConsole.info(
       "[DevDebugLogger] Initialized - capturing logs for Claude Code"
@@ -160,9 +135,6 @@ class DevDebugLogger {
     if (this.logs.length > this.maxLogs) {
       this.logs = this.logs.slice(-this.maxLogs);
     }
-
-    // Schedule flush
-    this.scheduleFlush();
   }
 
   private interceptConsole() {
@@ -205,7 +177,6 @@ class DevDebugLogger {
     this.originalFetch = window.fetch.bind(window);
     const boundOriginalFetch = this.originalFetch;
     const addLogFn = this.addLog.bind(this);
-    const skipBodyClonePatterns = this.skipBodyClonePatterns;
     const skipLogPatterns = this.skipLogPatterns;
 
     window.fetch = async function (
@@ -230,103 +201,34 @@ class DevDebugLogger {
       const startTime = Date.now();
       const method = init?.method || "GET";
 
-      // Check if this is a high-frequency endpoint where we skip body cloning
-      const shouldSkipBodyClone = skipBodyClonePatterns.some((pattern) =>
-        url.includes(pattern)
-      );
-
-      const logData: NetworkLogData = {
-        url,
-        method,
-      };
-
-      // Capture request body (if JSON)
-      if (init?.body) {
-        try {
-          if (typeof init.body === "string") {
-            logData.requestBody = JSON.parse(init.body);
-          }
-        } catch {
-          logData.requestBody = "[non-JSON body]";
-        }
-      }
-
       try {
         const response = await boundOriginalFetch(input, init);
         const duration = Date.now() - startTime;
 
-        logData.status = response.status;
-        logData.statusText = response.statusText;
-        logData.duration = duration;
-
-        if (shouldSkipBodyClone) {
-          // Log without cloning response body to avoid doubling memory
-          addLogFn({
-            level: response.ok ? "info" : "error",
-            source: "network",
-            message: `${method} ${url} - ${response.status} (${duration}ms)`,
-            url,
-            method,
-            status: response.status,
-            duration,
-            data: logData as unknown as Record<string, unknown>,
-          });
-        } else {
-          // Clone response to read body without consuming it
-          const clonedResponse = response.clone();
-
-          // Try to capture response body (async, non-blocking)
-          clonedResponse
-            .text()
-            .then((text) => {
-              try {
-                logData.responseBody = JSON.parse(text);
-              } catch {
-                logData.responseBody =
-                  text.length > 500 ? text.substring(0, 500) + "..." : text;
-              }
-
-              const level: LogLevel = response.ok ? "info" : "error";
-              addLogFn({
-                level,
-                source: "network",
-                message: `${method} ${url} - ${response.status} (${duration}ms)`,
-                url,
-                method,
-                status: response.status,
-                duration,
-                data: logData as unknown as Record<string, unknown>,
-              });
-            })
-            .catch(() => {
-              // Ignore read errors
-              addLogFn({
-                level: response.ok ? "info" : "error",
-                source: "network",
-                message: `${method} ${url} - ${response.status} (${duration}ms)`,
-                url,
-                method,
-                status: response.status,
-                duration,
-                data: logData as unknown as Record<string, unknown>,
-              });
-            });
-        }
+        // Log URL + status + duration only — never clone response bodies.
+        // Response body cloning (clone + text + JSON.parse) creates 3 copies of
+        // every response and was the primary cause of memory leaks with polling hooks.
+        addLogFn({
+          level: response.ok ? "info" : "error",
+          source: "network",
+          message: `${method} ${url} - ${response.status} (${duration}ms)`,
+          url,
+          method,
+          status: response.status,
+          duration,
+        });
 
         return response;
       } catch (error) {
         const duration = Date.now() - startTime;
-        logData.duration = duration;
-        logData.error = error instanceof Error ? error.message : String(error);
 
         addLogFn({
           level: "error",
           source: "network",
-          message: `${method} ${url} - FAILED: ${logData.error} (${duration}ms)`,
+          message: `${method} ${url} - FAILED: ${error instanceof Error ? error.message : String(error)} (${duration}ms)`,
           url,
           method,
           duration,
-          data: logData as unknown as Record<string, unknown>,
           stack: error instanceof Error ? error.stack : undefined,
         });
 
@@ -369,35 +271,11 @@ class DevDebugLogger {
     };
   }
 
-  private scheduleFlush() {
-    if (this.pendingFlush) return;
-
-    this.pendingFlush = setTimeout(() => {
-      this.flush();
-      this.pendingFlush = null;
-    }, this.flushInterval);
-  }
-
-  private startPeriodicFlush() {
-    this.periodicFlushInterval = setInterval(
-      () => this.flush(),
-      this.flushInterval * 2
-    );
-  }
-
   /**
    * Clean up all intervals and restore original functions.
    * Call this when the logger is no longer needed.
    */
   destroy() {
-    if (this.periodicFlushInterval) {
-      clearInterval(this.periodicFlushInterval);
-      this.periodicFlushInterval = null;
-    }
-    if (this.pendingFlush) {
-      clearTimeout(this.pendingFlush);
-      this.pendingFlush = null;
-    }
     // Restore original console methods
     if (this.enabled) {
       console.log = this.originalConsole.log;
@@ -414,27 +292,6 @@ class DevDebugLogger {
     this.enabled = false;
     this.logs = [];
     this.recentErrors.clear();
-  }
-
-  private async flush() {
-    if (!this.enabled || this.logs.length === 0) return;
-
-    const logsToSend = [...this.logs];
-    this.logs = [];
-
-    try {
-      // Use original fetch to avoid infinite loop
-      const fetchFn = this.originalFetch || fetch;
-      await fetchFn("/api/dev-debug/logs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ logs: logsToSend }),
-      });
-    } catch {
-      // Restore logs if flush failed (silently - this can happen due to
-      // browser extensions intercepting fetch or network issues)
-      this.logs = [...logsToSend, ...this.logs].slice(-this.maxLogs);
-    }
   }
 
   // Public API for manual logging
@@ -471,9 +328,10 @@ class DevDebugLogger {
     return [...this.logs];
   }
 
-  // Force immediate flush
-  async forceFlush(): Promise<void> {
-    await this.flush();
+  // Clear all in-memory logs
+  clear() {
+    this.logs = [];
+    this.recentErrors.clear();
   }
 
   // Check if enabled
