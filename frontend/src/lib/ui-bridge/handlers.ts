@@ -183,6 +183,28 @@ let latestControlSnapshot: ControlSnapshot = g.__uiBridgeLatestControlSnapshot;
 
 const MAX_PENDING_COMMANDS = 200;
 
+// Heartbeat tracking for app health detection
+if (!g.__uiBridgeLastHeartbeat) {
+  g.__uiBridgeLastHeartbeat = 0;
+}
+let lastHeartbeat: number = g.__uiBridgeLastHeartbeat;
+
+const HEARTBEAT_STALE_MS = 30_000;
+
+/**
+ * Check if the browser app is responsive based on heartbeat freshness.
+ */
+export function isAppResponsive(): boolean {
+  return lastHeartbeat > 0 && Date.now() - lastHeartbeat < HEARTBEAT_STALE_MS;
+}
+
+/**
+ * Get the last heartbeat timestamp.
+ */
+export function getLastHeartbeat(): number {
+  return lastHeartbeat;
+}
+
 // Command timeout in milliseconds (10 seconds for WebSocket, 30 seconds for SSE/HTTP)
 const WEBSOCKET_COMMAND_TIMEOUT_MS = 10000;
 const SSE_COMMAND_TIMEOUT_MS = 15000;
@@ -2181,5 +2203,519 @@ export const uiBridgeHandlers = {
     } catch (e) {
       return error((e as Error).message, "COMMAND_FAILED");
     }
+  },
+
+  // --------------------------------------------------------------------------
+  // Error Debugging
+  // --------------------------------------------------------------------------
+
+  async getTimeline(params?: {
+    since?: number;
+    limit?: number;
+    minSeverity?: string;
+  }): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("getTimeline", params ?? {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getHealthReport(params?: {
+    windowMs?: number;
+  }): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("getHealthReport", params ?? {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getNetworkChains(params?: {
+    since?: number;
+    limit?: number;
+    failuresOnly?: boolean;
+    url?: string;
+  }): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("getNetworkChains", params ?? {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async startErrorSession(request: {
+    label?: string;
+  }): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("startErrorSession", request);
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async endErrorSession(): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("endErrorSession", {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getErrorSessions(): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("getErrorSessions", {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async captureErrorBaseline(request: {
+    label: string;
+  }): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("captureErrorBaseline", request);
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async compareErrorBaseline(request: {
+    label: string;
+  }): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("compareErrorBaseline", request);
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getErrorSnapshots(params?: {
+    limit?: number;
+  }): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("getErrorSnapshots", params ?? {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getErrorReport(): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("getErrorReport", {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // Design Review
+  // --------------------------------------------------------------------------
+
+  async getElementStyles(id: string): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("getElementStyles", { id });
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getElementStateStyles(
+    id: string,
+    request: { states?: string[] }
+  ): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("getElementStateStyles", {
+        id,
+        ...request,
+      });
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getDesignSnapshot(request?: {
+    elementIds?: string[];
+    includePseudoElements?: boolean;
+  }): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand(
+        "getDesignSnapshot",
+        request ?? {}
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getResponsiveSnapshots(request: {
+    viewports?: Record<string, number>;
+    elementIds?: string[];
+  }): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("getResponsiveSnapshots", request);
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async runDesignAudit(request?: {
+    guide?: unknown;
+    elementIds?: string[];
+  }): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("runDesignAudit", request ?? {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async loadStyleGuide(request: {
+    guide: unknown;
+  }): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("loadStyleGuide", request);
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getStyleGuide(): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("getStyleGuide", {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async clearStyleGuide(): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("clearStyleGuide", {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // Quality Evaluation
+  // --------------------------------------------------------------------------
+
+  async evaluateQuality(request?: {
+    contexts?: string[];
+    elementIds?: string[];
+  }): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("evaluateQuality", request ?? {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getQualityContexts(): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("getQualityContexts", {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async saveBaseline(request?: {
+    label?: string;
+    elementIds?: string[];
+  }): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("saveBaseline", request ?? {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async diffBaseline(request?: {
+    elementIds?: string[];
+  }): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("diffBaseline", request ?? {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // Forms
+  // --------------------------------------------------------------------------
+
+  async getForms(): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("getForms", {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async fillForm(request: {
+    formId?: string;
+    fields?: Record<string, unknown>;
+    strategy?: string;
+  }): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("fillForm", request);
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async snapshotForms(): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("snapshotForms", {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async diffForms(request: {
+    before: unknown;
+    after: unknown;
+  }): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("diffForms", request);
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // Network Monitoring
+  // --------------------------------------------------------------------------
+
+  async getNetworkRequests(params?: {
+    status?: string;
+    method?: string;
+    urlPattern?: string;
+    failuresOnly?: boolean;
+    since?: number;
+    limit?: number;
+  }): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand(
+        "getNetworkRequests",
+        params ?? {}
+      );
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getNetworkRequestsInFlight(): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("getNetworkRequestsInFlight", {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async waitForNetworkRequest(request: {
+    urlPattern?: string;
+    method?: string;
+    timeout?: number;
+  }): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("waitForNetworkRequest", request);
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async getNetworkRequest(id: string): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("getNetworkRequest", { id });
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // Undo / Redo
+  // --------------------------------------------------------------------------
+
+  async getUndoState(): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("getUndoState", {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async executeUndo(): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("executeUndo", {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async executeRedo(): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("executeRedo", {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // Clipboard
+  // --------------------------------------------------------------------------
+
+  async getClipboard(): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("getClipboard", {});
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  async setClipboard(request: {
+    text: string;
+    html?: string;
+  }): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("setClipboard", request);
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // AI
+  // --------------------------------------------------------------------------
+
+  async aiFind(request: {
+    query: string;
+    context?: unknown;
+    confidenceThreshold?: number;
+  }): Promise<APIResponse<unknown>> {
+    try {
+      const result = await queueCommand("aiFind", request);
+      return success(result);
+    } catch (e) {
+      return error((e as Error).message, "COMMAND_FAILED");
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // API Discovery (server-side only — no relay needed)
+  // --------------------------------------------------------------------------
+
+  async getCapabilities(): Promise<APIResponse<unknown>> {
+    return success({
+      version: "1.0.0",
+      categories: {
+        "render-log": {
+          description: "Render log capture and retrieval",
+          endpoints: [
+            { method: "GET", path: "/render-log", description: "Get render log entries" },
+            { method: "DELETE", path: "/render-log", description: "Clear render log" },
+            { method: "POST", path: "/render-log/snapshot", description: "Capture snapshot" },
+          ],
+        },
+        control: {
+          description: "Element and component control, page navigation, forms, clipboard, idle, undo/redo",
+          endpoints: [
+            { method: "GET", path: "/control/elements", description: "List elements" },
+            { method: "GET", path: "/control/element/:id", description: "Get element" },
+            { method: "POST", path: "/control/element/:id/action", description: "Execute element action" },
+            { method: "GET", path: "/control/components", description: "List components" },
+            { method: "GET", path: "/control/snapshot", description: "Get control snapshot" },
+            { method: "POST", path: "/control/find", description: "Find elements" },
+            { method: "GET", path: "/control/forms", description: "Get forms" },
+            { method: "POST", path: "/control/fill", description: "Fill form" },
+            { method: "GET", path: "/control/clipboard", description: "Read clipboard" },
+            { method: "POST", path: "/control/clipboard", description: "Write clipboard" },
+            { method: "GET", path: "/control/network-requests", description: "Get network requests" },
+            { method: "GET", path: "/control/idle-status", description: "Get idle status" },
+            { method: "GET", path: "/control/undo-state", description: "Get undo/redo state" },
+            { method: "POST", path: "/control/undo", description: "Execute undo" },
+            { method: "POST", path: "/control/redo", description: "Execute redo" },
+            { method: "POST", path: "/control/page/refresh", description: "Refresh page" },
+            { method: "POST", path: "/control/page/navigate", description: "Navigate to URL" },
+          ],
+        },
+        ai: {
+          description: "AI-powered search, assertions, semantic analysis, change tracking",
+          endpoints: [
+            { method: "POST", path: "/ai/search", description: "AI search" },
+            { method: "POST", path: "/ai/find", description: "AI find" },
+            { method: "POST", path: "/ai/execute", description: "AI execute" },
+            { method: "POST", path: "/ai/assert", description: "AI assert" },
+            { method: "GET", path: "/ai/snapshot", description: "Get semantic snapshot" },
+            { method: "GET", path: "/ai/diff", description: "Get semantic diff" },
+            { method: "POST", path: "/ai/execute-with-diff", description: "Execute with diff tracking" },
+          ],
+        },
+        design: {
+          description: "Design review, style auditing, quality evaluation",
+          endpoints: [
+            { method: "GET", path: "/design/element/:id/styles", description: "Get element styles" },
+            { method: "POST", path: "/design/snapshot", description: "Get design snapshot" },
+            { method: "POST", path: "/design/audit", description: "Run design audit" },
+            { method: "POST", path: "/design/evaluate", description: "Evaluate quality" },
+          ],
+        },
+        debug: {
+          description: "Error debugging, timeline, health reports, error sessions",
+          endpoints: [
+            { method: "GET", path: "/control/timeline", description: "Get error timeline" },
+            { method: "GET", path: "/control/health", description: "Get health report" },
+            { method: "GET", path: "/control/error-report", description: "Get composite error report" },
+            { method: "POST", path: "/control/error-sessions/start", description: "Start error session" },
+            { method: "POST", path: "/control/error-sessions/end", description: "End error session" },
+          ],
+        },
+      },
+    });
+  },
+
+  // --------------------------------------------------------------------------
+  // Heartbeat (for app health detection)
+  // --------------------------------------------------------------------------
+
+  async receiveHeartbeat(): Promise<APIResponse<{ received: boolean }>> {
+    lastHeartbeat = Date.now();
+    g.__uiBridgeLastHeartbeat = lastHeartbeat;
+    return success({ received: true });
   },
 };

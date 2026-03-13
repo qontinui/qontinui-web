@@ -76,6 +76,11 @@ const browserCaptureConfig: BrowserCaptureConfig = {
   webVitals: true,
   memory: true,
   memoryIntervalMs: 15000,
+  freezeDetector: true,
+  freezeIntervalMs: 200,
+  freezeThresholdMs: 3000,
+  domMetrics: true,
+  domMetricsIntervalMs: 10000,
   maxEntries: 500,
 };
 

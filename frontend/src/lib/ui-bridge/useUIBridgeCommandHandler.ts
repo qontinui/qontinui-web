@@ -19,10 +19,14 @@ import { buildControlSnapshot } from "./buildControlSnapshot";
 // API endpoints
 const COMMANDS_RESPONSE_ENDPOINT = "/api/ui-bridge/commands";
 const COMMANDS_STREAM_ENDPOINT = "/api/ui-bridge/commands/stream";
+const HEARTBEAT_ENDPOINT = "/api/ui-bridge/heartbeat";
 
 // SSE reconnection delay in milliseconds
 // 10s to avoid triggering Next.js route recompilation cascades in dev mode
 const SSE_RECONNECT_DELAY_MS = 10000;
+
+// Heartbeat interval — kept alive even when tab is hidden
+const HEARTBEAT_INTERVAL_MS = 10_000;
 
 /**
  * Get recovery suggestions based on error code
@@ -1217,6 +1221,31 @@ export function useUIBridgeCommandHandler(enabled: boolean = true) {
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [enabled, processCommand]);
+
+  // Heartbeat: POST every 10s to signal the app is responsive.
+  // Kept alive even when the tab is hidden (unlike the SSE stream).
+  useEffect(() => {
+    if (!enabled) return;
+
+    const sendHeartbeat = () => {
+      fetch(HEARTBEAT_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ timestamp: Date.now() }),
+      }).catch(() => {
+        // Heartbeat failure is non-fatal — server will detect staleness
+      });
+    };
+
+    // Send initial heartbeat immediately
+    sendHeartbeat();
+
+    const interval = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [enabled]);
 
   return {
     isEnabled: enabled,

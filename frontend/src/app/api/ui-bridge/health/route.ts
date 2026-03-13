@@ -7,12 +7,17 @@
 
 import { NextResponse } from "next/server";
 import { uiBridgeConfig } from "@/config/ui-bridge-config";
-import { getTransportDiagnostics } from "@/lib/ui-bridge/handlers";
+import {
+  getTransportDiagnostics,
+  isAppResponsive,
+  getLastHeartbeat,
+} from "@/lib/ui-bridge/handlers";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET() {
+  const lastHeartbeat = getLastHeartbeat();
   return NextResponse.json({
     status: "ok",
     sdk: "@qontinui/ui-bridge",
@@ -20,5 +25,8 @@ export async function GET() {
     timestamp: Date.now(),
     uiBridge: uiBridgeConfig,
     transport: getTransportDiagnostics(),
+    healthy: isAppResponsive(),
+    lastHeartbeat,
+    heartbeatAgeMs: lastHeartbeat > 0 ? Date.now() - lastHeartbeat : null,
   });
 }
