@@ -61,7 +61,6 @@ import {
   Cpu,
   Bug,
   Plug,
-  Network,
 } from "lucide-react";
 
 const ICON_MAP: Record<
@@ -128,7 +127,6 @@ const ICON_MAP: Record<
   Cpu,
   Bug,
   Plug,
-  Network,
 };
 
 export function resolveIcon(
