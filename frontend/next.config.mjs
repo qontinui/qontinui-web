@@ -28,6 +28,14 @@ const nextConfig = {
       config.resolve.alias['@qontinui/schemas'] = schemasPath;
     }
 
+    // Ensure imports from linked packages outside the project tree (e.g.
+    // ../../qontinui-workflow-ui/dist) can resolve their peer dependencies
+    // from the frontend's own node_modules.
+    config.resolve.modules = [
+      path.resolve(__dirname, 'node_modules'),
+      ...(config.resolve.modules || ['node_modules']),
+    ];
+
     // Prevent duplicate library instances from symlinked packages
     // Note: React/react-dom aliases removed — they conflict with Next.js SSR runtime
     // which uses its own bundled React. Instead, delete react from symlinked packages'
