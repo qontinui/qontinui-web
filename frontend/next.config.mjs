@@ -78,19 +78,20 @@ const nextConfig = {
   async headers() {
     return [
       {
+        // API routes proxy to the backend which has its own CORS middleware.
+        // These headers cover preflight for the Next.js proxy layer itself.
         source: '/api/:path*',
         headers: [
-          { key: 'Access-Control-Allow-Credentials', value: 'true' },
           { key: 'Access-Control-Allow-Origin', value: '*' },
           { key: 'Access-Control-Allow-Methods', value: 'GET,OPTIONS,PATCH,DELETE,POST,PUT' },
           { key: 'Access-Control-Allow-Headers', value: 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization' },
         ],
       },
       {
-        // UI Bridge SDK endpoints - allow external client access
+        // UI Bridge SDK endpoints - allow external client access (runner, dev tools).
+        // No credentials needed - these are tool-to-tool calls, not browser sessions.
         source: '/__ui-bridge__/:path*',
         headers: [
-          { key: 'Access-Control-Allow-Credentials', value: 'true' },
           { key: 'Access-Control-Allow-Origin', value: '*' },
           { key: 'Access-Control-Allow-Methods', value: 'GET,OPTIONS,PATCH,DELETE,POST,PUT' },
           { key: 'Access-Control-Allow-Headers', value: 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization' },
