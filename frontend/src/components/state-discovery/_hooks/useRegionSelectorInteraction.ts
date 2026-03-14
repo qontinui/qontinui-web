@@ -235,8 +235,6 @@ export function useRegionSelectorInteraction({
       getRelativePosition,
       getHandleAtPosition,
       applyDragDelta,
-      imageWidth,
-      imageHeight,
     ]
   );
 

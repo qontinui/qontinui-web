@@ -99,6 +99,8 @@ const StateDiscoveryTab: React.FC = () => {
       }
     }
     return "";
+    // Individual properties are more precise deps than the whole object
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screenshotState.screenshots, screenshotState.selectedScreenshotIndex]);
 
   // --- Side effects ---

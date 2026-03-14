@@ -139,6 +139,8 @@ export function useWebExtractionState() {
   // Get states from state_machine (pre-built by runner), or fallback to annotation states
   const stateMachineStates: StateMachineState[] = useMemo(
     () => buildStateMachineStates(extractionDetail, annotations),
+    // Only re-compute when the specific nested field changes, not the whole object
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [extractionDetail?.state_machine?.states, annotations]
   );
 

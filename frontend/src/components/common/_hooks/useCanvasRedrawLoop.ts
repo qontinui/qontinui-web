@@ -51,16 +51,20 @@ export function useCanvasRedrawLoop({
   deps,
 }: UseCanvasRedrawLoopOptions): { redraw: () => void } {
   // Memoize the draw callback with the caller's dependencies.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const memoizedDraw = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+  // The deps array is intentionally dynamic — callers pass their own dependency list.
+  const memoizedDraw = useCallback(
+    () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
 
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
 
-    draw(ctx, canvas);
-  }, deps);
+      draw(ctx, canvas);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    deps
+  );
 
   // Redraw whenever the memoized draw callback identity changes.
   useEffect(() => {

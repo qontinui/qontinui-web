@@ -14,8 +14,8 @@
 const COMPARISON_OPS: Record<string, (a: unknown, b: unknown) => boolean> = {
   "===": (a, b) => a === b,
   "!==": (a, b) => a !== b,
-  "==": (a, b) => a == b, // eslint-disable-line eqeqeq
-  "!=": (a, b) => a != b, // eslint-disable-line eqeqeq
+  "==": (a, b) => a == b,
+  "!=": (a, b) => a != b,
   ">": (a, b) => Number(a) > Number(b),
   "<": (a, b) => Number(a) < Number(b),
   ">=": (a, b) => Number(a) >= Number(b),
@@ -41,7 +41,10 @@ function resolvePath(obj: Record<string, unknown>, path: string): unknown {
  * Handles: numbers, booleans, single/double-quoted strings, null, undefined,
  * and variable lookups (possibly dotted paths).
  */
-function parseToken(token: string, variables: Record<string, unknown>): unknown {
+function parseToken(
+  token: string,
+  variables: Record<string, unknown>
+): unknown {
   const trimmed = token.trim();
 
   // Boolean literals
@@ -211,11 +214,9 @@ const ASSERTION_CHECKS: Record<
     !(Array.isArray(v) && v.length === 0),
   hasLength: (v, len) => Array.isArray(v) && v.length === Number(len),
   minLength: (v, min) =>
-    (typeof v === "string" || Array.isArray(v)) &&
-    v.length >= Number(min),
+    (typeof v === "string" || Array.isArray(v)) && v.length >= Number(min),
   maxLength: (v, max) =>
-    (typeof v === "string" || Array.isArray(v)) &&
-    v.length <= Number(max),
+    (typeof v === "string" || Array.isArray(v)) && v.length <= Number(max),
   contains: (v, item) => {
     if (typeof v === "string") return v.includes(String(item));
     if (Array.isArray(v)) return v.includes(item);
@@ -261,9 +262,9 @@ export function evaluateCustomAssertion(
   try {
     // Handle pipe chains: "isString | minLength:3"
     if (trimmed.includes("|")) {
-      return trimmed.split("|").every((part) =>
-        evaluateCustomAssertion(part.trim(), value, _context)
-      );
+      return trimmed
+        .split("|")
+        .every((part) => evaluateCustomAssertion(part.trim(), value, _context));
     }
 
     // Handle comparison expressions: "value > 5"

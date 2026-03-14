@@ -160,6 +160,8 @@ export function useBuildNodesEdges({
 
     setNodes(newNodes);
     setEdges(newEdges);
+    // isDraggingRef is a ref — stable identity, safe to exclude
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     states,
     transitions,

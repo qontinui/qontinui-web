@@ -137,6 +137,8 @@ export function useStateMachineHandlers({
         }
       });
     },
+    // isDraggingRef is a ref — stable identity, safe to exclude
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [onNodesChange, states, updateState, transitions, updateTransition]
   );
 
@@ -235,6 +237,8 @@ export function useStateMachineHandlers({
     }
 
     prevCountsRef.current = currentCounts;
+    // prevCountsRef is a ref — stable identity, safe to exclude
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [states.length, transitions.length, applyAutoLayout]);
 
   const onConnect = useCallback(

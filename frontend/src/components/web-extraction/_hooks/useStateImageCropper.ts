@@ -195,6 +195,8 @@ export function useStateImageCropper({
     return () => {
       mounted = false;
     };
+    // Individual bbox properties are more precise deps than the whole object
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isOpen,
     extractionId,
