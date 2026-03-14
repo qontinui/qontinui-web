@@ -170,7 +170,8 @@ def import_test_snapshot(client, snapshot_data: dict[str, Any]) -> dict[str, Any
         if response.status_code != 200:
             raise Exception(f"Import failed: {response.text}")
 
-        return response.json()
+        result: dict[str, Any] = response.json()
+        return result
 
 
 def execute_test_process(
@@ -208,7 +209,8 @@ def execute_test_process(
     if response.status_code != 200:
         raise Exception(f"Execution failed: {response.text}")
 
-    return response.json()
+    result: dict[str, Any] = response.json()
+    return result
 
 
 def verify_execution_result(

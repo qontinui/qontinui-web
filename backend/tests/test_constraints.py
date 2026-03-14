@@ -19,7 +19,6 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-
 # ---------------------------------------------------------------------------
 # Lightweight test app — avoids the full app's startup lifecycle (DB, Redis)
 # ---------------------------------------------------------------------------
