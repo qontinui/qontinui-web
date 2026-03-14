@@ -57,7 +57,7 @@ interface StoreProbe {
 // Config
 // ---------------------------------------------------------------------------
 
-const SAMPLE_INTERVAL_MS = 10_000; // 10 seconds
+const SAMPLE_INTERVAL_MS = 30_000; // 30 seconds (was 10s — caused GC pressure)
 const WINDOW_DURATION_MS = 5 * 60_000; // 5 minute rolling window
 const MIN_SAMPLES_FOR_ANALYSIS = 6; // Need ≥1 minute of data
 const GROWTH_FRACTION_WARN = 0.7; // 70% of samples growing → warning
@@ -88,11 +88,12 @@ function countDOMNodes(): number {
 }
 
 /**
- * Estimate the size of a Zustand store state WITHOUT full JSON.stringify.
+ * Estimate the size of a Zustand store state cheaply.
  *
- * Full serialization is dangerous for large stores (e.g., canvas with 50
- * history snapshots can be 250MB+). Instead, we walk one level deep,
- * measure array/object sizes cheaply, and only stringify small leaves.
+ * IMPORTANT: Does NOT use JSON.stringify — repeated stringify calls every
+ * sample interval create temporary string garbage that causes GC pressure
+ * and escalating freezes. Instead, we walk one level deep and use
+ * structural heuristics (key counts, array lengths, string lengths).
  */
 function estimateObjectSizeKB(obj: unknown): number {
   if (obj == null) return 0;
@@ -101,58 +102,24 @@ function estimateObjectSizeKB(obj: unknown): number {
   }
 
   let totalBytes = 0;
-  const MAX_SERIALIZE_BYTES = 50_000; // Only stringify objects under 50KB estimate
 
   try {
     const record = obj as Record<string, unknown>;
     for (const key of Object.keys(record)) {
       const value = record[key];
-      if (value == null) continue;
+      if (value == null || typeof value === "function") continue;
 
       if (Array.isArray(value)) {
-        // For arrays, estimate based on length × average element size
-        // Sample first element to estimate per-element size
-        const len = value.length;
-        if (len === 0) continue;
-        if (len <= 10) {
-          // Small array — safe to stringify
-          try {
-            const json = JSON.stringify(value);
-            totalBytes += json ? json.length : 0;
-          } catch {
-            totalBytes += len * 100; // rough fallback
-          }
-        } else {
-          // Large array — sample first element and multiply
-          try {
-            const sampleJson = JSON.stringify(value[0]);
-            const perElement = sampleJson ? sampleJson.length : 100;
-            totalBytes += perElement * len;
-          } catch {
-            totalBytes += len * 100;
-          }
-        }
+        // Estimate: 100 bytes per element (rough average for typical state objects)
+        totalBytes += value.length * 100;
       } else if (value instanceof Map) {
-        totalBytes += value.size * 200; // rough estimate
+        totalBytes += value.size * 200;
       } else if (value instanceof Set) {
         totalBytes += value.size * 50;
       } else if (typeof value === "object") {
-        // Nested object — only stringify if likely small
+        // Count keys as a size proxy — no stringify
         const keyCount = Object.keys(value as Record<string, unknown>).length;
-        if (keyCount <= 20) {
-          try {
-            const json = JSON.stringify(value);
-            if (json && json.length < MAX_SERIALIZE_BYTES) {
-              totalBytes += json.length;
-            } else {
-              totalBytes += keyCount * 200;
-            }
-          } catch {
-            totalBytes += keyCount * 200;
-          }
-        } else {
-          totalBytes += keyCount * 200;
-        }
+        totalBytes += keyCount * 200;
       } else if (typeof value === "string") {
         totalBytes += (value as string).length;
       } else {
@@ -280,9 +247,7 @@ export class MemoryGrowthDetector {
       timestamp: Date.now(),
       heapUsedMB: Math.round((mem.usedJSHeapSize / 1024 / 1024) * 10) / 10,
       heapTotalMB: Math.round((mem.totalJSHeapSize / 1024 / 1024) * 10) / 10,
-      heapLimitMB: Math.round(
-        (mem.jsHeapSizeLimit / 1024 / 1024) * 10
-      ) / 10,
+      heapLimitMB: Math.round((mem.jsHeapSizeLimit / 1024 / 1024) * 10) / 10,
       domNodeCount: countDOMNodes(),
       storeSizes,
       listenerEstimate: this.estimateListenerCount(),
@@ -363,13 +328,10 @@ export class MemoryGrowthDetector {
 
     // Calculate growth rate via linear regression
     const first = this.snapshots[0]!;
-    const elapsedMin =
-      (latest.timestamp - first.timestamp) / 60_000;
+    const elapsedMin = (latest.timestamp - first.timestamp) / 60_000;
     const growthMB = latest.heapUsedMB - first.heapUsedMB;
     const growthRateMBPerMin =
-      elapsedMin > 0
-        ? Math.round((growthMB / elapsedMin) * 10) / 10
-        : 0;
+      elapsedMin > 0 ? Math.round((growthMB / elapsedMin) * 10) / 10 : 0;
 
     // Estimated time to OOM
     const headroomMB = latest.heapLimitMB - latest.heapUsedMB;

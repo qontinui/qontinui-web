@@ -14,7 +14,10 @@
  * All other routes are handled by the SDK's route matcher.
  */
 
-import { createNextRouteHandlers, SSEManager } from "@qontinui/ui-bridge/server";
+import {
+  createNextRouteHandlers,
+  SSEManager,
+} from "@qontinui/ui-bridge/server";
 import { handlers, relay } from "@/lib/ui-bridge/relay";
 import { NextRequest } from "next/server";
 
@@ -23,6 +26,12 @@ const sseManager = new SSEManager();
 const routeHandlers = createNextRouteHandlers(handlers, {
   relay,
   sseManager,
+  appInfo: {
+    appId: "qontinui-web",
+    appName: "Qontinui Web",
+    appType: "web",
+    framework: "nextjs",
+  },
 });
 
 // Wrap handlers to adapt from Next.js 15 async params to the expected sync params
