@@ -41,6 +41,8 @@ export interface GenerateWorkflowRequest {
   model_overrides?: Record<string, { provider?: string; model?: string }>;
   /** Verification depth: smoke, standard, thorough, or regression */
   verification_depth?: "smoke" | "standard" | "thorough" | "regression";
+  /** Whether to discover and include UI Bridge page specs during discovery (default: auto via keywords) */
+  discover_ui_bridge_specs?: boolean;
 }
 
 /** One pass of the verification->fix loop during workflow generation. */
