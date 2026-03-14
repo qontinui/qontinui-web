@@ -7,6 +7,7 @@ import { TutorialProvider } from "@/contexts/tutorial";
 import { UIBridgeWrapper, RenderLogWrapper } from "@/lib/ui-bridge";
 import { QueryProvider } from "@/lib/providers/query-provider";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { DevDebugInit } from "@/components/dev-debug-init";
 import { ClientOverlays } from "@/components/ClientOverlays";
 import { WorkflowUIProvider } from "@/lib/providers/workflow-ui-provider";
 import "./globals.css";
@@ -47,6 +48,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        <DevDebugInit />
         <ErrorBoundary>
           <QueryProvider>
             <AuthProvider>
