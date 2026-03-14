@@ -98,14 +98,6 @@ function toFrontendFormat(
 }
 
 /**
- * Get auth token from localStorage (same pattern as other services)
- */
-async function getAuthToken(): Promise<string | null> {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("access_token");
-}
-
-/**
  * Save annotations to the backend
  */
 export async function saveAnnotations(
@@ -119,11 +111,6 @@ export async function saveAnnotations(
   } = {}
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const token = await getAuthToken();
-    if (!token) {
-      return { success: false, error: "Not authenticated" };
-    }
-
     const payload: AnnotationUpdateRequest = {
       screenshot_id: screenshotId,
       source_url: options.sourceUrl || "",
@@ -139,8 +126,8 @@ export async function saveAnnotations(
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
         },
+        credentials: "include",
         body: JSON.stringify(payload),
       }
     );
@@ -177,18 +164,11 @@ export async function loadAnnotations(extractionId: string): Promise<{
   error?: string;
 }> {
   try {
-    const token = await getAuthToken();
-    if (!token) {
-      return { success: false, error: "Not authenticated" };
-    }
-
     const response = await fetch(
       `${API_BASE}/api/v1/extractions/${extractionId}/annotations`,
       {
         method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        credentials: "include",
       }
     );
 

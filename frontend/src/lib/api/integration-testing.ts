@@ -8,19 +8,6 @@ import type {
 } from "@/types/integration-testing";
 
 /**
- * Get authorization headers from localStorage
- * Returns empty object if no token (auth will use httpOnly cookies)
- */
-function getAuthHeaders(): Record<string, string> {
-  if (typeof window === "undefined") return {};
-  const token = localStorage.getItem("auth_token");
-  if (token) {
-    return { Authorization: `Bearer ${token}` };
-  }
-  return {};
-}
-
-/**
  * Execute a mock workflow using historical data.
  * This is used for Config Testing (workflow validation).
  */
@@ -31,7 +18,6 @@ export async function executeMockWorkflow(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...getAuthHeaders(),
     },
     credentials: "include",
     body: JSON.stringify(request),
@@ -60,7 +46,6 @@ export async function getStateScreenshots(
   const response = await fetch(
     `/api/integration-testing/snapshots/${runId}/screenshots?${params}`,
     {
-      headers: getAuthHeaders(),
       credentials: "include",
     }
   );
@@ -107,7 +92,6 @@ export async function generatePDFReport(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...getAuthHeaders(),
     },
     credentials: "include",
     body: JSON.stringify({

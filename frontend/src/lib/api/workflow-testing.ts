@@ -20,8 +20,8 @@ export async function runWorkflowTest(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${getAuthToken()}`,
     },
+    credentials: "include",
     body: JSON.stringify({
       project_id: projectId,
       run_name: `Test: ${testCase.name}`,
@@ -89,8 +89,8 @@ export async function runWorkflowTest(
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${getAuthToken()}`,
       },
+      credentials: "include",
       body: JSON.stringify({
         status: allAssertionsPassed ? "completed" : "failed",
         ended_at: endTime,
@@ -141,8 +141,8 @@ export async function runWorkflowTest(
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${getAuthToken()}`,
       },
+      credentials: "include",
       body: JSON.stringify({
         status: "failed",
         ended_at: endTime,
@@ -284,12 +284,4 @@ function deepEquals(a: unknown, b: unknown): boolean {
   }
 
   return false;
-}
-
-/**
- * Get authentication token from localStorage
- */
-function getAuthToken(): string {
-  if (typeof window === "undefined") return "";
-  return localStorage.getItem("auth_token") || "";
 }

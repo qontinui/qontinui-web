@@ -15,9 +15,7 @@ export function useSettings() {
     try {
       setLoading(true);
       const response = await fetch("/api/v1/settings/", {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
+        credentials: "include",
       });
       if (response.ok) {
         const data = await response.json();
@@ -38,8 +36,8 @@ export function useSettings() {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
+        credentials: "include",
         body: JSON.stringify(settings),
       });
       if (response.ok) {
@@ -60,9 +58,7 @@ export function useSettings() {
       setLoading(true);
       const response = await fetch("/api/v1/settings/reset", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
+        credentials: "include",
       });
       if (response.ok) {
         const data = await response.json();
@@ -82,9 +78,7 @@ export function useSettings() {
   const exportSettings = async () => {
     try {
       const response = await fetch("/api/v1/settings/export?format=yaml", {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
+        credentials: "include",
       });
       if (response.ok) {
         const data = await response.json();
