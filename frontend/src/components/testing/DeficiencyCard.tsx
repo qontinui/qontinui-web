@@ -223,7 +223,11 @@ export function DeficiencyCard({ deficiency }: DeficiencyCardProps) {
                     variant="outline"
                     className="absolute top-2 right-2 border-border-default hover:border-brand-primary"
                     onClick={() =>
-                      window.open(deficiency.screenshot_url!, "_blank")
+                      window.open(
+                        deficiency.screenshot_url!,
+                        "_blank",
+                        "noopener,noreferrer"
+                      )
                     }
                   >
                     <ExternalLink className="w-4 h-4" />

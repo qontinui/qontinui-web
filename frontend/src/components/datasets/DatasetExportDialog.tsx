@@ -180,7 +180,7 @@ export function DatasetExportDialog({
 
   const handleDownload = () => {
     if (exportJob?.download_url) {
-      window.open(exportJob.download_url, "_blank");
+      window.open(exportJob.download_url, "_blank", "noopener,noreferrer");
       toast.success("Download started");
     }
   };

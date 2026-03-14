@@ -37,7 +37,7 @@ export default function TestRunDetailPage() {
   const handleExport = () => {
     if (!run) return;
     const url = `${ApiConfig.getBaseUrl()}/api/v1/testing/runs/${runId}/export?format=json`;
-    window.open(url, "_blank");
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   if (authLoading || isLoading) {

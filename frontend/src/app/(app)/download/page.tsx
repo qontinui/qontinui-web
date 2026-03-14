@@ -158,7 +158,7 @@ export default function DownloadPage() {
   }, []);
 
   const handleDownload = (url: string) => {
-    window.open(url, "_blank");
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   if (authLoading) {
