@@ -31,9 +31,8 @@ import type {
   BrowserCaptureConfig,
   AnyCapturedEvent,
 } from "@qontinui/ui-bridge/debug";
-import { UIBridgeTransportListener } from "./UIBridgeTransportListener";
+import { CommandRelayListener } from "@qontinui/ui-bridge/react";
 import { RouteAwarenessProvider } from "./RouteAwarenessProvider";
-import type { TransportMode } from "./useUIBridgeTransport";
 
 const isDev = process.env.NODE_ENV === "development";
 
@@ -53,6 +52,7 @@ const features: UIBridgeFeatures = {
 const config: UIBridgeConfig = {
   verbose: isDev,
   maxLogEntries: 10, // Reduced from 1000 - each entry is a full DOM snapshot (several MB)
+  captureChanges: false, // Disable DOM change tracking — causes memory leak (unbounded pendingChanges array)
 };
 
 const FLUSH_INTERVAL_MS = 5000;
@@ -91,18 +91,6 @@ interface UIBridgeWrapperProps {
    * Defaults to true in development.
    */
   enableRemoteCommands?: boolean;
-  /**
-   * Transport mode for remote commands.
-   * - 'auto' (default): Try WebSocket first, fall back to HTTP polling
-   * - 'websocket': Use WebSocket only
-   * - 'http': Use HTTP polling only
-   */
-  transport?: TransportMode;
-  /**
-   * WebSocket URL for remote commands.
-   * Defaults to current host with /api/ui-bridge/ws path.
-   */
-  wsUrl?: string;
 }
 
 /**
@@ -120,8 +108,6 @@ interface UIBridgeWrapperProps {
 export function UIBridgeWrapper({
   children,
   enableRemoteCommands = isDev,
-  transport = "auto",
-  wsUrl,
 }: UIBridgeWrapperProps) {
   const bufferRef = useRef<BridgeEvent[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -261,12 +247,8 @@ export function UIBridgeWrapper({
         debounceMs={100}
         excludeSelectors={["[data-no-register]"]}
       >
-        {/* Transport listener for remote automation (WebSocket primary, HTTP fallback) */}
-        <UIBridgeTransportListener
-          enabled={enableRemoteCommands}
-          mode={transport}
-          wsUrl={wsUrl}
-        />
+        {/* Command relay listener for remote automation via SSE */}
+        <CommandRelayListener enabled={enableRemoteCommands} />
         <RouteAwarenessProvider>
           {children as Parameters<typeof AutoRegisterProvider>[0]["children"]}
         </RouteAwarenessProvider>

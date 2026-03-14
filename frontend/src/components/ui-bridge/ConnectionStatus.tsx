@@ -10,7 +10,13 @@
  */
 
 import React from "react";
-import type { ConnectionState } from "@/lib/ui-bridge/useUIBridgeTransport";
+/** Connection state for transport status indicators */
+export type ConnectionState =
+  | "disconnected"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "error";
 
 export interface ConnectionStatusProps {
   /**
@@ -208,6 +214,7 @@ export function ConnectionStatusBadge({
     reconnecting:
       "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
     disconnected: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+    error: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
   }[connectionState];
 
   const label =
