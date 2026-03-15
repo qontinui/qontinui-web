@@ -145,7 +145,7 @@ export function WorkflowListSidebar({
           // passing parameters, so we cannot accept a specific workflow ID here.
           // To select a specific workflow, use the sidebar UI directly.
           if (filteredWorkflows.length > 0) {
-            onSelectWorkflow(filteredWorkflows[0]);
+            onSelectWorkflow(filteredWorkflows[0]!);
           } else {
             console.warn("[WorkflowListSidebar] Cannot select: no workflows available");
           }

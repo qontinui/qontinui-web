@@ -160,7 +160,7 @@ export function WorkflowEditor({
             phase: "verification" as const,
             type: "api" as const,
             name: "New Step",
-          } as UnifiedStep;
+          } as unknown as UnifiedStep;
           addStep(step, "verification");
         },
       },
