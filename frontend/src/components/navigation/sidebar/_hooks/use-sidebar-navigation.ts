@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { setProductMode } from "qontinui-navigation";
 import type { NavItem } from "../types";
 import { getWebNavItems } from "../shared-nav-adapter";
 import { devNavItems } from "../nav-items";
@@ -34,10 +35,12 @@ export function useSidebarNavigation() {
     [mounted, isDevelopment, authLoading, user, productMode]
   );
 
+  // Sync product mode to the shared navigation package and rebuild items
   const allItems = useMemo(() => {
+    setProductMode(productMode);
     const shared = getWebNavItems();
     return [...shared, ...devNavItems];
-  }, []);
+  }, [productMode]);
 
   const visibleNavItems = useMemo(() => {
     return filterNavItems(allItems);
