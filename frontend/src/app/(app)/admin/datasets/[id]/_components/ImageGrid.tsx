@@ -53,6 +53,8 @@ export function ImageGrid({
                     image.image_hash
                   )}
                   alt={image.filename}
+                  width={200}
+                  height={200}
                   className="w-full aspect-square object-cover"
                 />
                 {image.annotation_count !== undefined &&

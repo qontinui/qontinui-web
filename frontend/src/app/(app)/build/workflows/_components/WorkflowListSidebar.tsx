@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useUIComponent } from "@qontinui/ui-bridge";
 import * as workflowApi from "@/lib/api/unified-workflows";
 import { useUnifiedWorkflows } from "@/lib/api/unified-workflows";
 import { Badge } from "@/components/ui/badge";
@@ -111,6 +112,48 @@ export function WorkflowListSidebar({
     }
   };
 
+  // UI Bridge: Component-level actions for AI control
+  useUIComponent({
+    id: 'workflow-list-sidebar',
+    name: 'Workflow List Sidebar',
+    description: 'Sidebar for browsing, creating, and managing workflows',
+    actions: [
+      {
+        id: 'create-workflow',
+        label: 'Create Workflow',
+        handler: async () => {
+          await handleCreateWorkflow();
+        },
+      },
+      {
+        id: 'delete-workflow',
+        label: 'Delete Workflow',
+        handler: async () => {
+          if (!selectedWorkflowId) {
+            console.warn("[WorkflowListSidebar] Cannot delete: no workflow selected");
+            return;
+          }
+          await handleDeleteWorkflow(selectedWorkflowId);
+        },
+      },
+      {
+        id: 'select-workflow',
+        label: 'Select Workflow',
+        handler: async () => {
+          // Selects the first available workflow from the (filtered) list.
+          // Limitation: the UI Bridge action system does not currently support
+          // passing parameters, so we cannot accept a specific workflow ID here.
+          // To select a specific workflow, use the sidebar UI directly.
+          if (filteredWorkflows.length > 0) {
+            onSelectWorkflow(filteredWorkflows[0]);
+          } else {
+            console.warn("[WorkflowListSidebar] Cannot select: no workflows available");
+          }
+        },
+      },
+    ],
+  });
+
   const toggleSelection = (id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -128,44 +171,44 @@ export function WorkflowListSidebar({
             Workflows
           </span>
           <div className="flex items-center gap-1">
-            {workflows && (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                {workflows.length}
-              </Badge>
-            )}
-            {selectionMode ? (
-              <>
+            <Badge variant="outline" className={`text-[10px] px-1.5 py-0${!workflows ? ' invisible' : ''}`}>
+              {workflows?.length ?? 0}
+            </Badge>
+            <div className="flex items-center gap-1 min-w-[60px] justify-end">
+              {selectionMode ? (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-5 w-5 text-red-400 hover:text-red-300"
+                    disabled={selectedIds.size === 0}
+                    onClick={handleBatchDelete}
+                    title="Delete selected"
+                  >
+                    <Trash2 className="size-3" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-5 w-5"
+                    onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }}
+                  >
+                    <X className="size-3" />
+                  </Button>
+                </>
+              ) : (
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-5 w-5 text-red-400 hover:text-red-300"
-                  disabled={selectedIds.size === 0}
-                  onClick={handleBatchDelete}
-                  title="Delete selected"
+                  className="h-5 w-5 text-text-muted"
+                  onClick={() => setSelectionMode(true)}
+                  disabled={!workflows || workflows.length === 0}
+                  title="Select for batch delete"
                 >
-                  <Trash2 className="size-3" />
+                  <CheckSquare className="size-3" />
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-5 w-5"
-                  onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }}
-                >
-                  <X className="size-3" />
-                </Button>
-              </>
-            ) : (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-5 w-5 text-text-muted"
-                onClick={() => setSelectionMode(true)}
-                disabled={!workflows || workflows.length === 0}
-                title="Select for batch delete"
-              >
-                <CheckSquare className="size-3" />
-              </Button>
-            )}
+              )}
+            </div>
           </div>
         </div>
         <div className="relative">

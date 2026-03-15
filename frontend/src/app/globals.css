@@ -87,6 +87,12 @@
   --color-bg-secondary: var(--surface-raised);
   --color-bg-tertiary: var(--surface-hover);
 
+  /* Text aliases (shared workflow-ui components use text-text-*) */
+  --color-text-primary: var(--qontinui-text-primary);
+  --color-text-secondary: var(--qontinui-text-secondary);
+  --color-text-muted: var(--qontinui-text-muted);
+  --color-text-inverse: var(--qontinui-text-inverse);
+
   /* Border aliases (shared workflow-ui components use border-border-*) */
   --color-border-primary: var(--border-subtle);
   --color-border-secondary: var(--border-default);

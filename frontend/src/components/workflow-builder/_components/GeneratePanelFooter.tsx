@@ -23,7 +23,7 @@ export function GeneratePanelFooter({
   onGenerateAndRun,
 }: GeneratePanelFooterProps) {
   return (
-    <div className="shrink-0 border-t border-zinc-800 bg-zinc-900/50 px-6 py-3">
+    <div className="shrink-0 border-t border-zinc-800 bg-zinc-900/50 px-6 py-3 min-h-[60px]">
       <div className="max-w-3xl mx-auto flex items-center gap-3">
         <Button
           onClick={onGenerate}

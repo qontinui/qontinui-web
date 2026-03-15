@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { useUIComponent } from "@qontinui/ui-bridge";
 import { SpecSourceSection } from "./SpecSourceSection";
 import { useGenerateFormState } from "./_hooks/useGenerateFormState";
 import { useAdvancedOptions } from "./_hooks/useAdvancedOptions";
@@ -66,6 +67,33 @@ export function AiGeneratePanel({
       setSubmittingAction: formState.setSubmittingAction,
       onNavigateToActiveRuns,
     });
+
+  // UI Bridge: Component-level actions for AI control
+  useUIComponent({
+    id: 'ai-generate-panel',
+    name: 'AI Generate Panel',
+    description: 'Panel for AI-powered workflow generation',
+    actions: [
+      {
+        id: 'generate',
+        label: 'Generate',
+        handler: async () => {
+          if (canGenerate) {
+            await handleGenerate();
+          }
+        },
+      },
+      {
+        id: 'generate-and-run',
+        label: 'Generate and Run',
+        handler: async () => {
+          if (canGenerate) {
+            await handleGenerateAndRun();
+          }
+        },
+      },
+    ],
+  });
 
   const handleApplyTemplate = (
     template: Parameters<typeof templates.handleApplyTemplate>[0]

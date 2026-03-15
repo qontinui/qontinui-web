@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import { useUIComponent } from "@qontinui/ui-bridge";
 import { useWorkflowBuilder } from "@/components/workflow-builder/WorkflowBuilderContext";
 import { StepConfigPanel } from "@/components/workflow-builder/StepConfigPanel";
 import { SettingsPanel } from "@/components/workflow-builder/SettingsPanel";
@@ -125,6 +126,46 @@ export function WorkflowEditor({
     },
     [importWorkflow, setWorkflow],
   );
+
+  // UI Bridge: Component-level actions for AI control
+  useUIComponent({
+    id: 'workflow-editor',
+    name: 'Workflow Editor',
+    description: 'Editor for building and managing workflow steps',
+    actions: [
+      {
+        id: 'save',
+        label: 'Save Workflow',
+        handler: async () => {
+          await handleSave();
+        },
+      },
+      {
+        id: 'run',
+        label: 'Run Workflow',
+        handler: async () => {
+          if (hasUnsavedChanges) {
+            const saved = await saveWorkflow();
+            if (!saved) return;
+          }
+          onRun();
+        },
+      },
+      {
+        id: 'add-step',
+        label: 'Add Step',
+        handler: async () => {
+          const step = {
+            id: generateStepId(),
+            phase: "verification" as const,
+            type: "api" as const,
+            name: "New Step",
+          } as UnifiedStep;
+          addStep(step, "verification");
+        },
+      },
+    ],
+  });
 
   const handleStop = useCallback(async () => {
     setIsStopping(true);
