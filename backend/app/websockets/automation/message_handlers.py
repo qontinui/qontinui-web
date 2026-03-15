@@ -270,9 +270,7 @@ async def store_tree_event(
             duration_ms=(
                 (node.get("end_timestamp", 0) - node.get("timestamp", 0)) * 1000
                 if node.get("end_timestamp") and node.get("timestamp")
-                else node.get("duration", 0) * 1000
-                if node.get("duration")
-                else None
+                else node.get("duration", 0) * 1000 if node.get("duration") else None
             ),
             status=node.get("status", "pending"),
             error_message=node.get("error"),

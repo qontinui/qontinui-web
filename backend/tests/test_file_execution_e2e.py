@@ -37,7 +37,8 @@ def project_dir() -> Generator[Path, None, None]:
 
         # 1. Simple calculator module
         calculator_py = project_root / "scripts" / "calculator.py"
-        calculator_py.write_text("""
+        calculator_py.write_text(
+            """
 def add(a, b):
     \"\"\"Add two numbers.\"\"\"
     return a + b
@@ -54,11 +55,13 @@ def divide(a, b):
 
 # Can also execute as script
 result = add(10, 20)
-""")
+"""
+        )
 
         # 2. Data processor that imports calculator
         processor_py = project_root / "scripts" / "processor.py"
-        processor_py.write_text("""
+        processor_py.write_text(
+            """
 from scripts.calculator import add, multiply
 
 def process_data(numbers):
@@ -79,11 +82,13 @@ def calculate_stats(numbers):
         "sum": total,
         "count": len(numbers)
     }
-""")
+"""
+        )
 
         # 3. Utility library
         utils_py = project_root / "lib" / "utils.py"
-        utils_py.write_text("""
+        utils_py.write_text(
+            """
 import re
 
 def extract_numbers(text):
@@ -95,11 +100,13 @@ def extract_numbers(text):
 def format_currency(amount):
     \"\"\"Format number as currency.\"\"\"
     return f"${amount:,.2f}"
-""")
+"""
+        )
 
         # 4. Workflow script that uses utils
         workflow_py = project_root / "scripts" / "workflow.py"
-        workflow_py.write_text("""
+        workflow_py.write_text(
+            """
 from lib.utils import extract_numbers, format_currency
 
 def process_invoice(text):
@@ -114,38 +121,46 @@ def process_invoice(text):
         "count": len(numbers),
         "items": numbers
     }
-""")
+"""
+        )
 
         # 5. File with syntax error
         syntax_error_py = project_root / "scripts" / "syntax_error.py"
-        syntax_error_py.write_text("""
+        syntax_error_py.write_text(
+            """
 def broken_function(
     \"\"\"This has a syntax error - missing closing parenthesis\"\"\"
     return "broken"
-""")
+"""
+        )
 
         # 6. File with runtime error
         runtime_error_py = project_root / "scripts" / "runtime_error.py"
-        runtime_error_py.write_text("""
+        runtime_error_py.write_text(
+            """
 def divide_numbers(a, b):
     \"\"\"This will cause a runtime error if b is 0.\"\"\"
     return a / b
 
 # Cause immediate error
 result = divide_numbers(10, 0)
-""")
+"""
+        )
 
         # 7. Nested file
         nested_py = project_root / "nested" / "deep" / "module.py"
-        nested_py.write_text("""
+        nested_py.write_text(
+            """
 def nested_function(x):
     \"\"\"Function in a deeply nested module.\"\"\"
     return x * 2
-""")
+"""
+        )
 
         # 8. File that uses context variables
         context_aware_py = project_root / "scripts" / "context_aware.py"
-        context_aware_py.write_text("""
+        context_aware_py.write_text(
+            """
 import re
 
 def extract_from_ocr(action_result, pattern_type="price"):
@@ -169,7 +184,8 @@ def check_threshold(action_result, variables):
     value = action_result.get('value', 0)
     threshold = variables.get('threshold', 100)
     return value < threshold
-""")
+"""
+        )
 
         yield project_root
 
@@ -265,9 +281,9 @@ class TestFileBasedExecution:
             # Should either return valid=False or 400/403 error
             if response.status_code == 200:
                 data = response.json()
-                assert data["valid"] is False, (
-                    f"Path traversal not blocked: {malicious_path}"
-                )
+                assert (
+                    data["valid"] is False
+                ), f"Path traversal not blocked: {malicious_path}"
             else:
                 assert response.status_code in [
                     400,
@@ -687,7 +703,8 @@ class TestFileExecutionErrors:
         """Test execution timeout."""
         # Create file with infinite loop
         timeout_file = project_dir / "scripts" / "timeout.py"
-        timeout_file.write_text("""
+        timeout_file.write_text(
+            """
 import time
 
 def slow_function():
@@ -695,7 +712,8 @@ def slow_function():
         time.sleep(1)
 
 result = slow_function()
-""")
+"""
+        )
 
         os.environ["TEST_PROJECT_ROOT"] = str(project_dir)
 
@@ -731,7 +749,8 @@ class TestFileExecutionSecurity:
         """Test that blocked imports in files are rejected."""
         # Create file with blocked import
         malicious_file = project_dir / "scripts" / "malicious.py"
-        malicious_file.write_text("""
+        malicious_file.write_text(
+            """
 import os
 
 def delete_files():
@@ -739,7 +758,8 @@ def delete_files():
     return "done"
 
 result = delete_files()
-""")
+"""
+        )
 
         os.environ["TEST_PROJECT_ROOT"] = str(project_dir)
 
@@ -772,12 +792,14 @@ result = delete_files()
         """Test that dangerous patterns in files are blocked."""
         # Create file with dangerous pattern
         dangerous_file = project_dir / "scripts" / "dangerous.py"
-        dangerous_file.write_text("""
+        dangerous_file.write_text(
+            """
 def execute_code(code):
     return eval(code)
 
 result = execute_code("2 + 2")
-""")
+"""
+        )
 
         os.environ["TEST_PROJECT_ROOT"] = str(project_dir)
 

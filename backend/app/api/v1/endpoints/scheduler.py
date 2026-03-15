@@ -270,7 +270,9 @@ async def get_schedule_details(
     try:
         schedule_executions = sorted(
             schedule_executions, key=lambda r: r.get("startTime", ""), reverse=True
-        )[:10]  # Last 10 executions
+        )[
+            :10
+        ]  # Last 10 executions
     except Exception:
         schedule_executions = schedule_executions[:10]
 
