@@ -4,12 +4,14 @@ import type { NavItem } from "../types";
 import { getWebNavItems } from "../shared-nav-adapter";
 import { devNavItems } from "../nav-items";
 import { useAuth } from "@/contexts/auth-context";
+import { useProductMode } from "@/contexts/product-mode-context";
 
 export function useSidebarNavigation() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { user, loading: authLoading } = useAuth();
+  const { mode: productMode } = useProductMode();
   const [mounted, setMounted] = useState(false);
 
   const isDevelopment = process.env.NODE_ENV === "development";
@@ -19,6 +21,7 @@ export function useSidebarNavigation() {
       return items
         .filter((item) => {
           if (item.hiddenInProd && (!mounted || !isDevelopment)) return false;
+          if (item.productMode && item.productMode !== "both" && item.productMode !== productMode) return false;
           if (authLoading || !user) return !item.adminOnly;
           return !item.adminOnly || user.is_superuser === true;
         })
@@ -28,13 +31,13 @@ export function useSidebarNavigation() {
         }))
         .filter((item) => !item.children || item.children.length > 0);
     },
-    [mounted, isDevelopment, authLoading, user]
+    [mounted, isDevelopment, authLoading, user, productMode]
   );
 
   const allItems = useMemo(() => {
     const shared = getWebNavItems();
-    return isDevelopment ? [...shared, ...devNavItems] : shared;
-  }, [isDevelopment]);
+    return [...shared, ...devNavItems];
+  }, []);
 
   const visibleNavItems = useMemo(() => {
     return filterNavItems(allItems);

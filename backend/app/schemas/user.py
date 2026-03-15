@@ -1,9 +1,18 @@
 import uuid
+from typing import Literal
 
 from fastapi_users import schemas
 from pydantic import BaseModel, ConfigDict, EmailStr
 
 from app.schemas.base import IsoDatetime
+
+
+class UserPreferences(BaseModel):
+    """User preferences stored as JSON."""
+
+    product_mode: Literal["ai", "visual"] | None = None
+
+    model_config = ConfigDict(extra="allow")
 
 
 class UserRead(schemas.BaseUser[uuid.UUID]):
@@ -16,6 +25,7 @@ class UserRead(schemas.BaseUser[uuid.UUID]):
     avatar_url: str | None = None
     subscription_tier: str
     is_beta: bool = False
+    preferences: UserPreferences | None = None
     created_at: IsoDatetime
     updated_at: IsoDatetime
 
@@ -108,6 +118,14 @@ class AutomationStreamingToggle(BaseModel):
     """Request model for toggling automation streaming"""
 
     enabled: bool
+
+
+class UserPreferencesUpdate(BaseModel):
+    """Request model for updating user preferences. Merges with existing preferences."""
+
+    product_mode: Literal["ai", "visual"] | None = None
+
+    model_config = ConfigDict(extra="ignore")
 
 
 # Runner connection schemas

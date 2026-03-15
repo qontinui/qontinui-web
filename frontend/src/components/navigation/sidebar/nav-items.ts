@@ -105,7 +105,7 @@ export const devNavItems: NavItem[] = [
   },
 
   // ===========================================================================
-  // Visual Automation (dev only, hidden in production)
+  // Visual Automation (visible in "visual" product mode)
   // ===========================================================================
   {
     id: "visual-automation",
@@ -113,7 +113,7 @@ export const devNavItems: NavItem[] = [
     icon: React.createElement(Eye, { className: "size-5" }),
     route: "/automation-builder/states",
     color: "#06B6D4",
-    hiddenInProd: true,
+    productMode: "visual",
     children: [
       {
         id: "visual-automation-execute",
@@ -122,7 +122,7 @@ export const devNavItems: NavItem[] = [
         icon: React.createElement(Play, { className: "size-4" }),
         route: "/tools/visual-automation",
         color: "#10B981",
-        hiddenInProd: true,
+        productMode: "visual",
       },
       {
         id: "visual-automation-monitor",
@@ -131,7 +131,7 @@ export const devNavItems: NavItem[] = [
         icon: React.createElement(Monitor, { className: "size-4" }),
         route: "/monitor",
         color: "#10B981",
-        hiddenInProd: true,
+        productMode: "visual",
       },
       {
         id: "visual-automation-capture",
@@ -140,7 +140,7 @@ export const devNavItems: NavItem[] = [
         icon: React.createElement(Video, { className: "size-4" }),
         route: "/tools/capture",
         color: "#10B981",
-        hiddenInProd: true,
+        productMode: "visual",
       },
       {
         id: "va-build",
@@ -148,7 +148,7 @@ export const devNavItems: NavItem[] = [
         icon: React.createElement(Network, { className: "size-4" }),
         route: "/automation-builder/states",
         color: "var(--brand-secondary)",
-        hiddenInProd: true,
+        productMode: "visual",
         children: [
           {
             id: "va-state-machine",
@@ -157,7 +157,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(Network, { className: "size-4" }),
             route: "/automation-builder/states",
             color: "var(--brand-secondary)",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-workflows",
@@ -166,7 +166,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(Workflow, { className: "size-4" }),
             route: "/automation-builder",
             color: "var(--brand-secondary)",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-variables",
@@ -175,7 +175,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(Sliders, { className: "size-4" }),
             route: "/automation-builder/variables",
             color: "var(--brand-secondary)",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-contexts",
@@ -184,7 +184,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(BookOpen, { className: "size-4" }),
             route: "/automation-builder/contexts",
             color: "var(--brand-secondary)",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-marketplace",
@@ -193,7 +193,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(Store, { className: "size-4" }),
             route: "/marketplace",
             color: "var(--brand-secondary)",
-            hiddenInProd: true,
+            productMode: "visual",
           },
         ],
       },
@@ -203,7 +203,7 @@ export const devNavItems: NavItem[] = [
         icon: React.createElement(ImageIcon, { className: "size-4" }),
         route: "/automation-builder/images",
         color: "#8B5CF6",
-        hiddenInProd: true,
+        productMode: "visual",
         children: [
           {
             id: "va-images",
@@ -212,7 +212,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(ImageIcon, { className: "size-4" }),
             route: "/automation-builder/images",
             color: "#8B5CF6",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-screenshots",
@@ -221,7 +221,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(Camera, { className: "size-4" }),
             route: "/automation-builder/screenshots",
             color: "#8B5CF6",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-recordings",
@@ -230,7 +230,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(Video, { className: "size-4" }),
             route: "/recordings",
             color: "#8B5CF6",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-visual-index",
@@ -239,7 +239,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(Database, { className: "size-4" }),
             route: "/projects/:projectId/rag",
             color: "#8B5CF6",
-            hiddenInProd: true,
+            productMode: "visual",
           },
         ],
       },
@@ -249,7 +249,7 @@ export const devNavItems: NavItem[] = [
         icon: React.createElement(Sparkles, { className: "size-4" }),
         route: "/automation-builder/image-extraction",
         color: "var(--brand-success)",
-        hiddenInProd: true,
+        productMode: "visual",
         children: [
           {
             id: "va-extract-images",
@@ -258,7 +258,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(Scissors, { className: "size-4" }),
             route: "/automation-builder/image-extraction",
             color: "var(--brand-success)",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-pattern-extraction",
@@ -267,7 +267,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(Sparkles, { className: "size-4" }),
             route: "/automation-builder/pattern-optimization",
             color: "var(--brand-success)",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-annotations",
@@ -276,7 +276,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(Scan, { className: "size-4" }),
             route: "/automation-builder/annotations",
             color: "var(--brand-success)",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-template-capture",
@@ -285,7 +285,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(Target, { className: "size-4" }),
             route: "/automation-builder/template-capture",
             color: "var(--brand-success)",
-            hiddenInProd: true,
+            productMode: "visual",
           },
         ],
       },
@@ -295,7 +295,7 @@ export const devNavItems: NavItem[] = [
         icon: React.createElement(Search, { className: "size-4" }),
         route: "/automation-builder/snapshot-tests",
         color: "#4ECDC4",
-        hiddenInProd: true,
+        productMode: "visual",
         children: [
           {
             id: "va-snapshot-tests",
@@ -304,7 +304,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(Camera, { className: "size-4" }),
             route: "/automation-builder/snapshot-tests",
             color: "#10b981",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-navigation-tests",
@@ -313,7 +313,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(GitBranch, { className: "size-4" }),
             route: "/automation-builder/navigation-tests",
             color: "#10b981",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-discover-states",
@@ -322,7 +322,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(Search, { className: "size-4" }),
             route: "/automation-builder/state-discovery",
             color: "#4ECDC4",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-extraction",
@@ -331,7 +331,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(Globe, { className: "size-4" }),
             route: "/automation-builder/extraction",
             color: "#4ECDC4",
-            hiddenInProd: true,
+            productMode: "visual",
           },
         ],
       },
@@ -341,7 +341,7 @@ export const devNavItems: NavItem[] = [
         icon: React.createElement(CheckCircle2, { className: "size-4" }),
         route: "/automation-builder/pattern-tests",
         color: "#FF6B6B",
-        hiddenInProd: true,
+        productMode: "visual",
         children: [
           {
             id: "va-pattern-tests",
@@ -350,7 +350,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(Target, { className: "size-4" }),
             route: "/automation-builder/pattern-tests",
             color: "#FF6B6B",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-integration-tests",
@@ -359,7 +359,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(TestTube2, { className: "size-4" }),
             route: "/integration-testing",
             color: "#FF6B6B",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-semantic-analysis",
@@ -368,7 +368,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(Scan, { className: "size-4" }),
             route: "/automation-builder/semantic-analysis",
             color: "#FF6B6B",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-rag-testing",
@@ -377,7 +377,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(Target, { className: "size-4" }),
             route: "/automation-builder/rag-testing",
             color: "#FF6B6B",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-workflow-runner",
@@ -386,7 +386,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(Play, { className: "size-4" }),
             route: "/workflow-viz",
             color: "#FF6B6B",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-captures",
@@ -395,7 +395,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(Camera, { className: "size-4" }),
             route: "/captures",
             color: "#FF6B6B",
-            hiddenInProd: true,
+            productMode: "visual",
           },
         ],
       },
@@ -405,7 +405,7 @@ export const devNavItems: NavItem[] = [
         icon: React.createElement(TestTube2, { className: "size-4" }),
         route: "/qa-dashboard",
         color: "#F59E0B",
-        hiddenInProd: true,
+        productMode: "visual",
         children: [
           {
             id: "va-qa-dashboard",
@@ -416,7 +416,7 @@ export const devNavItems: NavItem[] = [
             }),
             route: "/qa-dashboard",
             color: "#F59E0B",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-test-runs",
@@ -425,7 +425,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(Play, { className: "size-4" }),
             route: "/testing",
             color: "#F59E0B",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-qa-runs",
@@ -434,7 +434,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(TestTube2, { className: "size-4" }),
             route: "/qa-dashboard/runs",
             color: "#F59E0B",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-coverage",
@@ -443,7 +443,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(BarChart3, { className: "size-4" }),
             route: "/qa-dashboard/coverage",
             color: "#F59E0B",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-deficiencies",
@@ -452,7 +452,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(Target, { className: "size-4" }),
             route: "/qa-dashboard/deficiencies",
             color: "#F59E0B",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-compare",
@@ -461,7 +461,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(GitBranch, { className: "size-4" }),
             route: "/qa-dashboard/compare",
             color: "#F59E0B",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-execution-history",
@@ -470,7 +470,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(Play, { className: "size-4" }),
             route: "/execution-history",
             color: "#F59E0B",
-            hiddenInProd: true,
+            productMode: "visual",
           },
         ],
       },
@@ -480,7 +480,7 @@ export const devNavItems: NavItem[] = [
         icon: React.createElement(Sparkles, { className: "size-4" }),
         route: "/ai-tasks",
         color: "#9333EA",
-        hiddenInProd: true,
+        productMode: "visual",
         children: [
           {
             id: "va-ai-tasks-list",
@@ -489,7 +489,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(Sparkles, { className: "size-4" }),
             route: "/ai-tasks",
             color: "#9333EA",
-            hiddenInProd: true,
+            productMode: "visual",
           },
         ],
       },
@@ -499,7 +499,7 @@ export const devNavItems: NavItem[] = [
         icon: React.createElement(Box, { className: "size-4" }),
         route: "/automation-builder/overview",
         color: "var(--brand-primary)",
-        hiddenInProd: true,
+        productMode: "visual",
         children: [
           {
             id: "va-overview",
@@ -510,7 +510,7 @@ export const devNavItems: NavItem[] = [
             }),
             route: "/automation-builder/overview",
             color: "var(--brand-primary)",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-dependencies",
@@ -519,7 +519,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(GitBranch, { className: "size-4" }),
             route: "/automation-builder/dependencies",
             color: "var(--brand-primary)",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-documentation",
@@ -528,7 +528,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(FileText, { className: "size-4" }),
             route: "/automation-builder/documentation",
             color: "var(--brand-primary)",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-automation-analytics",
@@ -537,7 +537,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(BarChart3, { className: "size-4" }),
             route: "/automation-builder/analytics",
             color: "var(--brand-primary)",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-issues",
@@ -546,7 +546,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(AlertCircle, { className: "size-4" }),
             route: "/issues",
             color: "var(--brand-primary)",
-            hiddenInProd: true,
+            productMode: "visual",
           },
         ],
       },
@@ -556,7 +556,7 @@ export const devNavItems: NavItem[] = [
         icon: React.createElement(Settings, { className: "size-4" }),
         route: "/automation-builder/settings",
         color: "#FFD700",
-        hiddenInProd: true,
+        productMode: "visual",
         children: [
           {
             id: "va-automation-settings",
@@ -565,7 +565,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(Sliders, { className: "size-4" }),
             route: "/automation-builder/settings",
             color: "#FFD700",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-profile",
@@ -574,7 +574,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(Settings, { className: "size-4" }),
             route: "/profile",
             color: "#FFD700",
-            hiddenInProd: true,
+            productMode: "visual",
           },
           {
             id: "va-pricing",
@@ -583,7 +583,7 @@ export const devNavItems: NavItem[] = [
             icon: React.createElement(CreditCard, { className: "size-4" }),
             route: "/pricing",
             color: "#FFD700",
-            hiddenInProd: true,
+            productMode: "visual",
           },
         ],
       },

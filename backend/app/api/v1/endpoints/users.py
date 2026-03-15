@@ -30,6 +30,8 @@ from app.schemas.user import (
     AutomationStreamingToggle,
     RunnerConnectionInfo,
     User,
+    UserPreferences,
+    UserPreferencesUpdate,
     UserProfileResponse,
     UserProfileUpdate,
     UserUpdate,
@@ -443,6 +445,33 @@ async def get_activity(
     """Get recent user activity from audit logs"""
     activities = await get_user_activity(db, current_user.id, skip=skip, limit=limit)
     return activities
+
+
+# User preferences endpoints
+@router.get("/me/preferences", response_model=UserPreferences)
+async def get_user_preferences(
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """Get current user's preferences."""
+    return UserPreferences(**(current_user.preferences or {}))
+
+
+@router.put("/me/preferences", response_model=UserPreferences)
+async def update_user_preferences(
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    prefs_update: UserPreferencesUpdate,
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """Update user preferences. Merges with existing preferences."""
+    existing = dict(current_user.preferences or {})
+    update_data = prefs_update.model_dump(exclude_unset=True)
+    existing.update(update_data)
+    current_user.preferences = existing
+    db.add(current_user)
+    await db.commit()
+    await db.refresh(current_user)
+    return UserPreferences(**current_user.preferences)
 
 
 # Automation streaming endpoints

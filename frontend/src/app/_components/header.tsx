@@ -32,6 +32,13 @@ export function Header({ user, router, openSignIn }: HeaderProps) {
         <div className="flex items-center gap-4">
           <Button
             variant="ghost"
+            onClick={() => router.push("/visual")}
+            className="hover:bg-primary/10"
+          >
+            Visual Automation
+          </Button>
+          <Button
+            variant="ghost"
             onClick={() => router.push("/docs")}
             className="hover:bg-primary/10"
           >
@@ -61,7 +68,7 @@ export function Header({ user, router, openSignIn }: HeaderProps) {
               </span>
               <Button
                 variant="outline"
-                onClick={() => router.push("/build/workflows")}
+                onClick={() => router.push("/dashboard")}
                 className="border-primary/50 hover:border-primary hover:bg-primary/10"
               >
                 Dashboard

@@ -1,9 +1,10 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Download, Github } from "lucide-react";
+import { Download, Github, Eye, ArrowRight } from "lucide-react";
 import { getDownloadLabel } from "../_hooks/use-landing-page";
 
 interface HeroSectionProps {
@@ -67,6 +68,23 @@ export function HeroSection({ platform, handleDownload }: HeroSectionProps) {
             Build from source
           </a>
         </p>
+
+        <div className="mt-12 max-w-xl mx-auto">
+          <Link href="/visual">
+            <div className="group flex items-center gap-3 px-5 py-3 rounded-lg border border-cyan-500/20 bg-cyan-500/5 hover:border-cyan-500/40 hover:bg-cyan-500/10 transition-all duration-200 cursor-pointer">
+              <Eye className="h-5 w-5 text-cyan-400 shrink-0" />
+              <div className="text-left">
+                <span className="text-sm font-medium text-cyan-300">
+                  Visual GUI Automation
+                </span>
+                <span className="text-sm text-muted-foreground ml-2">
+                  — Free, research-backed visual automation tool
+                </span>
+              </div>
+              <ArrowRight className="h-4 w-4 text-cyan-400/60 group-hover:text-cyan-400 transition-colors ml-auto shrink-0" />
+            </div>
+          </Link>
+        </div>
       </div>
     </section>
   );

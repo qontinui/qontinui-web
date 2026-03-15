@@ -1,3 +1,8 @@
+export interface UserPreferences {
+  product_mode?: "ai" | "visual";
+  [key: string]: unknown;
+}
+
 export interface User {
   id: string; // UUID format
   email: string;
@@ -8,6 +13,7 @@ export interface User {
   is_active: boolean;
   is_superuser: boolean;
   is_beta?: boolean;
+  preferences?: UserPreferences | null;
   created_at: string;
   updated_at: string;
 }

@@ -71,10 +71,11 @@ export function AuthDialog({
       onOpenChange(false);
       loginForm.reset();
       // Redirect to admin page if superuser, otherwise dashboard
+      // Dashboard redirect handles product mode routing
       if (user?.is_superuser) {
         router.push("/admin");
       } else {
-        router.push("/build/workflows");
+        router.push("/dashboard");
       }
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : "Login failed");
@@ -95,8 +96,8 @@ export function AuthDialog({
       toast.success("Account created successfully");
       onOpenChange(false);
       registerForm.reset();
-      // Redirect to dashboard
-      router.push("/build/workflows");
+      // Dashboard redirect handles product mode routing
+      router.push("/dashboard");
     } catch (error: unknown) {
       toast.error(
         error instanceof Error ? error.message : "Registration failed"

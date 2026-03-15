@@ -8,6 +8,7 @@ import { RealtimeConnectionsProvider } from "@/contexts/realtime-connections-con
 import { ActiveRunnerProvider } from "@/contexts/active-runner-context";
 import { SidebarProvider, useSidebar } from "@/contexts/sidebar-context";
 import { TabStateProvider } from "@/contexts/tab-state-context";
+import { ProductModeProvider } from "@/contexts/product-mode-context";
 import { AppInitializer } from "@/components/offline/AppInitializer";
 import { BetaBanner } from "@/components/beta-banner";
 import { cn } from "@/lib/utils";
@@ -84,13 +85,15 @@ export default function AppLayout({
       <RealtimeConnectionsProvider>
         <ActiveRunnerProvider>
           <SidebarProvider>
-            <AutomationProvider>
-              <TabStateProvider>
-                <AppInitializer>
-                  <AppLayoutContent>{children}</AppLayoutContent>
-                </AppInitializer>
-              </TabStateProvider>
-            </AutomationProvider>
+            <ProductModeProvider>
+              <AutomationProvider>
+                <TabStateProvider>
+                  <AppInitializer>
+                    <AppLayoutContent>{children}</AppLayoutContent>
+                  </AppInitializer>
+                </TabStateProvider>
+              </AutomationProvider>
+            </ProductModeProvider>
           </SidebarProvider>
         </ActiveRunnerProvider>
       </RealtimeConnectionsProvider>

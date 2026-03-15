@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { OrganizationSwitcher } from "@/components/collaboration/OrganizationSwitcher";
+import { ProductModeSwitcher } from "./ProductModeSwitcher";
 
 interface SwitcherOrg {
   id: string;
@@ -59,6 +60,15 @@ export function SidebarHeader({
             </span>
           </div>
         )}
+      </div>
+
+      <div
+        className={cn(
+          "px-2 py-1.5 border-b border-border-subtle",
+          isCollapsed && "flex justify-center"
+        )}
+      >
+        <ProductModeSwitcher isCollapsed={isCollapsed} />
       </div>
 
       {!isCollapsed && (

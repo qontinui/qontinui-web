@@ -2,6 +2,7 @@ from datetime import datetime
 
 from fastapi_users.db import SQLAlchemyBaseUserTableUUID
 from sqlalchemy import Boolean, DateTime, Integer, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -70,6 +71,14 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
 
     automation_sessions_reset_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+    # User preferences (flexible JSON storage)
+    preferences: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        default=None,
+        comment="User preferences (product_mode, theme, etc.)",
     )
 
     # Relationships
