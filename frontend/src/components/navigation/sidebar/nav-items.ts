@@ -49,11 +49,12 @@ export const devNavItems: NavItem[] = [
     route: "/dev-dashboard",
     color: "#10B981",
     hiddenInProd: true,
+    productMode: "ai",
     group: "Dev",
   },
 
   // ===========================================================================
-  // Hidden items (dev-only)
+  // Hidden items (dev-only, AI mode)
   // ===========================================================================
   {
     id: "inspector",
@@ -63,6 +64,7 @@ export const devNavItems: NavItem[] = [
     route: "/tools/inspector",
     color: "var(--brand-secondary)",
     hiddenInProd: true,
+    productMode: "ai",
   },
   {
     id: "review",
@@ -72,6 +74,7 @@ export const devNavItems: NavItem[] = [
     route: "/build/review-workflow",
     color: "var(--brand-secondary)",
     hiddenInProd: true,
+    productMode: "ai",
   },
   {
     id: "state-machine",
@@ -81,6 +84,7 @@ export const devNavItems: NavItem[] = [
     route: "/automation-builder/ui-bridge-states",
     color: "var(--brand-secondary)",
     hiddenInProd: true,
+    productMode: "ai",
   },
   {
     id: "build-flow-designer",
@@ -90,6 +94,7 @@ export const devNavItems: NavItem[] = [
     route: "/build/flow-designer",
     color: "var(--brand-secondary)",
     hiddenInProd: true,
+    productMode: "ai",
   },
 
   // ===========================================================================

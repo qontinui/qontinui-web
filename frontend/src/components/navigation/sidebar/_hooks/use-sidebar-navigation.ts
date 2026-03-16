@@ -22,7 +22,12 @@ export function useSidebarNavigation() {
       return items
         .filter((item) => {
           if (item.hiddenInProd && (!mounted || !isDevelopment)) return false;
-          if (item.productMode && item.productMode !== "both" && item.productMode !== productMode) return false;
+          if (
+            item.productMode &&
+            item.productMode !== "both" &&
+            item.productMode !== productMode
+          )
+            return false;
           if (authLoading || !user) return !item.adminOnly;
           return !item.adminOnly || user.is_superuser === true;
         })
@@ -39,6 +44,19 @@ export function useSidebarNavigation() {
   const allItems = useMemo(() => {
     setProductMode(productMode);
     const shared = getWebNavItems();
+    // Insert devNavItems before SYSTEM so mode-specific items appear above
+    // Settings/Help. Admin goes after SYSTEM (always last).
+    const systemIdx = shared.findIndex((item) => item.group === "SYSTEM");
+    const mainItems = devNavItems.filter((item) => !item.adminOnly);
+    const adminItems = devNavItems.filter((item) => item.adminOnly);
+    if (systemIdx >= 0) {
+      return [
+        ...shared.slice(0, systemIdx),
+        ...mainItems,
+        ...shared.slice(systemIdx),
+        ...adminItems,
+      ];
+    }
     return [...shared, ...devNavItems];
   }, [productMode]);
 

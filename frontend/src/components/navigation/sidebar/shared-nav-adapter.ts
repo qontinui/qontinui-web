@@ -32,9 +32,9 @@ function toNavItem(item: NavigationItem, iconSize = "size-5"): NavItem {
 export function getWebNavItems(): NavItem[] {
   const groups = getWebNavigation();
   return groups.flatMap((group) =>
-    group.items.map((item, i) => {
+    group.items.map((item) => {
       const navItem = toNavItem(item);
-      if (i === 0) navItem.group = group.label;
+      navItem.group = group.label;
       return navItem;
     })
   );

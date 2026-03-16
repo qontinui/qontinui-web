@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { NavItem } from "../types";
@@ -22,6 +23,16 @@ export function SidebarNav({
   isRouteActive,
   onNavigate,
 }: SidebarNavProps) {
+  // Compute which items should show a group header (only when group changes)
+  const showGroupHeader = useMemo(() => {
+    let lastGroup: string | undefined;
+    return visibleNavItems.map((item) => {
+      const show = item.group != null && item.group !== lastGroup;
+      if (item.group) lastGroup = item.group;
+      return show;
+    });
+  }, [visibleNavItems]);
+
   return (
     <ScrollArea className="flex-1 px-2">
       <nav
@@ -31,9 +42,9 @@ export function SidebarNav({
           isCollapsed && "items-center"
         )}
       >
-        {visibleNavItems.map((item) => (
+        {visibleNavItems.map((item, index) => (
           <React.Fragment key={item.id}>
-            {item.group &&
+            {showGroupHeader[index] &&
               (isCollapsed ? (
                 <div className="my-1.5 h-px w-6 bg-border-subtle" />
               ) : (
