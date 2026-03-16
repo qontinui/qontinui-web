@@ -25,6 +25,7 @@ export default function ChatSessionPage() {
   const [generatedWorkflow, setGeneratedWorkflow] =
     useState<UnifiedWorkflow | null>(null);
   const [workflowError, setWorkflowError] = useState<string | undefined>();
+  const [lastIncludeUIBridge, setLastIncludeUIBridge] = useState(false);
 
   const handleSessionCreated = useCallback((_id: string, taskName: string) => {
     setSessionName(taskName);
@@ -112,6 +113,7 @@ export default function ChatSessionPage() {
 
   const handleGenerateWorkflow = useCallback(
     (includeUIBridge: boolean) => {
+      setLastIncludeUIBridge(includeUIBridge);
       generateWorkflow(taskRunId, { includeUIBridge });
     },
     [generateWorkflow, taskRunId]
@@ -125,18 +127,22 @@ export default function ChatSessionPage() {
 
   const handleEditInBuilder = useCallback(() => {
     if (!generatedWorkflow) return;
-    sessionStorage.setItem(
-      "qontinui:editWorkflow",
-      JSON.stringify(generatedWorkflow)
-    );
+    try {
+      sessionStorage.setItem(
+        "qontinui:editWorkflow",
+        JSON.stringify(generatedWorkflow)
+      );
+    } catch {
+      // Storage full or unavailable — navigate anyway, builder will show empty
+    }
     router.push("/build/workflows");
   }, [generatedWorkflow, router]);
 
   const handleRegenerate = useCallback(() => {
     setGeneratedWorkflow(null);
     setWorkflowError(undefined);
-    generateWorkflow(taskRunId);
-  }, [generateWorkflow, taskRunId]);
+    generateWorkflow(taskRunId, { includeUIBridge: lastIncludeUIBridge });
+  }, [generateWorkflow, taskRunId, lastIncludeUIBridge]);
 
   const handleSaveWorkflow = useCallback(async () => {
     if (!generatedWorkflow) return;

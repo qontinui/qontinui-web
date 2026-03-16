@@ -26,15 +26,17 @@ function BuildWorkflowsPageContent() {
 
   // Load workflow passed from chat page via sessionStorage
   useEffect(() => {
-    const stored = sessionStorage.getItem("qontinui:editWorkflow");
-    if (stored) {
-      sessionStorage.removeItem("qontinui:editWorkflow");
-      try {
-        const workflow = JSON.parse(stored) as UnifiedWorkflow;
-        setSelectedWorkflow(workflow);
-      } catch {
-        // Ignore malformed data
+    try {
+      const stored = sessionStorage.getItem("qontinui:editWorkflow");
+      if (stored) {
+        sessionStorage.removeItem("qontinui:editWorkflow");
+        const parsed = JSON.parse(stored);
+        if (parsed && typeof parsed === "object" && "setup_steps" in parsed && typeof parsed.id === "string" && parsed.id && typeof parsed.name === "string") {
+          setSelectedWorkflow(parsed as UnifiedWorkflow);
+        }
       }
+    } catch {
+      // Ignore malformed data or storage errors
     }
   }, []);
 
