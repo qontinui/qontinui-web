@@ -125,7 +125,10 @@ export default function ChatSessionPage() {
 
   const handleEditInBuilder = useCallback(() => {
     if (!generatedWorkflow) return;
-    // TODO: pass workflow to builder via state/context
+    sessionStorage.setItem(
+      "qontinui:editWorkflow",
+      JSON.stringify(generatedWorkflow)
+    );
     router.push("/build/workflows");
   }, [generatedWorkflow, router]);
 

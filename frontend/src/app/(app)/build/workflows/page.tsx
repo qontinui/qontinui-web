@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { usePageSpecs } from "@/hooks/usePageSpecs";
 import type { SpecConfig } from "@qontinui/ui-bridge/specs";
 import pageSpecJson from "./workflows.spec.uibridge.json";
@@ -23,6 +23,20 @@ function BuildWorkflowsPageContent() {
   const { isOffline } = useUnifiedWorkflows();
   const [selectedWorkflow, setSelectedWorkflow] =
     useState<UnifiedWorkflow | null>(null);
+
+  // Load workflow passed from chat page via sessionStorage
+  useEffect(() => {
+    const stored = sessionStorage.getItem("qontinui:editWorkflow");
+    if (stored) {
+      sessionStorage.removeItem("qontinui:editWorkflow");
+      try {
+        const workflow = JSON.parse(stored) as UnifiedWorkflow;
+        setSelectedWorkflow(workflow);
+      } catch {
+        // Ignore malformed data
+      }
+    }
+  }, []);
 
   const { pendingInsertStep, consumeInsertStep } = useInsertStep(
     selectedWorkflow,
