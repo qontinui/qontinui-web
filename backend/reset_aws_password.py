@@ -9,6 +9,7 @@ Required environment variables:
 
 import asyncio
 import os
+import re
 import sys
 
 from passlib.context import CryptContext
@@ -41,6 +42,12 @@ async def main():
 
     if not email or not new_password:
         print("Error: Email and password are required", file=sys.stderr)
+        sys.exit(1)
+
+    # Validate email format to prevent SQL injection via shell interpolation
+    email_pattern = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
+    if not email_pattern.match(email):
+        print("Error: Invalid email address format", file=sys.stderr)
         sys.exit(1)
 
     # Hash the password
