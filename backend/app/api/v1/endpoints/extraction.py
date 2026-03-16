@@ -1,7 +1,7 @@
 """API endpoints for web extraction."""
 
 import copy
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import UUID
 
@@ -476,7 +476,7 @@ async def import_to_state_structure(
 
     # Acquire sync lock to prevent frontend saves during import
     project_id = cast(UUID, session.project_id)
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     lock = SyncLock(
         project_id=project_id,
         user_id=current_user.id,
@@ -551,7 +551,7 @@ async def import_to_state_structure(
 
     finally:
         # Release sync lock
-        lock.released_at = datetime.utcnow()  # type: ignore[assignment]
+        lock.released_at = datetime.now(UTC)  # type: ignore[assignment]
         await db.commit()
         await db.refresh(lock)
 

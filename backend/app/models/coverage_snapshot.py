@@ -5,7 +5,7 @@ Stores point-in-time coverage metrics enabling trend visualization
 and comparative analysis across test runs.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
@@ -57,7 +57,10 @@ class CoverageSnapshot(Base):
 
     # Snapshot timing
     snapshot_time: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=datetime.utcnow, index=True
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        index=True,
     )
 
     # Transition coverage
@@ -108,7 +111,7 @@ class CoverageSnapshot(Base):
 
     # Audit
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
 
     # Relationships

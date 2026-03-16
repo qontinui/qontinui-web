@@ -10,9 +10,6 @@ from app.api.v1.endpoints import (
     annotations,
     annotations_ws,
     audit_logs,
-)
-from app.api.v1.endpoints import auth as auth_pkg
-from app.api.v1.endpoints import (
     automation,
     automation_ws,
     background_removal,
@@ -73,9 +70,6 @@ from app.api.v1.endpoints import (
     state_machine_configs,
     task_runs,
     template_capture,
-)
-from app.api.v1.endpoints import testing as testing_pkg
-from app.api.v1.endpoints import (
     training,
     training_datasets,
     ui_bridge_states,
@@ -88,6 +82,8 @@ from app.api.v1.endpoints import (
     visual_comparison,
     workflow_step_types,
 )
+from app.api.v1.endpoints import auth as auth_pkg
+from app.api.v1.endpoints import testing as testing_pkg
 
 api_router = APIRouter()
 

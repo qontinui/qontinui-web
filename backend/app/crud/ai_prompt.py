@@ -5,7 +5,7 @@ Provides database operations for creating, reading, updating, and deleting
 AI prompt templates and sequences.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -126,7 +126,7 @@ async def update_prompt_template(
     for field, value in update_dict.items():
         setattr(template, field, value)
 
-    template.updated_at = datetime.utcnow()  # type: ignore[assignment]
+    template.updated_at = datetime.now(UTC)  # type: ignore[assignment]
     await db.commit()
     await db.refresh(template)
 
@@ -360,7 +360,7 @@ async def update_prompt_sequence(
     for field, value in update_dict.items():
         setattr(sequence, field, value)
 
-    sequence.updated_at = datetime.utcnow()  # type: ignore[assignment]
+    sequence.updated_at = datetime.now(UTC)  # type: ignore[assignment]
     await db.commit()
     await db.refresh(sequence)
 

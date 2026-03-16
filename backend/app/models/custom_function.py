@@ -4,7 +4,7 @@ Custom function models for storing discovered @automation_function decorators.
 Tracks user-defined automation functions discovered in uploaded Python files.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import (
     JSON,
@@ -71,9 +71,12 @@ class CustomFunction(Base):
     line_end = Column(Integer, nullable=True)  # End line in file
 
     # Timestamps
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
     updated_at = Column(
-        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
 
     # Relationships

@@ -4,7 +4,7 @@ Handles issue_detected, issue_updated, and issues_sync message types.
 """
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -65,7 +65,7 @@ def _parse_issue_item(
         status=issue_data.get("status", "detected"),
         resolution=issue_data.get("resolution"),
         detected_at=datetime.fromisoformat(
-            issue_data.get("detected_at", datetime.utcnow().isoformat()).replace(
+            issue_data.get("detected_at", datetime.now(UTC).isoformat()).replace(
                 "Z", "+00:00"
             )
         ),

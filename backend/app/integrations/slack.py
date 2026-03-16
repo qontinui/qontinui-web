@@ -5,7 +5,7 @@ Provides formatted messages with color coding, statistics,
 and action buttons for viewing test results.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -193,7 +193,7 @@ class SlackIntegration:
                         "fields": self._build_coverage_fields(notification),
                         "footer": "Qontinui Test Automation",
                         "footer_icon": "https://qontinui.io/favicon.ico",
-                        "ts": int(datetime.utcnow().timestamp()),
+                        "ts": int(datetime.now(UTC).timestamp()),
                         "actions": self._build_coverage_action_buttons(notification),
                     }
                 ],

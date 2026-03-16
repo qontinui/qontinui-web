@@ -5,7 +5,7 @@ Stores issues detected during AI-assisted automation sessions.
 Issues are detected via structured markers in AI output and synced from the runner.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 
@@ -86,7 +86,7 @@ class DetectedIssue(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=text("now()"),
-        onupdate=datetime.utcnow,
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
 

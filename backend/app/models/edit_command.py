@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from sqlalchemy import (
@@ -46,7 +46,9 @@ class EditCommand(Base):
     entity_id = Column(String, nullable=False)  # ID of the entity being modified
     payload = Column(JSON, nullable=False)  # What changed (new values, delta, etc.)
     sequence_number = Column(Integer, nullable=False)  # Ensures ordering and no gaps
-    applied_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    applied_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
+    )
 
     # Relationships
     project = relationship("Project", back_populates="edit_commands")

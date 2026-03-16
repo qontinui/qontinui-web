@@ -4,7 +4,7 @@ Unified execution screenshot model for tracking screenshots captured during exec
 Replaces TestScreenshot + AutomationScreenshot models with a single unified model.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
@@ -150,7 +150,7 @@ class ExecutionScreenshot(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=datetime.utcnow,
+        default=lambda: datetime.now(UTC),
         server_default=text("now()"),
     )
 

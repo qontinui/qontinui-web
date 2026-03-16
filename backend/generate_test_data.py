@@ -13,7 +13,7 @@ import asyncio
 import io
 import random
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -279,7 +279,7 @@ async def generate_test_annotation_sets(
             image_height=generator.height,
             screenshots=screenshots,
             created_by_id=user.id,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         db.add(annotation_set)

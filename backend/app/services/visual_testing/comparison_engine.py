@@ -6,7 +6,7 @@ and diff image upload.
 """
 
 import io
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 import numpy as np
@@ -57,7 +57,7 @@ class ComparisonEngine:
         diff_bytes: bytes,
     ) -> str:
         """Upload diff image to storage."""
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         filename = f"{screenshot_id}_{timestamp}_diff.png"
         prefix = f"{DIFF_STORAGE_PREFIX}/{test_run_id}"
 

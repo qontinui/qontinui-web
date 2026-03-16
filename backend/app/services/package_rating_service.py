@@ -5,7 +5,7 @@ Provides business logic for rating and reviewing code packages.
 Extracted from crud/code_package.py for SRP compliance.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
@@ -255,7 +255,7 @@ class PackageRatingService:
         """Update an existing rating."""
         rating.rating = new_rating  # type: ignore[assignment]
         rating.review_text = review_text  # type: ignore[assignment]
-        rating.updated_at = datetime.utcnow()  # type: ignore[assignment]
+        rating.updated_at = datetime.now(UTC)  # type: ignore[assignment]
 
         await db.commit()
         await db.refresh(rating)

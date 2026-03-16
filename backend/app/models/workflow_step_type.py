@@ -9,7 +9,7 @@ Stores per-user configuration for:
 Built-in entries are seeded on first access; users can also create custom entries.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import (
@@ -71,7 +71,7 @@ class StepTypeConfig(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=text("now()"),
-        onupdate=datetime.utcnow,
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
 
@@ -120,7 +120,7 @@ class GuiActionTypeConfig(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=text("now()"),
-        onupdate=datetime.utcnow,
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
 
@@ -166,7 +166,7 @@ class WorkflowPhaseConfig(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=text("now()"),
-        onupdate=datetime.utcnow,
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
 

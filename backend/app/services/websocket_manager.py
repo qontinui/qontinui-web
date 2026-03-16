@@ -8,7 +8,7 @@ Enables horizontal scaling by broadcasting events through Redis channels.
 import asyncio
 import json
 from collections import defaultdict
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -131,7 +131,7 @@ class WebSocketManager:
         try:
             # Add timestamp if not present
             if "timestamp" not in message:
-                message["timestamp"] = datetime.utcnow().isoformat() + "Z"
+                message["timestamp"] = datetime.now(UTC).isoformat() + "Z"
 
             # Publish to Redis channel
             message_json = json.dumps(message)

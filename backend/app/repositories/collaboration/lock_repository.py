@@ -4,7 +4,7 @@ Provides data access for pessimistic locking of project resources
 during concurrent editing.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -102,7 +102,7 @@ class LockRepository:
     async def get_expired_locks(self, db: AsyncSession) -> list[ProjectLock]:
         """Get all expired locks."""
         result = await db.execute(
-            select(ProjectLock).filter(ProjectLock.expires_at < datetime.utcnow())
+            select(ProjectLock).filter(ProjectLock.expires_at < datetime.now(UTC))
         )
         return list(result.scalars().all())
 

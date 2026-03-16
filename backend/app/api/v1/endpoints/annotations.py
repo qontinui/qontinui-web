@@ -4,7 +4,7 @@ API endpoints for annotation management (admin only)
 
 import io
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -203,7 +203,7 @@ async def update_annotation_set(
             s.model_dump() for s in annotation_set_in.screenshots
         ]
 
-    annotation_set.updated_at = datetime.utcnow()  # type: ignore[assignment]
+    annotation_set.updated_at = datetime.now(UTC)  # type: ignore[assignment]
 
     # Update annotations if provided
     if annotation_set_in.annotations is not None:
@@ -306,7 +306,7 @@ async def add_annotation(
     )
 
     db.add(annotation)
-    annotation_set.updated_at = datetime.utcnow()  # type: ignore[assignment]
+    annotation_set.updated_at = datetime.now(UTC)  # type: ignore[assignment]
     await db.commit()
     await db.refresh(annotation)
     return annotation
@@ -358,7 +358,7 @@ async def update_annotation(
         annotation.extra_data = annotation_in.extra_data  # type: ignore[assignment]
 
     # Update annotation set timestamp
-    annotation.annotation_set.updated_at = datetime.utcnow()
+    annotation.annotation_set.updated_at = datetime.now(UTC)
 
     await db.commit()
     await db.refresh(annotation)
@@ -382,7 +382,7 @@ async def delete_annotation(
         raise HTTPException(status_code=404, detail="Annotation not found")
 
     # Update annotation set timestamp
-    annotation.annotation_set.updated_at = datetime.utcnow()
+    annotation.annotation_set.updated_at = datetime.now(UTC)
 
     await db.delete(annotation)
     await db.commit()

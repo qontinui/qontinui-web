@@ -4,7 +4,7 @@ Provides real-time presence, cursor tracking, resource locking,
 and activity broadcasting for collaborative project editing.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -117,7 +117,7 @@ class CollaborationWebSocketHandler(BaseWebSocketHandler):
             {
                 "type": "active_users",
                 "users": active_users,
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": datetime.now(UTC).isoformat() + "Z",
             }
         )
 
@@ -130,7 +130,7 @@ class CollaborationWebSocketHandler(BaseWebSocketHandler):
                 {
                     "type": "connection_state",
                     "state": connection_state,
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "timestamp": datetime.now(UTC).isoformat() + "Z",
                 }
             )
 

@@ -4,7 +4,7 @@ API endpoints for runner connection management.
 Provides REST API for viewing and managing desktop runner connections.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -315,7 +315,7 @@ async def execute_workflow_on_runner(
             "workflow": request.workflow,
             "variables": request.variables or {},
         },
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(UTC).isoformat() + "Z",
     }
 
     # Send command to runner

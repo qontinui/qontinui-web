@@ -10,7 +10,7 @@ Provides comprehensive audit log querying capabilities for:
 All endpoints are admin-only for security compliance.
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -402,7 +402,7 @@ async def get_audit_stats(
     events_by_action = {row[0]: row[1] for row in action_result.all()}
 
     # Recent events (24 hours)
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     twenty_four_hours_ago = now - timedelta(hours=24)
     recent_24h_query = (
         select(func.count())

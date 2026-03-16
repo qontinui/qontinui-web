@@ -7,7 +7,7 @@ and managing action history.
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -147,7 +147,7 @@ class ActionExecutor:
             "action_id": action_id,
             "workflow_run_id": self.workflow_run_id,
             "params": action_params,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
         # Create future for response
@@ -172,7 +172,7 @@ class ActionExecutor:
                 "action_type": action_type,
                 "params": action_params,
                 "result": result,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "success": result.get("success", False),
             }
             self._action_history.append(action_result)
@@ -323,7 +323,7 @@ class ActionExecutor:
             "action_type": "find_pattern",
             "params": {"image_path": image_path},
             "result": result,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "success": result.get("success", False),
         }
         self._action_history.append(action_result)

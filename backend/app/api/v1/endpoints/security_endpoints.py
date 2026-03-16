@@ -195,7 +195,7 @@ class CSPViolation(Base):
     client_ip = Column(String, nullable=True)
     user_agent = Column(String, nullable=True)
     report_data = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     is_suspicious = Column(Boolean, default=False)
 
 async def store_csp_violation(

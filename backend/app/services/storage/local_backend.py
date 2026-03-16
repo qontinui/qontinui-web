@@ -3,7 +3,7 @@
 import json
 import mimetypes
 import shutil
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import BinaryIO
 
@@ -54,7 +54,7 @@ class LocalBackend(StorageBackend):
                 metadata_path = file_path.with_suffix(file_path.suffix + ".meta.json")
                 metadata_with_type = {
                     "content_type": content_type,
-                    "uploaded_at": datetime.utcnow().isoformat(),
+                    "uploaded_at": datetime.now(UTC).isoformat(),
                     **metadata,
                 }
                 with open(metadata_path, "w") as f:

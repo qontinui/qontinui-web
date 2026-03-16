@@ -6,7 +6,7 @@ Provides CRUD operations and business logic for device session tracking.
 
 import secrets
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import structlog
 from sqlalchemy import select
@@ -181,7 +181,7 @@ class DeviceSessionService:
         Returns:
             Updated DeviceSession
         """
-        device_session.last_seen = datetime.utcnow()
+        device_session.last_seen = datetime.now(UTC)
         device_session.last_ip = ip_address
 
         await db.commit()
@@ -360,7 +360,7 @@ class DeviceSessionService:
         verification_token = secrets.token_urlsafe(32)
 
         device_session.verification_token = verification_token
-        device_session.verification_sent_at = datetime.utcnow()
+        device_session.verification_sent_at = datetime.now(UTC)
 
         await db.commit()
         await db.refresh(device_session)
@@ -405,7 +405,7 @@ class DeviceSessionService:
 
         # Check if token is expired (24 hours)
         if device_session.verification_sent_at:
-            token_age = datetime.utcnow() - device_session.verification_sent_at
+            token_age = datetime.now(UTC) - device_session.verification_sent_at
             if token_age > timedelta(hours=24):
                 logger.warning(
                     "device_verification_failed",

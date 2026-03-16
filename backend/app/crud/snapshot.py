@@ -2,7 +2,7 @@
 CRUD operations for snapshots (async)
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -110,7 +110,7 @@ async def update_snapshot_run(
         if hasattr(snapshot_run, key) and value is not None:
             setattr(snapshot_run, key, value)
 
-    snapshot_run.updated_at = datetime.utcnow()
+    snapshot_run.updated_at = datetime.now(UTC)
     await db.commit()
     await db.refresh(snapshot_run)
     return snapshot_run
@@ -155,7 +155,7 @@ async def add_screenshot(
     snapshot_run = await get_snapshot_run_by_id(db, snapshot_run_id)
     if snapshot_run:
         snapshot_run.num_screenshots += 1
-        snapshot_run.updated_at = datetime.utcnow()
+        snapshot_run.updated_at = datetime.now(UTC)
 
     await db.commit()
     await db.refresh(screenshot)
@@ -192,7 +192,7 @@ async def add_pattern(
     snapshot_run = await get_snapshot_run_by_id(db, snapshot_run_id)
     if snapshot_run:
         snapshot_run.num_patterns += 1
-        snapshot_run.updated_at = datetime.utcnow()
+        snapshot_run.updated_at = datetime.now(UTC)
 
     await db.commit()
     await db.refresh(pattern)

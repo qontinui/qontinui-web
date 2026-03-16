@@ -5,7 +5,7 @@ This service automatically creates TestDeficiency records when transitions fail,
 extracting relevant context and determining severity/type based on error patterns.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -306,8 +306,8 @@ class DeficiencyService:
             status=DeficiencyStatus.NEW,
             environment_info=environment_info,
             reproducible=True,  # Assume reproducible since it happened in automated test
-            first_seen_at=datetime.utcnow(),
-            last_seen_at=datetime.utcnow(),
+            first_seen_at=datetime.now(UTC),
+            last_seen_at=datetime.now(UTC),
             occurrence_count=1,
             custom_fields={
                 "auto_generated": True,
@@ -353,7 +353,7 @@ class DeficiencyService:
             )
             screenshot_urls.append(screenshot_url)
             deficiency.screenshot_urls = screenshot_urls
-            deficiency.updated_at = datetime.utcnow()
+            deficiency.updated_at = datetime.now(UTC)
             await db.flush()
 
             logger.info(

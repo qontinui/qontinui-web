@@ -4,7 +4,7 @@ Automation models for qontinui-web backend.
 Provides models for automation input events.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 
 from sqlalchemy import (
@@ -95,7 +95,7 @@ class AutomationInputEvent(Base):
         nullable=True,
     )
 
-    created_at = Column(TIMESTAMP, nullable=False, default=datetime.utcnow)
+    created_at = Column(TIMESTAMP, nullable=False, default=lambda: datetime.now(UTC))
 
     # Relationships
     session = relationship("AutomationSession", back_populates="input_events")

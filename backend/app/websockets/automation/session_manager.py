@@ -160,7 +160,7 @@ class SessionManager:
         self.state.started = True
         self.state.session_id = session_id
         self.state.workflow_name = workflow_name
-        self.state.started_at = datetime.utcnow()
+        self.state.started_at = datetime.now(UTC)
         self.state.request_id = request_id
 
         logger.info(

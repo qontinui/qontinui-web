@@ -5,7 +5,7 @@ Handles creation, updating, and retrieval of task run sessions
 (individual Claude sessions within a task run).
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
@@ -62,7 +62,7 @@ class TaskRunSessionService:
         session = TaskRunSession(
             task_run_id=task_run_id,
             session_number=session_data.session_number,
-            started_at=session_data.started_at or datetime.utcnow(),
+            started_at=session_data.started_at or datetime.now(UTC),
         )
 
         created = await self.session_repo.create_session(db, session)

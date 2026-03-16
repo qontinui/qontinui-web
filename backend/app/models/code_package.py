@@ -5,7 +5,7 @@ This module defines models for the marketplace where users can publish,
 discover, and install reusable Python code packages for automation workflows.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 
 from sqlalchemy import (
@@ -60,9 +60,12 @@ class PackageCategory(Base):
     slug = Column(String, nullable=False, unique=True, index=True)
     description = Column(Text, nullable=True)
     icon = Column(String, nullable=True)  # Icon name or emoji
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
     )
 
     # Relationships
@@ -110,9 +113,14 @@ class CodePackage(Base):
     avg_rating = Column(
         Numeric(3, 2), nullable=True
     )  # Average rating (e.g., 4.53 out of 5)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
+    )
     updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
     )
 
     # Relationships
@@ -180,7 +188,9 @@ class PackageVersion(Base):
         JSON, nullable=True
     )  # Detailed scan results (vulnerabilities, warnings)
     download_count = Column(Integer, default=0, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
+    )
 
     # Relationships
     package = relationship("CodePackage", back_populates="versions")
@@ -238,9 +248,12 @@ class PackageInstallation(Base):
     status = Column(
         String, default=InstallationStatus.ACTIVE.value, nullable=False, index=True
     )
-    installed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    installed_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
     )
 
     # Relationships
@@ -290,9 +303,14 @@ class PackageRating(Base):
         Integer, nullable=False
     )  # Rating from 1-5 stars (enforced by constraint)
     review_text = Column(Text, nullable=True)  # Optional written review
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
+    )
     updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
     )
 
     # Relationships

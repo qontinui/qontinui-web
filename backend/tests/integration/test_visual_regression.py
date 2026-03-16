@@ -5,7 +5,7 @@ Tests the complete API flow for visual baselines, comparisons,
 and review workflows.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from io import BytesIO
 
 import pytest
@@ -63,7 +63,7 @@ class TestVisualBaselineModel:
             version=1,
             is_active=True,
             approved_by_user_id=test_user.id,
-            approved_at=datetime.utcnow(),
+            approved_at=datetime.now(UTC),
             comparison_settings={
                 "algorithm": "ssim",
                 "threshold": 0.95,
@@ -101,7 +101,7 @@ class TestVisualBaselineModel:
             version=2,
             is_active=True,
             approved_by_user_id=test_user.id,
-            approved_at=datetime.utcnow(),
+            approved_at=datetime.now(UTC),
             comparison_settings=test_baseline.comparison_settings,
         )
         db_session.add(new_baseline)
@@ -162,7 +162,7 @@ class TestVisualComparisonModel:
         # Approve the comparison
         test_comparison_result.status = VisualComparisonStatus.APPROVED_AS_NEW
         test_comparison_result.reviewed_by_user_id = test_user.id
-        test_comparison_result.reviewed_at = datetime.utcnow()
+        test_comparison_result.reviewed_at = datetime.now(UTC)
         test_comparison_result.review_notes = "Intentional UI change"
         await db_session.commit()
 

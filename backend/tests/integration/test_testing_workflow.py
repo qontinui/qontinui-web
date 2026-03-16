@@ -8,7 +8,7 @@ Tests end-to-end workflows including:
 - Reliability statistics
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -54,7 +54,7 @@ class TestCompleteTestRunWorkflow:
             runner_connection_id=test_runner_connection.id,
             workflow_id="workflow-full-lifecycle",
             status=TestRunStatus.RUNNING,
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(UTC),
             configuration_snapshot={
                 "strategy": "random_walk",
                 "max_duration_seconds": 3600,
@@ -112,7 +112,7 @@ class TestCompleteTestRunWorkflow:
 
         # Step 5: Complete test run
         test_run.status = TestRunStatus.COMPLETED
-        test_run.completed_at = datetime.utcnow()
+        test_run.completed_at = datetime.now(UTC)
         test_run.error_summary = None
         db_session.add(test_run)
         await db_session.commit()
@@ -145,7 +145,7 @@ class TestCompleteTestRunWorkflow:
             runner_connection_id=test_runner_connection.id,
             workflow_id="workflow-with-failure",
             status=TestRunStatus.RUNNING,
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(UTC),
             configuration_snapshot={},
         )
         db_session.add(test_run)
@@ -153,7 +153,7 @@ class TestCompleteTestRunWorkflow:
 
         # Simulate failure
         test_run.status = TestRunStatus.FAILED
-        test_run.completed_at = datetime.utcnow()
+        test_run.completed_at = datetime.now(UTC)
         test_run.error_summary = "Test runner crashed due to memory error"
         db_session.add(test_run)
         await db_session.commit()
@@ -177,7 +177,7 @@ class TestCompleteTestRunWorkflow:
             runner_connection_id=test_runner_connection.id,
             workflow_id="workflow-with-timeout",
             status=TestRunStatus.RUNNING,
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(UTC),
             max_duration_seconds=60,
             configuration_snapshot={},
         )
@@ -186,7 +186,7 @@ class TestCompleteTestRunWorkflow:
 
         # Simulate timeout
         test_run.status = TestRunStatus.TIMEOUT
-        test_run.completed_at = datetime.utcnow()
+        test_run.completed_at = datetime.now(UTC)
         test_run.error_summary = "Test run exceeded maximum duration of 60 seconds"
         db_session.add(test_run)
         await db_session.commit()
@@ -236,7 +236,7 @@ class TestDeficiencyWorkflow:
 
         # Assign
         deficiency.status = DeficiencyStatus.ASSIGNED
-        deficiency.assigned_at = datetime.utcnow()
+        deficiency.assigned_at = datetime.now(UTC)
         db_session.add(deficiency)
         await db_session.commit()
 
@@ -248,7 +248,7 @@ class TestDeficiencyWorkflow:
         # Resolve
         deficiency.status = DeficiencyStatus.RESOLVED
         deficiency.resolution = "fixed"
-        deficiency.resolved_at = datetime.utcnow()
+        deficiency.resolved_at = datetime.now(UTC)
         db_session.add(deficiency)
         await db_session.commit()
 
@@ -306,8 +306,8 @@ class TestQueryAndFilterWorkflows:
             runner_connection_id=test_runner_connection.id,
             workflow_id="workflow-high-coverage",
             status=TestRunStatus.COMPLETED,
-            started_at=datetime.utcnow() - timedelta(days=1),
-            completed_at=datetime.utcnow() - timedelta(days=1, hours=-1),
+            started_at=datetime.now(UTC) - timedelta(days=1),
+            completed_at=datetime.now(UTC) - timedelta(days=1, hours=-1),
             coverage_percentage=Decimal("95.00"),
             configuration_snapshot={},
         )
@@ -318,8 +318,8 @@ class TestQueryAndFilterWorkflows:
             runner_connection_id=test_runner_connection.id,
             workflow_id="workflow-low-coverage",
             status=TestRunStatus.COMPLETED,
-            started_at=datetime.utcnow() - timedelta(days=2),
-            completed_at=datetime.utcnow() - timedelta(days=2, hours=-1),
+            started_at=datetime.now(UTC) - timedelta(days=2),
+            completed_at=datetime.now(UTC) - timedelta(days=2, hours=-1),
             coverage_percentage=Decimal("45.00"),
             configuration_snapshot={},
         )
@@ -460,7 +460,7 @@ class TestCoverageCalculationWorkflow:
         """Test tracking coverage improvements over multiple runs."""
         # Create runs with increasing coverage
         runs = []
-        base_date = datetime.utcnow() - timedelta(days=10)
+        base_date = datetime.now(UTC) - timedelta(days=10)
 
         for i in range(10):
             run = SoftwareTestRun(
@@ -553,8 +553,8 @@ class TestReliabilityStatisticsWorkflow:
             runner_connection_id=test_runner_connection.id,
             workflow_id=flaky_workflow,
             status=TestRunStatus.COMPLETED,
-            started_at=datetime.utcnow() - timedelta(hours=3),
-            completed_at=datetime.utcnow() - timedelta(hours=2),
+            started_at=datetime.now(UTC) - timedelta(hours=3),
+            completed_at=datetime.now(UTC) - timedelta(hours=2),
             total_transitions=100,
             successful_transitions=90,
             failed_transitions=10,
@@ -568,8 +568,8 @@ class TestReliabilityStatisticsWorkflow:
             runner_connection_id=test_runner_connection.id,
             workflow_id=flaky_workflow,
             status=TestRunStatus.COMPLETED,
-            started_at=datetime.utcnow() - timedelta(hours=1),
-            completed_at=datetime.utcnow(),
+            started_at=datetime.now(UTC) - timedelta(hours=1),
+            completed_at=datetime.now(UTC),
             total_transitions=100,
             successful_transitions=50,
             failed_transitions=50,
@@ -650,7 +650,7 @@ class TestBatchOperationsWorkflow:
     ):
         """Test deleting old test runs in bulk."""
         # Create old runs
-        old_date = datetime.utcnow() - timedelta(days=90)
+        old_date = datetime.now(UTC) - timedelta(days=90)
         old_runs = []
 
         for i in range(5):
@@ -670,7 +670,7 @@ class TestBatchOperationsWorkflow:
         await db_session.commit()
 
         # Delete runs older than 60 days
-        cutoff_date = datetime.utcnow() - timedelta(days=60)
+        cutoff_date = datetime.now(UTC) - timedelta(days=60)
         result = await db_session.execute(
             select(SoftwareTestRun).where(SoftwareTestRun.started_at < cutoff_date)
         )

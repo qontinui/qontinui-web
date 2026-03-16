@@ -4,7 +4,7 @@ Recording response builder service.
 Builds API response schemas from database models.
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.models.recording import Recording, RecordingFrame
@@ -104,7 +104,7 @@ class RecordingResponseBuilder:
         estimated_completion = None
         if recording.processing_started_at and recording.processing_progress > 0:
             elapsed = (
-                datetime.utcnow() - recording.processing_started_at
+                datetime.now(UTC) - recording.processing_started_at
             ).total_seconds()
             estimated_total = elapsed / recording.processing_progress
             estimated_completion = recording.processing_started_at + timedelta(

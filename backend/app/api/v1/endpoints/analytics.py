@@ -1,5 +1,5 @@
 import hashlib
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import structlog
 from fastapi import APIRouter, Depends, Request
@@ -203,7 +203,7 @@ async def get_user_metrics(
     Returns:
         List of metrics with timestamps and values
     """
-    start_date = datetime.utcnow() - timedelta(days=days)
+    start_date = datetime.now(UTC) - timedelta(days=days)
 
     metrics = await metrics_service.get_user_metrics(
         db=db,

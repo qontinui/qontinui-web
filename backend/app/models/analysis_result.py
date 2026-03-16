@@ -3,7 +3,7 @@ Analysis Result models for storing GUI element analysis results
 """
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import (
     JSON,
@@ -56,7 +56,7 @@ class AnalysisJob(Base):
     analyzer_statistics = Column(JSON)  # Statistics per analyzer
 
     # Metadata
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     created_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
 
     # Relationships

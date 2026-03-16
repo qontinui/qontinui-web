@@ -7,7 +7,7 @@ Builds database models from raw recording data.
 import io
 import mimetypes
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import structlog
 
@@ -169,7 +169,7 @@ class RecordingDataBuilder:
             relative_time_ms=relative_time_ms,
             s3_key=frame_key,
             image_url=presigned_url,
-            url_expires_at=datetime.utcnow() + timedelta(days=7),
+            url_expires_at=datetime.now(UTC) + timedelta(days=7),
             width=screen_width,
             height=screen_height,
             size_bytes=len(image_bytes),

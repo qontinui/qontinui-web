@@ -16,7 +16,8 @@ Usage:
 """
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 
 from app.db.partition_manager import (
     PARTITION_CONFIG,
@@ -67,9 +68,9 @@ async def test_helper_functions():
         "automation_input_events", datetime(2025, 11, 17), "weekly"
     )
     print(f"  Weekly: {name}")
-    assert name.startswith(
-        "automation_input_events_y2025_w"
-    ), "Invalid weekly partition name"
+    assert name.startswith("automation_input_events_y2025_w"), (
+        "Invalid weekly partition name"
+    )
 
     print("\n✓ All helper functions passed")
 
@@ -87,7 +88,7 @@ async def test_configuration():
         print(f"  Retention: {config['retention_months']} months")
 
         assert config["granularity"] in ["monthly", "weekly"], "Invalid granularity"
-        assert config["retention_months"] > 0, "Invalid retention period"
+        assert config["retention_months"] > 0, "Invalid retention period"  # type: ignore[operator]
 
     print("\n✓ Configuration valid")
 
@@ -99,7 +100,7 @@ async def test_create_monthly_partitions():
     print("=" * 80)
 
     async with AsyncSessionLocal() as db:
-        current_date = datetime.utcnow()
+        current_date = datetime.now(UTC)
 
         # Test automation_logs
         print("\n[automation_logs]")
@@ -143,7 +144,7 @@ async def test_create_weekly_partitions():
     print("=" * 80)
 
     async with AsyncSessionLocal() as db:
-        current_date = datetime.utcnow()
+        current_date = datetime.now(UTC)
 
         print("\n[automation_input_events]")
         for weeks_ahead in range(3):
@@ -172,7 +173,7 @@ async def test_list_partitions():
     async with AsyncSessionLocal() as db:
         for table_name in PARTITION_CONFIG.keys():
             print(f"\n[{table_name}]")
-            partitions = await list_partitions(db, table_name)
+            partitions = await list_partitions(db, cast(Any, table_name))
 
             if not partitions:
                 print("  No partitions found (table may not be partitioned yet)")
@@ -207,7 +208,7 @@ async def test_cleanup_dry_run():
             print(f"\n[{table_name}]")
             config = PARTITION_CONFIG[table_name]
 
-            result = await drop_old_partitions(db, table_name, dry_run=True)
+            result = await drop_old_partitions(db, cast(Any, table_name), dry_run=True)
 
             print(f"  Retention: {config['retention_months']} months")
             print(f"  Cutoff date: {result['cutoff_date']}")
@@ -234,7 +235,7 @@ async def test_duplicate_creation():
     print("=" * 80)
 
     async with AsyncSessionLocal() as db:
-        current_date = datetime.utcnow()
+        current_date = datetime.now(UTC)
         year = current_date.year
         month = current_date.month
 

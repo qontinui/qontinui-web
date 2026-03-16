@@ -8,7 +8,7 @@ Includes:
 - ConflictLog: Tracks and manages merge conflicts for collaborative editing
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from uuid import UUID as PyUUID
 
@@ -96,7 +96,7 @@ class ProjectLock(Base):
     )
     resource_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
     acquired_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     auto_release: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -112,16 +112,16 @@ class ProjectLock(Base):
             # Default lock duration: 5 minutes
             kwargs["expires_at"] = kwargs["acquired_at"] + timedelta(minutes=5)
         elif "expires_at" not in kwargs:
-            kwargs["expires_at"] = datetime.utcnow() + timedelta(minutes=5)
+            kwargs["expires_at"] = datetime.now(UTC) + timedelta(minutes=5)
         super().__init__(**kwargs)
 
     def is_expired(self) -> bool:
         """Check if lock has expired."""
-        return datetime.utcnow() > self.expires_at
+        return datetime.now(UTC) > self.expires_at
 
     def extend_lock(self, minutes: int = 5) -> None:
         """Extend lock expiration time."""
-        self.expires_at = datetime.utcnow() + timedelta(minutes=minutes)
+        self.expires_at = datetime.now(UTC) + timedelta(minutes=minutes)
 
 
 class ProjectComment(Base):
@@ -173,10 +173,13 @@ class ProjectComment(Base):
         index=True,
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
     )
     comment_metadata: Mapped[dict] = mapped_column(
         "metadata", JSON, nullable=True
@@ -194,7 +197,7 @@ class ProjectComment(Base):
         """Mark comment as resolved."""
         self.resolved = True
         self.resolved_by = user_id
-        self.resolved_at = datetime.utcnow()
+        self.resolved_at = datetime.now(UTC)
 
     def unresolve(self) -> None:
         """Mark comment as unresolved."""
@@ -270,7 +273,7 @@ class ActivityLog(Base):
         "metadata", JSON, nullable=True
     )  # Additional context
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False, index=True
+        DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
     )
 
     # Relationships
@@ -359,7 +362,7 @@ class ConflictLog(Base):
         JSON, nullable=True
     )  # Array of ConflictChange objects
     detected_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
     )
     resolved: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -393,7 +396,7 @@ class ConflictLog(Base):
             raise ValueError(f"Invalid resolution_type: {resolution_type}")
 
         self.resolved = True
-        self.resolved_at = datetime.utcnow()
+        self.resolved_at = datetime.now(UTC)
         self.resolution_type = resolution_type
         self.resolved_data = resolved_data
 

@@ -5,7 +5,7 @@ Provides distributed locking with Redis (preferred) or PostgreSQL (fallback).
 Handles lock acquisition, release, extension, and cleanup.
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -134,7 +134,7 @@ class LockingService:
             # Create new lock
             if existing_lock is None:
                 duration_minutes = min(duration_minutes, 30)
-                expires_at = datetime.utcnow() + timedelta(minutes=duration_minutes)
+                expires_at = datetime.now(UTC) + timedelta(minutes=duration_minutes)
 
                 lock = await lock_repository.create_lock(
                     db,

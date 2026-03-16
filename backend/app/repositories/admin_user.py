@@ -5,7 +5,7 @@ Provides optimized queries for listing and viewing user data in the admin dashbo
 """
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
@@ -179,7 +179,7 @@ class AdminUserRepository:
         Returns:
             Dict with platform statistics
         """
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         week_ago = now - timedelta(days=7)
         month_ago = now - timedelta(days=30)
 
@@ -241,7 +241,7 @@ class AdminUserRepository:
         Returns:
             Dict with activity metrics
         """
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         day_ago = now - timedelta(days=1)
         week_ago = now - timedelta(days=7)
         month_ago = now - timedelta(days=30)

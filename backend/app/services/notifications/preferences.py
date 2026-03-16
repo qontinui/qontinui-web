@@ -4,7 +4,7 @@ Notification preferences management.
 Provides utilities for managing user and project notification preferences.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -84,7 +84,7 @@ class UserPreferencesService:
                 if hasattr(preferences, key):
                     setattr(preferences, key, value)
 
-            preferences.updated_at = datetime.utcnow()  # type: ignore[assignment]
+            preferences.updated_at = datetime.now(UTC)  # type: ignore[assignment]
             await db.commit()
             await db.refresh(preferences)
 
@@ -163,7 +163,7 @@ class ProjectPreferencesService:
                 if hasattr(preferences, key):
                     setattr(preferences, key, value)
 
-            preferences.updated_at = datetime.utcnow()  # type: ignore[assignment]
+            preferences.updated_at = datetime.now(UTC)  # type: ignore[assignment]
             await db.commit()
             await db.refresh(preferences)
 

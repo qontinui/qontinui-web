@@ -8,7 +8,7 @@ Provides specialized screenshot management for test execution results:
 """
 
 import io
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
@@ -84,7 +84,7 @@ class ScreenshotStorageService:
 
             # Generate storage path
             # Format: test-screenshots/{run_id}/{step_id}_{timestamp}.{ext}
-            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
+            timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
             extension = image_format.lower()
             if extension == "jpeg":
                 extension = "jpg"
@@ -99,7 +99,7 @@ class ScreenshotStorageService:
                 "screenshot_type": screenshot_type,
                 "width": str(width),
                 "height": str(height),
-                "captured_at": datetime.utcnow().isoformat(),
+                "captured_at": datetime.now(UTC).isoformat(),
             }
 
             if metadata:

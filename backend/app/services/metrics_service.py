@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -17,7 +17,7 @@ class MetricsService:
     def __init__(self):
         self._batch_buffer: list[dict[str, Any]] = []
         self._batch_size = 10
-        self._last_flush = datetime.utcnow()
+        self._last_flush = datetime.now(UTC)
         self._flush_interval = timedelta(seconds=30)
 
     async def track_api_call(
@@ -46,7 +46,7 @@ class MetricsService:
             "metric_type": "api_call",
             "value": 1,  # Count of API calls
             "metric_metadata": full_metadata,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(UTC),
         }
 
         self._batch_buffer.append(metric_data)
@@ -54,7 +54,7 @@ class MetricsService:
         # Check if we should flush
         if (
             len(self._batch_buffer) >= self._batch_size
-            or datetime.utcnow() - self._last_flush >= self._flush_interval
+            or datetime.now(UTC) - self._last_flush >= self._flush_interval
         ):
             await self._flush_batch(db)
 
@@ -81,7 +81,7 @@ class MetricsService:
             "metric_type": event_type,
             "value": value,
             "metric_metadata": metadata,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(UTC),
         }
 
         self._batch_buffer.append(metric_data)
@@ -89,7 +89,7 @@ class MetricsService:
         # Check if we should flush
         if (
             len(self._batch_buffer) >= self._batch_size
-            or datetime.utcnow() - self._last_flush >= self._flush_interval
+            or datetime.now(UTC) - self._last_flush >= self._flush_interval
         ):
             await self._flush_batch(db)
 
@@ -104,7 +104,7 @@ class MetricsService:
             await db.commit()
             logger.info(f"Flushed {len(self._batch_buffer)} metrics to database")
             self._batch_buffer.clear()
-            self._last_flush = datetime.utcnow()
+            self._last_flush = datetime.now(UTC)
         except Exception as e:
             logger.error(f"Error flushing metrics batch: {e}")
             await db.rollback()

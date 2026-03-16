@@ -7,7 +7,7 @@ Screenshots are stored in object storage (S3/MinIO) with metadata in the databas
 
 import base64
 import io
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
@@ -80,7 +80,7 @@ class TestScreenshotService:
 
             # Step 3: Generate storage key and timestamp
             # Format: tests/{project_id}/{test_run_id}/{transition_id}_{timestamp}.png
-            datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
+            datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
             if transition_id:
                 pass
             elif deficiency_id:

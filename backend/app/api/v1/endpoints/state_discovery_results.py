@@ -9,7 +9,7 @@ Provides endpoints to:
 - Export/import state machines
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -341,7 +341,7 @@ async def export_state_machine(
         metadata={
             "original_id": str(discovery_result.id),
             "original_project_id": str(discovery_result.project_id),
-            "exported_at": datetime.utcnow().isoformat(),
+            "exported_at": datetime.now(UTC).isoformat(),
             "discovery_strategy": discovery_result.discovery_strategy,
             "confidence": discovery_result.confidence,
         },
@@ -399,7 +399,7 @@ async def import_state_machine(
         confidence=sm.metadata.get("confidence", 0.0),
         discovery_metadata={
             "imported": True,
-            "imported_at": datetime.utcnow().isoformat(),
+            "imported_at": datetime.now(UTC).isoformat(),
             "original_metadata": sm.metadata,
         },
     )

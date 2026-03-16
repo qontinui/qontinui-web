@@ -5,7 +5,7 @@ Each comparison result tracks whether a screenshot matched its baseline,
 the similarity score, and any diff regions detected.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
@@ -194,7 +194,7 @@ class VisualComparisonResult(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=datetime.utcnow,
+        default=lambda: datetime.now(UTC),
     )
 
     # Relationships

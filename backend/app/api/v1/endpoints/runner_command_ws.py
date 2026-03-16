@@ -6,7 +6,7 @@ and receive real-time responses and events.
 """
 
 import asyncio
-from datetime import datetime
+from datetime import UTC, datetime
 
 import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
@@ -168,7 +168,7 @@ async def websocket_runner_command_endpoint(
                 "type": "connected",
                 "connection_id": connection_id,
                 "runner_connected": runner_connected,
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": datetime.now(UTC).isoformat() + "Z",
             }
         )
 
@@ -208,7 +208,7 @@ async def websocket_runner_command_endpoint(
                     await websocket.send_json(
                         {
                             "type": "pong",
-                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                            "timestamp": datetime.now(UTC).isoformat() + "Z",
                         }
                     )
 
@@ -218,7 +218,7 @@ async def websocket_runner_command_endpoint(
                         "type": "command",
                         "command": message.command,
                         "params": message.params,
-                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                        "timestamp": datetime.now(UTC).isoformat() + "Z",
                     }
 
                     sent = await manager.send_command_to_runner(
@@ -230,7 +230,7 @@ async def websocket_runner_command_endpoint(
                             {
                                 "type": "command_sent",
                                 "command": message.command,
-                                "timestamp": datetime.utcnow().isoformat() + "Z",
+                                "timestamp": datetime.now(UTC).isoformat() + "Z",
                             }
                         )
                         logger.info(
@@ -260,7 +260,7 @@ async def websocket_runner_command_endpoint(
                     await websocket.send_json(
                         {
                             "type": "ping",
-                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                            "timestamp": datetime.now(UTC).isoformat() + "Z",
                         }
                     )
                 except Exception:

@@ -7,7 +7,7 @@ and helper utilities for testing the complete testing system.
 
 import os
 from collections.abc import AsyncGenerator
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import uuid4
@@ -112,7 +112,7 @@ async def test_runner_connection(
         project_id=test_project.id,
         machine_name=f"test-machine-{uuid4().hex[:8]}",
         status="connected",
-        last_heartbeat=datetime.utcnow(),
+        last_heartbeat=datetime.now(UTC),
     )
     db_session.add(runner)
     await db_session.commit()
@@ -133,7 +133,7 @@ async def test_run(
         runner_connection_id=test_runner_connection.id,
         workflow_id="test-workflow-001",
         status=TestRunStatus.RUNNING,
-        started_at=datetime.utcnow(),
+        started_at=datetime.now(UTC),
         total_transitions=0,
         successful_transitions=0,
         failed_transitions=0,
@@ -216,9 +216,9 @@ async def create_test_runs(
             runner_connection_id=runner.id,
             workflow_id=f"workflow-{i:03d}",
             status=status,
-            started_at=datetime.utcnow() - timedelta(hours=count - i),
+            started_at=datetime.now(UTC) - timedelta(hours=count - i),
             completed_at=(
-                datetime.utcnow() - timedelta(hours=count - i - 1)
+                datetime.now(UTC) - timedelta(hours=count - i - 1)
                 if status == TestRunStatus.COMPLETED
                 else None
             ),
@@ -293,8 +293,8 @@ def generate_mock_transition_data(count: int = 10) -> list[dict[str, Any]]:
                 "to_state": to_state,
                 "transition_name": f"{from_state}_to_{to_state}",
                 "status": "success" if i % 10 != 0 else "failed",
-                "started_at": datetime.utcnow().isoformat(),
-                "completed_at": (datetime.utcnow() + timedelta(seconds=2)).isoformat(),
+                "started_at": datetime.now(UTC).isoformat(),
+                "completed_at": (datetime.now(UTC) + timedelta(seconds=2)).isoformat(),
                 "duration_ms": 2000,
                 "error_message": "Element not found" if i % 10 == 0 else None,
                 "error_type": "element_not_found" if i % 10 == 0 else None,

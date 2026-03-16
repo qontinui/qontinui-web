@@ -5,7 +5,7 @@ Skills are parameterized step templates. Built-in skills are embedded in the
 runner; this service manages user-created skills stored in PostgreSQL.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -284,7 +284,7 @@ class SkillService:
         for key, value in update_data.items():
             setattr(skill, key, value)
 
-        skill.updated_at = datetime.utcnow()
+        skill.updated_at = datetime.now(UTC)
         await db.commit()
         await db.refresh(skill)
         return _model_to_response(skill)
@@ -340,7 +340,7 @@ class SkillService:
             raise ValueError(f"Skill not found or not owned by user: {skill_id}")
 
         skill.is_shared = is_shared
-        skill.updated_at = datetime.utcnow()
+        skill.updated_at = datetime.now(UTC)
         await db.commit()
         await db.refresh(skill)
         return _model_to_response(skill)
@@ -392,7 +392,7 @@ class SkillService:
             raise ValueError(f"Skill not found: {skill_id}")
 
         skill.approval_status = status
-        skill.updated_at = datetime.utcnow()
+        skill.updated_at = datetime.now(UTC)
         await db.commit()
         await db.refresh(skill)
         return _model_to_response(skill)
@@ -451,7 +451,7 @@ class SkillService:
             raise ValueError(f"Skill not found: {skill_id}")
 
         skill.usage_count = (skill.usage_count or 0) + 1
-        skill.updated_at = datetime.utcnow()
+        skill.updated_at = datetime.now(UTC)
         await db.commit()
         await db.refresh(skill)
         return {"id": str(skill.id), "usage_count": skill.usage_count}

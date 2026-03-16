@@ -5,7 +5,7 @@ Handles checking user access to projects, determining permission levels,
 and retrieving accessible projects.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
@@ -175,7 +175,7 @@ async def get_user_permission_level(
 
         # Find the highest permission level from all valid access controls
         highest_level = None
-        current_time = datetime.utcnow()
+        current_time = datetime.now(UTC)
 
         for access in access_controls:
             # Skip expired access
@@ -250,7 +250,7 @@ async def get_user_accessible_projects(
         ...     print(f"User can access: {project.name}")
     """
     try:
-        current_time = datetime.utcnow()
+        current_time = datetime.now(UTC)
 
         # Get owned projects
         # Use selectinload to avoid N+1 queries when accessing project.owner

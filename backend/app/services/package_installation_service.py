@@ -5,7 +5,7 @@ Provides business logic for installing and managing code packages in projects.
 Extracted from crud/code_package.py for SRP compliance.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
@@ -185,7 +185,7 @@ class PackageInstallationService:
     ) -> PackageInstallation:
         """Update an existing installation to a new version."""
         installation.version_id = version_id  # type: ignore[assignment]
-        installation.updated_at = datetime.utcnow()  # type: ignore[assignment]
+        installation.updated_at = datetime.now(UTC)  # type: ignore[assignment]
         installation.status = "active"  # type: ignore[assignment]
 
         await db.commit()

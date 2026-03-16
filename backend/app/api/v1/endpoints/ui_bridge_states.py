@@ -8,7 +8,7 @@ Provides endpoints to:
 - Manage domain knowledge and link it to states
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -982,7 +982,7 @@ async def create_exploration_session(
     await get_project_or_404(project_id, current_user.id, db)
 
     # Generate name if not provided
-    name = request.name or f"Exploration {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
+    name = request.name or f"Exploration {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
 
     session = UIBridgeExplorationSession(
         project_id=project_id,
@@ -1074,7 +1074,7 @@ async def update_exploration_session(
     if request.status is not None:
         session.status = request.status.value
         if request.status.value in ("completed", "failed", "cancelled"):
-            session.completed_at = datetime.utcnow()
+            session.completed_at = datetime.now(UTC)
 
     if request.render_logs is not None:
         # Append new render logs

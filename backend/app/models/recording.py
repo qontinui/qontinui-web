@@ -6,7 +6,7 @@ processed to automatically generate state structures.
 """
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 
 from sqlalchemy import (
@@ -138,9 +138,12 @@ class Recording(Base):
     accepted_at = Column(DateTime)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
     )
 
     # Relationships
@@ -487,7 +490,7 @@ class DiscoveredTransition(Base):
     converted_at = Column(DateTime)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
 
     # Relationships
     recording = relationship("Recording", back_populates="discovered_transitions")
@@ -518,7 +521,7 @@ class ProcessingLog(Base):
     )
 
     # Log entry
-    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+    timestamp = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     phase: ProcessingPhase = Column(Enum(ProcessingPhase), nullable=False)  # type: ignore[assignment]
     level = Column(String, nullable=False)  # info, warning, error
     message = Column(Text, nullable=False)

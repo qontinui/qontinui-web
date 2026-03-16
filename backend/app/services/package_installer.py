@@ -9,7 +9,7 @@ Orchestrates package installation by coordinating specialized services:
 This service maintains backward compatibility while delegating to focused services.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 import structlog
 from sqlalchemy import select
@@ -543,7 +543,7 @@ class PackageInstaller:
             version_id=version_id,
             user_id=user_id,
             status=InstallationStatus.ACTIVE.value,
-            installed_at=datetime.utcnow(),
+            installed_at=datetime.now(UTC),
         )
         self.db.add(installation)
         return installation

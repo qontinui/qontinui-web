@@ -5,7 +5,7 @@ Handles creating baselines from screenshots and uploaded images.
 """
 
 import io
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
@@ -130,7 +130,7 @@ class BaselineCreation(BaselineImageProcessing):
             version=version,
             is_active=True,
             approved_by_user_id=user_id,
-            approved_at=datetime.utcnow(),
+            approved_at=datetime.now(UTC),
             approval_notes=approval_notes,
             comparison_settings=comparison_settings,
             source_test_run_id=screenshot.test_run_id,
@@ -244,7 +244,7 @@ class BaselineCreation(BaselineImageProcessing):
             version=version,
             is_active=True,
             approved_by_user_id=user_id,
-            approved_at=datetime.utcnow(),
+            approved_at=datetime.now(UTC),
             approval_notes=approval_notes,
             comparison_settings=comparison_settings,
         )

@@ -1,7 +1,7 @@
 """API endpoints for ML training job management."""
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -260,7 +260,7 @@ async def start_training_job(
 
     # Update status to queued
     job.status = TrainingJobStatus.QUEUED.value  # type: ignore[assignment]
-    job.started_at = datetime.utcnow()  # type: ignore[assignment]
+    job.started_at = datetime.now(UTC)  # type: ignore[assignment]
 
     await db.commit()
     await db.refresh(job)
@@ -326,7 +326,7 @@ async def update_training_job(
                 TrainingJobStatus.COMPLETED.value,
                 TrainingJobStatus.FAILED.value,
             ]:
-                job.completed_at = datetime.utcnow()  # type: ignore[assignment]
+                job.completed_at = datetime.now(UTC)  # type: ignore[assignment]
         setattr(job, field, value)
 
     await db.commit()
@@ -427,7 +427,7 @@ async def cancel_training_job(
 
     # Update status
     job.status = TrainingJobStatus.CANCELLED.value  # type: ignore[assignment]
-    job.completed_at = datetime.utcnow()  # type: ignore[assignment]
+    job.completed_at = datetime.now(UTC)  # type: ignore[assignment]
 
     await db.commit()
     await db.refresh(job)

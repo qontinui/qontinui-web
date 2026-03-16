@@ -5,7 +5,7 @@ Provides database operations for test runs, transitions, deficiencies,
 coverage snapshots, and test screenshots.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -51,7 +51,7 @@ async def create_test_run(
         runner_connection_id=runner_connection_id,
         workflow_id=workflow_id,
         status=TestRunStatus.RUNNING,
-        started_at=datetime.utcnow(),
+        started_at=datetime.now(UTC),
         configuration_snapshot=configuration_snapshot,
         test_mode=test_mode,
         max_duration_seconds=max_duration_seconds,
@@ -129,7 +129,7 @@ async def update_test_run(
         if hasattr(test_run, key) and value is not None:
             setattr(test_run, key, value)
 
-    test_run.updated_at = datetime.utcnow()
+    test_run.updated_at = datetime.now(UTC)
     await db.commit()
     await db.refresh(test_run)
     return test_run
@@ -147,9 +147,9 @@ async def complete_test_run(
         return None
 
     test_run.status = status
-    test_run.completed_at = datetime.utcnow()
+    test_run.completed_at = datetime.now(UTC)
     test_run.error_summary = error_summary
-    test_run.updated_at = datetime.utcnow()
+    test_run.updated_at = datetime.now(UTC)
 
     await db.commit()
     await db.refresh(test_run)
@@ -238,7 +238,7 @@ async def create_transition_execution(
             test_run.failed_transitions += 1
         elif status == TransitionExecutionStatus.SKIPPED:
             test_run.skipped_transitions += 1
-        test_run.updated_at = datetime.utcnow()
+        test_run.updated_at = datetime.now(UTC)
 
     await db.commit()
     await db.refresh(transition)
@@ -334,8 +334,8 @@ async def create_test_deficiency(
         environment_info=environment_info or {},
         preconditions=preconditions or {},
         status=DeficiencyStatus.NEW,
-        first_seen_at=datetime.utcnow(),
-        last_seen_at=datetime.utcnow(),
+        first_seen_at=datetime.now(UTC),
+        last_seen_at=datetime.now(UTC),
         occurrence_count=1,
         tags=tags or [],
         custom_fields=custom_fields or {},
@@ -346,7 +346,7 @@ async def create_test_deficiency(
     test_run = await get_test_run(db, test_run_id)
     if test_run:
         test_run.deficiencies_found += 1
-        test_run.updated_at = datetime.utcnow()
+        test_run.updated_at = datetime.now(UTC)
 
     await db.commit()
     await db.refresh(deficiency)
@@ -423,11 +423,11 @@ async def update_test_deficiency(
         if hasattr(deficiency, key) and value is not None:
             setattr(deficiency, key, value)
 
-    deficiency.updated_at = datetime.utcnow()
+    deficiency.updated_at = datetime.now(UTC)
 
     # Set resolved_at if status is resolved
     if kwargs.get("status") in [DeficiencyStatus.RESOLVED, DeficiencyStatus.CLOSED]:
-        deficiency.resolved_at = datetime.utcnow()
+        deficiency.resolved_at = datetime.now(UTC)
 
     await db.commit()
     await db.refresh(deficiency)
@@ -474,7 +474,7 @@ async def create_coverage_snapshot(
         test_run_id=test_run_id,
         project_id=project_id,
         workflow_id=workflow_id,
-        snapshot_time=datetime.utcnow(),
+        snapshot_time=datetime.now(UTC),
         transitions_covered=transitions_covered,
         transitions_total=transitions_total,
         coverage_percentage=coverage_percentage,
@@ -570,7 +570,7 @@ async def create_test_screenshot(
         storage_path=storage_path,
         width=width,
         height=height,
-        captured_at=datetime.utcnow(),
+        captured_at=datetime.now(UTC),
         screenshot_metadata=screenshot_metadata or {},
         description=description,
     )

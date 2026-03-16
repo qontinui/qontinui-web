@@ -1,7 +1,7 @@
 """Device verification endpoints."""
 
 import uuid as uuid_lib
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
@@ -104,7 +104,7 @@ async def resend_device_verification(
 
     # Check rate limiting - don't allow resending within 5 minutes
     if device_session.verification_sent_at:
-        time_since_last = datetime.utcnow() - device_session.verification_sent_at
+        time_since_last = datetime.now(UTC) - device_session.verification_sent_at
         if time_since_last < timedelta(minutes=5):
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,

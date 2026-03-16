@@ -5,7 +5,7 @@ Provides distributed locking capabilities using Redis (preferred) or PostgreSQL 
 Redis locks are faster and more scalable for distributed systems.
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -183,7 +183,7 @@ class DistributedLockService:
                     # Extend existing lock (refresh TTL)
                     await redis.expire(lock_key, ttl_seconds)
                     ttl = await redis.ttl(lock_key)
-                    expires_at = datetime.utcnow() + timedelta(seconds=ttl)
+                    expires_at = datetime.now(UTC) + timedelta(seconds=ttl)
 
                     logger.info(
                         "redis_lock_extended",
@@ -216,7 +216,7 @@ class DistributedLockService:
             acquired = await redis.set(lock_key, lock_value, nx=True, ex=ttl_seconds)
 
             if acquired:
-                expires_at = datetime.utcnow() + timedelta(minutes=duration_minutes)
+                expires_at = datetime.now(UTC) + timedelta(minutes=duration_minutes)
 
                 logger.info(
                     "redis_lock_acquired",
@@ -318,7 +318,7 @@ class DistributedLockService:
 
             # Create new lock
             if existing_lock is None:
-                expires_at = datetime.utcnow() + timedelta(minutes=duration_minutes)
+                expires_at = datetime.now(UTC) + timedelta(minutes=duration_minutes)
 
                 lock = ProjectLock(
                     project_id=project_id,

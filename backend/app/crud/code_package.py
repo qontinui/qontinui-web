@@ -8,7 +8,7 @@ Business logic for search, installation, and rating is in dedicated services:
 - app.services.package_rating_service
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -133,7 +133,7 @@ async def update_package(
     for field, value in update_dict.items():
         setattr(package, field, value)
 
-    package.updated_at = datetime.utcnow()  # type: ignore[assignment]
+    package.updated_at = datetime.now(UTC)  # type: ignore[assignment]
     await db.commit()
     await db.refresh(package)
 

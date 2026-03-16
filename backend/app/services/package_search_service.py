@@ -5,7 +5,7 @@ Provides business logic for searching, filtering, and discovering code packages.
 Extracted from crud/code_package.py for SRP compliance.
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -113,7 +113,7 @@ class PackageSearchService:
         Returns:
             List of trending packages
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = datetime.now(UTC) - timedelta(days=days)
 
         result = await db.execute(
             select(CodePackage)

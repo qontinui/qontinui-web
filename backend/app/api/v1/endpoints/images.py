@@ -7,7 +7,7 @@ and presigned URL generation for secure access.
 
 import io
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -387,7 +387,7 @@ async def upload_image(
         # Use the public URL as fallback
         presigned_url = url
 
-    created_at = datetime.utcnow()
+    created_at = datetime.now(UTC)
 
     logger.info(
         "image_upload_complete",

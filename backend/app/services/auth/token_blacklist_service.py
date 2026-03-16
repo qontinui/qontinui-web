@@ -7,7 +7,7 @@ When Redis is disabled, tokens are stored in memory with manual cleanup.
 """
 
 import threading
-from datetime import datetime
+from datetime import UTC, datetime
 
 import structlog
 from redis import asyncio as aioredis
@@ -66,7 +66,7 @@ class TokenBlacklistService:
 
                 # Calculate TTL in seconds
                 if expiry:
-                    ttl = int((expiry - datetime.utcnow()).total_seconds())
+                    ttl = int((expiry - datetime.now(UTC)).total_seconds())
                     # Only set if not already expired
                     if ttl > 0:
                         await redis_client.setex(key, ttl, "1")
@@ -141,7 +141,7 @@ class TokenBlacklistService:
 
         # Manual cleanup for in-memory storage
         with self._lock:
-            now = datetime.utcnow()
+            now = datetime.now(UTC)
             expired_tokens = [
                 jti
                 for jti, expiry in self._token_expiry.items()

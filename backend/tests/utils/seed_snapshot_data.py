@@ -4,7 +4,7 @@ Seed snapshot data for E2E tests
 Creates test snapshot runs in the database for Playwright tests to use.
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,7 +27,7 @@ async def create_test_snapshots(db: AsyncSession) -> list[str]:
         db=db,
         run_id=run_id_1,
         run_name="Login Flow Test",
-        timestamp=datetime.utcnow() - timedelta(days=1),
+        timestamp=datetime.now(UTC) - timedelta(days=1),
         states=["login", "dashboard"],
         tags=["e2e", "login"],
         metadata={"test": True, "environment": "ci"},
@@ -41,7 +41,7 @@ async def create_test_snapshots(db: AsyncSession) -> list[str]:
             snapshot_run_id=snapshot1.id,
             screenshot_path=f"test_login_flow_screenshot_{i + 1}.png",
             active_states=[state],
-            timestamp=datetime.utcnow() - timedelta(days=1, hours=i),
+            timestamp=datetime.now(UTC) - timedelta(days=1, hours=i),
             width=1920,
             height=1080,
             state_hash=f"hash_login_{i + 1}",
@@ -72,7 +72,7 @@ async def create_test_snapshots(db: AsyncSession) -> list[str]:
         db=db,
         run_id=run_id_2,
         run_name="Settings Navigation Test",
-        timestamp=datetime.utcnow() - timedelta(hours=2),
+        timestamp=datetime.now(UTC) - timedelta(hours=2),
         states=["settings", "profile"],
         tags=["e2e", "settings"],
         metadata={"test": True, "environment": "ci"},
@@ -86,7 +86,7 @@ async def create_test_snapshots(db: AsyncSession) -> list[str]:
             snapshot_run_id=snapshot2.id,
             screenshot_path=f"test_settings_screenshot_{i + 1}.png",
             active_states=[state],
-            timestamp=datetime.utcnow() - timedelta(hours=2, minutes=i * 10),
+            timestamp=datetime.now(UTC) - timedelta(hours=2, minutes=i * 10),
             width=1920,
             height=1080,
             state_hash=f"hash_settings_{i + 1}",
@@ -116,7 +116,7 @@ async def create_test_snapshots(db: AsyncSession) -> list[str]:
         db=db,
         run_id=run_id_3,
         run_name="Complete Workflow Test",
-        timestamp=datetime.utcnow() - timedelta(hours=1),
+        timestamp=datetime.now(UTC) - timedelta(hours=1),
         states=["login", "dashboard", "settings"],
         tags=["e2e", "complete"],
         metadata={"test": True, "environment": "ci"},
@@ -141,7 +141,7 @@ async def create_test_snapshots(db: AsyncSession) -> list[str]:
             snapshot_run_id=snapshot3.id,
             screenshot_path=f"test_complete_screenshot_{i + 1}.png",
             active_states=[states_list[i]],
-            timestamp=datetime.utcnow() - timedelta(hours=1, minutes=i * 5),
+            timestamp=datetime.now(UTC) - timedelta(hours=1, minutes=i * 5),
             width=1920,
             height=1080,
             state_hash=f"hash_complete_{i + 1}",

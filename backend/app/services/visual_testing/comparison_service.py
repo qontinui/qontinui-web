@@ -4,7 +4,7 @@ Visual comparison service.
 Handles the compare workflow, review management, and pending reviews.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
@@ -371,7 +371,7 @@ class ComparisonService(ComparisonEngine):
 
         # Update review fields
         comparison.reviewed_by_user_id = user_id
-        comparison.reviewed_at = datetime.utcnow()
+        comparison.reviewed_at = datetime.now(UTC)
         comparison.review_decision = decision_value
         comparison.review_notes = notes
 
@@ -533,8 +533,8 @@ class ComparisonService(ComparisonEngine):
             status=DeficiencyStatus.NEW,
             environment_info={},
             reproducible=True,
-            first_seen_at=datetime.utcnow(),
-            last_seen_at=datetime.utcnow(),
+            first_seen_at=datetime.now(UTC),
+            last_seen_at=datetime.now(UTC),
             occurrence_count=1,
             custom_fields={
                 "auto_generated": True,

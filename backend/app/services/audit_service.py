@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -47,7 +47,7 @@ class AuditService:
                 resource_id=resource_id,
                 ip_address=ip_address,
                 log_metadata=metadata,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             )
 
             db.add(audit_log)
@@ -80,7 +80,7 @@ class AuditService:
             user_id=user_id,
             action="login",
             ip_address=ip_address,
-            metadata={"timestamp": datetime.utcnow().isoformat()},
+            metadata={"timestamp": datetime.now(UTC).isoformat()},
         )
 
     async def log_logout(
@@ -92,7 +92,7 @@ class AuditService:
             user_id=user_id,
             action="logout",
             ip_address=ip_address,
-            metadata={"timestamp": datetime.utcnow().isoformat()},
+            metadata={"timestamp": datetime.now(UTC).isoformat()},
         )
 
     async def log_project_created(

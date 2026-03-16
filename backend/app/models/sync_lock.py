@@ -1,6 +1,6 @@
 """Sync lock model for coordinating backend operations with frontend sync."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from sqlalchemy import Column, DateTime, ForeignKey, Index, String, Text, text
@@ -48,7 +48,7 @@ class SyncLock(Base):
     acquired_at = Column(
         DateTime(timezone=True),
         nullable=False,
-        default=datetime.utcnow,
+        default=lambda: datetime.now(UTC),
         server_default=text("now()"),
     )
     expires_at = Column(
@@ -82,4 +82,4 @@ class SyncLock(Base):
         """Check if the lock is still active (not released and not expired)."""
         if self.released_at is not None:
             return False
-        return self.expires_at > datetime.utcnow()  # type: ignore[return-value]
+        return self.expires_at > datetime.now(UTC)  # type: ignore[return-value]

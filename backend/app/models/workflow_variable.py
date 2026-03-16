@@ -7,7 +7,7 @@ Architecture:
 3. Execution Variables: Temporary, single run only (in-memory, no DB model)
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 
 from sqlalchemy import (
@@ -59,9 +59,12 @@ class WorkflowVariable(Base):
         Enum(VariableScope), nullable=False, index=True
     )
     description = Column(String, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
     updated_at = Column(
-        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
 
     # Relationships
@@ -101,7 +104,9 @@ class VariableHistory(Base):
     workflow_run_id = Column(String, nullable=True, index=True)  # For tracking runs
     old_value = Column(JSON, nullable=True)
     new_value = Column(JSON, nullable=True)
-    changed_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    changed_at = Column(
+        DateTime, nullable=False, default=lambda: datetime.now(UTC), index=True
+    )
     changed_by_action = Column(
         String, nullable=True
     )  # Action ID that triggered the change

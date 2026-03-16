@@ -4,7 +4,7 @@ CRUD operations for collaboration models.
 Provides database operations for locks, comments, and activity logs.
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import and_, delete, func, select
@@ -39,7 +39,7 @@ async def get_active_locks(
     query = select(ProjectLock).where(
         and_(
             ProjectLock.project_id == project_id,
-            ProjectLock.expires_at > datetime.utcnow(),
+            ProjectLock.expires_at > datetime.now(UTC),
         )
     )
 
@@ -69,7 +69,7 @@ async def get_user_locks(
     query = select(ProjectLock).where(
         and_(
             ProjectLock.user_id == user_id,
-            ProjectLock.expires_at > datetime.utcnow(),
+            ProjectLock.expires_at > datetime.now(UTC),
         )
     )
 
@@ -91,7 +91,7 @@ async def cleanup_expired_locks(db: AsyncSession) -> int:
         Number of locks deleted
     """
     result = await db.execute(
-        delete(ProjectLock).where(ProjectLock.expires_at <= datetime.utcnow())
+        delete(ProjectLock).where(ProjectLock.expires_at <= datetime.now(UTC))
     )
     await db.commit()
     return result.rowcount or 0  # type: ignore[attr-defined]
@@ -236,7 +236,7 @@ async def update_comment(
         else:
             comment.unresolve()
 
-    comment.updated_at = datetime.utcnow()
+    comment.updated_at = datetime.now(UTC)
     db.add(comment)
     await db.commit()
     await db.refresh(comment)
@@ -408,7 +408,7 @@ async def get_recent_activity_count(
     Returns:
         Count of recent activities
     """
-    since = datetime.utcnow() - timedelta(minutes=minutes)
+    since = datetime.now(UTC) - timedelta(minutes=minutes)
     result = await db.execute(
         select(func.count(ActivityLog.id)).where(
             and_(
@@ -436,7 +436,7 @@ async def cleanup_old_activities(
     """
     from datetime import timedelta
 
-    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    cutoff_date = datetime.now(UTC) - timedelta(days=days)
     result = await db.execute(
         delete(ActivityLog).where(ActivityLog.created_at < cutoff_date)
     )

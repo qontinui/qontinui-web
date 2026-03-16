@@ -1,5 +1,5 @@
 import secrets
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from jose import JWTError, jwt
@@ -21,9 +21,9 @@ class TokenService:
         additional_claims: dict | None = None,
     ) -> str:
         if expires_delta:
-            expire = datetime.utcnow() + expires_delta
+            expire = datetime.now(UTC) + expires_delta
         else:
-            expire = datetime.utcnow() + timedelta(
+            expire = datetime.now(UTC) + timedelta(
                 minutes=self.access_token_expire_minutes
             )
 
@@ -31,7 +31,7 @@ class TokenService:
             "exp": expire,
             "sub": str(subject),
             "type": "access",
-            "iat": datetime.utcnow(),
+            "iat": datetime.now(UTC),
             "jti": secrets.token_urlsafe(16),
         }
 
@@ -46,15 +46,15 @@ class TokenService:
         self, subject: str | Any, expires_delta: timedelta | None = None
     ) -> str:
         if expires_delta:
-            expire = datetime.utcnow() + expires_delta
+            expire = datetime.now(UTC) + expires_delta
         else:
-            expire = datetime.utcnow() + timedelta(days=self.refresh_token_expire_days)
+            expire = datetime.now(UTC) + timedelta(days=self.refresh_token_expire_days)
 
         to_encode = {
             "exp": expire,
             "sub": str(subject),
             "type": "refresh",
-            "iat": datetime.utcnow(),
+            "iat": datetime.now(UTC),
             "jti": secrets.token_urlsafe(16),
         }
 
@@ -63,12 +63,12 @@ class TokenService:
         )
 
     def create_password_reset_token(self, email: str, hours: int = 1) -> str:
-        expire = datetime.utcnow() + timedelta(hours=hours)
+        expire = datetime.now(UTC) + timedelta(hours=hours)
         to_encode = {
             "exp": expire,
             "sub": email,
             "type": "password_reset",
-            "iat": datetime.utcnow(),
+            "iat": datetime.now(UTC),
         }
         return cast(
             str, jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
@@ -93,12 +93,12 @@ class TokenService:
 
     def create_email_verification_token(self, email: str, hours: int = 24) -> str:
         """Create a token for email verification (valid for 24 hours by default)"""
-        expire = datetime.utcnow() + timedelta(hours=hours)
+        expire = datetime.now(UTC) + timedelta(hours=hours)
         to_encode = {
             "exp": expire,
             "sub": email,
             "type": "email_verification",
-            "iat": datetime.utcnow(),
+            "iat": datetime.now(UTC),
         }
         return cast(
             str, jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)

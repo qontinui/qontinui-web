@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -72,7 +72,7 @@ class StorageService:
             file_type=file_type,
             project_id=project_id,
             file_metadata=metadata or {},
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
         db.add(storage_record)
         await db.commit()

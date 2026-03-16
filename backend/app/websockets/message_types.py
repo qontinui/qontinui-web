@@ -4,7 +4,7 @@ Provides base message schemas and utility functions shared across
 WebSocket endpoints.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -71,7 +71,7 @@ def create_timestamp() -> str:
     Returns:
         ISO formatted timestamp with Z suffix.
     """
-    return datetime.utcnow().isoformat() + "Z"
+    return datetime.now(UTC).isoformat() + "Z"
 
 
 def create_error_response(message: str) -> dict[str, Any]:

@@ -4,7 +4,7 @@ Baseline CRUD operations.
 Handles get, list, update settings, delete, and URL generation for baselines.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
@@ -125,7 +125,7 @@ class BaselineCrud:
         if approval_notes is not None:
             baseline.approval_notes = approval_notes
 
-        baseline.updated_at = datetime.utcnow()
+        baseline.updated_at = datetime.now(UTC)
 
         await db.flush()
         await db.refresh(baseline)
@@ -219,7 +219,7 @@ class BaselineCrud:
         else:
             # Soft delete - just deactivate
             baseline.is_active = False
-            baseline.updated_at = datetime.utcnow()
+            baseline.updated_at = datetime.now(UTC)
 
         await db.flush()
 

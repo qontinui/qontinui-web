@@ -5,7 +5,7 @@ Tests model creation, relationships, queries, and data integrity
 for the software testing system.
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -44,7 +44,7 @@ class TestSoftwareTestRunModel:
             runner_connection_id=test_runner_connection.id,
             workflow_id="workflow-001",
             status=TestRunStatus.RUNNING,
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(UTC),
             configuration_snapshot={"strategy": "random_walk"},
             test_mode="exploration",
             runner_metadata={"version": "0.1.0"},
@@ -82,7 +82,7 @@ class TestSoftwareTestRunModel:
         self, db_session: AsyncSession, test_run: SoftwareTestRun
     ):
         """Test completing a test run."""
-        completion_time = datetime.utcnow()
+        completion_time = datetime.now(UTC)
 
         test_run.status = TestRunStatus.COMPLETED
         test_run.completed_at = completion_time
@@ -167,8 +167,8 @@ class TestSoftwareTestRunModel:
             runner_connection_id=test_runner_connection.id,
             workflow_id="old-workflow",
             status=TestRunStatus.COMPLETED,
-            started_at=datetime.utcnow() - timedelta(days=10),
-            completed_at=datetime.utcnow() - timedelta(days=10, hours=-1),
+            started_at=datetime.now(UTC) - timedelta(days=10),
+            completed_at=datetime.now(UTC) - timedelta(days=10, hours=-1),
             configuration_snapshot={},
         )
         recent_run = SoftwareTestRun(
@@ -177,7 +177,7 @@ class TestSoftwareTestRunModel:
             runner_connection_id=test_runner_connection.id,
             workflow_id="new-workflow",
             status=TestRunStatus.RUNNING,
-            started_at=datetime.utcnow() - timedelta(hours=1),
+            started_at=datetime.now(UTC) - timedelta(hours=1),
             configuration_snapshot={},
         )
 
@@ -185,7 +185,7 @@ class TestSoftwareTestRunModel:
         await db_session.commit()
 
         # Query last 7 days
-        cutoff_date = datetime.utcnow() - timedelta(days=7)
+        cutoff_date = datetime.now(UTC) - timedelta(days=7)
         result = await db_session.execute(
             select(SoftwareTestRun).where(SoftwareTestRun.started_at >= cutoff_date)
         )
@@ -268,7 +268,7 @@ class TestTestDeficiencyModel:
 
         # TRIAGED -> ASSIGNED
         test_deficiency.status = DeficiencyStatus.ASSIGNED
-        test_deficiency.assigned_at = datetime.utcnow()
+        test_deficiency.assigned_at = datetime.now(UTC)
         db_session.add(test_deficiency)
         await db_session.commit()
         await db_session.refresh(test_deficiency)
@@ -284,7 +284,7 @@ class TestTestDeficiencyModel:
 
         # IN_PROGRESS -> RESOLVED
         test_deficiency.status = DeficiencyStatus.RESOLVED
-        test_deficiency.resolved_at = datetime.utcnow()
+        test_deficiency.resolved_at = datetime.now(UTC)
         test_deficiency.resolution = "fixed"
         db_session.add(test_deficiency)
         await db_session.commit()
@@ -404,7 +404,7 @@ class TestTestDeficiencyModel:
         """Test assigning a deficiency to a user."""
         test_deficiency.assigned_to_user_id = test_user.id
         test_deficiency.status = DeficiencyStatus.ASSIGNED
-        test_deficiency.assigned_at = datetime.utcnow()
+        test_deficiency.assigned_at = datetime.now(UTC)
 
         db_session.add(test_deficiency)
         await db_session.commit()

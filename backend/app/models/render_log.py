@@ -4,7 +4,7 @@ These models store DOM snapshots captured by the frontend for AI-assisted
 debugging. Only used when RENDER_LOG_ENABLED=True (development mode).
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import UUID
 
@@ -65,7 +65,7 @@ class RenderLog(Base):
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=datetime.utcnow,
+        default=lambda: datetime.now(UTC),
         server_default="now()",
     )
 
@@ -148,7 +148,7 @@ class RenderImage(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=datetime.utcnow,
+        default=lambda: datetime.now(UTC),
         server_default="now()",
     )
 

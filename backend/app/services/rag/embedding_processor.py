@@ -5,7 +5,7 @@ from the runner, including job creation and project embedding storage.
 """
 
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -95,8 +95,8 @@ class EmbeddingProcessor:
                 "successful": successful,
                 "failed": failed,
             },
-            started_at=datetime.utcnow(),
-            completed_at=datetime.utcnow(),
+            started_at=datetime.now(UTC),
+            completed_at=datetime.now(UTC),
         )
         db.add(job)
         logger.info(

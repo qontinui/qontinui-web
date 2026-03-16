@@ -4,7 +4,7 @@ Repository for download analytics operations.
 Provides queries for analyzing runner download metrics.
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
@@ -41,7 +41,7 @@ class DownloadAnalyticsRepository:
         Returns:
             Dict with aggregated download statistics
         """
-        start_date = datetime.utcnow() - timedelta(days=days)
+        start_date = datetime.now(UTC) - timedelta(days=days)
 
         # Get all download metrics
         result = await db.execute(

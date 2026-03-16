@@ -6,7 +6,7 @@ Includes:
 - NotificationPreferences: User preferences for notification delivery
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 
 from sqlalchemy import (
@@ -84,7 +84,9 @@ class Notification(Base):
     notification_metadata: Mapped[dict] = mapped_column(
         "metadata", JSON, nullable=True
     )  # Additional context (deep links, etc.)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
+    )
 
     # Relationships
     user = relationship("User", foreign_keys=[user_id], backref="notifications")
@@ -96,7 +98,7 @@ class Notification(Base):
     def mark_as_read(self) -> None:
         """Mark notification as read."""
         self.read = True
-        self.read_at = datetime.utcnow()
+        self.read_at = datetime.now(UTC)
 
     def mark_as_unread(self) -> None:
         """Mark notification as unread."""
@@ -138,11 +140,11 @@ class NotificationPreferences(Base):
     in_app_team_invites = Column(Boolean, default=True, nullable=False)
     in_app_project_updates = Column(Boolean, default=True, nullable=False)
 
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     updated_at = Column(
         DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
 

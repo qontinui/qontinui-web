@@ -6,7 +6,7 @@ Handles screenshot upload, validation, S3 storage, and database persistence.
 import base64
 import io
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -194,9 +194,9 @@ async def handle_screenshot(
                     timestamp_str.replace("Z", "+00:00")
                 )
             except (ValueError, AttributeError):
-                screenshot_timestamp = datetime.utcnow()
+                screenshot_timestamp = datetime.now(UTC)
         else:
-            screenshot_timestamp = datetime.utcnow()
+            screenshot_timestamp = datetime.now(UTC)
 
         # Step 9: Create AutomationScreenshot record
         screenshot_name = metadata.get(

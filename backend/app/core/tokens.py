@@ -1,5 +1,5 @@
 import secrets
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from jose import JWTError, jwt
@@ -17,9 +17,9 @@ def create_access_token(
     additional_claims: dict | None = None,
 ) -> str:
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(UTC) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(
+        expire = datetime.now(UTC) + timedelta(
             seconds=settings.ACCESS_TOKEN_EXPIRE_SECONDS
         )
 
@@ -27,7 +27,7 @@ def create_access_token(
         "exp": expire,
         "sub": str(subject),
         "type": "access",
-        "iat": datetime.utcnow(),
+        "iat": datetime.now(UTC),
         "jti": secrets.token_urlsafe(16),  # JWT ID for blacklisting
         "aud": ["fastapi-users:auth"],  # Required by fastapi-users JWTStrategy
     }
@@ -54,7 +54,7 @@ def create_refresh_token(
     long_lived: bool = False,
 ) -> str:
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(UTC) + expires_delta
     else:
         # Use long-lived expiry for "remember me" tokens, otherwise standard expiry
         expiry_days = (
@@ -62,13 +62,13 @@ def create_refresh_token(
             if long_lived
             else settings.REFRESH_TOKEN_EXPIRE_DAYS
         )
-        expire = datetime.utcnow() + timedelta(days=expiry_days)
+        expire = datetime.now(UTC) + timedelta(days=expiry_days)
 
     to_encode = {
         "exp": expire,
         "sub": str(subject),
         "type": "refresh",
-        "iat": datetime.utcnow(),
+        "iat": datetime.now(UTC),
         "jti": secrets.token_urlsafe(16),
         "long_lived": long_lived,  # Track if this is a remember-me token
     }
@@ -163,12 +163,12 @@ async def clean_expired_tokens() -> int:
 
 def create_password_reset_token(email: str) -> str:
     """Create a password reset token"""
-    expire = datetime.utcnow() + timedelta(hours=1)  # Token valid for 1 hour
+    expire = datetime.now(UTC) + timedelta(hours=1)  # Token valid for 1 hour
     to_encode = {
         "exp": expire,
         "sub": email,
         "type": "password_reset",
-        "iat": datetime.utcnow(),
+        "iat": datetime.now(UTC),
     }
     encoded_jwt = cast(
         str,
@@ -247,7 +247,7 @@ def is_token_expiring_soon(token_payload: dict, threshold_minutes: int) -> bool:
     if not expiry:
         return False
 
-    threshold = datetime.utcnow() + timedelta(minutes=threshold_minutes)
+    threshold = datetime.now(UTC) + timedelta(minutes=threshold_minutes)
     return expiry <= threshold
 
 

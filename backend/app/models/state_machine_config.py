@@ -6,7 +6,7 @@ fingerprint details) in PostgreSQL for cross-device persistence.
 """
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import JSON, Column, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
@@ -41,9 +41,12 @@ class StateMachineConfig(Base):
     )  # {states, transitions, fingerprintDetails}
     tags = Column(JSON, nullable=False, default=list)
 
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
     updated_at = Column(
-        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
 
     project = relationship("Project", backref="state_machine_configs")

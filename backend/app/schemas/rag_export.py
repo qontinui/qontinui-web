@@ -4,7 +4,7 @@ This schema defines the format for exporting project configurations in a
 RAG-friendly format optimized for vector database storage and semantic search.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -78,8 +78,8 @@ class RAGElement(BaseModel):
     confidence_score: float | None = Field(
         default=None, description="Detection confidence score"
     )
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     metadata: dict[str, Any] = Field(
         default_factory=dict, description="Additional metadata"
     )
@@ -185,7 +185,7 @@ class RAGMetadata(BaseModel):
     description: str | None = None
     author: str | None = None
     created_at: datetime
-    exported_at: datetime = Field(default_factory=datetime.utcnow)
+    exported_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     target_application: str | None = None
     tags: list[str] = Field(default_factory=list)
     embedding_config: EmbeddingConfig = Field(default_factory=EmbeddingConfig)

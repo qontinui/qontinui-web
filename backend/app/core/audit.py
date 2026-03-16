@@ -34,7 +34,7 @@ Usage:
 """
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
@@ -172,7 +172,7 @@ class AuditLogger:
             log_metadata=metadata,
             ip_address=ip_address,
             correlation_id=correlation_id,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         db.add(audit_log)

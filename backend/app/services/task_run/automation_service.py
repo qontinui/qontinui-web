@@ -5,7 +5,7 @@ Handles creation, updating, retrieval, and step progress
 for automation records within task runs.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
@@ -67,7 +67,7 @@ class TaskRunAutomationService:
             task_run_id=task_run_id,
             workflow_name=automation_data.workflow_name,
             iteration_number=automation_data.iteration_number,
-            started_at=automation_data.started_at or datetime.utcnow(),
+            started_at=automation_data.started_at or datetime.now(UTC),
         )
 
         created = await self.automation_repo.create_automation(db, automation)
@@ -225,7 +225,7 @@ class TaskRunAutomationService:
             # Calculate elapsed time from automation start
             elapsed_ms = 0
             if latest_automation.started_at:
-                elapsed = datetime.utcnow() - latest_automation.started_at
+                elapsed = datetime.now(UTC) - latest_automation.started_at
                 elapsed_ms = int(elapsed.total_seconds() * 1000)
             if latest_automation.duration_ms:
                 elapsed_ms = latest_automation.duration_ms
@@ -262,7 +262,7 @@ class TaskRunAutomationService:
         # No automation found, return basic progress based on task status
         elapsed_ms = 0
         if task_run.created_at:
-            elapsed = datetime.utcnow() - task_run.created_at
+            elapsed = datetime.now(UTC) - task_run.created_at
             elapsed_ms = int(elapsed.total_seconds() * 1000)
         if task_run.duration_seconds:
             elapsed_ms = task_run.duration_seconds * 1000

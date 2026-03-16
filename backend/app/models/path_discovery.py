@@ -5,7 +5,7 @@ Discovers new paths through state space, identifies patterns,
 and detects anomalous or unexpected paths.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, text
@@ -63,7 +63,10 @@ class PathDiscovery(Base):
 
     # Discovery context
     discovered_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=datetime.utcnow, index=True
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        index=True,
     )
 
     execution_time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -84,7 +87,7 @@ class PathDiscovery(Base):
     occurrence_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
     last_traversed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
 
     # Metadata
@@ -92,7 +95,7 @@ class PathDiscovery(Base):
 
     # Audit
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
 
     # Relationships

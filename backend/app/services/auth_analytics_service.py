@@ -9,7 +9,7 @@ This service provides comprehensive analytics tracking including:
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import UUID
 
@@ -76,7 +76,7 @@ class AuthAnalyticsService:
             event_name=event_name,
             user_id=user_id,
             properties=properties or {},
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(UTC),
         )
 
         db.add(event)
@@ -150,7 +150,7 @@ class AuthAnalyticsService:
         Returns:
             EventSummary with statistics
         """
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         seven_days_ago = now - timedelta(days=7)
         thirty_days_ago = now - timedelta(days=30)
 
@@ -228,7 +228,7 @@ class AuthAnalyticsService:
         Returns:
             Dict with adoption rate statistics
         """
-        start_date = datetime.utcnow() - timedelta(days=days)
+        start_date = datetime.now(UTC) - timedelta(days=days)
 
         # Total logins in period
         result = await db.execute(
@@ -279,7 +279,7 @@ class AuthAnalyticsService:
             Count of active device sessions
         """
         # Consider sessions active if last seen within last 7 days
-        cutoff_date = datetime.utcnow() - timedelta(days=7)
+        cutoff_date = datetime.now(UTC) - timedelta(days=7)
 
         result = await db.execute(
             select(func.count(DeviceSession.id)).where(
@@ -303,7 +303,7 @@ class AuthAnalyticsService:
         Returns:
             Count of device mismatch events
         """
-        start_date = datetime.utcnow() - timedelta(days=days)
+        start_date = datetime.now(UTC) - timedelta(days=days)
 
         result = await db.execute(
             select(func.count(AnalyticsEvent.id)).where(
@@ -332,7 +332,7 @@ class AuthAnalyticsService:
         Returns:
             List of UserActivitySummary for most active users
         """
-        start_date = datetime.utcnow() - timedelta(days=days)
+        start_date = datetime.now(UTC) - timedelta(days=days)
 
         # Get users with most login events in the period
         result = await db.execute(
@@ -429,7 +429,7 @@ class AuthAnalyticsService:
 
         return {
             "period_days": days,
-            "generated_at": datetime.utcnow().isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
             "login_stats": {
                 "total_logins_7_days": login_summary.last_7_days,
                 "total_logins_30_days": login_summary.last_30_days,

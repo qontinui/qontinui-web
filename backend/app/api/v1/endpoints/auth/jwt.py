@@ -1,7 +1,7 @@
 """JWT authentication endpoints (login, logout, refresh, runner token)."""
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import structlog
 from fastapi import APIRouter, Depends, Request, Response
@@ -104,14 +104,14 @@ async def login(
 
     # Calculate account age in days
     account_age_days = (
-        (datetime.utcnow() - user.created_at).days if user.created_at else 0
+        (datetime.now(UTC) - user.created_at).days if user.created_at else 0
     )
 
     # Update user analytics fields
     user.login_count += 1
     if remember_me:
         user.remember_me_usage_count += 1
-    user.last_login_at = datetime.utcnow()
+    user.last_login_at = datetime.now(UTC)
     user.last_device_fingerprint = fingerprint
 
     # Track login event

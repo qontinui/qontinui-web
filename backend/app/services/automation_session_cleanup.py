@@ -7,7 +7,7 @@ Provides cleanup utilities for automation sessions including:
 - Automatic session abortion on disconnect
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -77,12 +77,12 @@ async def cleanup_session_on_disconnect(
             }
 
         # Calculate session duration
-        duration_minutes = (datetime.utcnow() - session.created_at).total_seconds() / 60
+        duration_minutes = (datetime.now(UTC) - session.created_at).total_seconds() / 60
 
         # Auto-abort if active for more than 30 minutes
         if duration_minutes > 30:
             session.status = "aborted"
-            session.ended_at = datetime.utcnow()
+            session.ended_at = datetime.now(UTC)
             await db.commit()
 
             logger.warning(
@@ -157,7 +157,7 @@ async def check_session_timeout(
 
         # Check if session has expired
         if session.is_expired():
-            duration_seconds = (datetime.utcnow() - session.created_at).total_seconds()
+            duration_seconds = (datetime.now(UTC) - session.created_at).total_seconds()
 
             logger.warning(
                 "session_timeout_detected",
@@ -168,7 +168,7 @@ async def check_session_timeout(
 
             # Update session status
             session.status = "expired"
-            session.ended_at = datetime.utcnow()
+            session.ended_at = datetime.now(UTC)
             await db.commit()
 
             return True, {

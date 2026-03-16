@@ -9,7 +9,7 @@ Run this script while WebSocket clients are connected to see real-time message d
 import asyncio
 import json
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 
 from redis import asyncio as aioredis
 
@@ -67,7 +67,7 @@ async def broadcast_test_message(session_id: str, message_type: str = "test_even
             "priority": "high",
             "status": "success",
         },
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(UTC).isoformat() + "Z",
     }
 
     print(f"Channel: {channel}")
@@ -143,12 +143,12 @@ async def continuous_broadcast(session_id: str, interval: int = 5):
                     "message_number": message_count,
                     "status": "broadcasting",
                 },
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": datetime.now(UTC).isoformat() + "Z",
             }
 
             published = await redis.publish(channel, json.dumps(message))
             print(
-                f"[{datetime.utcnow().strftime('%H:%M:%S')}] "
+                f"[{datetime.now(UTC).strftime('%H:%M:%S')}] "
                 f"Message #{message_count} → {published} subscriber(s)"
             )
 

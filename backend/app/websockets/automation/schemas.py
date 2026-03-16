@@ -4,7 +4,7 @@ Defines Pydantic models for validating WebSocket messages between
 the runner, backend, and frontend clients.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -158,4 +158,4 @@ class StatusResponse(BaseModel):
 
 def make_timestamp() -> str:
     """Generate ISO format timestamp string with Z suffix."""
-    return datetime.utcnow().isoformat() + "Z"
+    return datetime.now(UTC).isoformat() + "Z"

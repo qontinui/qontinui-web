@@ -6,7 +6,7 @@ Handles the business logic for real-time collaboration including:
 - Comment management
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import UUID
 
@@ -133,8 +133,8 @@ class CollaborationSyncManager:
                     user_id=self.user_id,
                     resource_type=resource_type,
                     resource_id=resource_id,
-                    acquired_at=datetime.utcnow(),
-                    expires_at=datetime.utcnow() + timedelta(minutes=duration_minutes),
+                    acquired_at=datetime.now(UTC),
+                    expires_at=datetime.now(UTC) + timedelta(minutes=duration_minutes),
                     auto_release=True,
                 )
                 self.db.add(lock)

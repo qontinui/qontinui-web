@@ -11,6 +11,7 @@ Provides comprehensive security scanning for Python code including:
 
 import ast
 import re
+from datetime import UTC, datetime
 from typing import Any
 
 from radon.complexity import cc_visit  # type: ignore[import-untyped]
@@ -266,13 +267,11 @@ class CodeSecurityScanner:
         Returns:
             SecurityScanResult with all findings
         """
-        from datetime import datetime
-
         result = SecurityScanResult(
             status=SecurityStatus.PASSED,
             risk_score=0,
             issues=[],
-            scanned_at=datetime.utcnow().isoformat(),
+            scanned_at=datetime.now(UTC).isoformat(),
         )
 
         # 1. Validate syntax (always required)

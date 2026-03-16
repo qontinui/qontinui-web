@@ -6,7 +6,7 @@ of task runs. Also serves as a facade that delegates session,
 finding, and automation operations to their respective sub-services.
 """
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 import structlog
@@ -280,7 +280,7 @@ class TaskRunService:
             task_run.output_summary = update_data.output_summary
         if update_data.summary is not None:
             task_run.summary = update_data.summary
-            task_run.summary_generated_at = datetime.utcnow()
+            task_run.summary_generated_at = datetime.now(UTC)
         if update_data.goal_achieved is not None:
             task_run.goal_achieved = update_data.goal_achieved
         if update_data.remaining_work is not None:

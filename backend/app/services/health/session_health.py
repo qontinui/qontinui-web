@@ -5,7 +5,7 @@ Monitors active session counts, remember-me adoption,
 and session expiration metrics.
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
@@ -33,7 +33,7 @@ async def get_session_stats(db: AsyncSession) -> dict[str, Any]:
         - avg_session_age_hours: Average age of active sessions
         - sessions_expiring_soon: Sessions expiring in next hour
     """
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
 
     try:
         # Total active sessions

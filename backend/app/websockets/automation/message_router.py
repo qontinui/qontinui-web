@@ -6,7 +6,7 @@ message type. Separates routing logic from business logic.
 
 import uuid
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -368,7 +368,7 @@ class MessageRouter:
                 ),
                 "name": metadata.get(
                     "name",
-                    f"Screenshot {datetime.utcnow().strftime('%H:%M:%S')}",
+                    f"Screenshot {datetime.now(UTC).strftime('%H:%M:%S')}",
                 ),
                 "width": metadata.get("width", 0),
                 "height": metadata.get("height", 0),

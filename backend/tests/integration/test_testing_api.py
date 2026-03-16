@@ -5,7 +5,7 @@ Tests the complete API flow for software test runs, transitions,
 deficiencies, and coverage tracking.
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -146,7 +146,7 @@ class TestTestRunAPI:
         async with AsyncClient(app=app, base_url="http://test") as client:
             completion_data = {
                 "status": "completed",
-                "ended_at": datetime.utcnow().isoformat(),
+                "ended_at": datetime.now(UTC).isoformat(),
                 "final_metrics": {
                     "total_transitions_executed": 50,
                     "successful_transitions": 45,
@@ -186,8 +186,8 @@ class TestTransitionAPI:
                 "to_state": "dashboard",
                 "transition_name": "successful_login",
                 "status": "success",
-                "started_at": datetime.utcnow().isoformat(),
-                "completed_at": (datetime.utcnow() + timedelta(seconds=2)).isoformat(),
+                "started_at": datetime.now(UTC).isoformat(),
+                "completed_at": (datetime.now(UTC) + timedelta(seconds=2)).isoformat(),
                 "duration_ms": 2000,
                 "metadata": {"confidence_score": 0.95},
             }
@@ -406,10 +406,10 @@ class TestCoverageAPI:
                 "/api/v1/testing/analytics/coverage-trends",
                 params={
                     "project_id": test_project.id,
-                    "start_date": (datetime.utcnow() - timedelta(days=30)).strftime(
+                    "start_date": (datetime.now(UTC) - timedelta(days=30)).strftime(
                         "%Y-%m-%d"
                     ),
-                    "end_date": datetime.utcnow().strftime("%Y-%m-%d"),
+                    "end_date": datetime.now(UTC).strftime("%Y-%m-%d"),
                     "granularity": "daily",
                 },
                 headers={"Authorization": "Bearer test_token"},
@@ -448,10 +448,10 @@ class TestAnalyticsAPI:
                 params={
                     "workflow_id": "workflow-001",
                     "project_id": test_project.id,
-                    "start_date": (datetime.utcnow() - timedelta(days=30)).strftime(
+                    "start_date": (datetime.now(UTC) - timedelta(days=30)).strftime(
                         "%Y-%m-%d"
                     ),
-                    "end_date": datetime.utcnow().strftime("%Y-%m-%d"),
+                    "end_date": datetime.now(UTC).strftime("%Y-%m-%d"),
                 },
                 headers={"Authorization": "Bearer test_token"},
             )
@@ -579,7 +579,7 @@ class TestErrorHandling:
         """Test attempting to update a completed test run."""
         # Complete the test run first
         test_run.status = TestRunStatus.COMPLETED
-        test_run.completed_at = datetime.utcnow()
+        test_run.completed_at = datetime.now(UTC)
         db_session.add(test_run)
         await db_session.commit()
 
@@ -590,8 +590,8 @@ class TestErrorHandling:
                 "to_state": "dashboard",
                 "transition_name": "login",
                 "status": "success",
-                "started_at": datetime.utcnow().isoformat(),
-                "completed_at": datetime.utcnow().isoformat(),
+                "started_at": datetime.now(UTC).isoformat(),
+                "completed_at": datetime.now(UTC).isoformat(),
                 "duration_ms": 1000,
             }
 

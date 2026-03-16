@@ -8,7 +8,7 @@ This model stores the current annotation state for a project, including:
 """
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import JSON, Column, DateTime, ForeignKey, Index, Integer, String
@@ -80,8 +80,8 @@ class ProjectAnnotationState(Base):
     # Tracking
     updated_at = Column(
         DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
     updated_by_id = Column(

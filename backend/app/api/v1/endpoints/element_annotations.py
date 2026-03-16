@@ -7,7 +7,7 @@ track annotation history over time.
 """
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
@@ -249,7 +249,7 @@ async def update_element_annotations(
         annotation_set.screenshot_width = annotation_data.screenshot_width  # type: ignore[assignment]
         annotation_set.screenshot_height = annotation_data.screenshot_height  # type: ignore[assignment]
         annotation_set.screenshot_url = annotation_data.screenshot_url  # type: ignore[assignment]
-        annotation_set.updated_at = datetime.utcnow()  # type: ignore[assignment]
+        annotation_set.updated_at = datetime.now(UTC)  # type: ignore[assignment]
 
         # Delete existing elements
         for element in annotation_set.elements:

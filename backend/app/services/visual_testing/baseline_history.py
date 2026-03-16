@@ -4,7 +4,7 @@ Baseline version history and rollback operations.
 Handles viewing version history and rolling back to previous versions.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
@@ -116,7 +116,7 @@ class BaselineHistory(BaselineCrud, BaselineImageProcessing):
 
         # Activate the target version
         target.is_active = True
-        target.updated_at = datetime.utcnow()
+        target.updated_at = datetime.now(UTC)
 
         await db.flush()
         await db.refresh(target)

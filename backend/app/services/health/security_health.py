@@ -4,7 +4,7 @@ Security health check functions.
 Monitors security warnings and suspicious activity patterns.
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
@@ -34,7 +34,7 @@ async def get_security_warnings(db: AsyncSession) -> dict[str, Any]:
         - alert_level: "healthy", "warning", or "critical"
         - recommendations: List of recommended actions
     """
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     day_ago = now - timedelta(days=1)
 
     try:

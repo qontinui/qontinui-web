@@ -4,7 +4,7 @@ Repository for recording database operations.
 Extracts database query logic from recordings.py endpoints into reusable methods.
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import structlog
 from pydantic import BaseModel
@@ -183,12 +183,12 @@ class RecordingRepository(BaseRepository[Recording, RecordingCreate]):
         """
         storage = object_storage
         for frame in frames:
-            if not frame.image_url or frame.url_expires_at < datetime.utcnow():
+            if not frame.image_url or frame.url_expires_at < datetime.now(UTC):
                 url = storage.generate_presigned_url(
                     str(frame.s3_key), expiration=3600 * 24 * 7
                 )
                 frame.image_url = url  # type: ignore[assignment]
-                frame.url_expires_at = datetime.utcnow() + timedelta(days=7)  # type: ignore[assignment]
+                frame.url_expires_at = datetime.now(UTC) + timedelta(days=7)  # type: ignore[assignment]
 
         await db.commit()
 

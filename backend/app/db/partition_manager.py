@@ -13,7 +13,7 @@ Tables managed:
 
 import calendar
 import re
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 import structlog
@@ -555,7 +555,7 @@ async def drop_old_partitions(
     granularity = config["granularity"]
 
     # Calculate cutoff date
-    cutoff_date = datetime.utcnow() - timedelta(days=retention_months * 30)  # type: ignore[operator]
+    cutoff_date = datetime.now(UTC) - timedelta(days=retention_months * 30)  # type: ignore[operator]
 
     logger.info(
         "drop_old_partitions_started",
@@ -597,8 +597,8 @@ async def drop_old_partitions(
 
             # Check if partition is older than retention period
             if partition_date < cutoff_date:
-                age_months = (datetime.utcnow().year - partition_date.year) * 12 + (
-                    datetime.utcnow().month - partition_date.month
+                age_months = (datetime.now(UTC).year - partition_date.year) * 12 + (
+                    datetime.now(UTC).month - partition_date.month
                 )
 
                 partitions_to_delete.append(

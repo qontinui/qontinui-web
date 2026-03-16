@@ -3,7 +3,7 @@
 Tracks automation test sessions including runner metadata and session lifecycle.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -70,7 +70,7 @@ class AutomationSession(Base):
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.utcnow, nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
     ended_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -120,7 +120,7 @@ class AutomationSession(Base):
             # Session already ended
             return False
 
-        duration = (datetime.utcnow() - self.created_at).total_seconds()
+        duration = (datetime.now(UTC) - self.created_at).total_seconds()
         return duration > self.max_duration_seconds
 
     def __repr__(self) -> str:

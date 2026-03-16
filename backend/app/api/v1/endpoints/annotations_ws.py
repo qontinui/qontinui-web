@@ -7,7 +7,7 @@ Provides real-time collaboration for annotation editing including:
 - User presence in annotation sessions
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -149,7 +149,7 @@ class AnnotationConnectionManager:
             "color": color,
             "cursor": None,
             "selection": [],
-            "connected_at": datetime.utcnow().isoformat() + "Z",
+            "connected_at": datetime.now(UTC).isoformat() + "Z",
         }
 
         self.active_connections[annotation_set_id][websocket] = user_info

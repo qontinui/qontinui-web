@@ -4,7 +4,7 @@ Automation Screenshot Model
 Stores screenshots captured during automation sessions with metadata.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 
@@ -77,7 +77,7 @@ class AutomationScreenshot(Base):
 
     # Created timestamp
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.utcnow, nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
 
     # Relationships

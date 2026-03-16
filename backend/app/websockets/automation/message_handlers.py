@@ -8,7 +8,7 @@ Screenshot handling is in screenshot_handler.py for better separation.
 
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -151,9 +151,9 @@ async def handle_input_event(
                     timestamp_str.replace("Z", "+00:00")
                 )
             except (ValueError, AttributeError):
-                event_timestamp = datetime.utcnow()
+                event_timestamp = datetime.now(UTC)
         else:
-            event_timestamp = datetime.utcnow()
+            event_timestamp = datetime.now(UTC)
 
         # Create input event record
         input_event = AutomationInputEvent(
@@ -270,7 +270,9 @@ async def store_tree_event(
             duration_ms=(
                 (node.get("end_timestamp", 0) - node.get("timestamp", 0)) * 1000
                 if node.get("end_timestamp") and node.get("timestamp")
-                else node.get("duration", 0) * 1000 if node.get("duration") else None
+                else node.get("duration", 0) * 1000
+                if node.get("duration")
+                else None
             ),
             status=node.get("status", "pending"),
             error_message=node.get("error"),

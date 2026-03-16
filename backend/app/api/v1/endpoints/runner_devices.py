@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -97,8 +97,8 @@ async def register_device(
         existing_device.platform = device_in.platform  # type: ignore[assignment]
         existing_device.user_id = current_user.id  # type: ignore[assignment]
         existing_device.is_active = True  # type: ignore[assignment]
-        existing_device.updated_at = datetime.utcnow()  # type: ignore[assignment]
-        existing_device.last_seen_at = datetime.utcnow()  # type: ignore[assignment]
+        existing_device.updated_at = datetime.now(UTC)  # type: ignore[assignment]
+        existing_device.last_seen_at = datetime.now(UTC)  # type: ignore[assignment]
 
         await db.commit()
         await db.refresh(existing_device)
@@ -119,7 +119,7 @@ async def register_device(
         device_name=device_in.device_name,
         platform=device_in.platform,
         is_active=True,
-        last_seen_at=datetime.utcnow(),
+        last_seen_at=datetime.now(UTC),
     )
 
     db.add(device)
@@ -281,7 +281,7 @@ async def delete_device(
 
     # Deactivate device
     device.is_active = False  # type: ignore[assignment]
-    device.updated_at = datetime.utcnow()  # type: ignore[assignment]
+    device.updated_at = datetime.now(UTC)  # type: ignore[assignment]
 
     await db.commit()
 
@@ -372,8 +372,8 @@ async def device_heartbeat(
         )
 
     # Update last seen
-    device.last_seen_at = datetime.utcnow()  # type: ignore[assignment]
-    device.updated_at = datetime.utcnow()  # type: ignore[assignment]
+    device.last_seen_at = datetime.now(UTC)  # type: ignore[assignment]
+    device.updated_at = datetime.now(UTC)  # type: ignore[assignment]
 
     await db.commit()
 

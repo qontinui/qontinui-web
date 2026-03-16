@@ -2,7 +2,7 @@
 Tests for automatic deficiency creation service.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -85,7 +85,7 @@ class TestDeficiencyService:
             transition_id="login->dashboard",
             sequence_number=1,
             status=TransitionExecutionStatus.FAILED,
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(UTC),
             source_state="login",
             target_state="dashboard",
             error_type="timeout",
@@ -103,8 +103,8 @@ class TestDeficiencyService:
             transition_id="login->dashboard",
             sequence_number=1,
             status=TransitionExecutionStatus.FAILED,
-            started_at=datetime.utcnow(),
-            completed_at=datetime.utcnow(),
+            started_at=datetime.now(UTC),
+            completed_at=datetime.now(UTC),
             source_state="login",
             target_state="dashboard",
             error_type="timeout",
@@ -127,7 +127,7 @@ class TestDeficiencyService:
             transition_name="successful_login",
             sequence_number=1,
             status=TransitionExecutionStatus.FAILED,
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(UTC),
             source_state="login",
             target_state="dashboard",
             error_message="Login button not found",
@@ -146,7 +146,7 @@ class TestDeficiencyService:
             transition_id="login->dashboard",
             sequence_number=1,
             status=TransitionExecutionStatus.FAILED,
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(UTC),
             execution_metadata={
                 "os": "Windows 11",
                 "browser": "Chrome 119",
@@ -171,8 +171,8 @@ class TestDeficiencyService:
             transition_name="successful_login",
             sequence_number=1,
             status=TransitionExecutionStatus.FAILED,
-            started_at=datetime.utcnow(),
-            completed_at=datetime.utcnow(),
+            started_at=datetime.now(UTC),
+            completed_at=datetime.now(UTC),
             execution_time_ms=5000,
             source_state="login",
             target_state="dashboard",

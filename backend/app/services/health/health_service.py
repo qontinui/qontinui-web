@@ -4,7 +4,7 @@ Health service facade.
 Composes all health sub-services into a single overview endpoint.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -64,7 +64,7 @@ class HealthService:
             - sessions: Session statistics
             - system: System resource metrics
         """
-        timestamp = datetime.utcnow()
+        timestamp = datetime.now(UTC)
 
         # Gather all health metrics
         redis_health = await get_redis_status()

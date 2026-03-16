@@ -6,7 +6,7 @@ Delegates pattern matching operations to the runner/API.
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -63,7 +63,7 @@ class PatternMatcher:
             Match result dictionary with found locations
         """
         match_id = str(uuid4())
-        start_time = datetime.utcnow()
+        start_time = datetime.now(UTC)
 
         try:
             async with httpx.AsyncClient() as client:
@@ -104,7 +104,7 @@ class PatternMatcher:
                     "best_match": api_result.get("best_match"),
                     "confidence": api_result.get("confidence", 0.0),
                     "execution_time_ms": (
-                        datetime.utcnow() - start_time
+                        datetime.now(UTC) - start_time
                     ).total_seconds()
                     * 1000,
                 }
@@ -115,7 +115,7 @@ class PatternMatcher:
                 "match_id": match_id,
                 "error": f"API error: {e.response.status_code} - {e.response.text}",
                 "matches": [],
-                "execution_time_ms": (datetime.utcnow() - start_time).total_seconds()
+                "execution_time_ms": (datetime.now(UTC) - start_time).total_seconds()
                 * 1000,
             }
         except httpx.HTTPError as e:
@@ -124,7 +124,7 @@ class PatternMatcher:
                 "match_id": match_id,
                 "error": f"HTTP error: {e}",
                 "matches": [],
-                "execution_time_ms": (datetime.utcnow() - start_time).total_seconds()
+                "execution_time_ms": (datetime.now(UTC) - start_time).total_seconds()
                 * 1000,
             }
         except FileNotFoundError:
@@ -133,7 +133,7 @@ class PatternMatcher:
                 "match_id": match_id,
                 "error": f"Template image not found: {template_path}",
                 "matches": [],
-                "execution_time_ms": (datetime.utcnow() - start_time).total_seconds()
+                "execution_time_ms": (datetime.now(UTC) - start_time).total_seconds()
                 * 1000,
             }
         except Exception as e:
@@ -142,7 +142,7 @@ class PatternMatcher:
                 "match_id": match_id,
                 "error": f"Pattern matching failed: {e}",
                 "matches": [],
-                "execution_time_ms": (datetime.utcnow() - start_time).total_seconds()
+                "execution_time_ms": (datetime.now(UTC) - start_time).total_seconds()
                 * 1000,
             }
 

@@ -5,7 +5,7 @@ Provides database operations for creating, reading, updating, and deleting
 custom functions discovered from user code.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
@@ -123,7 +123,7 @@ async def update_custom_function(
     for field, value in update_dict.items():
         setattr(function, field, value)
 
-    function.updated_at = datetime.utcnow()  # type: ignore[assignment]
+    function.updated_at = datetime.now(UTC)  # type: ignore[assignment]
     await db.commit()
     await db.refresh(function)
 
@@ -440,7 +440,7 @@ async def upsert_custom_function(
         for field, value in function_data.model_dump(exclude_unset=True).items():
             setattr(existing, field, value)
 
-        existing.updated_at = datetime.utcnow()  # type: ignore[assignment]
+        existing.updated_at = datetime.now(UTC)  # type: ignore[assignment]
         await db.commit()
         await db.refresh(existing)
 

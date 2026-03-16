@@ -2,7 +2,7 @@
 CRUD operations for SessionActivity model.
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import select
@@ -30,7 +30,7 @@ async def create_session_activity(
     Returns:
         Created SessionActivity instance
     """
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     first_login = first_login_at or now
 
     # Calculate absolute expiry based on MAX_SESSION_DAYS
@@ -81,7 +81,7 @@ async def update_last_activity(db: AsyncSession, jti: str) -> SessionActivity | 
     if not session_activity:
         return None
 
-    session_activity.last_activity_at = datetime.utcnow()
+    session_activity.last_activity_at = datetime.now(UTC)
     await db.commit()
     await db.refresh(session_activity)
 
@@ -103,7 +103,7 @@ async def is_session_expired(db: AsyncSession, jti: str) -> bool:
     if not session_activity:
         return True
 
-    return datetime.utcnow() > session_activity.absolute_expiry_at
+    return datetime.now(UTC) > session_activity.absolute_expiry_at
 
 
 async def delete_session(db: AsyncSession, jti: str) -> bool:
@@ -134,7 +134,7 @@ async def delete_expired_sessions(db: AsyncSession) -> int:
     Returns:
         Number of sessions deleted
     """
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     result = await db.execute(
         select(SessionActivity).where(SessionActivity.absolute_expiry_at < now)
     )
@@ -162,7 +162,7 @@ async def get_user_sessions(db: AsyncSession, user_id: UUID) -> list[SessionActi
     result = await db.execute(
         select(SessionActivity)
         .where(SessionActivity.user_id == user_id)
-        .where(SessionActivity.absolute_expiry_at > datetime.utcnow())
+        .where(SessionActivity.absolute_expiry_at > datetime.now(UTC))
         .order_by(SessionActivity.last_activity_at.desc())
     )
     return list(result.scalars().all())

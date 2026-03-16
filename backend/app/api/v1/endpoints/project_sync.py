@@ -5,7 +5,7 @@ Provides real-time sync coordination between frontend clients and backend operat
 Broadcasts lock acquisition/release events and version updates.
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import cast
 from uuid import UUID
 
@@ -185,7 +185,7 @@ async def websocket_sync_endpoint(
         lock_query = select(SyncLock).where(
             SyncLock.project_id == project_uuid,
             SyncLock.released_at.is_(None),
-            SyncLock.expires_at > datetime.utcnow(),
+            SyncLock.expires_at > datetime.now(UTC),
         )
         lock_result = await db.execute(lock_query)
         active_lock = lock_result.scalar_one_or_none()
@@ -294,7 +294,7 @@ async def acquire_sync_lock(
     existing_lock_query = select(SyncLock).where(
         SyncLock.project_id == project_id,
         SyncLock.released_at.is_(None),
-        SyncLock.expires_at > datetime.utcnow(),
+        SyncLock.expires_at > datetime.now(UTC),
     )
     existing_result = await db.execute(existing_lock_query)
     existing_lock = existing_result.scalar_one_or_none()
@@ -312,7 +312,7 @@ async def acquire_sync_lock(
         )
 
     # Create new lock
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     lock = SyncLock(
         project_id=project_id,
         user_id=current_user.id,
@@ -394,7 +394,7 @@ async def release_sync_lock(
         )
 
     # Mark lock as released
-    lock.released_at = datetime.utcnow()  # type: ignore[assignment]
+    lock.released_at = datetime.now(UTC)  # type: ignore[assignment]
     if not release_request.success:
         lock.error_message = release_request.error_message  # type: ignore[assignment]
 
@@ -463,7 +463,7 @@ async def get_active_lock(
     lock_query = select(SyncLock).where(
         SyncLock.project_id == project_id,
         SyncLock.released_at.is_(None),
-        SyncLock.expires_at > datetime.utcnow(),
+        SyncLock.expires_at > datetime.now(UTC),
     )
     lock_result = await db.execute(lock_query)
     lock = lock_result.scalar_one_or_none()

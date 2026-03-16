@@ -6,7 +6,7 @@ Categories define how AI-detected findings are classified (e.g. Code Bug, Securi
 Built-in categories are seeded on first access; users can also create custom categories.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import (
@@ -61,7 +61,7 @@ class FindingCategoryConfig(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=text("now()"),
-        onupdate=datetime.utcnow,
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
 

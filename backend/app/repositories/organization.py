@@ -4,7 +4,7 @@ Repository for organization, team member, and invitation database operations.
 Provides async CRUD operations for organization-related models.
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import and_, func, select
@@ -168,7 +168,7 @@ class TeamMemberRepository:
 
     async def count_active_today(self, db: AsyncSession, org_id: UUID) -> int:
         """Count members active in the last 24 hours."""
-        yesterday = datetime.utcnow() - timedelta(hours=24)
+        yesterday = datetime.now(UTC) - timedelta(hours=24)
         result = await db.execute(
             select(func.count(TeamMember.id)).filter(
                 and_(
@@ -292,7 +292,7 @@ class InvitationRepository:
         self, db: AsyncSession, invitation: OrganizationInvitation
     ) -> None:
         """Mark invitation as accepted."""
-        invitation.accepted_at = datetime.utcnow()  # type: ignore[assignment]
+        invitation.accepted_at = datetime.now(UTC)  # type: ignore[assignment]
         await db.commit()
 
 

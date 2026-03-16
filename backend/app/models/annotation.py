@@ -3,7 +3,7 @@ Annotation models for GUI element ground truth data
 """
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import JSON, Column, DateTime, ForeignKey, Index, Integer, String, Text
@@ -32,9 +32,12 @@ class AnnotationSet(Base):
     )
 
     # Metadata
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
     )
     created_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
 

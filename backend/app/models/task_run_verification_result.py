@@ -6,7 +6,7 @@ Each record captures the result of running all verification steps
 in a single iteration, including summary stats and the full result JSON.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -119,7 +119,7 @@ class TaskRunVerificationResult(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=datetime.utcnow,
+        default=lambda: datetime.now(UTC),
         server_default=text("now()"),
     )
 

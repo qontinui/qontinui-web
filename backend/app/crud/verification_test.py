@@ -5,7 +5,7 @@ Provides database operations for creating, reading, updating, and deleting
 verification tests and their execution results.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -126,7 +126,7 @@ async def update_verification_test(
     for field, value in update_dict.items():
         setattr(test, field, value)
 
-    test.updated_at = datetime.utcnow()
+    test.updated_at = datetime.now(UTC)
     await db.commit()
     await db.refresh(test)
 
@@ -486,7 +486,7 @@ async def update_workflow_association(
     for field, value in update_dict.items():
         setattr(assoc, field, value)
 
-    assoc.updated_at = datetime.utcnow()
+    assoc.updated_at = datetime.now(UTC)
     await db.commit()
     await db.refresh(assoc)
 

@@ -1,5 +1,5 @@
 import secrets
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 
 from sqlalchemy import (
@@ -59,9 +59,12 @@ class Organization(Base):
     avatar_url = Column(String, nullable=True)
     settings = Column(JSON, default={}, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
     )
 
     # Relationships
@@ -115,7 +118,7 @@ class TeamMember(Base):
     role = Column(String, default=TeamRole.MEMBER.value, nullable=False)
     permissions = Column(JSON, default={}, nullable=False)
     invited_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    joined_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    joined_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     last_active_at = Column(DateTime, nullable=True)
 
     # Relationships
@@ -172,7 +175,7 @@ class OrganizationInvitation(Base):
     token = Column(String, unique=True, nullable=False, index=True)
     expires_at = Column(DateTime, nullable=False)
     accepted_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
 
     # Relationships
     organization = relationship(
@@ -205,12 +208,12 @@ class OrganizationInvitation(Base):
     @staticmethod
     def default_expiry():
         """Default expiry time for invitations (7 days)"""
-        return datetime.utcnow() + timedelta(days=7)
+        return datetime.now(UTC) + timedelta(days=7)
 
     @property
     def is_expired(self):
         """Check if invitation has expired"""
-        return datetime.utcnow() > self.expires_at
+        return datetime.now(UTC) > self.expires_at
 
     @property
     def is_accepted(self):
@@ -252,7 +255,7 @@ class ProjectAccessControl(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     expires_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
 
     # Relationships
     project = relationship("Project")
@@ -293,4 +296,4 @@ class ProjectAccessControl(Base):
         """Check if access has expired"""
         if self.expires_at is None:
             return False  # type: ignore[unreachable]
-        return datetime.utcnow() > self.expires_at  # type: ignore[return-value]
+        return datetime.now(UTC) > self.expires_at  # type: ignore[return-value]

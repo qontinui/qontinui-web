@@ -3,7 +3,7 @@
 Handles individual message types for real-time collaboration.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -33,7 +33,7 @@ async def handle_heartbeat(
     await context.websocket.send_json(
         {
             "type": "heartbeat_ack",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(UTC).isoformat() + "Z",
         }
     )
 
@@ -102,7 +102,7 @@ async def handle_resend(
             "type": "resend_complete",
             "from_sequence": from_sequence,
             "count": resent_count,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(UTC).isoformat() + "Z",
         }
     )
 
@@ -119,7 +119,7 @@ async def handle_sync_state(
             {
                 "type": "sync_state_response",
                 "state": state,
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": datetime.now(UTC).isoformat() + "Z",
             }
         )
     else:
@@ -146,7 +146,7 @@ async def handle_cursor_move(
             "user_id": str(context.user_id),
             "username": context.user.username,
             "cursor": data,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(UTC).isoformat() + "Z",
         },
         exclude_user_id=context.user_id,
     )
@@ -204,7 +204,7 @@ async def handle_lock_acquire(
                 "resource_id": resource_id,
                 "user_id": str(context.user_id),
                 "username": context.user.username,
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": datetime.now(UTC).isoformat() + "Z",
             },
             exclude_user_id=context.user_id,
         )
@@ -256,7 +256,7 @@ async def handle_lock_release(
                 "resource_id": resource_id,
                 "user_id": str(context.user_id),
                 "username": context.user.username,
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": datetime.now(UTC).isoformat() + "Z",
             },
             exclude_user_id=context.user_id,
         )
@@ -317,7 +317,7 @@ async def handle_resource_update(
             "changes": changes,
             "user_id": str(context.user_id),
             "username": context.user.username,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(UTC).isoformat() + "Z",
         },
         exclude_user_id=context.user_id,
     )
@@ -364,7 +364,7 @@ async def handle_comment_add(
             "position": comment.position,
             "mentions": comment.mentions,
             "created_at": comment.created_at.isoformat() + "Z",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(UTC).isoformat() + "Z",
         },
     )
 
@@ -433,7 +433,7 @@ async def handle_activity(
             "resource_name": data.get("resource_name"),
             "user_id": str(context.user_id),
             "username": context.user.username,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(UTC).isoformat() + "Z",
         },
         exclude_user_id=context.user_id,
     )

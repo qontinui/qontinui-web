@@ -1,7 +1,7 @@
 """Webhook event processors for Stripe events."""
 
 import asyncio
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import stripe
@@ -100,7 +100,7 @@ class SubscriptionUpdatedProcessor:
             subscription.cancel_at_period_end = stripe_sub["cancel_at_period_end"]
 
             if stripe_sub["cancel_at_period_end"]:
-                subscription.canceled_at = datetime.utcnow()  # type: ignore[assignment]
+                subscription.canceled_at = datetime.now(UTC)  # type: ignore[assignment]
 
             await db.commit()
 
@@ -126,7 +126,7 @@ class SubscriptionDeletedProcessor:
         if subscription:
             subscription.status = SubscriptionStatus.CANCELED.value  # type: ignore[assignment]
             subscription.tier = SubscriptionTier.FREE.value  # type: ignore[assignment]
-            subscription.canceled_at = datetime.utcnow()  # type: ignore[assignment]
+            subscription.canceled_at = datetime.now(UTC)  # type: ignore[assignment]
 
             # Also update user subscription_tier
             result_user = await db.execute(

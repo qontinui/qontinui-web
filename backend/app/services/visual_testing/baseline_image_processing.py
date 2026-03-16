@@ -5,7 +5,7 @@ Handles downloading, hashing, thumbnailing, and uploading baseline images.
 """
 
 import io
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
@@ -72,7 +72,7 @@ class BaselineImageProcessing:
             c if c.isalnum() or c in "-_" else "_" for c in state_name
         )
 
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         suffix = "_thumb" if is_thumbnail else ""
         filename = f"v{version}_{timestamp}{suffix}.png"
 
@@ -122,7 +122,7 @@ class BaselineImageProcessing:
 
         for baseline in result.scalars().all():
             baseline.is_active = False
-            baseline.updated_at = datetime.utcnow()
+            baseline.updated_at = datetime.now(UTC)
 
         await db.flush()
 

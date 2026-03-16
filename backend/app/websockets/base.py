@@ -11,7 +11,7 @@ Provides a foundation for WebSocket endpoints with common patterns:
 import asyncio
 import time
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, TypeVar
 from uuid import UUID
 
@@ -53,7 +53,7 @@ class WebSocketContext:
         self.db = db
         self.session_key = session_key
         self.last_activity = time.time()
-        self.connected_at = datetime.utcnow()
+        self.connected_at = datetime.now(UTC)
 
     @property
     def user_id(self) -> UUID:
@@ -305,7 +305,7 @@ class BaseWebSocketHandler(ABC):
                     await context.websocket.send_json(
                         {
                             "type": "ping",
-                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                            "timestamp": datetime.now(UTC).isoformat() + "Z",
                         }
                     )
                     self.logger.debug(
@@ -399,7 +399,7 @@ class BaseWebSocketHandler(ABC):
                 {
                     "type": "error",
                     "message": message,
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "timestamp": datetime.now(UTC).isoformat() + "Z",
                 }
             )
         except Exception:

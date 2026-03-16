@@ -5,7 +5,7 @@ Replaces TransitionExecution + AutomationLog models with a single unified model
 that tracks all types of actions: vision, mouse, keyboard, state transitions, etc.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
@@ -198,7 +198,7 @@ class ActionExecution(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=datetime.utcnow,
+        default=lambda: datetime.now(UTC),
         server_default=text("now()"),
     )
 

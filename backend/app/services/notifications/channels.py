@@ -7,7 +7,7 @@ Provides utilities for delivering notifications via:
 - Generic webhooks
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -152,7 +152,7 @@ class ChannelDeliveryService:
             payload = {
                 "event": event_type,
                 "data": data,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             }
 
             async with httpx.AsyncClient(timeout=self.webhook_timeout) as client:

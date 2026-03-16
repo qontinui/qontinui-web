@@ -1,7 +1,7 @@
 """Service for user analytics and usage statistics."""
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -56,7 +56,7 @@ class AnalyticsService:
             UsageAnalytics with current usage information
         """
         # Calculate start of today (UTC)
-        today_start = datetime.utcnow().replace(
+        today_start = datetime.now(UTC).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
 
@@ -103,8 +103,8 @@ class AnalyticsService:
         Returns:
             AnalyticsSummary with comprehensive metrics
         """
-        start_date = datetime.utcnow() - timedelta(days=days)
-        end_date = datetime.utcnow()
+        start_date = datetime.now(UTC) - timedelta(days=days)
+        end_date = datetime.now(UTC)
 
         # Get various event counts for the period
         api_calls = await metrics_service.get_api_calls_count(

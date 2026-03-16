@@ -12,7 +12,7 @@ config_testing.py to align with Qontinui terminology:
 
 import json
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -115,7 +115,7 @@ async def _update_pdf_job_status(
     job_data = {
         "report_id": report_id,
         "status": status,
-        "updated_at": datetime.utcnow().isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
     }
     if storage_url:
         job_data["storage_url"] = storage_url

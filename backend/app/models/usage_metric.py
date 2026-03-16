@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import DECIMAL, JSON, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
@@ -16,7 +16,7 @@ class UsageMetric(Base):
     )
     metric_type = Column(String, nullable=False)
     value = Column(DECIMAL, nullable=False)
-    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    timestamp = Column(DateTime, default=lambda: datetime.now(UTC), index=True)
     metric_metadata = Column(JSON, nullable=True)
 
     # Relationships
