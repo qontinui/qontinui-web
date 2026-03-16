@@ -1,6 +1,13 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+} from "react";
 import { useAuth } from "@/contexts/auth-context";
 
 export type ProductMode = "ai" | "visual";
@@ -18,17 +25,25 @@ const ProductModeContext = createContext<ProductModeContextValue>({
   setMode: () => {},
 });
 
-export function ProductModeProvider({ children, initialMode }: { children: React.ReactNode; initialMode?: ProductMode }) {
+export function ProductModeProvider({
+  children,
+  initialMode,
+}: {
+  children: React.ReactNode;
+  initialMode?: ProductMode;
+}) {
   const { user } = useAuth();
   const [mode, setModeState] = useState<ProductMode>(initialMode ?? "ai");
   const syncedUserIdRef = useRef<string | null>(null);
 
   // Initialize from localStorage, then sync from server if logged in
   useEffect(() => {
+    const controller = new AbortController();
+
     if (initialMode) {
       setModeState(initialMode);
       localStorage.setItem(STORAGE_KEY, initialMode);
-      return;
+      return () => controller.abort();
     }
 
     // Read localStorage first for instant UI
@@ -41,20 +56,33 @@ export function ProductModeProvider({ children, initialMode }: { children: React
     // Re-sync when user identity changes (login/logout/switch)
     if (user && syncedUserIdRef.current !== user.id) {
       syncedUserIdRef.current = user.id;
-      fetch(API_BASE, { credentials: "include" })
-        .then((res) => (res.ok ? res.json() : null))
-        .then((prefs) => {
-          if (prefs?.product_mode === "ai" || prefs?.product_mode === "visual") {
+
+      async function syncFromServer() {
+        try {
+          const res = await fetch(API_BASE, {
+            credentials: "include",
+            signal: controller.signal,
+          });
+          if (!res.ok) return;
+          const prefs = await res.json();
+          if (
+            prefs?.product_mode === "ai" ||
+            prefs?.product_mode === "visual"
+          ) {
             setModeState(prefs.product_mode);
             localStorage.setItem(STORAGE_KEY, prefs.product_mode);
           }
-        })
-        .catch(() => {
-          // Silently fall back to localStorage value
-        });
+        } catch {
+          // Silently fall back to localStorage value (includes AbortError)
+        }
+      }
+
+      syncFromServer();
     } else if (!user) {
       syncedUserIdRef.current = null;
     }
+
+    return () => controller.abort();
   }, [initialMode, user]);
 
   const setMode = useCallback((newMode: ProductMode) => {

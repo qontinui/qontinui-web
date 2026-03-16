@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { setProductMode } from "qontinui-navigation";
 import type { NavItem } from "../types";
@@ -14,6 +14,10 @@ export function useSidebarNavigation() {
   const { user, loading: authLoading } = useAuth();
   const { mode: productMode } = useProductMode();
   const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const isDevelopment = process.env.NODE_ENV === "development";
 
@@ -127,7 +131,6 @@ export function useSidebarNavigation() {
 
   return {
     mounted,
-    setMounted,
     visibleNavItems,
     isRouteActive,
     buildRoute,

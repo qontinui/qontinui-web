@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useEffect, useCallback } from "react";
+import { useCallback } from "react";
 import { useRouter } from "next/navigation";
 import nextDynamic from "next/dynamic";
 import { cn } from "@/lib/utils";
@@ -65,7 +65,6 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
 
   const {
     mounted,
-    setMounted,
     visibleNavItems,
     isRouteActive,
     handleNavigation,
@@ -93,10 +92,6 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
 
   const { showExportDialog, setShowExportDialog, handleExport, handleImport } =
     useImportExport();
-
-  useEffect(() => {
-    setMounted(true);
-  }, [setMounted]);
 
   const handleLogout = useCallback(async () => {
     logout();
