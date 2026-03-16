@@ -77,7 +77,7 @@ export const devNavItems: NavItem[] = [
     productMode: "ai",
   },
   {
-    id: "state-machine",
+    id: "state-machine-dev",
     label: "State Machine",
     description: "UI Bridge state machine builder",
     icon: React.createElement(Network, { className: "size-5" }),
