@@ -126,7 +126,7 @@ async def blacklist_token(token: str, expiry: datetime | None = None) -> bool:
         if payload and "jti" in payload:
             # Get expiry from payload if not provided
             if not expiry and "exp" in payload:
-                expiry = datetime.fromtimestamp(payload["exp"])
+                expiry = datetime.fromtimestamp(payload["exp"], tz=UTC)
 
             await token_blacklist_service.blacklist_token(payload["jti"], expiry)
             return True
@@ -229,7 +229,7 @@ def get_token_expiry_time(token_payload: dict) -> datetime | None:
     exp = token_payload.get("exp")
     if not exp:
         return None
-    return datetime.fromtimestamp(exp)
+    return datetime.fromtimestamp(exp, tz=UTC)
 
 
 def is_token_expiring_soon(token_payload: dict, threshold_minutes: int) -> bool:

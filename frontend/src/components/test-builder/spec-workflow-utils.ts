@@ -56,7 +56,7 @@ export function resolveSelector(
   elementId: string | null | undefined,
   elements: AnalyzedElement[]
 ): string {
-  if (!elementId) return "";
+  if (!elementId) return "'[no element selected]'";
   const el = elements.find((e) => e.id === elementId);
   if (!el) return `'[unknown element ${elementId}]'`;
   if (el.selector) return `'${el.selector}'`;

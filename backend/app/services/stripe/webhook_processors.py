@@ -53,10 +53,10 @@ class CheckoutCompletedProcessor:
             subscription.tier = tier  # type: ignore[assignment]
             subscription.status = SubscriptionStatus.ACTIVE.value  # type: ignore[assignment]
             subscription.current_period_start = datetime.fromtimestamp(  # type: ignore[assignment]
-                stripe_sub["current_period_start"]
+                stripe_sub["current_period_start"], tz=UTC
             )
             subscription.current_period_end = datetime.fromtimestamp(  # type: ignore[assignment]
-                stripe_sub["current_period_end"]
+                stripe_sub["current_period_end"], tz=UTC
             )
             subscription.cancel_at_period_end = stripe_sub["cancel_at_period_end"]
 
@@ -92,10 +92,10 @@ class SubscriptionUpdatedProcessor:
         if subscription:
             subscription.status = stripe_sub["status"]
             subscription.current_period_start = datetime.fromtimestamp(  # type: ignore[assignment]
-                stripe_sub["current_period_start"]
+                stripe_sub["current_period_start"], tz=UTC
             )
             subscription.current_period_end = datetime.fromtimestamp(  # type: ignore[assignment]
-                stripe_sub["current_period_end"]
+                stripe_sub["current_period_end"], tz=UTC
             )
             subscription.cancel_at_period_end = stripe_sub["cancel_at_period_end"]
 

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,7 +59,7 @@ class AuthenticationService:
         # Get expiry from payload for TTL
         expiry = None
         if "exp" in payload:
-            expiry = datetime.fromtimestamp(payload["exp"])
+            expiry = datetime.fromtimestamp(payload["exp"], tz=UTC)
 
         await self.blacklist_service.blacklist_token(token_jti, expiry)  # type: ignore[arg-type]
 
@@ -77,7 +77,7 @@ class AuthenticationService:
                 # Get expiry from payload for TTL
                 expiry = None
                 if "exp" in payload:
-                    expiry = datetime.fromtimestamp(payload["exp"])
+                    expiry = datetime.fromtimestamp(payload["exp"], tz=UTC)
                 await self.blacklist_service.blacklist_token(token_jti, expiry)
                 success = True
 
@@ -88,7 +88,7 @@ class AuthenticationService:
                 # Get expiry from payload for TTL
                 expiry = None
                 if "exp" in payload:
-                    expiry = datetime.fromtimestamp(payload["exp"])
+                    expiry = datetime.fromtimestamp(payload["exp"], tz=UTC)
                 await self.blacklist_service.blacklist_token(token_jti, expiry)
                 success = True
 
