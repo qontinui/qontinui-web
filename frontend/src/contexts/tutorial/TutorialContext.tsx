@@ -23,6 +23,7 @@ import React, {
 import { useRouter } from "next/navigation";
 import { useTutorialStore } from "@/stores/tutorial-store";
 import { dispatchTutorialAction } from "@/hooks/tutorial/useTutorialEvents";
+import { getProgress as getStoredProgress } from "./storage";
 import type {
   Tutorial,
   TutorialStep,
@@ -181,6 +182,73 @@ export function TutorialProvider({ children }: TutorialProviderProps) {
     [router, store]
   );
 
+  // Build progress for the currently active tutorial from live store state
+  const getActiveTutorialProgress = useCallback(
+    (tutorialId: string): TutorialProgress | null => {
+      const { currentTutorial, currentStepIndex, completedTutorials } = store;
+
+      const isCompleted = completedTutorials.includes(tutorialId);
+
+      // If this is the currently active tutorial, build progress from live state
+      if (currentTutorial && currentTutorial.id === tutorialId) {
+        const totalSteps = currentTutorial.steps.length;
+        const percentage =
+          totalSteps > 0
+            ? Math.round(((currentStepIndex + 1) / totalSteps) * 100)
+            : 0;
+
+        return {
+          tutorialId,
+          currentStepIndex,
+          stepProgress: currentTutorial.steps.map((step, index) => ({
+            stepId: step.id,
+            completed: index < currentStepIndex,
+            tryItCompleted: false,
+            timestamp: index < currentStepIndex ? Date.now() : 0,
+          })),
+          startedAt: Date.now(),
+          completedAt: isCompleted ? Date.now() : undefined,
+          completionPercentage: isCompleted ? 100 : percentage,
+          isActive: !isCompleted,
+        };
+      }
+
+      // Check persisted storage for previously saved progress
+      const storedProgress = getStoredProgress(tutorialId);
+      if (storedProgress) {
+        return storedProgress;
+      }
+
+      // Synthesize minimal progress for completed tutorials with no stored record
+      if (isCompleted) {
+        return {
+          tutorialId,
+          currentStepIndex: 0,
+          stepProgress: [],
+          startedAt: 0,
+          completedAt: 0,
+          completionPercentage: 100,
+          isActive: false,
+        };
+      }
+
+      // Synthesize minimal progress for in-progress tutorials with no stored record
+      if (store.inProgressTutorials.includes(tutorialId)) {
+        return {
+          tutorialId,
+          currentStepIndex: 0,
+          stepProgress: [],
+          startedAt: Date.now(),
+          completionPercentage: 0,
+          isActive: true,
+        };
+      }
+
+      return null;
+    },
+    [store]
+  );
+
   // Progress context value
   const progressValue = useMemo<TutorialProgressContextValue>(
     () => ({
@@ -190,9 +258,13 @@ export function TutorialProvider({ children }: TutorialProviderProps) {
         store.completedTutorials.includes(id),
       isTutorialInProgress: (id: string) =>
         store.inProgressTutorials.includes(id),
-      getProgress: (_id: string) => null, // TODO: Implement when progress records are added to store
+      getProgress: getActiveTutorialProgress,
     }),
-    [store.completedTutorials, store.inProgressTutorials]
+    [
+      store.completedTutorials,
+      store.inProgressTutorials,
+      getActiveTutorialProgress,
+    ]
   );
 
   // Main context value
