@@ -42,8 +42,9 @@ export function useProjectLoader(): UseProjectLoaderResult {
   // Track if we've already triggered a load for this URL
   const lastLoadedUrlRef = useRef<string | null>(null);
 
-  // Extract project ID from URL
+  // Extract project ID and force-reload flag from URL
   const projectIdFromUrl = searchParams?.get("project") || null;
+  const forceBackend = searchParams?.get("forceBackend") === "true";
 
   projectLogger.urlHandler("Extracted project ID from URL", {
     projectIdFromUrl,
@@ -77,8 +78,8 @@ export function useProjectLoader(): UseProjectLoaderResult {
       return;
     }
 
-    // Skip if we already loaded this URL
-    if (lastLoadedUrlRef.current === projectIdToLoad) {
+    // Skip if we already loaded this URL (unless forceBackend is set)
+    if (lastLoadedUrlRef.current === projectIdToLoad && !forceBackend) {
       projectLogger.debug("ProjectLoader", "Already loaded this project", {
         projectIdToLoad,
       });
@@ -88,16 +89,18 @@ export function useProjectLoader(): UseProjectLoaderResult {
     projectLogger.urlHandler("Triggering project load", {
       projectIdToLoad,
       source: projectIdFromUrl ? "url" : "context",
+      forceBackend,
     });
 
     // Mark as loading this URL
     lastLoadedUrlRef.current = projectIdToLoad;
 
-    // Load the project
+    // Load the project (force backend data when ?forceBackend=true is in URL)
     loader.load(projectIdToLoad, {
       currentProjectId: contextProjectId,
+      force: forceBackend,
     });
-  }, [projectIdFromUrl, contextProjectId, loader]);
+  }, [projectIdFromUrl, contextProjectId, loader, forceBackend]);
 
   // Manual reload function
   const reloadProject = useCallback(async () => {

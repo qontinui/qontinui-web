@@ -63,26 +63,30 @@ export function StateImageTab({
             <p className="text-sm text-text-muted">No images configured</p>
           </div>
         ) : (
-          <div className="flex-1 grid grid-cols-2 gap-3 overflow-y-auto scrollbar-dark pr-2 content-start">
-            {state.stateImages.map((stateImage, index) => (
-              <StateImageCard
-                key={stateImage.id}
-                stateImage={stateImage}
-                index={index}
-                state={state}
-                allStates={allStates}
-                images={images}
-                isAdvancedExpanded={expandedAdvancedSections.has(stateImage.id)}
-                openImageSelectorId={openImageSelectorId}
-                setOpenImageSelectorId={setOpenImageSelectorId}
-                setExpandedAdvancedSections={setExpandedAdvancedSections}
-                setShowAddSearchRegionDialog={setShowAddSearchRegionDialog}
-                updateStateImage={updateStateImage}
-                removeStateImage={removeStateImage}
-                moveStateImage={moveStateImage}
-                resolvePatternImage={resolvePatternImage}
-              />
-            ))}
+          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark pr-2">
+            <div className="grid grid-cols-2 gap-3">
+              {state.stateImages.map((stateImage, index) => (
+                <StateImageCard
+                  key={stateImage.id}
+                  stateImage={stateImage}
+                  index={index}
+                  state={state}
+                  allStates={allStates}
+                  images={images}
+                  isAdvancedExpanded={expandedAdvancedSections.has(
+                    stateImage.id
+                  )}
+                  openImageSelectorId={openImageSelectorId}
+                  setOpenImageSelectorId={setOpenImageSelectorId}
+                  setExpandedAdvancedSections={setExpandedAdvancedSections}
+                  setShowAddSearchRegionDialog={setShowAddSearchRegionDialog}
+                  updateStateImage={updateStateImage}
+                  removeStateImage={removeStateImage}
+                  moveStateImage={moveStateImage}
+                  resolvePatternImage={resolvePatternImage}
+                />
+              ))}
+            </div>
           </div>
         )}
       </TabsContent>

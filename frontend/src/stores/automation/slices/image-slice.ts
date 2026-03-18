@@ -7,6 +7,7 @@
 import type { StateCreator } from "zustand";
 import type { AutomationStore, ImageSlice } from "../types";
 import { projectLogger } from "@/lib/project-logger";
+import { resolveImageDataUrl } from "@/components/image-library/utils";
 
 export const createImageSlice: StateCreator<
   AutomationStore,
@@ -167,6 +168,9 @@ export const createImageSlice: StateCreator<
       });
       return null;
     }
-    return { url: image.url, mask: image.mask };
+    const url = resolveImageDataUrl(
+      image as typeof image & { data?: string; format?: string }
+    );
+    return { url: url || "", mask: image.mask };
   },
 });

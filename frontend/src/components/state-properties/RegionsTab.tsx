@@ -41,77 +41,81 @@ export function RegionsTab({
           </p>
         </div>
       ) : (
-        <div className="flex-1 grid grid-cols-2 gap-3 overflow-y-auto scrollbar-dark pr-2 content-start">
-          {state.regions?.map((region, index) => {
-            // Check if this region has a linked reference image
-            const hasLinkedPosition = !!region.referenceImageId;
-            let linkedInfo = null;
+        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark pr-2">
+          <div className="grid grid-cols-2 gap-3">
+            {state.regions?.map((region, index) => {
+              // Check if this region has a linked reference image
+              const hasLinkedPosition = !!region.referenceImageId;
+              let linkedInfo = null;
 
-            if (hasLinkedPosition) {
-              // Find the state and image that this region is linked to
-              const linkedState = allStates.find((s) =>
-                s.stateImages?.some((img) => img.id === region.referenceImageId)
-              );
-              const linkedImage = linkedState?.stateImages?.find(
-                (img) => img.id === region.referenceImageId
-              );
-              linkedInfo = {
-                stateName: linkedState?.name || "Unknown State",
-                imageName: linkedImage?.name || "Unknown Image",
-              };
-            }
+              if (hasLinkedPosition) {
+                // Find the state and image that this region is linked to
+                const linkedState = allStates.find((s) =>
+                  s.stateImages?.some(
+                    (img) => img.id === region.referenceImageId
+                  )
+                );
+                const linkedImage = linkedState?.stateImages?.find(
+                  (img) => img.id === region.referenceImageId
+                );
+                linkedInfo = {
+                  stateName: linkedState?.name || "Unknown State",
+                  imageName: linkedImage?.name || "Unknown Image",
+                };
+              }
 
-            return (
-              <div
-                key={region.id}
-                className="rounded-lg overflow-hidden border-l-4 border-l-brand-secondary bg-brand-secondary/[0.03]"
-              >
-                {/* Header bar with index */}
-                <div className="bg-brand-secondary/15 px-3 py-2 flex items-center gap-2">
-                  <span className="text-brand-secondary text-xs font-bold min-w-[1.25rem]">
-                    {index + 1}
-                  </span>
-                  <span className="text-text-secondary text-xs font-medium truncate flex-1">
-                    {region.name || "Unnamed"}
-                  </span>
-                </div>
-                <div className="p-3 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      {hasLinkedPosition && linkedInfo ? (
-                        <div className="text-xs text-text-muted mt-1 flex items-center gap-1.5">
-                          <Link2 className="w-3 h-3 flex-shrink-0" />
-                          {linkedInfo.stateName} → {linkedInfo.imageName}
-                        </div>
-                      ) : (
-                        <div className="text-xs text-text-muted mt-1">
-                          ↖ {region.x},{region.y} ↔ {region.width} ↕{" "}
-                          {region.height}
-                        </div>
-                      )}
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 w-7 p-0 text-red-400 hover:text-red-300"
-                      onClick={() => removeRegion(index)}
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
+              return (
+                <div
+                  key={region.id}
+                  className="rounded-lg overflow-hidden border-l-4 border-l-brand-secondary bg-brand-secondary/[0.03]"
+                >
+                  {/* Header bar with index */}
+                  <div className="bg-brand-secondary/15 px-3 py-2 flex items-center gap-2">
+                    <span className="text-brand-secondary text-xs font-bold min-w-[1.25rem]">
+                      {index + 1}
+                    </span>
+                    <span className="text-text-secondary text-xs font-medium truncate flex-1">
+                      {region.name || "Unnamed"}
+                    </span>
                   </div>
-                  <MonitorSelector
-                    monitors={region.monitors || [0]}
-                    onChange={(monitors) =>
-                      updateRegion(index, "monitors", monitors)
-                    }
-                    label="Monitors"
-                    showLabel={true}
-                    showConnectionStatus={false}
-                  />
+                  <div className="p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        {hasLinkedPosition && linkedInfo ? (
+                          <div className="text-xs text-text-muted mt-1 flex items-center gap-1.5">
+                            <Link2 className="w-3 h-3 flex-shrink-0" />
+                            {linkedInfo.stateName} → {linkedInfo.imageName}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-text-muted mt-1">
+                            ↖ {region.x},{region.y} ↔ {region.width} ↕{" "}
+                            {region.height}
+                          </div>
+                        )}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 text-red-400 hover:text-red-300"
+                        onClick={() => removeRegion(index)}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </div>
+                    <MonitorSelector
+                      monitors={region.monitors || [0]}
+                      onChange={(monitors) =>
+                        updateRegion(index, "monitors", monitors)
+                      }
+                      label="Monitors"
+                      showLabel={true}
+                      showConnectionStatus={false}
+                    />
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       )}
     </TabsContent>
