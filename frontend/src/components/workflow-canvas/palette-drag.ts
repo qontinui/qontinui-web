@@ -63,12 +63,21 @@ function createGhostElement(
 ): HTMLElement {
   const ghost = document.createElement("div");
   ghost.className = "node-palette-ghost";
-  ghost.innerHTML = `
-    <div class="ghost-content">
-      <div class="ghost-icon">+</div>
-      <div class="ghost-label">${displayName}</div>
-    </div>
-  `;
+
+  const content = document.createElement("div");
+  content.className = "ghost-content";
+
+  const icon = document.createElement("div");
+  icon.className = "ghost-icon";
+  icon.textContent = "+";
+
+  const label = document.createElement("div");
+  label.className = "ghost-label";
+  label.textContent = displayName;
+
+  content.appendChild(icon);
+  content.appendChild(label);
+  ghost.appendChild(content);
   ghost.style.position = "absolute";
   ghost.style.top = "-9999px";
   ghost.style.left = "-9999px";

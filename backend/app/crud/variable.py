@@ -15,8 +15,9 @@ import structlog
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.workflow_variable import VariableHistory, WorkflowVariable
+from app.models.workflow_variable import VariableHistory
 from app.models.workflow_variable import VariableScope as ModelVariableScope
+from app.models.workflow_variable import WorkflowVariable
 from app.schemas.variable import VariableCreate, VariableScope, VariableUpdate
 
 logger = structlog.get_logger(__name__)
