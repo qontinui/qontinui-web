@@ -1,52 +1,53 @@
 /**
- * TokenStorage - HttpOnly Cookie Migration Complete
+ * TokenStorage - Dual auth strategy: in-memory tokens + HttpOnly cookies
  *
- * SECURITY: Tokens are now stored in HttpOnly cookies (XSS protection)
- * - access_token: HttpOnly cookie, path="/", 15min lifetime
- * - refresh_token: HttpOnly cookie, path="/api/v1/auth", 30-90 day lifetime
+ * The backend sets HttpOnly cookies for XSS protection, AND returns tokens in
+ * the response body. We store the tokens in memory (not localStorage) so the
+ * HttpClient can include them as Authorization headers.
  *
- * This class no longer stores actual token values in localStorage (security vulnerability).
- * We only store:
- * - Token expiry timestamps (for proactive refresh logic)
- * - Authentication state flag (for UI state management)
+ * This dual approach is needed because cross-origin cookie delivery
+ * (localhost:3001 -> localhost:8000) is unreliable in development:
+ * SameSite=lax cookies may not be sent on cross-origin fetch() requests
+ * depending on browser version and platform.
  *
- * The browser automatically sends HttpOnly cookies with every request.
- * Backend reads tokens from cookies first, then falls back to Authorization header.
+ * The backend's CookieOrBearerScheme checks cookies first, then falls back
+ * to the Authorization header, so both paths work.
+ *
+ * In-memory storage means tokens are lost on page refresh, but the HttpOnly
+ * cookies serve as a fallback and the refresh flow recovers gracefully.
  */
 export class TokenStorage {
   private readonly TOKEN_EXPIRY_KEY = "token_expiry";
   private readonly REFRESH_TOKEN_EXPIRY_KEY = "refresh_token_expiry";
   private readonly AUTHENTICATED_KEY = "is_authenticated";
 
-  // REMOVED: access_token and refresh_token keys (now in HttpOnly cookies)
+  // In-memory token storage (not localStorage — cleared on page refresh)
+  // This is the primary auth mechanism for API calls via Authorization header.
+  // HttpOnly cookies provide backup auth on the backend side.
+  private accessToken: string | null = null;
+  private refreshTokenValue: string | null = null;
 
   /**
-   * Save access token - NO-OP (tokens are in HttpOnly cookies)
-   * Kept for API compatibility during migration
+   * Save access token in memory for Authorization header usage.
+   * Also sets the authentication flag in localStorage for UI state.
    */
-  saveAccessToken(): void {
+  saveAccessToken(token?: string): void {
     if (typeof window === "undefined") return;
-    // DO NOT store actual token in localStorage (XSS vulnerability)
-    // Backend sets access_token as HttpOnly cookie automatically
-    console.log(
-      "[TokenStorage] ✅ Access token in HttpOnly cookie (not localStorage)"
-    );
-
+    if (token) {
+      this.accessToken = token;
+    }
     // Set authentication flag for UI state management
     localStorage.setItem(this.AUTHENTICATED_KEY, "true");
   }
 
   /**
-   * Save refresh token - NO-OP (tokens are in HttpOnly cookies)
-   * Kept for API compatibility during migration
+   * Save refresh token in memory for token refresh requests.
    */
-  saveRefreshToken(): void {
+  saveRefreshToken(token?: string): void {
     if (typeof window === "undefined") return;
-    // DO NOT store actual token in localStorage (XSS vulnerability)
-    // Backend sets refresh_token as HttpOnly cookie automatically
-    console.log(
-      "[TokenStorage] ✅ Refresh token in HttpOnly cookie (not localStorage)"
-    );
+    if (token) {
+      this.refreshTokenValue = token;
+    }
   }
 
   /**
@@ -55,32 +56,24 @@ export class TokenStorage {
   saveTokenExpiry(expiry: number): void {
     if (typeof window === "undefined") return;
     localStorage.setItem(this.TOKEN_EXPIRY_KEY, expiry.toString());
-    console.log(
-      "[TokenStorage] Token expiry saved:",
-      new Date(expiry).toISOString()
-    );
   }
 
   /**
-   * Get access token - Returns null (tokens are in HttpOnly cookies)
-   * Browser automatically sends access_token cookie with credentials: 'include'
+   * Get access token from memory for Authorization header.
+   * Returns null if token was not saved (e.g., after page refresh).
+   * In that case, HttpOnly cookies provide fallback auth on the backend.
    */
   getAccessToken(): string | null {
     if (typeof window === "undefined") return null;
-    // Tokens are in HttpOnly cookies, not accessible to JavaScript (security)
-    // Browser automatically sends cookies with fetch(..., { credentials: 'include' })
-    return null;
+    return this.accessToken;
   }
 
   /**
-   * Get refresh token - Returns null (tokens are in HttpOnly cookies)
-   * Browser automatically sends refresh_token cookie with credentials: 'include'
+   * Get refresh token from memory for token refresh requests.
    */
   getRefreshToken(): string | null {
     if (typeof window === "undefined") return null;
-    // Tokens are in HttpOnly cookies, not accessible to JavaScript (security)
-    // Browser automatically sends cookies with fetch(..., { credentials: 'include' })
-    return null;
+    return this.refreshTokenValue;
   }
 
   /**
@@ -98,10 +91,6 @@ export class TokenStorage {
   saveRefreshTokenExpiry(expiry: number): void {
     if (typeof window === "undefined") return;
     localStorage.setItem(this.REFRESH_TOKEN_EXPIRY_KEY, expiry.toString());
-    console.log(
-      "[TokenStorage] Refresh token expiry saved:",
-      new Date(expiry).toISOString()
-    );
   }
 
   /**
@@ -122,20 +111,16 @@ export class TokenStorage {
   }
 
   /**
-   * Clear all authentication state
-   * Note: This only clears localStorage flags. HttpOnly cookies are cleared by backend.
+   * Clear all authentication state (memory + localStorage).
+   * HttpOnly cookies are cleared by the backend /logout endpoint.
    */
   clearAll(): void {
     if (typeof window === "undefined") return;
+    this.accessToken = null;
+    this.refreshTokenValue = null;
     localStorage.removeItem(this.TOKEN_EXPIRY_KEY);
     localStorage.removeItem(this.REFRESH_TOKEN_EXPIRY_KEY);
     localStorage.removeItem(this.AUTHENTICATED_KEY);
-    console.error(
-      "[TokenStorage] Authentication state cleared from localStorage"
-    );
-    console.error(
-      "[TokenStorage] HttpOnly cookies cleared by backend /logout endpoint"
-    );
   }
 
   /**

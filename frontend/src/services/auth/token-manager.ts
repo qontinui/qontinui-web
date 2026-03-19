@@ -17,7 +17,7 @@ export class TokenManager {
   }
 
   /**
-   * Store new tokens
+   * Store new tokens (in memory for Authorization header, plus expiry in localStorage)
    */
   setTokens(tokens: TokenResponse): void {
     const expiry = this.validator.extractExpiry(tokens.access_token);
@@ -27,8 +27,8 @@ export class TokenManager {
       ? Date.now() + tokens.refresh_expires_in * 1000
       : null;
 
-    this.storage.saveAccessToken();
-    this.storage.saveRefreshToken();
+    this.storage.saveAccessToken(tokens.access_token);
+    this.storage.saveRefreshToken(tokens.refresh_token);
     if (expiry) {
       this.storage.saveTokenExpiry(expiry);
     }

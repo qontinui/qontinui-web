@@ -75,14 +75,21 @@ export class TokenRefreshService {
         "[TokenRefreshService] Attempting to refresh token at:",
         ApiConfig.AUTH_REFRESH
       );
-      console.log("[TokenRefreshService] Using HttpOnly cookie authentication");
+
+      // Send refresh token in request body (in-memory) and also via cookie (fallback).
+      // Backend checks cookie first, then falls back to request body.
+      const refreshToken = this.tokenManager.getRefreshToken();
+      const body = refreshToken
+        ? JSON.stringify({ refresh_token: refreshToken })
+        : undefined;
 
       const response = await fetch(ApiConfig.AUTH_REFRESH, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        credentials: "include", // Critical: Sends refresh_token cookie for authentication
+        credentials: "include",
+        body,
       });
 
       console.log(
@@ -94,9 +101,7 @@ export class TokenRefreshService {
         const tokens: TokenResponse = await response.json();
         console.log("[TokenRefreshService] ✅ Token refresh successful");
 
-        // Store expiry timestamps and authentication state (not actual tokens)
-        // Backend sets new HttpOnly cookies automatically
-        // TokenStorage.saveAccessToken() and saveRefreshToken() are now NO-OPs
+        // Store tokens in memory (for Authorization header) and expiry in localStorage
         this.tokenManager.setTokens(tokens);
         return true;
       } else {

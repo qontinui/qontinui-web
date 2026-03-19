@@ -111,10 +111,8 @@ export class AuthService {
       throw new Error("Invalid response from server. Please try again.");
     }
 
-    // Store expiry timestamps and authentication state (not actual tokens)
-    // Backend sets HttpOnly cookies automatically
-    // TokenStorage.saveAccessToken() and saveRefreshToken() are now NO-OPs
-    // They only set the authentication flag for UI state management
+    // Store tokens in memory (for Authorization header) and expiry in localStorage.
+    // Backend also sets HttpOnly cookies as fallback.
     this.tokenManager.setTokens(tokens);
 
     return this.getCurrentUser();
@@ -208,33 +206,31 @@ export class AuthService {
    * - No Authorization header needed (tokens are in HttpOnly cookies)
    */
   async getCurrentUser(): Promise<User> {
-    console.log("[AuthService] Getting current user from:", ApiConfig.USERS_ME);
-    console.log("[AuthService] Using HttpOnly cookie authentication");
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    // Include Authorization header if we have an in-memory access token
+    const accessToken = this.tokenManager.getAccessToken();
+    if (accessToken) {
+      headers["Authorization"] = `Bearer ${accessToken}`;
+    }
 
     const response = await fetch(ApiConfig.USERS_ME, {
       method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      credentials: "include", // Critical: Sends access_token cookie for authentication
+      headers,
+      credentials: "include",
     });
-
-    console.log(
-      "[AuthService] getCurrentUser response status:",
-      response.status
-    );
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("[AuthService] getCurrentUser error response:", errorText);
+      console.error("[AuthService] getCurrentUser error:", response.status);
       throw new Error(
         `Failed to get user info: ${response.status} - ${errorText}`
       );
     }
 
-    const user = await response.json();
-    console.log("[AuthService] Current user:", user);
-    return user;
+    return response.json();
   }
 
   /**
