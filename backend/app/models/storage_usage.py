@@ -24,7 +24,7 @@ class StorageUsage(Base):
         UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=True
     )
     file_metadata = Column(JSONB, nullable=True, default=dict)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
     # Relationships
     user = relationship("User", back_populates="storage_usages")

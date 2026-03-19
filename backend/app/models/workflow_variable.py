@@ -59,9 +59,11 @@ class WorkflowVariable(Base):
         Enum(VariableScope), nullable=False, index=True
     )
     description = Column(String, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
     updated_at = Column(
-        DateTime,
+        DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
@@ -105,7 +107,10 @@ class VariableHistory(Base):
     old_value = Column(JSON, nullable=True)
     new_value = Column(JSON, nullable=True)
     changed_at = Column(
-        DateTime, nullable=False, default=lambda: datetime.now(UTC), index=True
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        index=True,
     )
     changed_by_action = Column(
         String, nullable=True

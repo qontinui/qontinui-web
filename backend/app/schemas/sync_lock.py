@@ -1,10 +1,8 @@
 """Schemas for sync lock operations."""
 
-from datetime import datetime
-
 from pydantic import Field
 
-from app.schemas.base import BaseSchema
+from app.schemas.base import BaseSchema, IsoDatetime
 
 
 class SyncLockRequest(BaseSchema):
@@ -30,8 +28,8 @@ class SyncLockResponse(BaseSchema):
     operation: str = Field(..., description="Operation description")
     user_id: str = Field(..., description="User who acquired the lock")
     project_id: str = Field(..., description="Project ID")
-    acquired_at: datetime = Field(..., description="When the lock was acquired")
-    expires_at: datetime = Field(..., description="When the lock expires")
+    acquired_at: IsoDatetime = Field(..., description="When the lock was acquired")
+    expires_at: IsoDatetime = Field(..., description="When the lock expires")
     new_version: int | None = Field(
         None, description="New project version after lock release"
     )
@@ -55,8 +53,8 @@ class ActiveLockInfo(BaseSchema):
     operation: str
     user_id: str
     user_email: str | None = None
-    acquired_at: datetime
-    expires_at: datetime
+    acquired_at: IsoDatetime
+    expires_at: IsoDatetime
 
 
 class SyncWebSocketEvent(BaseSchema):

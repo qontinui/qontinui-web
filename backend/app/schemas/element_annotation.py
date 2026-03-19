@@ -1,10 +1,11 @@
 """Pydantic schemas for element annotation API."""
 
-from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.schemas.base import IsoDatetime
 
 # Element schemas
 
@@ -108,8 +109,8 @@ class ElementAnnotationSetResponse(BaseModel):
     version_number: int
     is_current: bool
     version_comment: str | None
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
     created_by_id: str
     elements: list[ElementAnnotationResponse] = Field(default_factory=list)
     element_count: int = Field(default=0)
@@ -145,8 +146,8 @@ class ElementAnnotationSetMetadata(BaseModel):
     version_number: int
     is_current: bool
     version_comment: str | None
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
     created_by_id: str
     element_count: int
 
@@ -181,7 +182,7 @@ class VersionResponse(BaseModel):
     element_count: int
     is_current: bool
     version_comment: str | None
-    created_at: datetime
+    created_at: IsoDatetime
     created_by_id: str
 
     model_config = ConfigDict(from_attributes=True)

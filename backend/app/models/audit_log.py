@@ -22,7 +22,9 @@ class AuditLog(Base):
     resource_id = Column(String, nullable=True, index=True)
     log_metadata = Column(JSON, nullable=True)
     ip_address = Column(String, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), index=True)
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
+    )
 
     # New fields for enhanced audit logging
     event_category = Column(

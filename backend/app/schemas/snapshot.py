@@ -7,12 +7,14 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.schemas.base import IsoDatetime
+
 
 # Screenshot schemas
 class ScreenshotBase(BaseModel):
     screenshot_path: str
     active_states: list[str]
-    timestamp: datetime
+    timestamp: IsoDatetime
     width: int
     height: int
     state_hash: str
@@ -87,9 +89,9 @@ class SnapshotRunUpdate(BaseModel):
 class SnapshotRun(SnapshotRunBase):
     id: int
     run_id: str
-    timestamp: datetime
-    created_at: datetime
-    updated_at: datetime
+    timestamp: IsoDatetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
     project_id: int | None
     workflow_id: int | None
     num_screenshots: int

@@ -80,12 +80,17 @@ class Notification(Base):
     read: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False, index=True
     )
-    read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    read_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     notification_metadata: Mapped[dict] = mapped_column(
         "metadata", JSON, nullable=True
     )  # Additional context (deep links, etc.)
     created_at = Column(
-        DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+        index=True,
     )
 
     # Relationships
@@ -140,9 +145,11 @@ class NotificationPreferences(Base):
     in_app_team_invites = Column(Boolean, default=True, nullable=False)
     in_app_project_updates = Column(Boolean, default=True, nullable=False)
 
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
     updated_at = Column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
         nullable=False,

@@ -79,7 +79,7 @@ class ProjectAnnotationState(Base):
 
     # Tracking
     updated_at = Column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
         nullable=False,

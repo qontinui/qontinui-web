@@ -1,10 +1,11 @@
 """Pydantic schemas for state machine configuration management."""
 
-from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.base import IsoDatetime
 
 
 class StateMachineConfigCreate(BaseModel):
@@ -38,8 +39,8 @@ class StateMachineConfigResponse(BaseModel):
     version: str
     configuration: dict[str, Any]
     tags: list[str]
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -51,7 +52,7 @@ class StateMachineConfigSummary(BaseModel):
     name: str
     description: str | None
     tags: list[str]
-    updated_at: datetime
+    updated_at: IsoDatetime
 
     model_config = ConfigDict(from_attributes=True)
 

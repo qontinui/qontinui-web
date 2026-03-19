@@ -2,11 +2,12 @@
 Pydantic schemas for annotation API
 """
 
-from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.schemas.base import IsoDatetime
 
 # Screenshot schema for multi-screenshot support
 
@@ -147,8 +148,8 @@ class AnnotationSetUpdate(BaseModel):
 
 class AnnotationSetResponse(AnnotationSetBase):
     id: str
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
     created_by_id: str
     annotations: list[AnnotationResponse] = []
 

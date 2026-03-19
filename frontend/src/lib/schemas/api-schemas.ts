@@ -40,13 +40,13 @@ export const UserSchema = z.object({
   is_superuser: z.boolean(),
   is_beta: z.boolean().optional(),
   is_verified: z.boolean().optional(),
-  created_at: z.string().datetime(), // ISO 8601 datetime string
-  updated_at: z.string().datetime(), // ISO 8601 datetime string
+  created_at: z.string().datetime({ offset: true }), // ISO 8601 datetime string
+  updated_at: z.string().datetime({ offset: true }), // ISO 8601 datetime string
   company: z.string().nullable().optional(),
   phone: z.string().nullable().optional(),
   avatar_url: z.string().nullable().optional(),
   subscription_tier: z.enum(["free", "hobby", "pro"]).default("free"),
-  last_login: z.string().datetime().nullable().optional(), // ISO 8601 datetime string
+  last_login: z.string().datetime({ offset: true }).nullable().optional(), // ISO 8601 datetime string
 });
 
 export type User = z.infer<typeof UserSchema>;
@@ -76,8 +76,8 @@ export const ProjectSchema = z.object({
   description: z.string().nullable().optional(),
   configuration: ProjectConfigurationSchema,
   owner_id: z.string().uuid(),
-  created_at: z.string().datetime(), // ISO 8601 datetime string
-  updated_at: z.string().datetime(), // ISO 8601 datetime string
+  created_at: z.string().datetime({ offset: true }), // ISO 8601 datetime string
+  updated_at: z.string().datetime({ offset: true }), // ISO 8601 datetime string
   permission_level: PermissionLevelSchema.optional(), // User's permission level for this project
 });
 

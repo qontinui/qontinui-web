@@ -60,9 +60,11 @@ class PackageCategory(Base):
     slug = Column(String, nullable=False, unique=True, index=True)
     description = Column(Text, nullable=True)
     icon = Column(String, nullable=True)  # Icon name or emoji
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
     updated_at = Column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
         nullable=False,
@@ -114,10 +116,13 @@ class CodePackage(Base):
         Numeric(3, 2), nullable=True
     )  # Average rating (e.g., 4.53 out of 5)
     created_at = Column(
-        DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+        index=True,
     )
     updated_at = Column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
         nullable=False,
@@ -189,7 +194,10 @@ class PackageVersion(Base):
     )  # Detailed scan results (vulnerabilities, warnings)
     download_count = Column(Integer, default=0, nullable=False)
     created_at = Column(
-        DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+        index=True,
     )
 
     # Relationships
@@ -248,9 +256,11 @@ class PackageInstallation(Base):
     status = Column(
         String, default=InstallationStatus.ACTIVE.value, nullable=False, index=True
     )
-    installed_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    installed_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
     updated_at = Column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
         nullable=False,
@@ -304,10 +314,13 @@ class PackageRating(Base):
     )  # Rating from 1-5 stars (enforced by constraint)
     review_text = Column(Text, nullable=True)  # Optional written review
     created_at = Column(
-        DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+        index=True,
     )
     updated_at = Column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
         nullable=False,

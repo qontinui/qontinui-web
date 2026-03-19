@@ -35,7 +35,9 @@ class AutomationVideo(Base):
     file_size_bytes = Column(Integer, nullable=False)
 
     # Timestamps
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
 
     # Relationships
     user = relationship("User", foreign_keys=[user_id])

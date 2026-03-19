@@ -72,8 +72,8 @@ class Recording(Base):
     tags = Column(JSON, default=list)  # Array of string tags
 
     # Recording details (from metadata.json)
-    recording_start_time = Column(DateTime, nullable=False)
-    recording_end_time = Column(DateTime, nullable=False)
+    recording_start_time = Column(DateTime(timezone=True), nullable=False)
+    recording_end_time = Column(DateTime(timezone=True), nullable=False)
     duration_ms = Column(Integer, nullable=False)  # Milliseconds
 
     # Recorder information
@@ -117,8 +117,8 @@ class Recording(Base):
         Enum(ProcessingPhase), nullable=True
     )  # type: ignore[assignment]
     processing_progress = Column(Float, default=0.0)  # 0.0 to 1.0
-    processing_started_at = Column(DateTime)
-    processing_completed_at = Column(DateTime)
+    processing_started_at = Column(DateTime(timezone=True))
+    processing_completed_at = Column(DateTime(timezone=True))
     processing_error = Column(Text)
 
     # Validation results
@@ -133,14 +133,16 @@ class Recording(Base):
 
     # User review status
     reviewed = Column(Boolean, default=False)
-    reviewed_at = Column(DateTime)
+    reviewed_at = Column(DateTime(timezone=True))
     accepted = Column(Boolean, default=False)
-    accepted_at = Column(DateTime)
+    accepted_at = Column(DateTime(timezone=True))
 
     # Timestamps
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
     updated_at = Column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
         nullable=False,
@@ -214,7 +216,7 @@ class RecordingFrame(Base):
 
     # Frame identification
     frame_number = Column(Integer, nullable=False)
-    timestamp = Column(DateTime, nullable=False)
+    timestamp = Column(DateTime(timezone=True), nullable=False)
     relative_time_ms = Column(
         Integer, nullable=False
     )  # Milliseconds since recording start
@@ -222,7 +224,7 @@ class RecordingFrame(Base):
     # Image storage
     s3_key = Column(String, nullable=False)  # Full S3 key for frame image
     image_url = Column(String)  # Presigned URL (temporary)
-    url_expires_at = Column(DateTime)
+    url_expires_at = Column(DateTime(timezone=True))
 
     # Image properties
     width = Column(Integer, nullable=False)
@@ -283,7 +285,7 @@ class RecordingInteraction(Base):
     )
 
     # Timing
-    timestamp = Column(DateTime, nullable=False)
+    timestamp = Column(DateTime(timezone=True), nullable=False)
     relative_time_ms = Column(Integer, nullable=False)
     frame_number = Column(Integer)  # Nearest frame
 
@@ -369,7 +371,7 @@ class RecordingContext(Base):
     )
 
     # Timing
-    timestamp = Column(DateTime, nullable=False)
+    timestamp = Column(DateTime(timezone=True), nullable=False)
     relative_time_ms = Column(Integer, nullable=False)
     frame_number = Column(Integer)
 
@@ -487,10 +489,12 @@ class DiscoveredTransition(Base):
 
     # Conversion to actual transition
     converted_to_transition_id = Column(UUID(as_uuid=True), nullable=True)
-    converted_at = Column(DateTime)
+    converted_at = Column(DateTime(timezone=True))
 
     # Timestamps
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
 
     # Relationships
     recording = relationship("Recording", back_populates="discovered_transitions")
@@ -521,7 +525,9 @@ class ProcessingLog(Base):
     )
 
     # Log entry
-    timestamp = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    timestamp = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
     phase: ProcessingPhase = Column(Enum(ProcessingPhase), nullable=False)  # type: ignore[assignment]
     level = Column(String, nullable=False)  # info, warning, error
     message = Column(Text, nullable=False)

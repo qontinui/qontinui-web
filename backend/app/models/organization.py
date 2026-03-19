@@ -59,9 +59,11 @@ class Organization(Base):
     avatar_url = Column(String, nullable=True)
     settings = Column(JSON, default={}, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
     updated_at = Column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
         nullable=False,
@@ -118,8 +120,10 @@ class TeamMember(Base):
     role = Column(String, default=TeamRole.MEMBER.value, nullable=False)
     permissions = Column(JSON, default={}, nullable=False)
     invited_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    joined_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
-    last_active_at = Column(DateTime, nullable=True)
+    joined_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    last_active_at = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     organization = relationship(
@@ -173,9 +177,11 @@ class OrganizationInvitation(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     token = Column(String, unique=True, nullable=False, index=True)
-    expires_at = Column(DateTime, nullable=False)
-    accepted_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    accepted_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
 
     # Relationships
     organization = relationship(
@@ -254,8 +260,10 @@ class ProjectAccessControl(Base):
     created_by = Column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
-    expires_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
 
     # Relationships
     project = relationship("Project")

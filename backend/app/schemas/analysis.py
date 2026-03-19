@@ -2,11 +2,12 @@
 Pydantic schemas for analysis API
 """
 
-from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.base import IsoDatetime
 
 
 # Base schemas for request/response
@@ -113,13 +114,13 @@ class AnalysisJobSchema(BaseModel):
     fusion_enabled: bool
     fusion_config: dict[str, Any] | None = None
     status: str
-    started_at: datetime | None = None
-    completed_at: datetime | None = None
+    started_at: IsoDatetime | None = None
+    completed_at: IsoDatetime | None = None
     error_message: str | None = None
     total_elements_found: int
     total_fused_elements: int
     analyzer_statistics: dict[str, Any] | None = None
-    created_at: datetime
+    created_at: IsoDatetime
     created_by_id: UUID
 
 

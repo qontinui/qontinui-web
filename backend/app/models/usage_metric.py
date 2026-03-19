@@ -16,7 +16,9 @@ class UsageMetric(Base):
     )
     metric_type = Column(String, nullable=False)
     value = Column(DECIMAL, nullable=False)
-    timestamp = Column(DateTime, default=lambda: datetime.now(UTC), index=True)
+    timestamp = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
+    )
     metric_metadata = Column(JSON, nullable=True)
 
     # Relationships

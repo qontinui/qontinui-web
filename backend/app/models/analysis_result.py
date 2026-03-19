@@ -46,8 +46,8 @@ class AnalysisJob(Base):
     # Status and timing
     status = Column(String, nullable=False, default="pending", index=True)
     # Status: pending, running, completed, failed
-    started_at = Column(DateTime)
-    completed_at = Column(DateTime)
+    started_at = Column(DateTime(timezone=True))
+    completed_at = Column(DateTime(timezone=True))
     error_message = Column(Text)
 
     # Results summary
@@ -56,7 +56,9 @@ class AnalysisJob(Base):
     analyzer_statistics = Column(JSON)  # Statistics per analyzer
 
     # Metadata
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
     created_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
 
     # Relationships

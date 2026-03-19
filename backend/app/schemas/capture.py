@@ -5,10 +5,11 @@ These schemas define the request/response models for the capture-to-workflow
 learning system.
 """
 
-from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, Field
+
+from app.schemas.base import IsoDatetime
 
 # ============================================================================
 # CaptureSession Schemas
@@ -49,8 +50,8 @@ class CaptureSessionResponse(BaseModel):
     description: str | None
     status: str
     extra_metadata: dict | None
-    created_at: datetime
-    completed_at: datetime | None
+    created_at: IsoDatetime
+    completed_at: IsoDatetime | None
     screenshot_count: int = Field(
         0, description="Number of screenshots in this session"
     )
@@ -96,7 +97,7 @@ class CaptureScreenshotResponse(BaseModel):
     thumbnail_url: str | None
     width: int
     height: int
-    timestamp: datetime
+    timestamp: IsoDatetime
     extra_metadata: dict | None
     analysis_status: str
     action_count: int = Field(0, description="Number of actions on this screenshot")
@@ -148,7 +149,7 @@ class CaptureActionResponse(BaseModel):
     key: str | None
     button: str | None
     scroll_delta: int | None
-    timestamp: datetime
+    timestamp: IsoDatetime
     extra_metadata: dict | None
 
     model_config = {"from_attributes": True}
@@ -234,7 +235,7 @@ class ScreenshotStateMatchResponse(BaseModel):
     matched_elements: dict
     is_confirmed: bool | None
     review_notes: str | None
-    created_at: datetime
+    created_at: IsoDatetime
 
     model_config = {"from_attributes": True}
 
@@ -288,8 +289,8 @@ class LearnedWorkflowResponse(BaseModel):
     confidence: float
     status: str
     warnings: list | None
-    created_at: datetime
-    reviewed_at: datetime | None
+    created_at: IsoDatetime
+    reviewed_at: IsoDatetime | None
     reviewer_id: UUID | None
     published_info: dict | None
 

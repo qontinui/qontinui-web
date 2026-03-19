@@ -4,10 +4,11 @@ Pydantic schemas for custom function management.
 Provides request/response models for the function library API.
 """
 
-from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.base import IsoDatetime
 
 # ===== Base Schemas =====
 
@@ -60,8 +61,8 @@ class CustomFunctionRead(CustomFunctionBase):
     docstring: str | None
     line_start: int | None
     line_end: int | None
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -77,7 +78,7 @@ class CustomFunctionSummary(BaseModel):
     description: str | None
     category: str | None
     tags: list[str]
-    created_at: datetime
+    created_at: IsoDatetime
 
     model_config = ConfigDict(from_attributes=True)
 

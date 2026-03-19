@@ -4,9 +4,9 @@ Schemas for project file management.
 Pydantic models for file upload, management, and validation.
 """
 
-from datetime import datetime
-
 from pydantic import BaseModel, Field, validator
+
+from app.schemas.base import IsoDatetime
 
 # ============================================================================
 # Request Schemas
@@ -113,8 +113,8 @@ class FileInfo(BaseModel):
     size_bytes: int = Field(..., description="File size in bytes")
     extension: str = Field(..., description="File extension (e.g., '.py')")
     is_directory: bool = Field(default=False, description="True if this is a directory")
-    created_at: datetime | None = Field(None, description="Creation timestamp")
-    modified_at: datetime | None = Field(
+    created_at: IsoDatetime | None = Field(None, description="Creation timestamp")
+    modified_at: IsoDatetime | None = Field(
         None, description="Last modification timestamp"
     )
 
@@ -134,7 +134,7 @@ class FileContentResponse(BaseModel):
     content: str = Field(..., description="File content")
     size_bytes: int = Field(..., description="File size in bytes")
     extension: str = Field(..., description="File extension")
-    modified_at: datetime | None = Field(
+    modified_at: IsoDatetime | None = Field(
         None, description="Last modification timestamp"
     )
 

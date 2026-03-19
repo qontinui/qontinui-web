@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from app.schemas.base import IsoDatetime
+
 
 class IndividualTestResult(BaseModel):
     """Individual test within a test suite."""
@@ -73,8 +75,8 @@ class TestResultResponse(BaseModel):
     task_run_id: UUID | None
     execution_run_id: UUID | None
     status: str
-    started_at: datetime | None
-    completed_at: datetime | None
+    started_at: IsoDatetime | None
+    completed_at: IsoDatetime | None
     duration_ms: int | None
     output: str | None
     error_message: str | None
@@ -85,8 +87,8 @@ class TestResultResponse(BaseModel):
     individual_tests: list[dict] | None
     coverage: dict | None
     exit_code: int | None
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
     class Config:
         """Pydantic model config."""

@@ -2,10 +2,11 @@
 Pydantic schemas for device sessions.
 """
 
-from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel
+
+from app.schemas.base import IsoDatetime
 
 
 class DeviceSessionBase(BaseModel):
@@ -37,11 +38,11 @@ class DeviceSessionRead(DeviceSessionBase):
 
     id: UUID
     user_id: UUID
-    first_seen: datetime
-    last_seen: datetime
+    first_seen: IsoDatetime
+    last_seen: IsoDatetime
     last_ip: str
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
     class Config:
         from_attributes = True
@@ -63,8 +64,8 @@ class DeviceSessionSummary(BaseModel):
     email_verified: bool
     country: str | None = None
     city: str | None = None
-    first_seen: datetime
-    last_seen: datetime
+    first_seen: IsoDatetime
+    last_seen: IsoDatetime
 
     class Config:
         from_attributes = True

@@ -11,6 +11,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.base import IsoDatetime
+
 # ============================================================================
 # Enums (mirror the model enums for API)
 # ============================================================================
@@ -91,8 +93,8 @@ class DatasetResponse(BaseModel):
     name: str
     description: str | None = None
     source: str
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
     created_by: str
 
     # Statistics
@@ -150,13 +152,13 @@ class DatasetImageResponse(DatasetImageBase):
     # Review status
     reviewed: bool
     reviewed_by: str | None = None
-    reviewed_at: datetime | None = None
+    reviewed_at: IsoDatetime | None = None
     reviewer_notes: str | None = None
 
     # Annotation count
     annotation_count: int | None = None
 
-    created_at: datetime
+    created_at: IsoDatetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -247,9 +249,9 @@ class DatasetAnnotationResponse(DatasetAnnotationBase):
     review_status: str
     reviewer_notes: str | None = None
     reviewed_by: str | None = None
-    reviewed_at: datetime | None = None
-    created_at: datetime
-    updated_at: datetime
+    reviewed_at: IsoDatetime | None = None
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -454,8 +456,8 @@ class DatasetExportJobResponse(BaseModel):
     format: str
     download_url: str | None = None
     error: str | None = None
-    created_at: datetime
-    completed_at: datetime | None = None
+    created_at: IsoDatetime
+    completed_at: IsoDatetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

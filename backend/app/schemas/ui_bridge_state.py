@@ -1,10 +1,11 @@
 """Schemas for UI Bridge state discovery and persistence."""
 
-from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
 from pydantic import BaseModel, Field
+
+from app.schemas.base import IsoDatetime
 
 # =============================================================================
 # Domain Knowledge Schemas
@@ -35,8 +36,8 @@ class DomainKnowledgeResponse(BaseModel):
     title: str
     content: str
     tags: list[str]
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
     class Config:
         """Pydantic model config."""
@@ -98,8 +99,8 @@ class UIBridgeStateResponse(BaseModel):
     confidence: float
     acceptance_criteria: list[str]
     extra_metadata: dict
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
     domain_knowledge: list[DomainKnowledgeResponse] = Field(default_factory=list)
 
     class Config:
@@ -145,8 +146,8 @@ class UIBridgeStateConfigResponse(BaseModel):
     render_count: int
     element_count: int
     include_html_ids: bool
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
     class Config:
         """Pydantic model config."""
@@ -295,8 +296,8 @@ class UIBridgeTransitionResponse(BaseModel):
     path_cost: float
     stays_visible: bool
     extra_metadata: dict
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
     class Config:
         """Pydantic model config."""
@@ -480,10 +481,10 @@ class ExplorationSessionResponse(BaseModel):
     error_message: str | None
     discovery_completed: bool
     saved_config_id: UUID | None
-    started_at: datetime
-    completed_at: datetime | None
-    created_at: datetime
-    updated_at: datetime
+    started_at: IsoDatetime
+    completed_at: IsoDatetime | None
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
     class Config:
         """Pydantic model config."""

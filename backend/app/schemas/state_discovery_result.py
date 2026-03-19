@@ -4,10 +4,11 @@ This module re-exports core schemas from qontinui-schemas and adds
 backend-specific schemas with UUID and datetime handling.
 """
 
-from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, Field
+
+from app.schemas.base import IsoDatetime
 
 # Re-export core schemas from qontinui-schemas
 from qontinui_schemas.discovery import (
@@ -83,8 +84,8 @@ class StateDiscoveryResultResponse(BaseModel):
     unique_element_count: int
     confidence: float
     discovery_metadata: dict
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
     class Config:
         """Pydantic model config."""
@@ -105,7 +106,7 @@ class StateDiscoveryResultSummary(BaseModel):
     state_count: int
     transition_count: int
     confidence: float
-    created_at: datetime
+    created_at: IsoDatetime
 
     class Config:
         """Pydantic model config."""

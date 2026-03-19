@@ -1,7 +1,8 @@
-from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel
+
+from app.schemas.base import IsoDatetime
 
 
 class StorageUsageBase(BaseModel):
@@ -24,7 +25,7 @@ class StorageUsageResponse(StorageUsageBase):
 
     id: int
     user_id: UUID
-    created_at: datetime
+    created_at: IsoDatetime
 
     class Config:
         from_attributes = True

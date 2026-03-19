@@ -5,9 +5,9 @@ These schemas handle runner fleet monitoring across multiple machines.
 No authentication required — dev-only, LAN-accessible.
 """
 
-from datetime import datetime
-
 from pydantic import BaseModel, Field
+
+from app.schemas.base import IsoDatetime
 
 
 class RunnerHeartbeat(BaseModel):
@@ -35,7 +35,7 @@ class RegisteredRunner(BaseModel):
     os_version: str | None = None
     running_task_count: int = 0
     running_task_ids: list[str] = Field(default_factory=list)
-    last_heartbeat: datetime
+    last_heartbeat: IsoDatetime
     is_healthy: bool = True  # False if heartbeat missed > 90s
 
 
@@ -44,7 +44,7 @@ class ClaudeSessionInfo(BaseModel):
 
     pid: int
     working_directory: str | None = None
-    started_at: datetime | None = None
+    started_at: IsoDatetime | None = None
 
 
 class ClaudeSessionReport(BaseModel):

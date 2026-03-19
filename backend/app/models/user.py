@@ -30,10 +30,12 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     full_name: Mapped[str | None] = mapped_column(String, nullable=True)
     is_beta: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(UTC)
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
 
     # Phase 1 Analytics fields
@@ -49,7 +51,7 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         Integer, default=0, nullable=False
     )
     last_login_at: Mapped[datetime | None] = mapped_column(
-        DateTime, nullable=True, index=True
+        DateTime(timezone=True), nullable=True, index=True
     )
     last_device_fingerprint: Mapped[str | None] = mapped_column(Text, nullable=True)
 

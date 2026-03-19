@@ -113,9 +113,11 @@ class TrainingDataset(Base):
     export_metadata = Column(JSON, nullable=True)
 
     # Timestamps
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
     updated_at = Column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
         nullable=False,
@@ -170,16 +172,18 @@ class TrainingDatasetImage(Base):
     action_id = Column(String(255), nullable=True)
     action_type = Column(String(100), nullable=True)
     active_states = Column(JSON, nullable=True)  # List of state names
-    timestamp = Column(DateTime, nullable=True)
+    timestamp = Column(DateTime(timezone=True), nullable=True)
 
     # Review status
     reviewed = Column(Boolean, nullable=False, default=False)
     reviewed_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    reviewed_at = Column(DateTime, nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
     reviewer_notes = Column(Text, nullable=True)
 
     # Timestamps
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
 
     # Relationships
     dataset = relationship("TrainingDataset", back_populates="images")
@@ -247,12 +251,14 @@ class TrainingDatasetAnnotation(Base):
     )
     reviewer_notes = Column(Text, nullable=True)
     reviewed_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    reviewed_at = Column(DateTime, nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
 
     # Timestamps
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
     updated_at = Column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
         nullable=False,
@@ -314,8 +320,10 @@ class TrainingDatasetExportJob(Base):
     file_size = Column(Integer, nullable=True)  # Size in bytes
 
     # Timestamps
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
-    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    completed_at = Column(DateTime(timezone=True), nullable=True)
     created_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
 
     # Relationships

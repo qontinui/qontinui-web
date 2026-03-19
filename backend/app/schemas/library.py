@@ -1,9 +1,10 @@
 """Pydantic schemas for library CRUD operations."""
 
-from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.base import IsoDatetime
 
 # =============================================================================
 # Pagination
@@ -82,8 +83,8 @@ class CheckResponse(BaseModel):
     timeout_seconds: int
     enabled: bool
     tags: list[str]
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
 
 class CheckListResponse(BaseModel):
@@ -135,8 +136,8 @@ class CheckGroupResponse(BaseModel):
     stop_on_failure: bool
     run_in_parallel: bool
     tags: list[str]
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
 
 class CheckGroupListResponse(BaseModel):
@@ -197,8 +198,8 @@ class ShellCommandResponse(BaseModel):
     fail_on_error: bool
     enabled: bool
     tags: list[str]
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
 
 class ShellCommandListResponse(BaseModel):
@@ -262,8 +263,8 @@ class SavedApiRequestResponse(BaseModel):
     variables: dict
     timeout_ms: int
     tags: list[str]
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
 
 class SavedApiRequestListResponse(BaseModel):
@@ -321,8 +322,8 @@ class ContextResponse(BaseModel):
     enabled: bool
     auto_include: dict | None
     tags: list[str]
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
 
 class ContextListResponse(BaseModel):
@@ -386,8 +387,8 @@ class MacroResponse(BaseModel):
     category: str | None
     steps: list[dict]
     tags: list[str]
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
 
 class MacroListResponse(BaseModel):
@@ -439,8 +440,8 @@ class PromptSnippetResponse(BaseModel):
     code: str
     category: str | None
     tags: list[str]
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
 
 class PromptSnippetListResponse(BaseModel):

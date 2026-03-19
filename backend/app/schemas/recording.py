@@ -8,6 +8,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.base import IsoDatetime
+
 # Enums
 
 
@@ -309,10 +311,10 @@ class RecordingResponse(RecordingBase):
     status: RecordingStatusEnum
     processing_phase: ProcessingPhaseEnum | None = None
     processing_progress: float = Field(default=0.0, ge=0.0, le=1.0)
-    created_at: datetime
-    updated_at: datetime
-    recording_start_time: datetime
-    recording_end_time: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
+    recording_start_time: IsoDatetime
+    recording_end_time: IsoDatetime
     stats: RecordingStats
     validation_errors: list[str] = Field(default_factory=list)
     validation_warnings: list[str] = Field(default_factory=list)
@@ -340,7 +342,7 @@ class FrameResponse(BaseModel):
     id: str
     recording_id: str
     frame_number: int
-    timestamp: datetime
+    timestamp: IsoDatetime
     relative_time_ms: int
     image_url: str | None = None
     width: int
@@ -365,15 +367,15 @@ class ProcessingJobStatus(BaseModel):
     status: RecordingStatusEnum
     phase: ProcessingPhaseEnum | None = None
     progress: float = Field(..., ge=0.0, le=1.0)
-    started_at: datetime | None = None
-    estimated_completion: datetime | None = None
+    started_at: IsoDatetime | None = None
+    estimated_completion: IsoDatetime | None = None
     error: str | None = None
 
 
 class ProcessingLogEntry(BaseModel):
     """Processing log entry"""
 
-    timestamp: datetime
+    timestamp: IsoDatetime
     phase: ProcessingPhaseEnum
     level: str
     message: str
@@ -501,7 +503,7 @@ class UploadResponse(BaseModel):
 
     success: bool
     recording_id: str
-    uploaded_at: datetime
+    uploaded_at: IsoDatetime
     size_bytes: int
     frame_count: int
     interaction_count: int

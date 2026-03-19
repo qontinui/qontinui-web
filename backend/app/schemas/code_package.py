@@ -4,11 +4,12 @@ Pydantic schemas for code package management.
 Provides request/response models for the community marketplace API.
 """
 
-from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.schemas.base import IsoDatetime
 
 # ===== Category Schemas =====
 
@@ -32,7 +33,7 @@ class CategoryRead(CategoryBase):
 
     id: int
     slug: str
-    created_at: datetime
+    created_at: IsoDatetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -109,8 +110,8 @@ class PackageRead(PackageBase):
     is_verified: bool
     total_downloads: int
     avg_rating: float | None
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
     # Nested relationships (optional)
     category: CategoryRead | None = None
@@ -171,7 +172,7 @@ class VersionRead(VersionBase):
     security_scan_status: str
     security_scan_result: dict[str, Any] | None = None
     download_count: int
-    created_at: datetime
+    created_at: IsoDatetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -196,7 +197,7 @@ class InstallResponse(BaseModel):
     version_id: int
     project_id: int
     status: str
-    installed_at: datetime
+    installed_at: IsoDatetime
     package_name: str
     package_version: str
 
@@ -231,8 +232,8 @@ class RatingRead(RatingBase):
     id: int
     package_id: int
     user_id: UUID
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -273,7 +274,7 @@ class PackageSearchResult(BaseModel):
     total_downloads: int
     avg_rating: float | None
     latest_version: str | None
-    created_at: datetime
+    created_at: IsoDatetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -316,8 +317,8 @@ class InstalledPackageRead(BaseModel):
     package_description: str
     version: str
     status: str
-    installed_at: datetime
-    updated_at: datetime
+    installed_at: IsoDatetime
+    updated_at: IsoDatetime
 
     model_config = ConfigDict(from_attributes=True)
 

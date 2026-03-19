@@ -5,11 +5,12 @@ Provides Pydantic schemas for test-related notifications sent via
 WebSocket, email, Slack, and generic webhooks.
 """
 
-from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, HttpUrl
+
+from app.schemas.base import IsoDatetime
 
 
 class TestRunNotificationBase(BaseModel):
@@ -19,8 +20,8 @@ class TestRunNotificationBase(BaseModel):
     project_id: UUID
     workflow_id: str | None = None
     status: str
-    started_at: datetime
-    completed_at: datetime | None = None
+    started_at: IsoDatetime
+    completed_at: IsoDatetime | None = None
 
 
 class TestRunNotification(TestRunNotificationBase):
@@ -90,7 +91,7 @@ class DeficiencyNotification(DeficiencyNotificationBase):
     deficiency_url: str | None = None
     test_run_url: str | None = None
 
-    first_seen_at: datetime
+    first_seen_at: IsoDatetime
     occurrence_count: int = Field(default=1, ge=1)
 
     class Config:
@@ -249,8 +250,8 @@ class TestNotificationPreferences(TestNotificationPreferencesBase):
     webhook_config: NotificationChannelConfig
 
     # Audit
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
     class Config:
         from_attributes = True

@@ -47,7 +47,10 @@ class EditCommand(Base):
     payload = Column(JSON, nullable=False)  # What changed (new values, delta, etc.)
     sequence_number = Column(Integer, nullable=False)  # Ensures ordering and no gaps
     applied_at = Column(
-        DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+        index=True,
     )
 
     # Relationships

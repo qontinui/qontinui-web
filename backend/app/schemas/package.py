@@ -2,10 +2,11 @@
 Pydantic schemas for package installation service.
 """
 
-from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.base import IsoDatetime
 
 # ============================================================================
 # Package Schemas
@@ -44,7 +45,7 @@ class PackageVersionResponse(PackageVersionBase):
     security_scan_status: str
     security_scan_result: dict[str, Any] | None = None
     download_count: int
-    created_at: datetime
+    created_at: IsoDatetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -75,8 +76,8 @@ class PackageResponse(PackageBase):
     is_verified: bool
     total_downloads: int
     avg_rating: float | None = None
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -137,8 +138,8 @@ class PackageInstallationResponse(BaseModel):
     project_id: int
     user_id: str
     status: str
-    installed_at: datetime
-    updated_at: datetime
+    installed_at: IsoDatetime
+    updated_at: IsoDatetime
 
     # Related data
     package: PackageResponse | None = None
@@ -180,7 +181,7 @@ class SecurityScanResult(BaseModel):
     status: str  # "passed", "failed", "pending"
     vulnerabilities: list[dict[str, Any]] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-    scanned_at: datetime | None = None
+    scanned_at: IsoDatetime | None = None
 
 
 class SafetyCheckResult(BaseModel):

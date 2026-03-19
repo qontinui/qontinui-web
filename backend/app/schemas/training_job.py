@@ -1,11 +1,12 @@
 """Pydantic schemas for training job API."""
 
-from datetime import datetime
 from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.schemas.base import IsoDatetime
 
 
 class TrainingJobStatus(StrEnum):
@@ -128,10 +129,10 @@ class TrainingJobResponse(BaseModel):
     metrics: dict[str, Any] | None
     output_path: str | None
     model_url: str | None
-    created_at: datetime
-    updated_at: datetime
-    started_at: datetime | None
-    completed_at: datetime | None
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
+    started_at: IsoDatetime | None
+    completed_at: IsoDatetime | None
 
     model_config = ConfigDict(from_attributes=True)
 

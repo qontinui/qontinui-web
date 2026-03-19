@@ -1,9 +1,10 @@
 """Pydantic schemas for error monitor CRUD operations."""
 
-from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.base import IsoDatetime
 
 
 class ErrorMonitorEntryCreate(BaseModel):
@@ -51,16 +52,16 @@ class ErrorMonitorEntryResponse(BaseModel):
     file_path: str | None
     line_number: int | None
     occurrence_count: int
-    first_seen_at: datetime
-    last_seen_at: datetime
+    first_seen_at: IsoDatetime
+    last_seen_at: IsoDatetime
     acknowledged: bool
-    acknowledged_at: datetime | None
-    resolved_at: datetime | None
+    acknowledged_at: IsoDatetime | None
+    resolved_at: IsoDatetime | None
     resolution_notes: str | None
     resolved_by_task_run_id: UUID | None
     extra_metadata: dict | None
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
 
 class ErrorMonitorListResponse(BaseModel):

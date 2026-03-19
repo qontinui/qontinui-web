@@ -4,11 +4,12 @@ Pydantic schemas for AI prompt template and sequence management.
 Provides request/response models for the AI prompt library API.
 """
 
-from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.base import IsoDatetime
 
 # ===== AI Prompt Template Schemas =====
 
@@ -56,8 +57,8 @@ class AIPromptTemplateResponse(AIPromptTemplateBase):
     parameters: list[dict[str, Any]]
     default_timeout: int | None
     default_working_directory: str | None
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -71,7 +72,7 @@ class AIPromptTemplateSummary(BaseModel):
     description: str | None
     category: str | None
     tags: list[str]
-    created_at: datetime
+    created_at: IsoDatetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -125,8 +126,8 @@ class PromptSequenceResponse(PromptSequenceBase):
     max_retries: int
     results_directory: str | None
     default_timeout: int | None
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -141,7 +142,7 @@ class PromptSequenceSummary(BaseModel):
     category: str | None
     tags: list[str]
     steps_count: int = Field(..., description="Number of steps in sequence")
-    created_at: datetime
+    created_at: IsoDatetime
 
     model_config = ConfigDict(from_attributes=True)
 

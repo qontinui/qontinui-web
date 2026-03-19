@@ -13,6 +13,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.base import IsoDatetime
+
 
 class AuditLogBase(BaseModel):
     """Base audit log schema with common fields."""
@@ -44,7 +46,7 @@ class AuditLogResponse(AuditLogBase):
     target_user_id: UUID | None = Field(None, description="User affected by the action")
     changes: dict[str, Any] | None = Field(None, description="Before/after state")
     correlation_id: str | None = Field(None, description="Request correlation ID")
-    created_at: datetime = Field(..., description="When the event occurred")
+    created_at: IsoDatetime = Field(..., description="When the event occurred")
 
     # Optional enriched data (populated by endpoint)
     user_email: str | None = Field(

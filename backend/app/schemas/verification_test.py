@@ -1,9 +1,10 @@
 """Schemas for verification test API operations."""
 
-from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel
+
+from app.schemas.base import IsoDatetime
 
 
 class VisionConfig(BaseModel):
@@ -85,8 +86,8 @@ class VerificationTestResponse(BaseModel):
     enabled: bool
     ai_generated: bool
     tags: list[str]
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
     class Config:
         """Pydantic model config."""
@@ -140,8 +141,8 @@ class WorkflowTestAssociationResponse(BaseModel):
     action_id: str | None
     execution_order: int
     enabled: bool
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
     test: VerificationTestResponse | None = None
 
     class Config:

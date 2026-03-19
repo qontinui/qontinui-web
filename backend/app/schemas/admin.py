@@ -1,8 +1,8 @@
 """Pydantic schemas for admin endpoints."""
 
-from datetime import datetime
-
 from pydantic import BaseModel, EmailStr, Field
+
+from app.schemas.base import IsoDatetime
 
 
 class AdminUserData(BaseModel):
@@ -107,8 +107,8 @@ class AdminNotificationSettingsResponse(AdminNotificationSettingsBase):
     """Schema for admin notification settings response."""
 
     id: str = Field(..., description="Settings UUID")
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
     class Config:
         from_attributes = True
