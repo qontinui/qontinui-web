@@ -6,20 +6,20 @@
 
 import type { DiscoveredSpec } from "./spec-prompt-builder";
 
-import activeRunsSpec from "@/app/(app)/runs/active/active-runs.spec.uibridge.json";
-import aiSettingsSpec from "@/app/(app)/settings/ai/ai-settings.spec.uibridge.json";
-import chatSpec from "@/app/(app)/chat/chat.spec.uibridge.json";
+import uiBridgeStatesSpec from "@/app/(app)/automation-builder/ui-bridge-states/ui-bridge-states.spec.uibridge.json";
 import contextsSpec from "@/app/(app)/build/contexts/contexts.spec.uibridge.json";
-import errorMonitorSpec from "@/app/(app)/tools/error-monitor/error-monitor.spec.uibridge.json";
+import templatesSpec from "@/app/(app)/build/templates/templates.spec.uibridge.json";
+import workflowsSpec from "@/app/(app)/build/workflows/workflows.spec.uibridge.json";
+import chatSpec from "@/app/(app)/chat/chat.spec.uibridge.json";
 import executeSpec from "@/app/(app)/execute/execute.spec.uibridge.json";
-import findingsSpec from "@/app/(app)/runs/findings/findings.spec.uibridge.json";
-import inspectorSpec from "@/app/(app)/tools/inspector/inspector.spec.uibridge.json";
 import runnersSpec from "@/app/(app)/runners/runners.spec.uibridge.json";
+import activeRunsSpec from "@/app/(app)/runs/active/active-runs.spec.uibridge.json";
+import findingsSpec from "@/app/(app)/runs/findings/findings.spec.uibridge.json";
 import runsSpec from "@/app/(app)/runs/runs.spec.uibridge.json";
 import statisticsSpec from "@/app/(app)/runs/statistics/statistics.spec.uibridge.json";
-import templatesSpec from "@/app/(app)/build/templates/templates.spec.uibridge.json";
-import uiBridgeStatesSpec from "@/app/(app)/automation-builder/ui-bridge-states/ui-bridge-states.spec.uibridge.json";
-import workflowsSpec from "@/app/(app)/build/workflows/workflows.spec.uibridge.json";
+import aiSettingsSpec from "@/app/(app)/settings/ai/ai-settings.spec.uibridge.json";
+import errorMonitorSpec from "@/app/(app)/tools/error-monitor/error-monitor.spec.uibridge.json";
+import inspectorSpec from "@/app/(app)/tools/inspector/inspector.spec.uibridge.json";
 
 interface RawSpec {
   specId: string;
@@ -28,20 +28,20 @@ interface RawSpec {
 }
 
 const ALL_SPECS: RawSpec[] = [
-  { specId: "active-runs", json: activeRunsSpec },
-  { specId: "ai-settings", json: aiSettingsSpec },
-  { specId: "chat", json: chatSpec },
+  { specId: "ui-bridge-states", json: uiBridgeStatesSpec },
   { specId: "contexts", json: contextsSpec },
-  { specId: "error-monitor", json: errorMonitorSpec },
+  { specId: "templates", json: templatesSpec },
+  { specId: "workflows", json: workflowsSpec },
+  { specId: "chat", json: chatSpec },
   { specId: "execute", json: executeSpec },
-  { specId: "findings", json: findingsSpec },
-  { specId: "inspector", json: inspectorSpec },
   { specId: "runners", json: runnersSpec },
+  { specId: "active-runs", json: activeRunsSpec },
+  { specId: "findings", json: findingsSpec },
   { specId: "runs", json: runsSpec },
   { specId: "statistics", json: statisticsSpec },
-  { specId: "templates", json: templatesSpec },
-  { specId: "ui-bridge-states", json: uiBridgeStatesSpec },
-  { specId: "workflows", json: workflowsSpec },
+  { specId: "ai-settings", json: aiSettingsSpec },
+  { specId: "error-monitor", json: errorMonitorSpec },
+  { specId: "inspector", json: inspectorSpec },
 ];
 
 /**

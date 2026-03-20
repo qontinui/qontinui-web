@@ -103,8 +103,12 @@ async def login(
     )
 
     # Calculate account age in days
+    # Ensure both datetimes are timezone-aware for subtraction
+    _created = user.created_at
+    if _created and _created.tzinfo is None:
+        _created = _created.replace(tzinfo=UTC)
     account_age_days = (
-        (datetime.now(UTC) - user.created_at).days if user.created_at else 0
+        (datetime.now(UTC) - _created).days if _created else 0
     )
 
     # Update user analytics fields
