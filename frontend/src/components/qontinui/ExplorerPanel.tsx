@@ -376,7 +376,10 @@ export function ExplorerPanelThumbnail({
 
   return (
     <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick?.(e as unknown as React.MouseEvent<HTMLDivElement>); } }}
       className={cn(
         "rounded-lg border cursor-pointer transition-all overflow-hidden",
         aspectClasses[aspectRatio],

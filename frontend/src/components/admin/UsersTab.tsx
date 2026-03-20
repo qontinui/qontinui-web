@@ -205,8 +205,11 @@ export default function UsersTab() {
             {filteredUsers.map((user) => (
               <div
                 key={user.id}
+                role="option"
+                tabIndex={0}
                 className="p-4 hover:bg-muted/50 transition-colors cursor-pointer flex items-center gap-4"
                 onClick={() => setSelectedUser(user)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedUser(user); } }}
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">

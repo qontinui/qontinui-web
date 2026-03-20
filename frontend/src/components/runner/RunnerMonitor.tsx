@@ -308,6 +308,7 @@ export function RunnerMonitor({ projectId: _projectId }: RunnerMonitorProps) {
                     src={selectedScreenshot.presigned_url}
                     alt={selectedScreenshot.name}
                     fill
+                    sizes="(max-width: 768px) 100vw, 50vw"
                     className="object-contain"
                   />
                 </div>
@@ -379,6 +380,7 @@ export function RunnerMonitor({ projectId: _projectId }: RunnerMonitorProps) {
                               src={screenshot.presigned_url}
                               alt={`Screenshot ${screenshots.length - idx}`}
                               fill
+                              sizes="96px"
                               className="object-cover"
                             />
                           </button>

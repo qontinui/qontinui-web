@@ -51,8 +51,11 @@ function VisualLandingContent() {
       <header className="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
           <div
+            role="link"
+            tabIndex={0}
             className="flex items-center gap-1 cursor-pointer"
             onClick={() => router.push("/")}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push("/"); } }}
           >
             <Image
               src="/q-logo.png"

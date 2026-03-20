@@ -72,6 +72,9 @@ export function PatternsTab({
                     )}
                   >
                     <div
+                      role="option"
+                      tabIndex={0}
+                      aria-selected={isSelected}
                       className="cursor-pointer"
                       onClick={() => {
                         const newSelection = new Set(selectedPatterns);
@@ -82,6 +85,7 @@ export function PatternsTab({
                         }
                         setSelectedPatterns(newSelection);
                       }}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); const ns = new Set(selectedPatterns); if (isSelected) { ns.delete(pattern.id); } else { ns.add(pattern.id); } setSelectedPatterns(ns); } }}
                     >
                       <div className="aspect-video bg-surface-raised rounded mb-2 flex items-center justify-center overflow-hidden">
                         {pattern.imageUrl ? (

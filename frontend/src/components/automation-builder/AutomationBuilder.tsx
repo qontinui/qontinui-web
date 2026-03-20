@@ -3,7 +3,9 @@
 import React, { Suspense } from "react";
 import { UnifiedProcessLibrary } from "@/components/unified-process-library";
 import { ActionProperties } from "@/components/action-properties";
-import { BuilderModeSelector, ItemMetadataPanel, EditorToolbar } from "./index";
+import { BuilderModeSelector } from "./components/BuilderModeSelector";
+import { ItemMetadataPanel } from "./components/ItemMetadataPanel";
+import { EditorToolbar } from "./components/EditorToolbar";
 import { EditorContent } from "./components/EditorContent";
 import { BuilderDialogs } from "./components/BuilderDialogs";
 import { useBuilderState } from "./hooks/useBuilderState";

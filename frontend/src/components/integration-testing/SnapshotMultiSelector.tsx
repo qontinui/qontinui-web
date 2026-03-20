@@ -108,6 +108,9 @@ export function SnapshotMultiSelector({
               return (
                 <div
                   key={snapshot.id}
+                  role="option"
+                  tabIndex={0}
+                  aria-selected={isSelected}
                   className={`
                     p-3 border rounded-lg cursor-pointer transition-all
                     ${
@@ -117,6 +120,7 @@ export function SnapshotMultiSelector({
                     }
                   `}
                   onClick={() => handleToggle(snapshot)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleToggle(snapshot); } }}
                 >
                   <div className="flex items-start gap-3">
                     <Checkbox

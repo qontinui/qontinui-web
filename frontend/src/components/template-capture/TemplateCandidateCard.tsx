@@ -63,6 +63,9 @@ export function TemplateCandidateCard({
 
   return (
     <div
+      role="option"
+      tabIndex={0}
+      aria-selected={isSelected}
       className={cn(
         "relative group rounded-lg border-2 transition-all cursor-pointer overflow-hidden",
         "hover:shadow-md bg-card",
@@ -71,6 +74,7 @@ export function TemplateCandidateCard({
           : "border-border hover:border-primary/50"
       )}
       onClick={onSelect}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(); } }}
     >
       {/* Status Badge */}
       <Badge

@@ -54,6 +54,8 @@ export function ThumbnailCard({
 
   return (
     <div
+      role="button"
+      tabIndex={0}
       className={cn(
         "relative group flex-shrink-0 rounded-lg border-2 transition-all cursor-pointer",
         "hover:shadow-md",
@@ -63,6 +65,7 @@ export function ThumbnailCard({
       )}
       style={{ width: "120px" }}
       onClick={onClick}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick?.(); } }}
     >
       {/* Screenshot Number Badge */}
       <Badge

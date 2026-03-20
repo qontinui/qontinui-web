@@ -372,6 +372,9 @@ export function StateList({
                       return (
                         <div
                           key={state.id}
+                          role="option"
+                          tabIndex={0}
+                          aria-selected={isSelected}
                           className={`flex items-center gap-2 p-2 rounded-md transition-colors cursor-pointer ${
                             isSelected
                               ? "bg-brand-primary/20 ring-1 ring-brand-primary"
@@ -380,6 +383,7 @@ export function StateList({
                                 : "hover:bg-muted"
                           }`}
                           onClick={() => handleSelectState(state.id)}
+                          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleSelectState(state.id); } }}
                         >
                           <Checkbox
                             checked={isChecked}

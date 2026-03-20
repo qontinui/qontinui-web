@@ -2,14 +2,11 @@
 
 import React from "react";
 import type { Workflow, Action } from "@/lib/action-schema/action-types";
-import {
-  BuilderMode,
-  LibraryItem,
-  isLinearWorkflow,
-  EmptyState,
-  SequentialEditor,
-  GraphEditor,
-} from "../index";
+import type { BuilderMode, LibraryItem } from "../types";
+import { isLinearWorkflow } from "../types";
+import { EmptyState } from "./EmptyState";
+import { SequentialEditor } from "./SequentialEditor";
+import { GraphEditor } from "./GraphEditor";
 import type { ActionType } from "@/lib/action-schema/action-types";
 
 interface EditorContentProps {

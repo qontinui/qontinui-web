@@ -180,6 +180,9 @@ function StateVisualizationTab() {
                   return (
                     <div
                       key={state.id}
+                      role="option"
+                      tabIndex={0}
+                      aria-selected={isSelected}
                       className={`
                         flex items-center gap-3 p-3 rounded-lg border cursor-pointer
                         transition-colors
@@ -187,6 +190,7 @@ function StateVisualizationTab() {
                         ${isHighlighted ? "ring-2 ring-primary" : ""}
                       `}
                       onClick={() => toggleState(state.id)}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleState(state.id); } }}
                       onMouseEnter={() =>
                         isSelected && setHighlightedStateId(state.id)
                       }

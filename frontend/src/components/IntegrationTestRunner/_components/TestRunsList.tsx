@@ -32,7 +32,11 @@ export function TestRunsList({
           testRuns.map((run) => (
             <div
               key={run.run_id}
+              role="option"
+              tabIndex={0}
+              aria-selected={selectedRunId === run.run_id}
               onClick={() => onSelectRun(run.run_id)}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectRun(run.run_id); } }}
               className={`p-2 rounded cursor-pointer border ${
                 selectedRunId === run.run_id
                   ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"

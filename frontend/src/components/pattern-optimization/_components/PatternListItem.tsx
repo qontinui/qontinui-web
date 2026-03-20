@@ -15,7 +15,11 @@ export const PatternListItem: React.FC<PatternListItemProps> = ({
   onSelect,
 }) => (
   <div
+    role="option"
+    tabIndex={0}
+    aria-selected={isSelected}
     onClick={() => onSelect(pattern)}
+    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(pattern); } }}
     className={`p-3 border rounded-lg cursor-pointer hover:bg-surface-raised/80 transition-colors ${
       isSelected ? "border-blue-500 bg-blue-50" : "border-border-default"
     }`}

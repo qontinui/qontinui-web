@@ -55,6 +55,9 @@ function StateItem({ state, isSelected, onSelectState }: StateItemProps) {
 
   return (
     <div
+      role="option"
+      tabIndex={0}
+      aria-selected={isSelected}
       className={`
         flex flex-col gap-2 p-3 rounded-lg border cursor-pointer
         transition-colors
@@ -65,6 +68,7 @@ function StateItem({ state, isSelected, onSelectState }: StateItemProps) {
         }
       `}
       onClick={() => onSelectState(state.id)}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectState(state.id); } }}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">

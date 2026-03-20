@@ -175,11 +175,14 @@ export default function ProjectsTab() {
                 return (
                   <div
                     key={project.id}
+                    role="button"
+                    tabIndex={0}
                     className="p-4 hover:bg-muted/50 transition-colors cursor-pointer"
                     onClick={() => {
                       setSelectedProjectId(project.id);
                       setIsModalOpen(true);
                     }}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedProjectId(project.id); setIsModalOpen(true); } }}
                   >
                     <div className="flex items-start gap-4">
                       <div className="flex-1 min-w-0">

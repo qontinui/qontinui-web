@@ -147,10 +147,14 @@ export function AssignChecksDialog({
               filteredChecks.map((check) => (
                 <div
                   key={check.id}
+                  role="option"
+                  tabIndex={0}
+                  aria-selected={localSelected.has(check.id)}
                   className={`flex items-center gap-3 rounded-md px-2 py-2 cursor-pointer transition-colors hover:bg-surface-raised/60 ${
                     localSelected.has(check.id) ? "bg-blue-500/10" : ""
                   }`}
                   onClick={() => toggleCheck(check.id)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleCheck(check.id); } }}
                 >
                   <Checkbox
                     checked={localSelected.has(check.id)}

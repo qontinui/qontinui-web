@@ -119,6 +119,9 @@ export function DeficiencyExport({
                 return (
                   <div
                     key={formatOption}
+                    role="radio"
+                    tabIndex={0}
+                    aria-checked={format === formatOption}
                     className={cn(
                       "flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors",
                       format === formatOption
@@ -126,6 +129,7 @@ export function DeficiencyExport({
                         : "border-border hover:border-primary/50"
                     )}
                     onClick={() => setFormat(formatOption)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setFormat(formatOption); } }}
                   >
                     <RadioGroupItem
                       value={formatOption}

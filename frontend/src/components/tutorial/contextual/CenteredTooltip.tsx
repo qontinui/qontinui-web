@@ -115,8 +115,8 @@ export const CenteredTooltip: React.FC<CenteredTooltipProps> = ({
             <div className="flex items-center gap-2">
               {showSuccess && (
                 <motion.div
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
+                  initial={{ scale: 0.95, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
                   className="tutorial-success-animation"
                 >
                   <CheckCircle className="w-5 h-5 text-green-500" />

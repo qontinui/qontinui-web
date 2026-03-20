@@ -159,8 +159,12 @@ export function PackageCodePreview({
       {/* Fullscreen overlay backdrop */}
       {isFullscreen && (
         <div
+          role="button"
+          tabIndex={0}
+          aria-label="Close fullscreen"
           className="fixed inset-0 bg-black/80 -z-10"
           onClick={() => setIsFullscreen(false)}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " " || e.key === "Escape") { e.preventDefault(); setIsFullscreen(false); } }}
         />
       )}
     </div>

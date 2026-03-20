@@ -324,6 +324,8 @@ export function ActiveStatesVisualizer({
       {/* Canvas Container */}
       <div
         ref={containerRef}
+        role="application"
+        aria-label="State visualization canvas"
         className={cn(
           "relative overflow-hidden rounded-lg border border-border-subtle",
           "bg-surface-canvas",

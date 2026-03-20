@@ -68,6 +68,9 @@ export function StateMachineSidebar({
               {states.map((state) => (
                 <div
                   key={state.id}
+                  role="option"
+                  tabIndex={0}
+                  aria-selected={selectedNode === state.id}
                   className={`flex items-center gap-2 p-2 rounded transition-colors cursor-pointer ${
                     selectedNode === state.id
                       ? "bg-[var(--brand-secondary)]/20 border border-[var(--brand-secondary)]"
@@ -77,6 +80,7 @@ export function StateMachineSidebar({
                     onSelectState(state.id);
                     onDeselectEdge();
                   }}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectState(state.id); onDeselectEdge(); } }}
                 >
                   <span className="text-sm flex-1 truncate">{state.name}</span>
                   <Button

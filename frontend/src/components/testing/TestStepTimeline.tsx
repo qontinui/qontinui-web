@@ -273,6 +273,8 @@ export function TestStepTimeline({
                             <div className="rounded border border-border-default overflow-hidden bg-black/30 cursor-pointer hover:border-brand-primary/50 transition-colors">
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
+                                role="button"
+                                tabIndex={0}
                                 src={step.screenshotUrl!}
                                 alt={`Step ${step.stepNumber} screenshot`}
                                 className="w-full h-auto"
@@ -283,6 +285,7 @@ export function TestStepTimeline({
                                     step,
                                   })
                                 }
+                                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedScreenshot({ url: step.screenshotUrl!, step }); } }}
                               />
                             </div>
                           </div>

@@ -299,12 +299,16 @@ export function EdgeDetectionView({
                 return (
                   <div
                     key={result.id}
+                    role="option"
+                    tabIndex={0}
+                    aria-selected={isSelected}
                     className={`p-2 rounded-lg border cursor-pointer transition-colors ${
                       isSelected
                         ? "border-success bg-success-muted"
                         : "hover:bg-accent"
                     }`}
                     onClick={() => setSelectedId(isSelected ? null : result.id)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId(isSelected ? null : result.id); } }}
                   >
                     <div className="flex items-center justify-between mb-1">
                       <Badge

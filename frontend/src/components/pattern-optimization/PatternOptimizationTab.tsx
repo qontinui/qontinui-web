@@ -129,7 +129,11 @@ export const PatternOptimizationTab: React.FC = () => {
             {patterns.map((pattern) => (
               <div
                 key={pattern.id}
+                role="option"
+                tabIndex={0}
+                aria-selected={selectedPattern?.id === pattern.id}
                 onClick={() => setSelectedPattern(pattern)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedPattern(pattern); } }}
                 className={`p-2 border rounded cursor-pointer hover:bg-surface-raised ${
                   selectedPattern?.id === pattern.id
                     ? "border-blue-500 bg-blue-50"

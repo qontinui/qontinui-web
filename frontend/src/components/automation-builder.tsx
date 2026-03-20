@@ -77,8 +77,11 @@ function ProjectHeader({ projectId }: { projectId: string | null }) {
           </div>
         ) : (
           <div
+            role="button"
+            tabIndex={0}
             className="flex items-center gap-2 group cursor-pointer"
             onClick={startEditing}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); startEditing(); } }}
           >
             <h1 className="text-xl font-semibold text-white group-hover:text-brand-primary transition-colors">
               {projectName || "Untitled Project"}

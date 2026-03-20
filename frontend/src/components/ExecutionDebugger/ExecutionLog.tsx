@@ -162,7 +162,7 @@ export const ExecutionLog: React.FC = () => {
       setAutoScroll(isAtBottom);
     };
 
-    container.addEventListener("scroll", handleScroll);
+    container.addEventListener("scroll", handleScroll, { passive: true });
     return () => container.removeEventListener("scroll", handleScroll);
   }, []);
 

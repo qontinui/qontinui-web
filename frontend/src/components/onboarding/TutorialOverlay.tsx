@@ -44,7 +44,7 @@ export function TutorialOverlay() {
     };
 
     window.addEventListener("resize", handleResize);
-    window.addEventListener("scroll", handleResize);
+    window.addEventListener("scroll", handleResize, { passive: true });
 
     return () => {
       window.removeEventListener("resize", handleResize);

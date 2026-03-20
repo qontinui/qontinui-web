@@ -24,6 +24,9 @@ const ScreenshotList: React.FC<ScreenshotListProps> = ({
         {screenshots.map((file, index) => (
           <div
             key={index}
+            role="option"
+            tabIndex={0}
+            aria-selected={selectedIndex === index}
             className={cn(
               "relative group cursor-pointer rounded-lg overflow-hidden border-2 transition-all",
               selectedIndex === index
@@ -31,6 +34,7 @@ const ScreenshotList: React.FC<ScreenshotListProps> = ({
                 : "border-border-subtle hover:border-border-default"
             )}
             onClick={() => onSelectScreenshot(index)}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectScreenshot(index); } }}
           >
             {/* Thumbnail */}
             <div className="aspect-video bg-surface-raised flex items-center justify-center overflow-hidden">

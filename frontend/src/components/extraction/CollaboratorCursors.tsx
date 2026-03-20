@@ -113,7 +113,6 @@ function CollaboratorCursor({
         pointerEvents: "none",
         zIndex: 1000,
         transition: "left 50ms linear, top 50ms linear",
-        willChange: "left, top",
       }}
     >
       {/* Cursor icon */}

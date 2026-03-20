@@ -20,7 +20,10 @@ export function Header() {
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
           <div
             className="flex items-center gap-1 cursor-pointer"
+            role="link"
+            tabIndex={0}
             onClick={() => router.push("/")}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push("/"); } }}
           >
             <Image
               src="/q-logo.png"

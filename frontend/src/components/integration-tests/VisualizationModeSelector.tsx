@@ -66,12 +66,16 @@ export const VisualizationModeSelector: React.FC<
           {visualizationModes.map((vizMode) => (
             <div
               key={vizMode.value}
+              role="radio"
+              tabIndex={0}
+              aria-checked={mode === vizMode.value}
               className={`relative flex items-start gap-3 p-3 rounded-lg border transition-all cursor-pointer ${
                 mode === vizMode.value
                   ? "bg-blue-50 border-blue-300 shadow-sm"
                   : "bg-white border-border-subtle hover:bg-surface-raised/80"
               } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
               onClick={() => !disabled && onModeChange(vizMode.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (!disabled) onModeChange(vizMode.value); } }}
             >
               <RadioGroupItem
                 value={vizMode.value}

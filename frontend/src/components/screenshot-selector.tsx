@@ -217,7 +217,10 @@ export function ScreenshotSelector({
                 {screenshots.map((screenshot) => (
                   <div
                     key={screenshot.id}
+                    role="option"
+                    tabIndex={0}
                     onClick={() => handleSelectScreenshot(screenshot.id)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleSelectScreenshot(screenshot.id); } }}
                     className={cn(
                       "group relative cursor-pointer rounded-lg overflow-hidden border-2 transition-all hover:scale-105",
                       multiSelect

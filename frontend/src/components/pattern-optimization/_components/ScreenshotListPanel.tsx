@@ -78,10 +78,13 @@ export const ScreenshotListPanel: React.FC<ScreenshotListPanelProps> = ({
             >
               <div className="flex justify-between items-start">
                 <div
+                  role="button"
+                  tabIndex={0}
                   className="flex-1"
                   onClick={() => {
                     onSelectScreenshot(screenshot.id);
                   }}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectScreenshot(screenshot.id); } }}
                 >
                   <div className="font-medium text-sm text-white truncate">
                     {screenshot.name}

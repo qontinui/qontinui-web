@@ -50,6 +50,9 @@ export function AccessibilityTreeNode({
       className={depth > 0 ? "ml-4 border-l border-border-subtle/30 pl-2" : ""}
     >
       <div
+        role="treeitem"
+        tabIndex={0}
+        aria-selected={isSelected}
         className={`flex items-center gap-2 py-1.5 px-2 rounded-md transition-colors cursor-pointer ${
           isSelected
             ? "bg-brand-primary/20 ring-1 ring-brand-primary/40"
@@ -58,6 +61,7 @@ export function AccessibilityTreeNode({
               : "hover:bg-surface-hover"
         }`}
         onClick={() => onSelectNode(node)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectNode(node); } }}
       >
         {hasChildren ? (
           <button

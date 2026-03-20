@@ -130,12 +130,16 @@ export function SelectionPhase({
             requests.map((req) => (
               <div
                 key={req.id}
+                role="option"
+                tabIndex={0}
+                aria-selected={selectedIds.has(req.id)}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 border-b border-border-subtle/20 last:border-b-0 cursor-pointer",
                   "hover:bg-surface-raised/40 transition-colors",
                   selectedIds.has(req.id) && "bg-purple-500/5"
                 )}
                 onClick={() => onToggle(req.id)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(req.id); } }}
               >
                 <Checkbox
                   checked={selectedIds.has(req.id)}

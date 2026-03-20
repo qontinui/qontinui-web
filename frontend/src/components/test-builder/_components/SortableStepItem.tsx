@@ -57,6 +57,9 @@ export function SortableStepItem({
     <div
       ref={setNodeRef}
       style={style}
+      role="option"
+      tabIndex={0}
+      aria-selected={isSelected}
       className={cn(
         "group flex items-center gap-2 px-2 py-2 rounded-md cursor-pointer transition-colors",
         isDragging && "opacity-50",
@@ -65,6 +68,7 @@ export function SortableStepItem({
           : "hover:bg-zinc-800/60"
       )}
       onClick={onSelect}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(); } }}
     >
       {/* Drag handle */}
       <button

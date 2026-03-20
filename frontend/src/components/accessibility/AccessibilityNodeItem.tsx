@@ -96,6 +96,9 @@ export function AccessibilityNodeItem({
   return (
     <div data-slot="accessibility-node">
       <div
+        role="treeitem"
+        tabIndex={0}
+        aria-selected={isSelected}
         className={cn(
           "flex items-center gap-2 py-1 px-2 rounded cursor-pointer hover:bg-muted/50 transition-colors",
           isSelected && "bg-primary/10 border border-primary/30",
@@ -103,6 +106,7 @@ export function AccessibilityNodeItem({
         )}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
         onClick={() => onSelectNode(node)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectNode(node); } }}
       >
         {/* Expand/Collapse button */}
         {hasChildren ? (

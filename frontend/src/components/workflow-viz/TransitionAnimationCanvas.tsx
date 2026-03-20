@@ -84,6 +84,8 @@ export function TransitionAnimationCanvas({
   return (
     <div
       ref={canvas.containerRef}
+      role="application"
+      aria-label="Transition animation canvas"
       className={cn(
         "relative overflow-hidden bg-zinc-900 rounded-lg",
         className

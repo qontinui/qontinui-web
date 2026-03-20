@@ -61,6 +61,9 @@ export function CreateReviewForm({
               {availableReviewers.map((reviewer) => (
                 <div
                   key={reviewer.id}
+                  role="option"
+                  tabIndex={0}
+                  aria-selected={selectedReviewers.includes(reviewer.id)}
                   className={cn(
                     "flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors",
                     selectedReviewers.includes(reviewer.id)
@@ -68,6 +71,7 @@ export function CreateReviewForm({
                       : "hover:bg-muted border border-transparent"
                   )}
                   onClick={() => onToggleReviewer(reviewer.id)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggleReviewer(reviewer.id); } }}
                 >
                   <Avatar
                     src={reviewer.avatar_url}

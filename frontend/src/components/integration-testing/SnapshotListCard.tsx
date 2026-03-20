@@ -72,6 +72,9 @@ export function SnapshotListCard({
           {snapshots.map((snapshot) => (
             <div
               key={snapshot.id}
+              role="option"
+              tabIndex={0}
+              aria-selected={selectedSnapshotId === snapshot.id}
               className={`
                 border rounded-lg p-4 cursor-pointer transition-all
                 ${
@@ -81,6 +84,7 @@ export function SnapshotListCard({
                 }
               `}
               onClick={() => onSelect?.(snapshot)}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(snapshot); } }}
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1">

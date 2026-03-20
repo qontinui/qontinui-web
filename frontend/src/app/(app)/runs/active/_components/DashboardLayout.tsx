@@ -101,6 +101,8 @@ export function DashboardLayout({
       </div>
 
       <div
+        role="separator"
+        aria-orientation="vertical"
         onMouseDown={handleMouseDown}
         className="w-1.5 mx-1 flex items-center justify-center cursor-col-resize group shrink-0"
       >

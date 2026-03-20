@@ -370,13 +370,17 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({
             <div className="grid grid-cols-3 gap-3">
               {detectedPatterns.map((pattern, index) => (
                 <div
-                  key={index}
+                  key={pattern.suggested_name || index}
+                  role="option"
+                  tabIndex={0}
+                  aria-selected={selectedPatterns.has(pattern.suggested_name)}
                   className={`p-2 border rounded cursor-pointer transition-all ${
                     selectedPatterns.has(pattern.suggested_name)
                       ? "border-blue-500 bg-blue-50 ring-2 ring-blue-200"
                       : "border-border-subtle hover:bg-surface-raised/80"
                   }`}
                   onClick={() => handleTogglePattern(pattern.suggested_name)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleTogglePattern(pattern.suggested_name); } }}
                 >
                   <div className="aspect-square bg-surface-raised rounded mb-2 overflow-hidden flex items-center justify-center">
                     {pattern.image_data ? (
