@@ -7,6 +7,9 @@ import {
 import { TokenManager } from "./token-manager";
 import { TokenRefreshService } from "./token-refresh-service";
 import { ApiConfig } from "../api-config";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("AuthService");
 
 /**
  * Map backend error codes to user-friendly messages
@@ -53,8 +56,7 @@ export class AuthService {
     formData.append("username", credentials.username);
     formData.append("password", credentials.password);
 
-    console.log("[AuthService] Attempting login to:", ApiConfig.AUTH_LOGIN);
-    console.log("[AuthService] Remember me:", credentials.remember_me);
+    log.debug("Attempting login");
 
     // Add remember_me as query parameter
     let loginUrl = ApiConfig.AUTH_LOGIN;
@@ -70,8 +72,6 @@ export class AuthService {
       body: formData,
       credentials: "include", // Critical: Allows cookies to be set
     });
-
-    console.log("[AuthService] Login response status:", response.status);
 
     if (!response.ok) {
       // Safely parse error response - might not be JSON
@@ -184,11 +184,9 @@ export class AuthService {
         credentials: "include", // Critical: Sends access_token cookie for authentication
       });
 
-      console.log(
-        "[AuthService] Logout successful, cookies cleared on backend"
-      );
+      log.debug("Logout successful");
     } catch (error) {
-      console.error("[AuthService] Logout request failed:", error);
+      log.error("Logout request failed:", error);
       // Continue to clear local tokens even if backend request fails
     } finally {
       // Clear authentication state from localStorage
@@ -224,7 +222,7 @@ export class AuthService {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("[AuthService] getCurrentUser error:", response.status);
+      log.error("getCurrentUser failed:", response.status);
       throw new Error(
         `Failed to get user info: ${response.status} - ${errorText}`
       );

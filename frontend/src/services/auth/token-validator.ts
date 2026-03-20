@@ -1,3 +1,7 @@
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("TokenValidator");
+
 /**
  * TokenValidator - Single Responsibility: Validate JWT tokens
  * Handles token decoding, expiration checks, and validation logic
@@ -20,13 +24,13 @@ export class TokenValidator {
     try {
       const parts = token.split(".");
       if (parts.length !== 3) {
-        console.error("[TokenValidator] Invalid token format");
+        log.error("Invalid token format");
         return null;
       }
       const payload = JSON.parse(atob(parts[1]!));
       return payload;
     } catch (error) {
-      console.error("[TokenValidator] Failed to decode token:", error);
+      log.error("Failed to decode token:", error);
       return null;
     }
   }
@@ -48,14 +52,7 @@ export class TokenValidator {
     const isExpired = now >= expiryTime + this.CLOCK_SKEW_TOLERANCE_MS;
 
     if (now >= expiryTime && !isExpired) {
-      console.warn(
-        "[TokenValidator] Token appears expired but within clock skew tolerance:",
-        {
-          now: new Date(now).toISOString(),
-          expiry: new Date(expiryTime).toISOString(),
-          skewToleranceMinutes: this.CLOCK_SKEW_TOLERANCE_MS / 60000,
-        }
-      );
+      log.debug("Token within clock skew tolerance");
     }
 
     return isExpired;
@@ -105,35 +102,5 @@ export class TokenValidator {
       accessTokenExpiry &&
       !this.isTokenExpired(accessTokenExpiry);
     return isAccessTokenValid || hasRefreshToken;
-  }
-
-  /**
-   * Log validation results for debugging
-   */
-  logValidation(
-    hasAccessToken: boolean,
-    hasRefreshToken: boolean,
-    expiry: number | null
-  ): void {
-    const isAccessTokenExpired = expiry ? this.isTokenExpired(expiry) : false;
-    const isValid = this.hasValidSession(
-      hasAccessToken,
-      hasRefreshToken,
-      expiry
-    );
-
-    console.log("[TokenValidator] Validation check:", {
-      hasAccessToken,
-      hasRefreshToken,
-      isAccessTokenExpired,
-      isValid,
-      expiry: expiry ? new Date(expiry).toISOString() : "none",
-      now: new Date().toISOString(),
-      reasoning: isValid
-        ? hasAccessToken && !isAccessTokenExpired
-          ? "Valid access token"
-          : "Has refresh token"
-        : "No tokens available",
-    });
   }
 }

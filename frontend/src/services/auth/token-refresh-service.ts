@@ -1,6 +1,9 @@
 import { TokenResponse } from "@/types/auth-types";
 import { TokenManager } from "./token-manager";
 import { ApiConfig } from "../api-config";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("TokenRefresh");
 
 /**
  * TokenRefreshService - Single Responsibility: Handle token refresh logic
@@ -41,16 +44,9 @@ export class TokenRefreshService {
    * - Frontend stores ONLY expiry timestamps (not actual tokens)
    */
   async refreshAccessToken(): Promise<boolean> {
-    console.log("[TokenRefreshService] refreshAccessToken called:", {
-      timestamp: new Date().toISOString(),
-      stackTrace: new Error().stack?.split("\n").slice(1, 4).join("\n"),
-    });
-
     // Prevent multiple simultaneous refresh attempts
     if (this.refreshPromise) {
-      console.log(
-        "[TokenRefreshService] Refresh already in progress, waiting..."
-      );
+      log.debug("Refresh already in progress, waiting...");
       return this.refreshPromise;
     }
 
@@ -71,10 +67,7 @@ export class TokenRefreshService {
    */
   private async performRefresh(): Promise<boolean> {
     try {
-      console.log(
-        "[TokenRefreshService] Attempting to refresh token at:",
-        ApiConfig.AUTH_REFRESH
-      );
+      log.debug("Attempting token refresh");
 
       // Send refresh token in request body (in-memory) and also via cookie (fallback).
       // Backend checks cookie first, then falls back to request body.
@@ -92,67 +85,43 @@ export class TokenRefreshService {
         body,
       });
 
-      console.log(
-        "[TokenRefreshService] Token refresh response status:",
-        response.status
-      );
-
       if (response.ok) {
         const tokens: TokenResponse = await response.json();
-        console.log("[TokenRefreshService] ✅ Token refresh successful");
+        log.debug("Token refresh successful");
 
         // Store tokens in memory (for Authorization header) and expiry in localStorage
         this.tokenManager.setTokens(tokens);
         return true;
       } else {
         const errorText = await response.text();
-        console.error("[TokenRefreshService] ❌ Token refresh FAILED:", {
-          status: response.status,
-          statusText: response.statusText,
-          error: errorText,
-          timestamp: new Date().toISOString(),
-          url: ApiConfig.AUTH_REFRESH,
-        });
+        log.error("Token refresh failed:", response.status, errorText);
 
         // If refresh token is invalid (401/403), clear tokens and trigger session expiry
         // This means the session has truly expired and user needs to log in again
         if (response.status === 401 || response.status === 403) {
-          console.error(
-            "[TokenRefreshService] ⚠️ Refresh token is invalid (401/403) - session expired"
-          );
+          log.warn("Refresh token invalid (401/403) - session expired");
           this.tokenManager.clearTokens();
 
           // Dispatch session-expired event to trigger redirect to landing page
           if (typeof window !== "undefined") {
-            console.log(
-              "[TokenRefreshService] Dispatching session-expired event"
-            );
+            log.debug("Dispatching session-expired event");
             window.dispatchEvent(new CustomEvent("session-expired"));
           }
         } else {
           // For other errors (server issues, network), keep tokens and allow retry
-          console.warn(
-            "[TokenRefreshService] ⚠️ Refresh failed but keeping tokens - may be temporary server issue"
+          log.warn(
+            "Refresh failed but keeping tokens - may be temporary server issue"
           );
         }
 
         return false;
       }
     } catch (error) {
-      console.error(
-        "[TokenRefreshService] ❌ Token refresh error (network/exception):",
-        {
-          error,
-          errorMessage: error instanceof Error ? error.message : String(error),
-          timestamp: new Date().toISOString(),
-          url: ApiConfig.AUTH_REFRESH,
-        }
+      log.error(
+        "Token refresh error:",
+        error instanceof Error ? error.message : String(error)
       );
-
-      // DON'T clear tokens on network errors - keep tokens for retry
-      console.warn(
-        "[TokenRefreshService] ⚠️ Network error during refresh - keeping tokens for retry"
-      );
+      log.warn("Network error during refresh - keeping tokens for retry");
       return false;
     }
   }
