@@ -43,7 +43,7 @@ export function AccessibilityTreeNode({
     return null;
   }
 
-  const isSelected = node.ref && node.ref === selectedRef;
+  const isSelected = Boolean(node.ref && node.ref === selectedRef);
 
   return (
     <div
