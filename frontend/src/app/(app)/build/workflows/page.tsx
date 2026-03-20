@@ -16,13 +16,14 @@ import { WorkflowEditor } from "./_components/WorkflowEditor";
 import { WorkflowListSidebar } from "./_components/WorkflowListSidebar";
 import { useInsertStep } from "./_hooks/useInsertStep";
 import { useWorkflowPageActions } from "./_hooks/useWorkflowPageActions";
-import { Workflow } from "lucide-react";
+import { Workflow, Loader2 } from "lucide-react";
 
 function BuildWorkflowsPageContent() {
   usePageSpecs({ workflows: pageSpec });
   const { isOffline } = useUnifiedWorkflows();
   const [selectedWorkflow, setSelectedWorkflow] =
     useState<UnifiedWorkflow | null>(null);
+  const [isSidebarCreating, setIsSidebarCreating] = useState(false);
 
   // Load workflow passed from chat page via sessionStorage
   useEffect(() => {
@@ -73,6 +74,7 @@ function BuildWorkflowsPageContent() {
           onSelectWorkflow={setSelectedWorkflow}
           onDeselectWorkflow={() => setSelectedWorkflow(null)}
           onRunWorkflow={handleRunWorkflow}
+          onCreatingChange={setIsSidebarCreating}
         />
 
         <div className="flex-1 min-w-0 overflow-y-auto">
@@ -100,6 +102,10 @@ function BuildWorkflowsPageContent() {
                   onInsertConsumed={consumeInsertStep}
                 />
               </WorkflowBuilderProvider>
+            </div>
+          ) : isCreatingManually || isSidebarCreating ? (
+            <div className="flex items-center justify-center h-full">
+              <Loader2 className="size-6 animate-spin text-text-muted" />
             </div>
           ) : (
             <AiGeneratePanel

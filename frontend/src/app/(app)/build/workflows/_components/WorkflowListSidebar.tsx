@@ -27,11 +27,13 @@ export function WorkflowListSidebar({
   onSelectWorkflow,
   onDeselectWorkflow,
   onRunWorkflow,
+  onCreatingChange,
 }: {
   selectedWorkflowId: string | null;
   onSelectWorkflow: (workflow: UnifiedWorkflow) => void;
   onDeselectWorkflow: () => void;
   onRunWorkflow: (workflowId: string) => void;
+  onCreatingChange?: (creating: boolean) => void;
 }) {
   const {
     data: workflows,
@@ -55,6 +57,7 @@ export function WorkflowListSidebar({
   }, [workflows, searchQuery]);
 
   const handleCreateWorkflow = async () => {
+    onCreatingChange?.(true);
     try {
       const newWorkflow = await workflowApi.createWorkflow({
         name: "New Workflow",
@@ -69,6 +72,8 @@ export function WorkflowListSidebar({
       toast.success("Workflow created");
     } catch {
       toast.error("Failed to create workflow");
+    } finally {
+      onCreatingChange?.(false);
     }
   };
 
@@ -80,8 +85,11 @@ export function WorkflowListSidebar({
       }
       await refetch();
       toast.success("Workflow deleted");
-    } catch {
-      toast.error("Failed to delete workflow");
+    } catch (err) {
+      console.error("[WorkflowListSidebar] Delete failed:", err);
+      toast.error(
+        err instanceof Error ? err.message : "Failed to delete workflow"
+      );
     }
   };
 

@@ -245,7 +245,7 @@ export function WorkflowEditor({
             size="sm"
             className="h-8"
             onClick={handleSave}
-            disabled={state.isSaving}
+            disabled={state.isSaving || !hasUnsavedChanges}
             title="Save workflow"
           >
             <Save className="size-4" />
