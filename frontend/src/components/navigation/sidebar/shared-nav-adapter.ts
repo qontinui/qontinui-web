@@ -34,7 +34,7 @@ export function getWebNavItems(): NavItem[] {
   return groups.flatMap((group) =>
     group.items.map((item) => {
       const navItem = toNavItem(item);
-      navItem.group = group.label;
+      navItem.group = group.label || undefined;
       return navItem;
     })
   );

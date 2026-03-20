@@ -64,7 +64,7 @@ const GROWTH_FRACTION_WARN = 0.7; // 70% of samples growing → warning
 const GROWTH_FRACTION_CRIT = 0.85; // 85% → critical
 const GROWTH_RATE_WARN_MB_MIN = 20; // >20 MB/min → warning
 const GROWTH_RATE_CRIT_MB_MIN = 100; // >100 MB/min → critical
-const HEAP_WARN_MB = 2048; // >2 GB absolute → warning
+const HEAP_WARN_MB = 3072; // >3 GB absolute → warning (Next.js dev routinely uses 1.5-2 GB)
 const HEAP_CRIT_MB = 4096; // >4 GB → critical
 
 // ---------------------------------------------------------------------------

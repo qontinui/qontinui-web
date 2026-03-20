@@ -21,15 +21,29 @@ function getRunnerWsUrl(): string {
 
 export type EventCallback = (data: unknown) => void;
 
+/** Tagged callback for subscriber leak detection */
+interface TaggedCallback {
+  cb: EventCallback;
+  id: string;
+}
+
+const MAX_SUBSCRIBERS_PER_CHANNEL = 50;
+
 /**
  * Low-level WebSocket hook for the runner's event stream.
  *
  * Connects to ws://127.0.0.1:9876/ws/events and dispatches messages
  * to channel-based subscribers. Reconnects with exponential backoff.
+ *
+ * Includes subscriber leak protection: callbacks are tagged with an ID
+ * so that re-subscriptions from the same hook instance (e.g. during HMR)
+ * replace the previous callback instead of accumulating.
  */
 export function useRunnerEventStream(enabled: boolean = true) {
   const wsRef = useRef<WebSocket | null>(null);
-  const subscribersRef = useRef<Map<string, Set<EventCallback>>>(new Map());
+  const subscribersRef = useRef<Map<string, Map<string, TaggedCallback>>>(
+    new Map()
+  );
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
@@ -46,9 +60,9 @@ export function useRunnerEventStream(enabled: boolean = true) {
   const notifySubscribers = useCallback((channel: string, data: unknown) => {
     const subs = subscribersRef.current.get(channel);
     if (subs) {
-      subs.forEach((cb) => {
+      subs.forEach((tagged) => {
         try {
-          cb(data);
+          tagged.cb(data);
         } catch (e) {
           console.error(
             `[RunnerEventStream] Subscriber error on channel "${channel}":`,
@@ -166,16 +180,33 @@ export function useRunnerEventStream(enabled: boolean = true) {
   }, [stopHeartbeat]);
 
   const subscribe = useCallback(
-    (channel: string, callback: EventCallback): (() => void) => {
+    (
+      channel: string,
+      callback: EventCallback,
+      /** Optional stable ID — re-subscribing with the same ID replaces the previous callback (prevents HMR leaks) */
+      subscriberId?: string
+    ): (() => void) => {
       if (!subscribersRef.current.has(channel)) {
-        subscribersRef.current.set(channel, new Set());
+        subscribersRef.current.set(channel, new Map());
       }
-      subscribersRef.current.get(channel)!.add(callback);
+      const channelSubs = subscribersRef.current.get(channel)!;
+      const id =
+        subscriberId ??
+        `anon-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+      // Replace previous callback with same ID (prevents HMR double-subscribe)
+      channelSubs.set(id, { cb: callback, id });
+
+      if (channelSubs.size > MAX_SUBSCRIBERS_PER_CHANNEL) {
+        console.warn(
+          `[RunnerEventStream] Channel "${channel}" has ${channelSubs.size} subscribers — possible leak`
+        );
+      }
 
       return () => {
         const subs = subscribersRef.current.get(channel);
         if (subs) {
-          subs.delete(callback);
+          subs.delete(id);
           if (subs.size === 0) {
             subscribersRef.current.delete(channel);
           }

@@ -20,7 +20,11 @@ import { runnerFetch, RunnerApiError } from "@/lib/runner-api";
 // =============================================================================
 
 interface RunnerEventContextValue {
-  subscribe: (channel: string, callback: EventCallback) => () => void;
+  subscribe: (
+    channel: string,
+    callback: EventCallback,
+    subscriberId?: string
+  ) => () => void;
 }
 
 const RunnerEventCtx = createContext<RunnerEventContextValue | null>(null);
@@ -55,6 +59,10 @@ export function useRunnerEvent(channel: string, callback: EventCallback) {
   const ctx = useContext(RunnerEventCtx);
   const callbackRef = useRef(callback);
   callbackRef.current = callback;
+  // Stable ID per hook instance — survives HMR re-renders so re-subscribe replaces instead of accumulating
+  const idRef = useRef(
+    `evt-${channel}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  );
 
   useEffect(() => {
     if (!ctx) return;
@@ -63,7 +71,7 @@ export function useRunnerEvent(channel: string, callback: EventCallback) {
       callbackRef.current(data);
     };
 
-    return ctx.subscribe(channel, handler);
+    return ctx.subscribe(channel, handler, idRef.current);
   }, [ctx, channel]);
 }
 
@@ -115,6 +123,10 @@ export function useEventTriggeredFetch<T>(
     null
   );
   const mountedRef = useRef(true);
+  // Stable ID per hook instance — prevents HMR subscriber accumulation
+  const subIdRef = useRef(
+    `etf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  );
 
   useEffect(() => {
     mountedRef.current = true;
@@ -212,23 +224,27 @@ export function useEventTriggeredFetch<T>(
     const unsubscribers: Array<() => void> = [];
 
     for (const ch of channels) {
-      const unsub = ctx.subscribe(ch, () => {
-        // Debounce rapid events
-        if (debounceTimerRef.current) {
-          clearTimeout(debounceTimerRef.current);
-        }
-        debounceTimerRef.current = setTimeout(() => {
-          fetchData();
-          // Reset fallback poll timer so we don't double-fetch
-          if (fallbackIntervalRef.current && fallbackPollMs) {
-            clearInterval(fallbackIntervalRef.current);
-            fallbackIntervalRef.current = setInterval(
-              fetchData,
-              fallbackPollMs
-            );
+      const unsub = ctx.subscribe(
+        ch,
+        () => {
+          // Debounce rapid events
+          if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current);
           }
-        }, debounceMs);
-      });
+          debounceTimerRef.current = setTimeout(() => {
+            fetchData();
+            // Reset fallback poll timer so we don't double-fetch
+            if (fallbackIntervalRef.current && fallbackPollMs) {
+              clearInterval(fallbackIntervalRef.current);
+              fallbackIntervalRef.current = setInterval(
+                fetchData,
+                fallbackPollMs
+              );
+            }
+          }, debounceMs);
+        },
+        `${subIdRef.current}-${ch}`
+      );
       unsubscribers.push(unsub);
     }
 

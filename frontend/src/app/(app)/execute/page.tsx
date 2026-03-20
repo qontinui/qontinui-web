@@ -332,7 +332,7 @@ export default function ExecutePage() {
       <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
         <div className="flex items-center gap-3">
           <Play className="size-5 text-primary" />
-          <h1 className="text-lg font-semibold text-foreground">Execute</h1>
+          <h1 className="text-lg font-semibold text-foreground">Workflows</h1>
         </div>
       </header>
 

@@ -18,7 +18,6 @@ import type {
   VerificationPhaseResultsData,
   TaskRunEvent,
   Screenshot,
-  TaskRunScreenshot,
   SessionState,
   FindingsSummary,
   Checkpoint,
@@ -208,7 +207,8 @@ export function useTaskRunScreenshots(id: string | number | null) {
     id != null ? `/task-runs/${id}/screenshots` : null,
     {
       enabled: id != null,
-      pollInterval: 3000,
+      // No polling — screenshots are fetched once when the tab is opened.
+      // The list refreshes on tab switch or manual refetch.
       transform: (raw) => {
         const obj = raw as Record<string, unknown>;
         if (
@@ -225,32 +225,10 @@ export function useTaskRunScreenshots(id: string | number | null) {
   );
 }
 
-export function useTaskRunScreenshotsDetailed(id: string | number | null) {
-  return useRunnerQuery<TaskRunScreenshot[]>(
-    id != null ? `/task-runs/${id}/screenshots` : null,
-    {
-      enabled: id != null,
-      pollInterval: 3000,
-      transform: (raw) => {
-        const obj = raw as Record<string, unknown>;
-        if (
-          obj &&
-          typeof obj === "object" &&
-          "screenshots" in obj &&
-          Array.isArray(obj.screenshots)
-        )
-          return obj.screenshots as TaskRunScreenshot[];
-        if (Array.isArray(raw)) return raw as TaskRunScreenshot[];
-        return [];
-      },
-    }
-  );
-}
-
 export function useSessionState(id: string | number | null) {
   return useRunnerQuery<SessionState>(
     id != null ? `/task-runs/${id}/session-state` : null,
-    { enabled: id != null, pollInterval: 3000 }
+    { enabled: id != null, pollInterval: DEFAULT_POLL_INTERVAL }
   );
 }
 

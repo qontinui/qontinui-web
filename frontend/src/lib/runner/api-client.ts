@@ -107,6 +107,89 @@ export async function runnerFetch<T>(
 }
 
 // =============================================================================
+// Shared Poll Registry — deduplicates concurrent polls to the same endpoint
+// =============================================================================
+
+type PollListener = (raw: unknown, err: Error | null) => void;
+
+interface SharedPollEntry {
+  /** The setInterval ID (null when paused or no polling) */
+  intervalId: NodeJS.Timeout | null;
+  /** The active poll interval in ms (minimum of all subscriber intervals, 0 = no polling) */
+  intervalMs: number;
+  /** Callbacks to notify when new data arrives, mapped to their requested poll interval */
+  listeners: Map<PollListener, number>;
+  /** Latest cached result */
+  lastResult: unknown;
+  /** Latest error */
+  lastError: Error | null;
+  /** In-flight fetch promise (prevents overlapping requests) */
+  pending: Promise<void> | null;
+}
+
+const _sharedPolls = new Map<string, SharedPollEntry>();
+
+/** Compute the fastest requested interval from all listeners (0 means no polling) */
+function computeMinInterval(entry: SharedPollEntry): number {
+  let min = 0;
+  entry.listeners.forEach((requestedMs) => {
+    if (requestedMs > 0) {
+      min = min === 0 ? requestedMs : Math.min(min, requestedMs);
+    }
+  });
+  return min;
+}
+
+function sharedFetch(path: string, entry: SharedPollEntry): Promise<void> {
+  if (entry.pending) return entry.pending;
+  entry.pending = runnerFetch<unknown>(path)
+    .then((raw) => {
+      entry.lastResult = raw;
+      entry.lastError = null;
+      entry.listeners.forEach((_interval, cb) => cb(raw, null));
+    })
+    .catch((err) => {
+      entry.lastError = err instanceof Error ? err : new Error(String(err));
+      entry.listeners.forEach((_interval, cb) => cb(null, entry.lastError));
+    })
+    .finally(() => {
+      entry.pending = null;
+    });
+  return entry.pending;
+}
+
+function startSharedPolling(path: string, entry: SharedPollEntry) {
+  stopSharedPolling(entry);
+  if (entry.intervalMs > 0) {
+    entry.intervalId = setInterval(
+      () => sharedFetch(path, entry),
+      entry.intervalMs
+    );
+  }
+}
+
+function stopSharedPolling(entry: SharedPollEntry) {
+  if (entry.intervalId) {
+    clearInterval(entry.intervalId);
+    entry.intervalId = null;
+  }
+}
+
+// Pause/resume all shared polls on visibility change
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      _sharedPolls.forEach((entry) => stopSharedPolling(entry));
+    } else {
+      _sharedPolls.forEach((entry, path) => {
+        sharedFetch(path, entry);
+        startSharedPolling(path, entry);
+      });
+    }
+  });
+}
+
+// =============================================================================
 // Generic Query Hook
 // =============================================================================
 
@@ -133,23 +216,17 @@ export function useRunnerQuery<T>(
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(false);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const enabled = options?.enabled !== false;
-  const pollInterval = options?.pollInterval;
+  const pollInterval = options?.pollInterval ?? 0;
   const transformRef = useRef(options?.transform);
   transformRef.current = options?.transform;
 
-  const fetchData = useCallback(async () => {
-    if (!path || !enabled) return;
-    try {
-      const raw = await runnerFetch<unknown>(path);
-      const result = transformRef.current
-        ? transformRef.current(raw)
-        : (raw as T);
-      setData(result);
-      setError(null);
-      setIsOffline(false);
-    } catch (err) {
+  // Build a stable cache key from path + poll interval.
+  // Multiple hooks with the same path but different intervals get the fastest interval.
+  const cacheKey = path ?? "";
+
+  const applyResult = useCallback((raw: unknown, err: Error | null) => {
+    if (err) {
       if (err instanceof TypeError && err.message.includes("fetch")) {
         setIsOffline(true);
         setError("Runner not connected");
@@ -160,10 +237,16 @@ export function useRunnerQuery<T>(
         setIsOffline(true);
         setError("Runner not connected");
       }
-    } finally {
-      setIsLoading(false);
+    } else {
+      const result = transformRef.current
+        ? transformRef.current(raw)
+        : (raw as T);
+      setData(result);
+      setError(null);
+      setIsOffline(false);
     }
-  }, [path, enabled]);
+    setIsLoading(false);
+  }, []);
 
   useEffect(() => {
     if (!enabled || !path) {
@@ -172,42 +255,75 @@ export function useRunnerQuery<T>(
     }
 
     setIsLoading(true);
-    fetchData();
 
-    const startPolling = () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      if (pollInterval) {
-        intervalRef.current = setInterval(fetchData, pollInterval);
+    let entry = _sharedPolls.get(path);
+    if (entry) {
+      // Join existing shared poll — track this listener's requested interval
+      entry.listeners.set(applyResult, pollInterval);
+      const newMin = computeMinInterval(entry);
+      if (newMin !== entry.intervalMs) {
+        entry.intervalMs = newMin;
+        if (newMin > 0) {
+          startSharedPolling(path, entry);
+        } else {
+          stopSharedPolling(entry);
+        }
       }
-    };
-
-    const stopPolling = () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    };
-
-    startPolling();
-
-    // Pause polling when tab is hidden to prevent request accumulation
-    const handleVisibility = () => {
-      if (document.hidden) {
-        stopPolling();
+      // Serve cached data immediately if available
+      if (entry.lastResult !== undefined) {
+        applyResult(entry.lastResult, null);
+      } else if (entry.lastError) {
+        applyResult(null, entry.lastError);
       } else {
-        fetchData(); // Refresh immediately on return
-        startPolling();
+        // A fetch is likely already in-flight from the first subscriber
+        sharedFetch(path, entry);
       }
-    };
-    document.addEventListener("visibilitychange", handleVisibility);
+    } else {
+      // Create new shared poll entry
+      entry = {
+        intervalId: null,
+        intervalMs: pollInterval,
+        listeners: new Map([[applyResult, pollInterval]]),
+        lastResult: undefined,
+        lastError: null,
+        pending: null,
+      };
+      _sharedPolls.set(path, entry);
+      sharedFetch(path, entry);
+      startSharedPolling(path, entry);
+    }
 
     return () => {
-      stopPolling();
-      document.removeEventListener("visibilitychange", handleVisibility);
+      const e = _sharedPolls.get(path);
+      if (!e) return;
+      e.listeners.delete(applyResult);
+      if (e.listeners.size === 0) {
+        stopSharedPolling(e);
+        _sharedPolls.delete(path);
+      } else {
+        // Recalculate interval — a fast poller may have just left
+        const newMin = computeMinInterval(e);
+        if (newMin !== e.intervalMs) {
+          e.intervalMs = newMin;
+          if (newMin > 0) {
+            startSharedPolling(path, e);
+          } else {
+            stopSharedPolling(e);
+          }
+        }
+      }
     };
-  }, [fetchData, pollInterval, enabled, path]);
+  }, [cacheKey, pollInterval, enabled, applyResult, path]);
 
-  return { data, isLoading, error, isOffline, refetch: fetchData };
+  const refetch = useCallback(async () => {
+    if (!path) return;
+    const entry = _sharedPolls.get(path);
+    if (entry) {
+      await sharedFetch(path, entry);
+    }
+  }, [path]);
+
+  return { data, isLoading, error, isOffline, refetch };
 }
 
 // =============================================================================

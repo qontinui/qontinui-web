@@ -32,7 +32,9 @@ import type {
   AnyCapturedEvent,
 } from "@qontinui/ui-bridge/debug";
 import { CommandRelayListener } from "@qontinui/ui-bridge/react";
+import { getGlobalSpecStore } from "@qontinui/ui-bridge/specs";
 import { RouteAwarenessProvider } from "./RouteAwarenessProvider";
+import { getAllSpecs } from "../spec-registry";
 
 const isDev = process.env.NODE_ENV === "development";
 
@@ -65,24 +67,45 @@ const PERF_EVENTS_ENDPOINT = "/api/dev-debug/perf-events";
  * network failures, web vitals (LCP, CLS), and memory snapshots.
  */
 const browserCaptureConfig: BrowserCaptureConfig = {
-  console: false, // Element lifecycle events already captured via onEvent
+  console: true, // Capture console.error() for UI Bridge getConsoleErrors command
   network: true,
   navigation: true,
   longTasks: true,
-  longAnimationFrames: true,
+  longAnimationFrames: false, // Disabled — large events (script attribution arrays), enable on-demand for profiling
   resourceErrors: true,
   wsDisconnections: true,
   hmr: false,
   webVitals: true,
   memory: true,
-  memoryIntervalMs: 15000,
+  memoryIntervalMs: 30000, // Relaxed from 15s — memory trends visible at 30s granularity
   freezeDetector: true,
-  freezeIntervalMs: 200,
+  freezeIntervalMs: 1000, // Relaxed from 200ms — 3s freeze threshold doesn't need 200ms resolution
   freezeThresholdMs: 3000,
   domMetrics: true,
-  domMetricsIntervalMs: 10000,
-  maxEntries: 500,
+  domMetricsIntervalMs: 30000, // Relaxed from 10s — DOM node counts don't change fast enough for 10s
+  maxEntries: 200, // Reduced from 500 — less memory in BrowserEventCapture's internal buffer
 };
+
+/**
+ * Loads bundled page specs into the global SpecStore on mount so they are
+ * returned by the /control/specs relay command.
+ */
+function BundledSpecsLoader() {
+  React.useEffect(() => {
+    const store = getGlobalSpecStore();
+    const specs = getAllSpecs();
+    for (const spec of specs) {
+      // Cast config to satisfy SpecConfig's literal version type
+      store.load(spec.specId, spec.config as Parameters<typeof store.load>[1]);
+    }
+    return () => {
+      for (const spec of specs) {
+        store.unload(spec.specId);
+      }
+    };
+  }, []);
+  return null;
+}
 
 interface UIBridgeWrapperProps {
   children: React.ReactNode;
@@ -239,6 +262,7 @@ export function UIBridgeWrapper({
       onBrowserEvent={isDev ? onBrowserEvent : undefined}
       browserCaptureConfig={isDev ? browserCaptureConfig : undefined}
     >
+      <BundledSpecsLoader />
       {/* AutoRegisterProvider enables automatic element registration for UI Bridge */}
       {/* All interactive elements (buttons, inputs, links, etc.) are auto-discovered */}
       <AutoRegisterProvider
@@ -246,6 +270,7 @@ export function UIBridgeWrapper({
         idStrategy="prefer-existing"
         debounceMs={100}
         excludeSelectors={["[data-no-register]"]}
+        contentDiscovery={{ enabled: true, maxContentElements: 200 }}
       >
         {/* Command relay listener for remote automation via SSE */}
         <CommandRelayListener enabled={enableRemoteCommands} />
