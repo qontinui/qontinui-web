@@ -5,6 +5,9 @@ import type {
   Region,
   OptimizationSession,
 } from "@/types/pattern-optimization";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("OptimizationSession");
 
 const STORAGE_KEY = "pattern-optimization-session-meta";
 
@@ -51,7 +54,7 @@ export function useOptimizationSession() {
         const parsed = JSON.parse(storedSession);
         setSession(parsed);
       } catch (error) {
-        console.error("Failed to parse stored session:", error);
+        log.error("Failed to parse stored session:", error);
       }
     }
   }, []);
@@ -65,7 +68,7 @@ export function useOptimizationSession() {
           JSON.stringify(stripImageData(session))
         );
       } catch (error) {
-        console.error("Failed to save session metadata:", error);
+        log.error("Failed to save session metadata:", error);
       }
     } else {
       localStorage.removeItem(STORAGE_KEY);
@@ -82,7 +85,7 @@ export function useOptimizationSession() {
         try {
           await patternOptimizationStorage.deleteImage(screenshot.id);
         } catch (error) {
-          console.error("Failed to delete image:", error);
+          log.error("Failed to delete image:", error);
         }
       }
     }
@@ -91,10 +94,10 @@ export function useOptimizationSession() {
 
   const addScreenshots = useCallback(
     async (screenshots: OptimizationScreenshot[]) => {
-      console.log("Adding screenshots:", screenshots);
+      log.debug("Adding screenshots:", screenshots);
 
       if (!session) {
-        console.log("No session, creating new one...");
+        log.debug("No session, creating new one...");
         setSession(createEmptySession());
       }
 
@@ -106,13 +109,13 @@ export function useOptimizationSession() {
               screenshot.id,
               screenshot.url
             );
-            console.log("Stored image in IndexedDB:", screenshot.id);
+            log.debug("Stored image in IndexedDB:", screenshot.id);
             return {
               ...screenshot,
               url: screenshot.id,
             };
           } catch (error) {
-            console.error("Failed to store image:", error);
+            log.error("Failed to store image:", error);
             return screenshot;
           }
         })
@@ -122,7 +125,7 @@ export function useOptimizationSession() {
         if (!prev) {
           const newSession = createEmptySession();
           newSession.screenshots = processedScreenshots;
-          console.log("Created new session with screenshots:", newSession);
+          log.debug("Created new session with screenshots:", newSession);
           return newSession;
         }
         const updated = {
@@ -130,7 +133,7 @@ export function useOptimizationSession() {
           screenshots: [...prev.screenshots, ...processedScreenshots],
           updatedAt: new Date(),
         };
-        console.log("Updated session with screenshots:", updated);
+        log.debug("Updated session with screenshots:", updated);
         return updated;
       });
     },
@@ -169,10 +172,10 @@ export function useOptimizationSession() {
 
   const setRegion = useCallback(
     (screenshotId: string, region: Region | null) => {
-      console.log("Setting region for screenshot:", { screenshotId, region });
+      log.debug("Setting region for screenshot:", { screenshotId, region });
       setSession((prev) => {
         if (!prev) {
-          console.error("No session when setting region");
+          log.error("No session when setting region");
           return prev;
         }
         const regionValue = region ?? undefined;
@@ -184,7 +187,7 @@ export function useOptimizationSession() {
           selectedRegion: regionValue,
           updatedAt: new Date(),
         };
-        console.log("Session after setting region:", updated);
+        log.debug("Session after setting region:", updated);
         return updated;
       });
     },

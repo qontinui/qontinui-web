@@ -25,6 +25,9 @@ import type {
   Activity,
   UserPresence,
 } from "@/types/collaboration";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("WSCollaboration");
 
 // ============================================================================
 // Types
@@ -313,7 +316,7 @@ export class WebSocketCollaborationService {
     let hasResolved = false;
 
     this.ws.onopen = () => {
-      console.log("[WebSocketCollaboration] Connected");
+      log.debug("Connected");
       this.setState("connected");
       this.reconnectAttempts = 0;
 
@@ -350,7 +353,7 @@ export class WebSocketCollaborationService {
     };
 
     this.ws.onclose = (event) => {
-      console.log("[WebSocketCollaboration] Closed:", event.code, event.reason);
+      log.debug("Closed:", event.code, event.reason);
 
       this.stopHeartbeat();
 
@@ -517,8 +520,8 @@ export class WebSocketCollaborationService {
       this.config.maxReconnectDelay
     );
 
-    console.log(
-      `[WebSocketCollaboration] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.config.maxReconnectAttempts || "∞"})`
+    log.debug(
+      `Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.config.maxReconnectAttempts || "∞"})`
     );
 
     this.reconnectTimeout = setTimeout(() => {
@@ -607,7 +610,7 @@ export class WebSocketCollaborationService {
       return;
     }
 
-    console.log(`[WebSocketCollaboration] State: ${this.state} -> ${state}`);
+    log.debug(`State: ${this.state} -> ${state}`);
     this.state = state;
 
     if (this.callbacks.onStateChange) {

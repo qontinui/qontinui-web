@@ -7,6 +7,9 @@ import type {
   StrategyEvaluation,
   OptimizationSession,
 } from "@/types/pattern-optimization";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("OptimizationAnalysis");
 
 interface ApiExtractedPattern {
   id: string | number;
@@ -33,10 +36,10 @@ export function useOptimizationAnalysis(
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const startAnalysis = useCallback(async () => {
-    console.log("Starting analysis...", { session });
+    log.debug("Starting analysis...", { session });
 
     if (!session || session.screenshots.length === 0) {
-      console.error("No session or screenshots");
+      log.error("No session or screenshots");
       throw new Error("No screenshots to analyze");
     }
 
@@ -44,7 +47,7 @@ export function useOptimizationAnalysis(
     setSession((prev) => (prev ? { ...prev, status: "analyzing" } : prev));
 
     try {
-      console.log("Preparing data for API call...");
+      log.debug("Preparing data for API call...");
       const positiveScreenshots: string[] = [];
       const negativeScreenshots: string[] = [];
       const regions: { x: number; y: number; width: number; height: number }[] =
@@ -73,14 +76,14 @@ export function useOptimizationAnalysis(
       }
 
       if (positiveScreenshots.length === 0 || regions.length === 0) {
-        console.error("No positive screenshots with regions", {
+        log.error("No positive screenshots with regions", {
           positiveScreenshots,
           regions,
         });
         throw new Error("No positive screenshots with regions defined");
       }
 
-      console.log("Making API call with data:", {
+      log.debug("Making API call", {
         screenshotsCount: positiveScreenshots.length,
         negativeCount: negativeScreenshots.length,
         regionsCount: regions.length,
@@ -107,11 +110,11 @@ export function useOptimizationAnalysis(
         }
       );
 
-      console.log("API response status:", response.status);
+      log.debug("API response status:", response.status);
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error("API request failed:", {
+        log.error("API request failed:", {
           status: response.status,
           errorText,
         });
@@ -119,7 +122,7 @@ export function useOptimizationAnalysis(
       }
 
       const apiResult = await response.json();
-      console.log("API result:", apiResult);
+      log.debug("API result:", apiResult);
 
       const patterns: ExtractedPattern[] = apiResult.extractedPatterns.map(
         (pattern: ApiExtractedPattern) => ({
@@ -154,9 +157,9 @@ export function useOptimizationAnalysis(
           : prev
       );
     } catch (error) {
-      console.error("Analysis failed:", error);
+      log.error("Analysis failed:", error);
       if (error instanceof Error) {
-        console.error("Error details:", error.message, error.stack);
+        log.error("Error details:", error.message, error.stack);
       }
       setSession((prev) => (prev ? { ...prev, status: "error" } : prev));
       throw error;
