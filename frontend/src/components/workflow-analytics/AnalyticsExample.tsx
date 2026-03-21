@@ -46,6 +46,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("AnalyticsExample");
 
 // ============================================================================
 // Example Component
@@ -206,13 +209,13 @@ export function WorkflowAnalyticsExample() {
 
   // Handle analyze
   const handleAnalyze = () => {
-    console.log("Running performance analysis...");
+    log.debug("Running performance analysis...");
     // Implement actual analysis logic
   };
 
   // Handle apply suggestion
   const handleApplySuggestion = (suggestion: unknown) => {
-    console.log("Applying suggestion:", suggestion);
+    log.debug("Applying suggestion:", suggestion);
     // Implement suggestion application logic
   };
 

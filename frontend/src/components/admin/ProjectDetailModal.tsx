@@ -18,6 +18,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAdminProjectDetails } from "@/hooks/use-admin";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("ProjectDetailModal");
 import {
   Loader2,
   User,
@@ -41,10 +44,7 @@ export default function ProjectDetailModal({
 }: ProjectDetailModalProps) {
   const { data: project, isLoading } = useAdminProjectDetails(projectId, open);
 
-  // Debug logging
-  console.log("[ProjectDetailModal] projectId:", projectId);
-  console.log("[ProjectDetailModal] project data:", project);
-  console.log("[ProjectDetailModal] image_library:", project?.image_library);
+  log.debug("Rendering", { projectId, hasProject: !!project });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

@@ -8,6 +8,9 @@ import {
   PresetName,
 } from "@/types/backgroundRemoval";
 import { useAutomation } from "@/contexts/automation-context";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("useBackgroundRemoval");
 
 export function useBackgroundRemoval() {
   const [selectedScreenshotIds, setSelectedScreenshotIds] = useState<string[]>(
@@ -58,14 +61,7 @@ export function useBackgroundRemoval() {
     setError(null);
 
     try {
-      console.log(
-        "[BackgroundRemoval] Selected screenshots:",
-        selectedScreenshots.length
-      );
-      console.log(
-        "[BackgroundRemoval] First screenshot URL preview:",
-        selectedScreenshots[0]?.url.substring(0, 100) ?? "No screenshots"
-      );
+      log.debug("Selected screenshots:", selectedScreenshots.length);
 
       // Prepare request
       const requestBody = {

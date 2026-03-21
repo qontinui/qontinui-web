@@ -29,6 +29,9 @@ import {
   type CompositeScreenshotInput,
 } from "@/services/image-extraction";
 import type { CapturedScreenshot } from "@/components/common/ScreenshotPicker";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("useImageExtraction");
 
 /**
  * Main hook for Image Extraction functionality
@@ -65,12 +68,7 @@ export function useImageExtraction() {
 
   // Debug log viewport changes
   useEffect(() => {
-    console.log(
-      "[useImageExtraction] viewport changed:",
-      viewport,
-      "isHydrated:",
-      _isHydrated
-    );
+    log.debug("viewport changed:", viewport, "isHydrated:", _isHydrated);
   }, [viewport, _isHydrated]);
 
   // Get store actions

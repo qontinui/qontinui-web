@@ -14,6 +14,9 @@ import {
   interactiveWorkflowNodes,
   interactiveWorkflowEdges,
 } from "./example-mock-data";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("ExampleInteractive");
 
 function addClickHandler(
   nodes: Node<BaseNodeData>[],
@@ -27,7 +30,7 @@ function addClickHandler(
 
 export function InteractiveWorkflowExample() {
   const handleNodeClick = useCallback((nodeId: string) => {
-    console.log("Node clicked:", nodeId);
+    log.debug("Node clicked:", nodeId);
   }, []);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<BaseNodeData>>(

@@ -1,4 +1,7 @@
 import { useState, useCallback } from "react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("useWorkflowVariables");
 
 export function useWorkflowVariables() {
   const [newVarName, setNewVarName] = useState("");
@@ -9,7 +12,7 @@ export function useWorkflowVariables() {
 
   const updateVariable = useCallback(
     (scope: string, name: string, value: unknown) => {
-      console.log("Update variable:", scope, name, value);
+      log.debug("Update variable:", scope, name, value);
     },
     []
   );
@@ -23,7 +26,7 @@ export function useWorkflowVariables() {
   }, [newVarName, newVarScope, newVarValue, updateVariable]);
 
   const removeVariable = useCallback((scope: string, name: string) => {
-    console.log("Remove variable:", scope, name);
+    log.debug("Remove variable:", scope, name);
   }, []);
 
   return {

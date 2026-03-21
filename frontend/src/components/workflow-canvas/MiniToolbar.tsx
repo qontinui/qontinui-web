@@ -14,6 +14,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useCanvasStore } from "@/stores/canvas-store";
 import { ContextMenuIcons } from "./ContextMenu";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("MiniToolbar");
 
 // ============================================================================
 // Types
@@ -70,7 +73,7 @@ export function MiniToolbar({ nodeIds, position, onClose }: MiniToolbarProps) {
         nodeIds.forEach((id) => {
           // Toggle disable state
           // Note: This would require updating the action in the store
-          console.log("Toggle disable", id);
+          log.debug("Toggle disable", id);
         });
       },
     },

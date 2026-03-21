@@ -1,6 +1,9 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("RefreshTokenExpiryWarning");
 import {
   Dialog,
   DialogContent,
@@ -36,13 +39,9 @@ export function RefreshTokenExpiryWarning() {
 
       // Show warning if refresh token expires in 7 days or less
       if (daysUntilExpiry <= 7 && daysUntilExpiry > 0 && !showWarning) {
-        console.log(
-          "[RefreshTokenExpiryWarning] Refresh token expiring soon:",
-          {
-            timestamp: new Date().toISOString(),
-            expiryDate: new Date(refreshExpiry).toISOString(),
-            daysRemaining: daysUntilExpiry,
-          }
+        log.debug(
+          "Refresh token expiring soon, days remaining:",
+          daysUntilExpiry
         );
         setDaysRemaining(daysUntilExpiry);
         setShowWarning(true);
@@ -65,7 +64,7 @@ export function RefreshTokenExpiryWarning() {
   }, [showWarning]);
 
   const handleDismiss = () => {
-    console.log("[RefreshTokenExpiryWarning] User dismissed warning");
+    log.debug("User dismissed warning");
     setShowWarning(false);
 
     // Show reminder again in 24 hours if still expiring
@@ -91,7 +90,7 @@ export function RefreshTokenExpiryWarning() {
   };
 
   const handleReLogin = () => {
-    console.log("[RefreshTokenExpiryWarning] User chose to re-login");
+    log.debug("User chose to re-login");
     toast.info("Please log in again to extend your session");
     authService.logout();
     window.location.href = "/";

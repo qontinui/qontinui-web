@@ -9,6 +9,9 @@ import { syncQueue } from "./sync-queue";
 import { syncProcessor } from "./sync-processor";
 import { screenshotDB, StoredScreenshot } from "./screenshot-db";
 import { serviceWorkerManager } from "./service-worker";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("OfflineScreenshotUpload");
 
 /**
  * Upload result (immediate, works offline)
@@ -73,7 +76,7 @@ export async function uploadScreenshotOffline(
   // Save to IndexedDB immediately (works offline)
   await screenshotDB.add(screenshot);
 
-  console.log(`[OfflineUpload] Saved screenshot locally: ${screenshotId}`);
+  log.debug("Saved screenshot locally:", screenshotId);
 
   // Report initial progress
   options.onProgress?.(0, "Queued for upload");
@@ -97,7 +100,7 @@ export async function uploadScreenshotOffline(
     }
   );
 
-  console.log(`[OfflineUpload] Added to sync queue: ${syncItem.id}`);
+  log.debug("Added to sync queue:", syncItem.id);
 
   // Track upload progress
   if (options.onProgress) {
@@ -227,7 +230,7 @@ export async function deleteScreenshotOffline(
   // Delete from IndexedDB immediately
   await screenshotDB.delete(screenshotId);
 
-  console.log(`[OfflineUpload] Deleted screenshot locally: ${screenshotId}`);
+  log.debug("Deleted screenshot locally:", screenshotId);
 
   // Queue deletion for server sync
   await syncQueue.enqueue("delete_screenshot", {
@@ -291,7 +294,7 @@ export async function retryScreenshotUpload(syncItemId: string): Promise<void> {
     nextRetryAt: undefined,
   });
 
-  console.log(`[OfflineUpload] Reset item for retry: ${syncItemId}`);
+  log.debug("Reset item for retry:", syncItemId);
 
   // Try to sync immediately
   if (navigator.onLine) {
@@ -319,7 +322,7 @@ export async function cancelScreenshotUpload(
     status: "cancelled",
   });
 
-  console.log(`[OfflineUpload] Cancelled upload: ${syncItemId}`);
+  log.debug("Cancelled upload:", syncItemId);
 
   // Optionally delete from IndexedDB
   if (item.metadata.screenshotId) {

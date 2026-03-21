@@ -25,6 +25,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Link2, AlertCircle, Trash2, ArrowRight } from "lucide-react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("ConnectionProperties");
 
 export interface ConnectionPropertiesProps {
   edgeId: string;
@@ -238,7 +241,7 @@ export const ConnectionProperties: React.FC<ConnectionPropertiesProps> = ({
                       className={`w-8 h-8 rounded border-2 ${
                         c === color ? "border-white" : "border-transparent"
                       } bg-${c}-500 hover:border-text-muted`}
-                      onClick={() => console.log("Set color:", c)}
+                      onClick={() => log.debug("Set color:", c)}
                     />
                   )
                 )}

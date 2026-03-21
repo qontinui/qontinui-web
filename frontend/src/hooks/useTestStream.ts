@@ -10,6 +10,9 @@
  */
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("useTestStream");
 
 export type TestStreamState =
   | "idle"
@@ -192,7 +195,7 @@ export function useTestStream(options: UseTestStreamOptions = {}) {
       if (message) {
         try {
           wsRef.current.send(message);
-          console.log("[useTestStream] Sent queued message");
+          log.debug("Sent queued message");
         } catch (error) {
           console.error(
             "[useTestStream] Failed to send queued message:",
@@ -219,7 +222,7 @@ export function useTestStream(options: UseTestStreamOptions = {}) {
         messageQueue.current.push(messageStr);
       }
     } else {
-      console.log("[useTestStream] Queueing message (not connected)");
+      log.debug("Queueing message (not connected)");
       messageQueue.current.push(messageStr);
     }
   }, []);
@@ -526,12 +529,12 @@ export function useTestStream(options: UseTestStreamOptions = {}) {
       const host = window.location.host;
       const wsUrl = `${protocol}//${host}/api/v1/testing/stream/${testRunId}`;
 
-      console.log("[useTestStream] Connecting to:", wsUrl);
+      log.debug("Connecting to:", wsUrl);
 
       wsRef.current = new WebSocket(wsUrl);
 
       wsRef.current.onopen = () => {
-        console.log("[useTestStream] Connected");
+        log.debug("Connected");
         reconnectCount.current = 0;
         setTestData((prev) => ({ ...prev, state: "connected" }));
 
@@ -553,7 +556,7 @@ export function useTestStream(options: UseTestStreamOptions = {}) {
       };
 
       wsRef.current.onclose = (event) => {
-        console.log("[useTestStream] Disconnected:", event.code, event.reason);
+        log.debug("Disconnected:", event.code, event.reason);
         stopElapsedTimer();
         stopHeartbeat();
 
@@ -580,8 +583,8 @@ export function useTestStream(options: UseTestStreamOptions = {}) {
             30000
           );
 
-          console.log(
-            `[useTestStream] Reconnecting in ${delay}ms (attempt ${reconnectCount.current}/${reconnectAttempts})`
+          log.debug(
+            `Reconnecting in ${delay}ms (attempt ${reconnectCount.current}/${reconnectAttempts})`
           );
 
           reconnectTimeoutRef.current = setTimeout(() => {

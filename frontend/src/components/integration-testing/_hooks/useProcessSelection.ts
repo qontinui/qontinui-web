@@ -1,5 +1,8 @@
 import { useState, useMemo } from "react";
 import { useAutomation } from "@/contexts/automation-context";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("useProcessSelection");
 
 export function useProcessSelection(
   onProcessChange?: (processId: string) => void
@@ -9,11 +12,7 @@ export function useProcessSelection(
   const [selectedProcessId, setSelectedProcessId] = useState<string>("");
 
   const processes = useMemo(() => {
-    console.log(
-      "[ExecutionControls] workflows from context:",
-      workflows?.length,
-      workflows
-    );
+    log.debug("workflows from context:", workflows?.length);
     return workflows;
   }, [workflows]);
 
@@ -49,12 +48,9 @@ export function useProcessSelection(
     const result = !selectedCategory
       ? processes
       : processesByCategory.get(selectedCategory) || [];
-    console.log("[ExecutionControls] categoryProcesses:", {
+    log.debug("categoryProcesses:", {
       selectedCategory,
-      processesCount: processes?.length,
-      categoriesInMap: Array.from(processesByCategory.keys()),
       resultCount: result?.length,
-      result,
     });
     return result;
   }, [selectedCategory, processesByCategory, processes]);

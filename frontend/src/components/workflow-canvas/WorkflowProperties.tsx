@@ -11,6 +11,9 @@ import { VariablesSection } from "./_components/VariablesSection";
 import { TagsSection } from "./_components/TagsSection";
 import { GraphExecutionSection } from "./_components/GraphExecutionSection";
 import { WorkflowStatisticsSection } from "./_components/WorkflowStatisticsSection";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("WorkflowProperties");
 
 export interface WorkflowPropertiesProps {
   className?: string;
@@ -24,11 +27,11 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
   const variables = useWorkflowVariables();
 
   const updateMetadata = useCallback((key: string, value: unknown) => {
-    console.log("Update metadata:", key, value);
+    log.debug("Update metadata:", key, value);
   }, []);
 
   const updateSettings = useCallback((key: string, value: unknown) => {
-    console.log("Update settings:", key, value);
+    log.debug("Update settings:", key, value);
   }, []);
 
   if (!workflow) {

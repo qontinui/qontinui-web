@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { StateImage } from "../../../types/stateDiscovery";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("useMaskedPatterns");
 import {
   MaskedPattern,
   PatternExtractionConfig,
@@ -80,7 +83,7 @@ export function useMaskedPatterns() {
 
       if (response.ok) {
         const data = await response.json();
-        console.log("Masked pattern extracted:", data);
+        log.debug("Masked pattern extracted:", data.id);
         fetchPatterns(); // Refresh patterns list
         setPatternName("");
         setSelectedStateImage(null);
@@ -111,8 +114,8 @@ export function useMaskedPatterns() {
       );
 
       if (response.ok) {
-        const data = await response.json();
-        console.log("Pattern threshold updated:", data);
+        await response.json();
+        log.debug("Pattern threshold updated:", patternId);
         fetchPatterns(); // Refresh to get updated pattern
       }
     } catch (error) {

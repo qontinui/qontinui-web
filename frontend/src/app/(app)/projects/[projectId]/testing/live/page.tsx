@@ -19,6 +19,9 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Play, RefreshCw, Search, Filter, PlayCircle } from "lucide-react";
 import { LiveTestDashboard } from "@/components/testing/LiveTestDashboard";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("LiveTestingPage");
 import { TestRunCard } from "@/components/testing/TestRunCard";
 import { useTestRuns } from "@/hooks/useTesting";
 
@@ -66,7 +69,7 @@ function ProjectLiveTestingPageContent() {
   };
 
   const handleStartNewTest = () => {
-    console.log("Start new test");
+    log.debug("Start new test");
   };
 
   if (authLoading) {

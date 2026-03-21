@@ -8,6 +8,9 @@
 "use client";
 
 import React, { useState } from "react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("OrganizationExample");
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -34,7 +37,7 @@ export function OrganizationMembersExample() {
   };
 
   const handleInvitationSent = (invitation: Invitation) => {
-    console.log("Invitation sent successfully:", invitation);
+    log.debug("Invitation sent successfully:", invitation.id);
     // You can update your local state, show a notification, etc.
   };
 
@@ -158,7 +161,7 @@ export function OrganizationSettingsInlineExample() {
         organizationName="My Organization"
         onClose={() => setShowInviteDialog(false)}
         onInvitationSent={(invitation) => {
-          console.log("New invitation:", invitation);
+          log.debug("New invitation:", invitation.id);
         }}
       />
     </div>

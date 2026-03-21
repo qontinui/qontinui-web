@@ -1,17 +1,20 @@
 import { useState, useCallback } from "react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("useWorkflowTags");
 
 export function useWorkflowTags() {
   const [newTag, setNewTag] = useState("");
 
   const addTag = useCallback(() => {
     if (newTag.trim()) {
-      console.log("Add tag:", newTag);
+      log.debug("Add tag:", newTag);
       setNewTag("");
     }
   }, [newTag]);
 
   const removeTag = useCallback((tag: string) => {
-    console.log("Remove tag:", tag);
+    log.debug("Remove tag:", tag);
   }, []);
 
   return {

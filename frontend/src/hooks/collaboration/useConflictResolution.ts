@@ -18,6 +18,9 @@ import {
 } from "./types";
 import { conflictResolutionService } from "../../services/collaboration/conflict-resolution-service";
 import { syncService } from "../../services/collaboration/sync-service";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("useConflictResolution");
 
 /**
  * Hook for managing conflict resolution
@@ -185,7 +188,7 @@ export function useConflictResolution(
   const refresh = useCallback(async (): Promise<void> => {
     // Re-check for conflicts by fetching latest server version
     // This would need to be implemented based on current state
-    console.log("Refreshing conflict state...");
+    log.debug("Refreshing conflict state...");
   }, []);
 
   /**
@@ -235,7 +238,7 @@ export function useConflictResolution(
       if (!isCheckingRef.current && !isResolvingRef.current) {
         // This would need current state to check against
         // For now, we just track that polling is active
-        console.log("Polling for conflicts...");
+        log.debug("Polling for conflicts...");
       }
     }, pollingInterval);
 

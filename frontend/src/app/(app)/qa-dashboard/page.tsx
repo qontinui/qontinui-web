@@ -19,6 +19,9 @@ const CoverageTrendChart = nextDynamic(
 import { ReliabilityStats } from "@/components/testing/ReliabilityStats";
 import { LiveTestExecution } from "@/components/testing/LiveTestExecution";
 import { RequireProject } from "@/components/require-project";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("QADashboard");
 import {
   BarChart3,
   FileText,
@@ -135,7 +138,7 @@ function QADashboardContent() {
               testRunId={liveTestRunId || undefined}
               workflowName={liveWorkflowName || undefined}
               onComplete={(data) => {
-                console.log("Test execution completed:", data);
+                log.debug("Test execution completed:", data);
               }}
             />
           )}

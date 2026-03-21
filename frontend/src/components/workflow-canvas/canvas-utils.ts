@@ -29,6 +29,9 @@ import {
   getConnectionStyle,
   hexToRgba,
 } from "./canvas-config";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("canvasUtils");
 
 // ============================================================================
 // Workflow to React Flow Conversion
@@ -41,13 +44,12 @@ export function workflowToReactFlow(workflow: Workflow): {
   nodes: CanvasNode[];
   edges: CanvasEdge[];
 } {
-  console.log("[workflowToReactFlow] Converting workflow:", {
-    workflowId: workflow.id,
-    workflowName: workflow.name,
-    actionsCount: workflow.actions.length,
-    actions: workflow.actions,
-    connections: workflow.connections,
-  });
+  log.debug(
+    "Converting workflow:",
+    workflow.id,
+    "actions:",
+    workflow.actions.length
+  );
 
   const nodes = actionsToNodes(workflow.actions);
   const edges = connectionsToEdges(
@@ -55,12 +57,13 @@ export function workflowToReactFlow(workflow: Workflow): {
     workflow.actions
   );
 
-  console.log("[workflowToReactFlow] Result:", {
-    nodesCount: nodes.length,
-    edgesCount: edges.length,
-    nodes,
-    edges,
-  });
+  log.debug(
+    "Conversion result:",
+    nodes.length,
+    "nodes,",
+    edges.length,
+    "edges"
+  );
 
   return { nodes, edges };
 }
@@ -69,7 +72,7 @@ export function workflowToReactFlow(workflow: Workflow): {
  * Convert actions to React Flow nodes
  */
 function actionsToNodes(actions: Action[]): CanvasNode[] {
-  console.log("[actionsToNodes] Converting actions:", actions);
+  log.debug("Converting", actions.length, "actions to nodes");
 
   return actions.map((action, index) => {
     const nodeType = getNodeType(action);
@@ -80,14 +83,7 @@ function actionsToNodes(actions: Action[]): CanvasNode[] {
       ? { x: action.position[0], y: action.position[1] }
       : { x: 100 + index * 250, y: 100 }; // Default horizontal layout
 
-    console.log("[actionsToNodes] Action:", {
-      id: action.id,
-      type: action.type,
-      position: action.position,
-      defaultedPosition: position,
-      nodeType,
-      color,
-    });
+    log.debug("Action:", action.id, action.type);
 
     const node: CanvasNode = {
       id: action.id,
@@ -108,7 +104,7 @@ function actionsToNodes(actions: Action[]): CanvasNode[] {
       },
     };
 
-    console.log("[actionsToNodes] Created node:", node);
+    log.debug("Created node:", node.id);
     return node;
   });
 }

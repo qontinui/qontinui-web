@@ -9,6 +9,9 @@ import { CommentsProvider, useComments } from "./CommentsContext";
 import { ActivityProvider, useActivity } from "./ActivityContext";
 import { WebSocketProvider, useWebSocket } from "./WebSocketContext";
 import type { CollaborationProviderProps } from "./types";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("CollaborationProvider");
 
 // ============================================================================
 // WebSocket Integration Component
@@ -31,7 +34,7 @@ function WebSocketIntegration({ workflowId }: { workflowId?: string }) {
         setActiveUsers(users);
       },
       onLockAcquired: (lock) => {
-        console.log("[WebSocket] Lock acquired:", lock);
+        log.debug("Lock acquired:", lock);
       },
       onLockReleased: (lock) => {
         // Update lock state if it affects current resource

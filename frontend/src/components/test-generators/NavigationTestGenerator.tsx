@@ -26,6 +26,9 @@ import type {
   SpecGroup,
   GeneratorSpecMetadata,
 } from "./types";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("NavigationTestGenerator");
 
 type Tab = "explore" | "graph" | "specs" | "output";
 
@@ -186,7 +189,7 @@ export function NavigationTestGenerator({
     setIsLoadingSession(true);
     try {
       // Would load from backend API
-      console.log("Loading session:", sessionId);
+      log.debug("Loading session:", sessionId);
     } finally {
       setIsLoadingSession(false);
     }

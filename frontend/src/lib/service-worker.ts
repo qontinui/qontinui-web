@@ -5,6 +5,9 @@
  */
 
 import { syncProcessor } from "./sync-processor";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("ServiceWorker");
 
 /**
  * Service worker registration status
@@ -47,7 +50,7 @@ class ServiceWorkerManager {
       this.registration = registration;
       this.setStatus("registered");
 
-      console.log("[ServiceWorker] Registered successfully");
+      log.debug("Registered successfully");
 
       // Setup update detection
       registration.addEventListener("updatefound", () => {
@@ -60,7 +63,7 @@ class ServiceWorkerManager {
               navigator.serviceWorker.controller
             ) {
               // New service worker installed, update available
-              console.log("[ServiceWorker] Update available");
+              log.debug("Update available");
               this.setStatus("updated");
             }
           });
@@ -74,7 +77,7 @@ class ServiceWorkerManager {
 
       // Register for background sync
       if ("sync" in registration) {
-        console.log("[ServiceWorker] Background Sync API supported");
+        log.debug("Background Sync API supported");
       } else {
         console.warn(
           "[ServiceWorker] Background Sync API not supported, using polling"
@@ -100,7 +103,7 @@ class ServiceWorkerManager {
     try {
       const success = await this.registration.unregister();
       if (success) {
-        console.log("[ServiceWorker] Unregistered successfully");
+        log.debug("Unregistered successfully");
         this.registration = null;
       }
       return success;
@@ -131,7 +134,7 @@ class ServiceWorkerManager {
         await (
           this.registration.sync as { register: (tag: string) => Promise<void> }
         ).register(tag);
-        console.log(`[ServiceWorker] Background sync registered: ${tag}`);
+        log.debug(`Background sync registered: ${tag}`);
       } catch (error) {
         console.error("[ServiceWorker] Background sync failed:", error);
         // Fallback to immediate processing
@@ -139,9 +142,7 @@ class ServiceWorkerManager {
       }
     } else {
       // Fallback to immediate processing
-      console.log(
-        "[ServiceWorker] Background sync not supported, processing immediately"
-      );
+      log.debug("Background sync not supported, processing immediately");
       await syncProcessor.processQueue();
     }
   }
@@ -156,7 +157,7 @@ class ServiceWorkerManager {
 
     try {
       await this.registration.update();
-      console.log("[ServiceWorker] Update check completed");
+      log.debug("Update check completed");
     } catch (error) {
       console.error("[ServiceWorker] Update check failed:", error);
     }

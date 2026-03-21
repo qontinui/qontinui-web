@@ -2,6 +2,9 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAutomation } from "@/contexts/automation-context";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("useGraphWorkflowBuilder");
 import { Workflow, Action, ActionType } from "@/lib/action-schema/action-types";
 import { toast } from "sonner";
 
@@ -71,19 +74,7 @@ export function useGraphWorkflowBuilder() {
 
   const handleNodeAdd = useCallback(
     (nodeType: ActionType) => {
-      console.log(
-        "[GraphWorkflowBuilder] handleNodeAdd called with:",
-        nodeType
-      );
-      console.log(
-        "[GraphWorkflowBuilder] selectedWorkflow:",
-        selectedWorkflow?.id,
-        selectedWorkflow?.name
-      );
-      console.log(
-        "[GraphWorkflowBuilder] Current actions count:",
-        selectedWorkflow?.actions.length
-      );
+      log.debug("handleNodeAdd called with:", nodeType);
 
       if (!selectedWorkflow) {
         console.error("[GraphWorkflowBuilder] No workflow selected!");
@@ -97,7 +88,7 @@ export function useGraphWorkflowBuilder() {
         position: [100, 100],
       };
 
-      console.log("[GraphWorkflowBuilder] Created new action:", newAction);
+      log.debug("Created new action:", newAction.id);
 
       const updatedWorkflow: Workflow = {
         ...selectedWorkflow,
@@ -108,13 +99,9 @@ export function useGraphWorkflowBuilder() {
         },
       };
 
-      console.log(
-        "[GraphWorkflowBuilder] Updated workflow actions count:",
+      log.debug(
+        "Updated workflow actions count:",
         updatedWorkflow.actions.length
-      );
-      console.log(
-        "[GraphWorkflowBuilder] Updated workflow actions:",
-        updatedWorkflow.actions
       );
 
       handleWorkflowChange(updatedWorkflow);

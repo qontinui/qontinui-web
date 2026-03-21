@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("RunnerMonitor");
 import {
   Card,
   CardContent,
@@ -64,38 +67,34 @@ export function RunnerMonitor({ projectId: _projectId }: RunnerMonitorProps) {
     try {
       // Connect to the runner status WebSocket to receive real-time session events
       const wsUrl = await apiClient.getRunnerStatusWebSocketUrl();
-      console.log("[RunnerMonitor] Connecting to status WebSocket:", wsUrl);
+      log.debug("Connecting to status WebSocket");
 
       // Create a simple WebSocket connection for status updates
       const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
-        console.log("[RunnerMonitor] Status WebSocket connected");
+        log.debug("Status WebSocket connected");
         setIsConnected(true);
         toast.success("Connected to runner status");
       };
 
       ws.onclose = () => {
-        console.log("[RunnerMonitor] Status WebSocket disconnected");
+        log.debug("Status WebSocket disconnected");
         setIsConnected(false);
       };
 
       ws.onerror = (error) => {
-        console.debug("[RunnerMonitor] WebSocket error:", error);
+        log.debug("WebSocket error:", error);
       };
 
       ws.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
-          console.log(
-            "[RunnerMonitor] Received message:",
-            message.type,
-            message
-          );
+          log.debug("Received message:", message.type);
 
           switch (message.type) {
             case "initial_state":
-              console.log("[RunnerMonitor] Initial state received");
+              log.debug("Initial state received");
               break;
 
             case "session_start":
@@ -152,15 +151,11 @@ export function RunnerMonitor({ projectId: _projectId }: RunnerMonitorProps) {
             case "runner_connected":
             case "runner_disconnected":
             case "runner_name_updated":
-              // Handle runner connection status changes
-              console.log("[RunnerMonitor] Runner status:", message.type);
+              log.debug("Runner status:", message.type);
               break;
 
             default:
-              console.log(
-                "[RunnerMonitor] Unknown message type:",
-                message.type
-              );
+              log.debug("Unknown message type:", message.type);
           }
         } catch (error) {
           console.error("[RunnerMonitor] Failed to parse message:", error);

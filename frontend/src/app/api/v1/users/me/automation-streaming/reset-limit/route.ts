@@ -1,35 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("AutomationStreamingResetLimitRoute");
 
 export async function POST(request: NextRequest) {
   try {
-    console.log(
-      "[AutomationStreaming Reset-Limit API Route] POST request received"
-    );
-
-    // Get the access token from cookie (preferred) or Authorization header (fallback)
     const cookieStore = await cookies();
     const accessTokenCookie = cookieStore.get("access_token");
     const authorizationHeader = request.headers.get("Authorization");
 
-    // Use cookie token or extract from Authorization header
     let accessToken: string | null = null;
     if (accessTokenCookie?.value) {
       accessToken = accessTokenCookie.value;
-      console.log(
-        "[AutomationStreaming Reset-Limit API Route] Using token from cookie"
-      );
     } else if (authorizationHeader?.startsWith("Bearer ")) {
       accessToken = authorizationHeader.substring(7);
-      console.log(
-        "[AutomationStreaming Reset-Limit API Route] Using token from Authorization header"
-      );
     }
 
     if (!accessToken) {
-      console.error(
-        "[AutomationStreaming Reset-Limit API Route] No access token found"
-      );
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
@@ -39,13 +27,7 @@ export async function POST(request: NextRequest) {
       "http://localhost:8000";
     const backendUrl = `${backendBaseUrl}/api/v1/users/me/automation-streaming/reset-limit`;
 
-    console.log(
-      "[AutomationStreaming Reset-Limit API Route] Backend URL:",
-      backendUrl
-    );
-    console.log(
-      "[AutomationStreaming Reset-Limit API Route] Attempting to fetch from backend..."
-    );
+    log.debug("Proxying POST to backend");
 
     const response = await fetch(backendUrl, {
       method: "POST",
@@ -55,33 +37,10 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    console.log(
-      "[AutomationStreaming Reset-Limit API Route] Backend response status:",
-      response.status
-    );
-    console.log(
-      "[AutomationStreaming Reset-Limit API Route] Backend response ok:",
-      response.ok
-    );
-
     const data = await response.json();
-    console.log(
-      "[AutomationStreaming Reset-Limit API Route] Backend response data:",
-      data
-    );
-
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
-    console.error("[AutomationStreaming Reset-Limit API Route] ERROR:", error);
-    console.error(
-      "[AutomationStreaming Reset-Limit API Route] Error message:",
-      (error as Error).message
-    );
-    console.error(
-      "[AutomationStreaming Reset-Limit API Route] Error stack:",
-      (error as Error).stack
-    );
-
+    console.error("[AutomationStreamingResetLimitRoute] POST error:", error);
     return NextResponse.json(
       {
         error: "Failed to proxy request to backend",

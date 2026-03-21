@@ -11,6 +11,9 @@
  */
 
 import type { ExecutionEvent } from "./backend-api";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("ExecutionWebSocket");
 
 // ============================================================================
 // Types
@@ -299,7 +302,7 @@ export class ExecutionWebSocket {
     if (!this.ws) return;
 
     this.ws.onopen = () => {
-      console.debug("[ExecutionWebSocket] Connected");
+      log.debug("Connected");
       this.setState("connected");
       this.reconnectAttempts = 0;
 
@@ -326,7 +329,7 @@ export class ExecutionWebSocket {
     };
 
     this.ws.onclose = (event) => {
-      console.debug("[ExecutionWebSocket] Closed:", event.code);
+      log.debug("Closed:", event.code);
 
       this.stopHeartbeat();
 
@@ -501,9 +504,7 @@ export class ExecutionWebSocket {
       this.config.maxReconnectDelay
     );
 
-    console.debug(
-      `[ExecutionWebSocket] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`
-    );
+    log.debug(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
 
     if (this.handlers.onReconnecting) {
       this.handlers.onReconnecting(
@@ -597,9 +598,7 @@ export class ExecutionWebSocket {
       timestamp: Date.now(),
     });
 
-    console.debug(
-      `[ExecutionWebSocket] Message queued (${this.messageQueue.length})`
-    );
+    log.debug(`Message queued (${this.messageQueue.length})`);
   }
 
   /**
@@ -610,9 +609,7 @@ export class ExecutionWebSocket {
       return;
     }
 
-    console.debug(
-      `[ExecutionWebSocket] Flushing ${this.messageQueue.length} queued messages`
-    );
+    log.debug(`Flushing ${this.messageQueue.length} queued messages`);
 
     while (this.messageQueue.length > 0 && this.isConnected()) {
       const message = this.messageQueue.shift();
@@ -634,7 +631,7 @@ export class ExecutionWebSocket {
       return;
     }
 
-    console.debug(`[ExecutionWebSocket] State: ${this.state} -> ${state}`);
+    log.debug(`State: ${this.state} -> ${state}`);
     this.state = state;
 
     if (this.handlers.onStateChange) {

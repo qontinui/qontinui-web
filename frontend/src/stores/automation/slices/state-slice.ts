@@ -8,6 +8,9 @@ import type { StateCreator } from "zustand";
 import type { AutomationStore, StateSlice } from "../types";
 import { projectLogger } from "@/lib/project-logger";
 import { StateUpdateCoordinator } from "@/contexts/automation-context/state-update-coordinator";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("StateSlice");
 
 export const createStateSlice: StateCreator<
   AutomationStore,
@@ -27,13 +30,7 @@ export const createStateSlice: StateCreator<
   },
 
   addState: (newState) => {
-    console.log("[StateSlice] addState called:", {
-      id: newState.id,
-      name: newState.name,
-      position: newState.position,
-      projectName: newState.projectName,
-      stateImagesCount: newState.stateImages?.length || 0,
-    });
+    log.debug("addState called:", { id: newState.id, name: newState.name });
     projectLogger.info("StateSlice", "addState", {
       id: newState.id,
       name: newState.name,
@@ -47,10 +44,6 @@ export const createStateSlice: StateCreator<
         projectName: newState.projectName || state.projectName,
       };
       state.states.push(stateToAdd);
-      console.log(
-        "[StateSlice] addState complete - new state count:",
-        state.states.length
-      );
     });
     get().triggerSave();
   },

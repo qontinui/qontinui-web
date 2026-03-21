@@ -29,6 +29,9 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import "./NodePalette.css";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("NodePalette");
 
 // ============================================================================
 // Types
@@ -113,16 +116,11 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
   };
 
   const handleNodeAdd = (nodeType: ActionType) => {
-    console.log("[NodePalette] handleNodeAdd called with:", nodeType);
-    console.log("[NodePalette] onNodeAdd callback exists:", !!onNodeAdd);
+    log.debug("handleNodeAdd:", nodeType);
 
-    // If onNodeAdd is provided, use it (parent handles the addition)
-    // Otherwise use addNodeAtCenter (adds to canvas store)
     if (onNodeAdd) {
-      console.log("[NodePalette] Using parent onNodeAdd callback");
       onNodeAdd(nodeType);
     } else {
-      console.log("[NodePalette] Using addNodeAtCenter");
       addNodeAtCenter(nodeType);
     }
   };

@@ -14,6 +14,9 @@
  */
 
 import type { Migration, MigrationContext } from "../migration-types";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("MigrationV2.11.0");
 
 /**
  * Recursively normalize target types in an object
@@ -104,8 +107,8 @@ export const migrationV211ToV212: Migration = {
     }
 
     if (normalizedCount > 0) {
-      console.log(
-        `Migration v2.11.0→v2.12.0: Normalized ${normalizedCount} action(s) with uppercase "StateImage" target type`
+      log.debug(
+        `Normalized ${normalizedCount} action(s) with uppercase "StateImage" target type`
       );
     }
 

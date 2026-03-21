@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("FormatConversionDialog");
 import {
   Dialog,
   DialogContent,
@@ -75,12 +78,7 @@ export function FormatConversionDialog({
     setConverting(true);
 
     try {
-      console.log(
-        "[FormatConversion] Converting workflow:",
-        item.name,
-        "to",
-        targetViewMode
-      );
+      log.debug("Converting workflow:", item.name, "to", targetViewMode);
 
       // Simply change the viewMode metadata
       const converted: Workflow = {
@@ -92,7 +90,7 @@ export function FormatConversionDialog({
         },
       };
 
-      console.log("[FormatConversion] Conversion complete, calling onConvert");
+      log.debug("Conversion complete, calling onConvert");
       onConvert(converted);
       onOpenChange(false);
     } catch (error) {

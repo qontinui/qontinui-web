@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("ActivityTracker");
 
 const INACTIVITY_TIMEOUT = 60 * 60 * 1000; // 1 hour in milliseconds
 // REMOVED: REFRESH_INTERVAL - Frontend no longer proactively refreshes tokens
@@ -27,7 +30,7 @@ export function useActivityTracker() {
   useEffect(() => {
     // Clear all timers when session expires
     const handleSessionExpired = () => {
-      console.log("[ActivityTracker] Session expired, clearing all timers");
+      log.debug("Session expired, clearing all timers");
       if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
       if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
     };

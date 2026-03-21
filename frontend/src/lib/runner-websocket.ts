@@ -5,6 +5,10 @@
  * receiving screenshots, logs, and status updates as the runner executes automations.
  */
 
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("RunnerWebSocket");
+
 /**
  * UI Bridge command received via WebSocket
  */
@@ -288,14 +292,14 @@ export class RunnerWebSocket {
       this.ws = new WebSocket(url);
 
       this.ws.onopen = () => {
-        console.debug("Runner WebSocket connected");
+        log.debug("Runner WebSocket connected");
         this.reconnectAttempts = 0;
         this.reconnectDelay = 1000;
         this.config.onConnect?.();
       };
 
       this.ws.onclose = (event) => {
-        console.debug("Runner WebSocket disconnected:", event.code);
+        log.debug("Runner WebSocket disconnected:", event.code);
         this.config.onDisconnect?.();
 
         // Attempt to reconnect if not intentionally closed
@@ -304,8 +308,8 @@ export class RunnerWebSocket {
           this.reconnectAttempts < this.maxReconnectAttempts
         ) {
           this.reconnectAttempts++;
-          console.debug(
-            `RunnerWebSocket reconnect ${this.reconnectAttempts}/${this.maxReconnectAttempts}`
+          log.debug(
+            `Reconnect ${this.reconnectAttempts}/${this.maxReconnectAttempts}`
           );
 
           this.reconnectTimeoutId = setTimeout(() => {
@@ -318,10 +322,7 @@ export class RunnerWebSocket {
       };
 
       this.ws.onerror = (error) => {
-        console.debug(
-          "Runner WebSocket error (runner may not be running):",
-          error
-        );
+        log.debug("Runner WebSocket error (runner may not be running):", error);
         this.config.onError?.(error);
       };
 
@@ -343,7 +344,7 @@ export class RunnerWebSocket {
    * Disconnect from the WebSocket server
    */
   disconnect(): void {
-    console.debug("[RunnerWebSocket] disconnect() called");
+    log.debug("disconnect() called");
     this.isIntentionallyClosed = true;
 
     if (this.reconnectTimeoutId) {
@@ -541,7 +542,7 @@ export class RunnerWebSocket {
         break;
 
       default:
-        console.debug("[RunnerWebSocket] Unknown message type:", message.type);
+        log.debug("Unknown message type:", message.type);
     }
   }
 

@@ -11,6 +11,9 @@ import React, {
 } from "react";
 import { RunnerConnection } from "@/types/runner";
 import { runnerService } from "@/services/service-factory";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("RealtimeConnections");
 
 // ============================================================================
 // Context Types
@@ -180,9 +183,7 @@ export function RealtimeConnectionsProvider({
           }, delay);
         } else {
           // Max reconnect attempts reached, fallback to polling
-          console.debug(
-            "[RealtimeConnections] Max reconnects reached, polling"
-          );
+          log.debug("Max reconnects reached, polling");
           startPolling();
         }
       };

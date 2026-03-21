@@ -1,6 +1,9 @@
 import { authService } from "@/services/service-factory";
 import { TokenValidator } from "@/services/auth/token-validator";
 import { csrfService } from "@/services/csrf-service";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("ApiClient");
 import type {
   User,
   Project,
@@ -233,7 +236,7 @@ class ApiClient {
     // - Tokens are stored in HttpOnly cookies (XSS protection)
     // - Browser automatically sends cookies with credentials: 'include'
     // - No Authorization header needed
-    console.debug("[ApiClient] Using HttpOnly cookie authentication");
+    log.debug("Using HttpOnly cookie authentication");
 
     // Add CSRF token for state-changing requests
     const csrfToken = csrfService.getToken();

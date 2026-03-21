@@ -1,10 +1,13 @@
 import React, { useRef, useEffect } from "react";
+import { createLogger } from "@/lib/logger";
 import { AdvancedRegionSelectorProps } from "./types";
 import { useCanvasViewport } from "@/components/common/_hooks/useCanvasViewport";
 import { useImageLoader } from "./_hooks/useImageLoader";
 import { useCanvasRenderer } from "./_hooks/useCanvasRenderer";
 import { useRegionInteraction } from "@/components/common/_hooks/useRegionInteraction";
 import { RegionSelectorToolbar } from "./_components/RegionSelectorToolbar";
+
+const log = createLogger("AdvancedRegionSelector");
 
 export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
   screenshotId: _screenshotId,
@@ -52,14 +55,9 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
   });
 
   useEffect(() => {
-    console.log("[AdvancedRegionSelector] MOUNTED with props:", {
-      isControlled:
-        controlledZoom !== undefined && onViewportChange !== undefined,
-      controlledZoom,
-      screenshotUrl: screenshotUrl?.substring(0, 50) + "...",
-    });
+    log.debug("MOUNTED");
     return () => {
-      console.log("[AdvancedRegionSelector] UNMOUNTED");
+      log.debug("UNMOUNTED");
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

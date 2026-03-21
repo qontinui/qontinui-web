@@ -3,6 +3,9 @@
  */
 
 import { createAction, Action } from "./action-types";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("ActionSchemaExamples");
 
 /**
  * Example 1: Simple CLICK action
@@ -362,9 +365,9 @@ export const jsonComparisonNew = {
   },
 };
 
-console.log("Old format size:", JSON.stringify(jsonComparisonOld).length);
-console.log("New format size:", JSON.stringify(jsonComparisonNew).length);
-console.log(
+log.debug("Old format size:", JSON.stringify(jsonComparisonOld).length);
+log.debug("New format size:", JSON.stringify(jsonComparisonNew).length);
+log.debug(
   "Size reduction:",
   Math.round(
     (1 -

@@ -7,6 +7,9 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import type { TransitionResult } from "@/services/testing-service";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("useTestingWebSocket");
 
 export type TestExecutionState =
   | "idle"
@@ -135,7 +138,7 @@ export function useTestingWebSocket(options: UseTestingWebSocketOptions = {}) {
       if (message) {
         try {
           wsRef.current.send(message);
-          console.log("[useTestingWebSocket] Sent queued message");
+          log.debug("Sent queued message");
         } catch (error) {
           console.error(
             "[useTestingWebSocket] Failed to send queued message:",
@@ -397,12 +400,12 @@ export function useTestingWebSocket(options: UseTestingWebSocketOptions = {}) {
       const host = window.location.host;
       const wsUrl = `${protocol}//${host}/api/v1/testing/runs/${testRunId}/stream`;
 
-      console.log("[useTestingWebSocket] Connecting to:", wsUrl);
+      log.debug("Connecting to:", wsUrl);
 
       wsRef.current = new WebSocket(wsUrl);
 
       wsRef.current.onopen = () => {
-        console.log("[useTestingWebSocket] Connected");
+        log.debug("Connected");
         reconnectAttempts.current = 0;
         setExecutionData((prev) => ({ ...prev, state: "connecting" }));
 
@@ -424,11 +427,7 @@ export function useTestingWebSocket(options: UseTestingWebSocketOptions = {}) {
       };
 
       wsRef.current.onclose = (event) => {
-        console.log(
-          "[useTestingWebSocket] Disconnected:",
-          event.code,
-          event.reason
-        );
+        log.debug("Disconnected:", event.code, event.reason);
         stopElapsedTimer();
         stopHeartbeat();
 
@@ -454,8 +453,8 @@ export function useTestingWebSocket(options: UseTestingWebSocketOptions = {}) {
             30000
           );
 
-          console.log(
-            `[useTestingWebSocket] Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current}/${maxReconnectAttempts})`
+          log.debug(
+            `Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current}/${maxReconnectAttempts})`
           );
 
           reconnectTimeout.current = setTimeout(() => {

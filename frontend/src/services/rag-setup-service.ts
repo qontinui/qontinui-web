@@ -11,6 +11,9 @@
  */
 
 import type { QontinuiConfig } from "@/lib/export-schema";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("RagSetupService");
 
 // Default runner URL - can be overridden
 // Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
@@ -203,7 +206,7 @@ export class RAGSetupService {
       0
     );
 
-    console.log("[RAG] Sending QontinuiConfig to runner:", {
+    log.debug("Sending QontinuiConfig to runner:", {
       project_id: projectId,
       name: config.metadata.name,
       stateCount: config.states?.length || 0,

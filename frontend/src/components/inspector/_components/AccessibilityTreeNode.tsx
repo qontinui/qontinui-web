@@ -61,7 +61,12 @@ export function AccessibilityTreeNode({
               : "hover:bg-surface-hover"
         }`}
         onClick={() => onSelectNode(node)}
-        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectNode(node); } }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onSelectNode(node);
+          }
+        }}
       >
         {hasChildren ? (
           <button

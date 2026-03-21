@@ -14,6 +14,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("DevReset");
 
 interface DebugInfo {
   timestamp: string;
@@ -55,11 +58,11 @@ export default function DevResetPage() {
 
     // Clear localStorage
     localStorage.clear();
-    console.log("[DevReset] localStorage cleared");
+    log.debug("localStorage cleared");
 
     // Clear sessionStorage
     sessionStorage.clear();
-    console.log("[DevReset] sessionStorage cleared");
+    log.debug("sessionStorage cleared");
 
     // Clear cookies by calling logout endpoint (clears HttpOnly cookies)
     try {
@@ -67,13 +70,9 @@ export default function DevResetPage() {
         method: "POST",
         credentials: "include",
       });
-      console.log(
-        "[DevReset] Logout endpoint called (HttpOnly cookies cleared)"
-      );
+      log.debug("Logout endpoint called (HttpOnly cookies cleared)");
     } catch (_e) {
-      console.log(
-        "[DevReset] Logout endpoint failed (may already be logged out)"
-      );
+      log.debug("Logout endpoint failed (may already be logged out)");
     }
 
     // Clear any remaining accessible cookies
@@ -83,7 +82,7 @@ export default function DevResetPage() {
         document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
       }
     });
-    console.log("[DevReset] Accessible cookies cleared");
+    log.debug("Accessible cookies cleared");
 
     // Clear IndexedDB databases (project data, screenshots)
     try {
@@ -91,11 +90,11 @@ export default function DevResetPage() {
       for (const db of databases) {
         if (db.name) {
           indexedDB.deleteDatabase(db.name);
-          console.log(`[DevReset] IndexedDB "${db.name}" deleted`);
+          log.debug(`IndexedDB "${db.name}" deleted`);
         }
       }
     } catch (e) {
-      console.log("[DevReset] IndexedDB clear failed:", e);
+      log.debug("IndexedDB clear failed:", e);
     }
 
     return {

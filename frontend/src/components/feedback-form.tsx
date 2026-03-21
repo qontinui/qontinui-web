@@ -2,6 +2,9 @@
 
 import React, { useState } from "react";
 import { MessageSquare, Send } from "lucide-react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("FeedbackForm");
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -44,7 +47,7 @@ export function FeedbackForm({ open, onOpenChange }: FeedbackFormProps) {
         process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const url = `${API_BASE_URL}/api/v1/feedback`;
 
-      console.log("Submitting feedback to:", url);
+      log.debug("Submitting feedback to:", url);
 
       const response = await fetch(url, {
         method: "POST",
@@ -58,7 +61,7 @@ export function FeedbackForm({ open, onOpenChange }: FeedbackFormProps) {
         }),
       });
 
-      console.log("Response status:", response.status);
+      log.debug("Response status:", response.status);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => null);

@@ -1,6 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("AutomationStreamingCard");
 import {
   Card,
   CardContent,
@@ -45,16 +48,13 @@ export function AutomationStreamingCard({
     try {
       setLoading(true);
       const url = `${ApiConfig.API_BASE_URL}/api/v1/users/me/automation-streaming`;
-      console.log("[AutomationStreaming] Loading settings from:", url);
+      log.debug("Loading settings");
 
       const response = await httpClient.fetch(url);
 
-      console.log("[AutomationStreaming] Response status:", response.status);
-      console.log("[AutomationStreaming] Response ok:", response.ok);
-
       if (response.ok) {
         const data = await response.json();
-        console.log("[AutomationStreaming] Settings loaded:", data);
+        log.debug("Settings loaded");
         setSettings(data);
       } else {
         const errorText = await response.text();

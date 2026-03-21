@@ -1,10 +1,13 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import { createLogger } from "@/lib/logger";
 import type {
   CompositeScreenshotDisplay,
   LoadedImage,
   CompositeBounds,
 } from "../types";
 import { calculateCompositeBounds } from "../utils";
+
+const log = createLogger("useImageLoader");
 
 export function useImageLoader(screenshots: CompositeScreenshotDisplay[]) {
   const [loadedImages, setLoadedImages] = useState<LoadedImage[]>([]);
@@ -23,14 +26,7 @@ export function useImageLoader(screenshots: CompositeScreenshotDisplay[]) {
   );
 
   useEffect(() => {
-    console.log(
-      "[CompositeCanvas] Screenshots effect triggered:",
-      screenshots.length,
-      "screenshotKey:",
-      screenshotKey,
-      "lastKey:",
-      lastLoadedScreenshotKeyRef.current
-    );
+    log.debug("Screenshots effect triggered:", screenshots.length);
 
     if (screenshots.length === 0) {
       setLoadedImages([]);
@@ -41,7 +37,7 @@ export function useImageLoader(screenshots: CompositeScreenshotDisplay[]) {
 
     // Skip if we've already loaded these screenshots
     if (lastLoadedScreenshotKeyRef.current === screenshotKey) {
-      console.log("[CompositeCanvas] Screenshots already loaded, skipping");
+      log.debug("Screenshots already loaded, skipping");
       return;
     }
 
@@ -67,7 +63,7 @@ export function useImageLoader(screenshots: CompositeScreenshotDisplay[]) {
         const img = new Image();
         img.onload = () => {
           if (!isCancelled) {
-            console.log("[CompositeCanvas] Loaded image:", screenshot.id);
+            log.debug("Loaded image:", screenshot.id);
             resolve({ screenshot, image: img });
           }
         };
@@ -90,7 +86,7 @@ export function useImageLoader(screenshots: CompositeScreenshotDisplay[]) {
     Promise.all(loadPromises)
       .then((loaded) => {
         if (!isCancelled) {
-          console.log("[CompositeCanvas] All images loaded:", loaded.length);
+          log.debug("All images loaded:", loaded.length);
           lastLoadedScreenshotKeyRef.current = screenshotKey;
           setLoadedImages(loaded);
         }

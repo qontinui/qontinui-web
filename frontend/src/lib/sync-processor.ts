@@ -8,6 +8,9 @@
 import { syncQueue, SyncQueueItem } from "./sync-queue";
 import { apiClient } from "./api-client";
 import { screenshotDB } from "./screenshot-db";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("SyncProcessor");
 
 /**
  * Result of processing a sync item
@@ -36,13 +39,13 @@ class SyncProcessor {
   async processQueue(force = false): Promise<number> {
     // Prevent concurrent processing
     if (this.processing && !force) {
-      console.log("[SyncProcessor] Already processing queue, skipping");
+      log.debug("Already processing queue, skipping");
       return 0;
     }
 
     // Check if online
     if (!navigator.onLine) {
-      console.log("[SyncProcessor] Offline, skipping sync");
+      log.debug("Offline, skipping sync");
       return 0;
     }
 
@@ -50,7 +53,7 @@ class SyncProcessor {
     syncQueue.setSyncing(true);
 
     try {
-      console.log("[SyncProcessor] Starting queue processing...");
+      log.debug("Starting queue processing...");
 
       // Get pending items
       const pending = await syncQueue.getAll({ status: "pending" });
@@ -61,8 +64,8 @@ class SyncProcessor {
       // Combine and sort by priority
       const itemsToProcess = [...pending, ...retryReady];
 
-      console.log(
-        `[SyncProcessor] Found ${itemsToProcess.length} items to process (${pending.length} pending, ${retryReady.length} retry)`
+      log.debug(
+        `Found ${itemsToProcess.length} items to process (${pending.length} pending, ${retryReady.length} retry)`
       );
 
       let processedCount = 0;
@@ -104,9 +107,7 @@ class SyncProcessor {
         }
       }
 
-      console.log(
-        `[SyncProcessor] Processed ${processedCount} items successfully`
-      );
+      log.debug(`Processed ${processedCount} items successfully`);
 
       return processedCount;
     } finally {
@@ -119,7 +120,7 @@ class SyncProcessor {
    * Process a single queue item
    */
   private async processItem(item: SyncQueueItem): Promise<SyncResult> {
-    console.log(`[SyncProcessor] Processing ${item.type}:`, item.id);
+    log.debug(`Processing ${item.type}:`, item.id);
 
     try {
       switch (item.type) {
@@ -387,7 +388,7 @@ export const syncProcessor = new SyncProcessor();
  */
 if (typeof window !== "undefined") {
   window.addEventListener("online", () => {
-    console.log("[SyncProcessor] Network online, processing queue...");
+    log.debug("Network online, processing queue...");
     syncProcessor.processQueue();
   });
 }

@@ -14,6 +14,9 @@ import { immer } from "zustand/middleware/immer";
 import type { Region } from "@/types/pattern-optimization";
 import type { MonitorInfo } from "@/components/common/ScreenshotPicker";
 import type { ProcessingMode } from "@/services/image-extraction";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("ImageExtractionStore");
 
 // ===== Types =====
 
@@ -254,7 +257,7 @@ export const useImageExtractionStoreV2 = create<ImageExtractionStore>()(
         // ===== Viewport Actions =====
 
         setViewport: (viewport) => {
-          console.log("[ImageExtractionStore] setViewport called:", viewport);
+          log.debug("setViewport called:", viewport);
           set((state) => {
             if (viewport.zoom !== undefined)
               state.viewport.zoom = viewport.zoom;
@@ -262,9 +265,6 @@ export const useImageExtractionStoreV2 = create<ImageExtractionStore>()(
               state.viewport.panX = viewport.panX;
             if (viewport.panY !== undefined)
               state.viewport.panY = viewport.panY;
-            console.log("[ImageExtractionStore] viewport after update:", {
-              ...state.viewport,
-            });
           });
         },
 
@@ -370,19 +370,9 @@ export const useImageExtractionStoreV2 = create<ImageExtractionStore>()(
           // Don't persist dialog state - it should start closed
         }),
         onRehydrateStorage: () => (state) => {
-          console.log(
-            "[ImageExtractionStore] onRehydrateStorage called, state:",
-            state
-              ? {
-                  hasCurrentScreenshot: !!state.currentScreenshot,
-                  viewport: state.viewport,
-                  _isHydrated: state._isHydrated,
-                }
-              : "null"
-          );
+          log.debug("onRehydrateStorage called, hasState:", !!state);
           if (state) {
             state._isHydrated = true;
-            console.log("[ImageExtractionStore] _isHydrated set to true");
           }
         },
       }

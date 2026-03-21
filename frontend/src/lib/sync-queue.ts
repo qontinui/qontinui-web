@@ -16,6 +16,9 @@ import {
   DBErrorType,
   handleStorageCorruption,
 } from "./db/error-handler";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("SyncQueue");
 
 const SYNC_DB_NAME = "qontinui-sync-queue-db";
 const SYNC_STORE_NAME = "sync_queue";
@@ -154,7 +157,7 @@ class SyncQueue {
           try {
             const db = await this.openDatabaseInternal();
             this.db = db;
-            console.log("[SyncQueue] Successfully recovered and reconnected");
+            log.debug("Successfully recovered and reconnected");
             return db;
           } catch (retryError) {
             console.error(
@@ -250,7 +253,7 @@ class SyncQueue {
       const request = store.add(item);
 
       request.onsuccess = () => {
-        console.log(`[SyncQueue] Enqueued ${type} operation:`, item.id);
+        log.debug(`Enqueued ${type} operation:`, item.id);
         this.notifyListeners();
         resolve(item);
       };
@@ -387,7 +390,7 @@ class SyncQueue {
       const request = store.delete(id);
 
       request.onsuccess = () => {
-        console.log(`[SyncQueue] Removed item:`, id);
+        log.debug(`Removed item:`, id);
         this.notifyListeners();
         resolve();
       };
@@ -405,7 +408,7 @@ class SyncQueue {
       await this.remove(item.id);
     }
 
-    console.log(`[SyncQueue] Cleared ${completed.length} completed items`);
+    log.debug(`Cleared ${completed.length} completed items`);
     return completed.length;
   }
 
@@ -421,7 +424,7 @@ class SyncQueue {
       const request = store.clear();
 
       request.onsuccess = () => {
-        console.log("[SyncQueue] Cleared all items");
+        log.debug("Cleared all items");
         this.notifyListeners();
         resolve();
       };
@@ -522,7 +525,7 @@ class SyncQueue {
       metadata: { ...item.metadata, ...metadata },
     });
 
-    console.log(`[SyncQueue] Item ${id} completed successfully`);
+    log.debug(`Item ${id} completed successfully`);
   }
 
   /**

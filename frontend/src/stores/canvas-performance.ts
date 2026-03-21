@@ -13,6 +13,9 @@
 
 import { useCallback, useMemo, useRef, useEffect, useState } from "react";
 import type { Action, Workflow } from "../lib/action-schema/action-types";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("CanvasPerformance");
 
 // ============================================================================
 // Debounce & Throttle Utilities
@@ -378,10 +381,11 @@ export class PerformanceMonitor {
     if (label) {
       const stats = this.getStats(label);
       if (stats) {
-        console.log(`Performance [${label}]:`, stats);
+        log.debug(`Performance [${label}]:`, stats);
       }
     } else {
       const allStats = this.getAllStats();
+      // eslint-disable-next-line no-console -- table output for manual diagnostics
       console.table(allStats);
     }
   }

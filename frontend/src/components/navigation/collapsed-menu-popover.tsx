@@ -2,6 +2,9 @@
 
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("CollapsedMenuPopover");
 
 interface PopoverChild {
   id: string;
@@ -51,48 +54,18 @@ export function CollapsedMenuPopover({
         top: rect.top + rect.height / 2,
         left: rect.right + 8, // 8px margin
       });
-      console.log("[POPOVER POSITION]", {
+      log.debug("Popover position:", {
         parentId,
-        rect,
-        position: { top: rect.top + rect.height / 2, left: rect.right + 8 },
+        top: rect.top + rect.height / 2,
+        left: rect.right + 8,
         parentZIndex,
-        popoverZIndex: "9999999 (bridge: 9999998)",
-        renderingViaPortal: true,
-        usingInlineStyles: true,
       });
-
-      // After a short delay, check if the popover is actually in the DOM
-      setTimeout(() => {
-        const popoverElements = document.querySelectorAll(
-          '[data-popover="true"]'
-        );
-        console.log("[POPOVER DOM CHECK]", {
-          parentId,
-          popoverCount: popoverElements.length,
-          popovers: Array.from(popoverElements).map((el) => {
-            const computedStyle = window.getComputedStyle(el);
-            return {
-              parent: el.parentElement?.tagName,
-              zIndex: computedStyle.zIndex,
-              position: computedStyle.position,
-              display: computedStyle.display,
-              visibility: computedStyle.visibility,
-              top: computedStyle.top,
-              left: computedStyle.left,
-              boundingRect: el.getBoundingClientRect(),
-            };
-          }),
-        });
-      }, 50);
     }
   }, [parentId]);
 
   if (!mounted) {
-    console.log("[POPOVER] Not mounted yet, returning null");
     return null;
   }
-
-  console.log("[POPOVER] Rendering portal content for:", parentId);
 
   const popoverContent = (
     <>
@@ -109,7 +82,6 @@ export function CollapsedMenuPopover({
         }}
         onMouseEnter={(e) => {
           e.stopPropagation();
-          console.log("[BRIDGE] Mouse enter - clearing timer");
           if (onClearTimer) {
             onClearTimer();
           }
@@ -130,15 +102,12 @@ export function CollapsedMenuPopover({
         }}
         onMouseEnter={(e) => {
           e.stopPropagation();
-          console.log("[POPOVER] Mouse enter - clearing timer");
-          // Clear any pending close timer when mouse enters popover
           if (onClearTimer) {
             onClearTimer();
           }
         }}
         onMouseLeave={(e) => {
           e.stopPropagation();
-          console.log("[POPOVER] Mouse leave - closing immediately");
           onClose();
         }}
       >

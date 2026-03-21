@@ -15,6 +15,9 @@
  */
 
 import type { Workflow } from "@/lib/action-schema/action-types";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("BackendAPI");
 
 // ============================================================================
 // Types
@@ -590,7 +593,7 @@ export class BackendAPI {
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
-      console.log(`[BackendAPI] WebSocket connected: ${executionId}`);
+      log.debug(`WebSocket connected: ${executionId}`);
     };
 
     ws.onmessage = (messageEvent) => {
@@ -624,7 +627,7 @@ export class BackendAPI {
     };
 
     ws.onclose = () => {
-      console.log(`[BackendAPI] WebSocket closed: ${executionId}`);
+      log.debug(`WebSocket closed: ${executionId}`);
       this.activeWebSockets.delete(executionId);
       if (onClose) {
         onClose();

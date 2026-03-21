@@ -13,6 +13,9 @@ import type {
   LockAcquireRequest,
 } from "@/types/collaboration";
 import { httpClient } from "./service-factory";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("LockService");
 
 const API_BASE = "/api/locks";
 
@@ -123,7 +126,7 @@ class LockService {
     const interval = setInterval(async () => {
       try {
         await this.refreshLock(lockId);
-        console.log(`[LockService] Auto-refreshed lock ${lockId}`);
+        log.debug(`Auto-refreshed lock ${lockId}`);
       } catch (error) {
         console.error(
           `[LockService] Failed to auto-refresh lock ${lockId}:`,

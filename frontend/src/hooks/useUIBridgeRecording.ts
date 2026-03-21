@@ -12,6 +12,9 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("useUIBridgeRecording");
 
 /**
  * Element captured in a snapshot
@@ -135,7 +138,7 @@ export function useUIBridgeRecording() {
         }
 
         const data = result.data;
-        console.log("[useUIBridgeRecording] Recording started:", data);
+        log.debug("Recording started:", data);
 
         setSession({
           isRecording: true,
@@ -188,11 +191,7 @@ export function useUIBridgeRecording() {
       }
 
       const data = result.data;
-      console.log(
-        "[useUIBridgeRecording] Recording stopped:",
-        data.snapshotCount,
-        "snapshots"
-      );
+      log.debug("Recording stopped:", data.snapshotCount, "snapshots");
 
       // Update session with final snapshots
       setSession((prev) => ({

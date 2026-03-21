@@ -4,6 +4,9 @@
 
 import React, { useState } from "react";
 import RegionSelector from "./RegionSelector";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("TestRegionSelector");
 
 const TestRegionSelector: React.FC = () => {
   const [selectedRegion, setSelectedRegion] = useState<
@@ -70,7 +73,7 @@ const TestRegionSelector: React.FC = () => {
         imageWidth={800}
         imageHeight={600}
         onRegionSelect={(region) => {
-          console.log("Region selected:", region);
+          log.debug("Region selected:", region);
           setSelectedRegion(region ?? null);
         }}
         initialRegion={selectedRegion ?? undefined}

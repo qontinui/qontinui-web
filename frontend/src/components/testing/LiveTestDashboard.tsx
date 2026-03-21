@@ -21,6 +21,9 @@ import {
 import { useTestStream } from "@/hooks/useTestStream";
 import { TestStepTimeline } from "./TestStepTimeline";
 import { CoverageHeatmap } from "./CoverageHeatmap";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("LiveTestDashboard");
 
 interface LiveTestDashboardProps {
   testRunId?: string;
@@ -51,18 +54,18 @@ export function LiveTestDashboard({
     testRunId,
     enabled: !!testRunId,
     onConnect: () => {
-      console.log("[LiveTestDashboard] Connected to test stream");
+      log.debug("Connected to test stream");
       setConnectionError(null);
     },
     onDisconnect: () => {
-      console.log("[LiveTestDashboard] Disconnected from test stream");
+      log.debug("Disconnected from test stream");
     },
     onError: (error) => {
       console.error("[LiveTestDashboard] Stream error:", error);
       setConnectionError(error.message);
     },
     onTestComplete: (data) => {
-      console.log("[LiveTestDashboard] Test completed:", data);
+      log.debug("Test completed:", data);
       if (onComplete) {
         onComplete(data);
       }

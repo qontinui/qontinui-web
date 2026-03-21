@@ -23,6 +23,9 @@ import {
   activityService,
 } from "@/services/service-factory";
 import { websocketCollaborationService } from "@/services/websocket-collaboration-service";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("CollaborationContext");
 
 // ============================================================================
 // Context Types
@@ -308,7 +311,7 @@ export function CollaborationProvider({
         },
         onLockAcquired: (lock) => {
           // Update lock state if it affects current resource
-          console.log("[Collaboration] Lock acquired:", lock);
+          log.debug("Lock acquired:", lock);
         },
         onLockReleased: (lock) => {
           // Update lock state if it affects current resource

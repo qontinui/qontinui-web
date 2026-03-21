@@ -28,6 +28,9 @@ import {
   DBErrorType,
   handleStorageCorruption,
 } from "./db/error-handler";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("ScreenshotDB");
 
 const DB_NAME = "qontinui-screenshots-db";
 const STORE_NAME = "screenshots";
@@ -143,9 +146,7 @@ class ScreenshotDB {
           try {
             const db = await this.openDatabaseInternal();
             this.db = db;
-            console.log(
-              "[ScreenshotDB] Successfully recovered and reconnected"
-            );
+            log.debug("Successfully recovered and reconnected");
             return db;
           } catch (retryError) {
             console.error(
@@ -538,7 +539,7 @@ class ScreenshotDB {
       }
 
       if (deletedCount > 0) {
-        console.log(
+        log.debug(
           `Cleaned up ${deletedCount} expired screenshots from IndexedDB`
         );
       }

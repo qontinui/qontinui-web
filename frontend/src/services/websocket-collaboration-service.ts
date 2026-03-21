@@ -25,6 +25,9 @@ import {
   ExecutionWebSocket,
   type WebSocketConfig,
 } from "./execution-websocket";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("WebSocketCollaborationService");
 
 // ============================================================================
 // Types
@@ -96,13 +99,11 @@ class WebSocketCollaborationService {
       },
       {
         onConnect: () => {
-          console.log("[CollaborationWS] Connected");
+          log.debug("Connected");
 
           // Request sync state if reconnecting (not first connection)
           if (this.lastAckedSequence > 0) {
-            console.log(
-              "[CollaborationWS] Reconnecting, requesting sync state"
-            );
+            log.debug("Reconnecting, requesting sync state");
             this.send({
               type: "sync_state" as WebSocketMessageType,
               timestamp: new Date().toISOString(),
@@ -123,7 +124,7 @@ class WebSocketCollaborationService {
           this.handlers.onConnect?.();
         },
         onDisconnect: () => {
-          console.log("[CollaborationWS] Disconnected");
+          log.debug("Disconnected");
           // Don't reset sequence tracking on disconnect - preserve for reconnect
           this.handlers.onDisconnect?.();
         },
@@ -318,8 +319,8 @@ class WebSocketCollaborationService {
 
       // Handle resend complete message
       if (message.type === "resend_complete") {
-        console.log(
-          "[CollaborationWS] Resend complete:",
+        log.debug(
+          "Resend complete:",
           (message.data as { count?: number } | undefined)?.count,
           "messages"
         );
@@ -383,8 +384,8 @@ class WebSocketCollaborationService {
       }
     } else {
       // Duplicate or old message - ignore
-      console.debug(
-        "[CollaborationWS] Duplicate/old message:",
+      log.debug(
+        "Duplicate/old message:",
         sequence,
         "expected:",
         this.expectedSequence
@@ -480,7 +481,7 @@ class WebSocketCollaborationService {
       data: { sequence },
     });
 
-    console.debug("[CollaborationWS] Acknowledged up to sequence:", sequence);
+    log.debug("Acknowledged up to sequence:", sequence);
   }
 
   /**
@@ -493,17 +494,14 @@ class WebSocketCollaborationService {
       data: { from_sequence: fromSequence },
     });
 
-    console.log(
-      "[CollaborationWS] Requested resend from sequence:",
-      fromSequence
-    );
+    log.debug("Requested resend from sequence:", fromSequence);
   }
 
   /**
    * Handle connection state message
    */
   private handleConnectionState(state: unknown): void {
-    console.log("[CollaborationWS] Connection state:", state);
+    log.debug("Connection state:", state);
 
     const stateObj = state as { message_sequence?: number };
     // If reconnecting and there are unacknowledged messages, request resend
@@ -513,10 +511,7 @@ class WebSocketCollaborationService {
       stateObj.message_sequence > this.lastAckedSequence
     ) {
       const fromSequence = this.lastAckedSequence + 1;
-      console.log(
-        "[CollaborationWS] Reconnected, requesting resend from:",
-        fromSequence
-      );
+      log.debug("Reconnected, requesting resend from:", fromSequence);
       this.requestResend(fromSequence);
     }
   }

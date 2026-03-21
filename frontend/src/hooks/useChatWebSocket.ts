@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { AiSessionState, AiMessage } from "@qontinui/shared-types";
 import { parseOutputLog } from "@qontinui/workflow-utils";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("useChatWebSocket");
 
 export type { AiSessionState, AiMessage };
 
@@ -304,7 +307,7 @@ export function useChatWebSocket({
           break;
 
         default:
-          console.debug("[useChatWebSocket] Unhandled message type:", type);
+          log.debug("Unhandled message type:", type);
       }
     },
     [onSessionCreated, onWorkflowGenerated]

@@ -1,4 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("StateImageDisplay");
 
 interface StateImageDisplayProps {
   image: string; // Base64 data URL
@@ -46,7 +49,7 @@ export const StateImageDisplay: React.FC<StateImageDisplayProps> = ({
           img.src = image;
         });
 
-        console.log("[StateImageDisplay] Image loaded:", {
+        log.debug("Image loaded:", {
           width: img.width,
           height: img.height,
           hasMask: !!mask,
@@ -55,19 +58,19 @@ export const StateImageDisplay: React.FC<StateImageDisplayProps> = ({
 
         // If no mask, just display the image normally
         if (!mask) {
-          console.log("[StateImageDisplay] No mask, displaying image directly");
+          log.debug("No mask, displaying image directly");
           setIsLoading(false);
           return;
         }
 
-        console.log("[StateImageDisplay] Loading mask...");
+        log.debug("Loading mask...");
 
         // Load the mask
         const maskImg = new Image();
         let maskLoadedSuccessfully = false;
         await new Promise<void>((resolve) => {
           maskImg.onload = () => {
-            console.log("[StateImageDisplay] Mask loaded:", {
+            log.debug("Mask loaded:", {
               width: maskImg.width,
               height: maskImg.height,
             });
@@ -90,9 +93,7 @@ export const StateImageDisplay: React.FC<StateImageDisplayProps> = ({
           maskImg.width === 0 ||
           maskImg.height === 0
         ) {
-          console.log(
-            "[StateImageDisplay] Mask invalid, showing image without mask processing"
-          );
+          log.debug("Mask invalid, showing image without mask processing");
           setIsLoading(false);
           return;
         }
@@ -134,15 +135,10 @@ export const StateImageDisplay: React.FC<StateImageDisplayProps> = ({
             maskImg.height
           );
 
-          console.log(
-            "[StateImageDisplay] Applying mask. Image pixels:",
-            imageData.data.length / 4,
-            "Mask pixels:",
-            maskData.data.length / 4
-          );
+          log.debug("Applying mask, pixels:", imageData.data.length / 4);
 
           // Sample first few pixels to debug
-          console.log("[StateImageDisplay] Sample mask values:", [
+          log.debug("Sample mask values:", [
             maskData.data[0],
             maskData.data[4],
             maskData.data[8],
@@ -160,7 +156,7 @@ export const StateImageDisplay: React.FC<StateImageDisplayProps> = ({
             imageData.data[i + 3] = (currentAlpha ?? 1) * maskValue;
           }
 
-          console.log("[StateImageDisplay] Mask applied successfully");
+          log.debug("Mask applied successfully");
           ctx.putImageData(imageData, 0, 0);
         } else {
           console.warn(

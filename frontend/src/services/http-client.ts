@@ -2,6 +2,9 @@ import { TokenManager } from "./auth/token-manager";
 import { ApiConfig } from "./api-config";
 import { csrfService } from "./csrf-service";
 import { RetryStrategy } from "./retry-strategy";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("HttpClient");
 
 export interface HttpOptions extends RequestInit {
   skipAuth?: boolean;
@@ -48,7 +51,7 @@ export class HttpClient {
       console.warn("[HttpClient] Received 401, attempting token refresh...");
       const refreshed = await this.refreshAccessToken();
       if (refreshed) {
-        console.log("[HttpClient] Token refresh successful, retrying request");
+        log.debug("Token refresh successful, retrying request");
         return this.executeSingleRequest(url, options, skipAuth);
       } else {
         // DISABLED: Automatic logout on 401
@@ -94,12 +97,10 @@ export class HttpClient {
 
     if (!skipAuth) {
       const accessToken = this.tokenManager.getAccessToken();
-      console.log("[HttpClient] executeSingleRequest:", {
+      log.debug("executeSingleRequest:", {
         url,
         method: options.method || "GET",
-        skipAuth,
         hasAccessToken: !!accessToken,
-        accessTokenLength: accessToken?.length || 0,
       });
       if (accessToken) {
         headers["Authorization"] = `Bearer ${accessToken}`;
@@ -129,11 +130,9 @@ export class HttpClient {
 
       clearTimeout(timeoutId);
 
-      // Debug logging for response
-      console.log("[HttpClient] Response:", {
+      log.debug("Response:", {
         url,
         status: response.status,
-        statusText: response.statusText,
         ok: response.ok,
       });
 
@@ -169,12 +168,12 @@ export class HttpClient {
   private async doRefreshToken(): Promise<boolean> {
     const isAuthenticated = this.tokenManager.isAuthenticated();
     if (!isAuthenticated) {
-      console.log("[HttpClient] Not authenticated - skipping token refresh");
+      log.debug("Not authenticated - skipping token refresh");
       return false;
     }
 
     try {
-      console.log("[HttpClient] Refreshing token at:", ApiConfig.AUTH_REFRESH);
+      log.debug("Refreshing token at:", ApiConfig.AUTH_REFRESH);
 
       // Include refresh token in request body (in-memory token).
       // Also sends HttpOnly cookie via credentials: 'include' as fallback.
@@ -195,7 +194,7 @@ export class HttpClient {
 
       if (response.ok) {
         const tokens = await response.json();
-        console.log("[HttpClient] Token refresh successful");
+        log.debug("Token refresh successful");
         this.tokenManager.setTokens(tokens);
         return true;
       } else {

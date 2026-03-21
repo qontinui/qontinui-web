@@ -28,6 +28,9 @@ import type {
 } from "../contexts/automation-context/types";
 import { Screenshot } from "../types/Screenshot";
 import type { ProjectSettings } from "../types/project-settings";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("ConfigExporter");
 
 export class ConfigExporter {
   private version = CURRENT_VERSION;
@@ -295,10 +298,9 @@ export class ConfigExporter {
         workflow.metadata?.viewMode === "sequential" &&
         workflow.actions.length > 1
       ) {
-        console.log(
-          `🔍 [Export] Workflow "${workflow.name}" - viewMode: ${workflow.metadata?.viewMode}, ${workflow.actions.length} actions`
+        log.debug(
+          `Workflow "${workflow.name}" - viewMode: ${workflow.metadata?.viewMode}, ${workflow.actions.length} actions`
         );
-        console.log(`🔍 [Export] Connections before check:`, connections);
 
         // Check if connections have actual chains (not just empty arrays)
         const hasActualConnections = Object.values(connections).some(
@@ -313,12 +315,8 @@ export class ConfigExporter {
           }
         );
 
-        console.log(`🔍 [Export] hasActualConnections:`, hasActualConnections);
-
         if (!hasActualConnections) {
-          console.log(
-            `✅ [Export] Generating sequential connections for "${workflow.name}"`
-          );
+          log.debug(`Generating sequential connections for "${workflow.name}"`);
 
           // Generate sequential chain: action1 -> action2 -> action3 -> ...
           const generatedConnections: WorkflowConnections = {};
@@ -349,15 +347,10 @@ export class ConfigExporter {
             }
           }
 
-          console.log(
-            `✅ [Export] Generated connections:`,
-            generatedConnections
-          );
+          log.debug("Generated connections:", generatedConnections);
           connections = generatedConnections;
         } else {
-          console.log(
-            `⏭️ [Export] Skipping generation - connections already exist`
-          );
+          log.debug("Skipping generation - connections already exist");
         }
       }
 

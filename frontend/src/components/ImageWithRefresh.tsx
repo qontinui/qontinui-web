@@ -2,6 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { ImageAsset } from "@/contexts/automation-context/types";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("ImageWithRefresh");
 import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
 
@@ -64,7 +67,7 @@ export function ImageWithRefresh({
         onRefresh(response.url);
       }
 
-      console.log(`[ImageWithRefresh] Refreshed URL for ${imageAsset.name}`);
+      log.debug(`Refreshed URL for ${imageAsset.name}`);
     } catch (error) {
       console.error("[ImageWithRefresh] Failed to refresh URL:", error);
       toast.error("Failed to refresh image URL", {
@@ -98,9 +101,7 @@ export function ImageWithRefresh({
 
   // Handle image load error
   const handleImageError = useCallback(() => {
-    console.warn(
-      `[ImageWithRefresh] Image load error for ${imageAsset.name}, attempting refresh...`
-    );
+    log.debug(`Image load error for ${imageAsset.name}, attempting refresh...`);
     setImageError(true);
     refreshUrl();
   }, [imageAsset.name, refreshUrl]);

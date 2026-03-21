@@ -8,6 +8,9 @@
 
 import React, { useCallback, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("GraphEditor");
 import { WorkflowCanvas, type EdgeInfo } from "@/components/workflow-canvas";
 import { NodePalette } from "@/components/workflow-canvas/NodePalette";
 import type {
@@ -54,7 +57,7 @@ function GraphEditorInner({
    */
   const handleEdgeClick = useCallback(
     (edgeInfo: EdgeInfo) => {
-      console.log("[GraphEditor] Edge clicked:", edgeInfo);
+      log.debug("Edge clicked:", edgeInfo);
       setSelectedEdge(edgeInfo);
       onSelectNode(null); // Deselect any node
     },
@@ -112,14 +115,8 @@ function GraphEditorInner({
    */
   const handleNodeAdd = useCallback(
     (nodeType: ActionType) => {
-      console.log("[GraphEditor] handleNodeAdd called with:", nodeType);
-      console.log(
-        "[GraphEditor] Current workflow has",
-        workflow.actions.length,
-        "actions"
-      );
+      log.debug("handleNodeAdd called with:", nodeType);
       onAddNode(nodeType);
-      console.log("[GraphEditor] onAddNode completed");
     },
     [onAddNode, workflow.actions.length]
   );

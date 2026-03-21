@@ -20,6 +20,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("LoginForm");
 
 interface LoginFormProps {
   onSuccess?: () => void;
@@ -36,10 +39,10 @@ export function LoginForm({ onSuccess, onError }: LoginFormProps) {
     mode: "onBlur", // Validate on blur for better UX
   });
 
-  const onSubmit = async (data: LoginFormData) => {
+  const onSubmit = async (_data: LoginFormData) => {
     try {
       // Here you would call your auth service
-      console.log("Login data:", data);
+      log.debug("Login submitted");
 
       // Example: await authService.login(data)
 

@@ -17,6 +17,9 @@ import {
   associateMatchesWithSegments,
 } from "../rag-testing-utils";
 import type { ScreenshotInfo } from "@/components/common/ScreenshotPicker";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("useRAGAnalysis");
 
 interface UseRAGAnalysisParams {
   projectId: string | null | undefined;
@@ -173,7 +176,7 @@ export function useRAGAnalysis({
         const segmentResult = await segmentResponse.json();
         if (segmentResult.data?.success) {
           runnerSegments = segmentResult.data.segments || [];
-          console.log(
+          log.debug(
             `SAM3 segmentation: ${runnerSegments.length} segments found`
           );
         } else if (segmentResult.data?.error) {

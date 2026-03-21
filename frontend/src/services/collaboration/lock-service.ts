@@ -15,6 +15,9 @@ import type {
   LockAcquireRequest,
   ResourceType,
 } from "@/types/collaboration";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("LockService");
 
 export class LockService {
   private httpClient: HttpClient;
@@ -220,7 +223,7 @@ export class LockService {
     const intervalId = setInterval(async () => {
       try {
         await this.refreshLock(lockId);
-        console.log(`[LockService] Lock ${lockId} refreshed successfully`);
+        log.debug(`Lock ${lockId} refreshed successfully`);
       } catch (error) {
         console.error(`[LockService] Failed to refresh lock ${lockId}:`, error);
         // Lock might have been released or expired

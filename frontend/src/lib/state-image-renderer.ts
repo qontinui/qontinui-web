@@ -3,6 +3,10 @@
  * Modular class for rendering StateImages with different display modes
  */
 
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("StateImageRenderer");
+
 export type RenderMode =
   | "normal"
   | "with-mask"
@@ -46,7 +50,7 @@ export class StateImageRenderer {
     if (data.mask) {
       try {
         this.maskElement = await this.loadImage(data.mask);
-        console.log("[StateImageRenderer] Loaded image and mask:", {
+        log.debug("Loaded image and mask:", {
           imageSize: `${this.imageElement.width}x${this.imageElement.height}`,
           maskSize: `${this.maskElement.width}x${this.maskElement.height}`,
         });
@@ -171,20 +175,7 @@ export class StateImageRenderer {
     const imagePixels = imageData.data.length / 4;
     const maskPixels = maskData.data.length / 4;
 
-    console.log("[StateImageRenderer] Applying mask:", {
-      imagePixels,
-      maskPixels,
-    });
-
-    // Sample first few mask values for debugging
-    const sampleMaskValues = [];
-    for (let i = 0; i < Math.min(10, maskPixels); i++) {
-      sampleMaskValues.push(maskData.data[i * 4]);
-    }
-    console.log(
-      "[StateImageRenderer] Sample mask values (should be 0 or 255):",
-      sampleMaskValues
-    );
+    log.debug("Applying mask:", { imagePixels, maskPixels });
 
     for (let i = 0; i < imageData.data.length; i += 4) {
       // Use red channel of mask as alpha multiplier (grayscale mask)
@@ -197,7 +188,7 @@ export class StateImageRenderer {
 
     // Put processed image data back
     this.ctx.putImageData(imageData, 0, 0);
-    console.log("[StateImageRenderer] Mask applied successfully");
+    log.debug("Mask applied successfully");
   }
 
   /**

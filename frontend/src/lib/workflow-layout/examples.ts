@@ -10,6 +10,9 @@ import type {
   Connection,
   Connections,
 } from "../action-schema/action-types";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("WorkflowLayoutExamples");
 
 /**
  * Example 1: Simple Linear Workflow
@@ -754,7 +757,7 @@ export function createLargeWorkflowExample(size: number = 100): Workflow {
   autoLayoutWorkflow(workflow);
   const duration = Date.now() - startTime;
 
-  console.log(`Layout time for ${size} actions: ${duration}ms`);
+  log.debug(`Layout time for ${size} actions: ${duration}ms`);
 
   return workflow;
 }

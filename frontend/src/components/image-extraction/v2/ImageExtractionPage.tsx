@@ -12,6 +12,9 @@
 
 import React, { useCallback, useState } from "react";
 import { Loader2 } from "lucide-react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("ImageExtractionPage");
 import { toast } from "sonner";
 import { useAutomation } from "@/contexts/automation-context";
 import { useAutomationStore } from "@/stores/automation";
@@ -87,12 +90,8 @@ export const ImageExtractionPage: React.FC = () => {
         | undefined;
       const imagesArray = config.images as unknown[] | undefined;
 
-      // Debug: log state names to verify the new state was added
       const stateNames = statesArray?.map((s) => s.name) ?? [];
-      console.log(
-        "[ImageExtractionPage] saveToBackendImmediately - state names:",
-        stateNames
-      );
+      log.debug("saveToBackendImmediately - state names:", stateNames);
 
       projectLogger.debug("ImageExtraction", "Saving to backend immediately", {
         projectId,
@@ -191,15 +190,13 @@ export const ImageExtractionPage: React.FC = () => {
         isNewImage = true;
       }
 
-      // Debug log: image added to library
-      console.log("[ImageExtractionPage] Image added to library:", {
+      log.debug("Image added to library:", {
         imageId: imageAsset.id,
         imageName: imageAsset.name,
+        isNewImage,
         hasUrl: !!imageAsset.url,
-        urlLength: imageAsset.url?.length,
         hasMask: !!imageAsset.mask,
         monitors: imageAsset.monitors,
-        isNewImage,
       });
 
       if (saveDialog.mode === "libraryOnly") {
@@ -306,37 +303,22 @@ export const ImageExtractionPage: React.FC = () => {
           saveDialog.newStateName.trim() || undefined
         );
 
-        // Debug log: prepareStateImageCreation result
-        console.log("[ImageExtractionPage] prepareStateImageCreation result:", {
+        log.debug("prepareStateImageCreation result:", {
           action: result.action,
-          stateImageId: result.stateImage?.id,
           stateImageName: result.stateImage?.name,
-          patternId: result.stateImage?.patterns?.[0]?.id,
-          patternImageId: result.stateImage?.patterns?.[0]?.imageId,
-          targetStateId: result.targetState?.id,
           targetStateName: result.targetState?.name,
-          targetStateImagesCount: result.targetState?.stateImages?.length,
         });
 
         if (result.action === "create-state" && result.targetState) {
-          console.log(
-            "[ImageExtractionPage] Creating new state with StateImage"
-          );
+          log.debug("Creating new state with StateImage");
           await addState(result.targetState);
           // Save to backend immediately to prevent data loss on navigation
           await saveToBackendImmediately();
           toast.success(`Created new state: ${result.targetState.name}`);
         } else if (result.action === "update-state" && result.targetState) {
-          console.log(
-            "[ImageExtractionPage] Updating existing state with StateImage:",
-            {
-              stateId: result.targetState.id,
-              stateImagesCount: result.targetState.stateImages?.length,
-              lastStateImage:
-                result.targetState.stateImages?.[
-                  result.targetState.stateImages.length - 1
-                ],
-            }
+          log.debug(
+            "Updating existing state with StateImage:",
+            result.targetState.id
           );
           await updateState(result.targetState);
           // Save to backend immediately to prevent data loss on navigation

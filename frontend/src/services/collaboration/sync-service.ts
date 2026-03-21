@@ -31,6 +31,9 @@ import {
 } from "../../types/collaboration/conflict-types";
 import { operationalTransformService } from "./operational-transform-service";
 import { conflictResolutionService } from "./conflict-resolution-service";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("SyncService");
 
 /**
  * Synchronization Service
@@ -75,13 +78,13 @@ export class SyncService {
   private setupEventListeners(): void {
     window.addEventListener("online", () => {
       this.isOnline = true;
-      console.log("Connection restored - processing offline queue");
+      log.debug("Connection restored - processing offline queue");
       this.processOfflineQueue();
     });
 
     window.addEventListener("offline", () => {
       this.isOnline = false;
-      console.log("Connection lost - changes will be queued");
+      log.debug("Connection lost - changes will be queued");
     });
   }
 
@@ -112,7 +115,7 @@ export class SyncService {
       this.ws = new WebSocket(`${this.config.wsUrl}/projects/${projectId}`);
 
       this.ws.onopen = () => {
-        console.log("WebSocket connected");
+        log.debug("WebSocket connected");
       };
 
       this.ws.onmessage = (event) => {
@@ -125,7 +128,7 @@ export class SyncService {
       };
 
       this.ws.onclose = () => {
-        console.log("WebSocket disconnected - attempting to reconnect...");
+        log.debug("WebSocket disconnected - attempting to reconnect...");
         setTimeout(() => this.connectWebSocket(projectId), 5000);
       };
     } catch (error) {
@@ -376,7 +379,7 @@ export class SyncService {
    * Handle incoming WebSocket updates
    */
   handleRemoteUpdate(update: RemoteUpdate): void {
-    console.log("Received remote update:", update);
+    log.debug("Received remote update:", update);
 
     switch (update.type) {
       case "change":
@@ -567,7 +570,7 @@ export class SyncService {
 
     this.processingQueue = true;
 
-    console.log(`Processing ${this.syncQueue.length} queued changes...`);
+    log.debug(`Processing ${this.syncQueue.length} queued changes...`);
 
     // Sort by priority (higher first) and timestamp (older first)
     this.syncQueue.sort((a, b) => {
@@ -643,7 +646,7 @@ export class SyncService {
 
     this.processingQueue = false;
 
-    console.log(
+    log.debug(
       `Processed ${processedIds.length} changes, ${this.syncQueue.length} remaining`
     );
   }
@@ -709,7 +712,7 @@ export class SyncService {
       const stored = localStorage.getItem("sync-queue");
       if (stored) {
         this.syncQueue = JSON.parse(stored);
-        console.log(`Loaded ${this.syncQueue.length} operations from storage`);
+        log.debug(`Loaded ${this.syncQueue.length} operations from storage`);
       }
     } catch (error) {
       console.error("Failed to load queue from storage:", error);

@@ -1,4 +1,7 @@
 import { useState, useCallback } from "react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("DashboardFilters");
 
 export interface DashboardFiltersResult {
   searchQuery: string;
@@ -14,11 +17,11 @@ export function useDashboardFilters(): DashboardFiltersResult {
   const [selectedTab, setSelectedTab] = useState("overview");
 
   const handleExportProject = useCallback(() => {
-    console.log("Exporting project...");
+    log.debug("Exporting project...");
   }, []);
 
   const handleImportProject = useCallback(() => {
-    console.log("Importing project...");
+    log.debug("Importing project...");
   }, []);
 
   return {

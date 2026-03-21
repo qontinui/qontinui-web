@@ -1,4 +1,7 @@
 import { useCallback, useRef, useState, useEffect, useMemo } from "react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("useScreenshotUploader");
 import { calculateImageHashes } from "@/utils/imageUtils";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -71,8 +74,8 @@ export function useScreenshotUploader(
       projectScreenshotsData.screenshots.length > 0
     ) {
       hasShownSavedMessageRef.current = true;
-      console.log(
-        "[ScreenshotUploader] Loading saved screenshots:",
+      log.debug(
+        "Loading saved screenshots:",
         projectScreenshotsData.screenshots.length
       );
       setSaveMessage({

@@ -16,6 +16,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { History, RotateCcw, Trash2, Clock } from "lucide-react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("PropertyHistory");
 
 export interface PropertyHistoryProps {
   actionId: string;
@@ -53,7 +56,7 @@ export const PropertyHistory: React.FC<PropertyHistoryProps> = ({
   };
 
   const handleRevert = (property: string) => {
-    console.log("Revert property:", property);
+    log.debug("Revert property:", property);
     // This would need to integrate with canvas store to actually revert
   };
 

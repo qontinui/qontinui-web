@@ -21,6 +21,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { httpClient } from "@/services/service-factory";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("SystemTab");
 
 interface SystemHealth {
   api_status: "healthy" | "degraded" | "down";
@@ -69,19 +72,13 @@ export default function SystemTab() {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const url = `${apiUrl}/api/v1/admin/system/health`;
 
-      console.log("[SystemTab] Loading system health from:", url);
+      log.debug("Loading system health from:", url);
 
       const response = await httpClient.fetch(url);
 
-      console.log(
-        "[SystemTab] Response status:",
-        response.status,
-        response.statusText
-      );
-
       if (response.ok) {
         const data = await response.json();
-        console.log("[SystemTab] System health loaded successfully");
+        log.debug("System health loaded successfully");
         setHealth(data);
         setError(null);
       } else {

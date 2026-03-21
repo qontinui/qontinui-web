@@ -22,6 +22,9 @@ import {
 } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useUIBridgeOptional } from "@qontinui/ui-bridge/react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("RenderLogWrapper");
 
 export interface RenderLogWrapperProps {
   children: ReactNode;
@@ -94,9 +97,9 @@ function RenderLogWrapperContent({
           ...metadata,
         });
 
-        console.debug(`[RenderLogWrapper] Captured snapshot: ${trigger}`);
+        log.debug(`Captured snapshot: ${trigger}`);
       } catch (error) {
-        console.debug("[RenderLogWrapper] Failed to capture snapshot:", error);
+        log.debug("Failed to capture snapshot:", error);
       } finally {
         isCapturingRef.current = false;
       }

@@ -23,6 +23,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { authService } from "@/services/service-factory";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("useAdmin");
 import {
   AdminProjectDetailsSchema,
   AdminProjectsArraySchema,
@@ -73,7 +76,7 @@ export function useAdminStats() {
   // Check if user is authenticated (using hasValidToken which checks auth state)
   const isAuthenticated = authService.tokenManager.hasValidToken();
 
-  console.log("[useAdminStats] isAuthenticated:", isAuthenticated);
+  log.debug("useAdminStats isAuthenticated:", isAuthenticated);
 
   return useQuery({
     queryKey: adminKeys.stats(),
@@ -81,7 +84,7 @@ export function useAdminStats() {
       const apiUrl = getApiUrl();
       const url = `${apiUrl}/api/v1/admin/stats`;
 
-      console.log("[useAdminStats] Fetching from:", url);
+      log.debug("useAdminStats fetching from:", url);
 
       // Use credentials: 'include' to send HttpOnly cookies for authentication
       const response = await fetch(url, {
@@ -91,11 +94,7 @@ export function useAdminStats() {
         credentials: "include",
       });
 
-      console.log(
-        "[useAdminStats] Response:",
-        response.status,
-        response.statusText
-      );
+      log.debug("useAdminStats response:", response.status);
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => "Unknown error");
@@ -123,7 +122,7 @@ export function useAdminStats() {
 export function useAdminUsers(params?: { limit?: number; offset?: number }) {
   const isAuthenticated = authService.tokenManager.hasValidToken();
 
-  console.log("[useAdminUsers] isAuthenticated:", isAuthenticated);
+  log.debug("useAdminUsers isAuthenticated:", isAuthenticated);
 
   return useQuery({
     queryKey: adminKeys.userList(params),
@@ -136,7 +135,7 @@ export function useAdminUsers(params?: { limit?: number; offset?: number }) {
 
       const url = `${apiUrl}/api/v1/admin/users${searchParams.toString() ? `?${searchParams}` : ""}`;
 
-      console.log("[useAdminUsers] Fetching from:", url);
+      log.debug("useAdminUsers fetching from:", url);
 
       const response = await fetch(url, {
         headers: {
@@ -145,11 +144,7 @@ export function useAdminUsers(params?: { limit?: number; offset?: number }) {
         credentials: "include",
       });
 
-      console.log(
-        "[useAdminUsers] Response:",
-        response.status,
-        response.statusText
-      );
+      log.debug("useAdminUsers response:", response.status);
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => "Unknown error");

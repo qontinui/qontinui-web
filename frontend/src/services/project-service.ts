@@ -1,5 +1,8 @@
 import { HttpClient } from "./http-client";
 import { ApiConfig } from "./api-config";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("ProjectService");
 import type {
   Project,
   ProjectCreate,
@@ -20,15 +23,11 @@ export class ProjectService {
 
   async getProjects(): Promise<Project[]> {
     const url = `${this.apiUrl}/api/v1/projects`;
-    console.log("[ProjectService] Fetching projects from:", url);
+    log.debug("Fetching projects from:", url);
 
     const response = await this.httpClient.fetch(url);
 
-    console.log("[ProjectService] Response:", {
-      status: response.status,
-      statusText: response.statusText,
-      ok: response.ok,
-    });
+    log.debug("Response:", { status: response.status, ok: response.ok });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
@@ -40,7 +39,7 @@ export class ProjectService {
       throw new Error(`Failed to get projects: ${response.statusText}`);
     }
     const projects = await response.json();
-    console.log("[ProjectService] Projects received:", projects?.length || 0);
+    log.debug("Projects received:", projects?.length || 0);
     return projects;
   }
 

@@ -8,6 +8,9 @@ import {
   DBErrorType,
   handleStorageCorruption,
 } from "./db/error-handler";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("PatternOptimizationStorage");
 
 const DB_NAME = "PatternOptimizationDB";
 const DB_VERSION = 1;
@@ -40,9 +43,7 @@ class PatternOptimizationStorage {
         if (recovered) {
           try {
             this.db = await this.openDatabaseInternal();
-            console.log(
-              "[PatternOptimizationStorage] Successfully recovered and reconnected"
-            );
+            log.debug("Successfully recovered and reconnected");
             return;
           } catch (retryError) {
             console.error(

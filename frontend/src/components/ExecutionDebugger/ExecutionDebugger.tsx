@@ -1,5 +1,8 @@
 import React, { useState } from "react";
 import { Bug, X, Maximize2, Minimize2 } from "lucide-react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("ExecutionDebugger");
 import { useExecutionDebugger } from "../../stores/execution-debugger-store";
 import { ExecutionControls } from "./ExecutionControls";
 import { ActionTimeline } from "./ActionTimeline";
@@ -192,8 +195,7 @@ export const ExecutionDebugger: React.FC<ExecutionDebuggerProps> = ({
               <ActionTimeline
                 actions={actions}
                 onActionClick={(index) => {
-                  // Could implement jump-to-action functionality here
-                  console.log("Clicked action:", index);
+                  log.debug("Clicked action:", index);
                 }}
               />
             )}

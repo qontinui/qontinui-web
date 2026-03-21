@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { StateImage } from "../../types/stateDiscovery";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("PatternOptimizationTab");
 import { ScreenshotSelector } from "../screenshot-selector";
 
 interface Pattern {
@@ -74,7 +77,7 @@ export const PatternOptimizationTab: React.FC = () => {
 
       if (response.ok) {
         const data = await response.json();
-        console.log("Pattern created:", data);
+        log.debug("Pattern created:", data.id);
         fetchPatterns(); // Refresh patterns list
         setPatternName("");
       }
@@ -109,7 +112,7 @@ export const PatternOptimizationTab: React.FC = () => {
 
       if (response.ok) {
         const data = await response.json();
-        console.log("Pattern optimized:", data);
+        log.debug("Pattern optimized:", data.id);
         fetchPatterns(); // Refresh patterns
       }
     } catch (error) {
@@ -133,7 +136,12 @@ export const PatternOptimizationTab: React.FC = () => {
                 tabIndex={0}
                 aria-selected={selectedPattern?.id === pattern.id}
                 onClick={() => setSelectedPattern(pattern)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedPattern(pattern); } }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setSelectedPattern(pattern);
+                  }
+                }}
                 className={`p-2 border rounded cursor-pointer hover:bg-surface-raised ${
                   selectedPattern?.id === pattern.id
                     ? "border-blue-500 bg-blue-50"

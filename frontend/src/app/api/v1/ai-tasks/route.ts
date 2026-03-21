@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("AITasksRoute");
 
 /**
  * API Route Handler for /api/v1/ai-tasks
@@ -21,13 +24,10 @@ async function getAccessToken(request: NextRequest): Promise<string | null> {
   const accessTokenCookie = cookieStore.get("access_token");
   const authorizationHeader = request.headers.get("Authorization");
 
-  // Debug logging
-  console.log("[AI Tasks API Route] getAccessToken:", {
+  log.debug("getAccessToken", {
     hasCookieStore: !!cookieStore,
     accessTokenCookieExists: !!accessTokenCookie,
-    accessTokenCookieValueLength: accessTokenCookie?.value?.length || 0,
     hasAuthHeader: !!authorizationHeader,
-    allCookies: cookieStore.getAll().map((c) => c.name),
   });
 
   if (accessTokenCookie?.value) {

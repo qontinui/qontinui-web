@@ -36,6 +36,9 @@ import type {
   UIBridgeExplorationConfig,
 } from "../exploration-config-types";
 import { getUrlLabel, getUrlPlaceholder } from "../exploration-config-utils";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("TargetAppConfigSection");
 
 interface TargetAppConfigSectionProps {
   config: UIBridgeExplorationConfig;
@@ -222,15 +225,9 @@ export function TargetAppConfigSection({
               <Select
                 value={config.selectedBrowserTabId?.toString() || "active"}
                 onValueChange={(value) => {
-                  console.log(
-                    "[ExplorationConfigPanel] Tab selection changed:",
-                    value
-                  );
+                  log.debug("Tab selection changed:", value);
                   const tabId = value === "active" ? null : parseInt(value, 10);
-                  console.log(
-                    "[ExplorationConfigPanel] Calling onSelectBrowserTab with:",
-                    tabId
-                  );
+                  log.debug("Calling onSelectBrowserTab with:", tabId);
                   onSelectBrowserTab?.(tabId);
                 }}
                 disabled={isRunning}

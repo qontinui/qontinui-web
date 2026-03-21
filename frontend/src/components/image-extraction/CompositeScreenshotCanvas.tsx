@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useCallback } from "react";
+import { createLogger } from "@/lib/logger";
 import type { CompositeScreenshotCanvasProps } from "./types";
 import { useImageLoader } from "./_hooks/useImageLoader";
 import { useCanvasViewport } from "@/components/common/_hooks/useCanvasViewport";
@@ -9,6 +10,8 @@ import { Maximize2 } from "lucide-react";
 import { InfoOverlay } from "./_components/InfoOverlay";
 
 export type { CompositeScreenshotDisplay } from "./types";
+
+const log = createLogger("CompositeScreenshotCanvas");
 
 export const CompositeScreenshotCanvas: React.FC<
   CompositeScreenshotCanvasProps
@@ -24,11 +27,10 @@ export const CompositeScreenshotCanvas: React.FC<
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Debug: mount/unmount tracking
   useEffect(() => {
-    console.log("[CompositeCanvas] MOUNTED");
+    log.debug("MOUNTED");
     return () => {
-      console.log("[CompositeCanvas] UNMOUNTED");
+      log.debug("UNMOUNTED");
     };
   }, []);
 

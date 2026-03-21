@@ -18,6 +18,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { httpClient } from "@/services/service-factory";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("AnalyticsTab");
 
 interface AnalyticsData {
   dau: number;
@@ -48,19 +51,13 @@ export default function AnalyticsTab() {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const url = `${apiUrl}/api/v1/admin/analytics`;
 
-      console.log("[AnalyticsTab] Loading analytics from:", url);
+      log.debug("Loading analytics from:", url);
 
       const response = await httpClient.fetch(url);
 
-      console.log(
-        "[AnalyticsTab] Response status:",
-        response.status,
-        response.statusText
-      );
-
       if (response.ok) {
         const data = await response.json();
-        console.log("[AnalyticsTab] Analytics data loaded successfully");
+        log.debug("Analytics data loaded successfully");
         setAnalytics(data);
         setError(null);
       } else {

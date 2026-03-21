@@ -10,6 +10,9 @@ import type { LibraryItem, BuilderMode } from "../types";
 import { FormatConversionDialog } from "@/components/format-conversion-dialog";
 import { toast } from "sonner";
 import { useAutomation } from "@/contexts/automation-context";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("useFormatConversion");
 
 interface UseFormatConversionOptions {
   onModeChange?: (mode: BuilderMode) => void;
@@ -26,10 +29,7 @@ export function useFormatConversion(options?: UseFormatConversionOptions) {
    * Open conversion dialog for an item
    */
   const openConversion = useCallback((item: LibraryItem) => {
-    console.log(
-      "[useFormatConversion] Opening conversion dialog for:",
-      item.name
-    );
+    log.debug("Opening conversion dialog for:", item.name);
     setConversionItem(item);
     setDialogOpen(true);
   }, []);
@@ -48,10 +48,7 @@ export function useFormatConversion(options?: UseFormatConversionOptions) {
    */
   const handleConversionComplete = useCallback(
     (converted: LibraryItem) => {
-      console.log(
-        "[useFormatConversion] Conversion complete, updating workflow:",
-        converted.name
-      );
+      log.debug("Conversion complete, updating workflow:", converted.name);
 
       // Update the workflow with new viewMode
       updateWorkflow(converted);
@@ -61,10 +58,7 @@ export function useFormatConversion(options?: UseFormatConversionOptions) {
 
       // Switch the builder mode to match the new viewMode
       if (options?.onModeChange) {
-        console.log(
-          "[useFormatConversion] Switching builder mode to:",
-          viewMode
-        );
+        log.debug("Switching builder mode to:", viewMode);
         options.onModeChange(viewMode);
       }
 
@@ -72,7 +66,6 @@ export function useFormatConversion(options?: UseFormatConversionOptions) {
         description: `"${converted.name}" will now open in ${viewLabel.toLowerCase()} mode.`,
       });
 
-      console.log("[useFormatConversion] Toast shown, closing dialog");
       closeConversion();
     },
     [updateWorkflow, closeConversion, options]

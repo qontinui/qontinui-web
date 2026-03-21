@@ -18,6 +18,9 @@ import {
   ValidationError,
 } from "../lib/action-schema/workflow-validation";
 import { migrateWorkflow, detectWorkflowVersion } from "./workflow-migration";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("WorkflowFileManager");
 
 // ============================================================================
 // Types
@@ -452,13 +455,9 @@ export class WorkflowFileManager {
    * Export workflow as JSON download
    */
   exportWorkflow(workflow: Workflow, options: ExportOptions = {}): void {
-    console.log("[WorkflowFileManager] exportWorkflow called", {
-      hasWorkflow: !!workflow,
-      workflowType: typeof workflow,
-      workflowKeys: workflow ? Object.keys(workflow) : [],
+    log.debug("exportWorkflow called", {
       workflowName: workflow?.name,
-      workflowId: workflow?.id,
-      options,
+      actionsCount: workflow?.actions?.length,
     });
 
     const { filename, pretty = true, includeMetadata = true } = options;
@@ -485,26 +484,15 @@ export class WorkflowFileManager {
         }
       : workflow;
 
-    console.log("[WorkflowFileManager] Prepared export workflow", {
-      hasMetadata: !!exportWorkflow.metadata,
-      actionsCount: exportWorkflow.actions?.length,
-    });
-
     // Convert to JSON
     const json = pretty
       ? JSON.stringify(exportWorkflow, null, 2)
       : JSON.stringify(exportWorkflow);
 
-    console.log("[WorkflowFileManager] JSON stringified", {
-      jsonLength: json.length,
-    });
-
     // Generate filename
     const finalFilename =
       filename ||
       `${workflow.name.replace(/[^a-z0-9]/gi, "_").toLowerCase()}${WORKFLOW_FILE_EXTENSION}`;
-
-    console.log("[WorkflowFileManager] Generated filename", { finalFilename });
 
     // Create download
     const blob = new Blob([json], { type: "application/json" });
@@ -514,7 +502,7 @@ export class WorkflowFileManager {
     link.download = finalFilename;
     link.click();
 
-    console.log("[WorkflowFileManager] Download triggered");
+    log.debug("Download triggered:", finalFilename);
 
     // Cleanup
     setTimeout(() => URL.revokeObjectURL(url), 100);

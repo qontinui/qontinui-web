@@ -33,6 +33,9 @@ import { ExpectedOutputsCard } from "./_components/ExpectedOutputsCard";
 import { AssertionsCard } from "./_components/AssertionsCard";
 import { AdvancedSettingsCard } from "./_components/AdvancedSettingsCard";
 import { ActionFooterCard } from "./_components/ActionFooterCard";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("TestCaseEditor");
 
 // ============================================================================
 // Types
@@ -173,7 +176,7 @@ export function TestCaseEditor({
 
       // Show result notification
       if (result.passed) {
-        console.log("Test passed!", result);
+        log.debug("Test passed!", result);
         alert("Test passed! All assertions succeeded.");
       } else {
         console.error("Test failed!", result);

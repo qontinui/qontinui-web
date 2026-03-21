@@ -42,6 +42,9 @@ import {
   Minimize2,
 } from "lucide-react";
 import { actionConfigRegistry } from "@/components/action-properties/ActionConfigRegistry";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("CanvasPropertiesPanel");
 
 export interface CanvasPropertiesPanelProps {
   position?: "right" | "bottom" | "floating";
@@ -382,7 +385,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => console.log("Discard changes")}
+                onClick={() => log.debug("Discard changes")}
                 className="h-7 text-xs"
               >
                 <RotateCcw className="w-3 h-3 mr-1" />
@@ -390,7 +393,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
               </Button>
               <Button
                 size="sm"
-                onClick={() => console.log("Save changes")}
+                onClick={() => log.debug("Save changes")}
                 className="h-7 text-xs bg-blue-600 hover:bg-blue-700"
               >
                 <Save className="w-3 h-3 mr-1" />

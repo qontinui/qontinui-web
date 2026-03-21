@@ -1,5 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { StateImageRenderer, RenderMode } from "@/lib/state-image-renderer";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("StateImageViewer");
 
 export interface StateImageViewerProps {
   image: string; // Base64 data URL
@@ -65,17 +68,13 @@ export const StateImageViewer: React.FC<StateImageViewerProps> = ({
 
         // If mode is 'with-mask' but no mask available, fall back to 'normal'
         if (mode === "with-mask" && !renderer.hasMask()) {
-          console.log(
-            "[StateImageViewer] No mask available, rendering in normal mode"
-          );
+          log.debug("No mask available, rendering in normal mode");
           renderMode = "normal";
         }
 
         // If mode is 'mask-only' but no mask available, show empty
         if (mode === "mask-only" && !renderer.hasMask()) {
-          console.log(
-            "[StateImageViewer] No mask available for mask-only mode"
-          );
+          log.debug("No mask available for mask-only mode");
         }
 
         // Render

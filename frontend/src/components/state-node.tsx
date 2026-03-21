@@ -11,6 +11,9 @@ import { Badge } from "@/components/ui/badge";
 import { ImageIcon, Play, MapPin, Square, Type } from "lucide-react";
 import { StateImageViewer } from "@/components/state-image-viewer";
 import { useImages, type Pattern } from "@/hooks/automation";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("StateNode");
 
 interface ImageAsset {
   id: string;
@@ -172,17 +175,8 @@ export function StateNode({
                       ? resolvePatternImage(firstPattern)
                       : null;
 
-                    // Debug log for troubleshooting image display issues
                     if (!imageData) {
-                      console.log("[StateNode] No imageData for stateImage:", {
-                        stateId: state.id,
-                        stateImageId: stateImage.id,
-                        stateImageName: stateImage.name,
-                        hasPatterns: !!stateImage.patterns,
-                        patternsLength: stateImage.patterns?.length,
-                        firstPatternId: firstPattern?.id,
-                        firstPatternImageId: firstPattern?.imageId,
-                      });
+                      log.debug("No imageData for stateImage:", stateImage.id);
                     }
                     return (
                       <div key={stateImage.id} className="relative">
@@ -297,7 +291,13 @@ export function StateNode({
             e.stopPropagation();
             onAddOutgoingTransition(state.id);
           }}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onAddOutgoingTransition(state.id); } }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              e.stopPropagation();
+              onAddOutgoingTransition(state.id);
+            }
+          }}
           title="Add Outgoing Transition"
         >
           <div className="w-8 h-8 rounded-full bg-[var(--brand-success)]/70 hover:bg-[var(--brand-success)] flex items-center justify-center shadow-lg">

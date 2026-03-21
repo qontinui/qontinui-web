@@ -12,6 +12,9 @@ import {
   DBErrorType,
   handleStorageCorruption,
 } from "@/lib/db/error-handler";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("PageStateDB");
 
 const DB_NAME = "qontinui-page-state-db";
 const DB_VERSION = 1;
@@ -135,7 +138,7 @@ class PageStateDB {
             this.db = db;
             this.isFatallyFailed = false;
             this.fatalError = null;
-            console.log("[PageStateDB] Successfully recovered and reconnected");
+            log.debug("Successfully recovered and reconnected");
             return db;
           } catch (retryError) {
             console.error(
@@ -412,7 +415,7 @@ class PageStateDB {
         await this.deletePageState(pageState.key);
       }
 
-      console.log(`Cleared page state for user ${userId}`);
+      log.debug(`Cleared page state for user ${userId}`);
     } catch (error) {
       console.error("Error clearing user data:", error);
     }
@@ -450,9 +453,7 @@ class PageStateDB {
         await this.deletePageState(pageState.key);
       }
 
-      console.log(
-        `Cleared page state for project ${projectName} user ${userId}`
-      );
+      log.debug(`Cleared page state for project ${projectName} user ${userId}`);
     } catch (error) {
       console.error("Error clearing project data:", error);
     }
@@ -481,7 +482,7 @@ class PageStateDB {
         transaction.onerror = () => reject(transaction.error);
       });
 
-      console.log("Cleared all page state");
+      log.debug("Cleared all page state");
     } catch (error) {
       console.error("Error clearing all data:", error);
       throw error;

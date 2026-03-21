@@ -12,6 +12,9 @@ import { useIsFavoriteNode, useToggleFavorite } from "@/stores/favorite-nodes";
 import { useIsRecentNode } from "@/stores/recent-nodes";
 import { Star, Plus, GripVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("PaletteItem");
 
 // ============================================================================
 // Types
@@ -53,12 +56,12 @@ export const PaletteItem: React.FC<PaletteItemProps> = ({
   };
 
   const handleClick = (event?: React.MouseEvent) => {
-    console.log("[PaletteItem] handleClick called for:", metadata.type);
+    log.debug("handleClick:", metadata.type);
     if (event) {
       event.stopPropagation();
     }
     if (onAdd) {
-      console.log("[PaletteItem] Calling onAdd for:", metadata.type);
+      log.debug("Calling onAdd for:", metadata.type);
       onAdd(metadata.type);
     }
   };

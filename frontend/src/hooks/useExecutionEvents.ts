@@ -11,6 +11,9 @@
  */
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("useExecutionEvents");
 
 // Default runner URL - can be overridden via environment variable
 // Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
@@ -270,13 +273,13 @@ export function useExecutionEvents(options: UseExecutionEventsOptions = {}) {
         .replace(/^https:/, "wss:");
       const fullWsUrl = `${wsUrl}/ws/events`;
 
-      console.log("[useExecutionEvents] Connecting to:", fullWsUrl);
+      log.debug("Connecting to:", fullWsUrl);
       setState((prev) => ({ ...prev, connectionState: "connecting" }));
 
       wsRef.current = new WebSocket(fullWsUrl);
 
       wsRef.current.onopen = () => {
-        console.log("[useExecutionEvents] Connected");
+        log.debug("Connected");
         reconnectAttempts.current = 0;
         setState((prev) => ({
           ...prev,
@@ -307,11 +310,7 @@ export function useExecutionEvents(options: UseExecutionEventsOptions = {}) {
       };
 
       wsRef.current.onclose = (event) => {
-        console.log(
-          "[useExecutionEvents] Disconnected:",
-          event.code,
-          event.reason
-        );
+        log.debug("Disconnected:", event.code, event.reason);
         stopHeartbeat();
 
         const wasNormalClosure = event.code === 1000;
@@ -336,8 +335,8 @@ export function useExecutionEvents(options: UseExecutionEventsOptions = {}) {
             30000
           );
 
-          console.log(
-            `[useExecutionEvents] Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current}/${maxReconnectAttempts})`
+          log.debug(
+            `Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current}/${maxReconnectAttempts})`
           );
 
           reconnectTimeout.current = setTimeout(() => {

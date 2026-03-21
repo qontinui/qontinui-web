@@ -8,6 +8,9 @@ import type { StateCreator } from "zustand";
 import type { AutomationStore, ImageSlice } from "../types";
 import { projectLogger } from "@/lib/project-logger";
 import { resolveImageDataUrl } from "@/components/image-library/utils";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("ImageSlice");
 
 export const createImageSlice: StateCreator<
   AutomationStore,
@@ -27,13 +30,7 @@ export const createImageSlice: StateCreator<
   },
 
   addImage: (image) => {
-    console.log("[ImageSlice] addImage called:", {
-      id: image.id,
-      name: image.name,
-      hasUrl: !!image.url,
-      hasMask: !!image.mask,
-      projectName: image.projectName,
-    });
+    log.debug("addImage called:", { id: image.id, name: image.name });
     projectLogger.info("ImageSlice", "addImage", {
       id: image.id,
       name: image.name,
@@ -46,10 +43,6 @@ export const createImageSlice: StateCreator<
         ...image,
         projectName: image.projectName || state.projectName,
       });
-      console.log(
-        "[ImageSlice] addImage complete - new images count:",
-        state.images.length
-      );
     });
     get().triggerSave();
   },
@@ -153,7 +146,7 @@ export const createImageSlice: StateCreator<
 
   resolvePatternImage: (pattern) => {
     if (!pattern.imageId) {
-      console.log("[ImageSlice] resolvePatternImage: No imageId in pattern", {
+      log.debug("resolvePatternImage: No imageId in pattern", {
         patternId: pattern.id,
         patternName: pattern.name,
       });
@@ -161,10 +154,9 @@ export const createImageSlice: StateCreator<
     }
     const image = get().getImageById(pattern.imageId);
     if (!image) {
-      console.log("[ImageSlice] resolvePatternImage: Image not found", {
+      log.debug("resolvePatternImage: Image not found", {
         patternId: pattern.id,
         patternImageId: pattern.imageId,
-        availableImageIds: get().images.map((i) => i.id),
       });
       return null;
     }

@@ -15,6 +15,9 @@ import {
   IfActionConfig,
   LoopActionConfig,
 } from "../action-schema/configs/control-flow-actions";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("WorkflowConverterExamples");
 
 /**
  * Example 1: Simple Linear Workflow
@@ -61,7 +64,7 @@ export function exampleLinearWorkflow() {
     version: "1.0.0",
   });
 
-  console.log("Linear Workflow:", {
+  log.debug("Linear Workflow:", {
     actions: workflow.actions.length,
     connections: Object.keys(workflow.connections).length,
   });
@@ -166,15 +169,15 @@ export function exampleDetailedConversion() {
 
   const result = converter.convert(actions);
 
-  console.log("Conversion Statistics:");
-  console.log("  Actions Converted:", result.stats.actionsConverted);
-  console.log("  Connections Created:", result.stats.connectionsCreated);
-  console.log("  Control Flow Expanded:", result.stats.controlFlowExpanded);
-  console.log("  Max Depth:", result.stats.maxDepth);
+  log.debug("Conversion Statistics:");
+  log.debug("  Actions Converted:", result.stats.actionsConverted);
+  log.debug("  Connections Created:", result.stats.connectionsCreated);
+  log.debug("  Control Flow Expanded:", result.stats.controlFlowExpanded);
+  log.debug("  Max Depth:", result.stats.maxDepth);
 
   if (result.warnings.length > 0) {
-    console.log("\nWarnings:");
-    result.warnings.forEach((warning) => console.log("  -", warning));
+    log.debug("\nWarnings:");
+    result.warnings.forEach((warning) => log.debug("  -", warning));
   }
 
   return result.workflow;
@@ -315,10 +318,10 @@ export function exampleComplexWorkflow() {
     },
   }).convert(actions);
 
-  console.log("Complex Workflow Statistics:");
-  console.log("  Total Actions:", result.stats.actionsConverted);
-  console.log("  Total Connections:", result.stats.connectionsCreated);
-  console.log("  Control Flow Actions:", result.stats.controlFlowExpanded);
+  log.debug("Complex Workflow Statistics:");
+  log.debug("  Total Actions:", result.stats.actionsConverted);
+  log.debug("  Total Connections:", result.stats.connectionsCreated);
+  log.debug("  Control Flow Actions:", result.stats.controlFlowExpanded);
 
   return result.workflow;
 }
@@ -343,7 +346,7 @@ export function exampleExtractNestedActions() {
   };
 
   const nestedActionIds = converter.extractNestedActions(ifAction);
-  console.log("Nested action IDs:", nestedActionIds);
+  log.debug("Nested action IDs:", nestedActionIds);
   // ['action-1', 'action-2', 'action-3']
 
   return nestedActionIds;

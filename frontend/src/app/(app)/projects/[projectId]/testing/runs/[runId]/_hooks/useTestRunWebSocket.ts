@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { ApiConfig } from "@/services/api-config";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("TestRunWebSocket");
 
 interface WebSocketMessage {
   type: string;
@@ -47,7 +50,7 @@ export function useTestRunWebSocket(
     const websocket = new WebSocket(wsUrl);
 
     websocket.onopen = () => {
-      console.log("[TestRunDetail] WebSocket connected");
+      log.debug("WebSocket connected");
     };
 
     websocket.onmessage = (event) => {
@@ -85,7 +88,7 @@ export function useTestRunWebSocket(
     };
 
     websocket.onclose = () => {
-      console.log("[TestRunDetail] WebSocket disconnected");
+      log.debug("WebSocket disconnected");
     };
 
     return () => {

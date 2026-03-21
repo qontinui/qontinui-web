@@ -17,6 +17,9 @@ import {
 } from "lucide-react";
 import { TransitionTimeline } from "./TransitionTimeline";
 import { useTestingWebSocket } from "@/hooks/useTestingWebSocket";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("LiveTestExecution");
 
 interface LiveTestExecutionProps {
   testRunId?: string;
@@ -45,18 +48,18 @@ export function LiveTestExecution({
     testRunId,
     enabled: !!testRunId,
     onConnect: () => {
-      console.log("[LiveTestExecution] Connected to WebSocket");
+      log.debug("Connected to WebSocket");
       setConnectionError(null);
     },
     onDisconnect: () => {
-      console.log("[LiveTestExecution] Disconnected from WebSocket");
+      log.debug("Disconnected from WebSocket");
     },
     onError: (error) => {
       console.error("[LiveTestExecution] WebSocket error:", error);
       setConnectionError(error.message);
     },
     onTestComplete: (data) => {
-      console.log("[LiveTestExecution] Test complete:", data);
+      log.debug("Test complete:", data);
       if (onComplete) {
         onComplete(data);
       }

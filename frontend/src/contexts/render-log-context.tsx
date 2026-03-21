@@ -22,6 +22,9 @@ import React, {
   useState,
 } from "react";
 import { usePathname } from "next/navigation";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("RenderLogContext");
 
 // Configuration
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -329,14 +332,11 @@ export function RenderLogProvider({ children }: { children: React.ReactNode }) {
           setLastCaptureTime(Date.now());
         } else {
           // Silently fail - render logging is non-critical
-          console.debug(
-            "[RenderLog] Failed to send snapshot:",
-            response.status
-          );
+          log.debug("Failed to send snapshot:", response.status);
         }
       } catch (error) {
         // Silently fail
-        console.debug("[RenderLog] Error sending snapshot:", error);
+        log.debug("Error sending snapshot:", error);
       }
     },
     [sessionId]

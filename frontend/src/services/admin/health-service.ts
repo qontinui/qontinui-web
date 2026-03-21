@@ -6,6 +6,9 @@
  */
 
 import { ApiConfig } from "../api-config";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("HealthService");
 
 export interface HealthOverview {
   api_status: "healthy" | "degraded" | "down";
@@ -362,9 +365,7 @@ class HealthService {
     // Note: The backend provides aggregate security stats, not individual warnings
     // Resolving individual warnings is not supported in the current implementation
     // This method is a no-op to prevent UI errors
-    console.log(
-      `[HealthService] Resolve warning requested for: ${warningId} (not implemented)`
-    );
+    log.debug(`Resolve warning requested for: ${warningId} (not implemented)`);
     return Promise.resolve();
   }
 

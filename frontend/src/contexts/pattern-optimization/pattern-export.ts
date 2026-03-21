@@ -1,4 +1,7 @@
 import type { ExtractedPattern } from "@/types/pattern-optimization";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("PatternExport");
 
 export function exportPattern(
   pattern: ExtractedPattern,
@@ -44,5 +47,5 @@ export function exportPattern(
   link.setAttribute("download", filename);
   link.click();
 
-  console.log("[PatternOptimization] Exported pattern:", pattern.id);
+  log.debug("Exported pattern:", pattern.id);
 }

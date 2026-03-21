@@ -17,6 +17,9 @@
 
 import { Workflow, Action } from "../lib/action-schema/action-types";
 import { workflowFileManager } from "./workflow-file-manager";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("CanvasExport");
 
 // ============================================================================
 // Types
@@ -358,13 +361,9 @@ export class CanvasExportService {
     options: ExportOptions
   ): CanvasExportResult {
     try {
-      console.log("[CanvasExport] Starting JSON export", {
+      log.debug("Starting JSON export", {
         workflowName: workflow?.name,
-        workflowId: workflow?.id,
-        hasWorkflow: !!workflow,
-        workflowKeys: workflow ? Object.keys(workflow) : [],
         actionsCount: workflow?.actions?.length,
-        options,
       });
 
       if (!workflow) {
@@ -380,7 +379,7 @@ export class CanvasExportService {
         includeMetadata: options.includeMetadata,
       });
 
-      console.log("[CanvasExport] JSON export successful");
+      log.debug("JSON export successful");
 
       return {
         success: true,

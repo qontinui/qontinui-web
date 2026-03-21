@@ -7,6 +7,9 @@
 
 import React, { useCallback } from "react";
 import { Monitor, Trash2 } from "lucide-react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("ScreenshotPanel");
 import {
   ScreenshotPicker,
   type CapturedScreenshot,
@@ -55,8 +58,7 @@ export const ScreenshotPanel: React.FC<ScreenshotPanelProps> = ({
   // Handle selecting from project screenshots (placeholder - integrate with automation context)
   const handleSelectProjectScreenshot = useCallback(
     async (screenshotId: string) => {
-      // This would need integration with the automation context
-      console.log("Select project screenshot:", screenshotId);
+      log.debug("Select project screenshot:", screenshotId);
     },
     []
   );

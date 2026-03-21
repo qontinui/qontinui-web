@@ -1,6 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("RAGSetupDialog");
 import {
   Dialog,
   DialogContent,
@@ -80,9 +83,9 @@ export function RAGSetupDialog({
   const checkAvailability = async () => {
     setState("checking");
     try {
-      console.log("[RAG] Checking runner connection...");
+      log.debug("Checking runner connection...");
       const isConnected = await ragSetupService.isRunnerConnected();
-      console.log("[RAG] Runner connected:", isConnected);
+      log.debug("Runner connected:", isConnected);
 
       if (!isConnected) {
         setAvailability({
@@ -94,9 +97,9 @@ export function RAGSetupDialog({
         return;
       }
 
-      console.log("[RAG] Checking RAG availability...");
+      log.debug("Checking RAG availability...");
       const result = await ragSetupService.checkRAGAvailability();
-      console.log("[RAG] Availability result:", result);
+      log.debug("Availability result:", result);
       setAvailability(result);
       setState("initial");
     } catch (err) {
@@ -113,7 +116,7 @@ export function RAGSetupDialog({
   };
 
   const startSetup = async () => {
-    console.log("[RAG] Starting setup for project:", projectId);
+    log.debug("Starting setup for project:", projectId);
     setState("processing");
     setError(null);
     setProgress({
@@ -124,12 +127,12 @@ export function RAGSetupDialog({
     });
 
     try {
-      console.log("[RAG] Calling startRAGSetup with config:", {
-        projectId,
-        stateCount: config.states?.length || 0,
-      });
+      log.debug(
+        "Calling startRAGSetup, stateCount:",
+        config.states?.length || 0
+      );
       const result = await ragSetupService.startRAGSetup(projectId, config);
-      console.log("[RAG] startRAGSetup result:", result);
+      log.debug("startRAGSetup result:", result);
 
       // Start polling for progress
       const interval = setInterval(async () => {

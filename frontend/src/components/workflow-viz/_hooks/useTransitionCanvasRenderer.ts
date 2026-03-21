@@ -1,4 +1,7 @@
 import { useEffect } from "react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("TransitionCanvasRenderer");
 import type { Monitor } from "@/lib/schemas/geometry";
 import type { Transition } from "@/contexts/automation-context/types";
 import type { UseTransitionAnimationResult } from "../TransitionAnimationController";
@@ -73,32 +76,20 @@ export function useTransitionCanvasRenderer(
     const data = animation.data;
     const state = animation.state;
 
-    if (
-      process.env.NODE_ENV === "development" &&
-      state.phase === "executing-action"
-    ) {
-      console.log(
-        "[TransitionAnimation] Canvas RENDER during executing-action:",
-        {
-          phase: state.phase,
-          progress: state.progress,
-          globalActionIndex: state.globalActionIndex,
-          currentAction: animation.currentAction?.type,
-          currentActionName: animation.currentAction?.name,
-        }
-      );
+    if (state.phase === "executing-action") {
+      log.debug("Canvas RENDER during executing-action:", {
+        phase: state.phase,
+        progress: state.progress,
+        globalActionIndex: state.globalActionIndex,
+        currentAction: animation.currentAction?.type,
+      });
     }
 
     if (!data) {
-      if (process.env.NODE_ENV === "development") {
-        console.log(
-          "[TransitionAnimation] Canvas: rendering with no data (showing placeholder)",
-          {
-            phase: state.phase,
-            hasTransition: !!transition,
-          }
-        );
-      }
+      log.debug("Canvas: rendering with no data (showing placeholder)", {
+        phase: state.phase,
+        hasTransition: !!transition,
+      });
       drawPlaceholder(ctx, bounds);
     } else {
       drawStates(ctx, data, state, loadedImages, bounds, monitors);

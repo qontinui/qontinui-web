@@ -13,6 +13,9 @@
 
 import type { Workflow } from "../lib/action-schema/action-types";
 import type { Viewport } from "../stores/canvas-store";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("CanvasPersistence");
 
 // ============================================================================
 // Types
@@ -226,7 +229,7 @@ export class PersistenceManager {
    */
   private migrate(state: PersistedCanvasState): PersistedCanvasState {
     // Add migration logic here as schema evolves
-    console.log(
+    log.debug(
       `Migrating canvas state from ${state.version} to ${CURRENT_VERSION}`
     );
 

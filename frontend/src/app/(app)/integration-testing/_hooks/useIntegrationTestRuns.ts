@@ -1,6 +1,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("IntegrationTestRuns");
 import { useProject } from "@/hooks/automation/useProject";
 import { useWorkflows } from "@/hooks/automation/useWorkflows";
 import { useAutomationStore } from "@/stores/automation";
@@ -173,7 +176,7 @@ export function useIntegrationTestRuns() {
     try {
       setRunningTest(true);
       setError(null);
-      console.log("Running integration test with config:", workflowConfig);
+      log.debug("Running integration test with config:", workflowConfig);
       const result = await integrationTestingService.runIntegrationTest(
         projectId,
         workflowConfig,
@@ -182,7 +185,7 @@ export function useIntegrationTestRuns() {
           record_screenshots: true,
         }
       );
-      console.log("Integration test result:", result);
+      log.debug("Integration test result:", result);
       setSelectedRun(result);
       setViewMode("detail");
       fetchRuns();

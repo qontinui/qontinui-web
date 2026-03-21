@@ -31,6 +31,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import type { ImportResult } from "@/services/extraction-service";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("ExportPanel");
 
 interface ExportPanelProps {
   extractionId: string;
@@ -48,10 +51,10 @@ export function ExportPanel({
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
 
   const handleImport = async () => {
-    console.log("[ExportPanel] handleImport called with selectedStateIds:", {
-      size: selectedStateIds.size,
-      ids: Array.from(selectedStateIds),
-    });
+    log.debug(
+      "handleImport called, selectedStateIds count:",
+      selectedStateIds.size
+    );
 
     if (selectedStateIds.size === 0) {
       toast.error("No states selected for import");
@@ -63,9 +66,9 @@ export function ExportPanel({
       setImportResult(null);
 
       const stateIdsArray = Array.from(selectedStateIds);
-      console.log("[ExportPanel] Calling onImport with:", stateIdsArray);
+      log.debug("Calling onImport with count:", stateIdsArray.length);
       const result = await onImport(stateIdsArray);
-      console.log("[ExportPanel] Import returned:", result);
+      log.debug("Import returned:", result);
 
       setImportResult(result);
 

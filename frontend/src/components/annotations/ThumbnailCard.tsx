@@ -16,6 +16,9 @@ import { X, AlertCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("ThumbnailCard");
 
 export interface ThumbnailCardProps {
   id?: string;
@@ -39,10 +42,8 @@ export function ThumbnailCard({
   onRemove,
   fileName,
 }: ThumbnailCardProps) {
-  // Log the URL being used for the thumbnail
   React.useEffect(() => {
-    console.log(`[ThumbnailCard] Screenshot ${index} rendering with URL:`, {
-      url,
+    log.debug(`Screenshot ${index} rendering with URL:`, {
       urlType: url?.startsWith("blob:")
         ? "blob"
         : url?.startsWith("http")
@@ -65,7 +66,12 @@ export function ThumbnailCard({
       )}
       style={{ width: "120px" }}
       onClick={onClick}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick?.(); } }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick?.();
+        }
+      }}
     >
       {/* Screenshot Number Badge */}
       <Badge

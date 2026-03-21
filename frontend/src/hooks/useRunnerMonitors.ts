@@ -3,6 +3,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { runnerClient } from "@/lib/runner-client";
 import type { RunnerMonitor } from "@/lib/schemas/geometry";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("useRunnerMonitors");
 
 /**
  * Default monitor information when runner is not available
@@ -60,7 +63,7 @@ export function useRunnerMonitors(options?: {
         return response.data;
       } catch (error) {
         // Silently fail - runner might be offline
-        console.debug("[useRunnerMonitors] Failed to fetch monitors:", error);
+        log.debug("Failed to fetch monitors:", error);
         return null;
       }
     },

@@ -8,6 +8,9 @@
  */
 
 import { useEffect } from "react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("DevDebugInit");
 
 export function DevDebugInit() {
   useEffect(() => {
@@ -20,7 +23,7 @@ export function DevDebugInit() {
     import("@/lib/dev-debug-logger").then(({ devDebugLogger }) => {
       if (cancelled) return;
       if (devDebugLogger.isEnabled()) {
-        console.info("[DevDebugInit] Dev debug logger active");
+        log.info("Dev debug logger active");
 
         // Expose helper functions to window for easy access
         (window as unknown as Record<string, unknown>).getDevLogs = () =>
@@ -28,9 +31,7 @@ export function DevDebugInit() {
         (window as unknown as Record<string, unknown>).clearDevLogs = () =>
           devDebugLogger.clear();
 
-        console.info(
-          "[DevDebugInit] Use window.getDevLogs() / window.clearDevLogs()"
-        );
+        log.info("Use window.getDevLogs() / window.clearDevLogs()");
       }
     });
 

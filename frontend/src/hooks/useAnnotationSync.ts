@@ -12,6 +12,9 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@/contexts/auth-context";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("useAnnotationSync");
 import type {
   AnnotatedElement,
   BoundingBox,
@@ -366,7 +369,7 @@ export function useAnnotationSync(
       const ws = new WebSocket(url);
 
       ws.onopen = () => {
-        console.log("[AnnotationSync] Connected");
+        log.debug("Connected");
         setIsConnected(true);
         setIsConnecting(false);
         setError(null);
@@ -374,7 +377,7 @@ export function useAnnotationSync(
       };
 
       ws.onclose = (event) => {
-        console.log("[AnnotationSync] Disconnected", event.code, event.reason);
+        log.debug("Disconnected", event.code, event.reason);
         setIsConnected(false);
         setIsConnecting(false);
         stopHeartbeat();
@@ -382,7 +385,7 @@ export function useAnnotationSync(
         // Attempt reconnection if not intentionally closed
         if (event.code !== 1000 && annotationSetId) {
           reconnectTimeoutRef.current = setTimeout(() => {
-            console.log("[AnnotationSync] Attempting reconnection...");
+            log.debug("Attempting reconnection...");
             connect();
           }, 3000);
         }

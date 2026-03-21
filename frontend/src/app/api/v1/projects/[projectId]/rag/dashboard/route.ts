@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("RAGDashboardRoute");
 
 /**
  * GET /api/v1/projects/[projectId]/rag/dashboard
@@ -28,7 +31,6 @@ export async function GET(
   }
 
   if (!accessToken) {
-    console.error("[RAG Dashboard Route] No access token found");
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
@@ -38,7 +40,7 @@ export async function GET(
     "http://localhost:8000";
   const targetUrl = `${backendUrl}/api/v1/projects/${projectId}/rag/dashboard`;
 
-  console.log("[RAG Dashboard Route] Proxying to:", targetUrl);
+  log.debug("Proxying to backend");
 
   try {
     const response = await fetch(targetUrl, {
@@ -48,11 +50,6 @@ export async function GET(
         "Content-Type": "application/json",
       },
     });
-
-    console.log(
-      "[RAG Dashboard Route] Backend response status:",
-      response.status
-    );
 
     const data = await response.json();
     return NextResponse.json(data, { status: response.status });

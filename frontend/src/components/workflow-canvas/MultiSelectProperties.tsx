@@ -19,6 +19,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Users, AlertCircle, Save, RotateCcw } from "lucide-react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("MultiSelectProperties");
 
 export interface MultiSelectPropertiesProps {
   actionIds: string[];
@@ -205,7 +208,7 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
                 size="sm"
                 variant="outline"
                 className="h-8 text-xs"
-                onClick={() => console.log("Align left")}
+                onClick={() => log.debug("Align left")}
               >
                 Align Left
               </Button>
@@ -213,7 +216,7 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
                 size="sm"
                 variant="outline"
                 className="h-8 text-xs"
-                onClick={() => console.log("Align center")}
+                onClick={() => log.debug("Align center")}
               >
                 Align Center
               </Button>
@@ -221,7 +224,7 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
                 size="sm"
                 variant="outline"
                 className="h-8 text-xs"
-                onClick={() => console.log("Align right")}
+                onClick={() => log.debug("Align right")}
               >
                 Align Right
               </Button>
@@ -229,7 +232,7 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
                 size="sm"
                 variant="outline"
                 className="h-8 text-xs"
-                onClick={() => console.log("Align top")}
+                onClick={() => log.debug("Align top")}
               >
                 Align Top
               </Button>
@@ -237,7 +240,7 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
                 size="sm"
                 variant="outline"
                 className="h-8 text-xs"
-                onClick={() => console.log("Align middle")}
+                onClick={() => log.debug("Align middle")}
               >
                 Align Middle
               </Button>
@@ -245,7 +248,7 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
                 size="sm"
                 variant="outline"
                 className="h-8 text-xs"
-                onClick={() => console.log("Align bottom")}
+                onClick={() => log.debug("Align bottom")}
               >
                 Align Bottom
               </Button>
@@ -253,7 +256,7 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
                 size="sm"
                 variant="outline"
                 className="col-span-3 h-8 text-xs"
-                onClick={() => console.log("Distribute")}
+                onClick={() => log.debug("Distribute")}
               >
                 Distribute Evenly
               </Button>

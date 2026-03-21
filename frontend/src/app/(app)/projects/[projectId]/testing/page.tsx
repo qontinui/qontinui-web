@@ -18,6 +18,9 @@ const CoverageTrendChart = nextDynamic(
 );
 import { ReliabilityStats } from "@/components/testing/ReliabilityStats";
 import { LiveTestExecution } from "@/components/testing/LiveTestExecution";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("TestingDashboard");
 import {
   BarChart3,
   TrendingUp,
@@ -131,7 +134,7 @@ export default function ProjectTestingDashboard() {
         {selectedView === "live" && (
           <LiveTestExecution
             onComplete={(data) => {
-              console.log("Test execution completed:", data);
+              log.debug("Test execution completed:", data);
             }}
           />
         )}

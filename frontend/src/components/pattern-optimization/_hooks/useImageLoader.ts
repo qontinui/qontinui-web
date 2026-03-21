@@ -1,5 +1,8 @@
 import { useState, useEffect } from "react";
 import { patternOptimizationStorage } from "@/lib/pattern-optimization-storage";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("useImageLoader");
 
 interface ImageDimensions {
   width: number;
@@ -14,27 +17,22 @@ export function useImageLoader(screenshotUrl: string) {
   useEffect(() => {
     const loadImage = async () => {
       if (!screenshotUrl) {
-        console.log(
-          "[AdvancedRegionSelector] No screenshot URL provided, skipping load"
-        );
+        log.debug("No screenshot URL provided, skipping load");
         return;
       }
 
       try {
-        console.log(
-          "[AdvancedRegionSelector] Attempting to load image:",
-          screenshotUrl
-        );
+        log.debug("Attempting to load image:", screenshotUrl);
         const data = await patternOptimizationStorage.getImage(screenshotUrl);
 
         if (data) {
-          console.log("[AdvancedRegionSelector] Loaded from IndexedDB");
+          log.debug("Loaded from IndexedDB");
           setImageData(data);
 
           const img = new Image();
           img.onload = () => {
-            console.log(
-              "[AdvancedRegionSelector] IndexedDB image dimensions:",
+            log.debug(
+              "IndexedDB image dimensions:",
               img.width,
               "x",
               img.height
@@ -43,16 +41,13 @@ export function useImageLoader(screenshotUrl: string) {
           };
           img.src = data;
         } else {
-          console.log(
-            "[AdvancedRegionSelector] Not found in IndexedDB, using direct URL:",
-            screenshotUrl
-          );
+          log.debug("Not found in IndexedDB, using direct URL");
           setImageData(screenshotUrl);
 
           const img = new Image();
           img.onload = () => {
-            console.log(
-              "[AdvancedRegionSelector] Direct URL image loaded, dimensions:",
+            log.debug(
+              "Direct URL image loaded, dimensions:",
               img.width,
               "x",
               img.height
@@ -61,7 +56,7 @@ export function useImageLoader(screenshotUrl: string) {
           };
           img.onerror = (e) => {
             console.error(
-              "[AdvancedRegionSelector] Failed to load image from direct URL:",
+              "[useImageLoader] Failed to load image from direct URL:",
               e
             );
           };
@@ -69,15 +64,15 @@ export function useImageLoader(screenshotUrl: string) {
         }
       } catch (error) {
         console.error(
-          "[AdvancedRegionSelector] IndexedDB error, using direct URL:",
+          "[useImageLoader] IndexedDB error, using direct URL:",
           error
         );
         setImageData(screenshotUrl);
 
         const img = new Image();
         img.onload = () => {
-          console.log(
-            "[AdvancedRegionSelector] Fallback image loaded, dimensions:",
+          log.debug(
+            "Fallback image loaded, dimensions:",
             img.width,
             "x",
             img.height
@@ -85,10 +80,7 @@ export function useImageLoader(screenshotUrl: string) {
           setImageDimensions({ width: img.width, height: img.height });
         };
         img.onerror = (e) => {
-          console.error(
-            "[AdvancedRegionSelector] Failed to load fallback image:",
-            e
-          );
+          console.error("[useImageLoader] Failed to load fallback image:", e);
         };
         img.src = screenshotUrl;
       }
