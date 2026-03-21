@@ -32,14 +32,10 @@ def add_beta_flag():
     if "is_beta" not in columns:
         # Add the column
         with engine.connect() as conn:
-            conn.execute(
-                text(
-                    """
+            conn.execute(text("""
                 ALTER TABLE users
                 ADD COLUMN is_beta BOOLEAN DEFAULT 0
-            """
-                )
-            )
+            """))
             conn.commit()
             print("✅ Added is_beta column to users table")
     else:
