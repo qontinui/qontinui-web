@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from passlib.context import CryptContext  # noqa: E402
 from sqlalchemy import create_engine, text  # noqa: E402
 
+import app.core.passlib_bcrypt5_compat  # noqa: F401, E402  # bcrypt 5 compat patch
 from app.core.test_credentials import (  # noqa: E402
     DEV_USER_EMAIL,
     STANDARD_DEV_PASSWORD,

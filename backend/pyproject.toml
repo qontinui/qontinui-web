@@ -20,7 +20,7 @@ uvicorn = {extras = ["standard"], version = "^0.38"}
 pydantic = "^2.11.9"
 python-jose = "^3.5.0"
 passlib = {extras = ["bcrypt"], version = "^1.7.4"}
-bcrypt = ">=4.0.1,<5.0.0"
+bcrypt = "^5"
 python-multipart = ">=0.0.9"
 pydantic-settings = "^2.10.1"
 email-validator = "^2.2"
@@ -38,7 +38,7 @@ aioredis = "^2.0.1"
 asyncpg = "^0.30.0"
 arq = "^0.26.1"
 psycopg2-binary = "^2.9.11"
-fastapi-users = {extras = ["sqlalchemy"], version = "^14.0.1"}
+fastapi-users = {version = "^15", extras = ["sqlalchemy"]}
 boto3 = "^1.35"
 psutil = "^7.1.2"
 httpx = "^0.28"
@@ -60,7 +60,7 @@ pre-commit = "^4.4.0"
 aiosqlite = "^0.21.0"
 # Linting tools
 black = "^24.10.0"
-isort = "^7.0"
+isort = "^8"
 flake8 = "^7.1.1"
 flake8-docstrings = "^1.7.0"
 mypy = "^1.14.0"
@@ -166,6 +166,8 @@ ignore = [
 known-first-party = ["app"]
 
 # Optional ML dependencies
+
+
 
 
 

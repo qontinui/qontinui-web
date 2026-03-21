@@ -24,6 +24,9 @@ email-validator = "^2.3.0"
 slowapi = "^0.1.9"
 python-dateutil = "^2.9.0.post0"
 httpx = "^0.28.1"
+websockets = "^16"
+chardet = "^7"
+bcrypt = "^5"
 
 
 [tool.poetry.group.dev.dependencies]
@@ -35,7 +38,7 @@ mypy = "^1.18.1"
 pre-commit = "^4.3.0"
 tox = "^4.30.2"
 ruff = "^0.13.0"
-isort = "^6.0.1"
+isort = "^8"
 pylint = "^4"
 types-requests = "^2.32.0"
 
