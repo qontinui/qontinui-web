@@ -32,6 +32,8 @@ async def create_session_activity(
     """
     now = datetime.now(UTC)
     first_login = first_login_at or now
+    if first_login.tzinfo is None:
+        first_login = first_login.replace(tzinfo=UTC)
 
     # Calculate absolute expiry based on MAX_SESSION_DAYS
     absolute_expiry = first_login + timedelta(days=settings.MAX_SESSION_DAYS)
@@ -103,7 +105,10 @@ async def is_session_expired(db: AsyncSession, jti: str) -> bool:
     if not session_activity:
         return True
 
-    return datetime.now(UTC) > session_activity.absolute_expiry_at
+    expiry = session_activity.absolute_expiry_at
+    if expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=UTC)
+    return datetime.now(UTC) > expiry
 
 
 async def delete_session(db: AsyncSession, jti: str) -> bool:
