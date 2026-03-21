@@ -69,7 +69,7 @@ export function Tooltip({
         </div>
       )}
 
-      <style jsx>{`
+      <style>{`
         @keyframes tooltipFadeIn {
           from {
             opacity: 0;

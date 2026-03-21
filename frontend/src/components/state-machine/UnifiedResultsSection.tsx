@@ -348,8 +348,11 @@ function ResultCard({
             {result.imageCount} images
           </span>
           <div
+            role="group"
+            tabIndex={0}
             className="flex items-center gap-1"
             onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
           >
             <AlertDialog>
               <AlertDialogTrigger asChild>

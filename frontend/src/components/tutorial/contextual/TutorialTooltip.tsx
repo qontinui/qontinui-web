@@ -9,7 +9,7 @@
  */
 
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence, LazyMotion, domAnimation } from "framer-motion";
 import { X, ArrowRight, ArrowLeft } from "lucide-react";
 import type { TooltipPosition } from "../../../types/tutorial";
 
@@ -240,8 +240,9 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
   };
 
   return (
+    <LazyMotion features={domAnimation}>
     <AnimatePresence>
-      <motion.div
+      <m.div
         ref={tooltipRef}
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -346,8 +347,9 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
             )}
           </div>
         </div>
-      </motion.div>
+      </m.div>
     </AnimatePresence>
+    </LazyMotion>
   );
 };
 

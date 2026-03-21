@@ -478,8 +478,8 @@ export function UIBridgeConfigSection({
           {/* Upload / Load Tab */}
           <TabsContent value="upload" className="space-y-4">
             <div className="flex items-center gap-4 flex-wrap">
-              <label className="cursor-pointer">
-                <input
+              <label aria-label="Upload file" htmlFor="type--file-0" className="cursor-pointer">
+                <input id="type--file-0"
                   type="file"
                   accept=".json"
                   onChange={(e) => {

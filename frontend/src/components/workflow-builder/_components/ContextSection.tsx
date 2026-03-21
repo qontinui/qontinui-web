@@ -95,9 +95,12 @@ export function ContextSection({
                     </p>
                     {contexts.map((ctx) => (
                       <div
+                        role="button"
+                        tabIndex={0}
                         key={ctx.id}
                         className="flex items-start gap-2 p-1.5 rounded hover:bg-zinc-800/50 cursor-pointer"
                         onClick={() => handleContextToggle(ctx.id)}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
                       >
                         <Checkbox
                           checked={selectedContextIds.includes(ctx.id)}

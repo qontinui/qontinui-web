@@ -198,6 +198,8 @@ export function SAM3SegmentationView({
 
                 return (
                   <div
+                    role="button"
+                    tabIndex={0}
                     key={segment.id}
                     className={`p-2 rounded-lg border cursor-pointer transition-colors ${
                       isSelected
@@ -207,6 +209,7 @@ export function SAM3SegmentationView({
                     onClick={() =>
                       setSelectedId(isSelected ? null : segment.id)
                     }
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
                   >
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">

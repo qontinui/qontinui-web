@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import DOMPurify from "dompurify";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Search, Share2 } from "lucide-react";
@@ -76,32 +75,45 @@ function renderContentLine(line: string, idx: number): React.ReactNode {
     );
   }
 
-  const boldText = line.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-  const codeText = boldText.replace(
-    /`(.+?)`/g,
-    '<code class="bg-muted px-1.5 py-0.5 rounded text-sm">$1</code>'
-  );
-
-  const sanitizedHtml = DOMPurify.sanitize(codeText, {
-    ALLOWED_TAGS: ["strong", "code"],
-    ALLOWED_ATTR: ["class"],
-  });
-
   if (line.trim()) {
+    // Parse inline markdown (bold + code) into React elements instead of HTML
+    const parts: React.ReactNode[] = [];
+    const pattern = /(\*\*(.+?)\*\*|`(.+?)`)/g;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+    let partKey = 0;
+
+    while ((match = pattern.exec(line)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(line.slice(lastIndex, match.index));
+      }
+      if (match[2]) {
+        parts.push(<strong key={partKey++}>{match[2]}</strong>);
+      } else if (match[3]) {
+        parts.push(
+          <code key={partKey++} className="bg-muted px-1.5 py-0.5 rounded text-sm">
+            {match[3]}
+          </code>
+        );
+      }
+      lastIndex = pattern.lastIndex;
+    }
+    if (lastIndex < line.length) {
+      parts.push(line.slice(lastIndex));
+    }
+
     return (
-      <p
-        key={idx}
-        className="mb-4 leading-7"
-        dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
-      />
+      <p key={idx} className="mb-4 leading-7">
+        {parts}
+      </p>
     );
   }
 
   return <br key={idx} />;
 }
 
-function renderContent(content: string): React.ReactNode[] {
-  return content.split("\n").map((line, idx) => renderContentLine(line, idx));
+function ContentRenderer({ content }: { content: string }) {
+  return <>{content.split("\n").map((line, idx) => renderContentLine(line, idx))}</>;
 }
 
 export function ViewerContent({
@@ -133,7 +145,7 @@ export function ViewerContent({
             </div>
 
             <div className={cn(collapsedSections.has(section.id) && "hidden")}>
-              {renderContent(section.content)}
+              <ContentRenderer content={section.content} />
             </div>
           </section>
         ))}

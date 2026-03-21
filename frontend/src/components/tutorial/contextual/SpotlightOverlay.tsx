@@ -9,7 +9,7 @@
  */
 
 import React, { useEffect, useState, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence, LazyMotion, domAnimation } from "framer-motion";
 
 export interface SpotlightOverlayProps {
   /** Target element to spotlight (CSS selector) */
@@ -135,8 +135,9 @@ export const SpotlightOverlay: React.FC<SpotlightOverlayProps> = ({
   const maskId = `spotlight-mask-${Math.random().toString(36).substr(2, 9)}`;
 
   return (
+    <LazyMotion features={domAnimation}>
     <AnimatePresence>
-      <motion.div
+      <m.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -160,7 +161,7 @@ export const SpotlightOverlay: React.FC<SpotlightOverlayProps> = ({
 
               {/* Black cutout - this area is transparent (spotlight) */}
               {spotlightRect && (
-                <motion.rect
+                <m.rect
                   initial={{
                     x: spotlightRect.x,
                     y: spotlightRect.y,
@@ -195,7 +196,7 @@ export const SpotlightOverlay: React.FC<SpotlightOverlayProps> = ({
 
           {/* Highlight border around spotlight */}
           {spotlightRect && (
-            <motion.rect
+            <m.rect
               initial={{
                 x: spotlightRect.x,
                 y: spotlightRect.y,
@@ -221,7 +222,7 @@ export const SpotlightOverlay: React.FC<SpotlightOverlayProps> = ({
 
         {/* Pulse animation around spotlight for extra attention */}
         {spotlightRect && (
-          <motion.div
+          <m.div
             className="absolute border-2 border-blue-400 rounded-lg pointer-events-none"
             style={{
               left: spotlightRect.x,
@@ -241,8 +242,9 @@ export const SpotlightOverlay: React.FC<SpotlightOverlayProps> = ({
             }}
           />
         )}
-      </motion.div>
+      </m.div>
     </AnimatePresence>
+    </LazyMotion>
   );
 };
 

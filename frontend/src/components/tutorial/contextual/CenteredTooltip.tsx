@@ -6,7 +6,7 @@
  */
 
 import React from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence, LazyMotion, domAnimation } from "framer-motion";
 import { X, ArrowRight, ArrowLeft, CheckCircle } from "lucide-react";
 
 export interface CenteredTooltipProps {
@@ -79,9 +79,10 @@ export const CenteredTooltip: React.FC<CenteredTooltipProps> = ({
   }
 
   return (
+    <LazyMotion features={domAnimation}>
     <AnimatePresence>
       {/* Backdrop */}
-      <motion.div
+      <m.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -92,7 +93,7 @@ export const CenteredTooltip: React.FC<CenteredTooltipProps> = ({
       />
 
       {/* Centered Dialog */}
-      <motion.div
+      <m.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
@@ -114,13 +115,13 @@ export const CenteredTooltip: React.FC<CenteredTooltipProps> = ({
           <div className="flex-1 pr-2">
             <div className="flex items-center gap-2">
               {showSuccess && (
-                <motion.div
+                <m.div
                   initial={{ scale: 0.95, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
                   className="tutorial-success-animation"
                 >
                   <CheckCircle className="w-5 h-5 text-green-500" />
-                </motion.div>
+                </m.div>
               )}
               <h3
                 id="centered-tooltip-title"
@@ -219,8 +220,9 @@ export const CenteredTooltip: React.FC<CenteredTooltipProps> = ({
             )}
           </div>
         </div>
-      </motion.div>
+      </m.div>
     </AnimatePresence>
+    </LazyMotion>
   );
 };
 

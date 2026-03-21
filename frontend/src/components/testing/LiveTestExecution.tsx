@@ -303,7 +303,7 @@ export function LiveTestExecution({
         </CardContent>
       </Card>
 
-      <style jsx global>{`
+      <style>{`
         .custom-scrollbar::-webkit-scrollbar {
           width: 8px;
         }

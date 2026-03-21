@@ -608,6 +608,9 @@ export function StateExplorerView({
             className="absolute inset-0 overflow-hidden"
           >
             <div
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
               ref={containerRef}
               data-slot="custom-scroll-viewport"
               className="h-full w-full overflow-y-auto overflow-x-hidden p-4 bg-surface-canvas/30 scrollbar-dark"

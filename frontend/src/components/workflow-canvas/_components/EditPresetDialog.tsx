@@ -233,7 +233,7 @@ export function EditPresetDialog({
         </div>
       </div>
 
-      <style jsx>{`
+      <style>{`
         .edit-preset-overlay {
           position: fixed;
           top: 0;

@@ -139,6 +139,8 @@ export function BoundingBoxOverlay({
 
   return (
     <div
+      role="button"
+      tabIndex={0}
       className={`absolute ${onClick ? "cursor-pointer pointer-events-auto" : ""}`}
       style={{
         left: bbox.x,
@@ -149,6 +151,7 @@ export function BoundingBoxOverlay({
         backgroundColor: actualFillColor,
       }}
       onClick={onClick}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
     >
       {label && (
         <span

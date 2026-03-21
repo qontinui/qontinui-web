@@ -124,6 +124,8 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
       <div
+        role="button"
+        tabIndex={0}
         className="bg-surface-raised border border-border-default rounded-lg p-6 w-[450px] max-w-full max-h-[90vh] overflow-y-auto"
         onKeyDown={handleKeyDown}
       >
@@ -156,8 +158,8 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
               Save As
             </p>
             <div className="space-y-2">
-              <label className="flex items-start p-3 bg-surface-canvas border border-border-default rounded-md cursor-pointer hover:border-border-default transition-colors">
-                <input
+              <label aria-label="Create StateImage" htmlFor="type--radio-2" className="flex items-start p-3 bg-surface-canvas border border-border-default rounded-md cursor-pointer hover:border-border-default transition-colors">
+                <input id="type--radio-2"
                   type="radio"
                   checked={saveDialog.mode === "createStateImage"}
                   onChange={() => onUpdateDialog({ mode: "createStateImage" })}
@@ -176,8 +178,8 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
                 </div>
               </label>
 
-              <label className="flex items-start p-3 bg-surface-canvas border border-border-default rounded-md cursor-pointer hover:border-border-default transition-colors">
-                <input
+              <label aria-label="Add Pattern to StateImage" htmlFor="type--radio-1" className="flex items-start p-3 bg-surface-canvas border border-border-default rounded-md cursor-pointer hover:border-border-default transition-colors">
+                <input id="type--radio-1"
                   type="radio"
                   checked={saveDialog.mode === "addPattern"}
                   onChange={() => onUpdateDialog({ mode: "addPattern" })}
@@ -196,8 +198,8 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
                 </div>
               </label>
 
-              <label className="flex items-start p-3 bg-surface-canvas border border-border-default rounded-md cursor-pointer hover:border-border-default transition-colors">
-                <input
+              <label aria-label="Save to library only" htmlFor="type--radio-0" className="flex items-start p-3 bg-surface-canvas border border-border-default rounded-md cursor-pointer hover:border-border-default transition-colors">
+                <input id="type--radio-0"
                   type="radio"
                   checked={saveDialog.mode === "libraryOnly"}
                   onChange={() => onUpdateDialog({ mode: "libraryOnly" })}

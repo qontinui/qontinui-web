@@ -142,7 +142,7 @@ export function ExtractionSaveOptionsDialog({
                 iconColor,
               } = OPTION_DETAILS[option];
               return (
-                <label
+                <label htmlFor={option}
                   key={option}
                   className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
                     selectedOption === option

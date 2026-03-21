@@ -57,7 +57,6 @@ export function BatchImportFilePicker({
             type="file"
             // @ts-expect-error - webkitdirectory is not in types
             webkitdirectory=""
-            directory=""
             onChange={onFolderSelect}
             className="hidden"
           />

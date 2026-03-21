@@ -237,6 +237,9 @@ export function BoundaryAdjustmentEditor({
 
         {/* Canvas Area */}
         <div
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
           ref={containerRef}
           className="flex-1 relative overflow-hidden bg-muted/30"
           onMouseMove={handleMouseMove}

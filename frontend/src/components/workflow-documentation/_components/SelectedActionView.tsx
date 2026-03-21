@@ -83,14 +83,14 @@ export function SelectedActionView({
         <div className="space-y-2">
           {showNewCommentForm ? (
             <div className="space-y-2">
-              <label
+              <label htmlFor="classname--cn-0"
                 className={cn(
                   "text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                 )}
               >
                 Add Comment
               </label>
-              <Textarea
+              <Textarea id="classname--cn-0"
                 value={newCommentText}
                 onChange={(e) => onNewCommentTextChange(e.target.value)}
                 placeholder="Add a comment to describe what this action does..."

@@ -305,7 +305,7 @@ export function GenerateFromStatesModal({
               </div>
 
               <div className="space-y-2">
-                <label className="flex items-center justify-between p-2.5 bg-surface-raised/50 rounded-lg border border-border-subtle cursor-pointer">
+                <label aria-label="Include Setup Navigation" htmlFor="include-setup-navigation-2" className="flex items-center justify-between p-2.5 bg-surface-raised/50 rounded-lg border border-border-subtle cursor-pointer">
                   <div>
                     <span className="text-sm text-text-secondary">
                       Include Setup Navigation
@@ -314,7 +314,7 @@ export function GenerateFromStatesModal({
                       Navigate to initial state in setup phase
                     </p>
                   </div>
-                  <input
+                  <input id="include-setup-navigation-2"
                     type="checkbox"
                     checked={includeSetupNavigation}
                     onChange={(e) =>
@@ -324,7 +324,7 @@ export function GenerateFromStatesModal({
                   />
                 </label>
 
-                <label className="flex items-center justify-between p-2.5 bg-surface-raised/50 rounded-lg border border-border-subtle cursor-pointer">
+                <label aria-label="Include AI Contexts" htmlFor="include-ai-contexts-1" className="flex items-center justify-between p-2.5 bg-surface-raised/50 rounded-lg border border-border-subtle cursor-pointer">
                   <div>
                     <span className="text-sm text-text-secondary">
                       Include AI Contexts
@@ -333,7 +333,7 @@ export function GenerateFromStatesModal({
                       Add context snippets to agentic prompt
                     </p>
                   </div>
-                  <input
+                  <input id="include-ai-contexts-1"
                     type="checkbox"
                     checked={includeContexts}
                     onChange={(e) => setIncludeContexts(e.target.checked)}
@@ -341,7 +341,7 @@ export function GenerateFromStatesModal({
                   />
                 </label>
 
-                <label className="flex items-center justify-between p-2.5 bg-surface-raised/50 rounded-lg border border-border-subtle cursor-pointer">
+                <label aria-label="Include AI Summary" htmlFor="include-ai-summary-0" className="flex items-center justify-between p-2.5 bg-surface-raised/50 rounded-lg border border-border-subtle cursor-pointer">
                   <div>
                     <span className="text-sm text-text-secondary">
                       Include AI Summary
@@ -350,7 +350,7 @@ export function GenerateFromStatesModal({
                       Generate summary in completion phase
                     </p>
                   </div>
-                  <input
+                  <input id="include-ai-summary-0"
                     type="checkbox"
                     checked={includeSummary}
                     onChange={(e) => setIncludeSummary(e.target.checked)}

@@ -165,9 +165,12 @@ export function DocumentationDashboard({
               <div className="space-y-2">
                 {undocumentedWorkflows.slice(0, 10).map((workflow) => (
                   <div
+                    role="button"
+                    tabIndex={0}
                     key={workflow.id}
                     className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-border transition-colors cursor-pointer"
                     onClick={() => onSelectWorkflow(workflow)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
                   >
                     <div className="flex items-center gap-3">
                       <FileCode className="size-4 text-muted-foreground" />

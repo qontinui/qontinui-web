@@ -8,8 +8,8 @@ interface MarkdownPreviewProps {
   content: string;
 }
 
-function renderPreview(content: string) {
-  return content.split("\n").map((line, idx) => {
+function MarkdownRenderer({ content }: { content: string }) {
+  const elements = content.split("\n").map((line, idx) => {
     // Headers
     if (line.startsWith("### ")) {
       return (
@@ -62,6 +62,7 @@ function renderPreview(content: string) {
 
     return <br key={idx} />;
   });
+  return <>{elements}</>;
 }
 
 export function MarkdownPreview({ content }: MarkdownPreviewProps) {
@@ -74,7 +75,7 @@ export function MarkdownPreview({ content }: MarkdownPreviewProps) {
         </div>
         <ScrollArea className="flex-1">
           <div className="p-4 prose prose-sm dark:prose-invert max-w-none">
-            {renderPreview(content)}
+            <MarkdownRenderer content={content} />
           </div>
         </ScrollArea>
       </div>

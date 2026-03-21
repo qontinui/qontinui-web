@@ -86,8 +86,11 @@ function ScreenshotEvidence({ path }: { path: string }) {
         </a>
       </div>
       <div
+        role="button"
+        tabIndex={0}
         className="relative bg-surface-canvas/50 rounded overflow-hidden cursor-pointer"
         onClick={() => setExpanded(!expanded)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
       >
         {!loaded && (
           <div className="h-32 flex items-center justify-center text-text-muted text-xs">

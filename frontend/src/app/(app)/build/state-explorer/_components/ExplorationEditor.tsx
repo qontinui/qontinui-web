@@ -109,7 +109,7 @@ export function ExplorationEditor({
         <EditorSection title="Exploration Strategy" defaultOpen={true}>
           <div className="space-y-2">
             {STRATEGY_OPTIONS.map((opt) => (
-              <label
+              <label aria-label="Exploration option" htmlFor="key--opt-value-1"
                 key={opt.value}
                 className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors ${
                   form.strategy === opt.value
@@ -117,7 +117,7 @@ export function ExplorationEditor({
                     : "border-border hover:border-border"
                 }`}
               >
-                <input
+                <input id="key--opt-value-1"
                   type="radio"
                   name="strategy"
                   value={opt.value}
@@ -243,7 +243,7 @@ export function ExplorationEditor({
                         ? form.target_transition_ids.split(",").map((s) => s.trim()).filter(Boolean)
                         : [];
                       return (
-                        <label
+                        <label aria-label="Transition option" htmlFor="key--trans-id-0"
                           key={trans.id}
                           className={`flex items-center gap-2.5 p-2 rounded-lg border cursor-pointer transition-colors ${
                             selectedIds.includes(trans.id)
@@ -251,7 +251,7 @@ export function ExplorationEditor({
                               : "border-border hover:border-border"
                           }`}
                         >
-                          <input
+                          <input id="key--trans-id-0"
                             type="checkbox"
                             checked={selectedIds.includes(trans.id)}
                             onChange={() => toggleTargetTransition(trans.id)}

@@ -173,9 +173,9 @@ export function ConnectionStatus({
   return (
     <div
       className={containerClasses}
-      onClick={onClick}
+      onClick={isClickable ? onClick : undefined}
       title={title}
-      role={isClickable ? "button" : undefined}
+      role="button"
       tabIndex={isClickable ? 0 : undefined}
       onKeyDown={
         isClickable
@@ -236,8 +236,8 @@ export function ConnectionStatusBadge({
       ]
         .filter(Boolean)
         .join(" ")}
-      onClick={onClick}
-      role={isClickable ? "button" : undefined}
+      onClick={isClickable ? onClick : undefined}
+      role="button"
       tabIndex={isClickable ? 0 : undefined}
       onKeyDown={
         isClickable

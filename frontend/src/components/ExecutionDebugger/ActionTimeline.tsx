@@ -151,12 +151,15 @@ const ActionItem: React.FC<ActionItemProps> = ({
   return (
     <div
       ref={itemRef}
+      role="button"
+      tabIndex={0}
       className={`relative flex items-center gap-3 p-3 border-l-4 rounded-r transition-all cursor-pointer ${
         config.borderColor
       } ${config.bgColor} ${
         isCurrent ? "ring-2 ring-blue-500 ring-opacity-50" : ""
       } hover:shadow-md`}
       onClick={onClick}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick?.(); } }}
     >
       {/* Breakpoint indicator */}
       {hasBreakpoint && (

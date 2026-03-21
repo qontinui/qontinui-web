@@ -99,6 +99,7 @@ export function FolderTree({
 
   return (
     <div
+      role="button"
       className={cn("flex flex-col h-full", className)}
       onKeyDown={handlers.handleKeyDown}
       tabIndex={0}

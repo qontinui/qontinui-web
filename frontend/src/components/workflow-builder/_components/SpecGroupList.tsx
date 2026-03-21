@@ -121,10 +121,13 @@ export function SpecGroupList({
                   <div className="pl-9 pb-1">
                     {groups.map((group) => (
                       <div
+                        role="button"
+                        tabIndex={0}
                         key={group.id}
                         data-ui-label={`${pageUrl}: ${(group.description || group.name).slice(0, 60)}`}
                         className="flex items-start gap-2 p-1 rounded hover:bg-zinc-700/30 cursor-pointer"
                         onClick={() => onToggleGroup(group.id)}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
                       >
                         <Checkbox
                           checked={selectedGroupIds.has(group.id)}

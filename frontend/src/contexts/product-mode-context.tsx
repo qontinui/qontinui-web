@@ -83,7 +83,7 @@ export function ProductModeProvider({
   useEffect(() => {
     if (initialMode) {
       localStorage.setItem(STORAGE_KEY, initialMode);
-      return;
+      return undefined;
     }
 
     if (user && syncedUserIdRef.current !== user.id) {
@@ -101,6 +101,7 @@ export function ProductModeProvider({
     } else if (!user) {
       syncedUserIdRef.current = null;
     }
+    return undefined;
   }, [initialMode, user]);
 
   const setMode = useCallback((newMode: ProductMode) => {

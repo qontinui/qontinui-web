@@ -330,6 +330,8 @@ export function ScreenshotManager() {
 
             {screenshots.map((screenshot) => (
               <div
+                role="button"
+                tabIndex={0}
                 key={screenshot.id}
                 className={cn(
                   "relative group cursor-pointer rounded overflow-hidden border-2 transition-all",
@@ -338,6 +340,7 @@ export function ScreenshotManager() {
                     : "border-border-default hover:border-border-subtle"
                 )}
                 onClick={() => toggleSelection(screenshot.id)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
               >
                 <div className="aspect-video bg-surface-canvas relative">
                   <ScreenshotImage

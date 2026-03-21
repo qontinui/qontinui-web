@@ -145,6 +145,7 @@ const ElementRow = memo(function ElementRow({
         isHovered && !isSelected && "bg-surface-raised/30"
       )}
       onClick={handleClick}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       role="option"

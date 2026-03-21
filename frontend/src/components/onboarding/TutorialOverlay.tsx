@@ -98,7 +98,7 @@ export function TutorialOverlay() {
         />
       )}
 
-      <style jsx>{`
+      <style>{`
         @keyframes pulse-glow {
           0%,
           100% {

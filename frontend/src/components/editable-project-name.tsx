@@ -88,7 +88,9 @@ export function EditableProjectName({
     return (
       <div
         className="flex items-center gap-1"
+        role="group"
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") e.stopPropagation(); }}
       >
         <Input
           ref={inputRef}

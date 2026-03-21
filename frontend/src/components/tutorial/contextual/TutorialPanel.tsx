@@ -8,7 +8,7 @@
  */
 
 import React, { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence, LazyMotion, domAnimation } from "framer-motion";
 import {
   ChevronLeft,
   ChevronRight,
@@ -73,12 +73,13 @@ export const TutorialPanel: React.FC<TutorialPanelProps> = ({
   const collapseDirection = position === "left" ? -1 : 1;
 
   return (
+    <LazyMotion features={domAnimation}>
     <div
       className={`fixed top-0 ${panelPosition} h-full z-[10003] ${className}`}
     >
       <AnimatePresence mode="wait">
         {!isCollapsed ? (
-          <motion.div
+          <m.div
             key="expanded"
             initial={{ x: collapseDirection * 100, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
@@ -116,7 +117,7 @@ export const TutorialPanel: React.FC<TutorialPanelProps> = ({
                   </span>
                 </div>
                 <div className="w-full h-2 bg-surface-raised dark:bg-border-default rounded-full overflow-hidden">
-                  <motion.div
+                  <m.div
                     className="h-full bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-400 dark:to-blue-500"
                     initial={{ width: 0 }}
                     animate={{ width: `${progressPercentage}%` }}
@@ -134,7 +135,7 @@ export const TutorialPanel: React.FC<TutorialPanelProps> = ({
                 const isClickable = !!onStepClick;
 
                 return (
-                  <motion.button
+                  <m.button
                     key={step.id}
                     onClick={() => isClickable && onStepClick(index)}
                     disabled={!isClickable}
@@ -180,7 +181,7 @@ export const TutorialPanel: React.FC<TutorialPanelProps> = ({
                         </h4>
                       </div>
                     </div>
-                  </motion.button>
+                  </m.button>
                 );
               })}
             </div>
@@ -191,9 +192,9 @@ export const TutorialPanel: React.FC<TutorialPanelProps> = ({
                 Click on any step to jump to it
               </p>
             </div>
-          </motion.div>
+          </m.div>
         ) : (
-          <motion.button
+          <m.button
             key="collapsed"
             initial={{ x: collapseDirection * -40, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
@@ -240,10 +241,11 @@ export const TutorialPanel: React.FC<TutorialPanelProps> = ({
                 </svg>
               </div>
             </div>
-          </motion.button>
+          </m.button>
         )}
       </AnimatePresence>
     </div>
+    </LazyMotion>
   );
 };
 

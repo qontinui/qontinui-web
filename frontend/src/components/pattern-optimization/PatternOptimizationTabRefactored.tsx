@@ -70,7 +70,7 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
       </div>
 
       {/* CSS for checkerboard background */}
-      <style jsx>{`
+      <style>{`
         .bg-checkerboard {
           background-image:
             linear-gradient(45deg, #e5e7eb 25%, transparent 25%),

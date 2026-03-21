@@ -8,7 +8,7 @@
  */
 
 import React, { useEffect, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence, LazyMotion, domAnimation } from "framer-motion";
 import { CheckCircle, XCircle, AlertCircle, Lightbulb } from "lucide-react";
 
 export type ValidationStatus = "idle" | "validating" | "success" | "failure";
@@ -76,12 +76,12 @@ export const ValidationFeedback: React.FC<ValidationFeedbackProps> = ({
         return <XCircle className="w-5 h-5 text-red-500" />;
       case "validating":
         return (
-          <motion.div
+          <m.div
             animate={{ rotate: 360 }}
             transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
           >
             <AlertCircle className="w-5 h-5 text-blue-500" />
-          </motion.div>
+          </m.div>
         );
       default:
         return null;
@@ -128,7 +128,7 @@ export const ValidationFeedback: React.FC<ValidationFeedbackProps> = ({
   };
 
   const content = (
-    <motion.div
+    <m.div
       initial={{ opacity: 0, y: asToast ? -20 : 0, scale: asToast ? 0.95 : 1 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: asToast ? -20 : 0, scale: asToast ? 0.95 : 1 }}
@@ -161,7 +161,7 @@ export const ValidationFeedback: React.FC<ValidationFeedbackProps> = ({
                   <span>Show hint</span>
                 </button>
               ) : (
-                <motion.div
+                <m.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}
                   transition={{ duration: 0.2 }}
@@ -171,7 +171,7 @@ export const ValidationFeedback: React.FC<ValidationFeedbackProps> = ({
                   <p className="text-xs text-yellow-800 dark:text-yellow-200">
                     {hint}
                   </p>
-                </motion.div>
+                </m.div>
               )}
             </div>
           )}
@@ -197,20 +197,22 @@ export const ValidationFeedback: React.FC<ValidationFeedbackProps> = ({
           </button>
         )}
       </div>
-    </motion.div>
+    </m.div>
   );
 
   if (asToast) {
     return (
-      <AnimatePresence>
-        {isVisible && (
-          <div className="fixed top-4 right-4 z-[9999]">{content}</div>
-        )}
-      </AnimatePresence>
+      <LazyMotion features={domAnimation}>
+        <AnimatePresence>
+          {isVisible && (
+            <div className="fixed top-4 right-4 z-[9999]">{content}</div>
+          )}
+        </AnimatePresence>
+      </LazyMotion>
     );
   }
 
-  return <AnimatePresence>{isVisible && content}</AnimatePresence>;
+  return <LazyMotion features={domAnimation}><AnimatePresence>{isVisible && content}</AnimatePresence></LazyMotion>;
 };
 
 export default ValidationFeedback;

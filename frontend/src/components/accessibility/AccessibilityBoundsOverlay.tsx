@@ -219,8 +219,11 @@ export function AccessibilityBoundsOverlay({
 
               return (
                 <div
+                  role="button"
+                  tabIndex={0}
                   key={boundsNode.node.ref}
                   onClick={() => handleNodeClick(boundsNode)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
                   onMouseEnter={() => handleNodeHover(boundsNode)}
                   onMouseLeave={() => handleNodeHover(null)}
                   className={cn(

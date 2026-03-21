@@ -52,8 +52,10 @@ export default function MarketingLayout({
     <div className="min-h-screen flex flex-col">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-      />
+        suppressHydrationWarning
+      >
+        {JSON.stringify(jsonLd)}
+      </script>
       <Header />
       <main className="flex-1 pt-16">
         <Suspense fallback={null}>{children}</Suspense>

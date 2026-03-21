@@ -1255,6 +1255,8 @@ function ExtractionPageContentInner() {
                               <div className="space-y-2">
                                 {annotationStore.elements.map((element) => (
                                   <div
+                                    role="button"
+                                    tabIndex={0}
                                     key={element.id}
                                     className={`p-3 rounded-lg border cursor-pointer transition-colors ${
                                       annotationStore.selectedElementIds.includes(
@@ -1266,6 +1268,7 @@ function ExtractionPageContentInner() {
                                     onClick={() =>
                                       annotationStore.selectElement(element.id)
                                     }
+                                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
                                   >
                                     <div className="flex items-center justify-between">
                                       <div className="flex items-center gap-2">

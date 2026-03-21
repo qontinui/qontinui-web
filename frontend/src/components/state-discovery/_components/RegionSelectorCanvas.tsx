@@ -85,6 +85,9 @@ const RegionSelectorCanvas: React.FC<RegionSelectorCanvasProps> = ({
     <Card>
       <CardContent className="p-0">
         <div
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
           ref={containerRef}
           className="relative overflow-hidden bg-surface-raised border-2 border-border-default"
           style={{

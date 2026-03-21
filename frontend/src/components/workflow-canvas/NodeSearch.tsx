@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
 export interface NodeSearchProps {
   onSelect?: (nodeType: ActionType) => void;
   onClose?: () => void;
-  autoFocus?: boolean;
+  shouldFocusOnMount?: boolean;
   showHistory?: boolean;
   maxResults?: number;
   placeholder?: string;
@@ -51,7 +51,7 @@ const SEARCH_HISTORY_KEY = "qontinui-node-search-history";
 export const NodeSearch: React.FC<NodeSearchProps> = ({
   onSelect,
   onClose,
-  autoFocus = true,
+  shouldFocusOnMount = true,
   showHistory = true,
   maxResults = 20,
   placeholder = "Search nodes...",
@@ -131,10 +131,10 @@ export const NodeSearch: React.FC<NodeSearchProps> = ({
 
   // Auto-focus input
   useEffect(() => {
-    if (autoFocus && inputRef.current) {
+    if (shouldFocusOnMount && inputRef.current) {
       inputRef.current.focus();
     }
-  }, [autoFocus]);
+  }, [shouldFocusOnMount]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -425,7 +425,7 @@ export const QuickSearchModal: React.FC<QuickSearchModalProps> = ({
             onClose();
           }}
           onClose={onClose}
-          autoFocus={true}
+          shouldFocusOnMount={true}
           showHistory={true}
           maxResults={30}
         />

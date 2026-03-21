@@ -159,24 +159,24 @@ export function CheckGroupEditor({ item, form, setForm, isDirty, isNew, isSaving
         {/* Settings */}
         <EditorSection title="Settings" icon={Settings} defaultOpen={true}>
           <div className="space-y-3">
-            <label className="flex items-center justify-between p-2.5 bg-muted rounded-lg border border-border cursor-pointer">
+            <label aria-label="Stop on Failure" htmlFor="field-1" className="flex items-center justify-between p-2.5 bg-muted rounded-lg border border-border cursor-pointer">
               <div>
                 <span className="text-sm text-muted-foreground block">Stop on Failure</span>
                 <span className="text-xs text-muted-foreground">Stop executing when a check fails</span>
               </div>
-              <input
+              <input id="field-1"
                 type="checkbox"
                 checked={form.stop_on_failure}
                 onChange={(e) => updateField("stop_on_failure", e.target.checked)}
                 className="w-4 h-4"
               />
             </label>
-            <label className="flex items-center justify-between p-2.5 bg-muted rounded-lg border border-border cursor-pointer">
+            <label aria-label="Run in Parallel" htmlFor="field-0" className="flex items-center justify-between p-2.5 bg-muted rounded-lg border border-border cursor-pointer">
               <div>
                 <span className="text-sm text-muted-foreground block">Run in Parallel</span>
                 <span className="text-xs text-muted-foreground">Execute all checks simultaneously</span>
               </div>
-              <input
+              <input id="field-0"
                 type="checkbox"
                 checked={form.run_in_parallel}
                 onChange={(e) => updateField("run_in_parallel", e.target.checked)}

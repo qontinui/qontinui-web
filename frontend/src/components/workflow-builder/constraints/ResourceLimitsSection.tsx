@@ -61,10 +61,10 @@ export function ResourceLimitsSection({
         <div className="mt-2 space-y-3 px-3">
           {/* Max Wall Time */}
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">
+            <label htmlFor="max-wall-time--seconds-3" className="block text-xs font-medium text-zinc-400 mb-1">
               Max Wall Time (seconds)
             </label>
-            <input
+            <input id="max-wall-time--seconds-3"
               type="number"
               value={resourceLimits.max_wall_time_secs ?? ""}
               onChange={(e) => {
@@ -84,10 +84,10 @@ export function ResourceLimitsSection({
 
           {/* Max Files Modified */}
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">
+            <label htmlFor="max-files-modified-2" className="block text-xs font-medium text-zinc-400 mb-1">
               Max Files Modified
             </label>
-            <input
+            <input id="max-files-modified-2"
               type="number"
               value={resourceLimits.max_files_modified ?? ""}
               onChange={(e) => {
@@ -107,10 +107,10 @@ export function ResourceLimitsSection({
 
           {/* Max Agentic Time */}
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">
+            <label htmlFor="max-agentic-time--ms-1" className="block text-xs font-medium text-zinc-400 mb-1">
               Max Agentic Time (ms)
             </label>
-            <input
+            <input id="max-agentic-time--ms-1"
               type="number"
               value={resourceLimits.max_agentic_time_ms ?? ""}
               onChange={(e) => {
@@ -130,10 +130,10 @@ export function ResourceLimitsSection({
 
           {/* Warning Threshold */}
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">
+            <label htmlFor="warning-threshold-0" className="block text-xs font-medium text-zinc-400 mb-1">
               Warning Threshold
             </label>
-            <input
+            <input id="warning-threshold-0"
               type="number"
               value={resourceLimits.warning_threshold ?? ""}
               onChange={(e) => {

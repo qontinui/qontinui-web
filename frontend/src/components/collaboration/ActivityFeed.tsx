@@ -384,12 +384,15 @@ export function ActivityFeed({
 
                     return (
                       <div
+                        role="button"
+                        tabIndex={0}
                         key={activity.id}
                         className={cn(
                           "flex gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors",
                           onActivityClick && "cursor-pointer"
                         )}
                         onClick={() => onActivityClick?.(activity)}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
                       >
                         <Avatar
                           src={activity.user_avatar}

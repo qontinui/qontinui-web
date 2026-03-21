@@ -6,7 +6,7 @@
  */
 
 import React from "react";
-import { motion } from "framer-motion";
+import { m, LazyMotion, domAnimation } from "framer-motion";
 
 export interface ProgressIndicatorProps {
   /** Current step number (1-indexed) */
@@ -59,6 +59,7 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
     const offset = circumference - (percentage / 100) * circumference;
 
     return (
+      <LazyMotion features={domAnimation}>
       <div className={`inline-flex items-center justify-center ${className}`}>
         <div
           className="relative"
@@ -80,7 +81,7 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
               className="text-border-subtle dark:text-surface-raised"
             />
             {/* Progress circle */}
-            <motion.circle
+            <m.circle
               cx={circleSize / 2}
               cy={circleSize / 2}
               r={radius}
@@ -111,11 +112,13 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
           </div>
         </div>
       </div>
+      </LazyMotion>
     );
   }
 
   // Linear variant
   return (
+    <LazyMotion features={domAnimation}>
     <div className={`w-full ${className}`}>
       <div className="flex items-center justify-between mb-1">
         <span
@@ -139,7 +142,7 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
         aria-valuemax={100}
         aria-label={`Tutorial progress: ${percentage}% complete`}
       >
-        <motion.div
+        <m.div
           className="h-full bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-400 dark:to-blue-500"
           initial={{ width: 0 }}
           animate={{ width: `${percentage}%` }}
@@ -147,6 +150,7 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
         />
       </div>
     </div>
+    </LazyMotion>
   );
 };
 
