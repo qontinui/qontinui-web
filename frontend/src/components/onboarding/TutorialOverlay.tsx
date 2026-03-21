@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { useTutorialNavigation } from "./_hooks/useTutorialNavigation";
 import { useTutorialPositioning } from "./_hooks/useTutorialPositioning";
@@ -9,8 +9,10 @@ import { TutorialTooltip } from "./_components/TutorialTooltip";
 
 export type { TutorialStep } from "./types";
 
+const emptySubscribe = () => () => {};
+
 export function TutorialOverlay() {
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
   const overlayRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -29,10 +31,6 @@ export function TutorialOverlay() {
 
   const { spotlightPos, tooltipPos, tooltipRef, updatePositions } =
     useTutorialPositioning(currentStep);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   useEffect(() => {
     if (!showTutorialOverlay) return;

@@ -145,11 +145,11 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
           description
         );
 
-        // Refresh organizations list
-        await loadOrganizations();
-
-        // Switch to the newly created organization
-        await switchOrganization(newOrg.id);
+        // Refresh organizations list and switch to the newly created organization
+        await Promise.all([
+          loadOrganizations(),
+          switchOrganization(newOrg.id),
+        ]);
 
         return newOrg;
       } catch (error) {

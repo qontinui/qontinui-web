@@ -95,7 +95,8 @@ interface ElementRowProps {
   element: AnnotatedElement;
   isSelected: boolean;
   isHovered: boolean;
-  style: React.CSSProperties;
+  top: number;
+  height: number;
   onSelect: (id: string, shiftKey: boolean) => void;
   onHover: (id: string | null) => void;
 }
@@ -108,10 +109,12 @@ const ElementRow = memo(function ElementRow({
   element,
   isSelected,
   isHovered,
-  style,
+  top,
+  height,
   onSelect,
   onHover,
 }: ElementRowProps) {
+  const style = useMemo<React.CSSProperties>(() => ({ top, height }), [top, height]);
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
       onSelect(element.id, e.shiftKey);
@@ -453,10 +456,8 @@ export function VirtualizedElementList({
                 element={element}
                 isSelected={selectedIdSet.has(element.id)}
                 isHovered={hoveredElementId === element.id}
-                style={{
-                  top: actualIndex * ITEM_HEIGHT,
-                  height: ITEM_HEIGHT,
-                }}
+                top={actualIndex * ITEM_HEIGHT}
+                height={ITEM_HEIGHT}
                 onSelect={handleSelect}
                 onHover={handleHover}
               />

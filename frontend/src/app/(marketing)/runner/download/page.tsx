@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useSyncExternalStore } from "react";
 import {
   Download,
   CheckCircle2,
@@ -68,13 +68,11 @@ function getPlatformName(platform: Platform): string {
   }
 }
 
-export default function DownloadPage() {
-  const [platform, setPlatform] = useState<Platform>("unknown");
-  const [downloading, setDownloading] = useState<string | null>(null);
+const emptySubscribe = () => () => {};
 
-  useEffect(() => {
-    setPlatform(detectPlatform());
-  }, []);
+export default function DownloadPage() {
+  const platform = useSyncExternalStore(emptySubscribe, detectPlatform, () => "unknown" as Platform);
+  const [downloading, setDownloading] = useState<string | null>(null);
 
   const handleDownload = async (
     selectedPlatform: Platform,
