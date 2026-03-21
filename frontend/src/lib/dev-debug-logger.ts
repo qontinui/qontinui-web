@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 /**
  * Dev Debug Logger - Captures all frontend diagnostics for Claude Code
  *

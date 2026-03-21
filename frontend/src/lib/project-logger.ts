@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 /**
  * Project Logger - Centralized logging for project operations
  *
