@@ -218,6 +218,7 @@ export function ScreenshotSelector({
                   <div
                     key={screenshot.id}
                     role="option"
+                    aria-selected={multiSelect ? tempSelectedScreenshots.includes(screenshot.id) : selectedScreenshots.includes(screenshot.id)}
                     tabIndex={0}
                     onClick={() => handleSelectScreenshot(screenshot.id)}
                     onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleSelectScreenshot(screenshot.id); } }}

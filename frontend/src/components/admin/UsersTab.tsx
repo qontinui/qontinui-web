@@ -206,6 +206,7 @@ export default function UsersTab() {
               <div
                 key={user.id}
                 role="option"
+                aria-selected={selectedUser?.id === user.id}
                 tabIndex={0}
                 className="p-4 hover:bg-muted/50 transition-colors cursor-pointer flex items-center gap-4"
                 onClick={() => setSelectedUser(user)}
