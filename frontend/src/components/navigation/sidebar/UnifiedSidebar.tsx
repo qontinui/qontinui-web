@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/contexts/auth-context";
 import { useSidebar } from "@/contexts/sidebar-context";
+import { useProductMode } from "@/contexts/product-mode-context";
 import { STORAGE_KEYS } from "qontinui-navigation";
 import { toast } from "sonner";
 import { useSidebarNavigation } from "./_hooks/use-sidebar-navigation";
@@ -61,6 +62,7 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
 }) => {
   const { user, logout } = useAuth();
   const { isCollapsed, setIsCollapsed } = useSidebar();
+  const { mode } = useProductMode();
   const router = useRouter();
 
   const {
@@ -132,23 +134,24 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
             isCollapsed && "items-center"
           )}
         >
-          {mounted ? (
-            <ProjectSwitcher
-              isCollapsed={isCollapsed}
-              projects={projects}
-              currentProject={currentProject}
-              onProjectChange={handleProjectChange}
-              onCreateProject={handleCreateProject}
-              loading={projectsLoading}
-            />
-          ) : (
-            <div
-              className={cn(
-                "h-8 rounded-md bg-surface-raised/50 animate-pulse",
-                isCollapsed ? "w-8" : "w-full"
-              )}
-            />
-          )}
+          {mode === "visual" &&
+            (mounted ? (
+              <ProjectSwitcher
+                isCollapsed={isCollapsed}
+                projects={projects}
+                currentProject={currentProject}
+                onProjectChange={handleProjectChange}
+                onCreateProject={handleCreateProject}
+                loading={projectsLoading}
+              />
+            ) : (
+              <div
+                className={cn(
+                  "h-8 rounded-md bg-surface-raised/50 animate-pulse",
+                  isCollapsed ? "w-8" : "w-full"
+                )}
+              />
+            ))}
           <SearchTrigger isCollapsed={isCollapsed} />
         </div>
 

@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { Workflow, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,6 +29,8 @@ export function ProjectSwitcher({
   onCreateProject,
   loading,
 }: ProjectSwitcherProps) {
+  const [open, setOpen] = useState(false);
+
   if (loading) {
     return (
       <div
@@ -47,12 +51,13 @@ export function ProjectSwitcher({
   }
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
-        <button
+        <Button
+          variant="ghost"
           data-tutorial-id="sidebar-project-switcher"
           className={cn(
-            "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors hover:bg-surface-hover",
+            "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 h-auto text-sm font-medium transition-colors hover:bg-surface-hover",
             isCollapsed && "justify-center px-0"
           )}
         >
@@ -78,14 +83,18 @@ export function ProjectSwitcher({
               <ChevronsUpDown className="size-3.5 shrink-0 text-text-muted" />
             </>
           )}
-        </button>
+        </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56">
         {projects.map((project) => (
           <DropdownMenuItem
             key={project.id}
-            onClick={() => onProjectChange(project.id)}
+            onSelect={() => {
+              onProjectChange(project.id);
+              setOpen(false);
+            }}
             className={cn(
+              "cursor-pointer",
               currentProject?.id === project.id && "bg-surface-hover"
             )}
           >
@@ -105,8 +114,12 @@ export function ProjectSwitcher({
         ))}
         <DropdownMenuSeparator />
         <DropdownMenuItem
-          onClick={onCreateProject}
+          onSelect={() => {
+            onCreateProject();
+            setOpen(false);
+          }}
           data-tutorial-id="sidebar-create-project"
+          className="cursor-pointer"
         >
           <div className="flex items-center gap-2 text-text-muted">
             <span>+ Create new project</span>
