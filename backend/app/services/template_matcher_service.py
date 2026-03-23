@@ -1,7 +1,7 @@
 """
 Template matching service for UI element detection.
 
-Interfaces with qontinui-api for semantic analysis and element detection.
+Interfaces with the runner for semantic analysis and element detection.
 """
 
 import io
@@ -23,7 +23,7 @@ class TemplateMatcherService:
         image: Image.Image, config: dict
     ) -> tuple[list[dict], bool]:
         """
-        Detect elements using qontinui-api.
+        Detect elements using the runner.
 
         Args:
             image: PIL Image of the screenshot
@@ -41,7 +41,7 @@ class TemplateMatcherService:
             image.save(image_buffer, format="PNG")
             image_buffer.seek(0)
 
-            # Call qontinui-api semantic analysis endpoint
+            # Call runner semantic analysis endpoint
             async with httpx.AsyncClient(timeout=60.0) as client:
                 response = await client.post(
                     f"{settings.QONTINUI_API_URL}/api/semantic/analyze",
@@ -63,7 +63,7 @@ class TemplateMatcherService:
                     return elements, True
                 else:
                     logger.warning(
-                        "qontinui_api_detection_failed",
+                        "runner_detection_failed",
                         status=response.status_code,
                         response=response.text[:500],
                     )
@@ -79,10 +79,10 @@ class TemplateMatcherService:
     @staticmethod
     def parse_api_response(api_result: dict) -> list[dict]:
         """
-        Parse qontinui-api response into element format.
+        Parse runner response into element format.
 
         Args:
-            api_result: Response from qontinui-api with 'regions' and 'text_regions'
+            api_result: Response from the runner with 'regions' and 'text_regions'
 
         Returns:
             List of element dictionaries with standardized structure

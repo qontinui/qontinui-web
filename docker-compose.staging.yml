@@ -87,7 +87,7 @@ services:
     container_name: qontinui-backend-staging
     restart: unless-stopped
     ports:
-      - "8002:8000"  # Port 8001 is used by qontinui-api dev
+      - "8002:8000"
     depends_on:
       postgres-staging:
         condition: service_healthy

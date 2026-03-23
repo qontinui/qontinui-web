@@ -1,7 +1,7 @@
 """
 Video capture models for continuous video recording.
 
-This package contains models for the video capture system (migrated from qontinui-api):
+This package contains models for the video capture system:
 - VideoCaptureSession: Video recording session metadata
 - InputEvent: Mouse and keyboard events
 - FrameIndex: Timestamp to frame mapping

@@ -286,7 +286,7 @@ async def search_embeddings(
     """
     await check_project_access(db, project_id, current_user, PermissionLevel.VIEW)
 
-    # Generate query embedding using qontinui-api
+    # Generate query embedding via the runner's embedding service
     embedding_service = EmbeddingService()
     embedding_result = await embedding_service.compute_text_embedding(request.query)
 

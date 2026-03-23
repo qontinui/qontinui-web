@@ -122,7 +122,7 @@ REDIS_DB=0
 
 ### Option 1: Using Systemd Services
 
-**Create API service** (`/etc/systemd/system/qontinui-api.service`):
+**Create API service** (`/etc/systemd/system/qontinui-web.service`):
 
 ```ini
 [Unit]
@@ -168,11 +168,11 @@ WantedBy=multi-user.target
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable qontinui-api qontinui-worker
-sudo systemctl start qontinui-api qontinui-worker
+sudo systemctl enable qontinui-web qontinui-worker
+sudo systemctl start qontinui-web qontinui-worker
 
 # Check status
-sudo systemctl status qontinui-api
+sudo systemctl status qontinui-web
 sudo systemctl status qontinui-worker
 ```
 

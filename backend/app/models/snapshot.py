@@ -3,13 +3,13 @@ Snapshot and Screenshot Database Models
 
 Models for storing snapshot runs and associated screenshots for integration testing.
 
-This module consolidates snapshot models from both the backend and qontinui-api:
+This module consolidates all snapshot models:
 - SnapshotRun: High-level snapshot run metadata
 - Screenshot: Individual screenshots from snapshot runs
 - Pattern: Visual patterns detected in screenshots
-- SnapshotAction: Individual actions from action logs (from qontinui-api)
-- SnapshotPattern: Pattern statistics and metadata (from qontinui-api)
-- SnapshotMatch: Individual match records for patterns (from qontinui-api)
+- SnapshotAction: Individual actions from action logs
+- SnapshotPattern: Pattern statistics and metadata
+- SnapshotMatch: Individual match records for patterns
 """
 
 from datetime import UTC, datetime
@@ -103,7 +103,7 @@ class SnapshotRun(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
-    # Additional relationships for detailed action tracking (from qontinui-api)
+    # Additional relationships for detailed action tracking
     actions: Mapped[list["SnapshotAction"]] = relationship(
         "SnapshotAction",
         back_populates="snapshot_run",
@@ -208,12 +208,12 @@ class Pattern(Base):
         return f"<Pattern(name='{self.name}', type='{self.type}', confidence={self.confidence})>"
 
 
-# Additional models migrated from qontinui-api for detailed action tracking and pattern matching
+# Additional models for detailed action tracking and pattern matching
 
 
 class SnapshotAction(Base):
     """
-    Snapshot action records table (migrated from qontinui-api).
+    Snapshot action records table.
 
     Stores individual actions from the action log with detailed execution data.
     This is more detailed than Screenshot and tracks action-level execution.
@@ -287,7 +287,7 @@ class SnapshotAction(Base):
 
 class SnapshotPattern(Base):
     """
-    Pattern statistics table (migrated from qontinui-api).
+    Pattern statistics table.
 
     Aggregates pattern usage across a snapshot run.
     This is more detailed than the Pattern model and includes usage statistics.
@@ -345,7 +345,7 @@ class SnapshotPattern(Base):
 
 class SnapshotMatch(Base):
     """
-    Individual match records table (migrated from qontinui-api).
+    Individual match records table.
 
     Stores detailed match information for pattern finds.
     """

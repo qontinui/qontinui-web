@@ -15,8 +15,8 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-# qontinui-api base URL for pattern matching
-QONTINUI_API_URL = "http://localhost:8001"
+# Runner base URL for pattern matching
+RUNNER_URL = "http://localhost:8001"
 
 
 class ActionExecutor:
@@ -256,7 +256,7 @@ class ActionExecutor:
         """
         Find pattern on screen using template matching (async version).
 
-        Calls qontinui-api for pattern matching against current screenshot.
+        Calls the runner for pattern matching against current screenshot.
 
         Args:
             image_path: Path to template image
@@ -268,7 +268,7 @@ class ActionExecutor:
         action_id = str(uuid4())
 
         try:
-            # Call qontinui-api pattern matching endpoint
+            # Call runner pattern matching endpoint
             async with httpx.AsyncClient() as client:
                 # Prepare multipart form data
                 files = {}
@@ -290,7 +290,7 @@ class ActionExecutor:
                     )
 
                 response = await client.post(
-                    f"{QONTINUI_API_URL}/api/v1/pattern-match",
+                    f"{RUNNER_URL}/api/v1/pattern-match",
                     files=files,
                     data=data,
                     timeout=30.0,

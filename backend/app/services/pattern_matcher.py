@@ -14,15 +14,15 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-# qontinui-api base URL for pattern matching
-QONTINUI_API_URL = "http://localhost:8001"
+# Runner base URL for pattern matching
+RUNNER_URL = "http://localhost:8001"
 
 
 class PatternMatcher:
     """
     Manages pattern matching operations for automation workflows.
 
-    Delegates to qontinui-api for actual pattern matching on screenshots.
+    Delegates to the runner for actual pattern matching on screenshots.
     """
 
     def __init__(self, workflow_run_id: str, api_base_url: str | None = None):
@@ -31,10 +31,10 @@ class PatternMatcher:
 
         Args:
             workflow_run_id: Unique ID for this workflow execution run
-            api_base_url: Optional custom qontinui-api URL
+            api_base_url: Optional custom runner URL
         """
         self.workflow_run_id = workflow_run_id
-        self._api_url = api_base_url or QONTINUI_API_URL
+        self._api_url = api_base_url or RUNNER_URL
         self._match_history: list[dict[str, Any]] = []
 
     # ========================================================================
@@ -51,7 +51,7 @@ class PatternMatcher:
         """
         Find pattern on screen using template matching (async version).
 
-        Calls qontinui-api for pattern matching against current screenshot.
+        Calls the runner for pattern matching against current screenshot.
 
         Args:
             template_path: Path to template image file

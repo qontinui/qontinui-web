@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 class InputEvent(Base):
     """
-    Input events (mouse and keyboard) captured during a video session (migrated from qontinui-api).
+    Input events (mouse and keyboard) captured during a video session.
 
     Stored as time-series data with millisecond precision timestamps
     relative to session start. This allows efficient querying for

@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 class VideoCaptureSession(Base):
     """
-    Video capture session metadata (migrated from qontinui-api).
+    Video capture session metadata.
 
     Represents a single video recording session that captures:
     - Screen video

@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 class FrameIndex(Base):
     """
-    Index mapping timestamps to video frame positions (migrated from qontinui-api).
+    Index mapping timestamps to video frame positions.
 
     This table enables efficient frame extraction by storing:
     - Keyframe positions (I-frames) for fast seeking

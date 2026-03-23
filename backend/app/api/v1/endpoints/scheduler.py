@@ -5,7 +5,6 @@ Provides REST endpoints for scheduler statistics and monitoring.
 Schedules are stored as part of project configurations, so this router
 focuses on statistics and execution history retrieval.
 
-Migrated from qontinui-api (Phase 5: API Service Boundaries).
 This endpoint requires user authentication and project access.
 """
 

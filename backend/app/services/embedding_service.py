@@ -1,7 +1,7 @@
 """Service for RAG embeddings.
 
 This service provides methods to:
-1. Call qontinui-api for embedding computation (used by runner)
+1. Call the runner's embedding service for embedding computation
 2. Receive and store embedding results from the runner
 """
 
@@ -13,18 +13,18 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-# qontinui-api URL (default to localhost:8001)
+# Runner embedding service URL (default to localhost:8001)
 QONTINUI_API_URL = os.getenv("QONTINUI_API_URL", "http://localhost:8001")
 
 
 class EmbeddingService:
-    """Service for computing embeddings via qontinui-api."""
+    """Service for computing embeddings via the runner's embedding service."""
 
     def __init__(self, api_url: str | None = None) -> None:
         """Initialize the embedding service.
 
         Args:
-            api_url: Base URL for qontinui-api. Defaults to QONTINUI_API_URL env var.
+            api_url: Base URL for the embedding service. Defaults to QONTINUI_API_URL env var.
         """
         self.api_url = api_url or QONTINUI_API_URL
         self.timeout = 60.0  # Embedding computation can take time
@@ -66,7 +66,7 @@ class EmbeddingService:
             )
             return {
                 "success": False,
-                "error": f"Could not connect to qontinui-api at {self.api_url}",
+                "error": f"Could not connect to the embedding service at {self.api_url}",
             }
         except httpx.HTTPStatusError as e:
             logger.error(
@@ -122,7 +122,7 @@ class EmbeddingService:
             )
             return {
                 "success": False,
-                "error": f"Could not connect to qontinui-api at {self.api_url}",
+                "error": f"Could not connect to the embedding service at {self.api_url}",
                 "results": [],
             }
         except httpx.HTTPStatusError as e:
@@ -145,7 +145,7 @@ class EmbeddingService:
             }
 
     async def warmup_models(self) -> dict[str, Any]:
-        """Warm up embedding models on qontinui-api.
+        """Warm up embedding models on the runner's embedding service.
 
         Call this before computing embeddings to avoid cold-start latency.
         """
@@ -166,7 +166,7 @@ class EmbeddingService:
             }
 
     async def get_status(self) -> dict[str, Any]:
-        """Get the status of embedding models on qontinui-api."""
+        """Get the status of embedding models on the runner's embedding service."""
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(
@@ -220,7 +220,7 @@ class EmbeddingService:
             )
             return {
                 "success": False,
-                "error": f"Could not connect to qontinui-api at {self.api_url}",
+                "error": f"Could not connect to the embedding service at {self.api_url}",
             }
         except httpx.HTTPStatusError as e:
             logger.error(

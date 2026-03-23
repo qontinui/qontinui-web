@@ -40,7 +40,7 @@ class ElementDetectionService:
         """
         Detect UI elements in a capture screenshot.
 
-        Uses qontinui-api's analysis capabilities to identify buttons, inputs,
+        Uses the runner's analysis capabilities to identify buttons, inputs,
         text, images, and other UI elements.
 
         Args:

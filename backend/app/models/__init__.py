@@ -327,7 +327,7 @@ __all__ = [
     "CaptureDetectedElement",
     "ScreenshotStateMatch",
     "LearnedWorkflow",
-    # Video Capture & Historical Data (from qontinui-api)
+    # Video Capture & Historical Data
     "VideoCaptureSession",
     "InputEvent",
     "InputEventType",

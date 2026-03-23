@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 class ActionFrame(Base):
     """
-    Links automation actions to specific video frames (migrated from qontinui-api).
+    Links automation actions to specific video frames.
 
     This table enables:
     - Retrieving the exact frame when an action occurred
