@@ -15,6 +15,7 @@ from app.api.v1.endpoints import auth as auth_pkg
 from app.api.v1.endpoints import (
     automation,
     automation_ws,
+    evaluation,
     background_removal,
     batch_import,
     billing,
@@ -36,6 +37,7 @@ from app.api.v1.endpoints import (
     exports,
     extraction,
     feedback,
+    feedback_scores,
     finding_categories,
     health,
     historical,
@@ -46,6 +48,7 @@ from app.api.v1.endpoints import (
     library,
     notifications,
     organizations,
+    prompt_versions,
     project_files,
     project_images,
     project_screenshots,
@@ -271,4 +274,16 @@ api_router.include_router(
 # Constraint engine proxy (forwards to runner HTTP API)
 api_router.include_router(
     constraints.router, prefix="/constraints", tags=["constraints"]
+)
+# Feedback scores (Opik integration — quality metrics on runs and actions)
+api_router.include_router(
+    feedback_scores.router, tags=["feedback-scores"]
+)
+# Prompt versions (Opik integration — prompt template version history and diff)
+api_router.include_router(
+    prompt_versions.router, tags=["prompt-versions"]
+)
+# Evaluation datasets and experiments (Opik integration — dataset management and experiment tracking)
+api_router.include_router(
+    evaluation.router, prefix="/evaluation", tags=["evaluation"]
 )

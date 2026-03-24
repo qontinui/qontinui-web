@@ -6,7 +6,8 @@
 export type ScheduleExpression =
   | { type: "Once"; value: string } // ISO 8601 datetime
   | { type: "Cron"; value: string } // Cron expression
-  | { type: "Interval"; value: number }; // Seconds
+  | { type: "Interval"; value: number } // Seconds
+  | { type: "Condition"; value: { rearm_delay_minutes?: number } }; // Condition-only
 
 // =============================================================================
 // Condition Types

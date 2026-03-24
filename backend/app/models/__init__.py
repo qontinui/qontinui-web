@@ -11,6 +11,7 @@ from app.models.action_execution import (
 )
 from app.models.admin_notification_settings import AdminNotificationSettings
 from app.models.ai_prompt import AIPromptTemplate, PromptSequence
+from app.models.prompt_template_version import PromptTemplateVersion
 from app.models.analytics_event import AnalyticsEvent
 from app.models.annotation import Annotation, AnnotationSet
 from app.models.application_profile import ApplicationProfile
@@ -69,6 +70,9 @@ from app.models.execution_tree_event import (
     TreeNodeType,
 )
 from app.models.extraction import ExtractionAnnotation, ExtractionSession
+from app.models.evaluation_dataset import DatasetItem, EvaluationDataset
+from app.models.evaluation_experiment import EvaluationExperiment, ExperimentResult
+from app.models.feedback_score import FeedbackScore
 from app.models.finding_category_config import FindingCategoryConfig
 from app.models.known_issue import KnownIssue
 from app.models.notification import (
@@ -231,6 +235,7 @@ __all__ = [
     # AI Prompt Library
     "AIPromptTemplate",
     "PromptSequence",
+    "PromptTemplateVersion",
     # Organizations and Teams
     "Organization",
     "TeamMember",
@@ -458,4 +463,11 @@ __all__ = [
     "Skill",
     # Known Issues (verified/discovered issues tracked across executions)
     "KnownIssue",
+    # Feedback Scores (Opik integration — quality metrics)
+    "FeedbackScore",
+    # Evaluation Datasets & Experiments (prompt variant evaluation)
+    "EvaluationDataset",
+    "DatasetItem",
+    "EvaluationExperiment",
+    "ExperimentResult",
 ]

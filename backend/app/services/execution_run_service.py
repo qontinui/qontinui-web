@@ -21,6 +21,8 @@ from qontinui_schemas.api.execution import (
     ActionReliabilityStats,
     ActionStatus,
     ActionType,
+    CostTrendDataPoint,
+    CostTrendResponse,
     CoverageData,
     ExecutionRunComplete,
     ExecutionRunCompleteResponse,
@@ -32,6 +34,8 @@ from qontinui_schemas.api.execution import (
     ExecutionTrendDataPoint,
     ExecutionTrendResponse,
     ExecutionWorkflowMetadata,
+    LLMCostSummary,
+    ModelCostBreakdown,
     Pagination,
     RunnerMetadata,
     RunStatus,
@@ -790,3 +794,184 @@ class ExecutionRunService:
             )
 
         return result_list
+
+    @staticmethod
+    def _extract_llm_metrics(action: ActionExecution) -> dict[str, Any] | None:
+        """
+        Extract LLM metrics from an action's extra_metadata.
+
+        The runner stores llm_metrics inside the metadata JSONB field.
+        Returns the metrics dict if present and non-empty, else None.
+        """
+        metadata = action.extra_metadata or {}
+        llm_metrics = metadata.get("llm_metrics")
+        if llm_metrics and isinstance(llm_metrics, dict):
+            return llm_metrics
+        return None
+
+    async def compute_llm_cost_summary(
+        self,
+        db: AsyncSession,
+        run_id: UUID,
+    ) -> LLMCostSummary:
+        """
+        Compute aggregate LLM cost summary for an execution run.
+
+        Queries all ActionExecution rows for the run, extracts LLM metrics
+        from extra_metadata, and returns per-model cost breakdown and totals.
+
+        Args:
+            db: Database session
+            run_id: ID of the execution run
+
+        Returns:
+            LLMCostSummary with per-model breakdown and totals
+        """
+        actions = await self.action_repo.get_all_for_run(db, run_id)
+
+        total_tokens_input = 0
+        total_tokens_output = 0
+        total_cost_usd = 0.0
+        llm_action_count = 0
+        model_agg: dict[str, dict[str, Any]] = {}
+
+        for action in actions:
+            metrics = self._extract_llm_metrics(action)
+            if not metrics:
+                continue
+
+            llm_action_count += 1
+            tokens_in = metrics.get("tokens_input") or 0
+            tokens_out = metrics.get("tokens_output") or 0
+            cost = metrics.get("cost_usd") or 0.0
+            model_name = metrics.get("model") or "unknown"
+            provider = metrics.get("provider")
+
+            total_tokens_input += tokens_in
+            total_tokens_output += tokens_out
+            total_cost_usd += cost
+
+            if model_name not in model_agg:
+                model_agg[model_name] = {
+                    "model": model_name,
+                    "provider": provider,
+                    "tokens_input": 0,
+                    "tokens_output": 0,
+                    "cost_usd": 0.0,
+                    "action_count": 0,
+                }
+
+            model_agg[model_name]["tokens_input"] += tokens_in
+            model_agg[model_name]["tokens_output"] += tokens_out
+            model_agg[model_name]["cost_usd"] += cost
+            model_agg[model_name]["action_count"] += 1
+
+        per_model = [
+            ModelCostBreakdown(**data)
+            for data in sorted(
+                model_agg.values(), key=lambda d: d["cost_usd"], reverse=True
+            )
+        ]
+
+        logger.info(
+            "Computed LLM cost summary",
+            run_id=str(run_id),
+            llm_action_count=llm_action_count,
+            total_cost_usd=round(total_cost_usd, 6),
+        )
+
+        return LLMCostSummary(
+            run_id=run_id,
+            total_tokens_input=total_tokens_input,
+            total_tokens_output=total_tokens_output,
+            total_cost_usd=round(total_cost_usd, 6),
+            llm_action_count=llm_action_count,
+            per_model=per_model,
+        )
+
+    async def get_cost_trends(
+        self,
+        db: AsyncSession,
+        project_id: UUID,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        granularity: str = "daily",
+    ) -> CostTrendResponse:
+        """
+        Get LLM cost trend data for analytics.
+
+        Aggregates cost data across runs grouped by date period.
+
+        Args:
+            db: Database session
+            project_id: Project ID to filter by
+            start_date: Start date for range
+            end_date: End date for range
+            granularity: Granularity (daily, weekly)
+
+        Returns:
+            CostTrendResponse with trend data
+        """
+        raw_data = await self.run_repo.get_cost_trend_data(
+            db,
+            project_id=project_id,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        data_points: list[CostTrendDataPoint] = []
+        overall_tokens_input = 0
+        overall_tokens_output = 0
+        overall_cost_usd = 0.0
+        overall_llm_action_count = 0
+        overall_runs_count = 0
+
+        for day_data in raw_data:
+            day_tokens_input = 0
+            day_tokens_output = 0
+            day_cost_usd = 0.0
+            day_llm_action_count = 0
+
+            for action in day_data["actions"]:
+                metrics = self._extract_llm_metrics(action)
+                if not metrics:
+                    continue
+
+                day_llm_action_count += 1
+                day_tokens_input += metrics.get("tokens_input") or 0
+                day_tokens_output += metrics.get("tokens_output") or 0
+                day_cost_usd += metrics.get("cost_usd") or 0.0
+
+            data_points.append(
+                CostTrendDataPoint(
+                    date=day_data["date"],
+                    tokens_input=day_tokens_input,
+                    tokens_output=day_tokens_output,
+                    cost_usd=round(day_cost_usd, 6),
+                    llm_action_count=day_llm_action_count,
+                    runs_count=day_data["runs_count"],
+                )
+            )
+
+            overall_tokens_input += day_tokens_input
+            overall_tokens_output += day_tokens_output
+            overall_cost_usd += day_cost_usd
+            overall_llm_action_count += day_llm_action_count
+            overall_runs_count += day_data["runs_count"]
+
+        overall_stats = {
+            "total_tokens_input": overall_tokens_input,
+            "total_tokens_output": overall_tokens_output,
+            "total_cost_usd": round(overall_cost_usd, 6),
+            "total_llm_actions": overall_llm_action_count,
+            "total_runs": overall_runs_count,
+        }
+
+        return CostTrendResponse(
+            project_id=project_id,
+            start_date=start_date.isoformat() if start_date else "",
+            end_date=end_date.isoformat() if end_date else "",
+            granularity=granularity,
+            data_points=data_points,
+            overall_stats=overall_stats,
+        )

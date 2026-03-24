@@ -12,8 +12,11 @@ from app.repositories.admin_project import AdminProjectRepository
 from app.repositories.admin_user import AdminUserRepository
 from app.repositories.automation_session import AutomationSessionRepository
 from app.repositories.download_analytics import DownloadAnalyticsRepository
+from app.repositories.evaluation import EvaluationRepository
+from app.repositories.prompt_version import PromptVersionRepository
 from app.repositories.execution_issue import ExecutionIssueRepository
 from app.repositories.execution_run import ExecutionRunRepository
+from app.repositories.feedback_score import FeedbackScoreRepository
 from app.repositories.execution_screenshot import ExecutionScreenshotRepository
 from app.repositories.execution_tree_event import ExecutionTreeEventRepository
 from app.repositories.test_run import CoverageRepository, TestRunRepository
@@ -130,6 +133,28 @@ def get_admin_project_repository() -> AdminProjectRepository:
 
 
 @lru_cache
+def get_evaluation_repository() -> EvaluationRepository:
+    """
+    Get the EvaluationRepository singleton instance.
+
+    Returns:
+        EvaluationRepository instance
+    """
+    return EvaluationRepository()
+
+
+@lru_cache
+def get_feedback_score_repository() -> FeedbackScoreRepository:
+    """
+    Get the FeedbackScoreRepository singleton instance.
+
+    Returns:
+        FeedbackScoreRepository instance
+    """
+    return FeedbackScoreRepository()
+
+
+@lru_cache
 def get_download_analytics_repository() -> DownloadAnalyticsRepository:
     """
     Get the DownloadAnalyticsRepository singleton instance.
@@ -138,3 +163,14 @@ def get_download_analytics_repository() -> DownloadAnalyticsRepository:
         DownloadAnalyticsRepository instance
     """
     return DownloadAnalyticsRepository()
+
+
+@lru_cache
+def get_prompt_version_repository() -> PromptVersionRepository:
+    """
+    Get the PromptVersionRepository singleton instance.
+
+    Returns:
+        PromptVersionRepository instance
+    """
+    return PromptVersionRepository()

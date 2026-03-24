@@ -82,6 +82,28 @@ class ActionExecution(Base):
         comment="Primary screenshot for this action",
     )
 
+    # Span nesting (Opik integration)
+    parent_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("action_executions.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+        comment="Parent action execution for span nesting",
+    )
+
+    span_type: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="Span type: action, llm_call, tool_use, retrieval (None defaults to action)",
+    )
+
+    trace_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+        comment="Distributed trace correlation ID",
+    )
+
     # Sequence and identification
     sequence_number: Mapped[int] = mapped_column(
         Integer,
@@ -213,9 +235,32 @@ class ActionExecution(Base):
         uselist=False,
     )
 
+    # Span nesting relationships
+    children = relationship(
+        "ActionExecution",
+        back_populates="parent",
+        foreign_keys="[ActionExecution.parent_id]",
+        lazy="select",
+    )
+
+    parent = relationship(
+        "ActionExecution",
+        back_populates="children",
+        foreign_keys="[ActionExecution.parent_id]",
+        remote_side="[ActionExecution.id]",
+        lazy="select",
+    )
+
     issues = relationship(
         "ExecutionIssue",
         back_populates="action_execution",
+        lazy="select",
+    )
+
+    feedback_scores = relationship(
+        "FeedbackScore",
+        back_populates="action_execution",
+        cascade="all, delete-orphan",
         lazy="select",
     )
 

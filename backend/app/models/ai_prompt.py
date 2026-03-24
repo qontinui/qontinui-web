@@ -53,6 +53,9 @@ class AIPromptTemplate(Base):
         JSON, nullable=False, default=list
     )  # List of PromptParameter dicts
 
+    # Versioning
+    current_version = Column(Integer, nullable=True)  # Current active version number
+
     # Execution defaults
     default_timeout = Column(
         Integer, nullable=True, default=600000
@@ -73,6 +76,7 @@ class AIPromptTemplate(Base):
     # Relationships
     project = relationship("Project", backref="ai_prompt_templates")
     creator = relationship("User", backref="created_prompt_templates")
+    versions = relationship("PromptTemplateVersion", back_populates="template")
 
     def to_dict(self):
         """Convert to dictionary for API responses."""
@@ -86,6 +90,7 @@ class AIPromptTemplate(Base):
             "tags": self.tags,
             "prompt": self.prompt,
             "parameters": self.parameters,
+            "current_version": self.current_version,
             "default_timeout": self.default_timeout,
             "default_working_directory": self.default_working_directory,
             "created_at": self.created_at.isoformat() if self.created_at else None,

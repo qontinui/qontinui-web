@@ -28,6 +28,7 @@ from qontinui_schemas.api.execution import (
     ActionReliabilityStats,
     ActionStatus,
     ActionType,
+    CostTrendResponse,
     ExecutionIssueBatch,
     ExecutionIssueBatchResponse,
     ExecutionIssueDetail,
@@ -46,6 +47,7 @@ from qontinui_schemas.api.execution import (
     IssueSource,
     IssueStatus,
     IssueType,
+    LLMCostSummary,
     RunStatus,
     RunType,
     ScreenshotType,
@@ -278,6 +280,38 @@ async def delete_run(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Execution run {run_id} not found",
         )
+
+
+@router.get(
+    "/runs/{run_id}/cost-summary",
+    response_model=LLMCostSummary,
+    summary="Get LLM cost summary for a run",
+    description="Get per-model cost breakdown and totals for all LLM actions in a run.",
+)
+async def get_run_cost_summary(
+    run_id: UUID,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
+    service: ExecutionRunService = Depends(get_run_service),
+    run_repo: ExecutionRunRepository = Depends(get_execution_run_repository),
+) -> LLMCostSummary:
+    """Get LLM cost summary for a single execution run."""
+    # Verify run exists
+    run = await run_repo.get_by_id(db, run_id)
+    if not run:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Execution run {run_id} not found",
+        )
+    result = await service.compute_llm_cost_summary(db, run_id)
+    logger.info(
+        "Retrieved LLM cost summary",
+        run_id=str(run_id),
+        llm_action_count=result.llm_action_count,
+        total_cost_usd=result.total_cost_usd,
+        user_id=str(current_user.id),
+    )
+    return result
 
 
 # =============================================================================
@@ -664,6 +698,33 @@ async def get_reliability_stats(
         run_type=run_type,
         days=days,
         limit=limit,
+    )
+
+
+@router.get(
+    "/analytics/cost-trends",
+    response_model=CostTrendResponse,
+    summary="Get LLM cost trends",
+    description="Get LLM cost trend data over time for analytics dashboards.",
+)
+async def get_cost_trends(
+    project_id: UUID = Query(..., description="Project ID"),
+    start_date: date = Query(..., description="Start date"),
+    end_date: date = Query(..., description="End date"),
+    granularity: str = Query(
+        "daily", description="Granularity: daily, weekly"
+    ),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
+    service: ExecutionRunService = Depends(get_run_service),
+) -> CostTrendResponse:
+    """Get LLM cost trend data."""
+    return await service.get_cost_trends(
+        db,
+        project_id=project_id,
+        start_date=start_date,
+        end_date=end_date,
+        granularity=granularity,
     )
 
 

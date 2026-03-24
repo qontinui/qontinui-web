@@ -77,6 +77,40 @@ class ActionExecutionRepository:
         return actions, total
 
     @staticmethod
+    async def get_all_for_run(
+        db: AsyncSession,
+        run_id: UUID,
+    ) -> list[ActionExecution]:
+        """
+        Get all action executions for a run (no pagination).
+
+        Used for aggregation operations like cost summaries where
+        all actions must be inspected.
+
+        Args:
+            db: Database session
+            run_id: ID of the execution run
+
+        Returns:
+            List of all ActionExecution records for the run
+        """
+        query = (
+            select(ActionExecution)
+            .where(ActionExecution.run_id == run_id)
+            .order_by(ActionExecution.sequence_number)
+        )
+        result = await db.execute(query)
+        actions = list(result.scalars().all())
+
+        logger.debug(
+            "get_all_for_run_executed",
+            run_id=str(run_id),
+            total=len(actions),
+        )
+
+        return actions
+
+    @staticmethod
     async def batch_create(
         db: AsyncSession,
         run_id: UUID,

@@ -498,3 +498,72 @@ class ExecutionRunRepository:
         query = select(ExecutionRun).where(ExecutionRun.id == run_id)
         result = await db.execute(query)
         return result.scalar_one_or_none()
+
+    @staticmethod
+    async def get_cost_trend_data(
+        db: AsyncSession,
+        project_id: UUID,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Get execution runs with their action executions for cost trend analysis.
+
+        Returns run IDs grouped by date, along with all associated actions
+        so callers can extract LLM metrics from extra_metadata.
+
+        Args:
+            db: Database session
+            project_id: Project ID to filter by
+            start_date: Start date for range
+            end_date: End date for range
+
+        Returns:
+            List of dicts with run date info and associated action executions
+        """
+        # Get runs in range
+        query = select(ExecutionRun).where(ExecutionRun.project_id == project_id)
+
+        if start_date:
+            query = query.where(func.date(ExecutionRun.started_at) >= start_date)
+        if end_date:
+            query = query.where(func.date(ExecutionRun.started_at) <= end_date)
+
+        result = await db.execute(query)
+        runs = result.scalars().all()
+
+        if not runs:
+            return []
+
+        # Group runs by date
+        daily_runs: dict[str, list[ExecutionRun]] = defaultdict(list)
+        for r in runs:
+            day = r.started_at.date().isoformat()
+            daily_runs[day].append(r)
+
+        # For each day, fetch all actions
+        data_points: list[dict[str, Any]] = []
+        for day_str, day_runs in sorted(daily_runs.items()):
+            run_ids = [r.id for r in day_runs]
+
+            action_query = select(ActionExecution).where(
+                ActionExecution.run_id.in_(run_ids)
+            )
+            action_result = await db.execute(action_query)
+            actions = list(action_result.scalars().all())
+
+            data_points.append(
+                {
+                    "date": day_str,
+                    "runs_count": len(day_runs),
+                    "actions": actions,
+                }
+            )
+
+        logger.debug(
+            "get_cost_trend_data_executed",
+            project_id=str(project_id),
+            data_point_count=len(data_points),
+        )
+
+        return data_points
