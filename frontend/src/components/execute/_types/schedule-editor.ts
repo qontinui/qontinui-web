@@ -54,6 +54,8 @@ export function getScheduleType(schedule?: ScheduleExpression): ScheduleType {
       return "cron";
     case "Interval":
       return "interval";
+    default:
+      return "once";
   }
 }
 
