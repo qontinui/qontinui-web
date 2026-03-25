@@ -5,6 +5,7 @@ import { useUIComponent } from "@qontinui/ui-bridge";
 import { useWorkflowBuilder } from "@/components/workflow-builder/WorkflowBuilderContext";
 import { StepConfigPanel } from "@/components/workflow-builder/StepConfigPanel";
 import { SettingsPanel } from "@/components/workflow-builder/SettingsPanel";
+import { FlowControlPanel } from "@/components/workflow-builder/FlowControlPanel";
 import { ConstraintsPanel } from "@/components/workflow-builder/constraints";
 import { ExecutionStatusPanel } from "@/components/workflow-builder/ExecutionStatusPanel";
 import { StageSelector } from "@/components/workflow-builder/StageSelector";
@@ -37,7 +38,7 @@ export function WorkflowEditor({
   pendingInsertStep?: Partial<UnifiedStep> | null;
   onInsertConsumed?: () => void;
 }) {
-  const { state, addStep, saveWorkflow, exportWorkflow, importWorkflow, setWorkflow, hasUnsavedChanges, getActiveSteps } =
+  const { state, addStep, saveWorkflow, exportWorkflow, importWorkflow, setWorkflow, updateWorkflow, hasUnsavedChanges, getActiveSteps } =
     useWorkflowBuilder();
   const [showSettings, setShowSettings] = useState(false);
   const [showConstraints, setShowConstraints] = useState(false);
@@ -329,7 +330,21 @@ export function WorkflowEditor({
         </div>
       </div>
 
-      {showSettings && <SettingsPanel />}
+      {showSettings && (
+        <>
+          <SettingsPanel />
+          <FlowControlPanel
+            flowControlJson={state.workflow.flow_control_json ?? null}
+            phaseTimeoutsJson={state.workflow.phase_timeouts_json ?? null}
+            onFlowControlChange={(json) =>
+              updateWorkflow({ flow_control_json: json })
+            }
+            onPhaseTimeoutsChange={(json) =>
+              updateWorkflow({ phase_timeouts_json: json })
+            }
+          />
+        </>
+      )}
       {showConstraints && <ConstraintsPanel />}
 
       <ExecutionStatusPanel workflowId={state.workflow.id} />

@@ -168,13 +168,14 @@ async def list_datasets(
     """List evaluation datasets."""
     datasets, total = await EvaluationRepository.list_datasets(db, skip, limit)
 
-    # Get item counts for each dataset
-    items = []
-    for dataset in datasets:
-        _, item_count = await EvaluationRepository.get_items(
-            db, dataset.id, skip=0, limit=0
-        )
-        items.append(_dataset_to_response(dataset, item_count=item_count))
+    # Batch count items for all datasets in a single query
+    dataset_ids = [dataset.id for dataset in datasets]
+    item_counts = await EvaluationRepository.count_items_by_dataset_ids(db, dataset_ids)
+
+    items = [
+        _dataset_to_response(dataset, item_count=item_counts.get(dataset.id, 0))
+        for dataset in datasets
+    ]
 
     return EvaluationDatasetListResponse(items=items, total=total)
 
@@ -198,9 +199,7 @@ async def get_dataset(
             detail=f"Evaluation dataset {dataset_id} not found",
         )
 
-    _, item_count = await EvaluationRepository.get_items(
-        db, dataset_id, skip=0, limit=0
-    )
+    item_count = await EvaluationRepository.count_items(db, dataset_id)
 
     return _dataset_to_response(dataset, item_count=item_count)
 
@@ -377,9 +376,7 @@ async def create_experiment(
     experiment = await EvaluationRepository.create_experiment(db, data)
 
     # Get item count from the dataset
-    _, item_count = await EvaluationRepository.get_items(
-        db, experiment.dataset_id, skip=0, limit=0
-    )
+    item_count = await EvaluationRepository.count_items(db, experiment.dataset_id)
 
     logger.info(
         "Created evaluation experiment",
@@ -412,23 +409,24 @@ async def list_experiments(
         db, dataset_id, skip, limit
     )
 
-    items = []
-    for experiment in experiments:
-        # Get item count from the dataset
-        _, item_count = await EvaluationRepository.get_items(
-            db, experiment.dataset_id, skip=0, limit=0
+    # Batch count items and results in two queries instead of 2N
+    exp_dataset_ids = list({exp.dataset_id for exp in experiments})
+    exp_ids = [exp.id for exp in experiments]
+    item_counts = await EvaluationRepository.count_items_by_dataset_ids(
+        db, exp_dataset_ids
+    )
+    result_counts = await EvaluationRepository.count_results_by_experiment_ids(
+        db, exp_ids
+    )
+
+    items = [
+        _experiment_to_response(
+            experiment,
+            item_count=item_counts.get(experiment.dataset_id, 0),
+            completed_count=result_counts.get(experiment.id, 0),
         )
-        # Get completed result count
-        _, completed_count = await EvaluationRepository.get_results(
-            db, experiment.id, skip=0, limit=0
-        )
-        items.append(
-            _experiment_to_response(
-                experiment,
-                item_count=item_count,
-                completed_count=completed_count,
-            )
-        )
+        for experiment in experiments
+    ]
 
     return EvaluationExperimentListResponse(items=items, total=total)
 
@@ -452,14 +450,9 @@ async def get_experiment(
             detail=f"Evaluation experiment {experiment_id} not found",
         )
 
-    # Get item count from the dataset
-    _, item_count = await EvaluationRepository.get_items(
-        db, experiment.dataset_id, skip=0, limit=0
-    )
-    # Get completed result count
-    _, completed_count = await EvaluationRepository.get_results(
-        db, experiment.id, skip=0, limit=0
-    )
+    # Get item count and completed result count with dedicated count queries
+    item_count = await EvaluationRepository.count_items(db, experiment.dataset_id)
+    completed_count = await EvaluationRepository.count_results(db, experiment.id)
 
     return _experiment_to_response(
         experiment,
@@ -493,14 +486,9 @@ async def update_experiment_status(
             detail=f"Evaluation experiment {experiment_id} not found",
         )
 
-    # Get item count from the dataset
-    _, item_count = await EvaluationRepository.get_items(
-        db, experiment.dataset_id, skip=0, limit=0
-    )
-    # Get completed result count
-    _, completed_count = await EvaluationRepository.get_results(
-        db, experiment.id, skip=0, limit=0
-    )
+    # Get item count and completed result count with dedicated count queries
+    item_count = await EvaluationRepository.count_items(db, experiment.dataset_id)
+    completed_count = await EvaluationRepository.count_results(db, experiment.id)
 
     logger.info(
         "Updated experiment status",

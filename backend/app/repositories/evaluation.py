@@ -335,6 +335,58 @@ class EvaluationRepository:
         return True
 
     # =========================================================================
+    # Count Operations
+    # =========================================================================
+
+    @staticmethod
+    async def count_items(db: AsyncSession, dataset_id: UUID) -> int:
+        """Count items for a single dataset."""
+        query = select(func.count(DatasetItem.id)).where(
+            DatasetItem.dataset_id == dataset_id
+        )
+        result = await db.execute(query)
+        return result.scalar() or 0
+
+    @staticmethod
+    async def count_results(db: AsyncSession, experiment_id: UUID) -> int:
+        """Count results for a single experiment."""
+        query = select(func.count(ExperimentResult.id)).where(
+            ExperimentResult.experiment_id == experiment_id
+        )
+        result = await db.execute(query)
+        return result.scalar() or 0
+
+    @staticmethod
+    async def count_items_by_dataset_ids(
+        db: AsyncSession, dataset_ids: list[UUID]
+    ) -> dict[UUID, int]:
+        """Batch count items for multiple datasets in a single query."""
+        if not dataset_ids:
+            return {}
+        query = (
+            select(DatasetItem.dataset_id, func.count(DatasetItem.id))
+            .where(DatasetItem.dataset_id.in_(dataset_ids))
+            .group_by(DatasetItem.dataset_id)
+        )
+        result = await db.execute(query)
+        return dict(result.all())
+
+    @staticmethod
+    async def count_results_by_experiment_ids(
+        db: AsyncSession, experiment_ids: list[UUID]
+    ) -> dict[UUID, int]:
+        """Batch count results for multiple experiments in a single query."""
+        if not experiment_ids:
+            return {}
+        query = (
+            select(ExperimentResult.experiment_id, func.count(ExperimentResult.id))
+            .where(ExperimentResult.experiment_id.in_(experiment_ids))
+            .group_by(ExperimentResult.experiment_id)
+        )
+        result = await db.execute(query)
+        return dict(result.all())
+
+    # =========================================================================
     # Experiment Operations
     # =========================================================================
 

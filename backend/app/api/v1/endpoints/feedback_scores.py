@@ -18,6 +18,7 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from qontinui_schemas.api.feedback import (
+    FeedbackScoreBatchResponse,
     FeedbackScoreCreate,
     FeedbackScoreListResponse,
     FeedbackScoreResponse,
@@ -103,6 +104,49 @@ async def create_feedback_score(
     )
 
     return _model_to_response(score)
+
+
+@router.post(
+    "/feedback-scores/batch",
+    response_model=FeedbackScoreBatchResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create feedback scores in batch",
+    description="Create multiple feedback scores in a single request.",
+)
+async def create_feedback_scores_batch(
+    scores: list[FeedbackScoreCreate],
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
+) -> FeedbackScoreBatchResponse:
+    """Create multiple feedback scores in a single transaction."""
+    items: list[dict] = []
+    for score_data in scores:
+        data: dict = {
+            "name": score_data.name,
+            "value": score_data.value,
+            "category_value": score_data.category_value,
+            "source": score_data.source,
+            "reason": score_data.reason,
+            "metadata_": score_data.metadata,
+            "created_by": str(current_user.id),
+        }
+
+        if score_data.target_type == "run":
+            data["run_id"] = score_data.target_id
+        else:
+            data["action_execution_id"] = score_data.target_id
+
+        items.append(data)
+
+    created = await FeedbackScoreRepository.create_batch(db, items)
+
+    logger.info(
+        "Batch created feedback scores",
+        count=created,
+        user_id=str(current_user.id),
+    )
+
+    return FeedbackScoreBatchResponse(created=created)
 
 
 @router.get(

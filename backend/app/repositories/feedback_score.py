@@ -51,6 +51,32 @@ class FeedbackScoreRepository:
         return score
 
     @staticmethod
+    async def create_batch(
+        db: AsyncSession,
+        items: list[dict],
+    ) -> int:
+        """
+        Create multiple feedback scores in a single transaction.
+
+        Args:
+            db: Database session
+            items: List of dicts, each with feedback score fields
+
+        Returns:
+            Number of scores created
+        """
+        scores = [FeedbackScore(**data) for data in items]
+        db.add_all(scores)
+        await db.commit()
+
+        logger.info(
+            "feedback_scores_batch_created",
+            count=len(scores),
+        )
+
+        return len(scores)
+
+    @staticmethod
     async def get_by_id(
         db: AsyncSession,
         score_id: UUID,
