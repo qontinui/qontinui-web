@@ -711,9 +711,7 @@ async def get_cost_trends(
     project_id: UUID = Query(..., description="Project ID"),
     start_date: date = Query(..., description="Start date"),
     end_date: date = Query(..., description="End date"),
-    granularity: str = Query(
-        "daily", description="Granularity: daily, weekly"
-    ),
+    granularity: str = Query("daily", description="Granularity: daily, weekly"),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
     service: ExecutionRunService = Depends(get_run_service),

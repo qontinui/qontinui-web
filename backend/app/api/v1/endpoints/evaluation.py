@@ -268,9 +268,7 @@ async def add_dataset_items(
         for item in items_data
     ]
 
-    created_items = await EvaluationRepository.add_items(
-        db, dataset_id, items_dicts
-    )
+    created_items = await EvaluationRepository.add_items(db, dataset_id, items_dicts)
 
     logger.info(
         "Added items to evaluation dataset",
@@ -304,9 +302,7 @@ async def list_dataset_items(
             detail=f"Evaluation dataset {dataset_id} not found",
         )
 
-    items, total = await EvaluationRepository.get_items(
-        db, dataset_id, skip, limit
-    )
+    items, total = await EvaluationRepository.get_items(db, dataset_id, skip, limit)
 
     return DatasetItemListResponse(
         items=[_item_to_response(item) for item in items],
@@ -359,9 +355,7 @@ async def create_experiment(
 ) -> EvaluationExperimentResponse:
     """Create a new evaluation experiment."""
     # Verify dataset exists and get current version
-    dataset = await EvaluationRepository.get_dataset(
-        db, experiment_data.dataset_id
-    )
+    dataset = await EvaluationRepository.get_dataset(db, experiment_data.dataset_id)
     if dataset is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -395,9 +389,7 @@ async def create_experiment(
         user_id=str(current_user.id),
     )
 
-    return _experiment_to_response(
-        experiment, item_count=item_count, completed_count=0
-    )
+    return _experiment_to_response(experiment, item_count=item_count, completed_count=0)
 
 
 @router.get(
@@ -632,8 +624,6 @@ async def get_experiment_summary(
             detail=f"Evaluation experiment {experiment_id} not found",
         )
 
-    summary = await EvaluationRepository.get_experiment_summary(
-        db, experiment_id
-    )
+    summary = await EvaluationRepository.get_experiment_summary(db, experiment_id)
 
     return ExperimentSummary(**summary)

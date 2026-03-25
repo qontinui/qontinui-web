@@ -52,9 +52,9 @@ class PromptVersionRepository:
         ).hexdigest()
 
         # Auto-increment version number
-        max_query = select(
-            func.max(PromptTemplateVersion.version_number)
-        ).where(PromptTemplateVersion.template_id == template_id)
+        max_query = select(func.max(PromptTemplateVersion.version_number)).where(
+            PromptTemplateVersion.template_id == template_id
+        )
         result = await db.execute(max_query)
         max_version = result.scalar() or 0
         next_version = max_version + 1
@@ -161,9 +161,11 @@ class PromptVersionRepository:
         total = total_result.scalar() or 0
 
         # Order by version number descending, apply pagination
-        query = base_query.order_by(
-            PromptTemplateVersion.version_number.desc()
-        ).offset(skip).limit(limit)
+        query = (
+            base_query.order_by(PromptTemplateVersion.version_number.desc())
+            .offset(skip)
+            .limit(limit)
+        )
 
         result = await db.execute(query)
         versions = list(result.scalars().all())
@@ -225,12 +227,8 @@ class PromptVersionRepository:
         Raises:
             ValueError: If either version is not found
         """
-        va = await PromptVersionRepository.get_version(
-            db, template_id, version_a
-        )
-        vb = await PromptVersionRepository.get_version(
-            db, template_id, version_b
-        )
+        va = await PromptVersionRepository.get_version(db, template_id, version_a)
+        vb = await PromptVersionRepository.get_version(db, template_id, version_b)
 
         if va is None:
             raise ValueError(
@@ -291,9 +289,9 @@ class PromptVersionRepository:
         await db.flush()
 
         # Update parent template's current_version
-        new_max_query = select(
-            func.max(PromptTemplateVersion.version_number)
-        ).where(PromptTemplateVersion.template_id == template_id)
+        new_max_query = select(func.max(PromptTemplateVersion.version_number)).where(
+            PromptTemplateVersion.template_id == template_id
+        )
         new_max_result = await db.execute(new_max_query)
         new_current = new_max_result.scalar()
 

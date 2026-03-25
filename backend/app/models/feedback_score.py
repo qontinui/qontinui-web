@@ -105,9 +105,7 @@ class FeedbackScore(Base):
     )
 
     # Composite index for common query: scores by name and source
-    __table_args__ = (
-        Index("ix_feedback_scores_name_source", "name", "source"),
-    )
+    __table_args__ = (Index("ix_feedback_scores_name_source", "name", "source"),)
 
     # Relationships
     run = relationship("ExecutionRun", back_populates="feedback_scores")

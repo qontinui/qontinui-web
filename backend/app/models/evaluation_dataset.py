@@ -151,9 +151,7 @@ class DatasetItem(Base):
     )
 
     # Index on dataset_id is declared via index=True on the column above
-    __table_args__ = (
-        Index("ix_dataset_items_dataset_id", "dataset_id"),
-    )
+    __table_args__ = (Index("ix_dataset_items_dataset_id", "dataset_id"),)
 
     # Relationships
     dataset = relationship("EvaluationDataset", back_populates="items")

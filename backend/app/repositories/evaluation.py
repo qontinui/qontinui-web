@@ -87,9 +87,7 @@ class EvaluationRepository:
         Returns:
             EvaluationDataset or None if not found
         """
-        query = select(EvaluationDataset).where(
-            EvaluationDataset.id == dataset_id
-        )
+        query = select(EvaluationDataset).where(EvaluationDataset.id == dataset_id)
         result = await db.execute(query)
         return result.scalar_one_or_none()
 
@@ -258,9 +256,7 @@ class EvaluationRepository:
         Returns:
             Tuple of (list of DatasetItem, total count)
         """
-        query = select(DatasetItem).where(
-            DatasetItem.dataset_id == dataset_id
-        )
+        query = select(DatasetItem).where(DatasetItem.dataset_id == dataset_id)
 
         # Get total count
         count_query = select(func.count()).select_from(query.subquery())
@@ -414,9 +410,7 @@ class EvaluationRepository:
         query = select(EvaluationExperiment)
 
         if dataset_id is not None:
-            query = query.where(
-                EvaluationExperiment.dataset_id == dataset_id
-            )
+            query = query.where(EvaluationExperiment.dataset_id == dataset_id)
 
         # Get total count
         count_query = select(func.count()).select_from(query.subquery())
@@ -459,9 +453,7 @@ class EvaluationRepository:
         Returns:
             Updated EvaluationExperiment or None if not found
         """
-        experiment = await EvaluationRepository.get_experiment(
-            db, experiment_id
-        )
+        experiment = await EvaluationRepository.get_experiment(db, experiment_id)
         if experiment is None:
             return None
 
@@ -582,15 +574,12 @@ class EvaluationRepository:
             total_tokens, avg_scores
         """
         # Aggregate numeric fields
-        agg_query = (
-            select(
-                func.count().label("total_results"),
-                func.avg(ExperimentResult.duration_ms).label("avg_duration_ms"),
-                func.sum(ExperimentResult.cost_usd).label("total_cost_usd"),
-                func.sum(ExperimentResult.tokens_total).label("total_tokens"),
-            )
-            .where(ExperimentResult.experiment_id == experiment_id)
-        )
+        agg_query = select(
+            func.count().label("total_results"),
+            func.avg(ExperimentResult.duration_ms).label("avg_duration_ms"),
+            func.sum(ExperimentResult.cost_usd).label("total_cost_usd"),
+            func.sum(ExperimentResult.tokens_total).label("total_tokens"),
+        ).where(ExperimentResult.experiment_id == experiment_id)
 
         agg_result = await db.execute(agg_query)
         row = agg_result.one()
@@ -606,11 +595,7 @@ class EvaluationRepository:
             if row.total_cost_usd is not None
             else None
         )
-        total_tokens = (
-            int(row.total_tokens)
-            if row.total_tokens is not None
-            else None
-        )
+        total_tokens = int(row.total_tokens) if row.total_tokens is not None else None
 
         # Compute average scores across all results that have scores
         avg_scores: dict[str, float] | None = None

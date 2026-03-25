@@ -11,7 +11,6 @@ from app.models.action_execution import (
 )
 from app.models.admin_notification_settings import AdminNotificationSettings
 from app.models.ai_prompt import AIPromptTemplate, PromptSequence
-from app.models.prompt_template_version import PromptTemplateVersion
 from app.models.analytics_event import AnalyticsEvent
 from app.models.annotation import Annotation, AnnotationSet
 from app.models.application_profile import ApplicationProfile
@@ -54,6 +53,8 @@ from app.models.discovery import Discovery
 from app.models.edit_command import EditCommand
 from app.models.element_annotation import ElementAnnotation, ElementAnnotationSet
 from app.models.embedding_generation_job import EmbeddingGenerationJob
+from app.models.evaluation_dataset import DatasetItem, EvaluationDataset
+from app.models.evaluation_experiment import EvaluationExperiment, ExperimentResult
 from app.models.execution_issue import (
     ExecutionIssue,
     ExecutionIssueSeverity,
@@ -70,8 +71,6 @@ from app.models.execution_tree_event import (
     TreeNodeType,
 )
 from app.models.extraction import ExtractionAnnotation, ExtractionSession
-from app.models.evaluation_dataset import DatasetItem, EvaluationDataset
-from app.models.evaluation_experiment import EvaluationExperiment, ExperimentResult
 from app.models.feedback_score import FeedbackScore
 from app.models.finding_category_config import FindingCategoryConfig
 from app.models.known_issue import KnownIssue
@@ -94,6 +93,7 @@ from app.models.project_annotation_state import ProjectAnnotationState
 from app.models.project_assets import ProjectImage, ProjectScreenshot
 from app.models.project_embedding import ProjectEmbedding
 from app.models.project_version import ProjectVersion
+from app.models.prompt_template_version import PromptTemplateVersion
 from app.models.recording import (
     DiscoveredTransition,
     ProcessingLog,

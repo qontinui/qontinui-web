@@ -24,11 +24,11 @@ from app.repositories.base import BaseRepository
 from app.repositories.evaluation import EvaluationRepository
 from app.repositories.execution_issue import ExecutionIssueRepository
 from app.repositories.execution_run import ExecutionRunRepository
-from app.repositories.feedback_score import FeedbackScoreRepository
 from app.repositories.execution_screenshot import ExecutionScreenshotRepository
 from app.repositories.execution_tree_event import ExecutionTreeEventRepository
-from app.repositories.test_run import CoverageRepository, TestRunRepository
+from app.repositories.feedback_score import FeedbackScoreRepository
 from app.repositories.prompt_version import PromptVersionRepository
+from app.repositories.test_run import CoverageRepository, TestRunRepository
 from app.repositories.training_dataset import (
     TrainingDatasetRepository,
     training_dataset_repository,

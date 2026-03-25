@@ -8,7 +8,15 @@ enabling version history, rollback, and performance comparison across versions.
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -28,9 +36,7 @@ class PromptTemplateVersion(Base):
 
     __tablename__ = "prompt_template_versions"
     __table_args__ = (
-        UniqueConstraint(
-            "template_id", "version_number", name="uq_template_version"
-        ),
+        UniqueConstraint("template_id", "version_number", name="uq_template_version"),
     )
 
     # Primary key

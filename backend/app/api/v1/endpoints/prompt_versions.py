@@ -146,9 +146,7 @@ async def get_prompt_version(
     current_user: User = Depends(current_active_user),
 ) -> PromptVersionResponse:
     """Get a specific prompt template version."""
-    version = await PromptVersionRepository.get_version(
-        db, template_id, version_number
-    )
+    version = await PromptVersionRepository.get_version(db, template_id, version_number)
     if version is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -199,9 +197,7 @@ async def delete_prompt_version(
 ) -> None:
     """Delete a prompt template version."""
     # First find the version to get its UUID
-    version = await PromptVersionRepository.get_version(
-        db, template_id, version_number
-    )
+    version = await PromptVersionRepository.get_version(db, template_id, version_number)
     if version is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
