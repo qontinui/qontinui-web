@@ -11,6 +11,7 @@ from uuid import UUID
 
 import structlog
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ai_prompt import AIPromptTemplate
@@ -77,6 +78,23 @@ class PromptVersionRepository:
         template = template_result.scalar_one_or_none()
         if template:
             template.current_version = next_version
+
+        try:
+            await db.flush()
+        except IntegrityError:
+            await db.rollback()
+            # Re-read max version after conflict
+            result = await db.execute(max_query)
+            max_version = result.scalar() or 0
+            next_version = max_version + 1
+            version.version_number = next_version
+            db.add(version)
+            # Re-fetch and update template after rollback
+            template_result = await db.execute(template_query)
+            template = template_result.scalar_one_or_none()
+            if template:
+                template.current_version = next_version
+            await db.flush()
 
         await db.commit()
         await db.refresh(version)
@@ -268,13 +286,32 @@ class PromptVersionRepository:
         if version is None:
             return False
 
+        template_id = version.template_id
         await db.delete(version)
+        await db.flush()
+
+        # Update parent template's current_version
+        new_max_query = select(
+            func.max(PromptTemplateVersion.version_number)
+        ).where(PromptTemplateVersion.template_id == template_id)
+        new_max_result = await db.execute(new_max_query)
+        new_current = new_max_result.scalar()
+
+        template_query = select(AIPromptTemplate).where(
+            AIPromptTemplate.id == template_id
+        )
+        template_result = await db.execute(template_query)
+        template = template_result.scalar_one_or_none()
+        if template:
+            template.current_version = new_current
+            await db.flush()
+
         await db.commit()
 
         logger.info(
             "prompt_version_deleted",
             version_id=str(version_id),
-            template_id=version.template_id,
+            template_id=template_id,
             version_number=version.version_number,
         )
 

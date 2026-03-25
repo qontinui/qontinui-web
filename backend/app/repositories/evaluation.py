@@ -13,7 +13,7 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.evaluation_dataset import DatasetItem, EvaluationDataset
@@ -153,11 +153,6 @@ class EvaluationRepository:
         dataset = await EvaluationRepository.get_dataset(db, dataset_id)
         if dataset is None:
             return False
-
-        # Delete associated items first
-        await db.execute(
-            delete(DatasetItem).where(DatasetItem.dataset_id == dataset_id)
-        )
 
         await db.delete(dataset)
         await db.commit()
@@ -632,7 +627,9 @@ class EvaluationRepository:
                 score_counts: dict[str, int] = {}
                 for scores_dict in all_scores:
                     for key, value in scores_dict.items():
-                        score_sums[key] = score_sums.get(key, 0.0) + value
+                        if not isinstance(value, (int, float)):
+                            continue
+                        score_sums[key] = score_sums.get(key, 0.0) + float(value)
                         score_counts[key] = score_counts.get(key, 0) + 1
 
                 avg_scores = {
