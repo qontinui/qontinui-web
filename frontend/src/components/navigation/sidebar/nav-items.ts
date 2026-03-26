@@ -54,16 +54,15 @@ export const devNavItems: NavItem[] = [
   },
 
   // ===========================================================================
-  // Hidden items (dev-only, AI mode)
+  // AI mode tools (supplemental to shared navigation)
   // ===========================================================================
   {
     id: "inspector",
     label: "Inspector",
-    description: "UI Bridge element inspection (dev debugging tool)",
+    description: "UI Bridge element inspection",
     icon: React.createElement(ScanSearch, { className: "size-5" }),
     route: "/tools/inspector",
     color: "var(--brand-secondary)",
-    hiddenInProd: true,
     productMode: "ai",
   },
   {
@@ -73,7 +72,6 @@ export const devNavItems: NavItem[] = [
     icon: React.createElement(ScanSearch, { className: "size-5" }),
     route: "/build/review-workflow",
     color: "var(--brand-secondary)",
-    hiddenInProd: true,
     productMode: "ai",
   },
   {
@@ -83,7 +81,6 @@ export const devNavItems: NavItem[] = [
     icon: React.createElement(Network, { className: "size-5" }),
     route: "/automation-builder/ui-bridge-states",
     color: "var(--brand-secondary)",
-    hiddenInProd: true,
     productMode: "ai",
   },
   {
@@ -93,7 +90,6 @@ export const devNavItems: NavItem[] = [
     icon: React.createElement(GitBranch, { className: "size-5" }),
     route: "/build/flow-designer",
     color: "var(--brand-secondary)",
-    hiddenInProd: true,
     productMode: "ai",
   },
 
