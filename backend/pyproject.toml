@@ -60,7 +60,6 @@ pre-commit = "^4.4.0"
 aiosqlite = "^0.21.0"
 # Linting tools
 black = "^24.10.0"
-isort = "^8"
 flake8 = "^7.1.1"
 flake8-docstrings = "^1.7.0"
 mypy = "^1.14.0"
@@ -91,12 +90,6 @@ exclude = '''
     | migrations
 )/
 '''
-
-[tool.isort]
-profile = "black"
-line_length = 88
-skip = [".git", "__pycache__", "venv", ".venv", "alembic", "migrations"]
-known_first_party = ["app"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -136,7 +129,7 @@ select = [
     "E",   # pycodestyle errors
     "W",   # pycodestyle warnings
     "F",   # pyflakes
-    # "I" - isort disabled; pre-commit uses isort which has different sorting
+    "I",   # isort
     "B",   # flake8-bugbear
     "C4",  # flake8-comprehensions
     "UP",  # pyupgrade
