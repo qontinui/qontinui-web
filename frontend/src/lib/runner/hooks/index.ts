@@ -5,3 +5,4 @@ export * from "./exploration-hooks";
 export * from "./settings-hooks";
 export * from "./misc-hooks";
 export * from "./scheduler-hooks";
+export * from "./observation-hooks";

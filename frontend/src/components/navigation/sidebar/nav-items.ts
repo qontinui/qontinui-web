@@ -92,6 +92,15 @@ export const devNavItems: NavItem[] = [
     color: "var(--brand-secondary)",
     productMode: "ai",
   },
+  {
+    id: "observations",
+    label: "Observations",
+    description: "Browse cross-session knowledge with temporal filtering",
+    icon: React.createElement(BookOpen, { className: "size-5" }),
+    route: "/observations",
+    color: "#8B5CF6",
+    productMode: "ai",
+  },
 
   // ===========================================================================
   // Visual Automation (visible in "visual" product mode)
