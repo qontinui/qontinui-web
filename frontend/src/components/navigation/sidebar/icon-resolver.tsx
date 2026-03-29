@@ -64,6 +64,8 @@ import {
   Network,
   Repeat,
   Video,
+  Radio,
+  Eye,
 } from "lucide-react";
 
 const ICON_MAP: Record<
@@ -133,6 +135,8 @@ const ICON_MAP: Record<
   Network,
   Repeat,
   Video,
+  Radio,
+  Eye,
 };
 
 export function resolveIcon(
