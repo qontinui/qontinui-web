@@ -8,7 +8,7 @@ and providing reusable methods for CRUD, listing, and aggregation.
 from uuid import UUID
 
 import structlog
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.feedback_score import FeedbackScore

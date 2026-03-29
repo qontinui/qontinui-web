@@ -8,7 +8,7 @@ reusable methods for CRUD, listing, and aggregation.
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -219,7 +219,7 @@ class EvaluationRepository:
             .values(
                 version=EvaluationDataset.version + 1,
                 content_hash=dataset_hash,
-                updated_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(UTC),
             )
         )
 
@@ -320,7 +320,7 @@ class EvaluationRepository:
             .values(
                 version=EvaluationDataset.version + 1,
                 content_hash=dataset_hash,
-                updated_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(UTC),
             )
         )
 
@@ -513,7 +513,7 @@ class EvaluationRepository:
         if metrics is not None:
             values["metrics"] = metrics
         if status in ("completed", "failed"):
-            values["completed_at"] = datetime.now(timezone.utc)
+            values["completed_at"] = datetime.now(UTC)
 
         await db.execute(
             update(EvaluationExperiment)
