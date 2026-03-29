@@ -369,7 +369,7 @@ class EvaluationRepository:
             .group_by(DatasetItem.dataset_id)
         )
         result = await db.execute(query)
-        return dict(result.all())
+        return dict(result.all())  # type: ignore[arg-type]
 
     @staticmethod
     async def count_results_by_experiment_ids(
@@ -384,7 +384,7 @@ class EvaluationRepository:
             .group_by(ExperimentResult.experiment_id)
         )
         result = await db.execute(query)
-        return dict(result.all())
+        return dict(result.all())  # type: ignore[arg-type]
 
     # =========================================================================
     # Experiment Operations
