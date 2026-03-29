@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   useObservationTemporalSearch,
   useObservationSnapshot,
@@ -233,6 +233,7 @@ function TrendChart({ weeks }: { weeks: number }) {
 
 export function ObservationBrowser() {
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [showSuperseded, setShowSuperseded] = useState(true);
@@ -240,6 +241,12 @@ export function ObservationBrowser() {
   const [showHistory, setShowHistory] = useState(false);
   const [showTrends, setShowTrends] = useState(false);
   const [asOfDate, setAsOfDate] = useState("");
+
+  // Debounce search query to avoid flooding API on every keystroke
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(searchQuery), 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   // Reset history expansion when selection changes
   const handleSelect = (id: number) => {
@@ -258,7 +265,7 @@ export function ObservationBrowser() {
 
   // Use snapshot mode when as-of is set, otherwise use temporal search
   const { data: searchResults, isLoading: searchLoading, error: searchError } = useObservationTemporalSearch({
-    q: searchQuery || undefined,
+    q: debouncedQuery || undefined,
     from: temporalFrom,
     to: temporalTo,
     maxResults: 100,
