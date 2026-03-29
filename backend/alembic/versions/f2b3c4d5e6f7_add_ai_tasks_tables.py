@@ -23,37 +23,27 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Create AI Tasks tables for multi-session Claude analysis tracking."""
     # Create enum types
-    op.execute(
-        """
+    op.execute("""
         CREATE TYPE ai_task_status AS ENUM ('running', 'complete', 'failed', 'stopped');
-        """
-    )
-    op.execute(
-        """
+        """)
+    op.execute("""
         CREATE TYPE ai_task_finding_category AS ENUM (
             'code_bug', 'security', 'performance', 'todo', 'enhancement',
             'config_issue', 'test_issue', 'documentation', 'runtime_issue',
             'already_fixed', 'expected_behavior'
         );
-        """
-    )
-    op.execute(
-        """
+        """)
+    op.execute("""
         CREATE TYPE ai_task_finding_severity AS ENUM ('critical', 'high', 'medium', 'low', 'info');
-        """
-    )
-    op.execute(
-        """
+        """)
+    op.execute("""
         CREATE TYPE ai_task_finding_status AS ENUM (
             'detected', 'in_progress', 'needs_input', 'resolved', 'wont_fix', 'deferred'
         );
-        """
-    )
-    op.execute(
-        """
+        """)
+    op.execute("""
         CREATE TYPE ai_task_finding_action_type AS ENUM ('auto_fix', 'needs_user_input', 'informational');
-        """
-    )
+        """)
 
     # Create ai_tasks table
     op.create_table(

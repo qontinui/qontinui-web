@@ -24,7 +24,9 @@ def upgrade() -> None:
     """Create prompt_template_versions table and add current_version column."""
     op.create_table(
         "prompt_template_versions",
-        sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column(
+            "id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False
+        ),
         sa.Column("template_id", sa.String(), nullable=False),
         sa.Column("version_number", sa.Integer(), nullable=False),
         sa.Column("prompt_content", sa.Text(), nullable=False),
@@ -45,7 +47,9 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("template_id", "version_number", name="uq_template_version"),
+        sa.UniqueConstraint(
+            "template_id", "version_number", name="uq_template_version"
+        ),
     )
     op.create_index(
         op.f("ix_prompt_template_versions_template_id"),
