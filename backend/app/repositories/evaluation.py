@@ -17,10 +17,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.evaluation_dataset import DatasetItem, EvaluationDataset
-from app.models.evaluation_experiment import (
-    EvaluationExperiment,
-    ExperimentResult,
-)
+from app.models.evaluation_experiment import EvaluationExperiment, ExperimentResult
 
 logger = structlog.get_logger(__name__)
 

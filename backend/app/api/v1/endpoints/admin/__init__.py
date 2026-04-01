@@ -11,9 +11,9 @@ Provides admin-only endpoints for platform management:
 - Cleanup operations
 """
 
+# Import sub-routers
 from fastapi import APIRouter
 
-# Import sub-routers
 from app.api.v1.endpoints.admin.analytics import router as analytics_router
 from app.api.v1.endpoints.admin.bootstrap import router as bootstrap_router
 from app.api.v1.endpoints.admin.cleanup import router as cleanup_router

@@ -7,22 +7,22 @@ Provides:
 """
 
 from app.services.security.constants import (
-    BLOCKED_FUNCTIONS,
-    BLOCKED_IMPORTS,
-    MAX_COMPLEXITY_BLOCK,
-    MAX_COMPLEXITY_WARN,
-    MAX_NESTING_DEPTH,
-    MIN_MAINTAINABILITY_INDEX,
-    OBFUSCATION_PATTERNS,
-    SAFE_IMPORTS,
-    WARNING_IMPORTS,
+                                             BLOCKED_FUNCTIONS,
+                                             BLOCKED_IMPORTS,
+                                             MAX_COMPLEXITY_BLOCK,
+                                             MAX_COMPLEXITY_WARN,
+                                             MAX_NESTING_DEPTH,
+                                             MIN_MAINTAINABILITY_INDEX,
+                                             OBFUSCATION_PATTERNS,
+                                             SAFE_IMPORTS,
+                                             WARNING_IMPORTS,
 )
 from app.services.security.models import (
-    IssueSeverity,
-    IssueType,
-    SecurityIssue,
-    SecurityScanResult,
-    SecurityStatus,
+                                             IssueSeverity,
+                                             IssueType,
+                                             SecurityIssue,
+                                             SecurityScanResult,
+                                             SecurityStatus,
 )
 from app.services.security.scanner import CodeSecurityScanner
 

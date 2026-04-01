@@ -5,7 +5,4 @@ All logic has moved to app.services.health submodules.
 Import from app.services.health directly for new code.
 """
 
-from app.services.health import (  # noqa: F401
-    HealthService,
-    health_service,
-)
+from app.services.health import HealthService, health_service  # noqa: F401

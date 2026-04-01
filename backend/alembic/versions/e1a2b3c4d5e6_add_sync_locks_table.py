@@ -9,7 +9,6 @@ Create Date: 2026-01-04 12:00:00.000000
 from typing import Sequence, Union
 
 import sqlalchemy as sa
-
 from alembic import op
 
 # from sqlalchemy.dialects import postgresql  # noqa: F401

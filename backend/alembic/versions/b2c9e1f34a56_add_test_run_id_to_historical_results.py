@@ -11,9 +11,8 @@ for linking execution data to live test runs and enabling deterministic playback
 from typing import Sequence, Union
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID
-
 from alembic import op
+from sqlalchemy.dialects.postgresql import UUID
 
 # revision identifiers, used by Alembic.
 revision: str = "b2c9e1f34a56"

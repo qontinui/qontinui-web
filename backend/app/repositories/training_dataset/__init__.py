@@ -10,17 +10,11 @@ re-exports all methods from the sub-repositories, so existing code using
 continues to work unchanged.
 """
 
-from app.repositories.training_dataset.annotation_repository import (
-    AnnotationRepository,
-)
+from app.repositories.training_dataset.annotation_repository import AnnotationRepository
 from app.repositories.training_dataset.dataset_repository import DatasetRepository
-from app.repositories.training_dataset.export_job_repository import (
-    ExportJobRepository,
-)
+from app.repositories.training_dataset.export_job_repository import ExportJobRepository
 from app.repositories.training_dataset.image_repository import ImageRepository
-from app.repositories.training_dataset.statistics_repository import (
-    StatisticsRepository,
-)
+from app.repositories.training_dataset.statistics_repository import StatisticsRepository
 
 
 class TrainingDatasetRepository(

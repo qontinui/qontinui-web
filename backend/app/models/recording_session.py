@@ -10,16 +10,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import (
-    JSON,
-    DateTime,
-    Float,
-    ForeignKey,
-    Integer,
-    String,
-    Text,
-    text,
-)
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -56,15 +47,19 @@ class RecordingSession(Base):
 
     # Session identification
     session_id: Mapped[str] = mapped_column(
-        String(100), nullable=False, comment="SDK session ID from RecordingSessionManager"
+        String(100),
+        nullable=False,
+        comment="SDK session ID from RecordingSessionManager",
     )
 
     # Application context (for experience retrieval)
     app_name: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     app_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     app_domain: Mapped[str | None] = mapped_column(
-        String(255), nullable=True, index=True,
-        comment="Extracted domain for similarity matching"
+        String(255),
+        nullable=True,
+        index=True,
+        comment="Extracted domain for similarity matching",
     )
 
     # Recording metadata
@@ -82,14 +77,20 @@ class RecordingSession(Base):
 
     # Raw export data (for re-processing or incremental merge)
     export_data: Mapped[dict] = mapped_column(
-        JSON, default=dict, nullable=False, server_default="{}",
-        comment="Full CooccurrenceExport JSON from the SDK"
+        JSON,
+        default=dict,
+        nullable=False,
+        server_default="{}",
+        comment="Full CooccurrenceExport JSON from the SDK",
     )
 
     # Extracted variables
     variables: Mapped[list] = mapped_column(
-        JSON, default=list, nullable=False, server_default="[]",
-        comment="VariableCandidate list from recording"
+        JSON,
+        default=list,
+        nullable=False,
+        server_default="[]",
+        comment="VariableCandidate list from recording",
     )
 
     # Generated playbook content (if generated)

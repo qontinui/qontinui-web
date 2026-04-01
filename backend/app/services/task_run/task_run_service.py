@@ -12,11 +12,7 @@ from uuid import UUID
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.task_run import (
-    TaskRun,
-    TaskRunStatus,
-    TaskType,
-)
+from app.models.task_run import TaskRun, TaskRunStatus, TaskType
 from app.repositories.task_run import (
     TaskRunAutomationRepository,
     TaskRunFindingRepository,

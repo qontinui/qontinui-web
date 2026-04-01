@@ -24,14 +24,13 @@ import structlog
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal
 from app.models.project_assets import ProjectScreenshot
 from app.models.user import User
 from app.services.object_storage import object_storage
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

@@ -9,12 +9,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.organization import (
-    Organization,
-    PermissionLevel,
-    TeamMember,
-    TeamRole,
-)
+from app.models.organization import Organization, PermissionLevel, TeamMember, TeamRole
 from app.models.project import Project
 from app.services.permissions.helpers import (
     PERMISSION_HIERARCHY,

@@ -102,9 +102,7 @@ class ProcessWithPlaybookRequest(ProcessRecordingRequest):
 class ProcessWithPlaybookResponse(ProcessRecordingResponse):
     """Response with generated playbook content."""
 
-    playbook_content: str = Field(
-        "", description="Generated playbook markdown content"
-    )
+    playbook_content: str = Field("", description="Generated playbook markdown content")
 
 
 # ============================================================================
@@ -132,10 +130,7 @@ async def process_recording(
     - Discovered states with confidence scores
     - Detected transitions with reliability metrics
     """
-    from qontinui.state_machine import (
-        RecordingPipeline,
-        RecordingPipelineConfig,
-    )
+    from qontinui.state_machine import RecordingPipeline, RecordingPipelineConfig
 
     logger.info(
         "recording_pipeline_request",
@@ -244,10 +239,7 @@ async def process_recording_with_playbook(
     Same as /process but additionally generates a playbook markdown file
     from the discovered states, transitions, and extracted variables.
     """
-    from qontinui.state_machine import (
-        RecordingPipeline,
-        RecordingPipelineConfig,
-    )
+    from qontinui.state_machine import RecordingPipeline, RecordingPipelineConfig
     from qontinui.state_machine.playbook_generator import generate_playbook
 
     logger.info(
@@ -389,16 +381,14 @@ async def merge_recording(
     confidence scores, adds new transitions, and increases observation counts.
     The existing state config is updated in-place.
     """
-    from sqlalchemy import select
-
-    from qontinui.state_machine import (
-        RecordingPipeline,
-        RecordingPipelineConfig,
-    )
+    from qontinui.state_machine import RecordingPipeline, RecordingPipelineConfig
     from qontinui.state_machine.ui_bridge_runtime import (
         UIBridgeState as UIBridgeStateInternal,
+    )
+    from qontinui.state_machine.ui_bridge_runtime import (
         UIBridgeTransition as UIBridgeTransitionInternal,
     )
+    from sqlalchemy import select
 
     from app.models.ui_bridge_state import UIBridgeState as UIBridgeStateModel
     from app.models.ui_bridge_state import UIBridgeStateConfig
@@ -415,7 +405,9 @@ async def merge_recording(
         raise HTTPException(status_code=404, detail="State config not found")
 
     states_result = await db.execute(
-        select(UIBridgeStateModel).where(UIBridgeStateModel.config_id == request.config_id)
+        select(UIBridgeStateModel).where(
+            UIBridgeStateModel.config_id == request.config_id
+        )
     )
     existing_state_rows = states_result.scalars().all()
 
@@ -432,11 +424,23 @@ async def merge_recording(
             id=row.state_id,
             name=row.name,
             element_ids=row.element_ids or [],
-            blocking=row.extra_metadata.get("blocking", False) if row.extra_metadata else False,
+            blocking=(
+                row.extra_metadata.get("blocking", False)
+                if row.extra_metadata
+                else False
+            ),
             metadata={
                 "confidence": row.confidence,
-                "is_global": row.extra_metadata.get("is_global", False) if row.extra_metadata else False,
-                "position_zone": row.extra_metadata.get("position_zone") if row.extra_metadata else None,
+                "is_global": (
+                    row.extra_metadata.get("is_global", False)
+                    if row.extra_metadata
+                    else False
+                ),
+                "position_zone": (
+                    row.extra_metadata.get("position_zone")
+                    if row.extra_metadata
+                    else None
+                ),
                 **(row.extra_metadata or {}),
             },
         )
@@ -479,44 +483,50 @@ async def merge_recording(
         await db.delete(row)
 
     for s in result.states:
-        db.add(UIBridgeStateModel(
-            config_id=request.config_id,
-            state_id=s.id,
-            name=s.name,
-            element_ids=s.element_ids,
-            confidence=s.metadata.get("confidence", 0.0),
-            extra_metadata={
-                "blocking": s.blocking,
-                "is_global": s.metadata.get("is_global", False),
-                "position_zone": s.metadata.get("position_zone"),
-                "observation_count": s.metadata.get("observation_count", 1),
-                "source": "recording_merge",
-            },
-        ))
+        db.add(
+            UIBridgeStateModel(
+                config_id=request.config_id,
+                state_id=s.id,
+                name=s.name,
+                element_ids=s.element_ids,
+                confidence=s.metadata.get("confidence", 0.0),
+                extra_metadata={
+                    "blocking": s.blocking,
+                    "is_global": s.metadata.get("is_global", False),
+                    "position_zone": s.metadata.get("position_zone"),
+                    "observation_count": s.metadata.get("observation_count", 1),
+                    "source": "recording_merge",
+                },
+            )
+        )
 
     for t in result.transitions:
-        db.add(UIBridgeTransitionModel(
-            config_id=request.config_id,
-            transition_id=t.id,
-            name=t.name,
-            from_states=t.from_states,
-            activate_states=t.activate_states,
-            exit_states=t.exit_states,
-            actions=t.actions,
-            path_cost=t.path_cost,
-            extra_metadata={
-                "confidence": t.metadata.get("confidence", 0.0),
-                "observation_count": t.metadata.get("observation_count", 1),
-                "source": "recording_merge",
-            },
-        ))
+        db.add(
+            UIBridgeTransitionModel(
+                config_id=request.config_id,
+                transition_id=t.id,
+                name=t.name,
+                from_states=t.from_states,
+                activate_states=t.activate_states,
+                exit_states=t.exit_states,
+                actions=t.actions,
+                path_cost=t.path_cost,
+                extra_metadata={
+                    "confidence": t.metadata.get("confidence", 0.0),
+                    "observation_count": t.metadata.get("observation_count", 1),
+                    "source": "recording_merge",
+                },
+            )
+        )
 
     await db.commit()
 
     # Build response
     states = [
         DiscoveredStateResponse(
-            id=s.id, name=s.name, element_count=len(s.element_ids),
+            id=s.id,
+            name=s.name,
+            element_count=len(s.element_ids),
             is_blocking=s.blocking,
             is_global=s.metadata.get("is_global", False),
             position_zone=s.metadata.get("position_zone"),
@@ -526,8 +536,10 @@ async def merge_recording(
     ]
     transitions = [
         DiscoveredTransitionResponse(
-            id=t.id, name=t.name,
-            from_states=t.from_states, activate_states=t.activate_states,
+            id=t.id,
+            name=t.name,
+            from_states=t.from_states,
+            activate_states=t.activate_states,
             exit_states=t.exit_states,
             confidence=t.metadata.get("confidence", 0.0),
             observation_count=t.metadata.get("observation_count", 0),
@@ -741,7 +753,12 @@ async def _save_experience(
         app_name=app_name,
         app_url=app_url,
         app_domain=app_domain,
-        duration_ms=export_data.get("exportedAt", 0) - export_data.get("presenceMatrix", [{}])[0].get("timestamp", 0) if export_data.get("presenceMatrix") else 0,
+        duration_ms=(
+            export_data.get("exportedAt", 0)
+            - export_data.get("presenceMatrix", [{}])[0].get("timestamp", 0)
+            if export_data.get("presenceMatrix")
+            else 0
+        ),
         interaction_count=len(export_data.get("transitions", [])),
         capture_count=len(export_data.get("presenceMatrix", [])),
         state_count=result.state_count,

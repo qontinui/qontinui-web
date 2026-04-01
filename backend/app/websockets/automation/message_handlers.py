@@ -23,8 +23,8 @@ from app.models.screenshot_input_association import ScreenshotInputAssociation
 from app.websockets.automation.schemas import make_timestamp
 
 # Re-export screenshot handler for backward compatibility
-from app.websockets.automation.screenshot_handler import (  # noqa: F401
-    handle_screenshot as handle_screenshot,
+from app.websockets.automation.screenshot_handler import (
+    handle_screenshot as handle_screenshot,  # noqa: F401
 )
 
 logger = structlog.get_logger(__name__)
