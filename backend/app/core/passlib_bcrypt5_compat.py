@@ -25,11 +25,13 @@ _orig_checkpw = _bcrypt.checkpw
 
 
 def _patched_hashpw(password: bytes, salt: bytes, **kwargs: object) -> bytes:
-    return _orig_hashpw(password[:72], salt, **kwargs)
+    result: bytes = _orig_hashpw(password[:72], salt, **kwargs)
+    return result
 
 
 def _patched_checkpw(password: bytes, hashed_password: bytes) -> bool:
-    return _orig_checkpw(password[:72], hashed_password)
+    result: bool = _orig_checkpw(password[:72], hashed_password)
+    return result
 
 
 _bcrypt.hashpw = _patched_hashpw  # type: ignore[assignment]

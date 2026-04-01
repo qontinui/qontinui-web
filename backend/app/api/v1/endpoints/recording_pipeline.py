@@ -638,7 +638,7 @@ async def _persist_to_pg(
     config_name: str,
     result: Any,  # RecordingPipelineResult
     export_data: dict[str, Any],
-) -> None:
+) -> UUID | None:
     """Persist discovered states and transitions to PostgreSQL.
 
     Creates a UIBridgeStateConfig with child UIBridgeState and UIBridgeTransition rows.
