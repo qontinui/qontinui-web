@@ -82,6 +82,56 @@ export interface RecordingOptions {
   captureMutations?: boolean;
 }
 
+/**
+ * Result from the embedded SDK recording pipeline
+ */
+export interface RecordingPipelineResult {
+  sessionId: string;
+  duration: number;
+  exportData: Record<string, unknown>;
+  variables: Array<{
+    fingerprint: string;
+    elementId: string;
+    inputType: string;
+    enteredValue: string;
+    label: string;
+    suggestedParamName: string;
+  }>;
+  interactionCount: number;
+  captureCount: number;
+}
+
+/**
+ * State machine discovery result from the pipeline API
+ */
+export interface PipelineDiscoveryResult {
+  sessionId: string;
+  stateCount: number;
+  transitionCount: number;
+  globalStateCount: number;
+  modalStateCount: number;
+  states: Array<{
+    id: string;
+    name: string;
+    elementCount: number;
+    isBlocking: boolean;
+    isGlobal: boolean;
+    positionZone: string | null;
+    confidence: number;
+  }>;
+  transitions: Array<{
+    id: string;
+    name: string;
+    fromStates: string[];
+    activateStates: string[];
+    exitStates: string[];
+    confidence: number;
+    observationCount: number;
+    isBidirectional: boolean;
+  }>;
+  playbookContent?: string;
+}
+
 const INITIAL_SESSION: RecordingSession = {
   isRecording: false,
   tabId: null,
@@ -362,6 +412,221 @@ export function useUIBridgeRecording() {
     }));
   }, [session.snapshots]);
 
+  // =========================================================================
+  // UI Bridge Embedded SDK Recording (WebSocket-based)
+  // =========================================================================
+
+  const [pipelineResult, setPipelineResult] =
+    useState<PipelineDiscoveryResult | null>(null);
+  const [sdkRecordingResult, setSdkRecordingResult] =
+    useState<RecordingPipelineResult | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  /**
+   * Start recording via the embedded UI Bridge SDK (WebSocket).
+   * Use this when connected to a UI Bridge-enabled app.
+   */
+  const startSdkRecording = useCallback(
+    async (wsUrl: string, config?: Record<string, unknown>) => {
+      setIsStarting(true);
+      setSession((prev) => ({ ...prev, error: null }));
+
+      try {
+        const ws = new WebSocket(wsUrl);
+        await new Promise<void>((resolve, reject) => {
+          ws.onopen = () => resolve();
+          ws.onerror = () => reject(new Error("WebSocket connection failed"));
+          setTimeout(() => reject(new Error("Connection timeout")), 5000);
+        });
+
+        // Send recording:start
+        const requestId = `req-${Date.now()}`;
+        const response = await new Promise<Record<string, unknown>>(
+          (resolve, reject) => {
+            ws.onmessage = (event) => {
+              const msg = JSON.parse(event.data);
+              if (msg.requestId === requestId && msg.type === "response") {
+                resolve(msg.payload);
+              }
+            };
+            ws.send(
+              JSON.stringify({
+                id: requestId,
+                type: "recording:start",
+                timestamp: Date.now(),
+                config,
+              })
+            );
+            setTimeout(() => reject(new Error("Start recording timeout")), 10000);
+          }
+        );
+
+        if (!(response as { success?: boolean }).success) {
+          throw new Error("Failed to start SDK recording");
+        }
+
+        ws.close();
+
+        setSession({
+          isRecording: true,
+          tabId: null,
+          tabUrl: null,
+          tabTitle: null,
+          startTime: Date.now(),
+          snapshots: [],
+          error: null,
+        });
+
+        log.debug("SDK recording started");
+        return { success: true };
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to start SDK recording";
+        setSession((prev) => ({ ...prev, error: message }));
+        return { success: false, error: message };
+      } finally {
+        setIsStarting(false);
+      }
+    },
+    []
+  );
+
+  /**
+   * Stop recording via the embedded UI Bridge SDK (WebSocket).
+   * Returns the CooccurrenceExport data for pipeline processing.
+   */
+  const stopSdkRecording = useCallback(async (wsUrl: string) => {
+    setIsStopping(true);
+
+    try {
+      const ws = new WebSocket(wsUrl);
+      await new Promise<void>((resolve, reject) => {
+        ws.onopen = () => resolve();
+        ws.onerror = () => reject(new Error("WebSocket connection failed"));
+        setTimeout(() => reject(new Error("Connection timeout")), 5000);
+      });
+
+      const requestId = `req-${Date.now()}`;
+      const response = await new Promise<Record<string, unknown>>(
+        (resolve, reject) => {
+          ws.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+            if (msg.requestId === requestId && msg.type === "response") {
+              resolve(msg.payload);
+            }
+          };
+          ws.send(
+            JSON.stringify({
+              id: requestId,
+              type: "recording:stop",
+              timestamp: Date.now(),
+            })
+          );
+          setTimeout(() => reject(new Error("Stop recording timeout")), 30000);
+        }
+      );
+
+      ws.close();
+
+      const result = (response as { data?: RecordingPipelineResult }).data;
+      if (!result) throw new Error("No recording data returned");
+
+      setSdkRecordingResult(result);
+
+      setSession((prev) => ({
+        ...prev,
+        isRecording: false,
+      }));
+
+      log.debug(
+        "SDK recording stopped:",
+        result.interactionCount,
+        "interactions,",
+        result.captureCount,
+        "captures"
+      );
+
+      return { success: true, result };
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to stop SDK recording";
+      setSession((prev) => ({ ...prev, error: message, isRecording: false }));
+      return { success: false, error: message };
+    } finally {
+      setIsStopping(false);
+    }
+  }, []);
+
+  /**
+   * Process the SDK recording result through the pipeline API.
+   * Discovers states, transitions, and optionally generates a playbook.
+   */
+  const processRecording = useCallback(
+    async (
+      apiBaseUrl: string,
+      options?: {
+        generatePlaybook?: boolean;
+        appName?: string;
+        appUrl?: string;
+      }
+    ) => {
+      if (!sdkRecordingResult) {
+        return { success: false, error: "No recording result to process" };
+      }
+
+      setIsProcessing(true);
+
+      try {
+        const endpoint = options?.generatePlaybook
+          ? "/api/v1/recording-pipeline/process-with-playbook"
+          : "/api/v1/recording-pipeline/process";
+
+        const body: Record<string, unknown> = {
+          export_data: sdkRecordingResult.exportData,
+        };
+
+        if (options?.generatePlaybook) {
+          body.variables = sdkRecordingResult.variables;
+          body.app_name = options.appName;
+          body.app_url = options.appUrl;
+        }
+
+        const response = await fetch(`${apiBaseUrl}${endpoint}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(
+            (error as { detail?: string }).detail || "Pipeline processing failed"
+          );
+        }
+
+        const result = (await response.json()) as PipelineDiscoveryResult;
+        setPipelineResult(result);
+
+        log.debug(
+          "Pipeline processed:",
+          result.stateCount,
+          "states,",
+          result.transitionCount,
+          "transitions"
+        );
+
+        return { success: true, result };
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Pipeline processing failed";
+        return { success: false, error: message };
+      } finally {
+        setIsProcessing(false);
+      }
+    },
+    [sdkRecordingResult]
+  );
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -373,6 +638,8 @@ export function useUIBridgeRecording() {
     session,
     isStarting,
     isStopping,
+    isProcessing,
+    // Extension-based recording (legacy)
     startRecording,
     stopRecording,
     getRecordingStatus,
@@ -381,6 +648,12 @@ export function useUIBridgeRecording() {
     stopPolling,
     resetSession,
     getSnapshotsAsRenderLogs,
+    // SDK-based recording (embedded UI Bridge)
+    startSdkRecording,
+    stopSdkRecording,
+    processRecording,
+    sdkRecordingResult,
+    pipelineResult,
     // Computed values
     isRecording: session.isRecording,
     snapshotCount: session.snapshots.length,

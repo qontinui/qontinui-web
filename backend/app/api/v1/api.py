@@ -54,6 +54,7 @@ from app.api.v1.endpoints import (
     public,
     rag_builder,
     rag_dashboard,
+    recording_pipeline,
     recordings,
     render_logs,
     runner_chat,
@@ -179,6 +180,12 @@ api_router.include_router(
     training_datasets.router, prefix="/datasets", tags=["training-datasets"]
 )
 api_router.include_router(recordings.router, prefix="/recordings", tags=["recordings"])
+# Recording pipeline — process UI Bridge recordings into state machines
+api_router.include_router(
+    recording_pipeline.router,
+    prefix="/recording-pipeline",
+    tags=["recording-pipeline"],
+)
 api_router.include_router(extraction.router, tags=["extraction"])
 api_router.include_router(
     runner_command_ws.router, prefix="/automation", tags=["runner-command-websockets"]
