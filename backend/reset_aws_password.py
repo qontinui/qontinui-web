@@ -10,6 +10,7 @@ Required environment variables:
 import asyncio
 import os
 import re
+import shlex
 import sys
 
 from passlib.context import CryptContext
@@ -68,13 +69,15 @@ WHERE email = $2;
     print("=" * 60)
     print("\nRun this command to execute:")
 
-    # Build psql command with proper escaping
+    # Build psql command with proper shell escaping
     # Note: For actual execution, use parameterized queries via psycopg2 instead
+    quoted_hashed = shlex.quote(hashed)
+    quoted_email = shlex.quote(email)
     psql_cmd = f"""
-psql -h {db_host} \\
-     -U {db_user} \\
-     -d {db_name} \\
-     -c "UPDATE users SET hashed_password = '{hashed}' WHERE email = '{email}';"
+psql -h {shlex.quote(db_host)} \\
+     -U {shlex.quote(db_user)} \\
+     -d {shlex.quote(db_name)} \\
+     -c "UPDATE users SET hashed_password = '{quoted_hashed}' WHERE email = '{quoted_email}';"
 """
     print(psql_cmd)
 

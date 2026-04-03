@@ -2,9 +2,9 @@ from app.db.base import Base  # noqa
 from app.models.analytics_event import AnalyticsEvent  # noqa
 from app.models.annotation import Annotation, AnnotationSet  # noqa
 from app.models.audit_log import AuditLog  # noqa
-from app.models.capture import (
+from app.models.capture import (  # noqa
     CaptureAction,
-    CaptureDetectedElement,  # noqa
+    CaptureDetectedElement,
     CaptureScreenshot,
     CaptureSession,
     LearnedWorkflow,
@@ -12,32 +12,32 @@ from app.models.capture import (
 )
 from app.models.device_session import DeviceSession  # noqa
 from app.models.error_monitor import ErrorMonitorEntry  # noqa
-from app.models.extraction import (
-    ExtractionAnnotation,  # noqa
+from app.models.extraction import (  # noqa
+    ExtractionAnnotation,
     ExtractionSession,
 )
-from app.models.library import (
+from app.models.library import (  # noqa
     Check,
     CheckGroup,
     Context,
-    Macro,  # noqa
+    Macro,
     PromptSnippet,
     SavedApiRequest,
     ShellCommand,
 )
 from app.models.project import Project  # noqa
 from app.models.session_activity import SessionActivity  # noqa
-from app.models.task_run import (
+from app.models.task_run import (  # noqa
     DeferredQuestion,
-    TaskRun,  # noqa
+    TaskRun,
     TaskRunAutomation,
     TaskRunFinding,
     TaskRunSession,
 )
-from app.models.snapshot import (
+from app.models.snapshot import (  # noqa
     Pattern,
     Screenshot,
-    SnapshotAction,  # noqa
+    SnapshotAction,
     SnapshotMatch,
     SnapshotPattern,
     SnapshotRun,
@@ -47,8 +47,8 @@ from app.models.subscription import Subscription  # noqa
 
 # Import all models here for Alembic to detect them
 # Note: Import snapshot models before project to avoid circular imports
-from app.models.ui_bridge_state import (
-    DomainKnowledge,  # noqa
+from app.models.ui_bridge_state import (  # noqa
+    DomainKnowledge,
     UIBridgeExplorationSession,
     UIBridgeState,
     UIBridgeStateConfig,
@@ -57,9 +57,9 @@ from app.models.ui_bridge_state import (
 from app.models.ui_bridge_transition import UIBridgeTransition  # noqa
 from app.models.usage_metric import UsageMetric  # noqa
 from app.models.user import User  # noqa
-from app.models.video_capture import (
+from app.models.video_capture import (  # noqa
     ActionFrame,
-    FrameIndex,  # noqa
+    FrameIndex,
     HistoricalResult,
     InputEvent,
     VideoCaptureSession,
