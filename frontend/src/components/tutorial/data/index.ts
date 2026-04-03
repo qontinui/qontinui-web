@@ -13,6 +13,8 @@ import type {
 import { testTutorial, eventDrivenTestTutorial } from "./test-tutorial";
 import { gettingStartedTutorial, quickTourTutorial } from "./getting-started";
 import { onboardingTourTutorial } from "./onboarding-tour";
+import { deferredFeedbackTutorial } from "./deferred-feedback";
+import { recordingStateMachineTutorial } from "./recording-state-machine";
 
 // ============================================================================
 // Tutorial Registry
@@ -27,6 +29,8 @@ export const tutorials: Tutorial[] = [
   gettingStartedTutorial,
   quickTourTutorial,
   onboardingTourTutorial,
+  deferredFeedbackTutorial,
+  recordingStateMachineTutorial,
 
   // Test tutorials (can be removed in production)
   testTutorial,
