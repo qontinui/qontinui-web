@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, text
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -337,6 +337,14 @@ class TaskRun(Base):
         order_by="TaskRunVerificationResult.iteration",
     )
 
+    deferred_questions = relationship(
+        "DeferredQuestion",
+        back_populates="task_run",
+        cascade="all, delete-orphan",
+        lazy="select",
+        order_by="DeferredQuestion.created_at",
+    )
+
     def __repr__(self) -> str:
         """Return string representation of TaskRun."""
         return f"<TaskRun(id={self.id}, name='{self.task_name}', type='{self.task_type}', status='{self.status}')>"
@@ -580,6 +588,122 @@ class TaskRunFinding(Base):
     def __repr__(self) -> str:
         """Return string representation of TaskRunFinding."""
         return f"<TaskRunFinding(id={self.id}, category='{self.category}', severity='{self.severity}')>"
+
+
+class DeferredQuestion(Base):
+    """Deferred question from autonomous workflow execution.
+
+    Questions that were deferred during autonomous execution for later
+    human review. Synced from runner to enable cross-computer viewing.
+    """
+
+    __tablename__ = "deferred_questions"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+
+    task_run_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("task_runs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    iteration: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        comment="Iteration number when question was raised",
+    )
+
+    question: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        comment="The deferred question text",
+    )
+
+    context_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="{}",
+        server_default=text("'{}'"),
+        comment="JSON context for the question",
+    )
+
+    auto_decision_type: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        comment="Type of automatic decision made (e.g., proceed, skip, defer)",
+    )
+
+    auto_decision_detail: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Detail of the automatic decision",
+    )
+
+    confidence: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        comment="Confidence level of the auto-decision (0.0-1.0)",
+    )
+
+    risk_level: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        comment="Risk level: low, medium, high, critical",
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="pending",
+        server_default=text("'pending'"),
+        index=True,
+        comment="Review status: pending, approved, rejected, revisit",
+    )
+
+    git_checkpoint: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Git commit/ref at the time of the question",
+    )
+
+    contingent_iterations: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="[]",
+        server_default=text("'[]'"),
+        comment="JSON array of iteration numbers contingent on this question",
+    )
+
+    reviewer_comment: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Reviewer's comment when reviewing the question",
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        server_default=text("now()"),
+    )
+
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    # Relationship
+    task_run = relationship("TaskRun", back_populates="deferred_questions")
+
+    def __repr__(self) -> str:
+        """Return string representation of DeferredQuestion."""
+        return f"<DeferredQuestion(id={self.id}, iteration={self.iteration}, status='{self.status}')>"
 
 
 class TaskRunAutomation(Base):

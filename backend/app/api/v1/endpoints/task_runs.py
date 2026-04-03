@@ -32,6 +32,9 @@ from app.api.deps import current_active_user, get_async_db
 from app.models.user import User
 from app.services.task_run import TaskRunVerificationService
 from app.services.task_run_service import (
+    DeferredQuestionBatch,
+    DeferredQuestionResponse,
+    DeferredQuestionUpdate,
     StepProgressResponse,
     TaskRunAutomationCreate,
     TaskRunAutomationResponse,
@@ -517,6 +520,73 @@ async def get_automations(
     """Get all automation records for a task run."""
     parsed_id = _parse_task_run_id(task_run_id)
     return await service.get_automations(db, parsed_id)
+
+
+# =============================================================================
+# Deferred Questions Endpoints
+# =============================================================================
+
+
+@router.post(
+    "/{task_run_id}/deferred-questions",
+    response_model=list[DeferredQuestionResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Sync deferred questions",
+    description="Sync a batch of deferred questions from the runner.",
+)
+async def sync_deferred_questions(
+    task_run_id: str,
+    batch: DeferredQuestionBatch,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
+    service: TaskRunService = Depends(get_task_run_service),
+) -> list[DeferredQuestionResponse]:
+    """Sync deferred questions for a task run."""
+    parsed_id = _parse_task_run_id(task_run_id)
+    return await service.sync_deferred_questions(db, parsed_id, batch)
+
+
+@router.get(
+    "/{task_run_id}/deferred-questions",
+    response_model=list[DeferredQuestionResponse],
+    summary="List deferred questions",
+    description="Get all deferred questions for a task run with optional status filtering.",
+)
+async def list_deferred_questions(
+    task_run_id: str,
+    status_filter: str | None = Query(None, alias="status", description="Filter by status"),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
+    service: TaskRunService = Depends(get_task_run_service),
+) -> list[DeferredQuestionResponse]:
+    """List deferred questions for a task run."""
+    parsed_id = _parse_task_run_id(task_run_id)
+    return await service.list_deferred_questions(db, parsed_id, status_filter)
+
+
+@router.put(
+    "/{task_run_id}/deferred-questions/{question_id}",
+    response_model=DeferredQuestionResponse,
+    summary="Review a deferred question",
+    description="Update the status and reviewer comment of a deferred question.",
+)
+async def review_deferred_question(
+    task_run_id: str,
+    question_id: UUID,
+    update_data: DeferredQuestionUpdate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
+    service: TaskRunService = Depends(get_task_run_service),
+) -> DeferredQuestionResponse:
+    """Review a deferred question."""
+    parsed_id = _parse_task_run_id(task_run_id)
+    result = await service.review_deferred_question(db, parsed_id, question_id, update_data)
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Deferred question {question_id} not found in task run {task_run_id}",
+        )
+    return result
 
 
 # =============================================================================

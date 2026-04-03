@@ -10,8 +10,8 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, text
-from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, text
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -77,7 +77,7 @@ class RecordingSession(Base):
 
     # Raw export data (for re-processing or incremental merge)
     export_data: Mapped[dict] = mapped_column(
-        JSON,
+        JSONB,
         default=dict,
         nullable=False,
         server_default="{}",
@@ -86,7 +86,7 @@ class RecordingSession(Base):
 
     # Extracted variables
     variables: Mapped[list] = mapped_column(
-        JSON,
+        JSONB,
         default=list,
         nullable=False,
         server_default="[]",

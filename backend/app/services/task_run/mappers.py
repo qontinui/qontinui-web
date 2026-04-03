@@ -7,12 +7,14 @@ Converts SQLAlchemy models to Pydantic response schemas.
 from typing import Any
 
 from app.models.task_run import (
+    DeferredQuestion,
     TaskRun,
     TaskRunAutomation,
     TaskRunFinding,
     TaskRunSession,
 )
 from app.services.task_run.schemas import (
+    DeferredQuestionResponse,
     TaskRunAutomationResponse,
     TaskRunFindingResponse,
     TaskRunResponse,
@@ -95,6 +97,29 @@ def model_to_finding_response(finding: TaskRunFinding) -> TaskRunFindingResponse
         detected_at=finding.detected_at,
         resolved_at=finding.resolved_at,
         updated_at=finding.updated_at,
+    )
+
+
+def model_to_deferred_question_response(
+    question: DeferredQuestion,
+) -> DeferredQuestionResponse:
+    """Convert DeferredQuestion model to DeferredQuestionResponse schema."""
+    return DeferredQuestionResponse(
+        id=question.id,
+        task_run_id=question.task_run_id,
+        iteration=question.iteration,
+        question=question.question,
+        context_json=question.context_json,
+        auto_decision_type=question.auto_decision_type,
+        auto_decision_detail=question.auto_decision_detail,
+        confidence=question.confidence,
+        risk_level=question.risk_level,
+        status=question.status,
+        git_checkpoint=question.git_checkpoint,
+        contingent_iterations=question.contingent_iterations,
+        reviewer_comment=question.reviewer_comment,
+        created_at=question.created_at,
+        reviewed_at=question.reviewed_at,
     )
 
 

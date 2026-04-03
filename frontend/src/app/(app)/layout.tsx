@@ -36,6 +36,13 @@ const SessionTimeoutWarning = nextDynamic(
     })),
   { ssr: false }
 );
+const RecordingIndicator = nextDynamic(
+  () =>
+    import("@/components/ui-bridge/RecordingIndicator").then((m) => ({
+      default: m.RecordingIndicator,
+    })),
+  { ssr: false }
+);
 
 function SidebarSkeleton({ isCollapsed }: { isCollapsed: boolean }) {
   return (
@@ -70,6 +77,9 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
       </Suspense>
       <Suspense fallback={null}>
         <SessionTimeoutWarning />
+      </Suspense>
+      <Suspense fallback={null}>
+        <RecordingIndicator />
       </Suspense>
     </div>
   );

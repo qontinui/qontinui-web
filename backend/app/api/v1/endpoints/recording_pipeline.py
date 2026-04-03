@@ -191,6 +191,7 @@ async def process_recording(
                 result=result,
                 export_data=request.export_data,
             )
+            await db.commit()
 
         logger.info(
             "recording_pipeline_success",
@@ -321,6 +322,10 @@ async def process_recording_with_playbook(
                 playbook_content=playbook_content,
                 state_config_id=state_config_id,
             )
+
+        # Single commit for both persist + experience (atomic)
+        if request.project_id:
+            await db.commit()
 
         return ProcessWithPlaybookResponse(
             session_id=result.session_id,
@@ -632,6 +637,23 @@ async def get_past_experiences(
 # ============================================================================
 
 
+def _compute_duration_ms(export_data: dict[str, Any]) -> int:
+    """Compute recording duration from transition timestamps."""
+    transitions = export_data.get("transitions", [])
+    if transitions:
+        timestamps = [t.get("timestamp", 0) for t in transitions if t.get("timestamp")]
+        if len(timestamps) >= 2:
+            return max(timestamps) - min(timestamps)
+    # Fallback: use fingerprint stats first/last seen
+    stats = export_data.get("fingerprintStats", {})
+    if stats:
+        all_first = [s.get("firstSeen", 0) for s in stats.values() if s.get("firstSeen")]
+        all_last = [s.get("lastSeen", 0) for s in stats.values() if s.get("lastSeen")]
+        if all_first and all_last:
+            return max(all_last) - min(all_first)
+    return 0
+
+
 async def _persist_to_pg(
     db: AsyncSession,
     project_id: UUID,
@@ -706,7 +728,8 @@ async def _persist_to_pg(
         )
         db.add(transition_row)
 
-    await db.commit()
+    # NOTE: caller is responsible for committing (to allow batching with _save_experience)
+    await db.flush()
     logger.info(
         "recording_pipeline_persisted",
         config_id=str(state_config.id),
@@ -753,12 +776,7 @@ async def _save_experience(
         app_name=app_name,
         app_url=app_url,
         app_domain=app_domain,
-        duration_ms=(
-            export_data.get("exportedAt", 0)
-            - export_data.get("presenceMatrix", [{}])[0].get("timestamp", 0)
-            if export_data.get("presenceMatrix")
-            else 0
-        ),
+        duration_ms=_compute_duration_ms(export_data),
         interaction_count=len(export_data.get("transitions", [])),
         capture_count=len(export_data.get("presenceMatrix", [])),
         state_count=result.state_count,
@@ -771,7 +789,8 @@ async def _save_experience(
         state_config_id=state_config_id,
     )
     db.add(session)
-    await db.commit()
+    # NOTE: caller is responsible for committing
+    await db.flush()
 
     logger.info(
         "recording_experience_saved",

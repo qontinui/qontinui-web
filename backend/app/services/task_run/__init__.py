@@ -12,15 +12,21 @@ for convenient imports.
 """
 
 from app.services.task_run.automation_service import TaskRunAutomationService
+from app.services.task_run.deferred_question_service import DeferredQuestionService
 from app.services.task_run.finding_service import TaskRunFindingService
 from app.services.task_run.mappers import (
                                            _get_enum_value,
                                            model_to_automation_response,
+                                           model_to_deferred_question_response,
                                            model_to_finding_response,
                                            model_to_session_response,
                                            model_to_task_run_response,
 )
 from app.services.task_run.schemas import (
+                                           DeferredQuestionBatch,
+                                           DeferredQuestionCreate,
+                                           DeferredQuestionResponse,
+                                           DeferredQuestionUpdate,
                                            Pagination,
                                            StepProgressResponse,
                                            TaskRunAutomationCreate,
@@ -51,6 +57,7 @@ __all__ = [
     "TaskRunFindingService",
     "TaskRunAutomationService",
     "TaskRunVerificationService",
+    "DeferredQuestionService",
     # Request schemas
     "TaskRunCreate",
     "TaskRunUpdate",
@@ -61,6 +68,9 @@ __all__ = [
     "TaskRunFindingsBatch",
     "TaskRunAutomationCreate",
     "TaskRunAutomationUpdate",
+    "DeferredQuestionCreate",
+    "DeferredQuestionUpdate",
+    "DeferredQuestionBatch",
     # Response schemas
     "Pagination",
     "StepProgressResponse",
@@ -68,6 +78,7 @@ __all__ = [
     "TaskRunSessionResponse",
     "TaskRunFindingResponse",
     "TaskRunAutomationResponse",
+    "DeferredQuestionResponse",
     "TaskRunDetail",
     "TaskRunListResponse",
     "TaskRunFindingsListResponse",
@@ -77,4 +88,5 @@ __all__ = [
     "model_to_session_response",
     "model_to_finding_response",
     "model_to_automation_response",
+    "model_to_deferred_question_response",
 ]

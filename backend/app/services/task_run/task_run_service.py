@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.task_run import TaskRun, TaskRunStatus, TaskType
 from app.repositories.task_run import (
+    DeferredQuestionRepository,
     TaskRunAutomationRepository,
     TaskRunFindingRepository,
     TaskRunRepository,
@@ -27,6 +28,9 @@ from app.services.task_run.mappers import (
     model_to_task_run_response,
 )
 from app.services.task_run.schemas import (
+    DeferredQuestionBatch,
+    DeferredQuestionResponse,
+    DeferredQuestionUpdate,
     Pagination,
     StepProgressResponse,
     TaskRunAutomationCreate,
@@ -62,12 +66,14 @@ class TaskRunService:
         session_repo: TaskRunSessionRepository | None = None,
         finding_repo: TaskRunFindingRepository | None = None,
         automation_repo: TaskRunAutomationRepository | None = None,
+        deferred_question_repo: DeferredQuestionRepository | None = None,
     ) -> None:
         """Initialize with repositories (uses static methods if not provided)."""
         self.task_run_repo = task_run_repo or TaskRunRepository()
         self.session_repo = session_repo or TaskRunSessionRepository()
         self.finding_repo = finding_repo or TaskRunFindingRepository()
         self.automation_repo = automation_repo or TaskRunAutomationRepository()
+        self.deferred_question_repo = deferred_question_repo or DeferredQuestionRepository()
 
     # =========================================================================
     # Core Task Run CRUD
@@ -585,3 +591,44 @@ class TaskRunService:
             automation_repo=self.automation_repo,
         )
         return await svc.get_step_progress(db, task_run_id, checkpoint_id)
+
+    # =========================================================================
+    # Deferred Question Operations (delegates to DeferredQuestionService)
+    # =========================================================================
+
+    async def sync_deferred_questions(
+        self,
+        db: AsyncSession,
+        task_run_id: UUID,
+        batch: DeferredQuestionBatch,
+    ) -> list[DeferredQuestionResponse]:
+        """Sync a batch of deferred questions. Delegates to DeferredQuestionService."""
+        from app.services.task_run.deferred_question_service import DeferredQuestionService
+
+        svc = DeferredQuestionService(question_repo=self.deferred_question_repo)
+        return await svc.sync_deferred_questions(db, task_run_id, batch)
+
+    async def list_deferred_questions(
+        self,
+        db: AsyncSession,
+        task_run_id: UUID,
+        status_filter: str | None = None,
+    ) -> list[DeferredQuestionResponse]:
+        """List deferred questions. Delegates to DeferredQuestionService."""
+        from app.services.task_run.deferred_question_service import DeferredQuestionService
+
+        svc = DeferredQuestionService(question_repo=self.deferred_question_repo)
+        return await svc.list_deferred_questions(db, task_run_id, status_filter)
+
+    async def review_deferred_question(
+        self,
+        db: AsyncSession,
+        task_run_id: UUID,
+        question_id: UUID,
+        update_data: DeferredQuestionUpdate,
+    ) -> DeferredQuestionResponse | None:
+        """Review a deferred question. Delegates to DeferredQuestionService."""
+        from app.services.task_run.deferred_question_service import DeferredQuestionService
+
+        svc = DeferredQuestionService(question_repo=self.deferred_question_repo)
+        return await svc.review_deferred_question(db, task_run_id, question_id, update_data)

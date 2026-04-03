@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.task_run import (
+    DeferredQuestion,
     FindingCategory,
     FindingSeverity,
     FindingStatus,
@@ -649,6 +650,72 @@ class TaskRunAutomationRepository:
         )
 
         return automation
+
+
+class DeferredQuestionRepository:
+    """Repository for deferred question database operations."""
+
+    @staticmethod
+    async def get_questions_for_task_run(
+        db: AsyncSession,
+        task_run_id: UUID,
+        status_filter: str | None = None,
+    ) -> list[DeferredQuestion]:
+        """Get deferred questions for a task run with optional status filter."""
+        query = select(DeferredQuestion).where(
+            DeferredQuestion.task_run_id == task_run_id
+        )
+        if status_filter:
+            query = query.where(DeferredQuestion.status == status_filter)
+        query = query.order_by(DeferredQuestion.created_at.asc())
+        result = await db.execute(query)
+        return list(result.scalars().all())
+
+    @staticmethod
+    async def get_question_by_id(
+        db: AsyncSession,
+        question_id: UUID,
+    ) -> DeferredQuestion | None:
+        """Get a deferred question by ID."""
+        query = select(DeferredQuestion).where(DeferredQuestion.id == question_id)
+        result = await db.execute(query)
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    async def create_question(
+        db: AsyncSession,
+        question: DeferredQuestion,
+    ) -> DeferredQuestion:
+        """Create a new deferred question."""
+        db.add(question)
+        await db.flush()
+        await db.refresh(question)
+
+        logger.debug(
+            "deferred_question_created",
+            question_id=str(question.id),
+            task_run_id=str(question.task_run_id),
+            iteration=question.iteration,
+        )
+
+        return question
+
+    @staticmethod
+    async def update_question(
+        db: AsyncSession,
+        question: DeferredQuestion,
+    ) -> DeferredQuestion:
+        """Update an existing deferred question."""
+        await db.flush()
+        await db.refresh(question)
+
+        logger.debug(
+            "deferred_question_updated",
+            question_id=str(question.id),
+            status=question.status,
+        )
+
+        return question
 
 
 # =============================================================================

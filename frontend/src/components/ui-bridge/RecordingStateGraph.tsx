@@ -7,7 +7,7 @@
  * from a recording session. Uses @xyflow/react + dagre layout.
  */
 
-import { useMemo, useCallback } from "react";
+import { useMemo, useCallback, useEffect } from "react";
 import {
   ReactFlow,
   type Node,
@@ -158,8 +158,12 @@ export function RecordingStateGraph({
     return { nodes, edges };
   }, [result]);
 
-  const [nodes, , onNodesChange] = useNodesState(initialNodes ?? []);
-  const [edges, , onEdgesChange] = useEdgesState(initialEdges ?? []);
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes ?? []);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges ?? []);
+
+  // Update when result changes (useNodesState only uses initial value once)
+  useEffect(() => { setNodes(initialNodes ?? []); }, [initialNodes, setNodes]);
+  useEffect(() => { setEdges(initialEdges ?? []); }, [initialEdges, setEdges]);
 
   const onInit = useCallback(() => {
     // Auto-fit on init handled by ReactFlow

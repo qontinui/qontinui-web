@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ControlBar } from "@/components/active-dashboard/ControlBar";
 import { BottomBar } from "@/components/active-dashboard/BottomBar";
+import { DeferredQuestionsFloatingPanel } from "@/components/active-dashboard/DeferredQuestionsFloatingPanel";
 import {
   AUTO_RUN_AFTER_GENERATE_KEY,
   type AutoRunAfterGenerate,
@@ -291,6 +292,7 @@ function ActiveDashboardInner({
       )}
 
       <BottomBar run={run} />
+      <DeferredQuestionsFloatingPanel runId={runId} />
     </div>
   );
 }

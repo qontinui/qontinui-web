@@ -1,0 +1,817 @@
+{
+  "version": "1.0.0",
+  "description": "Deferred Questions (Decisions tab) — displays non-blocking human-in-the-loop questions that were deferred during autonomous workflow execution. Users can review the AI's auto-decisions, approve them, or reject them (triggering targeted rework). Also covers the floating panel on the Active Dashboard and the badge counter on active run cards.",
+  "groups": [
+    {
+      "id": "decisions-tab-registration",
+      "name": "Tab Registration & Navigation",
+      "description": "The Decisions tab appears in the RunDetailContent tab bar and is accessible via the ?tab=decisions URL parameter.",
+      "category": "navigation",
+      "assertions": [
+        {
+          "id": "decisions-tab-trigger-exists",
+          "description": "A 'Decisions' tab trigger with a MessageSquareWarning icon exists in the tab bar.",
+          "category": "element-presence",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "tab", "textContains": "Decisions" },
+            "label": "Decisions tab trigger"
+          },
+          "assertionType": "exists",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "decisions-tab-navigable",
+          "description": "Clicking the Decisions tab switches to the deferred questions content. The tab value is 'decisions' and it renders DeferredQuestionsTab inside a Suspense boundary.",
+          "category": "navigation",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "tab", "textContains": "Decisions" },
+            "label": "Decisions tab trigger"
+          },
+          "assertionType": "behavior",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "decisions-tab-suspense-fallback",
+          "description": "While the DeferredQuestionsTab is loading (lazy import), a fallback with a spinning Loader2 icon and 'Loading...' text is shown.",
+          "category": "behavior",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "Loading..." },
+            "label": "Tab loading fallback"
+          },
+          "assertionType": "semantic",
+          "precondition": "Decisions tab is selected and component is still loading",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "source": "ai-generated"
+    },
+    {
+      "id": "decisions-empty-state",
+      "name": "Empty State — No Deferred Questions",
+      "description": "When a workflow run has no deferred questions (either because blocking_approval was true, or confidence was always high enough to auto-approve silently), an empty state is displayed.",
+      "category": "element-presence",
+      "assertions": [
+        {
+          "id": "empty-state-icon",
+          "description": "A CheckCircle2 icon (opacity-40, h-8 w-8) is displayed centered in the empty state.",
+          "category": "element-presence",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "tagName": "svg" },
+            "label": "Empty state check icon"
+          },
+          "assertionType": "semantic",
+          "precondition": "No deferred questions exist for this run",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "empty-state-heading",
+          "description": "The text 'No deferred questions for this run' is shown as the primary empty state message.",
+          "category": "element-presence",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "No deferred questions for this run" },
+            "label": "Empty state heading"
+          },
+          "assertionType": "exists",
+          "precondition": "No deferred questions exist for this run",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "empty-state-description",
+          "description": "A secondary description reads 'Questions appear when the system makes autonomous decisions with low confidence'.",
+          "category": "element-presence",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "autonomous decisions with low confidence" },
+            "label": "Empty state description"
+          },
+          "assertionType": "exists",
+          "precondition": "No deferred questions exist for this run",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "source": "ai-generated"
+    },
+    {
+      "id": "decisions-header-stats",
+      "name": "Header — Stats Badges & Bulk Actions",
+      "description": "When questions exist, a header shows the title, status count badges, and a bulk approve button.",
+      "category": "data-display",
+      "assertions": [
+        {
+          "id": "header-title",
+          "description": "The heading 'Deferred Questions' is displayed at the top of the tab.",
+          "category": "element-presence",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "Deferred Questions" },
+            "label": "Section title"
+          },
+          "assertionType": "exists",
+          "precondition": "At least one deferred question exists",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "pending-badge-count",
+          "description": "A badge showing 'N pending' appears when there are pending questions. Uses the 'default' badge variant with text-xs styling.",
+          "category": "data-display",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "pending" },
+            "label": "Pending count badge"
+          },
+          "assertionType": "semantic",
+          "precondition": "At least one pending question exists",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "approved-badge-count",
+          "description": "A badge showing 'N approved' appears when there are approved questions. Uses the 'secondary' badge variant.",
+          "category": "data-display",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "approved" },
+            "label": "Approved count badge"
+          },
+          "assertionType": "semantic",
+          "precondition": "At least one approved question exists",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "rejected-badge-count",
+          "description": "A badge showing 'N rejected' appears when there are rejected questions. Uses the 'destructive' badge variant.",
+          "category": "data-display",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "rejected" },
+            "label": "Rejected count badge"
+          },
+          "assertionType": "semantic",
+          "precondition": "At least one rejected question exists",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "bulk-approve-button",
+          "description": "An 'Approve all (N)' button appears when more than one pending question exists. Clicking it sends a bulk review request to approve all pending questions.",
+          "category": "interaction",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "button", "textContains": "Approve all" },
+            "label": "Bulk approve button"
+          },
+          "assertionType": "behavior",
+          "precondition": "More than one pending question exists",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "source": "ai-generated"
+    },
+    {
+      "id": "decisions-question-card-display",
+      "name": "Question Card — Data Display",
+      "description": "Each deferred question is rendered as a bordered card showing iteration number, risk level badge, confidence percentage, and the question text.",
+      "category": "data-display",
+      "assertions": [
+        {
+          "id": "card-iteration-label",
+          "description": "Each question card displays 'Iteration N' where N is the iteration when the question was raised.",
+          "category": "data-display",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "Iteration" },
+            "label": "Iteration label"
+          },
+          "assertionType": "exists",
+          "precondition": "At least one deferred question exists",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "card-risk-badge",
+          "description": "Each question card shows a risk level badge. 'irreversible' and 'high' use destructive (red) variant, 'medium' uses default, 'low' uses secondary.",
+          "category": "data-display",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "risk" },
+            "label": "Risk level badge"
+          },
+          "assertionType": "semantic",
+          "precondition": "At least one deferred question exists",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "card-confidence-display",
+          "description": "Each question card shows confidence as a percentage (e.g., '45% confidence'). The value is Math.round(confidence * 100).",
+          "category": "data-display",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "% confidence" },
+            "label": "Confidence percentage"
+          },
+          "assertionType": "exists",
+          "precondition": "At least one deferred question exists",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "card-question-text-visible",
+          "description": "The question text is displayed with text-text-secondary color and is limited to 2 lines (line-clamp-2). It should be clearly legible against the bg-surface-base card background.",
+          "category": "design",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "completed iteration" },
+            "label": "Question text"
+          },
+          "assertionType": "semantic",
+          "precondition": "At least one deferred question exists",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "source": "ai-generated"
+    },
+    {
+      "id": "decisions-question-actions",
+      "name": "Question Card — Approve & Reject Actions",
+      "description": "Pending questions show Approve and Reject buttons. Approved/rejected questions show a status badge instead.",
+      "category": "interaction",
+      "assertions": [
+        {
+          "id": "pending-approve-button",
+          "description": "Pending questions have an 'Approve' button (outline variant, sm size). Clicking it submits an approval review via POST and shows toast 'Decision approved'.",
+          "category": "interaction",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "button", "textContent": "Approve" },
+            "label": "Approve button"
+          },
+          "assertionType": "behavior",
+          "precondition": "A pending deferred question exists",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "pending-reject-button",
+          "description": "Pending questions have a 'Reject' button (destructive variant, sm size). Clicking it prompts 'Why was this decision wrong?', then submits a rejection review. Toast shows 'Decision rejected' or 'Decision rejected — rework triggered' if a rework run was created.",
+          "category": "interaction",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "button", "textContent": "Reject" },
+            "label": "Reject button"
+          },
+          "assertionType": "behavior",
+          "precondition": "A pending deferred question exists",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "reviewed-status-badge",
+          "description": "Questions that have been reviewed show a status badge ('approved' with secondary variant, or 'rejected' with destructive variant) instead of action buttons.",
+          "category": "data-display",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "approved" },
+            "label": "Reviewed status badge"
+          },
+          "assertionType": "semantic",
+          "precondition": "At least one reviewed (non-pending) question exists",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "source": "ai-generated"
+    },
+    {
+      "id": "decisions-expanded-details",
+      "name": "Question Card — Expanded Details",
+      "description": "Clicking the chevron expands a question card to show auto-decision details, summary, files modified, review comment, git checkpoint, and timestamps.",
+      "category": "behavior",
+      "assertions": [
+        {
+          "id": "expand-collapse-toggle",
+          "description": "Clicking the chevron (ChevronRight when collapsed, ChevronDown when expanded) toggles the expanded details section. Only one question can be expanded at a time.",
+          "category": "interaction",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "tagName": "button" },
+            "label": "Expand/collapse chevron"
+          },
+          "assertionType": "behavior",
+          "precondition": "At least one deferred question exists",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "expanded-auto-decision",
+          "description": "When expanded, shows 'Auto-decision:' label followed by 'Continued as planned' (if auto_decision_type is 'proceeded') or the auto_decision_detail text.",
+          "category": "data-display",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "Auto-decision:" },
+            "label": "Auto-decision detail"
+          },
+          "assertionType": "exists",
+          "precondition": "A question card is expanded",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "expanded-files-modified",
+          "description": "When expanded and context contains files_modified, a 'Files modified:' section displays a bulleted list of file paths.",
+          "category": "data-display",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "Files modified:" },
+            "label": "Files modified section"
+          },
+          "assertionType": "semantic",
+          "precondition": "A question card is expanded and has files_modified in context",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "expanded-git-checkpoint",
+          "description": "When expanded and git_checkpoint exists, shows 'Git checkpoint: <abbreviated-hash>' where the hash is truncated to 8 characters.",
+          "category": "data-display",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "Git checkpoint:" },
+            "label": "Git checkpoint"
+          },
+          "assertionType": "semantic",
+          "precondition": "A question card is expanded and has a git_checkpoint",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "expanded-timestamps",
+          "description": "When expanded, shows 'Created: <localized datetime>' and optionally '· Reviewed: <localized datetime>' if the question has been reviewed.",
+          "category": "data-display",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "Created:" },
+            "label": "Timestamp display"
+          },
+          "assertionType": "exists",
+          "precondition": "A question card is expanded",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "source": "ai-generated"
+    },
+    {
+      "id": "decisions-question-grouping",
+      "name": "Question Grouping — Status Sections",
+      "description": "Questions are displayed in three sections: Pending Review (with MessageSquareWarning icon), Rejected (with XCircle icon), and Approved (with CheckCircle2 icon). Each section only renders when it has questions.",
+      "category": "state-consistency",
+      "assertions": [
+        {
+          "id": "pending-section-header",
+          "description": "When pending questions exist, a 'Pending Review' section header with MessageSquareWarning icon is shown above the pending question cards.",
+          "category": "element-presence",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "Pending Review" },
+            "label": "Pending section header"
+          },
+          "assertionType": "exists",
+          "precondition": "At least one pending question exists",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "rejected-section-header",
+          "description": "When rejected questions exist, a 'Rejected' section header with XCircle icon is shown.",
+          "category": "element-presence",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "Rejected" },
+            "label": "Rejected section header"
+          },
+          "assertionType": "exists",
+          "precondition": "At least one rejected question exists",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "approved-section-header",
+          "description": "When approved questions exist, an 'Approved' section header with CheckCircle2 icon is shown.",
+          "category": "element-presence",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "Approved" },
+            "label": "Approved section header"
+          },
+          "assertionType": "exists",
+          "precondition": "At least one approved question exists",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "section-ordering",
+          "description": "Sections are displayed in order: Pending Review first, then Rejected, then Approved. This ensures actionable items are always at the top.",
+          "category": "layout",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "tagName": "div" },
+            "label": "Question sections container"
+          },
+          "assertionType": "semantic",
+          "precondition": "Questions with multiple statuses exist",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "source": "ai-generated"
+    },
+    {
+      "id": "decisions-design",
+      "name": "Visual Design & Styling",
+      "description": "Design tokens, colors, and typography for the deferred questions UI.",
+      "category": "design",
+      "assertions": [
+        {
+          "id": "card-background",
+          "description": "Question cards use bg-surface-base background with hover:bg-surface-raised transition, rounded-lg border, and p-4 padding.",
+          "category": "design",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "Iteration" },
+            "label": "Question card"
+          },
+          "assertionType": "semantic",
+          "precondition": "At least one deferred question exists",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "section-header-muted-text",
+          "description": "Section headers ('Pending Review', 'Rejected', 'Approved') use text-text-muted color at text-xs size with font-medium weight. They should be visually subtle but legible.",
+          "category": "design",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "Pending Review" },
+            "label": "Section header text"
+          },
+          "assertionType": "semantic",
+          "precondition": "At least one section header is visible",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "risk-badge-color-mapping",
+          "description": "Risk level badges follow the color scheme: 'irreversible' and 'high' → destructive (red), 'medium' → default (neutral), 'low' → secondary (muted). This provides immediate visual risk indication.",
+          "category": "design",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "tagName": "span" },
+            "label": "Risk level badge"
+          },
+          "assertionType": "semantic",
+          "precondition": "At least one deferred question exists",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "source": "ai-generated"
+    },
+    {
+      "id": "floating-panel-visibility",
+      "name": "Floating Panel — Active Dashboard",
+      "description": "During active workflow execution, a floating panel appears in the bottom-right corner showing pending deferred questions. Only visible when pending questions exist and not dismissed.",
+      "category": "behavior",
+      "assertions": [
+        {
+          "id": "floating-panel-position",
+          "description": "The floating panel is positioned at bottom-20 right-4 (fixed, z-50) with w-80 width, rounded-lg, shadow-xl, and backdrop-blur-lg. It overlays the active dashboard content.",
+          "category": "layout",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "pending decision" },
+            "label": "Floating panel"
+          },
+          "assertionType": "semantic",
+          "precondition": "Active dashboard is showing a running workflow with pending deferred questions",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "floating-panel-header",
+          "description": "The panel header shows a MessageSquareWarning icon (amber-400) and text 'N pending decision(s)' where N is the count. Clicking the header toggles expanded/collapsed state.",
+          "category": "interaction",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "pending decision" },
+            "label": "Panel header"
+          },
+          "assertionType": "behavior",
+          "precondition": "Floating panel is visible",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "floating-panel-dismiss",
+          "description": "An X button in the panel header dismisses the panel. The panel reappears when a new deferred question event arrives.",
+          "category": "interaction",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "tagName": "button" },
+            "label": "Dismiss button"
+          },
+          "assertionType": "behavior",
+          "precondition": "Floating panel is visible",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "floating-panel-hidden-no-pending",
+          "description": "The floating panel is not rendered when there are zero pending questions or when the panel has been dismissed.",
+          "category": "element-presence",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "pending decision" },
+            "label": "Floating panel"
+          },
+          "assertionType": "notExists",
+          "precondition": "No pending deferred questions exist for the active run",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "floating-panel-inline-actions",
+          "description": "When expanded, each pending question shows compact Approve (outline, h-6) and Reject (destructive, h-6) buttons at text-[10px] size.",
+          "category": "interaction",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "button", "textContent": "Approve" },
+            "label": "Inline approve button"
+          },
+          "assertionType": "semantic",
+          "precondition": "Floating panel is expanded and has pending questions",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "source": "ai-generated"
+    },
+    {
+      "id": "floating-panel-realtime",
+      "name": "Floating Panel — Real-Time Events & Toasts",
+      "description": "The floating panel subscribes to WebSocket events for live updates and shows toast notifications when new questions arrive.",
+      "category": "behavior",
+      "assertions": [
+        {
+          "id": "toast-on-question-created",
+          "description": "When a 'deferred-question-created' WebSocket event arrives for the current run, a toast.info notification appears with text 'Decision needed ({risk} risk, {confidence}% confidence)' and a description showing the first 120 chars of the question. Duration is 8 seconds.",
+          "category": "behavior",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "Decision needed" },
+            "label": "Toast notification"
+          },
+          "assertionType": "behavior",
+          "precondition": "Active dashboard is showing a running workflow",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "panel-reappears-after-dismiss",
+          "description": "After dismissing the panel, if a new deferred-question-created event arrives, the panel reappears (dismissed state is reset to false).",
+          "category": "behavior",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "pending decision" },
+            "label": "Floating panel"
+          },
+          "assertionType": "behavior",
+          "precondition": "Panel was dismissed and a new question event arrives",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "list-refreshes-on-event",
+          "description": "When a 'deferred-question-reviewed' event arrives, the question list is refreshed to reflect the updated status.",
+          "category": "behavior",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "pending decision" },
+            "label": "Floating panel"
+          },
+          "assertionType": "behavior",
+          "precondition": "Floating panel is visible and a review event arrives",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "source": "ai-generated"
+    },
+    {
+      "id": "active-runs-badge",
+      "name": "Active Runs Bar — Pending Decisions Badge",
+      "description": "The CompactRunCard in the ActiveRunsBar shows an amber badge with the count of pending deferred questions, fetched via useEventTriggeredFetch.",
+      "category": "data-display",
+      "assertions": [
+        {
+          "id": "badge-shows-pending-count",
+          "description": "When a running workflow has pending deferred questions, an amber badge appears on its card in the active runs bar. The badge shows the count (e.g., '2') with a MessageSquareWarning icon (size-2). Uses text-amber-400 and border-amber-500/20 styling.",
+          "category": "data-display",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "dataAttributes": { "content-label": "active-run-name" } },
+            "label": "Active run card"
+          },
+          "assertionType": "semantic",
+          "precondition": "Multiple active runs exist, at least one has pending deferred questions",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "badge-hidden-no-pending",
+          "description": "When a running workflow has zero pending deferred questions, no amber decisions badge is shown on its card.",
+          "category": "element-presence",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "pending decision" },
+            "label": "Decisions badge"
+          },
+          "assertionType": "notExists",
+          "precondition": "Active workflow has no pending deferred questions",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "badge-updates-on-event",
+          "description": "The badge count updates when a 'deferred-question-created' event arrives (via useEventTriggeredFetch with 30s fallback polling).",
+          "category": "behavior",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "dataAttributes": { "content-label": "active-run-name" } },
+            "label": "Active run card"
+          },
+          "assertionType": "behavior",
+          "precondition": "Active runs bar is visible",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "source": "ai-generated"
+    },
+    {
+      "id": "decisions-data-flow",
+      "name": "Data Flow — Dual Source & Sync",
+      "description": "The Decisions tab fetches data from the runner (live) with fallback to the backend (synced). This ensures deferred questions are viewable even when the runner is offline.",
+      "category": "state-consistency",
+      "assertions": [
+        {
+          "id": "runner-primary-source",
+          "description": "Data is fetched first from the runner via runnerFetch(/task-runs/{id}/deferred-questions). If the runner is available, its data is used.",
+          "category": "state-consistency",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "Deferred Questions" },
+            "label": "Questions tab"
+          },
+          "assertionType": "semantic",
+          "precondition": "Runner is connected and tab is active",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "backend-fallback",
+          "description": "If the runner fetch fails (offline), data is fetched from the backend via httpClient.get(/api/v1/task-runs/{id}/deferred-questions). Questions synced to the backend are displayed.",
+          "category": "state-consistency",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "Deferred Questions" },
+            "label": "Questions tab"
+          },
+          "assertionType": "semantic",
+          "precondition": "Runner is offline and backend has synced deferred questions",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "source": "ai-generated"
+    }
+  ],
+  "metadata": {
+    "component": "DeferredQuestionsTab",
+    "relatedComponents": [
+      "DeferredQuestionsFloatingPanel",
+      "ActiveRunsBar (CompactRunCard)",
+      "RunDetailContent"
+    ],
+    "pageUrl": "/runs/[id]?tab=decisions",
+    "tags": [
+      "deferred-feedback",
+      "human-in-the-loop",
+      "approval",
+      "review-queue",
+      "autonomous-execution",
+      "active-dashboard"
+    ]
+  }
+}

@@ -2803,13 +2803,460 @@
         }
       ],
       "source": "ai-generated"
+    },
+    {
+      "id": "sm-fingerprint-recording",
+      "name": "Fingerprint-Based Recording (SdkRecordingPanel)",
+      "description": "The SDK Recording Panel provides WebSocket-based fingerprint recording for UI Bridge-connected apps. It captures user interactions, computes element fingerprints, and produces a CooccurrenceExport for direct state machine bootstrapping — bypassing the snapshot-based discovery flow.",
+      "category": "behavior",
+      "assertions": [
+        {
+          "id": "sm-fp-panel-presence",
+          "description": "When an SDK app is connected and the Record tab is active, the SdkRecordingPanel card is rendered below the snapshot recording card. It shows the heading 'State Machine Recording' with a Workflow icon and description 'Record interactions to automatically discover states and transitions'.",
+          "category": "element-presence",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "State Machine Recording" },
+            "label": "SDK Recording Panel heading"
+          },
+          "assertionType": "exists",
+          "precondition": "An SDK app is connected and the Record tab is selected in the Discovery panel",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "sm-fp-record-button",
+          "description": "A 'Record' button with a red filled Circle icon is shown when no recording is active. Clicking it sends a 'recording:start' WebSocket message to the connected SDK app and the button changes to a 'Stop' button with a Square icon.",
+          "category": "interaction",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "button", "textContains": "Record" },
+            "label": "Record button"
+          },
+          "assertionType": "behavior",
+          "precondition": "SDK app is connected and no recording is active",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "sm-fp-stop-produces-result",
+          "description": "Clicking 'Stop' during an active recording sends 'recording:stop' to the SDK, which returns a RecordingSessionResult containing: interactionCount, captureCount, variables array, and a CooccurrenceExportData object. The panel shows a summary with three columns: Interactions count, Captures count, and Variables count.",
+          "category": "behavior",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "button", "textContains": "Stop" },
+            "label": "Stop recording button"
+          },
+          "assertionType": "behavior",
+          "precondition": "A fingerprint recording is active",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "sm-fp-variable-extraction",
+          "description": "After stopping a recording, if the user typed in text inputs or selected from dropdowns during recording, the panel shows an 'Extracted Variables' section listing each detected variable with its inputType badge, suggestedParamName in monospace, and the enteredValue in quotes.",
+          "category": "data-display",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "Extracted Variables" },
+            "label": "Extracted variables section"
+          },
+          "assertionType": "semantic",
+          "precondition": "Recording stopped and at least one form input was used during recording",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "sm-fp-discover-button",
+          "description": "After recording stops and results are shown, a 'Discover State Machine' button appears spanning full width. Clicking it sends the CooccurrenceExportData to the recording pipeline API endpoint, which runs FingerprintStateDiscovery and TransitionDetector to produce states and transitions.",
+          "category": "behavior",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "button", "textContains": "Discover State Machine" },
+            "label": "Discover State Machine button"
+          },
+          "assertionType": "behavior",
+          "precondition": "Recording has been stopped and results are displayed",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "sm-fp-pipeline-result",
+          "description": "After pipeline processing completes, the panel shows 'State Machine Discovered' with a green CheckCircle2 icon, state count, transition count, and modal state count. A scrollable list shows each non-global state with its name and confidence percentage.",
+          "category": "data-display",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "State Machine Discovered" },
+            "label": "Pipeline result heading"
+          },
+          "assertionType": "exists",
+          "precondition": "Pipeline processing has completed successfully",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "source": "ai-generated"
+    },
+    {
+      "id": "sm-recording-graph-visualization",
+      "name": "Recording State Graph Visualization",
+      "description": "After fingerprint-based recording pipeline produces results, a compact graph visualization shows discovered states as nodes and transitions as edges. Uses @xyflow/react with dagre layout.",
+      "category": "data-display",
+      "assertions": [
+        {
+          "id": "sm-rec-graph-shown",
+          "description": "When pipeline results include both states (non-global) and transitions, a RecordingStateGraph is rendered inside the SdkRecordingPanel. The graph canvas has a fixed height and contains ReactFlow nodes and edges. Node count matches the number of non-global states in the result.",
+          "category": "data-display",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "graphics-document" },
+            "label": "Recording state graph canvas"
+          },
+          "assertionType": "semantic",
+          "precondition": "Pipeline processing completed with at least 1 non-global state and 1 transition",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "sm-rec-graph-node-colors",
+          "description": "State nodes in the recording graph are colored by confidence: green (>=80%), blue (>=50%), gray (<50%). Modal states use amber coloring. Global states are gray and excluded from the graph. Each node shows the state name and confidence percentage.",
+          "category": "design",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "graphics-document" },
+            "label": "Recording graph nodes"
+          },
+          "assertionType": "semantic",
+          "precondition": "Recording graph is visible with at least 2 states",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "sm-rec-graph-edges",
+          "description": "Transition edges in the recording graph connect source to target state nodes with arrow markers. Edge stroke width is proportional to confidence (higher confidence = thicker line). Edge opacity also scales with confidence.",
+          "category": "design",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "graphics-document" },
+            "label": "Recording graph edges"
+          },
+          "assertionType": "semantic",
+          "precondition": "Recording graph is visible with at least 1 transition",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "source": "ai-generated"
+    },
+    {
+      "id": "sm-playbook-generation",
+      "name": "Playbook Generation from Recording",
+      "description": "After pipeline processing with playbook generation enabled, the SdkRecordingPanel displays the generated playbook markdown content with a copy-to-clipboard button.",
+      "category": "behavior",
+      "assertions": [
+        {
+          "id": "sm-playbook-shown",
+          "description": "When pipeline results include playbookContent (non-null), a 'Generated Playbook' section appears with a FileText icon. The playbook content is rendered in a scrollable preformatted block with monospace font at 10px size.",
+          "category": "data-display",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "Generated Playbook" },
+            "label": "Generated Playbook heading"
+          },
+          "assertionType": "exists",
+          "precondition": "Pipeline processing completed with playbook generation enabled",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "sm-playbook-content-format",
+          "description": "The generated playbook contains valid YAML frontmatter (name, description, category: recorded-workflow, triggers, context: ui-bridge) followed by markdown body with numbered steps. Each step has an Action line, optional Variable and Transition lines.",
+          "category": "semantic",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "tagName": "pre" },
+            "label": "Playbook content block"
+          },
+          "assertionType": "semantic",
+          "precondition": "Generated playbook is visible",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "sm-playbook-copy",
+          "description": "A 'Copy' button next to the playbook heading copies the playbook content to clipboard. After clicking, the button text changes to 'Copied' with a CheckCircle2 icon for 2 seconds before reverting.",
+          "category": "interaction",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "button", "textContains": "Copy" },
+            "label": "Copy playbook button"
+          },
+          "assertionType": "behavior",
+          "precondition": "Generated playbook is visible",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "source": "ai-generated"
+    },
+    {
+      "id": "sm-experience-memory",
+      "name": "Experience Memory (Past Recording Sessions)",
+      "description": "When connecting to an app with previous recording sessions, the SdkRecordingPanel shows past session history to inform the user and enable incremental recording.",
+      "category": "data-display",
+      "assertions": [
+        {
+          "id": "sm-exp-past-sessions",
+          "description": "If the connected app has past recording sessions (fetched from GET /api/v1/recording-pipeline/experiences by app domain), a 'Past recordings for this app' section appears with a History icon before the recording controls. Each session shows state count, transition count, and average confidence.",
+          "category": "data-display",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "Past recordings for this app" },
+            "label": "Past experiences section"
+          },
+          "assertionType": "exists",
+          "precondition": "SDK app is connected and the app has previous recording sessions stored in PostgreSQL",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "sm-exp-merge-hint",
+          "description": "Below the past sessions list, a hint text reads 'New recordings will merge with discovered states via incremental merge' to inform users that the system supports session stacking.",
+          "category": "data-display",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "incremental merge" },
+            "label": "Merge hint text"
+          },
+          "assertionType": "exists",
+          "precondition": "Past sessions are displayed",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "source": "ai-generated"
+    },
+    {
+      "id": "sm-recording-pipeline-correctness",
+      "name": "Recording Pipeline — State Discovery Correctness",
+      "description": "The fingerprint recording pipeline (RecordingPipeline.process_recording) discovers states via FingerprintStateDiscovery and transitions via TransitionDetector. These assertions verify that the pipeline output displayed on the page is correct.",
+      "category": "state-consistency",
+      "assertions": [
+        {
+          "id": "sm-pipe-states-nonempty",
+          "description": "Every state shown in the pipeline result list must have at least 1 element (shown as element count). A state with zero elements indicates a fingerprint co-occurrence grouping error.",
+          "category": "state-consistency",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "State Machine Discovered" },
+            "label": "Pipeline result states"
+          },
+          "assertionType": "semantic",
+          "precondition": "Pipeline processing has completed with at least 1 state",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "sm-pipe-confidence-range",
+          "description": "Every state confidence score shown in the pipeline result must be between 0% and 100%. The confidence reflects how reliably the state's elements co-occur across captures.",
+          "category": "state-consistency",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "State Machine Discovered" },
+            "label": "Pipeline result confidences"
+          },
+          "assertionType": "semantic",
+          "precondition": "Pipeline processing has completed",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "sm-pipe-transitions-valid",
+          "description": "Every transition in the pipeline result must connect two distinct states that both exist in the states list. A transition referencing a non-existent state indicates a bug in the TransitionDetector or state-to-fingerprint mapping.",
+          "category": "state-consistency",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "State Machine Discovered" },
+            "label": "Pipeline result transitions"
+          },
+          "assertionType": "semantic",
+          "precondition": "Pipeline processing completed with at least 1 transition",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "sm-pipe-counts-match",
+          "description": "The state count and transition count numbers shown in the summary header must match the actual number of items in the states list and transitions list respectively. A mismatch indicates a rendering bug.",
+          "category": "state-consistency",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "states" },
+            "label": "Pipeline result counts"
+          },
+          "assertionType": "semantic",
+          "precondition": "Pipeline processing has completed",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "source": "ai-generated"
+    },
+    {
+      "id": "sm-state-machine-graph-tab",
+      "name": "State Machine Graph Tab (StateMachineViewer)",
+      "description": "The StateMachineViewer component now has a Graph tab as its first (default) tab, rendering an interactive state transition graph using @xyflow/react and dagre layout.",
+      "category": "element-presence",
+      "assertions": [
+        {
+          "id": "sm-viewer-graph-tab",
+          "description": "The StateMachineViewer displays 4 tabs: Graph, States, Transitions, and Co-occurrence. The Graph tab is the default (first) tab shown on load.",
+          "category": "navigation",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "tab", "textContains": "Graph" },
+            "label": "Graph tab trigger"
+          },
+          "assertionType": "exists",
+          "precondition": "StateMachineViewer is rendered with a StateDiscoveryResult",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "sm-viewer-graph-content",
+          "description": "When the Graph tab is active, a card with heading 'State Transition Graph' contains a ReactFlow canvas showing state nodes and transition edges laid out hierarchically via dagre. Clicking a node triggers the onStateSelect callback.",
+          "category": "data-display",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "State Transition Graph" },
+            "label": "Graph tab content card"
+          },
+          "assertionType": "exists",
+          "precondition": "Graph tab is selected and discovery result has states",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "sm-viewer-graph-nodes-match-states",
+          "description": "The number of nodes rendered in the graph canvas must equal the number of states in the discovery result. Each node displays the state name and element count. Missing or extra nodes indicate a rendering or data mapping bug.",
+          "category": "state-consistency",
+          "severity": "critical",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "graphics-document" },
+            "label": "State machine graph"
+          },
+          "assertionType": "semantic",
+          "precondition": "Graph tab is active with at least 2 states in the result",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "source": "ai-generated"
+    },
+    {
+      "id": "sm-recording-indicator",
+      "name": "Floating Recording Indicator",
+      "description": "A floating recording indicator appears in the bottom-right corner of the app when any UI Bridge recording session is active. It polls SDK WebSocket ports and provides a quick stop button.",
+      "category": "behavior",
+      "assertions": [
+        {
+          "id": "sm-rec-indicator-appears",
+          "description": "When a fingerprint recording is active on any SDK app (ports 9876-9878), a floating pill-shaped indicator appears in the bottom-right corner with a pulsing red dot, 'Recording' text, elapsed duration, action count, and a stop (Square icon) button.",
+          "category": "behavior",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "Recording" },
+            "label": "Floating recording indicator"
+          },
+          "assertionType": "behavior",
+          "precondition": "A fingerprint recording is active on a connected SDK app",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "sm-rec-indicator-stop",
+          "description": "Clicking the stop button on the floating indicator sends a 'recording:stop' message to the SDK WebSocket and the indicator disappears. The recording result is available in the SdkRecordingPanel on the Discovery tab.",
+          "category": "interaction",
+          "severity": "warning",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "button" },
+            "label": "Indicator stop button"
+          },
+          "assertionType": "behavior",
+          "precondition": "The floating recording indicator is visible",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "sm-rec-indicator-hidden-when-idle",
+          "description": "When no recording session is active, the floating indicator is not rendered in the DOM. It does not flash or appear momentarily during polling.",
+          "category": "element-presence",
+          "severity": "info",
+          "target": {
+            "type": "search",
+            "criteria": { "textContains": "Recording" },
+            "label": "Indicator when idle"
+          },
+          "assertionType": "notExists",
+          "precondition": "No recording session is active on any SDK app",
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "source": "ai-generated"
     }
   ],
   "metadata": {
     "component": "UIBridgeStateMachinePage",
     "author": "Joshua Spinak",
     "createdAt": "2026-03-06T00:00:00.000Z",
-    "updatedAt": "2026-03-09T12:00:00.000Z",
+    "updatedAt": "2026-04-02T12:00:00.000Z",
     "pageUrl": "/automation-builder/ui-bridge-states",
     "elementSource": "sdk",
     "tags": [
@@ -2820,6 +3267,10 @@
       "transitions",
       "pathfinding",
       "automation",
+      "recording",
+      "fingerprint-recording",
+      "playbook-generation",
+      "experience-memory",
       "tier-1"
     ],
     "specType": "comprehensive"

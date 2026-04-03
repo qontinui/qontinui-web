@@ -94,6 +94,7 @@ from app.models.project_assets import ProjectImage, ProjectScreenshot
 from app.models.project_embedding import ProjectEmbedding
 from app.models.project_version import ProjectVersion
 from app.models.prompt_template_version import PromptTemplateVersion
+from app.models.recording_session import RecordingSession
 from app.models.recording import (
                                          DiscoveredTransition,
                                          ProcessingLog,

@@ -5,7 +5,7 @@ import type { TaskRun } from "@/lib/runner";
 import { useEventTriggeredFetch } from "@/contexts/RunnerEventContext";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { PlayCircle, Lock, Hash } from "lucide-react";
+import { PlayCircle, Lock, Hash, MessageSquareWarning } from "lucide-react";
 
 function CompactRunCard({
   run,
@@ -33,6 +33,15 @@ function CompactRunCard({
   }>("orchestrator-state-change", `/task-runs/${run.id}/orchestrator-state`, {
     fallbackPollMs: 10000,
   });
+
+  const { data: deferredQuestions } = useEventTriggeredFetch<
+    { status: string }[]
+  >("deferred-question-created", `/task-runs/${run.id}/deferred-questions`, {
+    fallbackPollMs: 30000,
+  });
+  const pendingCount = deferredQuestions?.filter(
+    (q) => q.status === "pending"
+  ).length ?? 0;
 
   return (
     <button
@@ -69,6 +78,16 @@ function CompactRunCard({
         >
           <Hash className="size-2" />
           {orchState.bridges_count}
+        </Badge>
+      )}
+
+      {pendingCount > 0 && (
+        <Badge
+          variant="outline"
+          className="text-[9px] gap-0.5 text-amber-400 border-amber-500/20"
+        >
+          <MessageSquareWarning className="size-2" />
+          {pendingCount}
         </Badge>
       )}
     </button>

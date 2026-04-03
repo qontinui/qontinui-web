@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # =============================================================================
 # Request Schemas
@@ -100,6 +100,38 @@ class TaskRunFindingsBatch(BaseModel):
     """Batch of findings to sync."""
 
     findings: list[TaskRunFindingCreate]
+
+
+class DeferredQuestionCreate(BaseModel):
+    """Request to create/sync a deferred question."""
+
+    id: str | None = None
+    iteration: int
+    question: str
+    context_json: str = "{}"
+    auto_decision_type: str
+    auto_decision_detail: str | None = None
+    confidence: float
+    risk_level: str
+    status: str = "pending"
+    git_checkpoint: str | None = None
+    contingent_iterations: str = "[]"
+    reviewer_comment: str | None = None
+    created_at: datetime | None = None
+    reviewed_at: datetime | None = None
+
+
+class DeferredQuestionBatch(BaseModel):
+    """Batch of deferred questions to sync."""
+
+    questions: list[DeferredQuestionCreate]
+
+
+class DeferredQuestionUpdate(BaseModel):
+    """Request to update/review a deferred question."""
+
+    status: str | None = None
+    reviewer_comment: str | None = None
 
 
 class TaskRunAutomationCreate(BaseModel):
@@ -207,6 +239,28 @@ class TaskRunFindingResponse(BaseModel):
     detected_at: datetime
     resolved_at: datetime | None
     updated_at: datetime
+
+
+class DeferredQuestionResponse(BaseModel):
+    """Response for a deferred question."""
+
+    id: UUID
+    task_run_id: UUID
+    iteration: int
+    question: str
+    context_json: str
+    auto_decision_type: str
+    auto_decision_detail: str | None
+    confidence: float
+    risk_level: str
+    status: str
+    git_checkpoint: str | None
+    contingent_iterations: str
+    reviewer_comment: str | None
+    created_at: datetime
+    reviewed_at: datetime | None
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TaskRunAutomationResponse(BaseModel):

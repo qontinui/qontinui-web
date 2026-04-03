@@ -25,13 +25,14 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Layers, ArrowRight, Grid3X3, Info } from "lucide-react";
+import { Layers, ArrowRight, Grid3X3, Info, Workflow } from "lucide-react";
 import { useStateMachineViewer } from "./_hooks/useStateMachineViewer";
 import { SummaryHeader } from "./_components/SummaryHeader";
 import { StateListItem } from "./_components/StateListItem";
 import { StateDetails } from "./_components/StateDetails";
 import { TransitionListItem } from "./_components/TransitionListItem";
 import { CooccurrenceMatrix } from "./_components/CooccurrenceMatrix";
+import { StateMachineGraph } from "./_components/StateMachineGraph";
 
 interface StateMachineViewerProps {
   result: StateDiscoveryResult;
@@ -64,8 +65,12 @@ export function StateMachineViewer({
     <div className={`flex flex-col gap-4 ${className}`}>
       <SummaryHeader result={result} />
 
-      <Tabs defaultValue="states" className="flex-1">
-        <TabsList className="grid w-full grid-cols-3">
+      <Tabs defaultValue="graph" className="flex-1">
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="graph" className="flex items-center gap-2">
+            <Workflow className="h-4 w-4" />
+            Graph
+          </TabsTrigger>
           <TabsTrigger value="states" className="flex items-center gap-2">
             <Layers className="h-4 w-4" />
             States
@@ -79,6 +84,27 @@ export function StateMachineViewer({
             Co-occurrence
           </TabsTrigger>
         </TabsList>
+
+        {/* Graph Tab */}
+        <TabsContent value="graph" className="mt-4">
+          <Card className="bg-surface-raised/60 border-border-subtle">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">
+                State Transition Graph
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <StateMachineGraph
+                states={result.states}
+                transitions={result.transitions}
+                onStateClick={(stateId) => {
+                  const state = stateMap.get(stateId);
+                  if (state) onStateSelect?.(state);
+                }}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* States Tab */}
         <TabsContent value="states" className="mt-4">

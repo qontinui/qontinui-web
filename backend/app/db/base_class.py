@@ -13,6 +13,9 @@ from app.models.library import (Check, CheckGroup, Context, Macro,  # noqa
                                 PromptSnippet, SavedApiRequest, ShellCommand)
 from app.models.project import Project  # noqa
 from app.models.session_activity import SessionActivity  # noqa
+from app.models.task_run import (DeferredQuestion, TaskRun,  # noqa
+                                 TaskRunAutomation, TaskRunFinding,
+                                 TaskRunSession)
 from app.models.snapshot import (Pattern, Screenshot, SnapshotAction,  # noqa
                                  SnapshotMatch, SnapshotPattern, SnapshotRun)
 from app.models.storage_usage import StorageUsage  # noqa

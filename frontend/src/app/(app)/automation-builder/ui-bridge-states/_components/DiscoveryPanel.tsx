@@ -36,6 +36,8 @@ import { useUIBridgeExploration } from "@/hooks/useUIBridgeExploration";
 import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
 import { useStateMachineDiscovery } from "../_hooks/useStateMachineDiscovery";
 import { useSDKApps, type SDKApp } from "../_hooks/useSDKApps";
+import { SdkRecordingPanel } from "@/components/ui-bridge/SdkRecordingPanel";
+import { useUIBridgeRecording } from "@/hooks/useUIBridgeRecording";
 
 const LOCAL_RUNNER_URL = "http://localhost:9876";
 const DIRECT_CONNECTION_ID = -1;
@@ -55,6 +57,7 @@ export function DiscoveryPanel({
   >(null);
   // Hooks
   const exploration = useUIBridgeExploration();
+  const sdkRecording = useUIBridgeRecording();
   const { connections, isLoading: connectionsLoading } =
     useRealtimeConnections();
 
@@ -550,6 +553,26 @@ export function DiscoveryPanel({
                   </div>
                 </CardContent>
               </Card>
+
+              {/* Fingerprint-based recording — produces state machine directly */}
+              {sdk.activeApp && (
+                <SdkRecordingPanel
+                  wsUrl={sdk.activeApp.url.replace("http", "ws")}
+                  apiBaseUrl=""
+                  appName={sdk.activeApp.app.appName}
+                  appUrl={sdk.activeApp.url}
+                  onStartRecording={sdkRecording.startSdkRecording}
+                  onStopRecording={sdkRecording.stopSdkRecording}
+                  onProcessRecording={sdkRecording.processRecording}
+                  isRecording={sdkRecording.isRecording}
+                  isStarting={sdkRecording.isStarting}
+                  isStopping={sdkRecording.isStopping}
+                  isProcessing={sdkRecording.isProcessing}
+                  sdkResult={sdkRecording.sdkRecordingResult}
+                  pipelineResult={sdkRecording.pipelineResult}
+                  error={sdkRecording.session.error}
+                />
+              )}
             </div>
           </div>
         </div>

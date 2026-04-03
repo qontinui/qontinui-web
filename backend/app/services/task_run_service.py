@@ -6,6 +6,11 @@ Import from app.services.task_run directly for new code.
 """
 
 from app.services.task_run import (  # noqa: F401
+                                   DeferredQuestionBatch,
+                                   DeferredQuestionCreate,
+                                   DeferredQuestionResponse,
+                                   DeferredQuestionService,
+                                   DeferredQuestionUpdate,
                                    Pagination,
                                    StepProgressResponse,
                                    TaskRunAutomationCreate,
@@ -31,6 +36,7 @@ from app.services.task_run import (  # noqa: F401
                                    TaskRunVerificationService,
                                    _get_enum_value,
                                    model_to_automation_response,
+                                   model_to_deferred_question_response,
                                    model_to_finding_response,
                                    model_to_session_response,
                                    model_to_task_run_response,

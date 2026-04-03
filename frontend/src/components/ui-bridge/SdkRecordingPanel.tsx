@@ -8,7 +8,7 @@
  * and displays discovered states, transitions, and generated playbooks.
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -30,6 +30,7 @@ import {
   Workflow,
   FileText,
   Copy,
+  History,
 } from "lucide-react";
 import type {
   RecordingPipelineResult,
@@ -104,6 +105,33 @@ export function SdkRecordingPanel({
 }: SdkRecordingPanelProps) {
   const generatePlaybook = true;
   const [copiedPlaybook, setCopiedPlaybook] = useState(false);
+  const [pastSessions, setPastSessions] = useState<
+    Array<{
+      session_id: string;
+      app_name: string | null;
+      state_count: number;
+      transition_count: number;
+      avg_confidence: number;
+      recorded_at: string;
+    }>
+  >([]);
+
+  // Fetch past experiences for this app on mount
+  useEffect(() => {
+    if (!appName && !appUrl) return;
+    const domain = appUrl ? new URL(appUrl).hostname : undefined;
+    const params = new URLSearchParams();
+    // project_id would come from context — for now, skip if no apiBaseUrl
+    if (!apiBaseUrl) return;
+    if (domain) params.set("app_domain", domain);
+    else if (appName) params.set("app_name", appName);
+    params.set("limit", "5");
+
+    fetch(`${apiBaseUrl}/api/v1/recording-pipeline/experiences?${params}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => setPastSessions(Array.isArray(data) ? data : []))
+      .catch(() => setPastSessions([]));
+  }, [apiBaseUrl, appName, appUrl]);
 
   const handleStart = useCallback(async () => {
     await onStartRecording(wsUrl);
@@ -181,6 +209,32 @@ export function SdkRecordingPanel({
             </Badge>
           )}
         </div>
+
+        {/* Past Experiences */}
+        {pastSessions.length > 0 && !isRecording && !sdkResult && !pipelineResult && (
+          <div className="space-y-1.5">
+            <div className="text-xs font-medium flex items-center gap-1 text-muted-foreground">
+              <History className="w-3 h-3" />
+              Past recordings for this app
+            </div>
+            {pastSessions.map((s) => (
+              <div
+                key={s.session_id}
+                className="text-xs flex items-center justify-between px-2 py-1.5 rounded bg-muted/50"
+              >
+                <span>
+                  {s.state_count} states, {s.transition_count} transitions
+                </span>
+                <span className="text-muted-foreground">
+                  {Math.round(s.avg_confidence * 100)}% conf
+                </span>
+              </div>
+            ))}
+            <p className="text-[10px] text-muted-foreground">
+              New recordings will merge with discovered states via incremental merge
+            </p>
+          </div>
+        )}
 
         {/* Error */}
         {error && (
