@@ -257,8 +257,8 @@ export function DeferredQuestionsTab({ taskRunId }: DeferredQuestionsTabProps) {
                 <div>
                   <span className="font-medium">Files modified:</span>
                   <ul className="list-disc ml-4 text-text-muted text-xs">
-                    {(context.files_modified as string[]).map((f: string, i: number) => (
-                      <li key={i}>{f}</li>
+                    {(context.files_modified as string[]).map((f: string) => (
+                      <li key={f}>{f}</li>
                     ))}
                   </ul>
                 </div>

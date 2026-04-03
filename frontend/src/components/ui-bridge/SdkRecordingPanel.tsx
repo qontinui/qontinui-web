@@ -272,8 +272,8 @@ export function SdkRecordingPanel({
               {sdkResult.variables.length > 0 && (
                 <div className="space-y-1">
                   <div className="text-xs font-medium">Extracted Variables</div>
-                  {sdkResult.variables.map((v, i) => (
-                    <div key={i} className="text-xs flex items-center gap-2 pl-2">
+                  {sdkResult.variables.map((v) => (
+                    <div key={v.fingerprint} className="text-xs flex items-center gap-2 pl-2">
                       <Badge variant="secondary" className="text-[10px] px-1">
                         {v.inputType}
                       </Badge>
