@@ -25,14 +25,18 @@ def export_all_data():
 
     with engine.connect() as conn:
         # Export users (using old schema column names from snapshot)
-        result = conn.execute(text("""
+        result = conn.execute(
+            text(
+                """
             SELECT id, email, username, full_name, hashed_password,
                    is_active, is_superuser, email_verified, is_beta,
                    company, phone, avatar_url, subscription_tier,
                    created_at, updated_at, email_verification_token
             FROM users
             ORDER BY created_at
-        """))
+        """
+            )
+        )
 
         users = []
         user_id_map = {}  # old_id -> new_uuid mapping
@@ -75,11 +79,15 @@ def export_all_data():
         print()
 
         # Export projects
-        result = conn.execute(text("""
+        result = conn.execute(
+            text(
+                """
             SELECT id, name, description, configuration, owner_id, created_at, updated_at
             FROM projects
             ORDER BY created_at
-        """))
+        """
+            )
+        )
 
         projects = []
         for row in result:
@@ -110,13 +118,17 @@ def export_all_data():
             result = conn.execute(text("SELECT COUNT(*) FROM subscriptions"))
             sub_count = result.scalar()
             if sub_count > 0:
-                result = conn.execute(text("""
+                result = conn.execute(
+                    text(
+                        """
                     SELECT id, user_id, stripe_customer_id, stripe_subscription_id,
                            stripe_price_id, tier, status, current_period_start,
                            current_period_end, cancel_at_period_end, canceled_at,
                            created_at, updated_at
                     FROM subscriptions
-                """))
+                """
+                    )
+                )
 
                 subscriptions = []
                 for row in result:
@@ -174,7 +186,8 @@ def import_all_data(data):
         print(f"Importing {len(data['users'])} users...")
         for i, user in enumerate(data["users"], 1):
             conn.execute(
-                text("""
+                text(
+                    """
                 INSERT INTO users (
                     id, email, username, full_name, hashed_password,
                     is_active, is_superuser, is_verified, is_beta,
@@ -186,7 +199,8 @@ def import_all_data(data):
                     :company, :phone, :avatar_url, :subscription_tier,
                     :created_at, :updated_at, :email_verification_token
                 )
-            """),
+            """
+                ),
                 {
                     "id": user["new_uuid"],
                     "email": user["email"],
@@ -217,13 +231,15 @@ def import_all_data(data):
             print(f"Importing {len(data['projects'])} projects...")
             for i, project in enumerate(data["projects"], 1):
                 conn.execute(
-                    text("""
+                    text(
+                        """
                     INSERT INTO projects (
                         name, description, configuration, owner_id, created_at, updated_at
                     ) VALUES (
                         :name, :description, :configuration, :owner_id, :created_at, :updated_at
                     )
-                """),
+                """
+                    ),
                     {
                         "name": project["name"],
                         "description": project["description"],
@@ -250,7 +266,8 @@ def import_all_data(data):
             print(f"Importing {len(data['subscriptions'])} subscriptions...")
             for i, sub in enumerate(data["subscriptions"], 1):
                 conn.execute(
-                    text("""
+                    text(
+                        """
                     INSERT INTO subscriptions (
                         user_id, stripe_customer_id, stripe_subscription_id,
                         stripe_price_id, tier, status, current_period_start,
@@ -262,7 +279,8 @@ def import_all_data(data):
                         :current_period_end, :cancel_at_period_end, :canceled_at,
                         :created_at, :updated_at
                     )
-                """),
+                """
+                    ),
                     {
                         "user_id": sub["new_user_uuid"],
                         "stripe_customer_id": sub["stripe_customer_id"],

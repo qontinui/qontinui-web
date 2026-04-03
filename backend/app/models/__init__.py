@@ -5,9 +5,9 @@ This package contains all SQLAlchemy models for the application.
 """
 
 from app.models.action_execution import (
-    ActionExecution,
-    ActionExecutionStatus,
-    ActionExecutionType,
+                                         ActionExecution,
+                                         ActionExecutionStatus,
+                                         ActionExecutionType,
 )
 from app.models.admin_notification_settings import AdminNotificationSettings
 from app.models.ai_prompt import AIPromptTemplate, PromptSequence
@@ -21,28 +21,28 @@ from app.models.automation_screenshot import AutomationScreenshot
 from app.models.automation_session import AutomationSession
 from app.models.automation_video import AutomationVideo
 from app.models.capture import (
-    CaptureAction,
-    CaptureDetectedElement,
-    CaptureScreenshot,
-    CaptureSession,
-    LearnedWorkflow,
-    ScreenshotStateMatch,
+                                         CaptureAction,
+                                         CaptureDetectedElement,
+                                         CaptureScreenshot,
+                                         CaptureSession,
+                                         LearnedWorkflow,
+                                         ScreenshotStateMatch,
 )
 from app.models.code_package import (
-    CodePackage,
-    InstallationStatus,
-    PackageCategory,
-    PackageInstallation,
-    PackageRating,
-    PackageVersion,
-    SecurityScanStatus,
+                                         CodePackage,
+                                         InstallationStatus,
+                                         PackageCategory,
+                                         PackageInstallation,
+                                         PackageRating,
+                                         PackageVersion,
+                                         SecurityScanStatus,
 )
 from app.models.collaboration import (
-    ActionType,
-    ActivityLog,
-    ProjectComment,
-    ProjectLock,
-    ResourceType,
+                                         ActionType,
+                                         ActivityLog,
+                                         ProjectComment,
+                                         ProjectLock,
+                                         ResourceType,
 )
 from app.models.coverage_snapshot import CoverageSnapshot
 from app.models.custom_function import CustomFunction
@@ -56,36 +56,36 @@ from app.models.embedding_generation_job import EmbeddingGenerationJob
 from app.models.evaluation_dataset import DatasetItem, EvaluationDataset
 from app.models.evaluation_experiment import EvaluationExperiment, ExperimentResult
 from app.models.execution_issue import (
-    ExecutionIssue,
-    ExecutionIssueSeverity,
-    ExecutionIssueSource,
-    ExecutionIssueStatus,
-    ExecutionIssueType,
+                                         ExecutionIssue,
+                                         ExecutionIssueSeverity,
+                                         ExecutionIssueSource,
+                                         ExecutionIssueStatus,
+                                         ExecutionIssueType,
 )
 from app.models.execution_run import ExecutionRun, ExecutionRunStatus, ExecutionRunType
 from app.models.execution_screenshot import ExecutionScreenshot, ExecutionScreenshotType
 from app.models.execution_tree_event import (
-    ExecutionTreeEvent,
-    TreeEventType,
-    TreeNodeStatus,
-    TreeNodeType,
+                                         ExecutionTreeEvent,
+                                         TreeEventType,
+                                         TreeNodeStatus,
+                                         TreeNodeType,
 )
 from app.models.extraction import ExtractionAnnotation, ExtractionSession
 from app.models.feedback_score import FeedbackScore
 from app.models.finding_category_config import FindingCategoryConfig
 from app.models.known_issue import KnownIssue
 from app.models.notification import (
-    Notification,
-    NotificationPreferences,
-    NotificationType,
+                                         Notification,
+                                         NotificationPreferences,
+                                         NotificationType,
 )
 from app.models.organization import (
-    Organization,
-    OrganizationInvitation,
-    PermissionLevel,
-    ProjectAccessControl,
-    TeamMember,
-    TeamRole,
+                                         Organization,
+                                         OrganizationInvitation,
+                                         PermissionLevel,
+                                         ProjectAccessControl,
+                                         TeamMember,
+                                         TeamRole,
 )
 from app.models.path_discovery import PathDiscovery
 from app.models.project import Project
@@ -95,22 +95,22 @@ from app.models.project_embedding import ProjectEmbedding
 from app.models.project_version import ProjectVersion
 from app.models.prompt_template_version import PromptTemplateVersion
 from app.models.recording import (
-    DiscoveredTransition,
-    ProcessingLog,
-    ProcessingPhase,
-    Recording,
-    RecordingContext,
-    RecordingFrame,
-    RecordingInteraction,
-    RecordingStatus,
+                                         DiscoveredTransition,
+                                         ProcessingLog,
+                                         ProcessingPhase,
+                                         Recording,
+                                         RecordingContext,
+                                         RecordingFrame,
+                                         RecordingInteraction,
+                                         RecordingStatus,
 )
 from app.models.recording_session import RecordingSession  # noqa
 from app.models.render_log import (
-    RenderImage,
-    RenderImageType,
-    RenderLog,
-    RenderLogMutationType,
-    RenderLogTrigger,
+                                         RenderImage,
+                                         RenderImageType,
+                                         RenderLog,
+                                         RenderLogMutationType,
+                                         RenderLogTrigger,
 )
 from app.models.runner_connection import RunnerConnection
 from app.models.runner_device import RunnerDevice
@@ -118,12 +118,12 @@ from app.models.screenshot_input_association import ScreenshotInputAssociation
 from app.models.session_activity import SessionActivity
 from app.models.skill import Skill
 from app.models.snapshot import (
-    Pattern,
-    Screenshot,
-    SnapshotAction,
-    SnapshotMatch,
-    SnapshotPattern,
-    SnapshotRun,
+                                         Pattern,
+                                         Screenshot,
+                                         SnapshotAction,
+                                         SnapshotMatch,
+                                         SnapshotPattern,
+                                         SnapshotRun,
 )
 from app.models.software_test_run import SoftwareTestRun, TestRunStatus
 from app.models.state_discovery_result import DiscoverySourceType, StateDiscoveryResult
@@ -133,96 +133,96 @@ from app.models.storage_usage import StorageUsage
 from app.models.subscription import Subscription, SubscriptionStatus, SubscriptionTier
 from app.models.sync_lock import SyncLock
 from app.models.task_run import (  # New unified names; Backward compatibility aliases
-    AITask,
-    AITaskFinding,
-    AITaskFindingActionType,
-    AITaskFindingCategory,
-    AITaskFindingSeverity,
-    AITaskFindingStatus,
-    AITaskSession,
-    AITaskStatus,
-    FindingActionType,
-    FindingCategory,
-    FindingSeverity,
-    FindingStatus,
-    TaskRun,
-    TaskRunAutomation,
-    TaskRunFinding,
-    TaskRunSession,
-    TaskRunStatus,
-    TaskType,
+                                         AITask,
+                                         AITaskFinding,
+                                         AITaskFindingActionType,
+                                         AITaskFindingCategory,
+                                         AITaskFindingSeverity,
+                                         AITaskFindingStatus,
+                                         AITaskSession,
+                                         AITaskStatus,
+                                         FindingActionType,
+                                         FindingCategory,
+                                         FindingSeverity,
+                                         FindingStatus,
+                                         TaskRun,
+                                         TaskRunAutomation,
+                                         TaskRunFinding,
+                                         TaskRunSession,
+                                         TaskRunStatus,
+                                         TaskType,
 )
 from app.models.task_run_verification_result import TaskRunVerificationResult
 from app.models.template_candidate import TemplateCandidate
 from app.models.test_deficiency import (
-    DeficiencySeverity,
-    DeficiencyStatus,
-    DeficiencyType,
-    TestDeficiency,
+                                         DeficiencySeverity,
+                                         DeficiencyStatus,
+                                         DeficiencyType,
+                                         TestDeficiency,
 )
 from app.models.test_notification_preferences import TestNotificationPreferences
 from app.models.test_result import TestResult, TestResultStatus
 from app.models.test_screenshot import TestScreenshot, TestScreenshotType
 from app.models.training_dataset import (
-    AnnotationSource,
-    DatasetSource,
-    ElementType,
-    ExportFormat,
-    ExportJobStatus,
-    ReviewStatus,
-    TrainingDataset,
-    TrainingDatasetAnnotation,
-    TrainingDatasetExportJob,
-    TrainingDatasetImage,
+                                         AnnotationSource,
+                                         DatasetSource,
+                                         ElementType,
+                                         ExportFormat,
+                                         ExportJobStatus,
+                                         ReviewStatus,
+                                         TrainingDataset,
+                                         TrainingDatasetAnnotation,
+                                         TrainingDatasetExportJob,
+                                         TrainingDatasetImage,
 )
 from app.models.training_job import TrainingJob, TrainingJobModelType, TrainingJobStatus
 from app.models.transition_execution import (
-    TransitionExecution,
-    TransitionExecutionStatus,
+                                         TransitionExecution,
+                                         TransitionExecutionStatus,
 )
 from app.models.transition_reliability import TransitionReliability
 from app.models.ui_bridge_state import (
-    DomainKnowledge,
-    UIBridgeExplorationSession,
-    UIBridgeState,
-    UIBridgeStateConfig,
-    UIBridgeStateDomainKnowledge,
+                                         DomainKnowledge,
+                                         UIBridgeExplorationSession,
+                                         UIBridgeState,
+                                         UIBridgeStateConfig,
+                                         UIBridgeStateDomainKnowledge,
 )
 from app.models.ui_bridge_transition import UIBridgeTransition
 from app.models.unified_workflow import UnifiedWorkflow
 from app.models.usage_metric import UsageMetric
 from app.models.user import User
 from app.models.verification_test import (
-    VerificationTest,
-    VerificationTestCategory,
-    VerificationTestType,
+                                         VerificationTest,
+                                         VerificationTestCategory,
+                                         VerificationTestType,
 )
 from app.models.video_capture import (
-    ActionFrame,
-    FrameIndex,
-    HistoricalResult,
-    InputEvent,
-    InputEventType,
-    StorageBackend,
-    VideoCaptureSession,
+                                         ActionFrame,
+                                         FrameIndex,
+                                         HistoricalResult,
+                                         InputEvent,
+                                         InputEventType,
+                                         StorageBackend,
+                                         VideoCaptureSession,
 )
 from app.models.visual_baseline import VisualBaseline
 from app.models.visual_comparison_result import (
-    ReviewDecision,
-    VisualComparisonResult,
-    VisualComparisonStatus,
+                                         ReviewDecision,
+                                         VisualComparisonResult,
+                                         VisualComparisonStatus,
 )
 from app.models.workflow_execution_history import WorkflowExecutionHistory
 from app.models.workflow_step_type import (
-    GuiActionTypeConfig,
-    StepTypeConfig,
-    WorkflowPhaseConfig,
+                                         GuiActionTypeConfig,
+                                         StepTypeConfig,
+                                         WorkflowPhaseConfig,
 )
 from app.models.workflow_test_association import TriggerPoint, WorkflowTestAssociation
 from app.models.workflow_variable import (
-    VariableHistory,
-    VariableScope,
-    WorkflowVariable,
+                                         VariableHistory,
+                                         VariableScope,
+                                         WorkflowVariable,
 )
 
 __all__ = [

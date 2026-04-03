@@ -179,6 +179,7 @@ def model_to_action_response(action: ActionExecution) -> ActionExecutionResponse
         from_state=action.from_state,
         to_state=action.to_state,
         error_message=action.error_message,
+        llm_metrics=None,
     )
 
 
@@ -806,7 +807,7 @@ class ExecutionRunService:
         metadata = action.extra_metadata or {}
         llm_metrics = metadata.get("llm_metrics")
         if llm_metrics and isinstance(llm_metrics, dict):
-            return llm_metrics
+            return dict(llm_metrics)
         return None
 
     async def compute_llm_cost_summary(

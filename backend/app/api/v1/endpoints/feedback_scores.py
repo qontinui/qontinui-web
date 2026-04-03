@@ -13,6 +13,7 @@ Endpoints:
 - DELETE /feedback-scores/{id} — delete a score
 """
 
+from typing import Literal
 from uuid import UUID
 
 import structlog
@@ -36,6 +37,7 @@ router = APIRouter()
 
 def _model_to_response(score) -> FeedbackScoreResponse:
     """Convert a FeedbackScore model to a FeedbackScoreResponse schema."""
+    target_type: Literal["run", "action"]
     if score.run_id is not None:
         target_type = "run"
         target_id = score.run_id

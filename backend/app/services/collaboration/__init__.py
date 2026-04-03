@@ -1,8 +1,8 @@
 """Collaboration services for real-time project collaboration."""
 
 from app.services.collaboration.activity_service import (
-    ActivityService,
-    activity_service,
+                                                         ActivityService,
+                                                         activity_service,
 )
 from app.services.collaboration.comment_service import CommentService, comment_service
 from app.services.collaboration.locking_service import LockingService, locking_service
