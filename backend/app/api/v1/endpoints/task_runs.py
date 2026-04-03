@@ -554,7 +554,9 @@ async def sync_deferred_questions(
 )
 async def list_deferred_questions(
     task_run_id: str,
-    status_filter: str | None = Query(None, alias="status", description="Filter by status"),
+    status_filter: str | None = Query(
+        None, alias="status", description="Filter by status"
+    ),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
     service: TaskRunService = Depends(get_task_run_service),
@@ -580,7 +582,9 @@ async def review_deferred_question(
 ) -> DeferredQuestionResponse:
     """Review a deferred question."""
     parsed_id = _parse_task_run_id(task_run_id)
-    result = await service.review_deferred_question(db, parsed_id, question_id, update_data)
+    result = await service.review_deferred_question(
+        db, parsed_id, question_id, update_data
+    )
     if not result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

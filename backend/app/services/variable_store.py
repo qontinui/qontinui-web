@@ -55,9 +55,9 @@ class VariableStore:
         self._persistent_state: dict[str, Any] = {}
         self._project_id = project_id
         self._workflow_id = workflow_id
-        self._pending_writes: list[tuple[str, Any, Any | None]] = (
-            []
-        )  # Queue for async writes
+        self._pending_writes: list[
+            tuple[str, Any, Any | None]
+        ] = []  # Queue for async writes
 
     # ========================================================================
     # Workflow Variables (Read-only)

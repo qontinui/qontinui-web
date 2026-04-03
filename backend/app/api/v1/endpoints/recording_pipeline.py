@@ -647,7 +647,9 @@ def _compute_duration_ms(export_data: dict[str, Any]) -> int:
     # Fallback: use fingerprint stats first/last seen
     stats = export_data.get("fingerprintStats", {})
     if stats:
-        all_first = [s.get("firstSeen", 0) for s in stats.values() if s.get("firstSeen")]
+        all_first = [
+            s.get("firstSeen", 0) for s in stats.values() if s.get("firstSeen")
+        ]
         all_last = [s.get("lastSeen", 0) for s in stats.values() if s.get("lastSeen")]
         if all_first and all_last:
             return max(all_last) - min(all_first)

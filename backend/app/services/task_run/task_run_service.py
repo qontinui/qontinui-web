@@ -73,7 +73,9 @@ class TaskRunService:
         self.session_repo = session_repo or TaskRunSessionRepository()
         self.finding_repo = finding_repo or TaskRunFindingRepository()
         self.automation_repo = automation_repo or TaskRunAutomationRepository()
-        self.deferred_question_repo = deferred_question_repo or DeferredQuestionRepository()
+        self.deferred_question_repo = (
+            deferred_question_repo or DeferredQuestionRepository()
+        )
 
     # =========================================================================
     # Core Task Run CRUD
@@ -603,7 +605,9 @@ class TaskRunService:
         batch: DeferredQuestionBatch,
     ) -> list[DeferredQuestionResponse]:
         """Sync a batch of deferred questions. Delegates to DeferredQuestionService."""
-        from app.services.task_run.deferred_question_service import DeferredQuestionService
+        from app.services.task_run.deferred_question_service import (
+            DeferredQuestionService,
+        )
 
         svc = DeferredQuestionService(question_repo=self.deferred_question_repo)
         return await svc.sync_deferred_questions(db, task_run_id, batch)
@@ -615,7 +619,9 @@ class TaskRunService:
         status_filter: str | None = None,
     ) -> list[DeferredQuestionResponse]:
         """List deferred questions. Delegates to DeferredQuestionService."""
-        from app.services.task_run.deferred_question_service import DeferredQuestionService
+        from app.services.task_run.deferred_question_service import (
+            DeferredQuestionService,
+        )
 
         svc = DeferredQuestionService(question_repo=self.deferred_question_repo)
         return await svc.list_deferred_questions(db, task_run_id, status_filter)
@@ -628,7 +634,11 @@ class TaskRunService:
         update_data: DeferredQuestionUpdate,
     ) -> DeferredQuestionResponse | None:
         """Review a deferred question. Delegates to DeferredQuestionService."""
-        from app.services.task_run.deferred_question_service import DeferredQuestionService
+        from app.services.task_run.deferred_question_service import (
+            DeferredQuestionService,
+        )
 
         svc = DeferredQuestionService(question_repo=self.deferred_question_repo)
-        return await svc.review_deferred_question(db, task_run_id, question_id, update_data)
+        return await svc.review_deferred_question(
+            db, task_run_id, question_id, update_data
+        )
