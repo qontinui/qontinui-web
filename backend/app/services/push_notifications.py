@@ -152,18 +152,19 @@ async def dispatch_push_for_event(db: AsyncSession, event: WorkflowEvent) -> Non
         )
         return
 
+    event_type: str = str(event.event_type)
     display = EVENT_DISPLAY.get(
-        event.event_type, {"title": "Workflow Event", "category": "other"}
+        event_type, {"title": "Workflow Event", "category": "other"}
     )
 
     title = f"{display['title']} — {event.runner_name}"
-    body = event.summary
+    body: str = str(event.summary)
     deep_link = build_deep_link(event)
-    priority = "high" if event.event_type in HIGH_PRIORITY_EVENTS else "default"
+    priority = "high" if event_type in HIGH_PRIORITY_EVENTS else "default"
 
     data = {
         "url": deep_link,
-        "event_type": event.event_type,
+        "event_type": event_type,
         "event_id": str(event.id),
         "runner_name": event.runner_name,
     }
