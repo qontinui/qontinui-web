@@ -267,6 +267,12 @@ async def mark_events_seen(
 
     Mobile calls this after displaying events to the user.
     """
+    if len(event_ids) > 500:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot mark more than 500 events at once",
+        )
+
     try:
         uuids = [PyUUID(eid) for eid in event_ids]
     except ValueError:

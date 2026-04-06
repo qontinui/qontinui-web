@@ -5,6 +5,8 @@ from typing import Annotated
 from pydantic.functional_serializers import PlainSerializer
 from pydantic.functional_validators import BeforeValidator
 
+from pydantic import Field
+
 from app.schemas.base import BaseORMSchema, BaseSchema, IsoDatetime
 
 UuidAsString = Annotated[
@@ -17,9 +19,9 @@ UuidAsString = Annotated[
 class PushDeviceRegister(BaseSchema):
     """Schema for registering a push device token."""
 
-    push_token: str
-    platform: str = "expo"
-    device_name: str | None = None
+    push_token: str = Field(..., max_length=255)
+    platform: str = Field("expo", max_length=50)
+    device_name: str | None = Field(None, max_length=255)
 
 
 class PushDeviceResponse(BaseORMSchema):

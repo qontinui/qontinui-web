@@ -31,7 +31,7 @@ def upgrade() -> None:
         sa.Column('payload', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column('seen', sa.Boolean(), nullable=False, server_default=sa.text('false')),
         sa.Column('timestamp', sa.DateTime(timezone=True), nullable=False),
-        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('now()')),
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id'),
     )

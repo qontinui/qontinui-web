@@ -6,6 +6,8 @@ from typing import Annotated, Any
 from pydantic.functional_serializers import PlainSerializer
 from pydantic.functional_validators import BeforeValidator
 
+from pydantic import Field
+
 from app.schemas.base import BaseORMSchema, BaseSchema, IsoDatetime
 
 UuidAsString = Annotated[
@@ -18,11 +20,11 @@ UuidAsString = Annotated[
 class WorkflowEventCreate(BaseSchema):
     """Schema for creating a workflow event (sent by runner)."""
 
-    event_type: str
-    device_id: str
-    runner_name: str
-    run_id: str | None = None
-    summary: str
+    event_type: str = Field(..., max_length=50)
+    device_id: str = Field(..., max_length=255)
+    runner_name: str = Field(..., max_length=255)
+    run_id: str | None = Field(None, max_length=255)
+    summary: str = Field(..., max_length=5000)
     payload: dict[str, Any] | None = None
     timestamp: datetime
 
