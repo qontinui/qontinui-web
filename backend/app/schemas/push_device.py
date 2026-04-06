@@ -2,10 +2,9 @@
 
 from typing import Annotated
 
+from pydantic import Field
 from pydantic.functional_serializers import PlainSerializer
 from pydantic.functional_validators import BeforeValidator
-
-from pydantic import Field
 
 from app.schemas.base import BaseORMSchema, BaseSchema, IsoDatetime
 
