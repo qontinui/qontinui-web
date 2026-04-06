@@ -5,9 +5,6 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import admin as admin_pkg
 from app.api.v1.endpoints import (
                                   admin_ws,
-                                  clipboard,
-                                  events,
-                                  push_devices,
                                   ai_prompts,
                                   analytics,
                                   annotations,
@@ -20,6 +17,7 @@ from app.api.v1.endpoints import (
                                   billing,
                                   capture,
                                   chat_sessions,
+                                  clipboard,
                                   code_execution,
                                   code_packages,
                                   collaboration,
@@ -32,12 +30,14 @@ from app.api.v1.endpoints import (
                                   element_annotations,
                                   error_monitor,
                                   evaluation,
+                                  events,
                                   execution,
                                   export,
                                   exports,
                                   extraction,
                                   feedback,
                                   feedback_scores,
+                                  files_sharing,
                                   finding_categories,
                                   health,
                                   historical,
@@ -55,6 +55,7 @@ from app.api.v1.endpoints import (
                                   projects,
                                   prompt_versions,
                                   public,
+                                  push_devices,
                                   rag_builder,
                                   rag_dashboard,
                                   recording_pipeline,
@@ -292,6 +293,8 @@ api_router.include_router(events.router, prefix="/events", tags=["events"])
 # Push device registration (mobile push notification tokens)
 api_router.include_router(push_devices.router, prefix="/devices", tags=["push-devices"])
 # Clipboard sync relay (cross-device clipboard sharing)
+api_router.include_router(clipboard.router, prefix="/clipboard", tags=["clipboard"])
+# File sharing (cross-device file upload/download)
 api_router.include_router(
-    clipboard.router, prefix="/clipboard", tags=["clipboard"]
+    files_sharing.router, prefix="/files", tags=["files-sharing"]
 )

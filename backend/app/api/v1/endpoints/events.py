@@ -128,6 +128,7 @@ async def ingest_workflow_event(
     async def _dispatch_push(event_id):
         async with AsyncSessionLocal() as bg_db:
             from sqlalchemy import select as bg_select
+
             result = await bg_db.execute(
                 bg_select(WorkflowEvent).where(WorkflowEvent.id == event_id)
             )

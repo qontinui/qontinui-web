@@ -91,10 +91,10 @@ from app.models.path_discovery import PathDiscovery
 from app.models.project import Project
 from app.models.project_annotation_state import ProjectAnnotationState
 from app.models.project_assets import ProjectImage, ProjectScreenshot
-from app.models.push_device import PushDevice
 from app.models.project_embedding import ProjectEmbedding
 from app.models.project_version import ProjectVersion
 from app.models.prompt_template_version import PromptTemplateVersion
+from app.models.push_device import PushDevice
 from app.models.recording import (
                                          DiscoveredTransition,
                                          ProcessingLog,

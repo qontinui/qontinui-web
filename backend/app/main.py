@@ -172,6 +172,7 @@ app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 # Background task handle for cleanup
 _cleanup_task: asyncio.Task | None = None
 _clipboard_cleanup_task: asyncio.Task | None = None
+_file_cleanup_task: asyncio.Task | None = None
 
 
 @app.on_event("startup")
@@ -305,6 +306,22 @@ async def startup_event():
             note="Continuing without clipboard cleanup",
         )
 
+    # Start shared file expiry cleanup (runs every hour, no Redis dependency)
+    try:
+        from app.tasks.file_cleanup import run_file_cleanup_loop
+
+        global _file_cleanup_task
+        _file_cleanup_task = asyncio.create_task(
+            run_file_cleanup_loop(interval_seconds=3600)
+        )
+        logger.info("file_cleanup_task_started", interval_seconds=3600)
+    except (ImportError, RuntimeError) as e:
+        logger.warning(
+            "file_cleanup_task_failed",
+            error=str(e),
+            note="Continuing without file cleanup",
+        )
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -326,6 +343,14 @@ async def shutdown_event():
             await _clipboard_cleanup_task
         except asyncio.CancelledError:
             logger.info("clipboard_cleanup_task_cancelled")
+
+    global _file_cleanup_task
+    if _file_cleanup_task is not None:
+        _file_cleanup_task.cancel()
+        try:
+            await _file_cleanup_task
+        except asyncio.CancelledError:
+            logger.info("file_cleanup_task_cancelled")
 
     # Close Redis connection
     if settings.REDIS_ENABLED:
