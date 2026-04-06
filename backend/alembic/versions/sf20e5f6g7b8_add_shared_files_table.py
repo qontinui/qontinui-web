@@ -1,8 +1,8 @@
-"""add_clipboard_entries_table
+"""add_shared_files_table
 
-Revision ID: a1b2c3d4e5f6
-Revises: z2a3b4c5d6e7
-Create Date: 2026-04-05
+Revision ID: sf20e5f6g7b8
+Revises: cb10d4e5f6a7
+Create Date: 2026-04-06
 
 """
 
@@ -13,16 +13,16 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = "a1b2c3d4e5f6"
-down_revision: Union[str, None] = "3df4b05ce971"
+revision: str = "sf20e5f6g7b8"
+down_revision: Union[str, None] = "cb10d4e5f6a7"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Create clipboard_entries table for cross-device clipboard sync."""
+    """Create shared_files table for cross-device file sharing."""
     op.create_table(
-        "clipboard_entries",
+        "shared_files",
         sa.Column(
             "id",
             postgresql.UUID(as_uuid=True),
@@ -31,11 +31,10 @@ def upgrade() -> None:
         ),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("source_device_id", sa.String(255), nullable=False),
-        sa.Column("source_device_name", sa.String(255), nullable=False),
-        sa.Column("content_type", sa.String(50), nullable=False),
-        sa.Column("text_content", sa.Text(), nullable=True),
-        sa.Column("image_url", sa.String(2048), nullable=True),
-        sa.Column("file_ref", postgresql.JSONB(), nullable=True),
+        sa.Column("filename", sa.String(512), nullable=False),
+        sa.Column("content_type", sa.String(255), nullable=False),
+        sa.Column("size_bytes", sa.BigInteger(), nullable=False),
+        sa.Column("storage_path", sa.String(1024), nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -45,7 +44,7 @@ def upgrade() -> None:
         sa.Column(
             "expires_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now() + interval '24 hours'"),
+            server_default=sa.text("now() + interval '7 days'"),
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
@@ -56,19 +55,19 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
-        "ix_clipboard_entries_user_id",
-        "clipboard_entries",
+        "ix_shared_files_user_id",
+        "shared_files",
         ["user_id"],
     )
     op.create_index(
-        "ix_clipboard_entries_expires_at",
-        "clipboard_entries",
+        "ix_shared_files_expires_at",
+        "shared_files",
         ["expires_at"],
     )
 
 
 def downgrade() -> None:
-    """Drop clipboard_entries table."""
-    op.drop_index("ix_clipboard_entries_expires_at", table_name="clipboard_entries")
-    op.drop_index("ix_clipboard_entries_user_id", table_name="clipboard_entries")
-    op.drop_table("clipboard_entries")
+    """Drop shared_files table."""
+    op.drop_index("ix_shared_files_expires_at", table_name="shared_files")
+    op.drop_index("ix_shared_files_user_id", table_name="shared_files")
+    op.drop_table("shared_files")
