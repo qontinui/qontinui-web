@@ -5,6 +5,9 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import admin as admin_pkg
 from app.api.v1.endpoints import (
                                   admin_ws,
+                                  clipboard,
+                                  events,
+                                  push_devices,
                                   ai_prompts,
                                   analytics,
                                   annotations,
@@ -284,3 +287,11 @@ api_router.include_router(feedback_scores.router, tags=["feedback-scores"])
 api_router.include_router(prompt_versions.router, tags=["prompt-versions"])
 # Evaluation datasets and experiments (Opik integration — dataset management and experiment tracking)
 api_router.include_router(evaluation.router, prefix="/evaluation", tags=["evaluation"])
+# Workflow events (runner-to-cloud event ingestion for push notifications)
+api_router.include_router(events.router, prefix="/events", tags=["events"])
+# Push device registration (mobile push notification tokens)
+api_router.include_router(push_devices.router, prefix="/devices", tags=["push-devices"])
+# Clipboard sync relay (cross-device clipboard sharing)
+api_router.include_router(
+    clipboard.router, prefix="/clipboard", tags=["clipboard"]
+)

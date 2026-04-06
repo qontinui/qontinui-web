@@ -139,6 +139,12 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     runner_devices = relationship(
         "RunnerDevice", back_populates="user", cascade="all, delete-orphan"
     )
+    workflow_events = relationship(
+        "WorkflowEvent", back_populates="user", cascade="all, delete-orphan"
+    )
+    push_devices = relationship(
+        "PushDevice", back_populates="user", cascade="all, delete-orphan"
+    )
     project_screenshots = relationship(
         "ProjectScreenshot", back_populates="user", cascade="all, delete-orphan"
     )
