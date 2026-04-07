@@ -65,6 +65,7 @@ from app.api.v1.endpoints import (
                                   runner_chat_ws,
                                   runner_command_ws,
                                   runner_devices,
+                                  runner_logs,
                                   runner_status_ws,
                                   runners,
                                   screenshots,
@@ -161,6 +162,10 @@ api_router.include_router(
 )
 api_router.include_router(
     runner_devices.router, prefix="/runner-devices", tags=["runner-devices"]
+)
+# Runner process logs proxy — read persisted process logs from runner's PG DB
+api_router.include_router(
+    runner_logs.router, prefix="/runner-logs", tags=["runner-logs"]
 )
 api_router.include_router(versions.router, prefix="/projects", tags=["versions"])
 api_router.include_router(
