@@ -46,7 +46,18 @@ def _runner_dsn() -> str:
 
 
 async def _init_connection(conn: asyncpg.Connection) -> None:
-    """Per-connection setup: match the runner's search_path."""
+    """Per-connection setup: match the runner's search_path.
+
+    NOTE: asyncpg's `init` hook only runs once when the connection is first
+    added to the pool; session state (including `search_path`) is reset
+    between acquisitions via `RESET ALL`. We use the `setup` hook instead
+    (via get_runner_pool) which runs on every acquire.
+    """
+    await conn.execute("SET search_path TO runner, public")
+
+
+async def _setup_connection(conn: asyncpg.Connection) -> None:
+    """Per-acquire setup: re-apply search_path after RESET ALL."""
     await conn.execute("SET search_path TO runner, public")
 
 
@@ -61,6 +72,7 @@ async def get_runner_pool() -> asyncpg.Pool:
             min_size=1,
             max_size=int(os.getenv("RUNNER_DB_POOL_SIZE", "5")),
             init=_init_connection,
+            setup=_setup_connection,
         )
     return _pool
 
