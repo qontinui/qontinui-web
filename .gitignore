@@ -75,6 +75,9 @@ uploads_backup_*.tar.gz
 
 # MinIO/S3 local data
 minio_data/
+
+# Runtime shared-file uploads (per-user UUID dirs)
+backend/shared-files/
 *.aws-credentials.txt
 .aws-credentials.txt
 
