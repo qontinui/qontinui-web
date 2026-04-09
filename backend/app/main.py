@@ -164,6 +164,13 @@ app.add_middleware(
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
+# Mount embedding service at /api/embeddings (no /v1 prefix — the Rust runner's
+# EmbeddingClient and the web backend's own semantic_search endpoint both call
+# http://127.0.0.1:8001/api/embeddings/compute-text directly).
+from app.api.embeddings import router as embeddings_router  # noqa: E402
+
+app.include_router(embeddings_router, prefix="/api/embeddings", tags=["embeddings"])
+
 # Mount static files for avatars
 uploads_dir = Path("uploads")
 uploads_dir.mkdir(exist_ok=True)
