@@ -29,11 +29,11 @@ function badgeVariant(state: ProviderCircuitState["state"]) {
 function StateIcon({ state }: { state: ProviderCircuitState["state"] }) {
   switch (state) {
     case "Closed":
-      return <CheckCircle2 className="size-3.5" />;
+      return <CheckCircle2 className="size-3.5" aria-hidden="true" />;
     case "HalfOpen":
-      return <Activity className="size-3.5" />;
+      return <Activity className="size-3.5" aria-hidden="true" />;
     case "Open":
-      return <AlertTriangle className="size-3.5" />;
+      return <AlertTriangle className="size-3.5" aria-hidden="true" />;
   }
 }
 
@@ -66,7 +66,7 @@ export function ProviderHealthStatus() {
     <div className="rounded-lg border border-border">
       <div className="px-4 py-3 border-b border-border bg-muted/50">
         <h3 className="text-sm font-medium flex items-center gap-2">
-          <Activity className="size-4" />
+          <Activity className="size-4" aria-hidden="true" />
           Provider Health
         </h3>
       </div>
@@ -89,9 +89,9 @@ export function ProviderHealthStatus() {
                     size="icon"
                     className="size-4 ml-0.5 p-0 hover:bg-transparent"
                     onClick={() => handleReset(s.provider_key)}
-                    title="Reset circuit breaker"
+                    aria-label={`Reset ${PROVIDER_LABELS[s.provider_key] ?? s.provider_key} circuit breaker`}
                   >
-                    <RotateCcw className="size-3" />
+                    <RotateCcw className="size-3" aria-hidden="true" />
                   </Button>
                 )}
               </Badge>

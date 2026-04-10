@@ -52,6 +52,7 @@
     "**/*.test.tsx",
     "**/*.spec.ts",
     "**/*.spec.tsx",
-    "src/test/**"
+    "src/test/**",
+    "scripts/**"
   ]
 }
