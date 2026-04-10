@@ -160,6 +160,12 @@ export interface AiConnectionTestResult {
   provider: string;
 }
 
+export interface ProviderCircuitState {
+  provider_key: string;
+  state: "Closed" | "Open" | "HalfOpen";
+  available: boolean;
+}
+
 export interface McpServerConfig {
   id: string;
   name: string;

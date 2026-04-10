@@ -14,6 +14,7 @@ import { GeminiCliSettings } from "./_components/GeminiCliSettings";
 import { GeminiApiSettings } from "./_components/GeminiApiSettings";
 import { GeneralAiSettings } from "./_components/GeneralAiSettings";
 import { TestConnection } from "./_components/TestConnection";
+import { ProviderHealthStatus } from "./_components/ProviderHealthStatus";
 
 const pageSpec = pageSpecJson as unknown as SpecConfig;
 
@@ -74,6 +75,8 @@ export default function AiSettingsPage() {
           Configure your AI provider for automation and analysis
         </p>
       </div>
+
+      <ProviderHealthStatus />
 
       <ProviderSelector provider={provider} onProviderChange={setProvider} />
 

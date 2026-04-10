@@ -13,6 +13,7 @@ import type {
   DeviceInfo,
   BackupSummary,
   McpServer,
+  ProviderCircuitState,
 } from "../types/settings";
 
 export function useAiSettings() {
@@ -57,4 +58,10 @@ export function useBackupSummary() {
 
 export function useSettingsMcpServers() {
   return useRunnerQuery<McpServer[]>("/settings/mcp/servers");
+}
+
+export function useProviderHealth() {
+  return useRunnerQuery<ProviderCircuitState[]>("/provider-health", {
+    pollInterval: 10000,
+  });
 }
