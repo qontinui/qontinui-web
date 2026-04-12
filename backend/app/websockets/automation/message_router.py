@@ -140,6 +140,12 @@ class MessageRouter:
             "chat_message_ack": self._handle_chat_response,
             "chat_running_tasks": self._handle_chat_response,
             "chat_created": self._handle_chat_response,
+            "terminal_output": self._handle_terminal_response,
+            "terminal_exit": self._handle_terminal_response,
+            "terminal_sessions": self._handle_terminal_response,
+            "terminal_created": self._handle_terminal_response,
+            "terminal_closed": self._handle_terminal_response,
+            "terminal_buffer_response": self._handle_terminal_response,
         }
 
         # Check exact match first
@@ -504,6 +510,15 @@ class MessageRouter:
     ) -> dict[str, Any] | None:
         """Forward chat response to connected mobiles."""
         await self.connection.send_chat_to_mobiles(raw_data)
+        return None
+
+    async def _handle_terminal_response(
+        self,
+        message: WSMessage,
+        raw_data: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Forward terminal response to connected mobiles."""
+        await self.connection.send_terminal_to_mobiles(raw_data)
         return None
 
     async def _handle_pong(

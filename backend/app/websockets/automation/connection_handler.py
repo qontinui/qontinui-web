@@ -548,6 +548,18 @@ class ConnectionHandler:
                 message,
             )
 
+    async def send_terminal_to_mobiles(self, message: dict[str, Any]) -> None:
+        """Relay terminal response to connected mobiles via Redis pub/sub.
+
+        Args:
+            message: Terminal response message to relay.
+        """
+        if self.connection_record and self.runner_manager:
+            await self.runner_manager.send_terminal_response_to_mobiles(
+                self.connection_record.id,
+                message,
+            )
+
     async def broadcast_status_event(self, event: dict[str, Any]) -> None:
         """Broadcast event to status channel for frontend monitoring.
 
