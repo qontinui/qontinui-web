@@ -22,6 +22,7 @@ EVENT_DISPLAY = {
     "run_completed": {"title": "Run Completed", "category": "run"},
     "run_failed": {"title": "Run Failed", "category": "run"},
     "session_completed": {"title": "Session Completed", "category": "session"},
+    "terminal_exited": {"title": "Terminal Exited", "category": "terminal"},
     "step_completed": {"title": "Step Completed", "category": "step"},
     "hitl_question_pending": {"title": "Action Required", "category": "hitl"},
     "runner_crashed": {"title": "Runner Crashed", "category": "runner"},
@@ -49,7 +50,9 @@ def build_deep_link(event: WorkflowEvent) -> str:
     event_type = event.event_type
     run_id = event.run_id
 
-    if event_type == "hitl_question_pending" and run_id:
+    if event_type == "terminal_exited":
+        return "qontinui://terminal"
+    elif event_type == "hitl_question_pending" and run_id:
         return f"qontinui://run/{run_id}/hitl"
     elif run_id:
         return f"qontinui://run/{run_id}"
@@ -74,17 +77,24 @@ async def send_push_notifications(
     body: str,
     data: dict | None = None,
     priority: str = "default",
+    collapse_id: str | None = None,
 ) -> None:
     """Send push notifications via Expo Push API.
 
     Sends to multiple tokens in a single batch request.
     Failures are logged but do not raise — this is fire-and-forget.
+
+    Args:
+        collapse_id: If set, newer notifications with the same collapse_id
+            replace older ones on the device (maps to Expo's ``_collapseId``
+            / APNs ``apns-collapse-id`` / FCM ``collapse_key``).
     """
     if not tokens:
         return
 
-    messages = [
-        {
+    messages = []
+    for token in tokens:
+        msg: dict = {
             "to": token,
             "title": title,
             "body": body,
@@ -92,8 +102,9 @@ async def send_push_notifications(
             "priority": priority,
             "data": data or {},
         }
-        for token in tokens
-    ]
+        if collapse_id:
+            msg["_collapseId"] = collapse_id
+        messages.append(msg)
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -172,10 +183,17 @@ async def dispatch_push_for_event(db: AsyncSession, event: WorkflowEvent) -> Non
     if event.run_id:
         data["run_id"] = event.run_id
 
+    # Collapse session_completed notifications per run so the device shows
+    # one updating notification instead of N separate ones.
+    collapse_id = None
+    if event_type == "session_completed" and event.run_id:
+        collapse_id = f"session-completed-{event.run_id}"
+
     await send_push_notifications(
         tokens=tokens,
         title=title,
         body=body,
         data=data,
         priority=priority,
+        collapse_id=collapse_id,
     )

@@ -18,6 +18,7 @@ class WorkflowEventType(StrEnum):
     RUN_COMPLETED = "run_completed"
     RUN_FAILED = "run_failed"
     SESSION_COMPLETED = "session_completed"
+    TERMINAL_EXITED = "terminal_exited"
     STEP_COMPLETED = "step_completed"
     HITL_QUESTION_PENDING = "hitl_question_pending"
     RUNNER_CRASHED = "runner_crashed"
