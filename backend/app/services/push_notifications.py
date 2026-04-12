@@ -21,6 +21,7 @@ EVENT_DISPLAY = {
     "run_started": {"title": "Run Started", "category": "run"},
     "run_completed": {"title": "Run Completed", "category": "run"},
     "run_failed": {"title": "Run Failed", "category": "run"},
+    "session_completed": {"title": "Session Completed", "category": "session"},
     "step_completed": {"title": "Step Completed", "category": "step"},
     "hitl_question_pending": {"title": "Action Required", "category": "hitl"},
     "runner_crashed": {"title": "Runner Crashed", "category": "runner"},
