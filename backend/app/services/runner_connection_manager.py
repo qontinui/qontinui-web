@@ -28,6 +28,7 @@ from redis import asyncio as aioredis
 
 from app.services.runner.chat_relay import ChatRelayService
 from app.services.runner.command_relay import CommandRelayService
+from app.services.runner.terminal_relay import TerminalRelayService
 from app.services.runner.connection_registry import WebSocketConnectionRegistry
 from app.services.runner.event_publisher import RunnerEventPublisher
 from app.services.runner.state_repository import RunnerStateRepository
@@ -61,6 +62,7 @@ class RunnerConnectionManager:
         self._state_repo = RunnerStateRepository(redis_client)
         self._relay = CommandRelayService(redis_client, self._registry)
         self._chat_relay = ChatRelayService(redis_client, self._registry)
+        self._terminal_relay = TerminalRelayService(redis_client, self._registry)
         self._publisher = RunnerEventPublisher(redis_client)
         self._redis = redis_client
         # Per-connection locks to synchronize WebSocket sends across relay services
@@ -130,6 +132,11 @@ class RunnerConnectionManager:
             connection_id, websocket, send_fn=locked_send
         )
 
+        # Start terminal listener
+        await self._terminal_relay.start_runner_listener(
+            connection_id, websocket, send_fn=locked_send
+        )
+
         # Publish connected event
         await self._publisher.publish_runner_connected(
             user_id=user_id,
@@ -189,6 +196,18 @@ class RunnerConnectionManager:
         )
 
         await self._chat_relay.stop_runner_listener(connection_id)
+
+        # Notify mobile terminal clients before stopping the terminal relay listener
+        await self._terminal_relay.notify_mobiles(
+            connection_id,
+            {
+                "type": "runner_disconnected",
+                "connection_id": connection_id,
+                "timestamp": utc_now().isoformat(),
+            },
+        )
+
+        await self._terminal_relay.stop_runner_listener(connection_id)
 
         # Remove per-connection send lock
         self._ws_send_locks.pop(connection_id, None)
@@ -371,6 +390,92 @@ class RunnerConnectionManager:
             response: Chat response message to send
         """
         await self._chat_relay.send_response_to_mobiles(connection_id, response)
+
+    # ========================================================================
+    # Mobile Terminal Connection
+    # ========================================================================
+
+    async def connect_mobile_terminal(
+        self, connection_id: int, websocket: WebSocket, user_id: UUID
+    ) -> bool:
+        """
+        Connect a mobile WebSocket for terminal relay.
+
+        Always starts the mobile listener so future events are delivered
+        even if the runner is currently offline.
+
+        Args:
+            connection_id: Runner connection ID to connect to
+            websocket: Mobile WebSocket connection
+            user_id: Requesting user ID
+
+        Returns:
+            True if runner is currently connected, False otherwise
+        """
+        runner_connected = self._registry.is_runner_connected(connection_id)
+        if not runner_connected:
+            logger.warning(
+                "mobile_terminal_connect_runner_not_found",
+                connection_id=connection_id,
+                user_id=str(user_id),
+            )
+
+        # Always start listener so mobile receives future events
+        await self._terminal_relay.start_mobile_listener(connection_id, websocket)
+
+        logger.info(
+            "mobile_terminal_connected_to_runner",
+            connection_id=connection_id,
+            user_id=str(user_id),
+            runner_connected=runner_connected,
+        )
+        return runner_connected
+
+    async def disconnect_mobile_terminal(
+        self, connection_id: int, websocket: WebSocket
+    ) -> None:
+        """
+        Disconnect a mobile terminal WebSocket.
+
+        Args:
+            connection_id: Runner connection ID
+            websocket: Mobile WebSocket connection
+        """
+        await self._terminal_relay.stop_mobile_listener(connection_id, websocket)
+
+        logger.info(
+            "mobile_terminal_disconnected_from_runner",
+            connection_id=connection_id,
+        )
+
+    async def send_terminal_to_runner(
+        self, connection_id: int, message: dict[str, Any]
+    ) -> bool:
+        """
+        Send terminal message from mobile to runner.
+
+        Args:
+            connection_id: Runner connection ID
+            message: Terminal message to send
+
+        Returns:
+            True if sent successfully, False if runner not connected
+        """
+        return await self._terminal_relay.send_terminal_to_runner(
+            connection_id, message
+        )
+
+    async def send_terminal_response_to_mobiles(
+        self, connection_id: int, response: dict[str, Any]
+    ) -> None:
+        """
+        Send terminal response from runner to all connected mobiles.
+
+        Args:
+            connection_id: Runner connection ID
+            response: Terminal response message to send
+        """
+        await self._terminal_relay.send_response_to_mobiles(connection_id, response)
 
     # ========================================================================
     # Status Publishing

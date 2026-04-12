@@ -63,6 +63,7 @@ from app.api.v1.endpoints import (
                                   render_logs,
                                   runner_chat,
                                   runner_chat_ws,
+                                  runner_terminal_ws,
                                   runner_command_ws,
                                   runner_devices,
                                   runner_logs,
@@ -201,6 +202,11 @@ api_router.include_router(
 )
 api_router.include_router(
     runner_chat_ws.router, prefix="/automation", tags=["runner-chat-websockets"]
+)
+api_router.include_router(
+    runner_terminal_ws.router,
+    prefix="/automation",
+    tags=["runner-terminal-websockets"],
 )
 api_router.include_router(runner_chat.router, prefix="/runners", tags=["runner-chat"])
 api_router.include_router(chat_sessions.router, tags=["chat-sessions"])
