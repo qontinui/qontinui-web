@@ -26,6 +26,7 @@ from app.api.v1.endpoints import (
                                   constraints,
                                   custom_functions,
                                   dev_dashboard,
+                                  device_bridge_ws,
                                   discoveries,
                                   element_annotations,
                                   error_monitor,
@@ -308,4 +309,8 @@ api_router.include_router(clipboard.router, prefix="/clipboard", tags=["clipboar
 # File sharing (cross-device file upload/download)
 api_router.include_router(
     files_sharing.router, prefix="/files", tags=["files-sharing"]
+)
+# Device bridge (cloud relay for physical mobile device UI Bridge connections)
+api_router.include_router(
+    device_bridge_ws.router, prefix="/device-bridge", tags=["device-bridge"]
 )
