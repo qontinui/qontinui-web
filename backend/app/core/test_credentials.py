@@ -16,7 +16,7 @@ When modifying credentials here, you MUST also update:
 
 # Standard development password - use this for ALL dev users
 # This makes it easy to switch between accounts during development
-STANDARD_DEV_PASSWORD = "Qontinui123!"
+STANDARD_DEV_PASSWORD = "dev123"
 
 # Primary development user - used for BOTH runner AND web during development
 # This is the single default user for all local development

@@ -11,7 +11,7 @@
  */
 
 // Standard development password - same for all dev users
-export const STANDARD_DEV_PASSWORD = "Qontinui123!";
+export const STANDARD_DEV_PASSWORD = "dev123";
 
 // Primary development user - used for all local development
 export const DEV_USER = {
