@@ -48,7 +48,9 @@ export default function CaptureHostPage() {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   // Register the URL input + advance button with UI Bridge so the capture
-  // script can drive the iframe via setValue/click commands.
+  // script can drive the iframe via setValue/click commands. Also register
+  // a read-only "bbox echo" input whose value is the JSON-serialised last
+  // reported bbox; the capture script reads it from /control/snapshot.
   const inputRegistered = useUIElement({
     id: "capture-next-url",
     label: "Pending isolated-sample URL the host iframe will load next",
@@ -60,9 +62,16 @@ export default function CaptureHostPage() {
       "Click to load the pending URL into the host iframe and move to the next sample",
     type: "button",
   });
+  const bboxEchoRegistered = useUIElement({
+    id: "capture-last-bbox",
+    label:
+      "Read-only JSON echo of the last bbox reported by the inner iframe",
+    type: "input",
+  });
   // Void the return values; the hooks just side-effect register the elements.
   void inputRegistered;
   void advanceBtnRegistered;
+  void bboxEchoRegistered;
 
   // Receive bbox messages from the iframe and surface them via body attrs
   useEffect(() => {
@@ -155,6 +164,26 @@ export default function CaptureHostPage() {
       <div style={{ fontSize: 11, color: "#666", marginBottom: 8 }}>
         sample #{sampleIndex} — bbox: {lastBbox ? `${lastBbox.x},${lastBbox.y} ${lastBbox.width}×${lastBbox.height}` : "(none)"}
       </div>
+      {/* Hidden echo input — the capture script reads its value from the
+          UI Bridge snapshot to recover the iframe's measured bbox. */}
+      <input
+        id="capture-last-bbox"
+        type="text"
+        readOnly
+        value={lastBbox ? JSON.stringify(lastBbox) : ""}
+        aria-hidden="true"
+        tabIndex={-1}
+        style={{
+          position: "absolute",
+          width: 1,
+          height: 1,
+          padding: 0,
+          margin: -1,
+          overflow: "hidden",
+          clip: "rect(0 0 0 0)",
+          border: 0,
+        }}
+      />
       <iframe
         ref={iframeRef}
         src={currentUrl}
