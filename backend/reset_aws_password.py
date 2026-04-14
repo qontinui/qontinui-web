@@ -13,9 +13,8 @@ import re
 import shlex
 import sys
 
-from passlib.context import CryptContext
-
 import app.core.passlib_bcrypt5_compat  # noqa: F401  # bcrypt 5 compat patch
+from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 

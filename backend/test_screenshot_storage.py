@@ -8,10 +8,9 @@ import asyncio
 import io
 from uuid import uuid4
 
-from PIL import Image
-
 from app.core.config import settings
 from app.services.screenshot_storage import screenshot_storage
+from PIL import Image
 
 
 def create_test_image(

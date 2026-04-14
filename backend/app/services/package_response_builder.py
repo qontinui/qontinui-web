@@ -7,16 +7,11 @@ Extracted from code_packages.py for SRP compliance and code reuse.
 
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.crud import code_package as crud
 from app.models.code_package import CodePackage, PackageInstallation
-from app.schemas.code_package import (
-    InstalledPackageRead,
-    PackageDetailRead,
-    PackageSearchResult,
-    RatingWithUser,
-)
+from app.schemas.code_package import (InstalledPackageRead, PackageDetailRead,
+                                      PackageSearchResult, RatingWithUser)
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class PackageResponseBuilder:

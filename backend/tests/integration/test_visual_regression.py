@@ -9,23 +9,18 @@ from datetime import UTC, datetime
 from io import BytesIO
 
 import pytest
-from PIL import Image
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.project import Project
 from app.models.software_test_run import SoftwareTestRun
 from app.models.test_screenshot import TestScreenshot
 from app.models.user import User
 from app.models.visual_baseline import VisualBaseline
-from app.models.visual_comparison_result import (
-    VisualComparisonResult,
-    VisualComparisonStatus,
-)
-from app.services.visual_testing import (
-    BaselineManagementService,
-    VisualComparisonService,
-)
+from app.models.visual_comparison_result import (VisualComparisonResult,
+                                                 VisualComparisonStatus)
+from app.services.visual_testing import (BaselineManagementService,
+                                         VisualComparisonService)
+from PIL import Image
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def create_test_image(

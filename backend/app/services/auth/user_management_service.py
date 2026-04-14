@@ -1,8 +1,7 @@
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.user import User
 from app.schemas.user import UserCreate, UserUpdate
 from app.services.auth.password_service import password_service
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class UserManagementService:

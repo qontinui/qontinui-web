@@ -10,10 +10,9 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from app.models.task_run_verification_result import TaskRunVerificationResult
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.task_run_verification_result import TaskRunVerificationResult
 
 logger = structlog.get_logger(__name__)
 

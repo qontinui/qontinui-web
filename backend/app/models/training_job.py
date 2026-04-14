@@ -4,11 +4,11 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import uuid4
 
-from sqlalchemy import JSON, Column, DateTime, ForeignKey, Integer, String, Text
+from app.db.base import Base
+from sqlalchemy import (JSON, Column, DateTime, ForeignKey, Integer, String,
+                        Text)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-
-from app.db.base import Base
 
 
 class TrainingJobStatus(StrEnum):

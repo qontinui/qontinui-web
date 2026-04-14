@@ -5,9 +5,8 @@ Pydantic schemas for analysis API
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
-
 from app.schemas.base import IsoDatetime
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # Base schemas for request/response

@@ -10,15 +10,14 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.automation_screenshot import AutomationScreenshot
 from app.models.automation_session import AutomationSession
 from app.schemas.state_discovery import StateDiscoveryResponse
 from app.services.state_clusterer import StateClusterer
 from app.services.state_detector import StateDetector
 from app.services.transition_analyzer import TransitionAnalyzer
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

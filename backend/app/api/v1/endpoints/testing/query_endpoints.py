@@ -12,30 +12,21 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import current_active_user, get_async_db
 from app.models.user import User
 from app.repositories import TestRunRepository
 from app.repositories.deps import get_test_run_repository
-from app.schemas.testing import (
-    CoverageTrendDataPoint,
-    CoverageTrendResponse,
-    ReliabilityResponse,
-    TestRunDetail,
-    TestRunListResponse,
-    TestRunResponse,
-    TransitionReliabilityStats,
-)
+from app.schemas.testing import (CoverageTrendDataPoint, CoverageTrendResponse,
+                                 ReliabilityResponse, TestRunDetail,
+                                 TestRunListResponse, TestRunResponse,
+                                 TransitionReliabilityStats)
 from app.services.test_run_service import TestRunService
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from .deps import (
-    get_test_run_service,
-    handle_test_run_not_found,
-    verify_project_access_or_raise,
-    verify_test_run_access_or_raise,
-)
+from .deps import (get_test_run_service, handle_test_run_not_found,
+                   verify_project_access_or_raise,
+                   verify_test_run_access_or_raise)
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

@@ -9,10 +9,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
+from app.models.session_activity import SessionActivity
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.session_activity import SessionActivity
 
 logger = structlog.get_logger(__name__)
 

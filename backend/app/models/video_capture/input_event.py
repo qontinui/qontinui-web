@@ -2,19 +2,11 @@
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import (
-    BigInteger,
-    Boolean,
-    ForeignKey,
-    Index,
-    Integer,
-    SmallInteger,
-    String,
-)
+from app.db.base import Base
+from sqlalchemy import (BigInteger, Boolean, ForeignKey, Index, Integer,
+                        SmallInteger, String)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.db.base import Base
 
 if TYPE_CHECKING:
     from .session import VideoCaptureSession

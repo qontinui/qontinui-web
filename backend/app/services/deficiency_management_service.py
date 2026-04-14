@@ -9,18 +9,14 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import structlog
+from app.models.software_test_run import SoftwareTestRun
+from app.models.test_deficiency import (DeficiencySeverity, DeficiencyStatus,
+                                        TestDeficiency)
+from app.models.user import User
+from app.schemas.testing import DeficiencyCommentCreate, DeficiencyUpdate
 from qontinui_schemas.common import utc_now
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.software_test_run import SoftwareTestRun
-from app.models.test_deficiency import (
-    DeficiencySeverity,
-    DeficiencyStatus,
-    TestDeficiency,
-)
-from app.models.user import User
-from app.schemas.testing import DeficiencyCommentCreate, DeficiencyUpdate
 
 logger = structlog.get_logger(__name__)
 

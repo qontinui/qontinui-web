@@ -7,10 +7,9 @@ Handles query logic for workflow definitions: list, search, CRUD.
 from uuid import UUID
 
 import structlog
+from app.models.unified_workflow import UnifiedWorkflow
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.unified_workflow import UnifiedWorkflow
 
 logger = structlog.get_logger(__name__)
 

@@ -9,10 +9,9 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import structlog
+from app.models.device_session import DeviceSession
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.device_session import DeviceSession
 
 # Try to import geolocation service (requires httpx)
 # If not available, geolocation features will be disabled

@@ -3,10 +3,9 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from app.models.usage_metric import UsageMetric
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.usage_metric import UsageMetric
 
 logger = structlog.get_logger(__name__)
 

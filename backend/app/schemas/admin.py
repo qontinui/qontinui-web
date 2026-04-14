@@ -1,8 +1,7 @@
 """Pydantic schemas for admin endpoints."""
 
-from pydantic import BaseModel, EmailStr, Field
-
 from app.schemas.base import IsoDatetime
+from pydantic import BaseModel, EmailStr, Field
 
 
 class AdminUserData(BaseModel):

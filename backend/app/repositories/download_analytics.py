@@ -8,10 +8,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
+from app.models.usage_metric import UsageMetric
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.usage_metric import UsageMetric
 
 logger = structlog.get_logger(__name__)
 

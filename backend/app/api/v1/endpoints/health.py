@@ -10,14 +10,13 @@ These endpoints provide different levels of health checks:
 from datetime import UTC, datetime
 
 import structlog
+from app.api.deps import get_async_db
+from app.config.redis_config import RedisConfig
+from app.core.config import settings
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.api.deps import get_async_db
-from app.config.redis_config import RedisConfig
-from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
 

@@ -9,11 +9,10 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+from app.models.skill import Skill
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.skill import Skill
 
 # =============================================================================
 # Pydantic Schemas

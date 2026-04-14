@@ -11,14 +11,13 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.core.config import settings
 from app.models.admin_notification_settings import AdminNotificationSettings
 from app.models.user import User
 from app.services.email.email_template_service import EmailTemplateService
 from app.services.email.email_transport_service import EmailTransportService
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

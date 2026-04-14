@@ -3,10 +3,9 @@
 from typing import Any, TypeVar, cast
 from uuid import UUID
 
+from app.db.base import Base
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.db.base import Base
 
 T = TypeVar("T", bound=Base)
 

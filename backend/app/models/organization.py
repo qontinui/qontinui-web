@@ -2,23 +2,12 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 
-from sqlalchemy import (
-    JSON,
-    Boolean,
-    CheckConstraint,
-    Column,
-    DateTime,
-    ForeignKey,
-    Index,
-    String,
-    Text,
-    UniqueConstraint,
-    text,
-)
+from app.db.base import Base
+from sqlalchemy import (JSON, Boolean, CheckConstraint, Column, DateTime,
+                        ForeignKey, Index, String, Text, UniqueConstraint,
+                        text)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-
-from app.db.base import Base
 
 
 class TeamRole(StrEnum):

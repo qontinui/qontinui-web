@@ -3,14 +3,13 @@
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_async_db
 from app.api.v1.endpoints.admin.dependencies import require_admin
 from app.models.user import User
 from app.repositories.admin_user import admin_user_repository
 from app.schemas.admin import AdminUserData
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 

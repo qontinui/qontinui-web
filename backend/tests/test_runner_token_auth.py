@@ -21,18 +21,16 @@ pytestmark = pytest.mark.skip(
     "verify_runner_token, and related CRUD functions do not exist."
 )
 
+from app.api.deps import \
+    get_runner_user_from_token as authenticate_runner  # noqa: E402
+from app.models.user import User  # noqa: E402
 from fastapi import HTTPException  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
-
-from app.api.deps import get_runner_user_from_token as authenticate_runner  # noqa: E402
-from app.models.user import User  # noqa: E402
 
 # Stubs for unimplemented functions - these will fail if tests are unskipped
 try:
     from app.core.security import (  # type: ignore[attr-defined]
-        generate_runner_token,
-        hash_runner_token,
-    )
+        generate_runner_token, hash_runner_token)
 except ImportError:
 
     def generate_runner_token() -> str:  # type: ignore[misc]

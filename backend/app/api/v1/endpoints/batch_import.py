@@ -12,11 +12,10 @@ from typing import Any
 from uuid import uuid4
 
 import structlog
+from app.api import deps
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.api import deps
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)

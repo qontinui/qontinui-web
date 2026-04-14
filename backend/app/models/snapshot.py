@@ -16,23 +16,11 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID as PyUUID
 
-from sqlalchemy import (
-    ARRAY,
-    JSON,
-    Boolean,
-    DateTime,
-    Float,
-    ForeignKey,
-    Index,
-    Integer,
-    Numeric,
-    String,
-    Text,
-)
+from app.db.base import Base
+from sqlalchemy import (ARRAY, JSON, Boolean, DateTime, Float, ForeignKey,
+                        Index, Integer, Numeric, String, Text)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.project import Project

@@ -1,26 +1,19 @@
 """Background tasks package."""
 
 import importlib.util
-
 # Import email tasks from the parent-level tasks.py module
 # We need to access the sibling tasks.py file at app/worker/tasks.py
 # Since this __init__.py creates a package that shadows it, we use importlib
 from pathlib import Path
 
 # Import cleanup tasks from dedicated modules
-from app.worker.tasks.automation_cleanup import (
-    cleanup_old_automation_data,
-    cleanup_orphaned_sessions,
-)
-from app.worker.tasks.database_cleanup import (
-    cleanup_expired_device_sessions,
-    cleanup_expired_sessions,
-    cleanup_token_blacklist,
-)
-from app.worker.tasks.metrics_cleanup import (
-    archive_old_analytics_to_s3,
-    cleanup_old_analytics_events,
-)
+from app.worker.tasks.automation_cleanup import (cleanup_old_automation_data,
+                                                 cleanup_orphaned_sessions)
+from app.worker.tasks.database_cleanup import (cleanup_expired_device_sessions,
+                                               cleanup_expired_sessions,
+                                               cleanup_token_blacklist)
+from app.worker.tasks.metrics_cleanup import (archive_old_analytics_to_s3,
+                                              cleanup_old_analytics_events)
 from app.worker.tasks.storage_cleanup import cleanup_old_screenshots
 
 # Load tasks.py from parent directory

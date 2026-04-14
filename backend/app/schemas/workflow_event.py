@@ -3,11 +3,10 @@
 from datetime import datetime
 from typing import Annotated, Any
 
+from app.schemas.base import BaseORMSchema, BaseSchema, IsoDatetime
 from pydantic import Field
 from pydantic.functional_serializers import PlainSerializer
 from pydantic.functional_validators import BeforeValidator
-
-from app.schemas.base import BaseORMSchema, BaseSchema, IsoDatetime
 
 UuidAsString = Annotated[
     str,

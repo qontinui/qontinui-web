@@ -16,14 +16,13 @@ from typing import Any, TypeVar
 from uuid import UUID
 
 import structlog
-from fastapi import WebSocket, WebSocketDisconnect, status
-from pydantic import BaseModel, ValidationError
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_current_user_from_ws
 from app.db.session import AsyncSessionLocal
 from app.models.user import User
 from app.websockets.rate_limiter import RateLimiter
+from fastapi import WebSocket, WebSocketDisconnect, status
+from pydantic import BaseModel, ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

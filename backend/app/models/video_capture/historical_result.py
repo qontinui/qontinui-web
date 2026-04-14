@@ -3,21 +3,12 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import (
-    BigInteger,
-    Boolean,
-    DateTime,
-    ForeignKey,
-    Index,
-    Integer,
-    Numeric,
-    String,
-)
+from app.db.base import Base
+from sqlalchemy import (BigInteger, Boolean, DateTime, ForeignKey, Index,
+                        Integer, Numeric, String)
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
-
-from app.db.base import Base
 
 
 class HistoricalResult(Base):

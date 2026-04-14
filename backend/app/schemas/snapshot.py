@@ -5,9 +5,8 @@ Pydantic schemas for snapshot models
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
-
 from app.schemas.base import IsoDatetime
+from pydantic import BaseModel, Field
 
 
 # Screenshot schemas

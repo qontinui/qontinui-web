@@ -5,9 +5,8 @@ endpoints to bypass host validation. This is necessary for AWS ELB health checks
 which use internal IP addresses in the Host header.
 """
 
-from starlette.middleware.trustedhost import (
-    TrustedHostMiddleware as StarletteTrustedHostMiddleware,
-)
+from starlette.middleware.trustedhost import \
+    TrustedHostMiddleware as StarletteTrustedHostMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 

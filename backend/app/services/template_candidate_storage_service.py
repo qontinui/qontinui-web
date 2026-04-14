@@ -10,9 +10,8 @@ import io
 from typing import TYPE_CHECKING
 
 import structlog
-from PIL import Image
-
 from app.services.storage import S3Backend, object_storage
+from PIL import Image
 
 if TYPE_CHECKING:
     pass

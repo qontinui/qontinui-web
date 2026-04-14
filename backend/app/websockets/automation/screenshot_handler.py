@@ -11,17 +11,14 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import HTTPException
-from PIL import Image
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.api.v1.endpoints.images import (
-    validate_image_magic_bytes,
-    validate_image_mime_type,
-)
+from app.api.v1.endpoints.images import (validate_image_magic_bytes,
+                                         validate_image_mime_type)
 from app.models.automation_screenshot import AutomationScreenshot
 from app.services.object_storage import object_storage
 from app.websockets.automation.schemas import make_timestamp
+from fastapi import HTTPException
+from PIL import Image
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

@@ -9,11 +9,11 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
+from app.models.custom_function import CustomFunction
+from app.schemas.custom_function import (CustomFunctionCreate,
+                                         CustomFunctionUpdate)
 from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.custom_function import CustomFunction
-from app.schemas.custom_function import CustomFunctionCreate, CustomFunctionUpdate
 
 logger = structlog.get_logger(__name__)
 

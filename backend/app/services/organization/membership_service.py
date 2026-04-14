@@ -12,27 +12,18 @@ from typing import cast
 from uuid import UUID
 
 import structlog
-from fastapi import HTTPException, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.core.audit import audit_logger
 from app.core.error_codes import ErrorCode
 from app.middleware.error_handler import forbidden_error
 from app.models.organization import TeamMember, TeamRole
-from app.repositories.organization import (
-    invitation_repo,
-    organization_repo,
-    team_member_repo,
-    user_repo,
-)
-from app.schemas.collaboration import (
-    InvitationCreate,
-    InvitationResponse,
-    TeamMemberCreate,
-    TeamMemberResponse,
-    TeamMemberUpdate,
-)
+from app.repositories.organization import (invitation_repo, organization_repo,
+                                           team_member_repo, user_repo)
+from app.schemas.collaboration import (InvitationCreate, InvitationResponse,
+                                       TeamMemberCreate, TeamMemberResponse,
+                                       TeamMemberUpdate)
 from app.services.collaboration_service import collaboration_service
+from fastapi import HTTPException, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

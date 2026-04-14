@@ -6,17 +6,17 @@ and receive real-time terminal output.
 """
 
 import structlog
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
-from pydantic import BaseModel, Field, ValidationError
-from qontinui_schemas.common import utc_now
-from sqlalchemy import select
-
 from app.api.deps import get_current_user_from_ws
 from app.config.redis_config import get_redis
 from app.db.session import AsyncSessionLocal
 from app.models.runner_connection import RunnerConnection
 from app.models.user import User
-from app.services.runner_connection_manager import get_runner_connection_manager
+from app.services.runner_connection_manager import \
+    get_runner_connection_manager
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
+from pydantic import BaseModel, Field, ValidationError
+from qontinui_schemas.common import utc_now
+from sqlalchemy import select
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)

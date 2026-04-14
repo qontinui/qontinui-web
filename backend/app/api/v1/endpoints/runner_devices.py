@@ -2,10 +2,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, Request, Response, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.core.config import settings
 from app.core.error_codes import ErrorCode
@@ -15,12 +11,13 @@ from app.middleware.rate_limit import user_limiter
 from app.models.runner_device import RunnerDevice
 from app.models.user import User
 from app.schemas.runner_device import RunnerDevice as RunnerDeviceSchema
-from app.schemas.runner_device import (
-    RunnerDeviceConnectionInfo,
-    RunnerDeviceHeartbeat,
-    RunnerDeviceHeartbeatResponse,
-    RunnerDeviceRegister,
-)
+from app.schemas.runner_device import (RunnerDeviceConnectionInfo,
+                                       RunnerDeviceHeartbeat,
+                                       RunnerDeviceHeartbeatResponse,
+                                       RunnerDeviceRegister)
+from fastapi import APIRouter, Depends, Request, Response, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

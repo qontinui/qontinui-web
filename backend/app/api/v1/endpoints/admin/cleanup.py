@@ -3,10 +3,9 @@
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
-
 from app.api.v1.endpoints.admin.dependencies import require_admin
 from app.models.user import User
+from fastapi import APIRouter, Depends, HTTPException, status
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)

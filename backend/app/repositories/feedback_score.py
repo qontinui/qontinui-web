@@ -8,10 +8,9 @@ and providing reusable methods for CRUD, listing, and aggregation.
 from uuid import UUID
 
 import structlog
+from app.models.feedback_score import FeedbackScore
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.feedback_score import FeedbackScore
 
 logger = structlog.get_logger(__name__)
 

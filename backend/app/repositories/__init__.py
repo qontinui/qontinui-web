@@ -16,10 +16,8 @@ Example usage:
 """
 
 from app.repositories.action_execution import ActionExecutionRepository
-from app.repositories.automation_session import (
-    AutomationSessionRepository,
-    automation_session_repository,
-)
+from app.repositories.automation_session import (AutomationSessionRepository,
+                                                 automation_session_repository)
 from app.repositories.base import BaseRepository
 from app.repositories.evaluation import EvaluationRepository
 from app.repositories.execution_issue import ExecutionIssueRepository
@@ -29,10 +27,8 @@ from app.repositories.execution_tree_event import ExecutionTreeEventRepository
 from app.repositories.feedback_score import FeedbackScoreRepository
 from app.repositories.prompt_version import PromptVersionRepository
 from app.repositories.test_run import CoverageRepository, TestRunRepository
-from app.repositories.training_dataset import (
-    TrainingDatasetRepository,
-    training_dataset_repository,
-)
+from app.repositories.training_dataset import (TrainingDatasetRepository,
+                                               training_dataset_repository)
 
 __all__ = [
     "ActionExecutionRepository",

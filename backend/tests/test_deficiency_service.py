@@ -6,16 +6,10 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-
-from app.models.test_deficiency import (
-    DeficiencySeverity,
-    DeficiencyStatus,
-    DeficiencyType,
-)
-from app.models.transition_execution import (
-    TransitionExecution,
-    TransitionExecutionStatus,
-)
+from app.models.test_deficiency import (DeficiencySeverity, DeficiencyStatus,
+                                        DeficiencyType)
+from app.models.transition_execution import (TransitionExecution,
+                                             TransitionExecutionStatus)
 from app.services.deficiency_service import DeficiencyService
 
 

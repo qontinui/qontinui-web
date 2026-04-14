@@ -17,20 +17,20 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
-from pydantic import BaseModel, Field
-from redis import asyncio as aioredis
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-
 from app.api.deps import current_active_user, get_async_db
 from app.models.project import Project
 from app.models.snapshot import SnapshotRun
 from app.models.user import User
 from app.services.object_storage import object_storage
 from app.services.reports import PDFReportOptions, generate_pdf_report
+from fastapi import (APIRouter, BackgroundTasks, Depends, HTTPException, Query,
+                     status)
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
+from pydantic import BaseModel, Field
+from redis import asyncio as aioredis
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 # Redis key prefix for PDF report jobs
 PDF_JOB_KEY_PREFIX = "pdf_report:job:"

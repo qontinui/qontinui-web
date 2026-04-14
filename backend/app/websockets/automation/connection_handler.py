@@ -8,10 +8,6 @@ import json
 from typing import Any
 
 import structlog
-from fastapi import WebSocket, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_current_user_from_ws
 from app.config.redis_config import get_redis
 from app.crud import runner as runner_crud
@@ -19,12 +15,13 @@ from app.db.session import AsyncSessionLocal
 from app.models.runner_connection import RunnerConnection
 from app.models.user import User
 from app.services.runner_connection_manager import (
-    RunnerConnectionManager,
-    get_runner_connection_manager,
-)
+    RunnerConnectionManager, get_runner_connection_manager)
 from app.websockets.automation.schemas import make_timestamp
 from app.websockets.automation.session_manager import SessionManager
 from app.websockets.rate_limiter import RateLimiter
+from fastapi import WebSocket, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

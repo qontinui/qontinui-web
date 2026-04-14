@@ -21,11 +21,8 @@ from datetime import datetime
 from typing import Any
 
 from app.core.security.code_policy import CodeSecurityPolicy
-from app.schemas.code_execution import (
-    CodeExecutionRequest,
-    CodeExecutionResult,
-    ExecutionContext,
-)
+from app.schemas.code_execution import (CodeExecutionRequest,
+                                        CodeExecutionResult, ExecutionContext)
 from app.services.automation_context import AutomationContext
 from app.utils.code_validator import CodeValidationError, CodeValidator
 from app.utils.timeout import ExecutionTimeoutError, time_limit

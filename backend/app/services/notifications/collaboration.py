@@ -6,9 +6,8 @@ Provides specific notification methods for mentions, shares, comments, replies, 
 
 from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.notification import Notification, NotificationType
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class CollaborationNotifications:

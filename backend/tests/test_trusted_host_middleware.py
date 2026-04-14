@@ -1,10 +1,9 @@
 """Tests for TrustedHost middleware with health check exemption."""
 
 import pytest
+from app.middleware.trusted_host import TrustedHostMiddleware
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
-from app.middleware.trusted_host import TrustedHostMiddleware
 
 
 @pytest.fixture

@@ -2,15 +2,14 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_async_db
 from app.core.error_codes import ErrorCode
 from app.middleware.error_handler import not_found_error
 from app.models.project import Project as ProjectModel
 from app.schemas.project import Project
+from fastapi import APIRouter, Depends
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

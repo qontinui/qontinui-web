@@ -22,16 +22,15 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import WebSocket
-from qontinui_schemas.common import utc_now
-from redis import asyncio as aioredis
-
 from app.services.runner.chat_relay import ChatRelayService
 from app.services.runner.command_relay import CommandRelayService
 from app.services.runner.connection_registry import WebSocketConnectionRegistry
 from app.services.runner.event_publisher import RunnerEventPublisher
 from app.services.runner.state_repository import RunnerStateRepository
 from app.services.runner.terminal_relay import TerminalRelayService
+from fastapi import WebSocket
+from qontinui_schemas.common import utc_now
+from redis import asyncio as aioredis
 
 logger = structlog.get_logger(__name__)
 

@@ -8,10 +8,9 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from app.models.automation_log import AutomationLog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.automation_log import AutomationLog
 
 logger = structlog.get_logger(__name__)
 

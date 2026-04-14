@@ -23,22 +23,17 @@ from typing import cast
 from uuid import UUID
 
 import structlog
-from fastapi import HTTPException, status
-from jose import JWTError, jwt
-
 from app.core.config import settings
 from app.models.user import User
+from fastapi import HTTPException, status
+from jose import JWTError, jwt
 
 logger = structlog.get_logger(__name__)
 
 # Export database dependencies
 # Export fastapi-users dependencies
-from app.auth.config import (
-    current_active_user,
-    current_active_user_optional,
-    current_superuser,
-    current_verified_user,
-)
+from app.auth.config import (current_active_user, current_active_user_optional,
+                             current_superuser, current_verified_user)
 from app.db.session import get_async_db
 
 # Export database session getter (for backward compatibility with sync-style imports)
@@ -120,9 +115,8 @@ async def get_current_user_from_ws(token: str) -> User:
     # Get user from database
     # Use the db session from the generator - do NOT call close() explicitly
     # as the async context manager in get_async_db() handles cleanup
-    from sqlalchemy import select
-
     from app.db.session import AsyncSessionLocal
+    from sqlalchemy import select
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(

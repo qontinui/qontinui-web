@@ -7,43 +7,31 @@ Provides REST API for publishing, discovering, and installing community code pac
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import current_active_user, get_async_db
 from app.crud import code_package as crud
 from app.models.code_package import PackageCategory, SecurityScanStatus
 from app.models.project import Project
 from app.models.user import User
-from app.schemas.code_package import (
-    CategoryRead,
-    InstallRequest,
-    InstallResponse,
-    PackageCreate,
-    PackageDetailRead,
-    PackageListResponse,
-    PackageRead,
-    PackageUpdate,
-    PopularPackageResponse,
-    ProjectPackagesResponse,
-    RatingCreate,
-    RatingRead,
-    TrendingPackageResponse,
-    UninstallRequest,
-    VersionCreate,
-    VersionRead,
-)
-from app.services.package_installation_service import package_installation_service
+from app.schemas.code_package import (CategoryRead, InstallRequest,
+                                      InstallResponse, PackageCreate,
+                                      PackageDetailRead, PackageListResponse,
+                                      PackageRead, PackageUpdate,
+                                      PopularPackageResponse,
+                                      ProjectPackagesResponse, RatingCreate,
+                                      RatingRead, TrendingPackageResponse,
+                                      UninstallRequest, VersionCreate,
+                                      VersionRead)
+from app.services.package_installation_service import \
+    package_installation_service
 from app.services.package_publishing_service import (
-    PackageNotFoundError,
-    PackageOwnershipError,
-    SecurityScanFailedError,
-    package_publishing_service,
-)
+    PackageNotFoundError, PackageOwnershipError, SecurityScanFailedError,
+    package_publishing_service)
 from app.services.package_rating_service import package_rating_service
 from app.services.package_response_builder import package_response_builder
 from app.services.package_search_service import package_search_service
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

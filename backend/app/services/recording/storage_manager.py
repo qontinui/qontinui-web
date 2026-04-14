@@ -5,7 +5,6 @@ Manages S3 storage operations for recordings.
 """
 
 import structlog
-
 from app.models.recording import Recording
 from app.services.object_storage import S3Backend, object_storage
 

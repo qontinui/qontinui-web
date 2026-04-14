@@ -12,17 +12,14 @@ import re
 from uuid import UUID
 
 import structlog
-from fastapi import HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.middleware.error_handler import not_found_error
 from app.repositories.organization import organization_repo
-from app.schemas.collaboration import (
-    OrganizationCreate,
-    OrganizationResponse,
-    OrganizationUpdate,
-)
+from app.schemas.collaboration import (OrganizationCreate,
+                                       OrganizationResponse,
+                                       OrganizationUpdate)
 from app.services.organization.membership_service import membership_service
+from fastapi import HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

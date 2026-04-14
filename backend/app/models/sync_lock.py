@@ -3,10 +3,9 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from app.db.base_class import Base
 from sqlalchemy import Column, DateTime, ForeignKey, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
-
-from app.db.base_class import Base
 
 
 class SyncLock(Base):

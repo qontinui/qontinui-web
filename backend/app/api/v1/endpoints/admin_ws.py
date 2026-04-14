@@ -4,13 +4,12 @@ import asyncio
 from datetime import UTC, datetime
 
 import structlog
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
-from fastapi.exceptions import HTTPException
-
 from app.api.deps import get_current_user_from_ws
 from app.db.session import AsyncSessionLocal
 from app.models.user import User
 from app.services.health_service import health_service
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
+from fastapi.exceptions import HTTPException
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)

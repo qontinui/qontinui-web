@@ -5,12 +5,11 @@ from typing import BinaryIO
 
 import boto3
 import structlog
+from app.core.config import settings
+from app.services.storage.base import StorageBackend
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from fastapi import HTTPException, status
-
-from app.core.config import settings
-from app.services.storage.base import StorageBackend
 
 logger = structlog.get_logger(__name__)
 

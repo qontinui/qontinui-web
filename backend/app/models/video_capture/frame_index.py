@@ -2,18 +2,10 @@
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import (
-    BigInteger,
-    Boolean,
-    ForeignKey,
-    Index,
-    Integer,
-    String,
-    UniqueConstraint,
-)
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
 from app.db.base import Base
+from sqlalchemy import (BigInteger, Boolean, ForeignKey, Index, Integer,
+                        String, UniqueConstraint)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
     from .session import VideoCaptureSession

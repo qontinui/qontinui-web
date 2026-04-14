@@ -9,9 +9,6 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from pydantic import ValidationError
-from qontinui_schemas.common import utc_now
-
 from app.config.redis_config import get_redis
 from app.crud import runner as runner_crud
 from app.schemas.testing_ws import WSTestMessage
@@ -19,6 +16,8 @@ from app.services.websocket_manager import get_websocket_manager
 from app.websockets.base import BaseWebSocketHandler, WebSocketContext
 from app.websockets.message_types import create_timestamp
 from app.websockets.testing.orchestrator import TestOrchestrator
+from pydantic import ValidationError
+from qontinui_schemas.common import utc_now
 
 logger = structlog.get_logger(__name__)
 

@@ -4,9 +4,8 @@ import secrets
 import string
 from typing import cast
 
-from passlib.context import CryptContext
-
 import app.core.passlib_bcrypt5_compat  # noqa: F401  # bcrypt 5 compat patch
+from passlib.context import CryptContext
 
 
 class PasswordService:

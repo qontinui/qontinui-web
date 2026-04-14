@@ -1,9 +1,8 @@
 """Admin endpoint dependencies."""
 
-from fastapi import Depends, HTTPException, status
-
 from app.api.deps import get_current_user_async
 from app.models.user import User
+from fastapi import Depends, HTTPException, status
 
 
 async def require_admin(current_user: User = Depends(get_current_user_async)) -> User:

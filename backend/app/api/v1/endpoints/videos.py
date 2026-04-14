@@ -10,16 +10,16 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.models.automation_video import AutomationVideo
 from app.models.user import User
 from app.services.limit_checker import LimitChecker
 from app.services.object_storage import object_storage
 from app.services.storage_service import StorageQuotaExceeded, StorageService
+from fastapi import (APIRouter, Depends, File, Form, HTTPException, UploadFile,
+                     status)
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

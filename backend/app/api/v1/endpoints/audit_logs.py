@@ -15,19 +15,15 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from app.api.deps import get_async_db, get_current_superuser_async
+from app.models.audit_log import AuditLog
+from app.models.user import User
+from app.schemas.audit import (AuditLogListResponse, AuditLogResponse,
+                               AuditLogStatsResponse)
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
-
-from app.api.deps import get_async_db, get_current_superuser_async
-from app.models.audit_log import AuditLog
-from app.models.user import User
-from app.schemas.audit import (
-    AuditLogListResponse,
-    AuditLogResponse,
-    AuditLogStatsResponse,
-)
 
 logger = structlog.get_logger(__name__)
 

@@ -2,14 +2,11 @@
 
 from uuid import UUID
 
+from app.models.finding_category_config import FindingCategoryConfig
+from app.schemas.finding_category_config import (FindingCategoryConfigCreate,
+                                                 FindingCategoryConfigUpdate)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.finding_category_config import FindingCategoryConfig
-from app.schemas.finding_category_config import (
-    FindingCategoryConfigCreate,
-    FindingCategoryConfigUpdate,
-)
 
 # ─── 13 built-in defaults (from qontinui-runner FindingCategories.ts) ────────
 

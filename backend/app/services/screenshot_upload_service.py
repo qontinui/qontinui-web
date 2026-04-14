@@ -10,16 +10,15 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from PIL import Image
-from qontinui_schemas.common import utc_now
-from sqlalchemy import and_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.test_screenshot import TestScreenshot, TestScreenshotType
 from app.models.transition_execution import TransitionExecution
 from app.schemas.testing import ScreenshotMetadata, VisualComparisonSummary
 from app.services.object_storage import object_storage
 from app.services.visual_testing import VisualComparisonService
+from PIL import Image
+from qontinui_schemas.common import utc_now
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

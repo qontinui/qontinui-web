@@ -9,14 +9,13 @@ from pathlib import Path
 from uuid import UUID
 
 import structlog
-from fastapi import HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.crud import custom_function as custom_function_crud
 from app.schemas.custom_function import CustomFunctionCreate
 from app.schemas.project_file import FileInfo
 from app.services.function_scanner import FunctionScanner
 from app.services.project_directory import ProjectDirectoryManager
+from fastapi import HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

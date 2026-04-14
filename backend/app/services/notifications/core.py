@@ -11,14 +11,13 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import and_, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.notification import Notification, NotificationType
 from app.services.notifications.collaboration import CollaborationNotifications
 from app.services.notifications.email import notification_email_service
 from app.services.notifications.preferences import user_preferences_service
 from app.services.websocket_manager import connection_manager
+from sqlalchemy import and_, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

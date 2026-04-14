@@ -7,12 +7,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 import structlog
-from pydantic import BaseModel
-
 from app.models.collaboration import ActionType, ResourceType
 from app.services.websocket_manager import connection_manager
 from app.websockets.base import WebSocketContext
 from app.websockets.collaboration.sync_manager import CollaborationSyncManager
+from pydantic import BaseModel
 
 logger = structlog.get_logger(__name__)
 

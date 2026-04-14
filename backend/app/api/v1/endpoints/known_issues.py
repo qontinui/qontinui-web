@@ -8,22 +8,18 @@ the user's personal organization.
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import current_active_user, get_async_db
 from app.models.user import User
-from app.services.known_issue_service import (
-    KnownIssueCreate,
-    KnownIssueListQuery,
-    KnownIssueListResponse,
-    KnownIssueResponse,
-    KnownIssueService,
-    KnownIssueStats,
-    KnownIssueUpdate,
-    ResolveRequest,
-)
+from app.services.known_issue_service import (KnownIssueCreate,
+                                              KnownIssueListQuery,
+                                              KnownIssueListResponse,
+                                              KnownIssueResponse,
+                                              KnownIssueService,
+                                              KnownIssueStats,
+                                              KnownIssueUpdate, ResolveRequest)
 from app.services.permissions import get_personal_organization
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

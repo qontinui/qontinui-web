@@ -8,52 +8,29 @@ shell commands, saved API requests, contexts, macros, and prompt snippets.
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import current_active_user, get_async_db
 from app.crud import library as crud
-from app.models.library import (
-    Check,
-    CheckGroup,
-    Context,
-    Macro,
-    PromptSnippet,
-    SavedApiRequest,
-    ShellCommand,
-)
+from app.models.library import (Check, CheckGroup, Context, Macro,
+                                PromptSnippet, SavedApiRequest, ShellCommand)
 from app.models.user import User
-from app.schemas.library import (
-    CheckCreate,
-    CheckGroupCreate,
-    CheckGroupListResponse,
-    CheckGroupResponse,
-    CheckGroupUpdate,
-    CheckListResponse,
-    CheckResponse,
-    CheckUpdate,
-    ContextCreate,
-    ContextListResponse,
-    ContextResponse,
-    ContextUpdate,
-    MacroCreate,
-    MacroListResponse,
-    MacroResponse,
-    MacroUpdate,
-    Pagination,
-    PromptSnippetCreate,
-    PromptSnippetListResponse,
-    PromptSnippetResponse,
-    PromptSnippetUpdate,
-    SavedApiRequestCreate,
-    SavedApiRequestListResponse,
-    SavedApiRequestResponse,
-    SavedApiRequestUpdate,
-    ShellCommandCreate,
-    ShellCommandListResponse,
-    ShellCommandResponse,
-    ShellCommandUpdate,
-)
+from app.schemas.library import (CheckCreate, CheckGroupCreate,
+                                 CheckGroupListResponse, CheckGroupResponse,
+                                 CheckGroupUpdate, CheckListResponse,
+                                 CheckResponse, CheckUpdate, ContextCreate,
+                                 ContextListResponse, ContextResponse,
+                                 ContextUpdate, MacroCreate, MacroListResponse,
+                                 MacroResponse, MacroUpdate, Pagination,
+                                 PromptSnippetCreate,
+                                 PromptSnippetListResponse,
+                                 PromptSnippetResponse, PromptSnippetUpdate,
+                                 SavedApiRequestCreate,
+                                 SavedApiRequestListResponse,
+                                 SavedApiRequestResponse,
+                                 SavedApiRequestUpdate, ShellCommandCreate,
+                                 ShellCommandListResponse,
+                                 ShellCommandResponse, ShellCommandUpdate)
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

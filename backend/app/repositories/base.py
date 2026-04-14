@@ -8,11 +8,10 @@ designed for use with UUID primary keys and Pydantic v2 schemas.
 from typing import Any, cast
 from uuid import UUID
 
+from app.db.base import Base
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.db.base import Base
 
 
 class BaseRepository[ModelType: Base, CreateSchemaType: BaseModel]:

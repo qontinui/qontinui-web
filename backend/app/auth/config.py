@@ -4,21 +4,19 @@ import uuid
 from typing import cast
 
 import structlog
-from fastapi import Depends, Request, Response
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin, exceptions
-from fastapi_users.authentication import AuthenticationBackend, JWTStrategy
-from fastapi_users.authentication.transport import (
-    Transport,
-    TransportLogoutNotSupportedError,
-)
-from fastapi_users.openapi import OpenAPIResponseType
-from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.core.config import settings
 from app.db.session import get_async_db
 from app.models.user import User
+from fastapi import Depends, Request, Response
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi_users import (BaseUserManager, FastAPIUsers, UUIDIDMixin,
+                           exceptions)
+from fastapi_users.authentication import AuthenticationBackend, JWTStrategy
+from fastapi_users.authentication.transport import (
+    Transport, TransportLogoutNotSupportedError)
+from fastapi_users.openapi import OpenAPIResponseType
+from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -192,7 +190,8 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             logger.error("verification_email_enqueue_failed", email=user.email)
 
         # Send admin notification for new user signup
-        from app.services.admin_notification_service import admin_notification_service
+        from app.services.admin_notification_service import \
+            admin_notification_service
 
         try:
             await admin_notification_service.notify_user_signup(

@@ -6,11 +6,10 @@ Called as a background task after workflow events are ingested.
 
 import httpx
 import structlog
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.push_device import PushDevice
 from app.models.workflow_event import WorkflowEvent
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

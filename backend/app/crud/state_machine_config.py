@@ -3,14 +3,11 @@
 from uuid import UUID
 
 import structlog
+from app.models.state_machine_config import StateMachineConfig
+from app.schemas.state_machine_config import (StateMachineConfigCreate,
+                                              StateMachineConfigUpdate)
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.state_machine_config import StateMachineConfig
-from app.schemas.state_machine_config import (
-    StateMachineConfigCreate,
-    StateMachineConfigUpdate,
-)
 
 logger = structlog.get_logger(__name__)
 

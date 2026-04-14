@@ -3,9 +3,8 @@
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
-
 from app.schemas.base import BaseORMSchema, IsoDatetime
+from pydantic import BaseModel, Field
 
 ActionType = Literal["auto_fix", "needs_user_input", "manual", "informational"]
 

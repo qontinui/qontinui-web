@@ -12,16 +12,13 @@ All endpoints are read-only and require an authenticated user.
 from __future__ import annotations
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
-
 from app.api.deps import get_current_active_user_async
 from app.db.runner_db import get_runner_pool
-from app.models.runner_process_log import (
-    RunnerProcessLogSearchHit,
-    RunnerProcessSession,
-    RunnerProcessSessionOutputLine,
-)
+from app.models.runner_process_log import (RunnerProcessLogSearchHit,
+                                           RunnerProcessSession,
+                                           RunnerProcessSessionOutputLine)
 from app.models.user import User
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

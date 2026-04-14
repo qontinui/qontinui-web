@@ -3,11 +3,10 @@
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_async_db
 from app.repositories.admin_user import admin_user_repository
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)

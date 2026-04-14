@@ -6,11 +6,10 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from app.services.reports.pdf_options import PDFReportOptions
 from reportlab.lib.styles import StyleSheet1
 from reportlab.lib.units import inch
 from reportlab.platypus import Image, PageBreak, Paragraph, Spacer
-
-from app.services.reports.pdf_options import PDFReportOptions
 
 logger = logging.getLogger(__name__)
 

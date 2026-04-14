@@ -9,23 +9,11 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import (
-    ARRAY,
-    JSON,
-    Boolean,
-    CheckConstraint,
-    DateTime,
-    Float,
-    ForeignKey,
-    Integer,
-    String,
-    Text,
-    text,
-)
+from app.db.base import Base
+from sqlalchemy import (ARRAY, JSON, Boolean, CheckConstraint, DateTime, Float,
+                        ForeignKey, Integer, String, Text, text)
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.automation_session import AutomationSession

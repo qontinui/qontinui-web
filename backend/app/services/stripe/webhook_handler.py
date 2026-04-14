@@ -1,13 +1,9 @@
 """Stripe webhook event handler."""
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.services.stripe.webhook_processors import (
-    CheckoutCompletedProcessor,
-    PaymentFailedProcessor,
-    SubscriptionDeletedProcessor,
-    SubscriptionUpdatedProcessor,
-)
+    CheckoutCompletedProcessor, PaymentFailedProcessor,
+    SubscriptionDeletedProcessor, SubscriptionUpdatedProcessor)
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class StripeWebhookHandler:

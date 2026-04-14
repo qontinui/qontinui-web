@@ -11,16 +11,13 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.software_test_run import SoftwareTestRun, TestRunStatus
 from app.models.test_deficiency import TestDeficiency
 from app.models.test_screenshot import TestScreenshot
-from app.models.transition_execution import (
-    TransitionExecution,
-    TransitionExecutionStatus,
-)
+from app.models.transition_execution import (TransitionExecution,
+                                             TransitionExecutionStatus)
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

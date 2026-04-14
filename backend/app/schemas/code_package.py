@@ -7,9 +7,8 @@ Provides request/response models for the community marketplace API.
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-
 from app.schemas.base import IsoDatetime
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # ===== Category Schemas =====
 

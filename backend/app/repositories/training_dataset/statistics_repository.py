@@ -7,15 +7,11 @@ and confidence score analytics.
 from typing import Any
 from uuid import UUID
 
+from app.models.training_dataset import (ReviewStatus, TrainingDataset,
+                                         TrainingDatasetAnnotation,
+                                         TrainingDatasetImage)
 from sqlalchemy import and_, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.training_dataset import (
-    ReviewStatus,
-    TrainingDataset,
-    TrainingDatasetAnnotation,
-    TrainingDatasetImage,
-)
 
 
 class StatisticsRepository:

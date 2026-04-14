@@ -7,13 +7,12 @@ Provides FastAPI dependencies for validating device fingerprints on protected ro
 import uuid
 
 import structlog
-from fastapi import Depends, HTTPException, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_async_db
 from app.core.security import decode_token
 from app.services.device_fingerprint_service import device_fingerprint_service
 from app.services.device_session_service import device_session_service
+from fastapi import Depends, HTTPException, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

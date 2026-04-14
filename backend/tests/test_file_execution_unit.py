@@ -226,9 +226,8 @@ class TestFilePathValidator:
 
     def test_validate_path_traversal(self, project_dir: Path):
         """Test that path traversal attempts are blocked."""
-        from fastapi import HTTPException
-
         from app.services.file_loader import FilePathValidator
+        from fastapi import HTTPException
 
         validator = FilePathValidator()
 
@@ -247,9 +246,8 @@ class TestFilePathValidator:
 
     def test_validate_absolute_path(self, project_dir: Path):
         """Test that absolute paths are blocked."""
-        from fastapi import HTTPException
-
         from app.services.file_loader import FilePathValidator
+        from fastapi import HTTPException
 
         validator = FilePathValidator()
 
@@ -260,9 +258,8 @@ class TestFilePathValidator:
 
     def test_validate_non_python_file(self, project_dir: Path):
         """Test that non-Python files are rejected."""
-        from fastapi import HTTPException
-
         from app.services.file_loader import FilePathValidator
+        from fastapi import HTTPException
 
         validator = FilePathValidator()
 
@@ -277,9 +274,8 @@ class TestFilePathValidator:
 
     def test_validate_missing_file(self, project_dir: Path):
         """Test that missing files are rejected."""
-        from fastapi import HTTPException
-
         from app.services.file_loader import FilePathValidator
+        from fastapi import HTTPException
 
         validator = FilePathValidator()
 
@@ -394,10 +390,8 @@ class TestCodeExecution:
 
     def test_execute_simple_file(self, project_dir: Path):
         """Test executing a simple Python file."""
-        from app.services.code_execution_service import (
-            CodeExecutionRequest,
-            CodeExecutionService,
-        )
+        from app.services.code_execution_service import (CodeExecutionRequest,
+                                                         CodeExecutionService)
         from app.services.file_loader import PythonFileLoader
 
         # Load file
@@ -413,10 +407,8 @@ class TestCodeExecution:
 
     def test_execute_function_with_inputs(self, project_dir: Path):
         """Test executing a specific function with inputs."""
-        from app.services.code_execution_service import (
-            CodeExecutionRequest,
-            CodeExecutionService,
-        )
+        from app.services.code_execution_service import (CodeExecutionRequest,
+                                                         CodeExecutionService)
         from app.services.file_loader import PythonFileLoader
 
         # Load file
@@ -435,10 +427,8 @@ class TestCodeExecution:
 
     def test_execute_with_import_resolution(self, project_dir: Path):
         """Test executing file that imports another project file."""
-        from app.services.code_execution_service import (
-            CodeExecutionRequest,
-            CodeExecutionService,
-        )
+        from app.services.code_execution_service import (CodeExecutionRequest,
+                                                         CodeExecutionService)
         from app.services.file_loader import PythonFileLoader
 
         # Load file that imports another file
@@ -462,10 +452,8 @@ class TestCodeExecution:
 
     def test_execute_with_cross_directory_import(self, project_dir: Path):
         """Test executing file that imports from different directory."""
-        from app.services.code_execution_service import (
-            CodeExecutionRequest,
-            CodeExecutionService,
-        )
+        from app.services.code_execution_service import (CodeExecutionRequest,
+                                                         CodeExecutionService)
         from app.services.file_loader import PythonFileLoader
 
         # Load file that imports from lib/
@@ -492,10 +480,8 @@ class TestCodeExecution:
 
     def test_execute_syntax_error(self, project_dir: Path):
         """Test executing file with syntax error."""
-        from app.services.code_execution_service import (
-            CodeExecutionRequest,
-            CodeExecutionService,
-        )
+        from app.services.code_execution_service import (CodeExecutionRequest,
+                                                         CodeExecutionService)
         from app.services.file_loader import PythonFileLoader
 
         # Load file with syntax error
@@ -511,10 +497,8 @@ class TestCodeExecution:
 
     def test_execute_runtime_error(self, project_dir: Path):
         """Test executing file that causes runtime error."""
-        from app.services.code_execution_service import (
-            CodeExecutionRequest,
-            CodeExecutionService,
-        )
+        from app.services.code_execution_service import (CodeExecutionRequest,
+                                                         CodeExecutionService)
         from app.services.file_loader import PythonFileLoader
 
         # Load file with runtime error
@@ -530,10 +514,8 @@ class TestCodeExecution:
 
     def test_execute_blocked_import(self, project_dir: Path):
         """Test that blocked imports are rejected."""
-        from app.services.code_execution_service import (
-            CodeExecutionRequest,
-            CodeExecutionService,
-        )
+        from app.services.code_execution_service import (CodeExecutionRequest,
+                                                         CodeExecutionService)
         from app.services.file_loader import PythonFileLoader
 
         # Load file with blocked import
@@ -552,10 +534,8 @@ class TestCodeExecution:
 
     def test_execute_dangerous_pattern(self, project_dir: Path):
         """Test that dangerous patterns are blocked."""
-        from app.services.code_execution_service import (
-            CodeExecutionRequest,
-            CodeExecutionService,
-        )
+        from app.services.code_execution_service import (CodeExecutionRequest,
+                                                         CodeExecutionService)
         from app.services.file_loader import PythonFileLoader
 
         # Load file with eval
@@ -576,11 +556,9 @@ class TestCodeExecutionWithContext:
 
     def test_execute_with_action_result(self, project_dir: Path):
         """Test executing file that uses action_result from context."""
-        from app.services.code_execution_service import (
-            CodeExecutionRequest,
-            CodeExecutionService,
-            ExecutionContext,
-        )
+        from app.services.code_execution_service import (CodeExecutionRequest,
+                                                         CodeExecutionService,
+                                                         ExecutionContext)
         from app.services.file_loader import PythonFileLoader
 
         # Load file
@@ -606,11 +584,9 @@ class TestCodeExecutionWithContext:
 
     def test_execute_with_variables(self, project_dir: Path):
         """Test executing file that uses variables from context."""
-        from app.services.code_execution_service import (
-            CodeExecutionRequest,
-            CodeExecutionService,
-            ExecutionContext,
-        )
+        from app.services.code_execution_service import (CodeExecutionRequest,
+                                                         CodeExecutionService,
+                                                         ExecutionContext)
         from app.services.file_loader import PythonFileLoader
 
         # Load file
@@ -640,10 +616,8 @@ class TestIntegratedWorkflow:
 
     def test_multi_file_workflow(self, project_dir: Path):
         """Test a workflow that uses multiple files sequentially."""
-        from app.services.code_execution_service import (
-            CodeExecutionRequest,
-            CodeExecutionService,
-        )
+        from app.services.code_execution_service import (CodeExecutionRequest,
+                                                         CodeExecutionService)
         from app.services.file_loader import PythonFileLoader
 
         loader = PythonFileLoader(project_root=project_dir)

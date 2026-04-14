@@ -1,8 +1,6 @@
 """Stripe facade - unified interface to all Stripe services."""
 
 import stripe
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.core.config import settings
 from app.models.user import User
 from app.services.stripe.checkout_service import StripeCheckoutService
@@ -11,11 +9,9 @@ from app.services.stripe.subscription_service import StripeSubscriptionService
 from app.services.stripe.tier_service import TierService
 from app.services.stripe.webhook_handler import StripeWebhookHandler
 from app.services.stripe.webhook_processors import (
-    CheckoutCompletedProcessor,
-    PaymentFailedProcessor,
-    SubscriptionDeletedProcessor,
-    SubscriptionUpdatedProcessor,
-)
+    CheckoutCompletedProcessor, PaymentFailedProcessor,
+    SubscriptionDeletedProcessor, SubscriptionUpdatedProcessor)
+from sqlalchemy.ext.asyncio import AsyncSession
 
 # Initialize Stripe
 stripe.api_key = settings.STRIPE_SECRET_KEY

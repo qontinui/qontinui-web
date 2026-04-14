@@ -9,10 +9,9 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from app.models.collaboration import ConflictLog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.collaboration import ConflictLog
 
 logger = structlog.get_logger(__name__)
 

@@ -9,17 +9,13 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from app.models.execution_issue import (ExecutionIssue, ExecutionIssueSeverity,
+                                        ExecutionIssueSource,
+                                        ExecutionIssueStatus,
+                                        ExecutionIssueType)
+from app.models.execution_run import ExecutionRun
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.execution_issue import (
-    ExecutionIssue,
-    ExecutionIssueSeverity,
-    ExecutionIssueSource,
-    ExecutionIssueStatus,
-    ExecutionIssueType,
-)
-from app.models.execution_run import ExecutionRun
 
 logger = structlog.get_logger(__name__)
 
