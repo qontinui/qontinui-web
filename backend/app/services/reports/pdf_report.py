@@ -10,11 +10,10 @@ from typing import Any
 
 from app.services.reports.pdf_analysis import build_coverage_analysis
 from app.services.reports.pdf_appendices import build_appendices
-from app.services.reports.pdf_cover import build_cover_page, build_table_of_contents
-from app.services.reports.pdf_details import (
-    build_detailed_results,
-    build_recommendations,
-)
+from app.services.reports.pdf_cover import (build_cover_page,
+                                            build_table_of_contents)
+from app.services.reports.pdf_details import (build_detailed_results,
+                                              build_recommendations)
 from app.services.reports.pdf_options import PDFReportOptions
 from app.services.reports.pdf_styles import setup_custom_styles
 from app.services.reports.pdf_summary import build_executive_summary

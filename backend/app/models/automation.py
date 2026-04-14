@@ -8,18 +8,8 @@ from datetime import UTC, datetime
 from enum import StrEnum
 
 from app.db.base import Base
-from sqlalchemy import (
-    TIMESTAMP,
-    BigInteger,
-    Column,
-    Enum,
-    Float,
-    ForeignKey,
-    Index,
-    Integer,
-    String,
-    Text,
-)
+from sqlalchemy import (TIMESTAMP, BigInteger, Column, Enum, Float, ForeignKey,
+                        Index, Integer, String, Text)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 

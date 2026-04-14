@@ -8,7 +8,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.services.health.database_health import get_database_health
-from app.services.health.redis_health import get_redis_status, get_token_blacklist_stats
+from app.services.health.redis_health import (get_redis_status,
+                                              get_token_blacklist_stats)
 from app.services.health.security_health import get_security_warnings
 from app.services.health.session_health import get_session_stats
 from app.services.health.system_health import get_system_metrics

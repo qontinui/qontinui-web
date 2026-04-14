@@ -5,7 +5,8 @@ Test security features: rate limiting, JWT, error handling
 import asyncio
 
 import pytest
-from app.core.security import blacklist_token, create_access_token, decode_token
+from app.core.security import (blacklist_token, create_access_token,
+                               decode_token)
 from app.main import app
 from fastapi.testclient import TestClient
 
@@ -73,7 +74,8 @@ def test_token_blacklisting():
     assert payload.get("sub") == user_id  # Token decodes successfully
 
     # To properly check blacklist, use token_blacklist_service.is_blacklisted()
-    from app.services.auth.token_blacklist_service import token_blacklist_service
+    from app.services.auth.token_blacklist_service import \
+        token_blacklist_service
 
     jti = payload.get("jti")
     is_blacklisted = asyncio.run(token_blacklist_service.is_blacklisted(jti))

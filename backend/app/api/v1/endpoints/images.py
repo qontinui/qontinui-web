@@ -15,11 +15,8 @@ import structlog
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.core.error_codes import ErrorCode
 from app.crud.project import get_project
-from app.middleware.error_handler import (
-    forbidden_error,
-    not_found_error,
-    validation_error,
-)
+from app.middleware.error_handler import (forbidden_error, not_found_error,
+                                          validation_error)
 from app.models.organization import PermissionLevel
 from app.models.storage_usage import StorageUsage
 from app.models.user import User

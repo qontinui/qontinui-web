@@ -35,7 +35,9 @@ def upgrade() -> None:
         sa.Column("app_url", sa.String(2048), nullable=True),
         sa.Column("app_domain", sa.String(255), nullable=True),
         sa.Column("duration_ms", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("interaction_count", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column(
+            "interaction_count", sa.Integer(), nullable=False, server_default="0"
+        ),
         sa.Column("capture_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("state_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("transition_count", sa.Integer(), nullable=False, server_default="0"),

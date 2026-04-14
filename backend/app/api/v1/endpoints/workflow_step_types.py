@@ -10,19 +10,17 @@ from uuid import UUID
 from app.api.deps import current_active_user, get_async_db
 from app.crud import workflow_step_type as crud
 from app.models.user import User
-from app.schemas.workflow_step_type import (
-    GuiActionTypeConfigCreate,
-    GuiActionTypeConfigListResponse,
-    GuiActionTypeConfigResponse,
-    GuiActionTypeConfigUpdate,
-    StepTypeConfigCreate,
-    StepTypeConfigListResponse,
-    StepTypeConfigResponse,
-    StepTypeConfigUpdate,
-    WorkflowPhaseConfigListResponse,
-    WorkflowPhaseConfigResponse,
-    WorkflowPhaseConfigUpdate,
-)
+from app.schemas.workflow_step_type import (GuiActionTypeConfigCreate,
+                                            GuiActionTypeConfigListResponse,
+                                            GuiActionTypeConfigResponse,
+                                            GuiActionTypeConfigUpdate,
+                                            StepTypeConfigCreate,
+                                            StepTypeConfigListResponse,
+                                            StepTypeConfigResponse,
+                                            StepTypeConfigUpdate,
+                                            WorkflowPhaseConfigListResponse,
+                                            WorkflowPhaseConfigResponse,
+                                            WorkflowPhaseConfigUpdate)
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 

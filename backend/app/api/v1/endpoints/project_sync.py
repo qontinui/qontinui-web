@@ -10,32 +10,19 @@ from typing import cast
 from uuid import UUID
 
 import structlog
-from app.api.deps import (
-    get_async_db,
-    get_current_active_user_async,
-    get_current_user_from_ws,
-)
+from app.api.deps import (get_async_db, get_current_active_user_async,
+                          get_current_user_from_ws)
 from app.crud.project import get_project
 from app.db.session import AsyncSessionLocal
 from app.models.organization import PermissionLevel
 from app.models.sync_lock import SyncLock
 from app.models.user import User
-from app.schemas.sync_lock import (
-    ActiveLockInfo,
-    SyncLockReleaseRequest,
-    SyncLockRequest,
-    SyncLockResponse,
-)
+from app.schemas.sync_lock import (ActiveLockInfo, SyncLockReleaseRequest,
+                                   SyncLockRequest, SyncLockResponse)
 from app.services.permission_service import permission_service
 from app.services.sync_broadcast import sync_broadcast
-from fastapi import (
-    APIRouter,
-    Depends,
-    HTTPException,
-    WebSocket,
-    WebSocketDisconnect,
-    status,
-)
+from fastapi import (APIRouter, Depends, HTTPException, WebSocket,
+                     WebSocketDisconnect, status)
 from qontinui_schemas.common import utc_now
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

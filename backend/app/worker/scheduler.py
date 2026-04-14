@@ -24,16 +24,14 @@ async def run_all_cleanup_tasks(ctx: dict[str, Any]) -> dict[str, Any]:
     logger.info("run_all_cleanup_tasks_started")
 
     # Import cleanup tasks
-    from app.worker.tasks import (
-        archive_old_analytics_to_s3,
-        cleanup_expired_device_sessions,
-        cleanup_expired_sessions,
-        cleanup_old_analytics_events,
-        cleanup_old_automation_data,
-        cleanup_old_screenshots,
-        cleanup_orphaned_sessions,
-        cleanup_token_blacklist,
-    )
+    from app.worker.tasks import (archive_old_analytics_to_s3,
+                                  cleanup_expired_device_sessions,
+                                  cleanup_expired_sessions,
+                                  cleanup_old_analytics_events,
+                                  cleanup_old_automation_data,
+                                  cleanup_old_screenshots,
+                                  cleanup_orphaned_sessions,
+                                  cleanup_token_blacklist)
 
     results: dict[str, Any] = {
         "status": "success",

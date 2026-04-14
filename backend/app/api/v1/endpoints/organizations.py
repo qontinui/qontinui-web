@@ -15,25 +15,17 @@ import structlog
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.middleware.rate_limit import user_limiter
 from app.models.user import User
-from app.schemas.collaboration import (
-    InvitationAccept,
-    InvitationCreate,
-    InvitationResponse,
-    OrganizationCreate,
-    OrganizationResponse,
-    OrganizationStatistics,
-    OrganizationSwitchResponse,
-    OrganizationUpdate,
-    TeamMemberCreate,
-    TeamMemberResponse,
-    TeamMemberUpdate,
-)
+from app.schemas.collaboration import (InvitationAccept, InvitationCreate,
+                                       InvitationResponse, OrganizationCreate,
+                                       OrganizationResponse,
+                                       OrganizationStatistics,
+                                       OrganizationSwitchResponse,
+                                       OrganizationUpdate, TeamMemberCreate,
+                                       TeamMemberResponse, TeamMemberUpdate)
 from app.schemas.project import Project
-from app.services.organization import (
-    membership_service,
-    organization_settings_service,
-    statistics_service,
-)
+from app.services.organization import (membership_service,
+                                       organization_settings_service,
+                                       statistics_service)
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 

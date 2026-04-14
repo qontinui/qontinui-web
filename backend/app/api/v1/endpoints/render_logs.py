@@ -14,19 +14,14 @@ from app.api.deps import current_active_user_optional, get_async_db
 from app.core.config import settings
 from app.models.render_log import RenderImage, RenderLog
 from app.models.user import User
-from app.schemas.render_log import (
-    ClearRenderLogsRequest,
-    ClearRenderLogsResponse,
-    RenderImageResponse,
-    RenderLogCreate,
-    RenderLogList,
-    RenderLogResponse,
-    RenderLogSessionSummary,
-    RenderLogStats,
-    RenderLogSummary,
-    RenderLogWithImages,
-)
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from app.schemas.render_log import (ClearRenderLogsRequest,
+                                    ClearRenderLogsResponse,
+                                    RenderImageResponse, RenderLogCreate,
+                                    RenderLogList, RenderLogResponse,
+                                    RenderLogSessionSummary, RenderLogStats,
+                                    RenderLogSummary, RenderLogWithImages)
+from fastapi import (APIRouter, Depends, File, HTTPException, Query,
+                     UploadFile, status)
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 

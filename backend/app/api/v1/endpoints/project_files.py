@@ -19,17 +19,12 @@ from app.crud.project import get_project
 from app.middleware.error_handler import forbidden_error, not_found_error
 from app.models import User
 from app.models.organization import PermissionLevel
-from app.schemas.project_file import (
-    FileContentResponse,
-    FileDeleteResponse,
-    FileListResponse,
-    FileUpdateRequest,
-    FileUploadRequest,
-    FileUploadResponse,
-    FolderCreateRequest,
-    FolderCreateResponse,
-    ProjectLimitsResponse,
-)
+from app.schemas.project_file import (FileContentResponse, FileDeleteResponse,
+                                      FileListResponse, FileUpdateRequest,
+                                      FileUploadRequest, FileUploadResponse,
+                                      FolderCreateRequest,
+                                      FolderCreateResponse,
+                                      ProjectLimitsResponse)
 from app.services.permission_service import permission_service
 from app.services.project_file_service import project_file_service
 from fastapi import APIRouter, Depends, HTTPException, status

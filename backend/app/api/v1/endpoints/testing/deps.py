@@ -11,17 +11,12 @@ from uuid import UUID
 from app.api.deps import get_async_db, get_runner_user_from_token
 from app.models.user import User
 from app.services.deficiency_management_service import (
-    DeficiencyManagementService,
-    DeficiencyNotFoundError,
-    deficiency_management_service,
-)
-from app.services.test_run_service import (
-    ProjectAccessDeniedError,
-    ProjectNotFoundError,
-    TestRunNotFoundError,
-    TestRunService,
-    test_run_service,
-)
+    DeficiencyManagementService, DeficiencyNotFoundError,
+    deficiency_management_service)
+from app.services.test_run_service import (ProjectAccessDeniedError,
+                                           ProjectNotFoundError,
+                                           TestRunNotFoundError,
+                                           TestRunService, test_run_service)
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession

@@ -15,47 +15,27 @@ from uuid import UUID
 import structlog
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.models.project import Project
-from app.models.ui_bridge_state import (
-    DomainKnowledge,
-    UIBridgeExplorationSession,
-    UIBridgeState,
-    UIBridgeStateConfig,
-    UIBridgeStateDomainKnowledge,
-)
+from app.models.ui_bridge_state import (DomainKnowledge,
+                                        UIBridgeExplorationSession,
+                                        UIBridgeState, UIBridgeStateConfig,
+                                        UIBridgeStateDomainKnowledge)
 from app.models.ui_bridge_transition import UIBridgeTransition
 from app.models.user import User
 from app.schemas.ui_bridge_state import (
-    DomainKnowledgeCreate,
-    DomainKnowledgeListResponse,
-    DomainKnowledgeResponse,
-    DomainKnowledgeUpdate,
-    ExplorationSessionAppendRenders,
-    ExplorationSessionCreate,
-    ExplorationSessionListResponse,
-    ExplorationSessionResponse,
-    ExplorationSessionUpdate,
-    ExplorationSessionWithRenders,
-    ExportResponse,
-    PathfindingRequest,
-    PathfindingResponse,
-    PathfindingStep,
-    UIBridgeDiscoverAndSaveRequest,
-    UIBridgeDiscoverAndSaveResponse,
-    UIBridgeStateConfigCreate,
-    UIBridgeStateConfigListResponse,
-    UIBridgeStateConfigResponse,
-    UIBridgeStateConfigUpdate,
-    UIBridgeStateConfigWithStates,
-    UIBridgeStateConfigWithStatesAndTransitions,
-    UIBridgeStateDomainKnowledgeLink,
-    UIBridgeStateListResponse,
-    UIBridgeStateResponse,
-    UIBridgeStateUpdate,
-    UIBridgeTransitionCreate,
-    UIBridgeTransitionListResponse,
-    UIBridgeTransitionResponse,
-    UIBridgeTransitionUpdate,
-)
+    DomainKnowledgeCreate, DomainKnowledgeListResponse,
+    DomainKnowledgeResponse, DomainKnowledgeUpdate,
+    ExplorationSessionAppendRenders, ExplorationSessionCreate,
+    ExplorationSessionListResponse, ExplorationSessionResponse,
+    ExplorationSessionUpdate, ExplorationSessionWithRenders, ExportResponse,
+    PathfindingRequest, PathfindingResponse, PathfindingStep,
+    UIBridgeDiscoverAndSaveRequest, UIBridgeDiscoverAndSaveResponse,
+    UIBridgeStateConfigCreate, UIBridgeStateConfigListResponse,
+    UIBridgeStateConfigResponse, UIBridgeStateConfigUpdate,
+    UIBridgeStateConfigWithStates, UIBridgeStateConfigWithStatesAndTransitions,
+    UIBridgeStateDomainKnowledgeLink, UIBridgeStateListResponse,
+    UIBridgeStateResponse, UIBridgeStateUpdate, UIBridgeTransitionCreate,
+    UIBridgeTransitionListResponse, UIBridgeTransitionResponse,
+    UIBridgeTransitionUpdate)
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -799,10 +779,8 @@ async def discover_and_save_states(
     await get_project_or_404(project_id, current_user.id, db)
 
     # Lazy import to avoid loading torch/easyocr at startup
-    from qontinui.discovery.state_discovery import (
-        DiscoveryStrategyType,
-        StateDiscoveryService,
-    )
+    from qontinui.discovery.state_discovery import (DiscoveryStrategyType,
+                                                    StateDiscoveryService)
 
     # Map request strategy to library strategy type
     strategy_map = {
@@ -1526,15 +1504,11 @@ async def pathfind(
     try:
         # Lazy import to avoid loading torch at startup
         from qontinui.state_machine.ui_bridge_runtime import (
-            UIBridgeRuntime,
-            UIBridgeRuntimeConfig,
-        )
-        from qontinui.state_machine.ui_bridge_runtime import (
-            UIBridgeState as UIBridgeStateData,
-        )
-        from qontinui.state_machine.ui_bridge_runtime import (
-            UIBridgeTransition as UIBridgeTransitionData,
-        )
+            UIBridgeRuntime, UIBridgeRuntimeConfig)
+        from qontinui.state_machine.ui_bridge_runtime import \
+            UIBridgeState as UIBridgeStateData
+        from qontinui.state_machine.ui_bridge_runtime import \
+            UIBridgeTransition as UIBridgeTransitionData
 
         # Create a stub client that does nothing
         class StubClient:

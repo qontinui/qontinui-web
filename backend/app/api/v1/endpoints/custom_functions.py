@@ -11,13 +11,10 @@ from app.api.deps import current_active_user, get_async_db
 from app.crud import custom_function as crud
 from app.models.project import Project
 from app.models.user import User
-from app.schemas.custom_function import (
-    CustomFunctionListResponse,
-    CustomFunctionRead,
-    CustomFunctionSummary,
-    CustomFunctionUpdate,
-    FunctionStats,
-)
+from app.schemas.custom_function import (CustomFunctionListResponse,
+                                         CustomFunctionRead,
+                                         CustomFunctionSummary,
+                                         CustomFunctionUpdate, FunctionStats)
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 

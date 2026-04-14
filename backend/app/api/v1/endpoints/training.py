@@ -10,14 +10,10 @@ from app.models.annotation import AnnotationSet
 from app.models.project import Project
 from app.models.training_job import TrainingJob, TrainingJobStatus
 from app.models.user import User
-from app.schemas.training_job import (
-    TrainingConfig,
-    TrainingEstimate,
-    TrainingJobCreate,
-    TrainingJobListResponse,
-    TrainingJobResponse,
-    TrainingJobUpdate,
-)
+from app.schemas.training_job import (TrainingConfig, TrainingEstimate,
+                                      TrainingJobCreate,
+                                      TrainingJobListResponse,
+                                      TrainingJobResponse, TrainingJobUpdate)
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession

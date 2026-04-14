@@ -19,16 +19,13 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from app.db.partition_manager import (
-    PARTITION_CONFIG,
-    create_monthly_partition,
-    create_weekly_partition,
-    drop_old_partitions,
-    format_partition_name,
-    get_month_boundaries,
-    get_week_boundaries,
-    list_partitions,
-)
+from app.db.partition_manager import (PARTITION_CONFIG,
+                                      create_monthly_partition,
+                                      create_weekly_partition,
+                                      drop_old_partitions,
+                                      format_partition_name,
+                                      get_month_boundaries,
+                                      get_week_boundaries, list_partitions)
 from app.db.session import AsyncSessionLocal
 
 

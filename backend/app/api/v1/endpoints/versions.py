@@ -17,14 +17,11 @@ from app.api.deps import get_async_db, get_current_active_user_async
 from app.crud.project import get_project
 from app.models.organization import PermissionLevel
 from app.models.user import User
-from app.schemas.version import (
-    EditCommandHistoryResponse,
-    ProjectVersionListItem,
-    ProjectVersionResponse,
-    VersionComparisonResponse,
-    VersionRestoreRequest,
-    VersionRestoreResponse,
-)
+from app.schemas.version import (EditCommandHistoryResponse,
+                                 ProjectVersionListItem,
+                                 ProjectVersionResponse,
+                                 VersionComparisonResponse,
+                                 VersionRestoreRequest, VersionRestoreResponse)
 from app.services.event_sourcing_service import EventSourcingService
 from app.services.permission_service import permission_service
 from app.services.version_history_service import VersionHistoryService

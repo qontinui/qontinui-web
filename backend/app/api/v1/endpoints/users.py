@@ -2,40 +2,25 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from app.api.deps import (
-    get_async_db,
-    get_current_active_user_async,
-    get_current_superuser_async,
-)
+from app.api.deps import (get_async_db, get_current_active_user_async,
+                          get_current_superuser_async)
 from app.core.audit import audit_logger
-from app.crud.user import (
-    delete_user,
-    get_user,
-    get_user_activity,
-    get_users,
-    update_user,
-    update_user_avatar,
-    update_user_profile,
-)
+from app.crud.user import (delete_user, get_user, get_user_activity, get_users,
+                           update_user, update_user_avatar,
+                           update_user_profile)
 from app.middleware.error_handler import not_found_error
 from app.middleware.rate_limit import user_limiter
 from app.models.user import User as UserModel
 from app.schemas.storage import StorageQuotaResponse
-from app.schemas.user import (
-    ActivityLogResponse,
-    AutomationStreamingSettings,
-    AutomationStreamingToggle,
-    RunnerConnectionInfo,
-    User,
-    UserPreferences,
-    UserPreferencesUpdate,
-    UserProfileResponse,
-    UserProfileUpdate,
-    UserUpdate,
-)
+from app.schemas.user import (ActivityLogResponse, AutomationStreamingSettings,
+                              AutomationStreamingToggle, RunnerConnectionInfo,
+                              User, UserPreferences, UserPreferencesUpdate,
+                              UserProfileResponse, UserProfileUpdate,
+                              UserUpdate)
 from app.services.avatar_service import avatar_service
 from app.services.storage_service import StorageService
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import (APIRouter, Depends, File, HTTPException, Request,
+                     UploadFile, status)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()

@@ -8,7 +8,8 @@ and providing reusable methods for listing, filtering, and storage operations.
 from uuid import UUID
 
 import structlog
-from app.models.execution_screenshot import ExecutionScreenshot, ExecutionScreenshotType
+from app.models.execution_screenshot import (ExecutionScreenshot,
+                                             ExecutionScreenshotType)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

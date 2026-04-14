@@ -8,10 +8,8 @@ the ImageProcessingService works correctly.
 
 import io
 
-from app.services.image_processing_service import (
-    THUMBNAIL_SIZES,
-    ImageProcessingService,
-)
+from app.services.image_processing_service import (THUMBNAIL_SIZES,
+                                                   ImageProcessingService)
 from PIL import Image
 
 

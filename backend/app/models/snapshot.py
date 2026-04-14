@@ -17,19 +17,8 @@ from typing import TYPE_CHECKING
 from uuid import UUID as PyUUID
 
 from app.db.base import Base
-from sqlalchemy import (
-    ARRAY,
-    JSON,
-    Boolean,
-    DateTime,
-    Float,
-    ForeignKey,
-    Index,
-    Integer,
-    Numeric,
-    String,
-    Text,
-)
+from sqlalchemy import (ARRAY, JSON, Boolean, DateTime, Float, ForeignKey,
+                        Index, Integer, Numeric, String, Text)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 

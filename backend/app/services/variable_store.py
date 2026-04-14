@@ -8,11 +8,8 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from app.models.workflow_variable import (
-    VariableHistory,
-    VariableScope,
-    WorkflowVariable,
-)
+from app.models.workflow_variable import (VariableHistory, VariableScope,
+                                          WorkflowVariable)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

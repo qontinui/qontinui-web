@@ -6,17 +6,13 @@ using pgvector cosine similarity with MiniLM-L6-v2 (384-dim) embeddings.
 
 import structlog
 from app.api.deps import get_async_db, get_current_active_user_async
-from app.crud.semantic_search import (
-    search_domain_knowledge,
-    search_execution_issues,
-    search_project_embeddings,
-)
+from app.crud.semantic_search import (search_domain_knowledge,
+                                      search_execution_issues,
+                                      search_project_embeddings)
 from app.models.user import User
-from app.schemas.semantic_search import (
-    SemanticSearchRequest,
-    SemanticSearchResponse,
-    SemanticSearchResultItem,
-)
+from app.schemas.semantic_search import (SemanticSearchRequest,
+                                         SemanticSearchResponse,
+                                         SemanticSearchResultItem)
 from app.services.embedding_service import EmbeddingService
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession

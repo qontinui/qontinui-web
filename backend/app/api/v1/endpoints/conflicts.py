@@ -17,17 +17,14 @@ from app.models.collaboration import ConflictLog
 from app.models.project import Project
 from app.models.project_annotation_state import ProjectAnnotationState
 from app.models.user import User
-from app.schemas.conflict import (
-    AnnotationConflictCheckRequest,
-    AnnotationConflictCheckResponse,
-    AnnotationDiffSummary,
-    ConflictLogCreate,
-    ConflictLogResponse,
-    ConflictResolveRequest,
-    ConflictSummary,
-)
+from app.schemas.conflict import (AnnotationConflictCheckRequest,
+                                  AnnotationConflictCheckResponse,
+                                  AnnotationDiffSummary, ConflictLogCreate,
+                                  ConflictLogResponse, ConflictResolveRequest,
+                                  ConflictSummary)
 from app.services.collaboration_service import collaboration_service
-from app.services.conflict_resolution_service import conflict_resolution_service
+from app.services.conflict_resolution_service import \
+    conflict_resolution_service
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession

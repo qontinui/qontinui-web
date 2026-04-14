@@ -14,6 +14,15 @@
 
 import { type NextRequest, NextResponse } from "next/server";
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 // ---------------------------------------------------------------------------
 // Background map (mirrors the client-side page)
 // ---------------------------------------------------------------------------
@@ -119,11 +128,11 @@ function componentHtml(
 
 export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;
-  const component = sp.get("component") ?? "Button";
-  const variant = sp.get("variant") ?? "default";
-  const state = sp.get("state") ?? "enabled";
-  const size = sp.get("size") ?? "default";
-  const theme = sp.get("theme") ?? "light";
+  const component = escapeHtml(sp.get("component") ?? "Button");
+  const variant = escapeHtml(sp.get("variant") ?? "default");
+  const state = escapeHtml(sp.get("state") ?? "enabled");
+  const size = escapeHtml(sp.get("size") ?? "default");
+  const theme = sp.get("theme") === "dark" ? "dark" : "light";
   const bg = sp.get("bg") ?? "solid-white";
   const left = Math.max(0, Math.min(100, parseFloat(sp.get("left") ?? "50")));
   const top = Math.max(0, Math.min(100, parseFloat(sp.get("top") ?? "50")));

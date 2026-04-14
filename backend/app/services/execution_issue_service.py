@@ -9,32 +9,24 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from app.models.execution_issue import (
-    ExecutionIssue,
-    ExecutionIssueSeverity,
-    ExecutionIssueSource,
-    ExecutionIssueStatus,
-    ExecutionIssueType,
-)
+from app.models.execution_issue import (ExecutionIssue, ExecutionIssueSeverity,
+                                        ExecutionIssueSource,
+                                        ExecutionIssueStatus,
+                                        ExecutionIssueType)
 from app.repositories.action_execution import ActionExecutionRepository
 from app.repositories.execution_issue import ExecutionIssueRepository
 from app.repositories.execution_screenshot import ExecutionScreenshotRepository
-from app.services.execution_screenshot_service import model_to_screenshot_response
-
+from app.services.execution_screenshot_service import \
+    model_to_screenshot_response
 # Import schemas from qontinui-schemas
-from qontinui_schemas.api.execution import (
-    ExecutionIssueBatch,
-    ExecutionIssueBatchResponse,
-    ExecutionIssueDetail,
-    ExecutionIssueListResponse,
-    ExecutionIssueResponse,
-    ExecutionIssueUpdate,
-    IssueSeverity,
-    IssueSource,
-    IssueStatus,
-    IssueType,
-    Pagination,
-)
+from qontinui_schemas.api.execution import (ExecutionIssueBatch,
+                                            ExecutionIssueBatchResponse,
+                                            ExecutionIssueDetail,
+                                            ExecutionIssueListResponse,
+                                            ExecutionIssueResponse,
+                                            ExecutionIssueUpdate,
+                                            IssueSeverity, IssueSource,
+                                            IssueStatus, IssueType, Pagination)
 from qontinui_schemas.common import utc_now
 from sqlalchemy.ext.asyncio import AsyncSession
 

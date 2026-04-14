@@ -10,9 +10,8 @@ from uuid import UUID
 import structlog
 from app.models.visual_baseline import VisualBaseline
 from app.services.visual_testing.baseline_crud import BaselineCrud
-from app.services.visual_testing.baseline_image_processing import (
-    BaselineImageProcessing,
-)
+from app.services.visual_testing.baseline_image_processing import \
+    BaselineImageProcessing
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 

@@ -17,13 +17,10 @@ from app.models.test_deficiency import DeficiencySeverity, TestDeficiency
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .conftest import (
-    create_test_deficiencies,
-    create_test_runs,
-    generate_mock_coverage_data,
-    generate_mock_deficiency_data,
-    generate_mock_transition_data,
-)
+from .conftest import (create_test_deficiencies, create_test_runs,
+                       generate_mock_coverage_data,
+                       generate_mock_deficiency_data,
+                       generate_mock_transition_data)
 
 
 @pytest.mark.asyncio

@@ -10,16 +10,12 @@ from datetime import timedelta
 from typing import Any
 
 import pandas as pd  # type: ignore[import-untyped]
-from app.worker.tasks.cleanup_utils import (
-    CleanupResult,
-    TaskTimer,
-    create_error_result,
-    create_partial_success_result,
-    create_success_result,
-    generate_archive_s3_keys,
-    logger,
-    upload_dataframes_to_s3,
-)
+from app.worker.tasks.cleanup_utils import (CleanupResult, TaskTimer,
+                                            create_error_result,
+                                            create_partial_success_result,
+                                            create_success_result,
+                                            generate_archive_s3_keys, logger,
+                                            upload_dataframes_to_s3)
 from qontinui_schemas.common import utc_now
 
 

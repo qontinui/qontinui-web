@@ -12,10 +12,8 @@ from uuid import UUID
 import structlog
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.models.user import User
-from app.schemas.state_discovery import (
-    StateDiscoveryResponse,
-    StateDiscoveryTriggerRequest,
-)
+from app.schemas.state_discovery import (StateDiscoveryResponse,
+                                         StateDiscoveryTriggerRequest)
 from app.services.state_discovery_service import state_discovery_service
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -340,10 +338,8 @@ async def discover_ui_bridge_states(
     For fingerprint discovery, provide `cooccurrence_export` with fingerprint data.
     """
     # Import here to avoid circular dependency at module load
-    from qontinui.discovery.state_discovery import (
-        DiscoveryStrategyType,
-        StateDiscoveryService,
-    )
+    from qontinui.discovery.state_discovery import (DiscoveryStrategyType,
+                                                    StateDiscoveryService)
 
     # Map request strategy to library strategy type
     strategy_map = {

@@ -10,18 +10,14 @@ from app.api import deps
 from app.models.extraction import ExtractionAnnotation, ExtractionSession
 from app.models.sync_lock import SyncLock
 from app.models.user import User
-from app.schemas.extraction import (
-    AnnotationUpdate,
-    ExtractionAnnotationResponse,
-    ExtractionSessionCreate,
-    ExtractionSessionDetail,
-    ExtractionSessionResponse,
-    ExtractionSessionUpdate,
-    ImportMode,
-    ImportResult,
-    StateImportRequest,
-    StateMachineUpdate,
-)
+from app.schemas.extraction import (AnnotationUpdate,
+                                    ExtractionAnnotationResponse,
+                                    ExtractionSessionCreate,
+                                    ExtractionSessionDetail,
+                                    ExtractionSessionResponse,
+                                    ExtractionSessionUpdate, ImportMode,
+                                    ImportResult, StateImportRequest,
+                                    StateMachineUpdate)
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

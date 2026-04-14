@@ -16,14 +16,10 @@ from typing import Any, TypedDict, cast
 
 import structlog
 from app.core.config import settings
-from app.db.partition_manager import (
-    PARTITION_CONFIG,
-    PartitionTable,
-    create_monthly_partition,
-    create_weekly_partition,
-    drop_old_partitions,
-    list_partitions,
-)
+from app.db.partition_manager import (PARTITION_CONFIG, PartitionTable,
+                                      create_monthly_partition,
+                                      create_weekly_partition,
+                                      drop_old_partitions, list_partitions)
 from qontinui_schemas.common import utc_now
 
 logger = structlog.get_logger(__name__)

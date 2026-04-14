@@ -21,7 +21,8 @@ from app.services.rag_builder import rag_builder_service
 from fastapi import APIRouter, Depends, HTTPException, status
 from PIL import Image
 from pydantic import BaseModel
-from qontinui_schemas.api.rag import EmbeddingResultsRequest, EmbeddingResultsResponse
+from qontinui_schemas.api.rag import (EmbeddingResultsRequest,
+                                      EmbeddingResultsResponse)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)

@@ -19,15 +19,10 @@ from app.models.project import Project
 from app.models.state_discovery_result import StateDiscoveryResult
 from app.models.user import User
 from app.schemas.state_discovery_result import (
-    DiscoverySourceType,
-    StateDiscoveryResultCreate,
-    StateDiscoveryResultListResponse,
-    StateDiscoveryResultResponse,
-    StateDiscoveryResultSummary,
-    StateDiscoveryResultUpdate,
-    StateMachineExport,
-    StateMachineImport,
-)
+    DiscoverySourceType, StateDiscoveryResultCreate,
+    StateDiscoveryResultListResponse, StateDiscoveryResultResponse,
+    StateDiscoveryResultSummary, StateDiscoveryResultUpdate,
+    StateMachineExport, StateMachineImport)
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

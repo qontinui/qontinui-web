@@ -1,6 +1,5 @@
 from app.core.config import settings
 from app.core.security import get_password_hash
-
 # Import models to register them with Base
 from app.db.base_class import *  # noqa
 from app.models.user import User

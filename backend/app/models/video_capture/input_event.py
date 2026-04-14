@@ -3,15 +3,8 @@
 from typing import TYPE_CHECKING
 
 from app.db.base import Base
-from sqlalchemy import (
-    BigInteger,
-    Boolean,
-    ForeignKey,
-    Index,
-    Integer,
-    SmallInteger,
-    String,
-)
+from sqlalchemy import (BigInteger, Boolean, ForeignKey, Index, Integer,
+                        SmallInteger, String)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 

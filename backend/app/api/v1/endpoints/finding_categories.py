@@ -11,11 +11,8 @@ from app.api.deps import current_active_user, get_async_db
 from app.crud import finding_category_config as crud
 from app.models.user import User
 from app.schemas.finding_category_config import (
-    FindingCategoryConfigCreate,
-    FindingCategoryConfigListResponse,
-    FindingCategoryConfigResponse,
-    FindingCategoryConfigUpdate,
-)
+    FindingCategoryConfigCreate, FindingCategoryConfigListResponse,
+    FindingCategoryConfigResponse, FindingCategoryConfigUpdate)
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 

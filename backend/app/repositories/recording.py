@@ -8,14 +8,9 @@ from datetime import UTC, datetime, timedelta
 
 import structlog
 from app.models.discovered_state import DiscoveredState
-from app.models.recording import (
-    DiscoveredTransition,
-    Recording,
-    RecordingContext,
-    RecordingFrame,
-    RecordingInteraction,
-    RecordingStatus,
-)
+from app.models.recording import (DiscoveredTransition, Recording,
+                                  RecordingContext, RecordingFrame,
+                                  RecordingInteraction, RecordingStatus)
 from app.repositories.base import BaseRepository
 from app.services.object_storage import object_storage
 from pydantic import BaseModel

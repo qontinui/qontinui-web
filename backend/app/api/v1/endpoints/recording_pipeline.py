@@ -129,7 +129,8 @@ async def process_recording(
     - Discovered states with confidence scores
     - Detected transitions with reliability metrics
     """
-    from qontinui.state_machine import RecordingPipeline, RecordingPipelineConfig
+    from qontinui.state_machine import (RecordingPipeline,
+                                        RecordingPipelineConfig)
 
     logger.info(
         "recording_pipeline_request",
@@ -239,7 +240,8 @@ async def process_recording_with_playbook(
     Same as /process but additionally generates a playbook markdown file
     from the discovered states, transitions, and extracted variables.
     """
-    from qontinui.state_machine import RecordingPipeline, RecordingPipelineConfig
+    from qontinui.state_machine import (RecordingPipeline,
+                                        RecordingPipelineConfig)
     from qontinui.state_machine.playbook_generator import generate_playbook
 
     logger.info(
@@ -387,16 +389,14 @@ async def merge_recording(
     """
     from app.models.ui_bridge_state import UIBridgeState as UIBridgeStateModel
     from app.models.ui_bridge_state import UIBridgeStateConfig
-    from app.models.ui_bridge_transition import (
-        UIBridgeTransition as UIBridgeTransitionModel,
-    )
-    from qontinui.state_machine import RecordingPipeline, RecordingPipelineConfig
-    from qontinui.state_machine.ui_bridge_runtime import (
-        UIBridgeState as UIBridgeStateInternal,
-    )
-    from qontinui.state_machine.ui_bridge_runtime import (
-        UIBridgeTransition as UIBridgeTransitionInternal,
-    )
+    from app.models.ui_bridge_transition import \
+        UIBridgeTransition as UIBridgeTransitionModel
+    from qontinui.state_machine import (RecordingPipeline,
+                                        RecordingPipelineConfig)
+    from qontinui.state_machine.ui_bridge_runtime import \
+        UIBridgeState as UIBridgeStateInternal
+    from qontinui.state_machine.ui_bridge_runtime import \
+        UIBridgeTransition as UIBridgeTransitionInternal
     from sqlalchemy import select
 
     # Load existing config with states and transitions
@@ -670,9 +670,8 @@ async def _persist_to_pg(
     """
     from app.models.ui_bridge_state import UIBridgeState as UIBridgeStateModel
     from app.models.ui_bridge_state import UIBridgeStateConfig
-    from app.models.ui_bridge_transition import (
-        UIBridgeTransition as UIBridgeTransitionModel,
-    )
+    from app.models.ui_bridge_transition import \
+        UIBridgeTransition as UIBridgeTransitionModel
 
     # Create a state config
     state_config = UIBridgeStateConfig(

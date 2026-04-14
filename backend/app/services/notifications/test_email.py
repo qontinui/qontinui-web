@@ -10,11 +10,9 @@ import structlog
 from app.models.project import Project
 from app.models.software_test_run import SoftwareTestRun
 from app.models.test_deficiency import TestDeficiency
-from app.schemas.test_notifications import (
-    CoverageAlertNotification,
-    DeficiencyNotification,
-    TestRunNotification,
-)
+from app.schemas.test_notifications import (CoverageAlertNotification,
+                                            DeficiencyNotification,
+                                            TestRunNotification)
 from app.services.email.email_template_service import EmailTemplateService
 from app.services.email.email_transport_service import EmailTransportService
 from sqlalchemy import select

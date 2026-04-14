@@ -13,13 +13,10 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from app.models.code_package import (
-    CodePackage,
-    PackageCategory,
-    PackageVersion,
-    SecurityScanStatus,
-)
-from app.schemas.code_package import PackageCreate, PackageUpdate, VersionCreate
+from app.models.code_package import (CodePackage, PackageCategory,
+                                     PackageVersion, SecurityScanStatus)
+from app.schemas.code_package import (PackageCreate, PackageUpdate,
+                                      VersionCreate)
 from sqlalchemy import and_, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload

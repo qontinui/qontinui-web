@@ -11,11 +11,8 @@ from typing import Any, cast
 from uuid import UUID
 
 import structlog
-from app.models.organization import (
-    Organization,
-    OrganizationInvitation,
-    PermissionLevel,
-)
+from app.models.organization import (Organization, OrganizationInvitation,
+                                     PermissionLevel)
 from app.repositories.collaboration.access_repository import access_repository
 from app.schemas.collaboration import CollaboratorResponse
 from app.services.email.email_template_service import EmailTemplateService

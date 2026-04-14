@@ -6,15 +6,10 @@ import structlog
 from app.api.deps import get_async_db
 from app.api.v1.endpoints.admin.dependencies import require_admin
 from app.models.user import User
-from app.schemas.health import (
-    DatabaseHealth,
-    HealthOverview,
-    HealthThresholds,
-    RedisHealth,
-    SecurityWarnings,
-    SessionStats,
-    TokenBlacklistStats,
-)
+from app.schemas.health import (DatabaseHealth, HealthOverview,
+                                HealthThresholds, RedisHealth,
+                                SecurityWarnings, SessionStats,
+                                TokenBlacklistStats)
 from app.services.health_service import health_service
 from fastapi import APIRouter, Depends
 from sqlalchemy import text

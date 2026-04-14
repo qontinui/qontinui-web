@@ -15,20 +15,18 @@ from app.middleware.error_handler import not_found_error, validation_error
 from app.models.organization import PermissionLevel
 from app.models.project_assets import ProjectImage
 from app.models.user import User
-from app.repositories.project_image import (
-    project_image_repository,
-    project_screenshot_repository,
-)
-from app.schemas.project_assets import (
-    BatchDeleteResponse,
-    BatchProjectImageDelete,
-    ProjectImageListResponse,
-    ProjectImageResponse,
-    ProjectImageUpdate,
-)
+from app.repositories.project_image import (project_image_repository,
+                                            project_screenshot_repository)
+from app.schemas.project_assets import (BatchDeleteResponse,
+                                        BatchProjectImageDelete,
+                                        ProjectImageListResponse,
+                                        ProjectImageResponse,
+                                        ProjectImageUpdate)
 from app.services.project_image_service import project_image_service
-from app.utils.permission_utils import check_project_permission, check_read_only_mode
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from app.utils.permission_utils import (check_project_permission,
+                                        check_read_only_mode)
+from fastapi import (APIRouter, Depends, File, HTTPException, Query,
+                     UploadFile, status)
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 

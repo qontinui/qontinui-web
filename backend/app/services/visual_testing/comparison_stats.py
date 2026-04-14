@@ -9,10 +9,8 @@ from uuid import UUID
 import structlog
 from app.models.software_test_run import SoftwareTestRun
 from app.models.visual_baseline import VisualBaseline
-from app.models.visual_comparison_result import (
-    VisualComparisonResult,
-    VisualComparisonStatus,
-)
+from app.models.visual_comparison_result import (VisualComparisonResult,
+                                                 VisualComparisonStatus)
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 

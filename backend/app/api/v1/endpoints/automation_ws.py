@@ -14,7 +14,8 @@ from app.config.redis_config import get_redis
 from app.db.session import AsyncSessionLocal
 from app.models.automation_session import AutomationSession
 from app.services.websocket_manager import get_websocket_manager
-from app.websockets.automation import ConnectionHandler, MessageRouter, make_timestamp
+from app.websockets.automation import (ConnectionHandler, MessageRouter,
+                                       make_timestamp)
 from app.websockets.rate_limiter import RateLimiter
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select

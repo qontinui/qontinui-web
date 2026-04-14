@@ -13,12 +13,8 @@ import pytest
 from app.models.project import Project
 from app.models.runner_connection import RunnerConnection
 from app.models.software_test_run import SoftwareTestRun, TestRunStatus
-from app.models.test_deficiency import (
-    DeficiencySeverity,
-    DeficiencyStatus,
-    DeficiencyType,
-    TestDeficiency,
-)
+from app.models.test_deficiency import (DeficiencySeverity, DeficiencyStatus,
+                                        DeficiencyType, TestDeficiency)
 from app.models.user import User
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession

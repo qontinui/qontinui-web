@@ -15,7 +15,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
     from app.models.automation_session import AutomationSession
-    from app.models.screenshot_input_association import ScreenshotInputAssociation
+    from app.models.screenshot_input_association import \
+        ScreenshotInputAssociation
 
 
 class AutomationLog(Base):

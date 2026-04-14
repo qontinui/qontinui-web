@@ -10,13 +10,12 @@ from uuid import UUID
 
 import structlog
 from app.models.task_run import TaskRunSession
-from app.repositories.task_run import TaskRunRepository, TaskRunSessionRepository
+from app.repositories.task_run import (TaskRunRepository,
+                                       TaskRunSessionRepository)
 from app.services.task_run.mappers import model_to_session_response
-from app.services.task_run.schemas import (
-    TaskRunSessionCreate,
-    TaskRunSessionResponse,
-    TaskRunSessionUpdate,
-)
+from app.services.task_run.schemas import (TaskRunSessionCreate,
+                                           TaskRunSessionResponse,
+                                           TaskRunSessionUpdate)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)

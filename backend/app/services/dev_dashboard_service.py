@@ -12,13 +12,9 @@ from typing import Any
 
 import httpx
 import structlog
-from app.schemas.dev_dashboard import (
-    ClaudeSessionInfo,
-    ClaudeSessionReport,
-    FleetStatus,
-    RegisteredRunner,
-    RunnerHeartbeat,
-)
+from app.schemas.dev_dashboard import (ClaudeSessionInfo, ClaudeSessionReport,
+                                       FleetStatus, RegisteredRunner,
+                                       RunnerHeartbeat)
 
 logger = structlog.get_logger(__name__)
 

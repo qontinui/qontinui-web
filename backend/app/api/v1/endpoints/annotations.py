@@ -10,14 +10,9 @@ import structlog
 from app.api import deps
 from app.models.annotation import Annotation, AnnotationSet
 from app.models.user import User
-from app.schemas.annotation import (
-    AnnotationCreate,
-    AnnotationResponse,
-    AnnotationSetCreate,
-    AnnotationSetResponse,
-    AnnotationSetUpdate,
-    AnnotationUpdate,
-)
+from app.schemas.annotation import (AnnotationCreate, AnnotationResponse,
+                                    AnnotationSetCreate, AnnotationSetResponse,
+                                    AnnotationSetUpdate, AnnotationUpdate)
 from app.services.object_storage import object_storage
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import delete as sql_delete

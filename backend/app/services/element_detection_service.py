@@ -11,9 +11,9 @@ import io
 from uuid import UUID
 
 import structlog
-from app.models.capture import CaptureDetectedElement, CaptureScreenshot, CaptureSession
+from app.models.capture import (CaptureDetectedElement, CaptureScreenshot,
+                                CaptureSession)
 from app.services.object_storage import object_storage
-
 # DEPRECATED: CV-heavy service removed - moved to qontinui library
 # from app.services.region_analyzer import RegionAnalyzer
 from app.services.template_matcher_service import TemplateMatcherService
@@ -154,7 +154,8 @@ class ElementDetectionService:
         Returns:
             Dictionary with detection statistics
         """
-        from app.services.screenshot_storage_service import ScreenshotStorageService
+        from app.services.screenshot_storage_service import \
+            ScreenshotStorageService
         from app.services.session_repository import SessionRepository
 
         # Verify session access

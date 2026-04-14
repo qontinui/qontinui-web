@@ -15,27 +15,16 @@ from app.api.deps import current_active_user, get_async_db
 from app.models.project import Project
 from app.models.user import User
 from app.models.visual_baseline import VisualBaseline
-from app.schemas.visual_regression import (
-    AutoCreateBaselinesRequest,
-    AutoCreateBaselinesResponse,
-    BaselineFromScreenshot,
-    BaselineHistoryResponse,
-    BaselineListResponse,
-    BaselineResponse,
-    BaselineRollback,
-    BaselineUpdate,
-)
+from app.schemas.visual_regression import (AutoCreateBaselinesRequest,
+                                           AutoCreateBaselinesResponse,
+                                           BaselineFromScreenshot,
+                                           BaselineHistoryResponse,
+                                           BaselineListResponse,
+                                           BaselineResponse, BaselineRollback,
+                                           BaselineUpdate)
 from app.services.visual_testing import baseline_management_service
-from fastapi import (
-    APIRouter,
-    Depends,
-    File,
-    Form,
-    HTTPException,
-    Query,
-    UploadFile,
-    status,
-)
+from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query,
+                     UploadFile, status)
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 

@@ -1,7 +1,8 @@
 from datetime import UTC, datetime
 
 from app.db.base import Base
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import (BigInteger, Column, DateTime, ForeignKey, Integer,
+                        String)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 

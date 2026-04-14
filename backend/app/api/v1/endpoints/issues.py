@@ -12,15 +12,11 @@ import structlog
 from app.api.deps import current_active_user, get_async_db
 from app.crud import detected_issue as issue_crud
 from app.models.user import User
-from app.schemas.detected_issue import (
-    DetectedIssueCreate,
-    DetectedIssueResponse,
-    DetectedIssueUpdate,
-    IssueListResponse,
-    IssuesSyncRequest,
-    IssuesSyncResponse,
-    IssueStats,
-)
+from app.schemas.detected_issue import (DetectedIssueCreate,
+                                        DetectedIssueResponse,
+                                        DetectedIssueUpdate, IssueListResponse,
+                                        IssuesSyncRequest, IssuesSyncResponse,
+                                        IssueStats)
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 

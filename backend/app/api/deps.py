@@ -32,12 +32,8 @@ logger = structlog.get_logger(__name__)
 
 # Export database dependencies
 # Export fastapi-users dependencies
-from app.auth.config import (
-    current_active_user,
-    current_active_user_optional,
-    current_superuser,
-    current_verified_user,
-)
+from app.auth.config import (current_active_user, current_active_user_optional,
+                             current_superuser, current_verified_user)
 from app.db.session import get_async_db
 
 # Export database session getter (for backward compatibility with sync-style imports)

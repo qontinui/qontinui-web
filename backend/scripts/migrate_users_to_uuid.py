@@ -24,7 +24,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.core.config import settings  # noqa: E402
 from sqlalchemy import text  # noqa: E402
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine  # noqa: E402
+from sqlalchemy.ext.asyncio import (AsyncSession,  # noqa: E402
+                                    create_async_engine)
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 

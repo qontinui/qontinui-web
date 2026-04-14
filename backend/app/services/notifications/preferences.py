@@ -10,7 +10,8 @@ from uuid import UUID
 
 import structlog
 from app.models.notification import NotificationPreferences
-from app.models.test_notification_preferences import TestNotificationPreferences
+from app.models.test_notification_preferences import \
+    TestNotificationPreferences
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

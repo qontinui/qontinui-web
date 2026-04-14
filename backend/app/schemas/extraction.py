@@ -10,17 +10,11 @@ from uuid import UUID
 
 from app.schemas.base import IsoDatetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-
 # Re-export shared schemas from qontinui-schemas
-from qontinui_schemas.extraction import (
-    BoundingBox,
-    ElementAnnotation,
-    ExtractionStats,
-    InferredTransition,
-    StateAnnotation,
-    StateType,
-    TriggerType,
-)
+from qontinui_schemas.extraction import (BoundingBox, ElementAnnotation,
+                                         ExtractionStats, InferredTransition,
+                                         StateAnnotation, StateType,
+                                         TriggerType)
 
 # Re-export for backward compatibility
 __all__ = [

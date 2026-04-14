@@ -9,33 +9,29 @@ import numpy as np
 import structlog
 from app.api.deps import current_active_user, get_async_db
 from app.models import ApplicationProfile, TemplateCandidate, User
-from app.services.template_candidate_storage_service import (
-    TemplateCandidateStorageService,
-)
+from app.services.template_candidate_storage_service import \
+    TemplateCandidateStorageService
 from fastapi import APIRouter, Depends, HTTPException, status
 from PIL import Image
 from pydantic import BaseModel
-from qontinui_schemas.template_capture import (
-    ApplicationProfileCreate,
-    ApplicationProfileListResponse,
-    ApplicationProfileResponse,
-    ApplicationProfileUpdate,
-    ApprovedTemplateData,
-    CandidateBoundingBox,
-    CandidateStatus,
-    DetectionStrategyType,
-    InferenceConfigSchema,
-    TemplateCandidateBatchCreate,
-    TemplateCandidateCreate,
-    TemplateCandidateDetail,
-    TemplateCandidateListResponse,
-    TemplateCandidateResponse,
-    TemplateCandidateSummary,
-    TemplateCandidateUpdate,
-    TuningMetrics,
-    TuningRequest,
-    TuningResult,
-)
+from qontinui_schemas.template_capture import (ApplicationProfileCreate,
+                                               ApplicationProfileListResponse,
+                                               ApplicationProfileResponse,
+                                               ApplicationProfileUpdate,
+                                               ApprovedTemplateData,
+                                               CandidateBoundingBox,
+                                               CandidateStatus,
+                                               DetectionStrategyType,
+                                               InferenceConfigSchema,
+                                               TemplateCandidateBatchCreate,
+                                               TemplateCandidateCreate,
+                                               TemplateCandidateDetail,
+                                               TemplateCandidateListResponse,
+                                               TemplateCandidateResponse,
+                                               TemplateCandidateSummary,
+                                               TemplateCandidateUpdate,
+                                               TuningMetrics, TuningRequest,
+                                               TuningResult)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -684,7 +680,8 @@ async def tune_profile(
     4. Returns metrics and strategy rankings
     """
     # Import qontinui tuning components
-    from qontinui.discovery.click_analysis.application_tuner import ApplicationTuner
+    from qontinui.discovery.click_analysis.application_tuner import \
+        ApplicationTuner
     from qontinui.discovery.click_analysis.models import InferredBoundingBox
 
     result = await db.execute(
@@ -775,9 +772,7 @@ async def tune_profile(
     known_elements: list[InferredBoundingBox] | None = None
     if tuning_request.known_elements:
         from qontinui.discovery.click_analysis.models import (
-            DetectionStrategy,
-            ElementType,
-        )
+            DetectionStrategy, ElementType)
 
         known_elements = []
         for elem in tuning_request.known_elements:

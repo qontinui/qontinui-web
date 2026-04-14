@@ -42,9 +42,8 @@ class TaskQueue:
         # Fallback to synchronous email sending if queue unavailable
         if job_id is None:
             try:
-                from app.services.email.email_transport_service import (
-                    EmailTransportService,
-                )
+                from app.services.email.email_transport_service import \
+                    EmailTransportService
 
                 logger.info(
                     "email_sent_synchronously",
@@ -102,12 +101,10 @@ class TaskQueue:
         if job_id is None:
             try:
                 from app.core.config import settings
-                from app.services.email.email_template_service import (
-                    EmailTemplateService,
-                )
-                from app.services.email.email_transport_service import (
-                    EmailTransportService,
-                )
+                from app.services.email.email_template_service import \
+                    EmailTemplateService
+                from app.services.email.email_transport_service import \
+                    EmailTransportService
 
                 logger.info(
                     "verification_email_sent_synchronously",
@@ -177,12 +174,10 @@ class TaskQueue:
         if job_id is None:
             try:
                 from app.core.config import settings
-                from app.services.email.email_template_service import (
-                    EmailTemplateService,
-                )
-                from app.services.email.email_transport_service import (
-                    EmailTransportService,
-                )
+                from app.services.email.email_template_service import \
+                    EmailTemplateService
+                from app.services.email.email_transport_service import \
+                    EmailTransportService
 
                 logger.info(
                     "password_reset_email_sent_synchronously",

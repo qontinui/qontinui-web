@@ -11,10 +11,8 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from app.api.v1.endpoints.images import (
-    validate_image_magic_bytes,
-    validate_image_mime_type,
-)
+from app.api.v1.endpoints.images import (validate_image_magic_bytes,
+                                         validate_image_mime_type)
 from app.models.automation_screenshot import AutomationScreenshot
 from app.services.object_storage import object_storage
 from app.websockets.automation.schemas import make_timestamp

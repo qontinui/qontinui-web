@@ -18,15 +18,12 @@ from app.models.organization import PermissionLevel
 from app.models.user import User
 from app.repositories import AutomationSessionRepository
 from app.repositories.deps import get_automation_session_repository
-from app.schemas.automation import (
-    AutomationSessionListResponse,
-    AutomationSessionWithStats,
-    ImageRecognitionReport,
-    ImageRecognitionStats,
-    ScreenshotWithInputs,
-    SessionTimeline,
-    TimelineEvent,
-)
+from app.schemas.automation import (AutomationSessionListResponse,
+                                    AutomationSessionWithStats,
+                                    ImageRecognitionReport,
+                                    ImageRecognitionStats,
+                                    ScreenshotWithInputs, SessionTimeline,
+                                    TimelineEvent)
 from app.services.object_storage import object_storage
 from app.services.permission_service import permission_service
 from fastapi import APIRouter, Depends, HTTPException, Query, status

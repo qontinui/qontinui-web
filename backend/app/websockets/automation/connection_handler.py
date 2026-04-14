@@ -15,9 +15,7 @@ from app.db.session import AsyncSessionLocal
 from app.models.runner_connection import RunnerConnection
 from app.models.user import User
 from app.services.runner_connection_manager import (
-    RunnerConnectionManager,
-    get_runner_connection_manager,
-)
+    RunnerConnectionManager, get_runner_connection_manager)
 from app.websockets.automation.schemas import make_timestamp
 from app.websockets.automation.session_manager import SessionManager
 from app.websockets.rate_limiter import RateLimiter

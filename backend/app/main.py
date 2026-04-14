@@ -7,23 +7,19 @@ from app.config.logging_config import configure_logging, get_logger
 from app.core.config import settings
 from app.db.init_db import init_db
 from app.db.session import AsyncSessionLocal
-from app.middleware.database_timing import (
-    DatabaseTimingMiddleware,
-    init_database_timing,
-)
-from app.middleware.error_handler import (
-    AppError,
-    app_exception_handler,
-    general_exception_handler,
-    http_exception_handler,
-    validation_exception_handler,
-)
+from app.middleware.database_timing import (DatabaseTimingMiddleware,
+                                            init_database_timing)
+from app.middleware.error_handler import (AppError, app_exception_handler,
+                                          general_exception_handler,
+                                          http_exception_handler,
+                                          validation_exception_handler)
 from app.middleware.logging_middleware import LoggingMiddleware
 from app.middleware.metrics_middleware import MetricsMiddleware
 from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 from app.middleware.request_id import RequestIDMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
-from app.middleware.sliding_window_session import SlidingWindowSessionMiddleware
+from app.middleware.sliding_window_session import \
+    SlidingWindowSessionMiddleware
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware

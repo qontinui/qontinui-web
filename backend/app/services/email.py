@@ -11,11 +11,8 @@ refactored architecture with separated concerns:
 import structlog
 from app.models.user import User
 from app.services.email.email_composers import (
-    BetaWelcomeEmailComposer,
-    EmailVerificationComposer,
-    PasswordResetEmailComposer,
-    ResendVerificationEmailComposer,
-)
+    BetaWelcomeEmailComposer, EmailVerificationComposer,
+    PasswordResetEmailComposer, ResendVerificationEmailComposer)
 from app.services.email.email_template_service import EmailTemplateService
 from app.services.email.email_transport_service import EmailTransportService
 

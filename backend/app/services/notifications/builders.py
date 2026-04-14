@@ -9,11 +9,9 @@ from uuid import UUID
 
 from app.models.software_test_run import SoftwareTestRun
 from app.models.test_deficiency import DeficiencySeverity, TestDeficiency
-from app.schemas.test_notifications import (
-    CoverageAlertNotification,
-    DeficiencyNotification,
-    TestRunNotification,
-)
+from app.schemas.test_notifications import (CoverageAlertNotification,
+                                            DeficiencyNotification,
+                                            TestRunNotification)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

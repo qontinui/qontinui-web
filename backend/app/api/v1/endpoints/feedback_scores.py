@@ -21,13 +21,11 @@ from app.api.deps import current_active_user, get_async_db
 from app.models.user import User
 from app.repositories.feedback_score import FeedbackScoreRepository
 from fastapi import APIRouter, Depends, HTTPException, status
-from qontinui_schemas.api.feedback import (
-    FeedbackScoreBatchResponse,
-    FeedbackScoreCreate,
-    FeedbackScoreListResponse,
-    FeedbackScoreResponse,
-    FeedbackScoreSummary,
-)
+from qontinui_schemas.api.feedback import (FeedbackScoreBatchResponse,
+                                           FeedbackScoreCreate,
+                                           FeedbackScoreListResponse,
+                                           FeedbackScoreResponse,
+                                           FeedbackScoreSummary)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)

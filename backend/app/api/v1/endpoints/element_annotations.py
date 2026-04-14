@@ -14,17 +14,16 @@ import structlog
 from app.api import deps
 from app.crud.project import get_project
 from app.middleware.error_handler import not_found_error
-from app.models.element_annotation import ElementAnnotation, ElementAnnotationSet
+from app.models.element_annotation import (ElementAnnotation,
+                                           ElementAnnotationSet)
 from app.models.organization import PermissionLevel
 from app.models.user import User
-from app.schemas.element_annotation import (
-    ElementAnnotationSetCreate,
-    ElementAnnotationSetResponse,
-    ElementAnnotationSetUpdate,
-    VersionListResponse,
-    VersionResponse,
-    VersionSnapshotCreate,
-)
+from app.schemas.element_annotation import (ElementAnnotationSetCreate,
+                                            ElementAnnotationSetResponse,
+                                            ElementAnnotationSetUpdate,
+                                            VersionListResponse,
+                                            VersionResponse,
+                                            VersionSnapshotCreate)
 from app.services.permission_service import permission_service
 from fastapi import APIRouter, Depends, status
 from sqlalchemy import desc, func, select

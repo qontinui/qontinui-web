@@ -69,7 +69,8 @@ async def login(
 
     Rate limited to 5 attempts per minute to prevent brute force attacks.
     """
-    from app.api.v1.endpoints.auth.helpers import send_device_verification_email
+    from app.api.v1.endpoints.auth.helpers import \
+        send_device_verification_email
     from app.crud.user import authenticate_user
 
     user = await authenticate_user(db, form_data.username, form_data.password)
@@ -276,19 +277,15 @@ async def refresh_token(
 
     extend_session = body.extend_session if body else False
 
-    from app.core.security import (
-        decode_refresh_token,
-        get_session_jti_from_refresh_token,
-        get_token_expiry_time,
-    )
-    from app.crud.session_activity import (
-        create_session_activity,
-        delete_session,
-        is_session_expired,
-        update_last_activity,
-    )
+    from app.core.security import (decode_refresh_token,
+                                   get_session_jti_from_refresh_token,
+                                   get_token_expiry_time)
+    from app.crud.session_activity import (create_session_activity,
+                                           delete_session, is_session_expired,
+                                           update_last_activity)
     from app.crud.user import get_user
-    from app.services.auth.token_blacklist_service import token_blacklist_service
+    from app.services.auth.token_blacklist_service import \
+        token_blacklist_service
 
     payload = decode_refresh_token(refresh_token_value)
 

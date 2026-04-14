@@ -25,23 +25,19 @@ def upgrade() -> None:
     """Create collaboration tables."""
 
     # Create resource_type enum
-    op.execute(
-        """
+    op.execute("""
         CREATE TYPE resourcetype AS ENUM (
             'workflow', 'state', 'image', 'transition', 'action', 'project'
         )
-    """
-    )
+    """)
 
     # Create action_type enum
-    op.execute(
-        """
+    op.execute("""
         CREATE TYPE actiontype AS ENUM (
             'created', 'modified', 'deleted', 'shared', 'commented',
             'locked', 'unlocked', 'viewed', 'exported', 'imported'
         )
-    """
-    )
+    """)
 
     # Create project_locks table
     op.create_table(

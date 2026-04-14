@@ -73,7 +73,8 @@ async def websocket_runner_status(
 
     # Import here to avoid circular dependency
     from app.db.session import AsyncSessionLocal
-    from app.services.runner_connection_manager import get_runner_connection_manager
+    from app.services.runner_connection_manager import \
+        get_runner_connection_manager
 
     # Send initial state
     try:

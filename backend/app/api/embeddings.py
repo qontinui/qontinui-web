@@ -30,7 +30,8 @@ def _get_provider():
         if _provider is not None:
             return _provider
         try:
-            from qontinui.embeddings import EmbeddingConfig, get_embedding_provider
+            from qontinui.embeddings import (EmbeddingConfig,
+                                             get_embedding_provider)
 
             config = EmbeddingConfig(provider="sentence-transformers")
             _provider = get_embedding_provider(config)

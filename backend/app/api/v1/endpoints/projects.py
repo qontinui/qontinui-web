@@ -4,13 +4,8 @@ from uuid import UUID
 import structlog
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.core.error_codes import ErrorCode
-from app.crud.project import (
-    VersionConflictError,
-    create_project,
-    delete_project,
-    get_project,
-    update_project,
-)
+from app.crud.project import (VersionConflictError, create_project,
+                              delete_project, get_project, update_project)
 from app.middleware.error_handler import forbidden_error, not_found_error
 from app.models.organization import PermissionLevel
 from app.models.user import User
@@ -205,7 +200,8 @@ async def create_new_project(
     )
 
     # Send admin notification for new project creation
-    from app.services.admin_notification_service import admin_notification_service
+    from app.services.admin_notification_service import \
+        admin_notification_service
 
     try:
         await admin_notification_service.notify_project_created(

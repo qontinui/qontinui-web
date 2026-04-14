@@ -15,7 +15,8 @@ import structlog
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.models.shared_file import SharedFile
 from app.models.user import User
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import (APIRouter, Depends, File, Form, HTTPException, UploadFile,
+                     status)
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select

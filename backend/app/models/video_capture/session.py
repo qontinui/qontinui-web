@@ -5,17 +5,8 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from app.db.base import Base
-from sqlalchemy import (
-    BigInteger,
-    Boolean,
-    DateTime,
-    Float,
-    ForeignKey,
-    Index,
-    Integer,
-    String,
-    Text,
-)
+from sqlalchemy import (BigInteger, Boolean, DateTime, Float, ForeignKey,
+                        Index, Integer, String, Text)
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func

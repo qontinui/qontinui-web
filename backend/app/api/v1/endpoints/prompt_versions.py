@@ -18,12 +18,10 @@ from app.api.deps import current_active_user, get_async_db
 from app.models.user import User
 from app.repositories.prompt_version import PromptVersionRepository
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from qontinui_schemas.api.prompt_versions import (
-    PromptVersionCreate,
-    PromptVersionDiff,
-    PromptVersionListResponse,
-    PromptVersionResponse,
-)
+from qontinui_schemas.api.prompt_versions import (PromptVersionCreate,
+                                                  PromptVersionDiff,
+                                                  PromptVersionListResponse,
+                                                  PromptVersionResponse)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)

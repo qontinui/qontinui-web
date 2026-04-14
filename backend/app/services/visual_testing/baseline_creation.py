@@ -11,9 +11,8 @@ from uuid import UUID
 import structlog
 from app.models.test_screenshot import TestScreenshot
 from app.models.visual_baseline import VisualBaseline
-from app.services.visual_testing.baseline_image_processing import (
-    BaselineImageProcessing,
-)
+from app.services.visual_testing.baseline_image_processing import \
+    BaselineImageProcessing
 from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

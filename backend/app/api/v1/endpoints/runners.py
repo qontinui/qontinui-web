@@ -8,18 +8,18 @@ from datetime import UTC, datetime
 from typing import Any
 
 import structlog
-from app.api.deps import current_superuser, get_async_db, get_current_active_user_async
+from app.api.deps import (current_superuser, get_async_db,
+                          get_current_active_user_async)
 from app.config.redis_config import get_redis
 from app.crud import runner as runner_crud
 from app.models.user import User as UserModel
-from app.schemas.runner import (
-    ConnectionCleanupResponse,
-    ExecuteWorkflowRequest,
-    ExecuteWorkflowResponse,
-    RunnerConnectionHistory,
-    RunnerConnectionResponse,
-)
-from app.services.runner_connection_manager import get_runner_connection_manager
+from app.schemas.runner import (ConnectionCleanupResponse,
+                                ExecuteWorkflowRequest,
+                                ExecuteWorkflowResponse,
+                                RunnerConnectionHistory,
+                                RunnerConnectionResponse)
+from app.services.runner_connection_manager import \
+    get_runner_connection_manager
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 

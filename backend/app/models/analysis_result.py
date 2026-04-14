@@ -6,17 +6,8 @@ import uuid
 from datetime import UTC, datetime
 
 from app.db.base import Base
-from sqlalchemy import (
-    JSON,
-    Column,
-    DateTime,
-    Float,
-    ForeignKey,
-    Index,
-    Integer,
-    String,
-    Text,
-)
+from sqlalchemy import (JSON, Column, DateTime, Float, ForeignKey, Index,
+                        Integer, String, Text)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 

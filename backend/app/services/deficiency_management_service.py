@@ -10,11 +10,8 @@ from uuid import UUID, uuid4
 
 import structlog
 from app.models.software_test_run import SoftwareTestRun
-from app.models.test_deficiency import (
-    DeficiencySeverity,
-    DeficiencyStatus,
-    TestDeficiency,
-)
+from app.models.test_deficiency import (DeficiencySeverity, DeficiencyStatus,
+                                        TestDeficiency)
 from app.models.user import User
 from app.schemas.testing import DeficiencyCommentCreate, DeficiencyUpdate
 from qontinui_schemas.common import utc_now

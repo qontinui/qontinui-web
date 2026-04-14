@@ -10,7 +10,8 @@ from typing import cast
 from uuid import UUID
 
 import structlog
-from app.models.capture import CaptureScreenshot, CaptureSession, LearnedWorkflow
+from app.models.capture import (CaptureScreenshot, CaptureSession,
+                                LearnedWorkflow)
 from fastapi import HTTPException
 from fastapi import status as http_status
 from sqlalchemy import select

@@ -9,7 +9,8 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
-from app.models.organization import PermissionLevel, ProjectAccessControl, TeamMember
+from app.models.organization import (PermissionLevel, ProjectAccessControl,
+                                     TeamMember)
 from app.models.project import Project
 from app.services.permissions.helpers import check_permission_level
 from sqlalchemy import and_, or_, select

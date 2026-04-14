@@ -10,9 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 T = TypeVar("T", bound=Base)
 
 
-async def list_items[
-    T: Base
-](
+async def list_items[T: Base](
     db: AsyncSession,
     model: type[T],
     user_id: UUID,
@@ -46,9 +44,12 @@ async def list_items[
     return list(result.scalars().all()), total
 
 
-async def get_item[
-    T: Base
-](db: AsyncSession, model: type[T], item_id: UUID, user_id: UUID,) -> T | None:
+async def get_item[T: Base](
+    db: AsyncSession,
+    model: type[T],
+    item_id: UUID,
+    user_id: UUID,
+) -> T | None:
     """Get a single item by ID, scoped to user."""
     result = await db.execute(
         select(model).where(
@@ -59,9 +60,12 @@ async def get_item[
     return result.scalar_one_or_none()
 
 
-async def create_item[
-    T: Base
-](db: AsyncSession, model: type[T], user_id: UUID, data: dict[str, Any],) -> T:
+async def create_item[T: Base](
+    db: AsyncSession,
+    model: type[T],
+    user_id: UUID,
+    data: dict[str, Any],
+) -> T:
     """Create a new item."""
     item = cast(T, model(created_by_user_id=user_id, **data))  # type: ignore[call-arg]
     db.add(item)
@@ -70,9 +74,11 @@ async def create_item[
     return item
 
 
-async def update_item[
-    T: Base
-](db: AsyncSession, item: T, data: dict[str, Any],) -> T:
+async def update_item[T: Base](
+    db: AsyncSession,
+    item: T,
+    data: dict[str, Any],
+) -> T:
     """Update an existing item with non-None fields."""
     for key, value in data.items():
         if value is not None:
@@ -82,9 +88,10 @@ async def update_item[
     return item
 
 
-async def delete_item[
-    T: Base
-](db: AsyncSession, item: T,) -> None:
+async def delete_item[T: Base](
+    db: AsyncSession,
+    item: T,
+) -> None:
     """Delete an item."""
     await db.delete(item)
     await db.commit()

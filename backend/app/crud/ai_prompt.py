@@ -11,12 +11,9 @@ from uuid import UUID
 
 import structlog
 from app.models.ai_prompt import AIPromptTemplate, PromptSequence
-from app.schemas.ai_prompt import (
-    AIPromptTemplateCreate,
-    AIPromptTemplateUpdate,
-    PromptSequenceCreate,
-    PromptSequenceUpdate,
-)
+from app.schemas.ai_prompt import (AIPromptTemplateCreate,
+                                   AIPromptTemplateUpdate,
+                                   PromptSequenceCreate, PromptSequenceUpdate)
 from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 

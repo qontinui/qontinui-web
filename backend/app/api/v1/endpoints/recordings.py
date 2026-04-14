@@ -12,24 +12,12 @@ from app.models.project import Project
 from app.models.recording import RecordingStatus
 from app.models.user import User
 from app.repositories.recording import recording_repository
-from app.schemas.recording import (
-    DiscoveredStateStructure,
-    FrameResponse,
-    ProcessingJobStatus,
-    RecordingListResponse,
-    RecordingResponse,
-    UploadResponse,
-)
+from app.schemas.recording import (DiscoveredStateStructure, FrameResponse,
+                                   ProcessingJobStatus, RecordingListResponse,
+                                   RecordingResponse, UploadResponse)
 from app.services.recording_service import recording_service
-from fastapi import (
-    APIRouter,
-    BackgroundTasks,
-    Depends,
-    File,
-    Form,
-    HTTPException,
-    UploadFile,
-)
+from fastapi import (APIRouter, BackgroundTasks, Depends, File, Form,
+                     HTTPException, UploadFile)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

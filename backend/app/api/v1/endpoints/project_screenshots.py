@@ -16,15 +16,15 @@ from app.models.organization import PermissionLevel
 from app.models.project_assets import ProjectScreenshot
 from app.models.user import User
 from app.repositories.project_image import project_screenshot_repository
-from app.schemas.project_assets import (
-    BatchDeleteResponse,
-    BatchProjectScreenshotDelete,
-    ProjectScreenshotListResponse,
-    ProjectScreenshotUpdate,
-)
+from app.schemas.project_assets import (BatchDeleteResponse,
+                                        BatchProjectScreenshotDelete,
+                                        ProjectScreenshotListResponse,
+                                        ProjectScreenshotUpdate)
 from app.services.project_screenshot_service import project_screenshot_service
-from app.utils.permission_utils import check_project_permission, check_read_only_mode
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from app.utils.permission_utils import (check_project_permission,
+                                        check_read_only_mode)
+from fastapi import (APIRouter, Depends, File, HTTPException, Query,
+                     UploadFile, status)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)

@@ -14,11 +14,9 @@ from __future__ import annotations
 import structlog
 from app.api.deps import get_current_active_user_async
 from app.db.runner_db import get_runner_pool
-from app.models.runner_process_log import (
-    RunnerProcessLogSearchHit,
-    RunnerProcessSession,
-    RunnerProcessSessionOutputLine,
-)
+from app.models.runner_process_log import (RunnerProcessLogSearchHit,
+                                           RunnerProcessSession,
+                                           RunnerProcessSessionOutputLine)
 from app.models.user import User
 from fastapi import APIRouter, Depends, HTTPException, Query
 

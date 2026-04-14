@@ -15,14 +15,11 @@ import structlog
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.models.notification import Notification
 from app.models.user import User
-from app.schemas.notification import (
-    MarkAllReadResponse,
-    NotificationPreferencesResponse,
-    NotificationPreferencesUpdate,
-    NotificationResponse,
-    NotificationUpdate,
-    UnreadCountResponse,
-)
+from app.schemas.notification import (MarkAllReadResponse,
+                                      NotificationPreferencesResponse,
+                                      NotificationPreferencesUpdate,
+                                      NotificationResponse, NotificationUpdate,
+                                      UnreadCountResponse)
 from app.services.notification_service import notification_service
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, select

@@ -18,25 +18,14 @@ from app.models.project import Project
 from app.models.user import User
 from app.repositories.collaboration.access_repository import access_repository
 from app.repositories.collaboration.lock_repository import lock_repository
-from app.schemas.collaboration import (
-    ActivityLogResponse,
-    CollaboratorResponse,
-    CommentCreate,
-    CommentResolveRequest,
-    CommentResponse,
-    CommentUpdate,
-    LockExtendRequest,
-    LockRequest,
-    LockResponse,
-    ProjectShareRequest,
-    ProjectShareUpdate,
-)
-from app.services.collaboration import (
-    activity_service,
-    comment_service,
-    locking_service,
-    sharing_service,
-)
+from app.schemas.collaboration import (ActivityLogResponse,
+                                       CollaboratorResponse, CommentCreate,
+                                       CommentResolveRequest, CommentResponse,
+                                       CommentUpdate, LockExtendRequest,
+                                       LockRequest, LockResponse,
+                                       ProjectShareRequest, ProjectShareUpdate)
+from app.services.collaboration import (activity_service, comment_service,
+                                        locking_service, sharing_service)
 from app.services.notification_service import notification_service
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select

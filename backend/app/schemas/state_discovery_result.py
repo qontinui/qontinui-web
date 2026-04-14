@@ -8,20 +8,15 @@ from uuid import UUID
 
 from app.schemas.base import IsoDatetime
 from pydantic import BaseModel, Field
-
 # Re-export core schemas from qontinui-schemas
-from qontinui_schemas.discovery import (
-    SOURCE_TYPE_LABELS,
-    DiscoveredState,
-    DiscoveredStateImage,
-    DiscoveredTransition,
-    DiscoveryBoundingBox,
-    DiscoverySourceType,
-    DiscoveryTransitionTrigger,
-    StateMachineExport,
-    StateMachineImport,
-    TransitionTriggerType,
-)
+from qontinui_schemas.discovery import (SOURCE_TYPE_LABELS, DiscoveredState,
+                                        DiscoveredStateImage,
+                                        DiscoveredTransition,
+                                        DiscoveryBoundingBox,
+                                        DiscoverySourceType,
+                                        DiscoveryTransitionTrigger,
+                                        StateMachineExport, StateMachineImport,
+                                        TransitionTriggerType)
 
 # Aliases for backward compatibility
 BoundingBox = DiscoveryBoundingBox

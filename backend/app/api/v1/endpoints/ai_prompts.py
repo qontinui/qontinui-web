@@ -12,19 +12,15 @@ from app.api.deps import current_active_user, get_async_db
 from app.crud import ai_prompt as crud
 from app.models.project import Project
 from app.models.user import User
-from app.schemas.ai_prompt import (
-    AIPromptTemplateCreate,
-    AIPromptTemplateListResponse,
-    AIPromptTemplateResponse,
-    AIPromptTemplateSummary,
-    AIPromptTemplateUpdate,
-    PromptLibraryStats,
-    PromptSequenceCreate,
-    PromptSequenceListResponse,
-    PromptSequenceResponse,
-    PromptSequenceSummary,
-    PromptSequenceUpdate,
-)
+from app.schemas.ai_prompt import (AIPromptTemplateCreate,
+                                   AIPromptTemplateListResponse,
+                                   AIPromptTemplateResponse,
+                                   AIPromptTemplateSummary,
+                                   AIPromptTemplateUpdate, PromptLibraryStats,
+                                   PromptSequenceCreate,
+                                   PromptSequenceListResponse,
+                                   PromptSequenceResponse,
+                                   PromptSequenceSummary, PromptSequenceUpdate)
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 

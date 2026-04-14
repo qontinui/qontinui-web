@@ -14,19 +14,14 @@ from app.models.execution_run import ExecutionRun
 from app.models.execution_tree_event import ExecutionTreeEvent
 from app.repositories.action_execution import ActionExecutionRepository
 from app.repositories.execution_tree_event import ExecutionTreeEventRepository
-
 # Import schemas from qontinui-schemas
 from qontinui_schemas.events import DisplayNode as SchemaDisplayNode
 from qontinui_schemas.events import ExecutionTreeResponse
 from qontinui_schemas.events import NodeMetadata as SchemaNodeMetadata
 from qontinui_schemas.events import NodeStatus as SchemaNodeStatus
 from qontinui_schemas.events import NodeType as SchemaNodeType
-from qontinui_schemas.events import (
-    PathElement,
-    StateContext,
-    TreeEventListResponse,
-    TreeEventResponse,
-)
+from qontinui_schemas.events import (PathElement, StateContext,
+                                     TreeEventListResponse, TreeEventResponse)
 from qontinui_schemas.events import TreeEventType as SchemaTreeEventType
 from sqlalchemy.ext.asyncio import AsyncSession
 

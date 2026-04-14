@@ -15,20 +15,13 @@ from uuid import UUID
 
 import structlog
 from app.crud.project import get_project
-from app.crud.version import (
-    create_version,
-    delete_old_versions,
-    get_latest_version,
-    get_version_by_number,
-    get_versions_by_project,
-)
+from app.crud.version import (create_version, delete_old_versions,
+                              get_latest_version, get_version_by_number,
+                              get_versions_by_project)
 from app.models.project import Project
 from app.models.project_version import ProjectVersion
-from app.schemas.version import (
-    ProjectVersionCreate,
-    ProjectVersionListItem,
-    VersionComparisonResponse,
-)
+from app.schemas.version import (ProjectVersionCreate, ProjectVersionListItem,
+                                 VersionComparisonResponse)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)

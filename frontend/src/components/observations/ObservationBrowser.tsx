@@ -41,20 +41,24 @@ function DateRangePicker({
 }) {
   return (
     <div className="flex items-center gap-2 text-sm">
-      <label className="text-text-muted">From</label>
-      <input
-        type="date"
-        value={from}
-        onChange={(e) => onChange(e.target.value, to)}
-        className="bg-surface-raised border border-border-subtle rounded px-2 py-1 text-xs text-text-primary"
-      />
-      <label className="text-text-muted">To</label>
-      <input
-        type="date"
-        value={to}
-        onChange={(e) => onChange(from, e.target.value)}
-        className="bg-surface-raised border border-border-subtle rounded px-2 py-1 text-xs text-text-primary"
-      />
+      <label className="text-text-muted flex items-center gap-2">
+        From
+        <input
+          type="date"
+          value={from}
+          onChange={(e) => onChange(e.target.value, to)}
+          className="bg-surface-raised border border-border-subtle rounded px-2 py-1 text-xs text-text-primary"
+        />
+      </label>
+      <label className="text-text-muted flex items-center gap-2">
+        To
+        <input
+          type="date"
+          value={to}
+          onChange={(e) => onChange(from, e.target.value)}
+          className="bg-surface-raised border border-border-subtle rounded px-2 py-1 text-xs text-text-primary"
+        />
+      </label>
     </div>
   );
 }
@@ -112,7 +116,15 @@ function ObservationRow({
 
   return (
     <div
+      role="button"
+      tabIndex={0}
       onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
       className={`px-4 py-3 cursor-pointer border-b border-border-subtle/30 transition-colors hover:bg-surface-raised/50 ${
         isSelected ? "bg-surface-raised/80 border-l-2 border-l-blue-500" : ""
       } ${isSuperseded || isExpired ? "opacity-60" : ""}`}
@@ -323,13 +335,15 @@ export function ObservationBrowser() {
           }}
         />
         <div className="flex items-center gap-2 text-sm">
-          <label className="text-text-muted text-xs">As of</label>
-          <input
-            type="date"
-            value={asOfDate}
-            onChange={(e) => setAsOfDate(e.target.value)}
-            className="bg-surface-raised border border-border-subtle rounded px-2 py-1 text-xs text-text-primary"
-          />
+          <label className="text-text-muted text-xs flex items-center gap-2">
+            As of
+            <input
+              type="date"
+              value={asOfDate}
+              onChange={(e) => setAsOfDate(e.target.value)}
+              className="bg-surface-raised border border-border-subtle rounded px-2 py-1 text-xs text-text-primary"
+            />
+          </label>
           {asOfDate && (
             <button
               onClick={() => setAsOfDate("")}

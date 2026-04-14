@@ -10,26 +10,17 @@ from uuid import UUID
 import structlog
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.crud.project import get_project
-from app.crud.rag_dashboard import (
-    get_dashboard_stats,
-    get_embeddings,
-    get_jobs,
-    get_unique_states,
-    semantic_search,
-)
+from app.crud.rag_dashboard import (get_dashboard_stats, get_embeddings,
+                                    get_jobs, get_unique_states,
+                                    semantic_search)
 from app.middleware.error_handler import not_found_error
 from app.models.organization import PermissionLevel
 from app.models.user import User
-from app.schemas.rag_dashboard import (
-    EmbeddingItem,
-    EmbeddingListResponse,
-    JobItem,
-    JobListResponse,
-    JobSummary,
-    RAGDashboardStats,
-    SemanticSearchRequest,
-    SemanticSearchResponse,
-)
+from app.schemas.rag_dashboard import (EmbeddingItem, EmbeddingListResponse,
+                                       JobItem, JobListResponse, JobSummary,
+                                       RAGDashboardStats,
+                                       SemanticSearchRequest,
+                                       SemanticSearchResponse)
 from app.services.embedding_service import EmbeddingService
 from app.services.object_storage import object_storage
 from app.services.permission_service import permission_service

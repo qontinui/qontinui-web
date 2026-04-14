@@ -10,17 +10,8 @@ from datetime import UTC, datetime
 from enum import StrEnum
 
 from app.db.base import Base
-from sqlalchemy import (
-    JSON,
-    Boolean,
-    Column,
-    DateTime,
-    Enum,
-    ForeignKey,
-    String,
-    Text,
-    text,
-)
+from sqlalchemy import (JSON, Boolean, Column, DateTime, Enum, ForeignKey,
+                        String, Text, text)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 

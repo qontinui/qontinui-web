@@ -9,9 +9,8 @@ import cv2
 import numpy as np
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from evaluator import BBox, MultiScreenshotDataset
-
 from detectors.base_detector import MultiScreenshotDetector
+from evaluator import BBox, MultiScreenshotDataset
 
 
 class ConsistencyDetector(MultiScreenshotDetector):

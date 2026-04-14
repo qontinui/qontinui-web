@@ -3,19 +3,9 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 
 from app.db.base import Base
-from sqlalchemy import (
-    JSON,
-    Boolean,
-    CheckConstraint,
-    Column,
-    DateTime,
-    ForeignKey,
-    Index,
-    String,
-    Text,
-    UniqueConstraint,
-    text,
-)
+from sqlalchemy import (JSON, Boolean, CheckConstraint, Column, DateTime,
+                        ForeignKey, Index, String, Text, UniqueConstraint,
+                        text)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 

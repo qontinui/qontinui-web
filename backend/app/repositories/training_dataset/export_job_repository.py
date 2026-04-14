@@ -6,11 +6,8 @@ Handles creation and retrieval of dataset export jobs.
 from typing import Any
 from uuid import UUID
 
-from app.models.training_dataset import (
-    ExportFormat,
-    ExportJobStatus,
-    TrainingDatasetExportJob,
-)
+from app.models.training_dataset import (ExportFormat, ExportJobStatus,
+                                         TrainingDatasetExportJob)
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 

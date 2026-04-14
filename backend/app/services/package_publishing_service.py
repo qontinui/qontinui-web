@@ -9,8 +9,10 @@ from uuid import UUID
 
 import structlog
 from app.crud import code_package as crud
-from app.models.code_package import CodePackage, PackageVersion, SecurityScanStatus
-from app.schemas.code_package import PackageCreate, PackageUpdate, VersionCreate
+from app.models.code_package import (CodePackage, PackageVersion,
+                                     SecurityScanStatus)
+from app.schemas.code_package import (PackageCreate, PackageUpdate,
+                                      VersionCreate)
 from app.services.code_security import CodeSecurityScanner, SecurityStatus
 from sqlalchemy.ext.asyncio import AsyncSession
 

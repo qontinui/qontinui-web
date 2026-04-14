@@ -11,42 +11,33 @@ from uuid import UUID
 
 import structlog
 from app.models.task_run import TaskRun, TaskRunStatus, TaskType
-from app.repositories.task_run import (
-    DeferredQuestionRepository,
-    TaskRunAutomationRepository,
-    TaskRunFindingRepository,
-    TaskRunRepository,
-    TaskRunSessionRepository,
-)
-from app.services.task_run.mappers import (
-    _get_enum_value,
-    model_to_automation_response,
-    model_to_finding_response,
-    model_to_session_response,
-    model_to_task_run_response,
-)
-from app.services.task_run.schemas import (
-    DeferredQuestionBatch,
-    DeferredQuestionResponse,
-    DeferredQuestionUpdate,
-    Pagination,
-    StepProgressResponse,
-    TaskRunAutomationCreate,
-    TaskRunAutomationResponse,
-    TaskRunAutomationUpdate,
-    TaskRunCreate,
-    TaskRunDetail,
-    TaskRunFindingResponse,
-    TaskRunFindingsBatch,
-    TaskRunFindingsListResponse,
-    TaskRunFindingUpdate,
-    TaskRunListResponse,
-    TaskRunResponse,
-    TaskRunSessionCreate,
-    TaskRunSessionResponse,
-    TaskRunSessionUpdate,
-    TaskRunUpdate,
-)
+from app.repositories.task_run import (DeferredQuestionRepository,
+                                       TaskRunAutomationRepository,
+                                       TaskRunFindingRepository,
+                                       TaskRunRepository,
+                                       TaskRunSessionRepository)
+from app.services.task_run.mappers import (_get_enum_value,
+                                           model_to_automation_response,
+                                           model_to_finding_response,
+                                           model_to_session_response,
+                                           model_to_task_run_response)
+from app.services.task_run.schemas import (DeferredQuestionBatch,
+                                           DeferredQuestionResponse,
+                                           DeferredQuestionUpdate, Pagination,
+                                           StepProgressResponse,
+                                           TaskRunAutomationCreate,
+                                           TaskRunAutomationResponse,
+                                           TaskRunAutomationUpdate,
+                                           TaskRunCreate, TaskRunDetail,
+                                           TaskRunFindingResponse,
+                                           TaskRunFindingsBatch,
+                                           TaskRunFindingsListResponse,
+                                           TaskRunFindingUpdate,
+                                           TaskRunListResponse,
+                                           TaskRunResponse,
+                                           TaskRunSessionCreate,
+                                           TaskRunSessionResponse,
+                                           TaskRunSessionUpdate, TaskRunUpdate)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
@@ -539,7 +530,8 @@ class TaskRunService:
         automation_data: TaskRunAutomationCreate,
     ) -> TaskRunAutomationResponse | None:
         """Create an automation record. Delegates to TaskRunAutomationService."""
-        from app.services.task_run.automation_service import TaskRunAutomationService
+        from app.services.task_run.automation_service import \
+            TaskRunAutomationService
 
         svc = TaskRunAutomationService(
             task_run_repo=self.task_run_repo,
@@ -555,7 +547,8 @@ class TaskRunService:
         update_data: TaskRunAutomationUpdate,
     ) -> TaskRunAutomationResponse | None:
         """Update an automation record. Delegates to TaskRunAutomationService."""
-        from app.services.task_run.automation_service import TaskRunAutomationService
+        from app.services.task_run.automation_service import \
+            TaskRunAutomationService
 
         svc = TaskRunAutomationService(
             task_run_repo=self.task_run_repo,
@@ -569,7 +562,8 @@ class TaskRunService:
         task_run_id: UUID,
     ) -> list[TaskRunAutomationResponse]:
         """Get all automation records. Delegates to TaskRunAutomationService."""
-        from app.services.task_run.automation_service import TaskRunAutomationService
+        from app.services.task_run.automation_service import \
+            TaskRunAutomationService
 
         svc = TaskRunAutomationService(
             task_run_repo=self.task_run_repo,
@@ -584,7 +578,8 @@ class TaskRunService:
         checkpoint_id: str,
     ) -> StepProgressResponse | None:
         """Get step execution progress. Delegates to TaskRunAutomationService."""
-        from app.services.task_run.automation_service import TaskRunAutomationService
+        from app.services.task_run.automation_service import \
+            TaskRunAutomationService
 
         svc = TaskRunAutomationService(
             task_run_repo=self.task_run_repo,
@@ -603,9 +598,8 @@ class TaskRunService:
         batch: DeferredQuestionBatch,
     ) -> list[DeferredQuestionResponse]:
         """Sync a batch of deferred questions. Delegates to DeferredQuestionService."""
-        from app.services.task_run.deferred_question_service import (
-            DeferredQuestionService,
-        )
+        from app.services.task_run.deferred_question_service import \
+            DeferredQuestionService
 
         svc = DeferredQuestionService(question_repo=self.deferred_question_repo)
         return await svc.sync_deferred_questions(db, task_run_id, batch)
@@ -617,9 +611,8 @@ class TaskRunService:
         status_filter: str | None = None,
     ) -> list[DeferredQuestionResponse]:
         """List deferred questions. Delegates to DeferredQuestionService."""
-        from app.services.task_run.deferred_question_service import (
-            DeferredQuestionService,
-        )
+        from app.services.task_run.deferred_question_service import \
+            DeferredQuestionService
 
         svc = DeferredQuestionService(question_repo=self.deferred_question_repo)
         return await svc.list_deferred_questions(db, task_run_id, status_filter)
@@ -632,9 +625,8 @@ class TaskRunService:
         update_data: DeferredQuestionUpdate,
     ) -> DeferredQuestionResponse | None:
         """Review a deferred question. Delegates to DeferredQuestionService."""
-        from app.services.task_run.deferred_question_service import (
-            DeferredQuestionService,
-        )
+        from app.services.task_run.deferred_question_service import \
+            DeferredQuestionService
 
         svc = DeferredQuestionService(question_repo=self.deferred_question_repo)
         return await svc.review_deferred_question(

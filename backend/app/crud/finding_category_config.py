@@ -3,10 +3,8 @@
 from uuid import UUID
 
 from app.models.finding_category_config import FindingCategoryConfig
-from app.schemas.finding_category_config import (
-    FindingCategoryConfigCreate,
-    FindingCategoryConfigUpdate,
-)
+from app.schemas.finding_category_config import (FindingCategoryConfigCreate,
+                                                 FindingCategoryConfigUpdate)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

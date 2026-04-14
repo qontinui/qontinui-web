@@ -17,26 +17,13 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from detectors import (
-    ColorClusterDetector,
-    ContourDetector,
-    EdgeBasedDetector,
-    HybridDetector,
-    MSERDetector,
-    SAM2Detector,
-    SelectiveSearchDetector,
-    TemplateDetector,
-)
+from detectors import (ColorClusterDetector, ContourDetector,
+                       EdgeBasedDetector, HybridDetector, MSERDetector,
+                       SAM2Detector, SelectiveSearchDetector, TemplateDetector)
 from detectors.consistency_detector import ConsistencyDetector
-from evaluator import (
-    BBox,
-    EvaluationResult,
-    Evaluator,
-    MultiScreenshotDataset,
-    MultiScreenshotEvaluator,
-    compare_methods,
-    load_multi_screenshot_dataset,
-)
+from evaluator import (BBox, EvaluationResult, Evaluator,
+                       MultiScreenshotDataset, MultiScreenshotEvaluator,
+                       compare_methods, load_multi_screenshot_dataset)
 
 
 class ResearchNotes:

@@ -14,18 +14,10 @@ from app.services.websocket_manager import connection_manager
 from app.utils.authorization import verify_project_access
 from app.websockets.base import BaseWebSocketHandler, WebSocketContext
 from app.websockets.collaboration.message_handlers import (
-    WSMessage,
-    handle_ack,
-    handle_activity,
-    handle_comment_add,
-    handle_cursor_move,
-    handle_heartbeat,
-    handle_lock_acquire,
-    handle_lock_release,
-    handle_resend,
-    handle_resource_update,
-    handle_sync_state,
-)
+    WSMessage, handle_ack, handle_activity, handle_comment_add,
+    handle_cursor_move, handle_heartbeat, handle_lock_acquire,
+    handle_lock_release, handle_resend, handle_resource_update,
+    handle_sync_state)
 from app.websockets.collaboration.sync_manager import CollaborationSyncManager
 from fastapi import HTTPException, status
 from pydantic import ValidationError

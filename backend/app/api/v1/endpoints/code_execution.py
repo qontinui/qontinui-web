@@ -7,11 +7,9 @@ from pathlib import Path
 from app.api import deps
 from app.db.session import get_async_db
 from app.models import User
-from app.services.code_execution_service import (
-    CodeExecutionRequest,
-    CodeExecutionResult,
-    CodeExecutionService,
-)
+from app.services.code_execution_service import (CodeExecutionRequest,
+                                                 CodeExecutionResult,
+                                                 CodeExecutionService)
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 

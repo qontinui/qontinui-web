@@ -6,7 +6,8 @@ Handles image retrieval, filtering, pagination, and annotation count lookups.
 from typing import Any
 from uuid import UUID
 
-from app.models.training_dataset import TrainingDatasetAnnotation, TrainingDatasetImage
+from app.models.training_dataset import (TrainingDatasetAnnotation,
+                                         TrainingDatasetImage)
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.expression import ColumnElement

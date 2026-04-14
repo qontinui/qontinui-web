@@ -11,9 +11,7 @@ import structlog
 from app.models.automation_log import AutomationLog
 from app.models.automation_session import AutomationSession
 from app.repositories.automation_session.schemas import (
-    ImageRecognitionReportData,
-    ImageRecognitionStatsData,
-)
+    ImageRecognitionReportData, ImageRecognitionStatsData)
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 

@@ -8,12 +8,9 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from app.models.detected_issue import DetectedIssue
-from app.schemas.detected_issue import (
-    DetectedIssueCreate,
-    DetectedIssueUpdate,
-    IssueStats,
-    IssueSyncItem,
-)
+from app.schemas.detected_issue import (DetectedIssueCreate,
+                                        DetectedIssueUpdate, IssueStats,
+                                        IssueSyncItem)
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 

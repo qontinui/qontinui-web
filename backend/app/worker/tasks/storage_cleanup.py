@@ -9,14 +9,10 @@ from datetime import timedelta
 from typing import Any
 
 from app.core.config import settings
-from app.worker.tasks.cleanup_utils import (
-    CleanupResult,
-    TaskTimer,
-    create_error_result,
-    create_partial_success_result,
-    create_success_result,
-    logger,
-)
+from app.worker.tasks.cleanup_utils import (CleanupResult, TaskTimer,
+                                            create_error_result,
+                                            create_partial_success_result,
+                                            create_success_result, logger)
 from qontinui_schemas.common import utc_now
 
 

@@ -9,7 +9,8 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
-from app.models.code_package import CodePackage, PackageInstallation, PackageVersion
+from app.models.code_package import (CodePackage, PackageInstallation,
+                                     PackageVersion)
 from sqlalchemy import and_, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload

@@ -10,12 +10,8 @@ Tests include:
 """
 
 import pytest
-from app.services.code_security import (
-    CodeSecurityScanner,
-    IssueSeverity,
-    IssueType,
-    SecurityStatus,
-)
+from app.services.code_security import (CodeSecurityScanner, IssueSeverity,
+                                        IssueType, SecurityStatus)
 
 
 @pytest.fixture

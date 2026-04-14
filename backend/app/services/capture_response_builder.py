@@ -4,20 +4,14 @@ Response builder for capture session endpoints.
 Provides utilities for building Pydantic response models from database models.
 """
 
-from app.models.capture import (
-    CaptureAction,
-    CaptureScreenshot,
-    CaptureSession,
-    LearnedWorkflow,
-    ScreenshotStateMatch,
-)
-from app.schemas.capture import (
-    CaptureActionResponse,
-    CaptureScreenshotResponse,
-    CaptureSessionResponse,
-    LearnedWorkflowResponse,
-    ScreenshotStateMatchResponse,
-)
+from app.models.capture import (CaptureAction, CaptureScreenshot,
+                                CaptureSession, LearnedWorkflow,
+                                ScreenshotStateMatch)
+from app.schemas.capture import (CaptureActionResponse,
+                                 CaptureScreenshotResponse,
+                                 CaptureSessionResponse,
+                                 LearnedWorkflowResponse,
+                                 ScreenshotStateMatchResponse)
 
 
 class CaptureResponseBuilder:

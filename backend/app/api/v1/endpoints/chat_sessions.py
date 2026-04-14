@@ -9,7 +9,8 @@ from app.api.deps import current_active_user, get_db
 from app.config.redis_config import get_redis
 from app.models.runner_connection import RunnerConnection
 from app.models.user import User
-from app.services.runner_connection_manager import get_runner_connection_manager
+from app.services.runner_connection_manager import \
+    get_runner_connection_manager
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

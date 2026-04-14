@@ -8,11 +8,9 @@ and providing reusable methods for listing, filtering, and batch operations.
 from uuid import UUID
 
 import structlog
-from app.models.action_execution import (
-    ActionExecution,
-    ActionExecutionStatus,
-    ActionExecutionType,
-)
+from app.models.action_execution import (ActionExecution,
+                                         ActionExecutionStatus,
+                                         ActionExecutionType)
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 

@@ -9,37 +9,21 @@ import json
 from uuid import UUID
 
 from app.api.deps import current_active_user, get_async_db
-from app.models.capture import (
-    CaptureDetectedElement,
-    CaptureScreenshot,
-    ScreenshotStateMatch,
-)
+from app.models.capture import (CaptureDetectedElement, CaptureScreenshot,
+                                ScreenshotStateMatch)
 from app.models.user import User
-from app.schemas.capture import (
-    BatchActionCreate,
-    CaptureActionCreate,
-    CaptureActionResponse,
-    CaptureScreenshotResponse,
-    CaptureSessionCreate,
-    CaptureSessionResponse,
-    CaptureSessionUpdate,
-    LearnedWorkflowResponse,
-    ScreenshotStateMatchResponse,
-)
+from app.schemas.capture import (BatchActionCreate, CaptureActionCreate,
+                                 CaptureActionResponse,
+                                 CaptureScreenshotResponse,
+                                 CaptureSessionCreate, CaptureSessionResponse,
+                                 CaptureSessionUpdate, LearnedWorkflowResponse,
+                                 ScreenshotStateMatchResponse)
 from app.services.capture_response_builder import capture_response_builder
 from app.services.capture_session_service import CaptureSessionService
 from app.services.element_detection_service import ElementDetectionService
 from app.services.workflow_generation_service import WorkflowGenerationService
-from fastapi import (
-    APIRouter,
-    Depends,
-    File,
-    Form,
-    HTTPException,
-    Query,
-    UploadFile,
-    status,
-)
+from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query,
+                     UploadFile, status)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

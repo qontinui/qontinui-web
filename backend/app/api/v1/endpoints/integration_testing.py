@@ -23,7 +23,8 @@ from app.models.snapshot import SnapshotRun
 from app.models.user import User
 from app.services.object_storage import object_storage
 from app.services.reports import PDFReportOptions, generate_pdf_report
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import (APIRouter, BackgroundTasks, Depends, HTTPException, Query,
+                     status)
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from redis import asyncio as aioredis

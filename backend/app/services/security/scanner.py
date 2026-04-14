@@ -14,20 +14,14 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
-from app.services.security.constants import (
-    MAX_COMPLEXITY_BLOCK,
-    MAX_COMPLEXITY_WARN,
-    MAX_NESTING_DEPTH,
-    MIN_MAINTAINABILITY_INDEX,
-    OBFUSCATION_PATTERNS,
-)
-from app.services.security.models import (
-    IssueSeverity,
-    IssueType,
-    SecurityIssue,
-    SecurityScanResult,
-    SecurityStatus,
-)
+from app.services.security.constants import (MAX_COMPLEXITY_BLOCK,
+                                             MAX_COMPLEXITY_WARN,
+                                             MAX_NESTING_DEPTH,
+                                             MIN_MAINTAINABILITY_INDEX,
+                                             OBFUSCATION_PATTERNS)
+from app.services.security.models import (IssueSeverity, IssueType,
+                                          SecurityIssue, SecurityScanResult,
+                                          SecurityStatus)
 from app.services.security.visitor import SecurityASTVisitor
 from radon.complexity import cc_visit  # type: ignore[import-untyped]
 from radon.metrics import mi_visit  # type: ignore[import-untyped]

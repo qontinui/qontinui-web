@@ -11,12 +11,10 @@ from app.middleware.rate_limit import user_limiter
 from app.models.runner_device import RunnerDevice
 from app.models.user import User
 from app.schemas.runner_device import RunnerDevice as RunnerDeviceSchema
-from app.schemas.runner_device import (
-    RunnerDeviceConnectionInfo,
-    RunnerDeviceHeartbeat,
-    RunnerDeviceHeartbeatResponse,
-    RunnerDeviceRegister,
-)
+from app.schemas.runner_device import (RunnerDeviceConnectionInfo,
+                                       RunnerDeviceHeartbeat,
+                                       RunnerDeviceHeartbeatResponse,
+                                       RunnerDeviceRegister)
 from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

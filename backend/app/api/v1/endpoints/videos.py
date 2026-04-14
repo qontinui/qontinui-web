@@ -16,7 +16,8 @@ from app.models.user import User
 from app.services.limit_checker import LimitChecker
 from app.services.object_storage import object_storage
 from app.services.storage_service import StorageQuotaExceeded, StorageService
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import (APIRouter, Depends, File, Form, HTTPException, UploadFile,
+                     status)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

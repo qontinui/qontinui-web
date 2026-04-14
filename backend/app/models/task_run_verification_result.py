@@ -10,15 +10,8 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from app.db.base import Base
-from sqlalchemy import (
-    BigInteger,
-    Boolean,
-    DateTime,
-    ForeignKey,
-    Integer,
-    UniqueConstraint,
-    text,
-)
+from sqlalchemy import (BigInteger, Boolean, DateTime, ForeignKey, Integer,
+                        UniqueConstraint, text)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
