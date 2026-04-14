@@ -34,11 +34,13 @@ try:
         hash_runner_token,
     )
 except ImportError:
+
     def generate_runner_token() -> str:  # type: ignore[misc]
         raise NotImplementedError("generate_runner_token not yet implemented")
 
     def hash_runner_token(token: str) -> str:  # type: ignore[misc]
         raise NotImplementedError("hash_runner_token not yet implemented")
+
 
 try:
     from app.crud import runner as runner_crud

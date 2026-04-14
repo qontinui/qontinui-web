@@ -198,7 +198,9 @@ class CodeExecutionService:
 
                 with time_limit(request.timeout):
                     # Execute code
-                    exec(request.code, safe_globals, safe_locals)  # noqa: S102 - sandboxed execution with restricted globals
+                    exec(
+                        request.code, safe_globals, safe_locals
+                    )  # noqa: S102 - sandboxed execution with restricted globals
 
                     # Get result (last expression or explicit return)
                     result = safe_locals.get("result", None)
@@ -206,7 +208,9 @@ class CodeExecutionService:
                     # If no 'result' variable, try to evaluate as expression
                     if result is None:
                         try:
-                            result = eval(request.code, safe_globals, safe_locals)  # noqa: S307 - sandboxed eval with restricted globals
+                            result = eval(
+                                request.code, safe_globals, safe_locals
+                            )  # noqa: S307 - sandboxed eval with restricted globals
                         except Exception:
                             # If not an expression, result is None
                             pass

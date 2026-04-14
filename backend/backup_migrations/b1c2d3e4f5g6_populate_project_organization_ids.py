@@ -34,7 +34,9 @@ def upgrade() -> None:
 
     # Update projects to reference their owner's personal organization
     # This uses a SQL UPDATE with a subquery to find the personal org
-    connection.execute(sa.text("""
+    connection.execute(
+        sa.text(
+            """
             UPDATE projects p
             SET organization_id = (
                 SELECT o.id
@@ -50,14 +52,20 @@ def upgrade() -> None:
                 WHERE o.owner_id = p.owner_id
                 AND (o.slug LIKE '%-personal%' OR o.slug LIKE '%-personal-%')
             )
-        """))
+        """
+        )
+    )
 
     # Log how many projects were updated
-    result = connection.execute(sa.text("""
+    result = connection.execute(
+        sa.text(
+            """
             SELECT COUNT(*)
             FROM projects
             WHERE organization_id IS NOT NULL
-        """))
+        """
+        )
+    )
     projects_with_org = result.fetchone()[0]
 
     result = connection.execute(sa.text("SELECT COUNT(*) FROM projects"))
@@ -66,12 +74,16 @@ def upgrade() -> None:
     print(f"Updated {projects_with_org}/{total_projects} projects with organization_id")
 
     # Warn about any projects without an organization
-    result = connection.execute(sa.text("""
+    result = connection.execute(
+        sa.text(
+            """
             SELECT id, name, owner_id
             FROM projects
             WHERE organization_id IS NULL
             LIMIT 10
-        """))
+        """
+        )
+    )
     orphaned_projects = result.fetchall()
 
     if orphaned_projects:
@@ -97,10 +109,14 @@ def downgrade() -> None:
     connection = op.get_bind()
 
     # Clear organization_id from all projects
-    connection.execute(sa.text("""
+    connection.execute(
+        sa.text(
+            """
             UPDATE projects
             SET organization_id = NULL
             WHERE organization_id IS NOT NULL
-        """))
+        """
+        )
+    )
 
     print("Cleared organization_id from all projects")

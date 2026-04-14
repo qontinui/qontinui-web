@@ -60,11 +60,13 @@ async def main():
     print("SQL Query to run in AWS RDS:")
     print("=" * 60)
     # Use parameterized query syntax for safety
-    print("""
+    print(
+        """
 UPDATE users
 SET hashed_password = $1
 WHERE email = $2;
-""")
+"""
+    )
     print(f"Parameters: ['{hashed}', '{email}']")
     print("=" * 60)
     print("\nRun this command to execute:")

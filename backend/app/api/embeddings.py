@@ -36,7 +36,9 @@ def _get_provider():
                 get_embedding_provider,
             )
 
-            config = EmbeddingConfig(provider=EmbeddingProviderType.SENTENCE_TRANSFORMERS)
+            config = EmbeddingConfig(
+                provider=EmbeddingProviderType.SENTENCE_TRANSFORMERS
+            )
             _provider = get_embedding_provider(config)
             logger.info(
                 "embedding_provider_loaded",

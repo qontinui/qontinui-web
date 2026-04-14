@@ -14,9 +14,9 @@ This package provides modular components for handling WebSocket automation:
 
 from app.websockets.automation.connection_handler import ConnectionHandler
 from app.websockets.automation.message_handlers import (
-                                                        handle_input_event,
-                                                        handle_screenshot,
-                                                        store_tree_event,
+    handle_input_event,
+    handle_screenshot,
+    store_tree_event,
 )
 from app.websockets.automation.message_router import MessageRouter
 from app.websockets.automation.schemas import WSMessage, make_timestamp
