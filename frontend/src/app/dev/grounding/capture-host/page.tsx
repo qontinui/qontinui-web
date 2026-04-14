@@ -12,6 +12,15 @@
  *   <CaptureHostFrame messageKind="grounding-bbox" initialSrc={...} />
  *
  * Pattern docs: see `proj_ui_bridge_capture_host_pattern.md` in memory.
+ *
+ * Two bbox signal channels are supported (see the iframe route for how they
+ * are populated):
+ *   - Channel A: window.postMessage({kind: "grounding-bbox", ...}).
+ *     Works when the host tab is focused.  Mirrored into the
+ *     `capture-last-bbox` / `capture-last-echo` inputs for automation via
+ *     /control/snapshot.
+ *   - Channel B: fetch('/api/grounding-isolated/bbox').  Tab-focus-
+ *     independent. Polled directly by the capture driver.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";

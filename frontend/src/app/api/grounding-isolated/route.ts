@@ -174,7 +174,50 @@ export async function GET(request: NextRequest) {
     // via (a) window.__GROUNDING_BBOX__, (b) body data-attr, (c) a postMessage
     // to the parent window (when the page is embedded by the capture-host).
     var SAMPLE_INDEX = ${Number.isFinite(sampleIndex) ? sampleIndex : -1};
-    requestAnimationFrame(function() {
+    // Immediate diagnostic ping — fires even if requestAnimationFrame is
+    // throttled (backgrounded tab). Targets BOTH window.parent and
+    // window.top to rule out nested-browsing-context issues. Also POSTs
+    // to the server-side signal channel so the capture driver can see
+    // that the iframe at least reached this script regardless of tab focus.
+    (function() {
+      var payload = {
+        kind: 'grounding-iframe-loaded',
+        sampleIndex: SAMPLE_INDEX,
+        href: location.href,
+        selfIsTop: window === window.top,
+        selfIsParent: window === window.parent,
+        at: Date.now()
+      };
+      try {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage(payload, '*');
+        }
+      } catch (e) { /* ignore */ }
+      try {
+        if (window.top && window.top !== window && window.top !== window.parent) {
+          window.top.postMessage(payload, '*');
+        }
+      } catch (e) { /* ignore */ }
+      try {
+        fetch('/api/grounding-isolated/bbox', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sampleIndex: SAMPLE_INDEX,
+            x: -1, y: -1, width: 0, height: 0,
+            viewportWidth: window.innerWidth, viewportHeight: window.innerHeight,
+            component: null, variant: null,
+            _iframeLoadedPing: true
+          }),
+          keepalive: true
+        });
+      } catch (e) { /* ignore */ }
+    })();
+    // Synchronous fallback: if RAF never fires (deeply backgrounded tab),
+    // do a setTimeout(0) path that still measures + reports. Running both
+    // is harmless — the server just overwrites the entry for this
+    // sampleIndex with whichever call lands last.
+    function measureAndReport() {
       var el = document.querySelector('[data-grounding-target="true"]');
       if (!el) return;
       var r = el.getBoundingClientRect();
@@ -189,8 +232,6 @@ export async function GET(request: NextRequest) {
       };
       window.__GROUNDING_BBOX__ = bbox;
       document.body.setAttribute('data-grounding-bbox', JSON.stringify(bbox));
-      // Notify the capture-host (or any parent) that we've rendered this
-      // sample, so it can drive mss screenshot + dataset write.
       try {
         if (window.parent && window.parent !== window) {
           window.parent.postMessage(
@@ -198,7 +239,18 @@ export async function GET(request: NextRequest) {
           );
         }
       } catch (e) { /* cross-origin */ }
-    });
+      try {
+        fetch('/api/grounding-isolated/bbox', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(bbox),
+          keepalive: true
+        });
+      } catch (e) { /* ignore */ }
+    }
+    setTimeout(measureAndReport, 0);
+    // Also try via RAF for the common (foreground) path.
+    requestAnimationFrame(measureAndReport);
   </script>
 </body>
 </html>`;
