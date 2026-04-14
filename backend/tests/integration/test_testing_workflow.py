@@ -13,13 +13,18 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.project import Project
 from app.models.runner_connection import RunnerConnection
 from app.models.software_test_run import SoftwareTestRun, TestRunStatus
-from app.models.test_deficiency import (DeficiencySeverity, DeficiencyStatus,
-                                        DeficiencyType, TestDeficiency)
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from app.models.test_deficiency import (
+    DeficiencySeverity,
+    DeficiencyStatus,
+    DeficiencyType,
+    TestDeficiency,
+)
 
 from .conftest import create_test_runs
 

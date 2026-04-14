@@ -7,8 +7,11 @@ from app.services.stripe.subscription_service import StripeSubscriptionService
 from app.services.stripe.tier_service import TierService
 from app.services.stripe.webhook_handler import StripeWebhookHandler
 from app.services.stripe.webhook_processors import (
-    CheckoutCompletedProcessor, PaymentFailedProcessor,
-    SubscriptionDeletedProcessor, SubscriptionUpdatedProcessor)
+    CheckoutCompletedProcessor,
+    PaymentFailedProcessor,
+    SubscriptionDeletedProcessor,
+    SubscriptionUpdatedProcessor,
+)
 
 __all__ = [
     "StripeFacade",

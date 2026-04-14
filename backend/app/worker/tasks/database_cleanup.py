@@ -9,11 +9,16 @@ This module handles cleanup of database records including:
 from datetime import timedelta
 from typing import Any
 
-from app.core.config import settings
-from app.worker.tasks.cleanup_utils import (CleanupResult, TaskTimer,
-                                            create_error_result,
-                                            create_success_result, logger)
 from qontinui_schemas.common import utc_now
+
+from app.core.config import settings
+from app.worker.tasks.cleanup_utils import (
+    CleanupResult,
+    TaskTimer,
+    create_error_result,
+    create_success_result,
+    logger,
+)
 
 
 async def cleanup_expired_sessions(ctx: dict[str, Any]) -> CleanupResult:
@@ -31,9 +36,10 @@ async def cleanup_expired_sessions(ctx: dict[str, Any]) -> CleanupResult:
 
     with TaskTimer() as timer:
         try:
+            from sqlalchemy import delete
+
             from app.db.session import AsyncSessionLocal
             from app.models.session_activity import SessionActivity
-            from sqlalchemy import delete
 
             async with AsyncSessionLocal() as db:
                 # Delete sessions that have passed their absolute expiry
@@ -85,9 +91,10 @@ async def cleanup_expired_device_sessions(ctx: dict[str, Any]) -> CleanupResult:
 
     with TaskTimer() as timer:
         try:
+            from sqlalchemy import delete
+
             from app.db.session import AsyncSessionLocal
             from app.models.device_session import DeviceSession
-            from sqlalchemy import delete
 
             # Use configured cleanup days
             days_to_keep = settings.CLEANUP_SESSION_DAYS
@@ -147,8 +154,9 @@ async def cleanup_token_blacklist(ctx: dict[str, Any]) -> CleanupResult:
 
     with TaskTimer() as timer:
         try:
-            from app.services.auth.token_blacklist_service import \
-                token_blacklist_service
+            from app.services.auth.token_blacklist_service import (
+                token_blacklist_service,
+            )
 
             deleted_count = await token_blacklist_service.clean_expired_tokens()
 

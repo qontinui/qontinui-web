@@ -21,12 +21,13 @@ from contextlib import contextmanager
 from typing import Any
 
 import structlog
-from app.core.config import settings
 from fastapi import Request, Response
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.middleware.base import BaseHTTPMiddleware
+
+from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
 

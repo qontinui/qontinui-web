@@ -4,13 +4,14 @@ import json
 import logging
 from typing import Any
 
+from fastapi import APIRouter, Depends, HTTPException, status
+from redis import asyncio as aioredis
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.config.redis_config import get_redis
 from app.models.user import User
 from app.schemas.settings import QontinuiSettings, QontinuiSettingsUpdate
-from fastapi import APIRouter, Depends, HTTPException, status
-from redis import asyncio as aioredis
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 

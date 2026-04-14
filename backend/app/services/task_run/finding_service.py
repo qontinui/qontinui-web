@@ -8,17 +8,23 @@ for findings detected during task runs.
 from uuid import UUID
 
 import structlog
-from app.models.task_run import (FindingActionType, FindingCategory,
-                                 FindingSeverity, FindingStatus,
-                                 TaskRunFinding)
-from app.repositories.task_run import TaskRunFindingRepository
-from app.services.task_run.mappers import (_get_enum_value,
-                                           model_to_finding_response)
-from app.services.task_run.schemas import (TaskRunFindingResponse,
-                                           TaskRunFindingsBatch,
-                                           TaskRunFindingsListResponse,
-                                           TaskRunFindingUpdate)
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.task_run import (
+    FindingActionType,
+    FindingCategory,
+    FindingSeverity,
+    FindingStatus,
+    TaskRunFinding,
+)
+from app.repositories.task_run import TaskRunFindingRepository
+from app.services.task_run.mappers import _get_enum_value, model_to_finding_response
+from app.services.task_run.schemas import (
+    TaskRunFindingResponse,
+    TaskRunFindingsBatch,
+    TaskRunFindingsListResponse,
+    TaskRunFindingUpdate,
+)
 
 logger = structlog.get_logger(__name__)
 

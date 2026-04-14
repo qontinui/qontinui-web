@@ -8,17 +8,17 @@ when WebSocket connections are not available.
 from typing import Any
 
 import structlog
-from app.api.deps import get_async_db, get_current_active_user_async
-from app.config.redis_config import get_redis
-from app.models.runner_connection import RunnerConnection
-from app.models.user import User as UserModel
-from app.services.runner_connection_manager import \
-    get_runner_connection_manager
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from qontinui_schemas.common import utc_now
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_async_db, get_current_active_user_async
+from app.config.redis_config import get_redis
+from app.models.runner_connection import RunnerConnection
+from app.models.user import User as UserModel
+from app.services.runner_connection_manager import get_runner_connection_manager
 
 logger = structlog.get_logger(__name__)
 

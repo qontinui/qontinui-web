@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import structlog
+
 from app.core.log_sanitizer import sanitize_log_data
 
 # Development log file location (for Claude Code access)

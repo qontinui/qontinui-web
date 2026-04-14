@@ -2,8 +2,9 @@
 
 from uuid import UUID
 
-from app.schemas.base import IsoDatetime
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.base import IsoDatetime
 
 # =============================================================================
 # Pagination

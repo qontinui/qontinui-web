@@ -17,13 +17,14 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 import structlog
-from app.api.deps import current_active_user, get_current_user_from_ws
-from app.models.user import User
-from app.config.redis_config import get_redis
-from app.core.config import settings
-from app.services.device_bridge_service import DeviceBridgeService
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import JSONResponse
+
+from app.api.deps import current_active_user, get_current_user_from_ws
+from app.config.redis_config import get_redis
+from app.core.config import settings
+from app.models.user import User
+from app.services.device_bridge_service import DeviceBridgeService
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)

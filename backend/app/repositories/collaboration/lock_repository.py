@@ -8,10 +8,11 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from app.models.collaboration import ProjectLock, ResourceType
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
+
+from app.models.collaboration import ProjectLock, ResourceType
 
 
 class LockRepository:

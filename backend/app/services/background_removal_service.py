@@ -32,7 +32,9 @@ class BackgroundRemovalService:
         try:
             # Import qontinui background removal module
             from qontinui.discovery.background_removal import (
-                BackgroundRemovalConfig, remove_backgrounds_from_base64)
+                BackgroundRemovalConfig,
+                remove_backgrounds_from_base64,
+            )
 
             # Store the function for use in remove_backgrounds
             self._remove_backgrounds_from_base64 = remove_backgrounds_from_base64

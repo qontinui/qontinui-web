@@ -10,8 +10,7 @@ All functionality has been refactored into:
 """
 
 # Re-export everything from the new location for backward compatibility
-from app.services.notifications.core import (NotificationService,
-                                             notification_service)
+from app.services.notifications.core import NotificationService, notification_service
 
 __all__ = [
     "NotificationService",

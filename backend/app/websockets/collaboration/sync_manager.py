@@ -11,12 +11,18 @@ from typing import Any, cast
 from uuid import UUID
 
 import structlog
-from app.models.collaboration import (ActionType, ActivityLog, ProjectComment,
-                                      ProjectLock, ResourceType)
-from app.models.user import User
 from sqlalchemy import and_, delete, select
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.collaboration import (
+    ActionType,
+    ActivityLog,
+    ProjectComment,
+    ProjectLock,
+    ResourceType,
+)
+from app.models.user import User
 
 logger = structlog.get_logger(__name__)
 

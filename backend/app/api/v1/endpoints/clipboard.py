@@ -10,13 +10,14 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from app.api.deps import get_async_db, get_current_active_user_async
-from app.models.clipboard import ClipboardEntry
-from app.models.user import User
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_async_db, get_current_active_user_async
+from app.models.clipboard import ClipboardEntry
+from app.models.user import User
 
 logger = structlog.get_logger(__name__)
 

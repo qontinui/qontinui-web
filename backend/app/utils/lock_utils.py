@@ -8,9 +8,10 @@ are locked before allowing modifications.
 from uuid import UUID
 
 import structlog
-from app.models.collaboration import ProjectLock
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.collaboration import ProjectLock
 
 logger = structlog.get_logger(__name__)
 

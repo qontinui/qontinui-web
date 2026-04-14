@@ -12,12 +12,22 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from uuid import UUID as PyUUID
 
-from app.db.base import Base
-from sqlalchemy import (JSON, Boolean, Column, DateTime, ForeignKey, Integer,
-                        String, Text, text)
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base
 
 
 class ResourceType(StrEnum):

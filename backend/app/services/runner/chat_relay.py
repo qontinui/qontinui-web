@@ -10,9 +10,10 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 import structlog
-from app.services.runner.connection_registry import WebSocketConnectionRegistry
 from fastapi import WebSocket, WebSocketDisconnect
 from redis import asyncio as aioredis
+
+from app.services.runner.connection_registry import WebSocketConnectionRegistry
 
 logger = structlog.get_logger(__name__)
 

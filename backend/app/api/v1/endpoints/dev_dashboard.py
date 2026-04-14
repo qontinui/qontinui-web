@@ -5,11 +5,17 @@ These endpoints are unauthenticated (dev-only, LAN access).
 """
 
 import structlog
-from app.schemas.dev_dashboard import (AggregatedTaskRuns, ClaudeSessionReport,
-                                       FleetStatus, RegisteredRunner,
-                                       RunnerHeartbeat, RunnerTaskRun)
-from app.services.dev_dashboard_service import get_fleet_registry
 from fastapi import APIRouter, HTTPException, Query
+
+from app.schemas.dev_dashboard import (
+    AggregatedTaskRuns,
+    ClaudeSessionReport,
+    FleetStatus,
+    RegisteredRunner,
+    RunnerHeartbeat,
+    RunnerTaskRun,
+)
+from app.services.dev_dashboard_service import get_fleet_registry
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

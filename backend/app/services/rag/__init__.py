@@ -7,10 +7,13 @@ This package provides modular components for managing RAG configuration:
 The main RAGBuilderService facade is exported from app.services.rag_builder.
 """
 
-from app.services.rag.embedding_processor import (EmbeddingProcessor,
-                                                  embedding_processor)
-from app.services.rag.entity_crud import (RAGEntityCRUD, element_crud,
-                                          state_crud, transition_crud)
+from app.services.rag.embedding_processor import EmbeddingProcessor, embedding_processor
+from app.services.rag.entity_crud import (
+                                                  RAGEntityCRUD,
+                                                  element_crud,
+                                                  state_crud,
+                                                  transition_crud,
+)
 
 __all__ = [
     # Entity CRUD

@@ -7,8 +7,9 @@ for secure token storage (XSS protection).
 
 from typing import Literal, TypedDict
 
-from app.core.config import settings
 from fastapi import Response
+
+from app.core.config import settings
 
 
 class CookieParams(TypedDict, total=False):

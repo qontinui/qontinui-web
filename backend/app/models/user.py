@@ -1,10 +1,11 @@
 from datetime import UTC, datetime
 
-from app.db.base import Base
 from fastapi_users.db import SQLAlchemyBaseUserTableUUID
 from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base
 
 
 class User(SQLAlchemyBaseUserTableUUID, Base):

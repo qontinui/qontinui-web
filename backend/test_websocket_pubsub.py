@@ -11,8 +11,9 @@ import json
 import sys
 from datetime import UTC, datetime
 
-from app.core.config import settings
 from redis import asyncio as aioredis
+
+from app.core.config import settings
 
 
 async def broadcast_test_message(session_id: str, message_type: str = "test_event"):

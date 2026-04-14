@@ -11,8 +11,9 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
-from app.services.screenshot_storage import screenshot_storage
 from PIL import Image
+
+from app.services.screenshot_storage import screenshot_storage
 
 logger = structlog.get_logger(__name__)
 

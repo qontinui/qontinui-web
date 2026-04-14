@@ -86,7 +86,7 @@ class Settings(BaseSettings):
         raise ValueError(v)
 
     # Server
-    HOST: str = Field(default="0.0.0.0")
+    HOST: str = Field(default="0.0.0.0")  # noqa: S104 - intentional bind for server
     PORT: int = Field(default=8000)
     RELOAD: bool = Field(default=True)
     DEBUG: bool = Field(default=True)

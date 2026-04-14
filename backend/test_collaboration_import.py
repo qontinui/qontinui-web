@@ -12,9 +12,13 @@ def test_imports():
 
     # Test models
     try:
-        from app.models.collaboration import (ActionType, ActivityLog,
-                                              ProjectComment, ProjectLock,
-                                              ResourceType)
+        from app.models.collaboration import (
+            ActionType,
+            ActivityLog,
+            ProjectComment,
+            ProjectLock,
+            ResourceType,
+        )
 
         print("✓ Models imported successfully")
         print(f"  - ProjectLock: {ProjectLock.__tablename__}")

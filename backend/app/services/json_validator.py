@@ -8,8 +8,9 @@ import hashlib
 import re
 from typing import Any
 
-from app.schemas.export import QontinuiConfig, ValidationResult
 from pydantic import ValidationError
+
+from app.schemas.export import QontinuiConfig, ValidationResult
 
 
 class JSONConfigValidator:

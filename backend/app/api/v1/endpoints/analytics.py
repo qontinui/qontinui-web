@@ -2,13 +2,14 @@ import hashlib
 from datetime import UTC, datetime, timedelta
 
 import structlog
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.models.user import User
 from app.services.analytics_service import analytics_service
 from app.services.geolocation_service import geolocation_service
 from app.services.metrics_service import metrics_service
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

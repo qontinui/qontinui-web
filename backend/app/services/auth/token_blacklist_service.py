@@ -10,9 +10,10 @@ import threading
 from datetime import UTC, datetime
 
 import structlog
+from redis import asyncio as aioredis
+
 from app.config.redis_config import RedisConfig
 from app.core.config import settings
-from redis import asyncio as aioredis
 
 logger = structlog.get_logger(__name__)
 

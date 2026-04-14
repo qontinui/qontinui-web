@@ -1,13 +1,14 @@
 from uuid import UUID
 
 import structlog
+from fastapi import HTTPException, status
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.project import Project
 from app.schemas.project import ProjectCreate, ProjectUpdate
 from app.services.project_directory import ProjectDirectoryManager
 from app.services.stripe_service import StripeService
-from fastapi import HTTPException, status
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

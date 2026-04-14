@@ -2,10 +2,11 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from app.models.storage_usage import StorageUsage
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.storage_usage import StorageUsage
 
 
 class StorageQuotaExceeded(HTTPException):

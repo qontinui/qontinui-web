@@ -8,17 +8,24 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
-from app.models.software_test_run import SoftwareTestRun
-from app.models.test_deficiency import (DeficiencySeverity, DeficiencyStatus,
-                                        DeficiencyType, TestDeficiency)
-from app.models.test_screenshot import TestScreenshot
-from app.models.visual_comparison_result import (ReviewDecision,
-                                                 VisualComparisonResult,
-                                                 VisualComparisonStatus)
-from app.services.visual_testing.comparison_engine import ComparisonEngine
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+from app.models.software_test_run import SoftwareTestRun
+from app.models.test_deficiency import (
+    DeficiencySeverity,
+    DeficiencyStatus,
+    DeficiencyType,
+    TestDeficiency,
+)
+from app.models.test_screenshot import TestScreenshot
+from app.models.visual_comparison_result import (
+    ReviewDecision,
+    VisualComparisonResult,
+    VisualComparisonStatus,
+)
+from app.services.visual_testing.comparison_engine import ComparisonEngine
 
 logger = structlog.get_logger(__name__)
 

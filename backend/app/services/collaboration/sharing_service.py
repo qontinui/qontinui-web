@@ -11,14 +11,18 @@ from typing import Any, cast
 from uuid import UUID
 
 import structlog
-from app.models.organization import (Organization, OrganizationInvitation,
-                                     PermissionLevel)
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.organization import (
+    Organization,
+    OrganizationInvitation,
+    PermissionLevel,
+)
 from app.repositories.collaboration.access_repository import access_repository
 from app.schemas.collaboration import CollaboratorResponse
 from app.services.email.email_template_service import EmailTemplateService
 from app.services.email.email_transport_service import EmailTransportService
 from app.services.permission_service import permission_service
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

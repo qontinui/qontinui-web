@@ -4,14 +4,17 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
+
 from app.models.device_session import DeviceSession
 from app.models.session_activity import SessionActivity
 from app.worker.scheduler import run_all_cleanup_tasks
-from app.worker.tasks import (cleanup_expired_device_sessions,
-                              cleanup_expired_sessions,
-                              cleanup_old_analytics_events,
-                              cleanup_token_blacklist)
-from sqlalchemy import select
+from app.worker.tasks import (
+    cleanup_expired_device_sessions,
+    cleanup_expired_sessions,
+    cleanup_old_analytics_events,
+    cleanup_token_blacklist,
+)
 
 
 @pytest.mark.asyncio
@@ -116,8 +119,7 @@ async def test_cleanup_old_analytics_events():
 @pytest.mark.asyncio
 async def test_cleanup_token_blacklist():
     """Test cleanup of expired tokens from blacklist."""
-    from app.services.auth.token_blacklist_service import \
-        token_blacklist_service
+    from app.services.auth.token_blacklist_service import token_blacklist_service
 
     # Add expired tokens to blacklist
     expired_jti = str(uuid4())

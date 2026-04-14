@@ -4,8 +4,9 @@ Pydantic schemas for device sessions.
 
 from uuid import UUID
 
-from app.schemas.base import IsoDatetime
 from pydantic import BaseModel
+
+from app.schemas.base import IsoDatetime
 
 
 class DeviceSessionBase(BaseModel):

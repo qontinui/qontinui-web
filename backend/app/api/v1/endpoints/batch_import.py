@@ -12,10 +12,11 @@ from typing import Any
 from uuid import uuid4
 
 import structlog
-from app.api import deps
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api import deps
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -493,7 +494,7 @@ async def batch_import_annotations(
                 for el in elements:
                     # Create hash from label and bbox
                     hash_str = f"{el.label}-{el.bbox['x']}-{el.bbox['y']}-{el.bbox['width']}-{el.bbox['height']}"
-                    element_hash = hashlib.md5(hash_str.encode()).hexdigest()
+                    element_hash = hashlib.md5(hash_str.encode(), usedforsecurity=False).hexdigest()
 
                     if element_hash not in existing_hashes:
                         existing_hashes.add(element_hash)

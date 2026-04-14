@@ -6,13 +6,20 @@ Converts SQLAlchemy models to Pydantic response schemas.
 
 from typing import Any
 
-from app.models.task_run import (DeferredQuestion, TaskRun, TaskRunAutomation,
-                                 TaskRunFinding, TaskRunSession)
-from app.services.task_run.schemas import (DeferredQuestionResponse,
-                                           TaskRunAutomationResponse,
-                                           TaskRunFindingResponse,
-                                           TaskRunResponse,
-                                           TaskRunSessionResponse)
+from app.models.task_run import (
+    DeferredQuestion,
+    TaskRun,
+    TaskRunAutomation,
+    TaskRunFinding,
+    TaskRunSession,
+)
+from app.services.task_run.schemas import (
+    DeferredQuestionResponse,
+    TaskRunAutomationResponse,
+    TaskRunFindingResponse,
+    TaskRunResponse,
+    TaskRunSessionResponse,
+)
 
 
 def _get_enum_value(val: Any) -> str:

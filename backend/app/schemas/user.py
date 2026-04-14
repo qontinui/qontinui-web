@@ -1,9 +1,10 @@
 import uuid
 from typing import Literal
 
-from app.schemas.base import IsoDatetime
 from fastapi_users import schemas
 from pydantic import BaseModel, ConfigDict, EmailStr
+
+from app.schemas.base import IsoDatetime
 
 
 class UserPreferences(BaseModel):

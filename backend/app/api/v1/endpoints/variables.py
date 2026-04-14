@@ -11,19 +11,26 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import current_active_user, get_async_db
 from app.crud import variable as variable_crud
 from app.models.project import Project
 from app.models.user import User
-from app.schemas.variable import (VariableCreate, VariableHistoryListResponse,
-                                  VariableHistoryRead, VariableListResponse,
-                                  VariableRead, VariableScope,
-                                  VariableSnapshot, VariableSnapshotResponse,
-                                  VariableUpdate)
+from app.schemas.variable import (
+    VariableCreate,
+    VariableHistoryListResponse,
+    VariableHistoryRead,
+    VariableListResponse,
+    VariableRead,
+    VariableScope,
+    VariableSnapshot,
+    VariableSnapshotResponse,
+    VariableUpdate,
+)
 from app.utils.authorization import verify_project_access
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

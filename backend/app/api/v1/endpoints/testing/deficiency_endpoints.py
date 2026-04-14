@@ -12,24 +12,34 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from app.api.deps import current_active_user, get_async_db
-from app.models.user import User
-from app.schemas.testing import (DeficiencyCommentCreate,
-                                 DeficiencyCommentResponse, DeficiencyDetail,
-                                 DeficiencyListResponse, DeficiencyResponse,
-                                 DeficiencyUpdate)
-from app.services.deficiency_management_service import \
-    DeficiencyManagementService
-from app.services.test_run_service import TestRunService
 from fastapi import APIRouter, Depends, Query, status
 from qontinui_schemas.common import utc_now
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .deps import (DeficiencyNotFoundError, ProjectAccessDeniedError,
-                   TestRunNotFoundError, get_deficiency_service,
-                   get_test_run_service, handle_deficiency_not_found,
-                   handle_project_access_denied, handle_test_run_not_found,
-                   verify_project_access_or_raise)
+from app.api.deps import current_active_user, get_async_db
+from app.models.user import User
+from app.schemas.testing import (
+    DeficiencyCommentCreate,
+    DeficiencyCommentResponse,
+    DeficiencyDetail,
+    DeficiencyListResponse,
+    DeficiencyResponse,
+    DeficiencyUpdate,
+)
+from app.services.deficiency_management_service import DeficiencyManagementService
+from app.services.test_run_service import TestRunService
+
+from .deps import (
+    DeficiencyNotFoundError,
+    ProjectAccessDeniedError,
+    TestRunNotFoundError,
+    get_deficiency_service,
+    get_test_run_service,
+    handle_deficiency_not_found,
+    handle_project_access_denied,
+    handle_test_run_not_found,
+    verify_project_access_or_raise,
+)
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

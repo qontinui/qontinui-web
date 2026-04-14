@@ -10,18 +10,27 @@ Provides centralized access control split into focused modules:
 All classes and the singleton instance are re-exported here.
 """
 
-from app.services.permissions.helpers import (PERMISSION_HIERARCHY,
+from app.services.permissions.helpers import (
+                                              PERMISSION_HIERARCHY,
                                               ROLE_HIERARCHY,
                                               check_permission_level,
-                                              check_role_level)
+                                              check_role_level,
+)
 from app.services.permissions.organization_access import (
-    can_user_manage_organization, check_organization_membership,
-    get_personal_organization, get_user_organization_role)
-from app.services.permissions.permission_service import (PermissionService,
-                                                         permission_service)
+                                              can_user_manage_organization,
+                                              check_organization_membership,
+                                              get_personal_organization,
+                                              get_user_organization_role,
+)
+from app.services.permissions.permission_service import (
+                                              PermissionService,
+                                              permission_service,
+)
 from app.services.permissions.project_access import (
-    can_user_access_project, get_user_accessible_projects,
-    get_user_permission_level)
+                                              can_user_access_project,
+                                              get_user_accessible_projects,
+                                              get_user_permission_level,
+)
 
 __all__ = [
     # Service class and singleton

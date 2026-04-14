@@ -12,12 +12,13 @@ def my_function(input, context: AutomationContext):
 
 from typing import Any
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.services.action_executor import ActionExecutor
 from app.services.pattern_matcher import PatternMatcher
 from app.services.screenshot_capture import ScreenshotCapture
 from app.services.state_tracker import StateTracker
 from app.services.variable_store import VariableStore
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class AutomationContext:

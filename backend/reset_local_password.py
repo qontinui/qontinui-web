@@ -16,11 +16,14 @@ import sys
 # Add backend to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import app.core.passlib_bcrypt5_compat  # noqa: F401, E402  # bcrypt 5 compat patch
-from app.core.test_credentials import DEV_USER_EMAIL  # noqa: E402
-from app.core.test_credentials import STANDARD_DEV_PASSWORD
 from passlib.context import CryptContext  # noqa: E402
 from sqlalchemy import create_engine, text  # noqa: E402
+
+import app.core.passlib_bcrypt5_compat  # noqa: F401, E402  # bcrypt 5 compat patch
+from app.core.test_credentials import (
+    DEV_USER_EMAIL,  # noqa: E402
+    STANDARD_DEV_PASSWORD,
+)
 
 # Password hashing context (same as used in the app)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

@@ -8,9 +8,12 @@ the ImageProcessingService works correctly.
 
 import io
 
-from app.services.image_processing_service import (THUMBNAIL_SIZES,
-                                                   ImageProcessingService)
 from PIL import Image
+
+from app.services.image_processing_service import (
+    THUMBNAIL_SIZES,
+    ImageProcessingService,
+)
 
 
 def create_test_image(width: int = 3000, height: int = 2000) -> bytes:

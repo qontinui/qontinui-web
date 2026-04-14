@@ -8,10 +8,11 @@ embedding generation jobs, and performing semantic search.
 from typing import Any
 from uuid import UUID
 
-from app.models.embedding_generation_job import EmbeddingGenerationJob
-from app.models.project_embedding import ProjectEmbedding
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.embedding_generation_job import EmbeddingGenerationJob
+from app.models.project_embedding import ProjectEmbedding
 
 
 async def get_dashboard_stats(

@@ -10,12 +10,13 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import structlog
-from app.config.redis_config import RedisConfig
-from app.core.config import settings
-from app.models.collaboration import ProjectLock, ResourceType
 from redis import asyncio as aioredis
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config.redis_config import RedisConfig
+from app.core.config import settings
+from app.models.collaboration import ProjectLock, ResourceType
 
 logger = structlog.get_logger(__name__)
 

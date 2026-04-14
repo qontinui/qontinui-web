@@ -10,9 +10,10 @@ This endpoint requires user authentication and project access.
 
 from typing import Any
 
+from fastapi import APIRouter, Depends, HTTPException
+
 from app.api.deps import current_active_user
 from app.models.user import User
-from fastapi import APIRouter, Depends, HTTPException
 
 router = APIRouter(tags=["scheduler"], prefix="/scheduler")
 

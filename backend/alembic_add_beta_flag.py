@@ -10,8 +10,9 @@ from pathlib import Path
 # Add the backend directory to the path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from app.db.session import engine  # noqa: E402
 from sqlalchemy import inspect, text  # noqa: E402
+
+from app.db.session import engine  # noqa: E402
 
 
 def add_beta_flag():

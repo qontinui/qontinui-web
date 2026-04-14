@@ -7,8 +7,9 @@ Provides request/response models for the AI prompt library API.
 from typing import Any
 from uuid import UUID
 
-from app.schemas.base import IsoDatetime
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.base import IsoDatetime
 
 # ===== AI Prompt Template Schemas =====
 

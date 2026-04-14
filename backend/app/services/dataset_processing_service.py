@@ -14,13 +14,18 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from app.models.training_dataset import (AnnotationSource, DatasetSource,
-                                         ElementType, TrainingDataset,
-                                         TrainingDatasetAnnotation,
-                                         TrainingDatasetImage)
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.training_dataset import (
+    AnnotationSource,
+    DatasetSource,
+    ElementType,
+    TrainingDataset,
+    TrainingDatasetAnnotation,
+    TrainingDatasetImage,
+)
 from app.repositories.training_dataset import TrainingDatasetRepository
 from app.services.object_storage import object_storage
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

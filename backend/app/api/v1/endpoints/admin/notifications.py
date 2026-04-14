@@ -3,14 +3,17 @@
 from typing import Any
 
 import structlog
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import get_async_db
 from app.api.v1.endpoints.admin.dependencies import require_admin
 from app.models.user import User
-from app.schemas.admin import (AdminNotificationSettingsResponse,
-                               AdminNotificationSettingsUpdate)
+from app.schemas.admin import (
+    AdminNotificationSettingsResponse,
+    AdminNotificationSettingsUpdate,
+)
 from app.services.admin_notification_service import admin_notification_service
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -102,8 +105,7 @@ async def send_test_notification(
     Sends a test email to the configured notification email address.
     Returns success or failure status.
     """
-    from app.services.email.email_transport_service import \
-        EmailTransportService
+    from app.services.email.email_transport_service import EmailTransportService
 
     settings = await admin_notification_service.get_or_create_settings(
         db, default_email=current_user.email

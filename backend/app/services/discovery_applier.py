@@ -13,6 +13,8 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.crud.project import get_project, update_project
 from app.crud.version import create_command
 from app.models.discovery import Discovery
@@ -20,7 +22,6 @@ from app.models.project import Project
 from app.schemas.project import ProjectUpdate
 from app.schemas.version import EditCommandCreate
 from app.services.version_history_service import VersionHistoryService
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

@@ -1,6 +1,10 @@
 """Password management endpoints."""
 
 import structlog
+from fastapi import APIRouter, Depends, Request, Response
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import current_active_user, get_async_db
 from app.core.config import settings
 from app.core.error_codes import ErrorCode
@@ -10,9 +14,6 @@ from app.middleware.rate_limit import auth_rate_limit
 from app.models.user import User
 from app.services.auth_analytics_service import auth_analytics_service
 from app.services.device_session_service import device_session_service
-from fastapi import APIRouter, Depends, Request, Response
-from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

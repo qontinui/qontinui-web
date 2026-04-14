@@ -21,8 +21,11 @@ from datetime import datetime
 from typing import Any
 
 from app.core.security.code_policy import CodeSecurityPolicy
-from app.schemas.code_execution import (CodeExecutionRequest,
-                                        CodeExecutionResult, ExecutionContext)
+from app.schemas.code_execution import (
+    CodeExecutionRequest,
+    CodeExecutionResult,
+    ExecutionContext,
+)
 from app.services.automation_context import AutomationContext
 from app.utils.code_validator import CodeValidationError, CodeValidator
 from app.utils.timeout import ExecutionTimeoutError, time_limit
@@ -195,7 +198,7 @@ class CodeExecutionService:
 
                 with time_limit(request.timeout):
                     # Execute code
-                    exec(request.code, safe_globals, safe_locals)
+                    exec(request.code, safe_globals, safe_locals)  # noqa: S102 - sandboxed execution with restricted globals
 
                     # Get result (last expression or explicit return)
                     result = safe_locals.get("result", None)
@@ -203,7 +206,7 @@ class CodeExecutionService:
                     # If no 'result' variable, try to evaluate as expression
                     if result is None:
                         try:
-                            result = eval(request.code, safe_globals, safe_locals)
+                            result = eval(request.code, safe_globals, safe_locals)  # noqa: S307 - sandboxed eval with restricted globals
                         except Exception:
                             # If not an expression, result is None
                             pass

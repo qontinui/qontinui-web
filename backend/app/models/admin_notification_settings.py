@@ -9,9 +9,10 @@ Stores global settings for admin email notifications including:
 
 from datetime import UTC, datetime
 
-from app.db.base import Base
 from sqlalchemy import Boolean, Column, DateTime, String, text
 from sqlalchemy.dialects.postgresql import UUID
+
+from app.db.base import Base
 
 
 class AdminNotificationSettings(Base):

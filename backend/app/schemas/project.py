@@ -1,9 +1,10 @@
 from typing import Annotated, Any
 from uuid import UUID
 
-from app.schemas.base import BaseORMSchema, BaseSchema, IsoDatetime
 from pydantic.functional_serializers import PlainSerializer
 from pydantic.functional_validators import BeforeValidator
+
+from app.schemas.base import BaseORMSchema, BaseSchema, IsoDatetime
 
 # Custom type that accepts int, UUID, or str and serializes to string
 # The BeforeValidator converts any input to string first, then PlainSerializer ensures string output

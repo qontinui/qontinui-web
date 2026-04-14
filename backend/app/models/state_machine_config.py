@@ -8,10 +8,11 @@ fingerprint details) in PostgreSQL for cross-device persistence.
 import uuid
 from datetime import UTC, datetime
 
-from app.db.base import Base
 from sqlalchemy import JSON, Column, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
+
+from app.db.base import Base
 
 
 class StateMachineConfig(Base):

@@ -2,11 +2,12 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+
 import app.core.passlib_bcrypt5_compat  # noqa: F401  # bcrypt 5 compat patch
 from app.core.config import settings
 from app.services.auth.token_blacklist_service import token_blacklist_service
-from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["argon2", "bcrypt"], deprecated="auto")
 

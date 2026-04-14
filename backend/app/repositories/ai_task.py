@@ -8,8 +8,11 @@ All classes are re-exported from task_run.py for backward compatibility.
 
 # Re-export everything from task_run repository for backward compatibility
 from app.repositories.task_run import (  # New unified names (recommended)
-    TaskRunAutomationRepository, TaskRunFindingRepository, TaskRunRepository,
-    TaskRunSessionRepository)
+    TaskRunAutomationRepository,
+    TaskRunFindingRepository,
+    TaskRunRepository,
+    TaskRunSessionRepository,
+)
 
 # Backward compatibility aliases
 AITaskRepository = TaskRunRepository

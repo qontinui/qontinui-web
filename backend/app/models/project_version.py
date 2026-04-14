@@ -1,11 +1,20 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from app.db.base import Base
-from sqlalchemy import (JSON, Column, DateTime, ForeignKey, Index, Integer,
-                        Text, UniqueConstraint)
+from sqlalchemy import (
+    JSON,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
+
+from app.db.base import Base
 
 
 class ProjectVersion(Base):

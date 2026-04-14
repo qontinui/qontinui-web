@@ -13,6 +13,9 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.notification import NotificationType
 from app.models.project import Project
 from app.models.software_test_run import SoftwareTestRun
@@ -22,8 +25,6 @@ from app.services.notifications.channels import channel_delivery_service
 from app.services.notifications.core import notification_service
 from app.services.notifications.preferences import project_preferences_service
 from app.services.notifications.test_email import test_email_service
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

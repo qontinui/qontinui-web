@@ -9,15 +9,17 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
-from app.models.task_run import TaskRunAutomation, TaskRunStatus
-from app.repositories.task_run import (TaskRunAutomationRepository,
-                                       TaskRunRepository)
-from app.services.task_run.mappers import model_to_automation_response
-from app.services.task_run.schemas import (StepProgressResponse,
-                                           TaskRunAutomationCreate,
-                                           TaskRunAutomationResponse,
-                                           TaskRunAutomationUpdate)
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.task_run import TaskRunAutomation, TaskRunStatus
+from app.repositories.task_run import TaskRunAutomationRepository, TaskRunRepository
+from app.services.task_run.mappers import model_to_automation_response
+from app.services.task_run.schemas import (
+    StepProgressResponse,
+    TaskRunAutomationCreate,
+    TaskRunAutomationResponse,
+    TaskRunAutomationUpdate,
+)
 
 logger = structlog.get_logger(__name__)
 

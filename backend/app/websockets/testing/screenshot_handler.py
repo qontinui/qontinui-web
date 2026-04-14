@@ -9,18 +9,20 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import structlog
-from app.api.v1.endpoints.images import (validate_image_magic_bytes,
-                                         validate_image_mime_type)
-from app.models.transition_execution import TransitionExecution
-from app.schemas.testing_ws import ScreenshotData
-from app.services.object_storage import object_storage
-from app.websockets.message_types import (create_error_response,
-                                          create_timestamp)
 from fastapi import HTTPException
 from PIL import Image
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.v1.endpoints.images import (
+    validate_image_magic_bytes,
+    validate_image_mime_type,
+)
+from app.models.transition_execution import TransitionExecution
+from app.schemas.testing_ws import ScreenshotData
+from app.services.object_storage import object_storage
+from app.websockets.message_types import create_error_response, create_timestamp
 
 logger = structlog.get_logger(__name__)
 

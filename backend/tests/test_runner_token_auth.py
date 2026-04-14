@@ -9,12 +9,13 @@ Tests the complete authentication flow:
 """
 
 import pytest
+from fastapi import HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import authenticate_runner
 from app.core.security import generate_runner_token, hash_runner_token
 from app.crud import runner as runner_crud
 from app.models.user import User
-from fastapi import HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class TestRunnerTokenCreation:

@@ -9,11 +9,12 @@ from pathlib import Path
 backend_dir = Path(__file__).resolve().parent
 sys.path.insert(0, str(backend_dir))
 
+from passlib.context import CryptContext  # noqa: E402
+
 import app.core.passlib_bcrypt5_compat  # noqa: F401, E402  # bcrypt 5 compat patch
 from app.core.test_credentials import get_admin_credentials  # noqa: E402
 from app.db.session import SessionLocal  # noqa: E402
 from app.models.user import User  # noqa: E402
-from passlib.context import CryptContext  # noqa: E402
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 

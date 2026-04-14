@@ -7,12 +7,15 @@ Provides run-level and project-level comparison statistics.
 from uuid import UUID
 
 import structlog
-from app.models.software_test_run import SoftwareTestRun
-from app.models.visual_baseline import VisualBaseline
-from app.models.visual_comparison_result import (VisualComparisonResult,
-                                                 VisualComparisonStatus)
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.software_test_run import SoftwareTestRun
+from app.models.visual_baseline import VisualBaseline
+from app.models.visual_comparison_result import (
+    VisualComparisonResult,
+    VisualComparisonStatus,
+)
 
 logger = structlog.get_logger(__name__)
 

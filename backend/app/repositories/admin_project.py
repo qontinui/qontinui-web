@@ -8,10 +8,11 @@ import uuid
 from typing import Any
 
 import structlog
-from app.models.project import Project
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
+
+from app.models.project import Project
 
 logger = structlog.get_logger(__name__)
 

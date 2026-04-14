@@ -4,8 +4,9 @@ Pydantic schemas for runner connection management.
 These schemas handle validation and serialization for runner connections.
 """
 
-from app.schemas.base import IsoDatetime
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.base import IsoDatetime
 
 
 class RunnerConnectionResponse(BaseModel):

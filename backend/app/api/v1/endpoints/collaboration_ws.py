@@ -7,8 +7,9 @@ This module provides a thin endpoint layer that delegates to the refactored
 WebSocket infrastructure in app.websockets.collaboration.
 """
 
-from app.websockets.collaboration import collaboration_handler
 from fastapi import APIRouter, WebSocket
+
+from app.websockets.collaboration import collaboration_handler
 
 router = APIRouter()
 

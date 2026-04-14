@@ -11,8 +11,9 @@ This module sets up Celery for handling long-running tasks like:
 import os
 from typing import Any
 
-from app.core.config import settings
 from celery import Celery  # type: ignore[import-not-found]
+
+from app.core.config import settings
 
 # Get Redis URL from settings with fallback
 REDIS_URL = getattr(settings, "REDIS_URL", None) or os.getenv(

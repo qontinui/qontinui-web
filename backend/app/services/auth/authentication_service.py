@@ -1,11 +1,12 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.user import User
 from app.services.auth.password_service import password_service
 from app.services.auth.token_blacklist_service import token_blacklist_service
 from app.services.auth.token_service import token_service
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class AuthenticationService:

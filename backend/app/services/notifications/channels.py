@@ -13,10 +13,13 @@ from uuid import UUID
 
 import httpx
 import structlog
+
 from app.integrations.slack import slack_integration
-from app.schemas.test_notifications import (CoverageAlertNotification,
-                                            DeficiencyNotification,
-                                            TestRunNotification)
+from app.schemas.test_notifications import (
+    CoverageAlertNotification,
+    DeficiencyNotification,
+    TestRunNotification,
+)
 from app.services.websocket_manager import connection_manager
 
 logger = structlog.get_logger(__name__)

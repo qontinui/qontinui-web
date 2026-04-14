@@ -3,10 +3,11 @@ from collections.abc import Callable
 from uuid import UUID
 
 import structlog
-from app.db.session import AsyncSessionLocal
-from app.services.metrics_service import metrics_service
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
+
+from app.db.session import AsyncSessionLocal
+from app.services.metrics_service import metrics_service
 
 logger = structlog.get_logger(__name__)
 

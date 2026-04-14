@@ -6,11 +6,12 @@ Provides pgvector-based cosine similarity search across multiple entity types
 
 from uuid import UUID
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.execution_issue import ExecutionIssue
 from app.models.project_embedding import ProjectEmbedding
 from app.models.ui_bridge_state import DomainKnowledge
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def search_execution_issues(

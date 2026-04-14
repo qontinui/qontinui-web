@@ -9,8 +9,9 @@ singleton instances for backward compatibility.
 from app.services.visual_testing.baseline_creation import BaselineCreation
 from app.services.visual_testing.baseline_crud import BaselineCrud
 from app.services.visual_testing.baseline_history import BaselineHistory
-from app.services.visual_testing.baseline_image_processing import \
-    BaselineImageProcessing
+from app.services.visual_testing.baseline_image_processing import (
+    BaselineImageProcessing,
+)
 from app.services.visual_testing.comparison_engine import ComparisonEngine
 from app.services.visual_testing.comparison_service import ComparisonService
 from app.services.visual_testing.comparison_stats import ComparisonStats
