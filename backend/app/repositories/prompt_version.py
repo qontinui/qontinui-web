@@ -76,7 +76,7 @@ class PromptVersionRepository:
         template_result = await db.execute(template_query)
         template = template_result.scalar_one_or_none()
         if template:
-            template.current_version = next_version
+            template.current_version = next_version  # type: ignore[assignment]
 
         try:
             await db.flush()
@@ -92,7 +92,7 @@ class PromptVersionRepository:
             template_result = await db.execute(template_query)
             template = template_result.scalar_one_or_none()
             if template:
-                template.current_version = next_version
+                template.current_version = next_version  # type: ignore[assignment]
             await db.flush()
 
         await db.commit()
@@ -300,7 +300,7 @@ class PromptVersionRepository:
         template_result = await db.execute(template_query)
         template = template_result.scalar_one_or_none()
         if template:
-            template.current_version = new_current
+            template.current_version = new_current  # type: ignore[assignment]
             await db.flush()
 
         await db.commit()

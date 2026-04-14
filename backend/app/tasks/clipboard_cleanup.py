@@ -31,7 +31,7 @@ async def cleanup_expired_clipboard() -> dict[str, int]:
             now = datetime.now(UTC)
             stmt = delete(ClipboardEntry).where(ClipboardEntry.expires_at <= now)
             result = await db.execute(stmt)
-            stats["deleted"] = result.rowcount or 0  # type: ignore[assignment]
+            stats["deleted"] = result.rowcount or 0  # type: ignore[attr-defined, assignment]
             await db.commit()
 
             if stats["deleted"] > 0:

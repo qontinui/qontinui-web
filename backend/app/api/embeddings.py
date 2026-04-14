@@ -31,9 +31,10 @@ def _get_provider():
             return _provider
         try:
             from qontinui.embeddings import (EmbeddingConfig,
+                                             EmbeddingProviderType,
                                              get_embedding_provider)
 
-            config = EmbeddingConfig(provider="sentence-transformers")
+            config = EmbeddingConfig(provider=EmbeddingProviderType.SENTENCE_TRANSFORMERS)
             _provider = get_embedding_provider(config)
             logger.info(
                 "embedding_provider_loaded",

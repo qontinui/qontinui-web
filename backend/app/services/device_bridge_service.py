@@ -103,7 +103,8 @@ class DeviceBridgeService:
         if raw is None:
             return None
         try:
-            return json.loads(raw)
+            result: dict[str, object] = json.loads(raw)
+            return result
         except json.JSONDecodeError as e:
             logger.error(
                 "device_bridge_parse_error",

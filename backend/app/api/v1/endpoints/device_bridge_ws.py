@@ -18,6 +18,7 @@ from typing import Annotated
 
 import structlog
 from app.api.deps import current_active_user, get_current_user_from_ws
+from app.models.user import User
 from app.config.redis_config import get_redis
 from app.core.config import settings
 from app.services.device_bridge_service import DeviceBridgeService
@@ -535,7 +536,7 @@ async def device_bridge_tunnel_endpoint(
 
 @router.get("/available-devices")
 async def list_available_devices(
-    user: Annotated[object, Depends(current_active_user)],
+    user: Annotated[User, Depends(current_active_user)],
 ) -> JSONResponse:
     """
     List mobile devices with active bridge connections for the current user.
@@ -549,7 +550,7 @@ async def list_available_devices(
 
     redis_client = await get_redis()
     service = DeviceBridgeService(redis_client)
-    user_id = str(user.id)  # type: ignore[union-attr]
+    user_id = str(user.id)
 
     raw_devices = await service.list_devices(user_id)
 

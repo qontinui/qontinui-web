@@ -14,7 +14,7 @@ import bcrypt as _bcrypt
 if not hasattr(_bcrypt, "__about__"):
 
     class _About:
-        __version__ = _bcrypt.__version__
+        __version__: str = getattr(_bcrypt, "__version__", "0.0.0")
 
     _bcrypt.__about__ = _About  # type: ignore[attr-defined]
 
