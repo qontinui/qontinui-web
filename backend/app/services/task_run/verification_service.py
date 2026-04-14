@@ -8,6 +8,10 @@ results for task runs. Uses shared Pydantic schemas from qontinui-schemas.
 from uuid import UUID
 
 import structlog
+from app.models.task_run_verification_result import TaskRunVerificationResult
+from app.repositories.task_run_verification_result import (
+    TaskRunVerificationResultRepository,
+)
 from qontinui_schemas.execution.verification_result import (
     VerificationPhaseResult,
     VerificationResultCreate,
@@ -16,11 +20,6 @@ from qontinui_schemas.execution.verification_result import (
     VerificationResultsListResponse,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.task_run_verification_result import TaskRunVerificationResult
-from app.repositories.task_run_verification_result import (
-    TaskRunVerificationResultRepository,
-)
 
 logger = structlog.get_logger(__name__)
 

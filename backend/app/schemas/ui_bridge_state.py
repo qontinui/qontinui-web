@@ -3,9 +3,8 @@
 from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel, Field
-
 from app.schemas.base import IsoDatetime
+from pydantic import BaseModel, Field
 
 # =============================================================================
 # Domain Knowledge Schemas

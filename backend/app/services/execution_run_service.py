@@ -11,6 +11,15 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from app.config.redis_config import get_redis
+from app.models.action_execution import (
+    ActionExecution,
+    ActionExecutionStatus,
+    ActionExecutionType,
+)
+from app.models.execution_run import ExecutionRun, ExecutionRunStatus, ExecutionRunType
+from app.repositories.action_execution import ActionExecutionRepository
+from app.repositories.execution_run import ExecutionRunRepository
 
 # Import schemas from qontinui-schemas
 from qontinui_schemas.api.execution import (
@@ -43,16 +52,6 @@ from qontinui_schemas.api.execution import (
 )
 from qontinui_schemas.common import utc_now
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.config.redis_config import get_redis
-from app.models.action_execution import (
-    ActionExecution,
-    ActionExecutionStatus,
-    ActionExecutionType,
-)
-from app.models.execution_run import ExecutionRun, ExecutionRunStatus, ExecutionRunType
-from app.repositories.action_execution import ActionExecutionRepository
-from app.repositories.execution_run import ExecutionRunRepository
 
 logger = structlog.get_logger(__name__)
 

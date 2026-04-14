@@ -1,12 +1,11 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+from app.db.base import Base
 from sqlalchemy import DateTime, ForeignKey, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.db.base import Base
 
 # Default expiry: 24 hours from creation
 CLIPBOARD_EXPIRY_HOURS = 24

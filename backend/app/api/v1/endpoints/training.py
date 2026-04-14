@@ -5,10 +5,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import desc, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api import deps
 from app.models.annotation import AnnotationSet
 from app.models.project import Project
@@ -22,6 +18,9 @@ from app.schemas.training_job import (
     TrainingJobResponse,
     TrainingJobUpdate,
 )
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

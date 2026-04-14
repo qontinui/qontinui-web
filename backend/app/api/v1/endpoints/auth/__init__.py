@@ -9,9 +9,6 @@ Provides authentication endpoints including:
 - Beta signup
 """
 
-# Import sub-routers
-from fastapi import APIRouter
-
 from app.api.v1.endpoints.auth.beta_signup import router as beta_signup_router
 from app.api.v1.endpoints.auth.devices import router as devices_router
 from app.api.v1.endpoints.auth.jwt import router as jwt_router
@@ -19,6 +16,9 @@ from app.api.v1.endpoints.auth.password import router as password_router
 from app.api.v1.endpoints.auth.verification import router as verification_router
 from app.auth.config import fastapi_users
 from app.schemas.user import UserCreate, UserRead, UserUpdate
+
+# Import sub-routers
+from fastapi import APIRouter
 
 # Main auth router
 router = APIRouter()

@@ -47,9 +47,7 @@ class DeviceBridgeService:
     # Device registration
     # ------------------------------------------------------------------
 
-    async def register_device(
-        self, user_id: str, device_id: str, info: dict
-    ) -> str:
+    async def register_device(self, user_id: str, device_id: str, info: dict) -> str:
         """
         Register a device connection in Redis.
 

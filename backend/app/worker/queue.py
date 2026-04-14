@@ -4,7 +4,6 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-
 from app.worker.arq_pool import enqueue_task
 
 logger = structlog.get_logger(__name__)

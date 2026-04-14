@@ -9,8 +9,6 @@ This module handles cleanup of database records including:
 from datetime import timedelta
 from typing import Any
 
-from qontinui_schemas.common import utc_now
-
 from app.core.config import settings
 from app.worker.tasks.cleanup_utils import (
     CleanupResult,
@@ -19,6 +17,7 @@ from app.worker.tasks.cleanup_utils import (
     create_success_result,
     logger,
 )
+from qontinui_schemas.common import utc_now
 
 
 async def cleanup_expired_sessions(ctx: dict[str, Any]) -> CleanupResult:
@@ -36,10 +35,9 @@ async def cleanup_expired_sessions(ctx: dict[str, Any]) -> CleanupResult:
 
     with TaskTimer() as timer:
         try:
-            from sqlalchemy import delete
-
             from app.db.session import AsyncSessionLocal
             from app.models.session_activity import SessionActivity
+            from sqlalchemy import delete
 
             async with AsyncSessionLocal() as db:
                 # Delete sessions that have passed their absolute expiry
@@ -91,10 +89,9 @@ async def cleanup_expired_device_sessions(ctx: dict[str, Any]) -> CleanupResult:
 
     with TaskTimer() as timer:
         try:
-            from sqlalchemy import delete
-
             from app.db.session import AsyncSessionLocal
             from app.models.device_session import DeviceSession
+            from sqlalchemy import delete
 
             # Use configured cleanup days
             days_to_keep = settings.CLEANUP_SESSION_DAYS

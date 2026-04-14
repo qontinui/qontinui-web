@@ -12,9 +12,6 @@ import logging
 from uuid import UUID
 
 import httpx
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.workflow_step_type import (
     GuiActionTypeConfig,
     StepTypeConfig,
@@ -27,6 +24,8 @@ from app.schemas.workflow_step_type import (
     StepTypeConfigUpdate,
     WorkflowPhaseConfigUpdate,
 )
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 

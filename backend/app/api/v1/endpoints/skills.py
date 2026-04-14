@@ -2,10 +2,6 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import current_active_user, get_async_db
 from app.models.user import User
 from app.services.permissions.organization_access import check_organization_membership
@@ -16,6 +12,9 @@ from app.services.skill_service import (
     SkillService,
     SkillUpdate,
 )
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 

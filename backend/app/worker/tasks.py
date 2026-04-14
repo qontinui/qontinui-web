@@ -374,12 +374,11 @@ async def cleanup_old_data_task(
     try:
         from datetime import timedelta
 
-        from qontinui_schemas.common import utc_now
-        from sqlalchemy import delete
-
         from app.db.session import AsyncSessionLocal
         from app.models.audit_log import AuditLog
         from app.models.usage_metric import UsageMetric
+        from qontinui_schemas.common import utc_now
+        from sqlalchemy import delete
 
         cutoff_date = utc_now() - timedelta(days=days_to_keep)
         audit_logs_deleted = 0
@@ -443,14 +442,13 @@ async def send_analytics_report_task(
     logger.info("generating_analytics_report", report_type=report_type, user_id=user_id)
 
     try:
-        from qontinui_schemas.common import utc_now
-        from sqlalchemy import select
-
         from app.core.config import settings
         from app.db.session import AsyncSessionLocal
         from app.models.user import User
         from app.services.analytics_service import analytics_service
         from app.services.email.email_transport_service import EmailTransportService
+        from qontinui_schemas.common import utc_now
+        from sqlalchemy import select
 
         # Determine days based on report type
         days_map = {"daily": 1, "weekly": 7, "monthly": 30}

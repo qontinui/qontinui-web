@@ -10,11 +10,10 @@ from typing import Any
 
 import httpx
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
-
 from app.api.deps import current_active_user
 from app.models.user import User
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

@@ -10,10 +10,6 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import desc, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-
 from app.models.coverage_snapshot import CoverageSnapshot
 from app.models.software_test_run import SoftwareTestRun, TestRunStatus
 from app.models.test_deficiency import (
@@ -27,6 +23,9 @@ from app.models.transition_execution import (
     TransitionExecution,
     TransitionExecutionStatus,
 )
+from sqlalchemy import desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 # ============================================================================
 # Test Run CRUD

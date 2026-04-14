@@ -14,8 +14,6 @@ ProcessSessionOutputLine, ProcessLogSearchHit).
 
 from __future__ import annotations
 
-from typing import Optional
-
 from pydantic import BaseModel
 
 
@@ -23,9 +21,9 @@ class RunnerProcessSession(BaseModel):
     id: str
     process_config_id: str
     process_name: str
-    started_at: Optional[str] = None
-    stopped_at: Optional[str] = None
-    exit_code: Optional[int] = None
+    started_at: str | None = None
+    stopped_at: str | None = None
+    exit_code: int | None = None
     state: str
     error_count: int = 0
 

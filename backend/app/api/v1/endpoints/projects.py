@@ -2,9 +2,6 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.core.error_codes import ErrorCode
 from app.crud.project import (
@@ -23,6 +20,8 @@ from app.services.object_storage import object_storage
 from app.services.permission_service import permission_service
 from app.services.storage_service import StorageService
 from app.utils.lock_utils import check_resource_lock, get_lock_info
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

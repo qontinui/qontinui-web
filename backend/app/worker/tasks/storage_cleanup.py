@@ -8,8 +8,6 @@ This module handles cleanup of storage resources including:
 from datetime import timedelta
 from typing import Any
 
-from qontinui_schemas.common import utc_now
-
 from app.core.config import settings
 from app.worker.tasks.cleanup_utils import (
     CleanupResult,
@@ -19,6 +17,7 @@ from app.worker.tasks.cleanup_utils import (
     create_success_result,
     logger,
 )
+from qontinui_schemas.common import utc_now
 
 
 async def cleanup_old_screenshots(ctx: dict[str, Any]) -> CleanupResult:
@@ -48,14 +47,13 @@ async def cleanup_old_screenshots(ctx: dict[str, Any]) -> CleanupResult:
 
     with TaskTimer() as timer:
         try:
-            from sqlalchemy import and_, select
-            from sqlalchemy.orm import selectinload
-
             from app.db.session import AsyncSessionLocal
             from app.models.automation_screenshot import AutomationScreenshot
             from app.models.automation_session import AutomationSession
             from app.models.user import User
             from app.services.object_storage import object_storage
+            from sqlalchemy import and_, select
+            from sqlalchemy.orm import selectinload
 
             # Get retention period from settings (default 30 days for free tier)
             retention_days_free = (

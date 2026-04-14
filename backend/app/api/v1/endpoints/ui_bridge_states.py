@@ -13,11 +13,6 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.models.project import Project
 from app.models.ui_bridge_state import (
@@ -61,6 +56,10 @@ from app.schemas.ui_bridge_state import (
     UIBridgeTransitionResponse,
     UIBridgeTransitionUpdate,
 )
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 # Note: qontinui imports are done lazily in endpoints that need them
 # to avoid loading torch/easyocr at application startup

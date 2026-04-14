@@ -4,11 +4,6 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import structlog
-from fastapi import APIRouter, Depends, Request, Response
-from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import current_active_user, get_async_db
 from app.core.config import settings
 from app.core.error_codes import ErrorCode
@@ -20,6 +15,10 @@ from app.services.auth_analytics_service import auth_analytics_service
 from app.services.cookie_service import cookie_service
 from app.services.device_fingerprint_service import device_fingerprint_service
 from app.services.device_session_service import device_session_service
+from fastapi import APIRouter, Depends, Request, Response
+from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

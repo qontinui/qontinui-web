@@ -8,9 +8,6 @@ shell commands, saved API requests, contexts, macros, and prompt snippets.
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import current_active_user, get_async_db
 from app.crud import library as crud
 from app.models.library import (
@@ -54,6 +51,8 @@ from app.schemas.library import (
     ShellCommandResponse,
     ShellCommandUpdate,
 )
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

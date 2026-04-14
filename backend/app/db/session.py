@@ -3,11 +3,10 @@ import ssl
 from collections.abc import AsyncGenerator
 
 import structlog
+from app.core.config import settings
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
-
-from app.core.config import settings
 
 # Sync engine only for Alembic migrations and init_db
 database_url_str = str(settings.DATABASE_URL)

@@ -6,6 +6,7 @@ Tracks user-defined automation functions discovered in uploaded Python files.
 
 from datetime import UTC, datetime
 
+from app.db.base import Base
 from sqlalchemy import (
     JSON,
     Column,
@@ -18,8 +19,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-
-from app.db.base import Base
 
 
 class CustomFunction(Base):

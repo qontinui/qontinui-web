@@ -14,9 +14,6 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.code_package import (
     CodePackage,
     InstallationStatus,
@@ -29,6 +26,8 @@ from app.models.project import Project
 from app.models.user import User
 from app.services.package_installer import PackageInstaller
 from app.services.project_directory import ProjectDirectoryManager
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 # ============================================================================
 # Fixtures

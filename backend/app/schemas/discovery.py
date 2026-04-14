@@ -7,9 +7,8 @@ Discoveries are config improvements detected by runners that users can review an
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
-
 from app.schemas.base import BaseORMSchema, IsoDatetime
+from pydantic import BaseModel, Field
 
 # Type definitions
 DiscoveryType = Literal[

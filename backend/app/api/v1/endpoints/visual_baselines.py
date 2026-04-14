@@ -11,19 +11,6 @@ Provides REST API endpoints for:
 from uuid import UUID
 
 import structlog
-from fastapi import (
-    APIRouter,
-    Depends,
-    File,
-    Form,
-    HTTPException,
-    Query,
-    UploadFile,
-    status,
-)
-from sqlalchemy import and_, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import current_active_user, get_async_db
 from app.models.project import Project
 from app.models.user import User
@@ -39,6 +26,18 @@ from app.schemas.visual_regression import (
     BaselineUpdate,
 )
 from app.services.visual_testing import baseline_management_service
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
+from sqlalchemy import and_, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

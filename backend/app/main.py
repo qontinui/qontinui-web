@@ -2,13 +2,6 @@ import asyncio
 import time
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.exceptions import RequestValidationError
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from slowapi.errors import RateLimitExceeded
-from starlette.exceptions import HTTPException as StarletteHTTPException
-
 from app.api.v1.api import api_router
 from app.config.logging_config import configure_logging, get_logger
 from app.core.config import settings
@@ -31,6 +24,12 @@ from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 from app.middleware.request_id import RequestIDMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.middleware.sliding_window_session import SlidingWindowSessionMiddleware
+from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from slowapi.errors import RateLimitExceeded
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # Configure structured logging
 configure_logging(environment=settings.ENVIRONMENT)
@@ -412,9 +411,8 @@ async def health_check():
 
     # Check async database connectivity
     try:
-        from sqlalchemy import text
-
         from app.db.session import AsyncSessionLocal
+        from sqlalchemy import text
 
         async with AsyncSessionLocal() as session:
             await session.execute(text("SELECT 1"))

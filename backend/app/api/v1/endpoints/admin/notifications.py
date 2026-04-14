@@ -3,9 +3,6 @@
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_async_db
 from app.api.v1.endpoints.admin.dependencies import require_admin
 from app.models.user import User
@@ -14,6 +11,8 @@ from app.schemas.admin import (
     AdminNotificationSettingsUpdate,
 )
 from app.services.admin_notification_service import admin_notification_service
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)

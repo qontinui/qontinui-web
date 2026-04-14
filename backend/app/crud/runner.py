@@ -6,11 +6,10 @@ This module provides database operations for tracking runner connection history.
 
 from uuid import UUID
 
+from app.models.runner_connection import RunnerConnection
 from qontinui_schemas.common import utc_now
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.runner_connection import RunnerConnection
 
 
 async def create_connection_record(

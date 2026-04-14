@@ -10,10 +10,6 @@ Provides REST API endpoints for:
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import current_active_user, get_async_db
 from app.models.project import Project
 from app.models.software_test_run import SoftwareTestRun
@@ -32,6 +28,9 @@ from app.schemas.visual_regression import (
     ReviewCreate,
 )
 from app.services.visual_testing import visual_comparison_service
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import and_, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

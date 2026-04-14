@@ -7,9 +7,6 @@ This facade will be gradually deprecated in favor of direct service usage.
 
 from uuid import UUID
 
-from fastapi import UploadFile
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.capture import CaptureAction, CaptureScreenshot, CaptureSession
 from app.schemas.capture import (
     CaptureActionCreate,
@@ -20,6 +17,8 @@ from app.services.action_recorder import ActionRecorder
 from app.services.screenshot_storage_service import ScreenshotStorageService
 from app.services.session_repository import SessionRepository
 from app.services.session_state_matcher import SessionStateMatcher
+from fastapi import UploadFile
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class CaptureSessionService:

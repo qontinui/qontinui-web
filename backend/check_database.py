@@ -9,9 +9,8 @@ sys.path.insert(0, str(backend_path))
 
 import asyncio
 
-from sqlalchemy import text
-
 from app.db.session import AsyncSessionLocal
+from sqlalchemy import text
 
 
 async def check_db():

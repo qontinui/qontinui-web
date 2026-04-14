@@ -9,8 +9,6 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import structlog
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.task_run import DeferredQuestion
 from app.repositories.task_run import DeferredQuestionRepository
 from app.services.task_run.mappers import model_to_deferred_question_response
@@ -19,6 +17,7 @@ from app.services.task_run.schemas import (
     DeferredQuestionResponse,
     DeferredQuestionUpdate,
 )
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

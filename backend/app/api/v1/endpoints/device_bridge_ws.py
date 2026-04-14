@@ -17,13 +17,12 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 import structlog
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, status
-from fastapi.responses import JSONResponse
-
 from app.api.deps import current_active_user, get_current_user_from_ws
 from app.config.redis_config import get_redis
 from app.core.config import settings
 from app.services.device_bridge_service import DeviceBridgeService
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, status
+from fastapi.responses import JSONResponse
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -41,7 +40,9 @@ def _now_iso() -> str:
 def _redis_unavailable_response() -> JSONResponse:
     return JSONResponse(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        content={"detail": "Device bridge requires Redis, which is currently disabled."},
+        content={
+            "detail": "Device bridge requires Redis, which is currently disabled."
+        },
     )
 
 
@@ -93,7 +94,10 @@ async def device_bridge_device_endpoint(
         # --- Auth ---
         if not token:
             await websocket.send_json(
-                {"type": "error", "message": "Authentication required (token query param)."}
+                {
+                    "type": "error",
+                    "message": "Authentication required (token query param).",
+                }
             )
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
@@ -135,7 +139,10 @@ async def device_bridge_device_endpoint(
         device_id = reg_data.get("device_id")
         if not device_id:
             await websocket.send_json(
-                {"type": "error", "message": "device_id is required in device_register."}
+                {
+                    "type": "error",
+                    "message": "device_id is required in device_register.",
+                }
             )
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
@@ -339,7 +346,10 @@ async def device_bridge_tunnel_endpoint(
         # --- Auth ---
         if not token:
             await websocket.send_json(
-                {"type": "error", "message": "Authentication required (token query param)."}
+                {
+                    "type": "error",
+                    "message": "Authentication required (token query param).",
+                }
             )
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return

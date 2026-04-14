@@ -9,9 +9,6 @@ This module provides REST API endpoints for:
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import current_active_user, get_async_db
 from app.crud import detected_issue as issue_crud
 from app.models.user import User
@@ -24,6 +21,8 @@ from app.schemas.detected_issue import (
     IssuesSyncResponse,
     IssueStats,
 )
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

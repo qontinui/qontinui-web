@@ -11,10 +11,6 @@ from typing import Any, cast
 from uuid import UUID
 
 import structlog
-from sqlalchemy import and_, delete, select
-from sqlalchemy.engine import CursorResult
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.collaboration import (
     ActionType,
     ActivityLog,
@@ -23,6 +19,9 @@ from app.models.collaboration import (
     ResourceType,
 )
 from app.models.user import User
+from sqlalchemy import and_, delete, select
+from sqlalchemy.engine import CursorResult
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

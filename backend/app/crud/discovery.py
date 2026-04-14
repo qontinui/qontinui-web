@@ -7,9 +7,6 @@ Provides database operations for discoveries from runners.
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import desc, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.discovery import Discovery
 from app.schemas.discovery import (
     DiscoveryAcceptRequest,
@@ -19,6 +16,8 @@ from app.schemas.discovery import (
     DiscoveryStats,
     DiscoveryUpdate,
 )
+from sqlalchemy import desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def create_discovery(

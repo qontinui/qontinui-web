@@ -9,9 +9,8 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
-from PIL import Image
-
 from app.services.object_storage import object_storage
+from PIL import Image
 
 logger = structlog.get_logger(__name__)
 
@@ -103,9 +102,8 @@ class BaselineImageProcessing:
         workflow_id: str | None,
     ) -> None:
         """Deactivate all existing baselines for a state."""
-        from sqlalchemy import and_, select
-
         from app.models.visual_baseline import VisualBaseline
+        from sqlalchemy import and_, select
 
         conditions = [
             VisualBaseline.project_id == project_id,
@@ -134,9 +132,8 @@ class BaselineImageProcessing:
         workflow_id: str | None,
     ) -> int:
         """Get the next version number for a state's baseline."""
-        from sqlalchemy import and_, func, select
-
         from app.models.visual_baseline import VisualBaseline
+        from sqlalchemy import and_, func, select
 
         conditions = [
             VisualBaseline.project_id == project_id,

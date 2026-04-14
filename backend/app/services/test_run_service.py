@@ -11,10 +11,6 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from qontinui_schemas.common import utc_now
-from sqlalchemy import and_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.project import Project
 from app.models.software_test_run import SoftwareTestRun, TestRunStatus
 from app.models.test_deficiency import (
@@ -35,6 +31,9 @@ from app.schemas.testing import (
     TransitionBatchCreate,
     TransitionCreate,
 )
+from qontinui_schemas.common import utc_now
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

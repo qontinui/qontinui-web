@@ -8,9 +8,6 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.crud.project import get_project
 from app.crud.rag_dashboard import (
@@ -36,6 +33,8 @@ from app.schemas.rag_dashboard import (
 from app.services.embedding_service import EmbeddingService
 from app.services.object_storage import object_storage
 from app.services.permission_service import permission_service
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
 
 # Presigned URL expiration: 7 days
 PRESIGNED_URL_EXPIRATION = 7 * 24 * 60 * 60  # 604800 seconds

@@ -15,8 +15,6 @@ and delegates to them, preserving the original single-class API.
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.automation_screenshot import AutomationScreenshot
 from app.models.automation_session import AutomationSession
 from app.repositories.automation_session.log_repository import LogRepository
@@ -33,6 +31,7 @@ from app.repositories.automation_session.screenshot_repository import (
 from app.repositories.automation_session.session_repository import SessionRepository
 from app.repositories.automation_session.stats_repository import StatsRepository
 from app.repositories.automation_session.timeline_repository import TimelineRepository
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class AutomationSessionRepository(SessionRepository):

@@ -7,18 +7,6 @@ Handles recording uploads, processing status, and state structure discovery.
 import json
 
 import structlog
-from fastapi import (
-    APIRouter,
-    BackgroundTasks,
-    Depends,
-    File,
-    Form,
-    HTTPException,
-    UploadFile,
-)
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api import deps
 from app.models.project import Project
 from app.models.recording import RecordingStatus
@@ -33,6 +21,17 @@ from app.schemas.recording import (
     UploadResponse,
 )
 from app.services.recording_service import recording_service
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+)
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

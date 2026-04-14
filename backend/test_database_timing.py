@@ -23,12 +23,11 @@ os.environ["MAX_QUERIES_PER_REQUEST"] = "5"
 
 async def test_query_timing():
     """Test the database query timing functionality."""
-    from sqlalchemy import text
-
     from app.config.logging_config import configure_logging, get_logger
     from app.core.config import settings
     from app.db.session import AsyncSessionLocal, async_engine, sync_engine
     from app.middleware.database_timing import init_database_timing
+    from sqlalchemy import text
 
     # Configure logging
     configure_logging("development")
@@ -92,11 +91,10 @@ async def test_query_timing():
 
 async def test_with_request_context():
     """Test query timing within a simulated request context."""
-    from sqlalchemy import text
-
     from app.config.logging_config import get_logger
     from app.db.session import AsyncSessionLocal
     from app.middleware.database_timing import track_request_queries
+    from sqlalchemy import text
 
     logger = get_logger(__name__)
 

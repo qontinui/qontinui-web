@@ -8,9 +8,6 @@ and sequences in the prompt library.
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import current_active_user, get_async_db
 from app.crud import ai_prompt as crud
 from app.models.project import Project
@@ -28,6 +25,8 @@ from app.schemas.ai_prompt import (
     PromptSequenceSummary,
     PromptSequenceUpdate,
 )
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

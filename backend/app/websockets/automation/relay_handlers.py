@@ -8,7 +8,6 @@ and tree events.
 from typing import Any
 
 import structlog
-
 from app.websockets.automation.message_handlers import store_tree_event
 from app.websockets.automation.schemas import WSMessage, make_timestamp
 

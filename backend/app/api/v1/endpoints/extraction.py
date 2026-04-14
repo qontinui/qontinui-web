@@ -6,11 +6,6 @@ from typing import Any, cast
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-
 from app.api import deps
 from app.models.extraction import ExtractionAnnotation, ExtractionSession
 from app.models.sync_lock import SyncLock
@@ -27,6 +22,10 @@ from app.schemas.extraction import (
     StateImportRequest,
     StateMachineUpdate,
 )
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 logger = structlog.get_logger(__name__)
 

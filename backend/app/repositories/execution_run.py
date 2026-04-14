@@ -12,13 +12,12 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-
 from app.models.action_execution import ActionExecution, ActionExecutionStatus
 from app.models.execution_issue import ExecutionIssue
 from app.models.execution_run import ExecutionRun, ExecutionRunStatus, ExecutionRunType
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 logger = structlog.get_logger(__name__)
 

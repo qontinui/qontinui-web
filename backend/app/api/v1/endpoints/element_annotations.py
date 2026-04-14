@@ -11,11 +11,6 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, status
-from sqlalchemy import desc, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-
 from app.api import deps
 from app.crud.project import get_project
 from app.middleware.error_handler import not_found_error
@@ -31,6 +26,10 @@ from app.schemas.element_annotation import (
     VersionSnapshotCreate,
 )
 from app.services.permission_service import permission_service
+from fastapi import APIRouter, Depends, status
+from sqlalchemy import desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 logger = structlog.get_logger(__name__)
 

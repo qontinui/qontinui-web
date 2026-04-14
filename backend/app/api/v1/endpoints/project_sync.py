@@ -10,18 +10,6 @@ from typing import cast
 from uuid import UUID
 
 import structlog
-from fastapi import (
-    APIRouter,
-    Depends,
-    HTTPException,
-    WebSocket,
-    WebSocketDisconnect,
-    status,
-)
-from qontinui_schemas.common import utc_now
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import (
     get_async_db,
     get_current_active_user_async,
@@ -40,6 +28,17 @@ from app.schemas.sync_lock import (
 )
 from app.services.permission_service import permission_service
 from app.services.sync_broadcast import sync_broadcast
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
+from qontinui_schemas.common import utc_now
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)

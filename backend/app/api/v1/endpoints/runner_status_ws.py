@@ -9,13 +9,12 @@ import asyncio
 import json
 
 import structlog
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
-from redis import asyncio as aioredis
-from starlette.websockets import WebSocketState
-
 from app.api.deps import get_current_user_from_ws
 from app.config.redis_config import get_redis
 from app.crud import runner as runner_crud
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from redis import asyncio as aioredis
+from starlette.websockets import WebSocketState
 
 logger = structlog.get_logger(__name__)
 

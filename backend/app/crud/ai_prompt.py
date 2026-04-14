@@ -10,9 +10,6 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import and_, desc, func, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.ai_prompt import AIPromptTemplate, PromptSequence
 from app.schemas.ai_prompt import (
     AIPromptTemplateCreate,
@@ -20,6 +17,8 @@ from app.schemas.ai_prompt import (
     PromptSequenceCreate,
     PromptSequenceUpdate,
 )
+from sqlalchemy import and_, desc, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

@@ -5,13 +5,12 @@ from pathlib import Path
 from typing import BinaryIO
 from uuid import UUID
 
-from fastapi import HTTPException, UploadFile, status
-from PIL import Image
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.core.config import settings
 from app.services.object_storage import object_storage
 from app.services.storage_service import StorageService
+from fastapi import HTTPException, UploadFile, status
+from PIL import Image
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class AvatarService:

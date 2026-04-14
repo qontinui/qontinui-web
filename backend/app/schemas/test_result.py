@@ -3,9 +3,8 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel
-
 from app.schemas.base import IsoDatetime
+from pydantic import BaseModel
 
 
 class IndividualTestResult(BaseModel):

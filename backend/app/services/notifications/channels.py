@@ -13,7 +13,6 @@ from uuid import UUID
 
 import httpx
 import structlog
-
 from app.integrations.slack import slack_integration
 from app.schemas.test_notifications import (
     CoverageAlertNotification,

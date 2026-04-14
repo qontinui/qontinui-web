@@ -8,10 +8,6 @@ This module provides:
 
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_async_db, get_runner_user_from_token
 from app.models.user import User
 from app.services.deficiency_management_service import (
@@ -26,6 +22,9 @@ from app.services.test_run_service import (
     TestRunService,
     test_run_service,
 )
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.ext.asyncio import AsyncSession
 
 # HTTP Bearer scheme for runner token authentication
 security = HTTPBearer()

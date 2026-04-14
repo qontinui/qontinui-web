@@ -6,9 +6,8 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
-
 from app.schemas.base import BaseORMSchema, IsoDatetime
+from pydantic import BaseModel, Field
 
 
 # Automation Session schemas

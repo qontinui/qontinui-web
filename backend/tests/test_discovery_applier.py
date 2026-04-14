@@ -8,12 +8,11 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.discovery import Discovery
 from app.models.project import Project
 from app.models.user import User
 from app.services.discovery_applier import DiscoveryApplier
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest_asyncio.fixture

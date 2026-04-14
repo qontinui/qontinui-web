@@ -10,11 +10,10 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from dateutil.relativedelta import relativedelta  # type: ignore
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.user import User
 from app.websockets.automation.schemas import make_timestamp
+from dateutil.relativedelta import relativedelta  # type: ignore
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

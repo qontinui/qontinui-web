@@ -7,9 +7,6 @@ Categories auto-seed with 13 defaults on first access.
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import current_active_user, get_async_db
 from app.crud import finding_category_config as crud
 from app.models.user import User
@@ -19,6 +16,8 @@ from app.schemas.finding_category_config import (
     FindingCategoryConfigResponse,
     FindingCategoryConfigUpdate,
 )
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 

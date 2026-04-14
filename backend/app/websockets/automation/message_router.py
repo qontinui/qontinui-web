@@ -11,9 +11,6 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from pydantic import ValidationError
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.user import User
 from app.websockets.automation.connection_handler import ConnectionHandler
 from app.websockets.automation.issue_handlers import (
@@ -34,6 +31,8 @@ from app.websockets.automation.relay_handlers import (
 )
 from app.websockets.automation.schemas import WSMessage, make_timestamp
 from app.websockets.automation.session_manager import SessionManager
+from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

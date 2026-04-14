@@ -6,6 +6,7 @@ backend-specific schemas with UUID and datetime handling.
 
 from uuid import UUID
 
+from app.schemas.base import IsoDatetime
 from pydantic import BaseModel, Field
 
 # Re-export core schemas from qontinui-schemas
@@ -21,8 +22,6 @@ from qontinui_schemas.discovery import (
     StateMachineImport,
     TransitionTriggerType,
 )
-
-from app.schemas.base import IsoDatetime
 
 # Aliases for backward compatibility
 BoundingBox = DiscoveryBoundingBox

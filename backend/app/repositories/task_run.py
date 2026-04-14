@@ -13,10 +13,6 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-
 from app.models.task_run import (
     DeferredQuestion,
     FindingCategory,
@@ -29,6 +25,9 @@ from app.models.task_run import (
     TaskRunStatus,
     TaskType,
 )
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 logger = structlog.get_logger(__name__)
 

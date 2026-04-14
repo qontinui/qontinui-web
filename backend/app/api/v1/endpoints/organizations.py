@@ -12,9 +12,6 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, Query, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.middleware.rate_limit import user_limiter
 from app.models.user import User
@@ -37,6 +34,8 @@ from app.services.organization import (
     organization_settings_service,
     statistics_service,
 )
+from fastapi import APIRouter, Depends, Query, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

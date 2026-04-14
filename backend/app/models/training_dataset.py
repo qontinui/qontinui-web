@@ -9,6 +9,7 @@ import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 
+from app.db.base import Base
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -24,8 +25,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.db.base import Base
 
 
 class DatasetSource(StrEnum):

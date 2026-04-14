@@ -15,8 +15,6 @@ from datetime import timedelta
 from typing import Any, TypedDict, cast
 
 import structlog
-from qontinui_schemas.common import utc_now
-
 from app.core.config import settings
 from app.db.partition_manager import (
     PARTITION_CONFIG,
@@ -26,6 +24,7 @@ from app.db.partition_manager import (
     drop_old_partitions,
     list_partitions,
 )
+from qontinui_schemas.common import utc_now
 
 logger = structlog.get_logger(__name__)
 

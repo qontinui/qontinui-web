@@ -1,14 +1,13 @@
 """Feedback API endpoints."""
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
-
 from app.schemas.feedback import FeedbackResponse, FeedbackSubmission
 from app.services.email import (
     EmailTemplateService,
     EmailTransportService,
     FeedbackEmailComposer,
 )
+from fastapi import APIRouter, Depends, HTTPException, status
 
 logger = structlog.get_logger(__name__)
 

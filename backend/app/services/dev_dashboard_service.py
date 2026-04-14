@@ -12,7 +12,6 @@ from typing import Any
 
 import httpx
 import structlog
-
 from app.schemas.dev_dashboard import (
     ClaudeSessionInfo,
     ClaudeSessionReport,

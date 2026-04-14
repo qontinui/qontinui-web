@@ -4,6 +4,9 @@ import uuid
 from typing import cast
 
 import structlog
+from app.core.config import settings
+from app.db.session import get_async_db
+from app.models.user import User
 from fastapi import Depends, Request, Response
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin, exceptions
@@ -15,10 +18,6 @@ from fastapi_users.authentication.transport import (
 from fastapi_users.openapi import OpenAPIResponseType
 from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.core.config import settings
-from app.db.session import get_async_db
-from app.models.user import User
 
 logger = structlog.get_logger(__name__)
 

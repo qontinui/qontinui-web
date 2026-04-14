@@ -8,9 +8,8 @@ comparison endpoints.
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
-
 from app.schemas.base import IsoDatetime
+from pydantic import BaseModel, Field
 
 # ============================================================================
 # Ignore Region Schemas

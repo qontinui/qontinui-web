@@ -18,6 +18,29 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from app.api.deps import current_active_user, get_async_db
+from app.models.user import User
+from app.repositories import (
+    ActionExecutionRepository,
+    ExecutionIssueRepository,
+    ExecutionRunRepository,
+    ExecutionScreenshotRepository,
+    ExecutionTreeEventRepository,
+)
+from app.repositories.deps import (
+    get_action_execution_repository,
+    get_execution_issue_repository,
+    get_execution_run_repository,
+    get_execution_screenshot_repository,
+    get_execution_tree_event_repository,
+)
+from app.services.execution_issue_service import ExecutionIssueService
+from app.services.execution_run_service import ExecutionRunService
+from app.services.execution_screenshot_service import (
+    ExecutionScreenshotService,
+    model_to_screenshot_response,
+)
+from app.services.execution_tree_service import ExecutionTreeService
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 
 # Import schemas from qontinui-schemas
@@ -54,30 +77,6 @@ from qontinui_schemas.api.execution import (
 )
 from qontinui_schemas.events import ExecutionTreeResponse, TreeEventListResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.api.deps import current_active_user, get_async_db
-from app.models.user import User
-from app.repositories import (
-    ActionExecutionRepository,
-    ExecutionIssueRepository,
-    ExecutionRunRepository,
-    ExecutionScreenshotRepository,
-    ExecutionTreeEventRepository,
-)
-from app.repositories.deps import (
-    get_action_execution_repository,
-    get_execution_issue_repository,
-    get_execution_run_repository,
-    get_execution_screenshot_repository,
-    get_execution_tree_event_repository,
-)
-from app.services.execution_issue_service import ExecutionIssueService
-from app.services.execution_run_service import ExecutionRunService
-from app.services.execution_screenshot_service import (
-    ExecutionScreenshotService,
-    model_to_screenshot_response,
-)
-from app.services.execution_tree_service import ExecutionTreeService
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

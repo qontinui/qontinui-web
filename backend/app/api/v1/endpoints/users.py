@@ -2,9 +2,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import (
     get_async_db,
     get_current_active_user_async,
@@ -38,6 +35,8 @@ from app.schemas.user import (
 )
 from app.services.avatar_service import avatar_service
 from app.services.storage_service import StorageService
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 

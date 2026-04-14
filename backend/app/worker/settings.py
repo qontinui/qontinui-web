@@ -1,7 +1,5 @@
 """ARQ worker configuration and settings."""
 
-from arq.connections import RedisSettings
-
 from app.core.config import settings
 from app.worker.scheduler import get_cleanup_cron_jobs, run_all_cleanup_tasks
 from app.worker.tasks import (
@@ -23,6 +21,7 @@ from app.worker.tasks.partition_tasks import (
     get_partition_cron_jobs,
     get_partition_statistics,
 )
+from arq.connections import RedisSettings
 
 
 def get_arq_redis_settings() -> RedisSettings:

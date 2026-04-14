@@ -17,8 +17,8 @@ Example usage:
 
 from app.repositories.action_execution import ActionExecutionRepository
 from app.repositories.automation_session import (
-                                                 AutomationSessionRepository,
-                                                 automation_session_repository,
+    AutomationSessionRepository,
+    automation_session_repository,
 )
 from app.repositories.base import BaseRepository
 from app.repositories.evaluation import EvaluationRepository
@@ -30,8 +30,8 @@ from app.repositories.feedback_score import FeedbackScoreRepository
 from app.repositories.prompt_version import PromptVersionRepository
 from app.repositories.test_run import CoverageRepository, TestRunRepository
 from app.repositories.training_dataset import (
-                                                 TrainingDatasetRepository,
-                                                 training_dataset_repository,
+    TrainingDatasetRepository,
+    training_dataset_repository,
 )
 
 __all__ = [

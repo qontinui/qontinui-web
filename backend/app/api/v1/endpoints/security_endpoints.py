@@ -8,11 +8,10 @@ This module provides endpoints for:
 """
 
 import structlog
+from app.api.deps import get_async_db
 from fastapi import APIRouter, Depends, Request, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.api.deps import get_async_db
 
 logger = structlog.get_logger(__name__)
 

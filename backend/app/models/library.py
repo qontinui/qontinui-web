@@ -8,13 +8,12 @@ Context, Macro, PromptSnippet.
 from datetime import datetime
 from uuid import UUID, uuid4
 
+from app.db.base import Base
 from qontinui_schemas.common import utc_now
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
-
-from app.db.base import Base
 
 
 class Check(Base):

@@ -3,11 +3,10 @@
 from typing import Any
 
 import structlog
+from app.worker.settings import get_arq_redis_settings
 from arq import create_pool
 from arq.connections import ArqRedis
 from arq.jobs import Job
-
-from app.worker.settings import get_arq_redis_settings
 
 logger = structlog.get_logger(__name__)
 

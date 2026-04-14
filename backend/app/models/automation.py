@@ -7,6 +7,7 @@ Provides models for automation input events.
 from datetime import UTC, datetime
 from enum import StrEnum
 
+from app.db.base import Base
 from sqlalchemy import (
     TIMESTAMP,
     BigInteger,
@@ -21,8 +22,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
-
-from app.db.base import Base
 
 
 class InputEventType(StrEnum):

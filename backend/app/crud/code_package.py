@@ -13,10 +13,6 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import and_, desc, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-
 from app.models.code_package import (
     CodePackage,
     PackageCategory,
@@ -24,6 +20,9 @@ from app.models.code_package import (
     SecurityScanStatus,
 )
 from app.schemas.code_package import PackageCreate, PackageUpdate, VersionCreate
+from sqlalchemy import and_, desc, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 logger = structlog.get_logger(__name__)
 

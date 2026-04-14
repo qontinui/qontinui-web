@@ -14,9 +14,6 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
-from radon.complexity import cc_visit  # type: ignore[import-untyped]
-from radon.metrics import mi_visit  # type: ignore[import-untyped]
-
 from app.services.security.constants import (
     MAX_COMPLEXITY_BLOCK,
     MAX_COMPLEXITY_WARN,
@@ -32,6 +29,8 @@ from app.services.security.models import (
     SecurityStatus,
 )
 from app.services.security.visitor import SecurityASTVisitor
+from radon.complexity import cc_visit  # type: ignore[import-untyped]
+from radon.metrics import mi_visit  # type: ignore[import-untyped]
 
 
 class CodeSecurityScanner:

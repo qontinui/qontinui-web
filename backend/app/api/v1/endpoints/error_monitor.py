@@ -8,10 +8,6 @@ from datetime import UTC
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import current_active_user, get_async_db
 from app.models.error_monitor import ErrorMonitorEntry
 from app.models.user import User
@@ -22,6 +18,9 @@ from app.schemas.error_monitor import (
     ErrorMonitorListResponse,
     ErrorMonitorSummary,
 )
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

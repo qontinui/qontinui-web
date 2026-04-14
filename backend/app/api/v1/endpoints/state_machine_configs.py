@@ -8,10 +8,6 @@ configurations in PostgreSQL for cross-device persistence.
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import current_active_user, get_async_db
 from app.crud import state_machine_config as crud
 from app.models.project import Project
@@ -23,6 +19,9 @@ from app.schemas.state_machine_config import (
     StateMachineConfigSummary,
     StateMachineConfigUpdate,
 )
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

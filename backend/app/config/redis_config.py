@@ -5,9 +5,8 @@ This module provides Redis client setup and connection management.
 """
 
 import structlog
-from redis import asyncio as aioredis
-
 from app.core.config import settings
+from redis import asyncio as aioredis
 
 logger = structlog.get_logger(__name__)
 

@@ -10,10 +10,6 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.middleware.error_handler import not_found_error, validation_error
 from app.models.organization import PermissionLevel
@@ -32,6 +28,9 @@ from app.schemas.project_assets import (
 )
 from app.services.project_image_service import project_image_service
 from app.utils.permission_utils import check_project_permission, check_read_only_mode
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

@@ -7,9 +7,6 @@ Provides database operations for locks, comments, and activity logs.
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import and_, delete, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.collaboration import (
     ActionType,
     ActivityLog,
@@ -17,6 +14,8 @@ from app.models.collaboration import (
     ProjectLock,
     ResourceType,
 )
+from sqlalchemy import and_, delete, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 # ProjectLock CRUD

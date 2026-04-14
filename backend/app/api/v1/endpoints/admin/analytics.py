@@ -2,14 +2,13 @@
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_async_db
 from app.api.v1.endpoints.admin.dependencies import require_admin
 from app.models.user import User
 from app.repositories.admin_user import admin_user_repository
 from app.services.auth_analytics_service import auth_analytics_service
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 

@@ -13,9 +13,6 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.automation import AutomationInputEvent, InputEventType
 from app.models.automation_screenshot import AutomationScreenshot
 from app.models.execution_tree_event import ExecutionTreeEvent
@@ -24,8 +21,10 @@ from app.websockets.automation.schemas import make_timestamp
 
 # Re-export screenshot handler for backward compatibility
 from app.websockets.automation.screenshot_handler import (
-    handle_screenshot as handle_screenshot,  # noqa: F401
-)
+    handle_screenshot as handle_screenshot,
+)  # noqa: F401
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

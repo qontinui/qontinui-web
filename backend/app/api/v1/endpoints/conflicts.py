@@ -12,11 +12,6 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
-
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.models.collaboration import ConflictLog
 from app.models.project import Project
@@ -33,6 +28,10 @@ from app.schemas.conflict import (
 )
 from app.services.collaboration_service import collaboration_service
 from app.services.conflict_resolution_service import conflict_resolution_service
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 logger = structlog.get_logger(__name__)
 

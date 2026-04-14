@@ -11,11 +11,10 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from app.db.base import Base
 from sqlalchemy import JSON, Column, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.db.base import Base
 
 
 class ProjectAnnotationState(Base):

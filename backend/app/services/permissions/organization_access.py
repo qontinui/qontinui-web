@@ -8,11 +8,10 @@ retrieval, and management role verification.
 from uuid import UUID
 
 import structlog
-from sqlalchemy import and_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.organization import Organization, TeamMember, TeamRole
 from app.services.permissions.helpers import check_role_level
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

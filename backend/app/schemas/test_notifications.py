@@ -8,9 +8,8 @@ WebSocket, email, Slack, and generic webhooks.
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, HttpUrl
-
 from app.schemas.base import IsoDatetime
+from pydantic import BaseModel, Field, HttpUrl
 
 
 class TestRunNotificationBase(BaseModel):

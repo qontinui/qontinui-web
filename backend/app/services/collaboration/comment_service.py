@@ -12,11 +12,10 @@ from typing import cast
 from uuid import UUID
 
 import structlog
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.collaboration import ProjectComment
 from app.repositories.collaboration.comment_repository import comment_repository
 from app.schemas.collaboration import CommentCreate, CommentResponse, CommentUpdate
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

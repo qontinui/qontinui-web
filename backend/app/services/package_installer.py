@@ -12,9 +12,6 @@ This service maintains backward compatibility while delegating to focused servic
 from datetime import UTC, datetime
 
 import structlog
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.code_package import (
     CodePackage,
     InstallationStatus,
@@ -38,6 +35,8 @@ from app.services.package_download_service import (
 )
 from app.services.package_validator import PackageValidator, package_validator
 from app.services.project_directory import ProjectDirectoryManager
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

@@ -8,9 +8,8 @@ and images that are used in visual automation workflows.
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
-
 from app.schemas.base import BaseORMSchema, IsoDatetime
+from pydantic import BaseModel, Field, field_validator
 
 # ============================================================================
 # ProjectScreenshot Schemas

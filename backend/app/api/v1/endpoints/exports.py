@@ -8,10 +8,6 @@ from pathlib import Path
 
 import boto3
 import structlog
-from botocore.exceptions import BotoCoreError, ClientError
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.models.user import User
 from app.schemas.training_export import (
@@ -20,6 +16,9 @@ from app.schemas.training_export import (
     S3ExportRequest,
     S3ExportResponse,
 )
+from botocore.exceptions import BotoCoreError, ClientError
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

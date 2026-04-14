@@ -14,9 +14,6 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_async_db
 from app.models.user import User
 from app.schemas.testing import (
@@ -39,6 +36,8 @@ from app.services.screenshot_upload_service import (
     screenshot_upload_service,
 )
 from app.services.test_run_service import TestRunService
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .deps import (
     ProjectAccessDeniedError,

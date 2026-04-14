@@ -11,11 +11,7 @@ All endpoints are read-only and require an authenticated user.
 
 from __future__ import annotations
 
-from typing import List, Optional
-
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
-
 from app.api.deps import get_current_active_user_async
 from app.db.runner_db import get_runner_pool
 from app.models.runner_process_log import (
@@ -24,6 +20,7 @@ from app.models.runner_process_log import (
     RunnerProcessSessionOutputLine,
 )
 from app.models.user import User
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
@@ -54,14 +51,14 @@ def _row_to_line(row) -> RunnerProcessSessionOutputLine:
 
 @router.get(
     "/sessions",
-    response_model=List[RunnerProcessSession],
+    response_model=list[RunnerProcessSession],
     summary="List runner process sessions",
 )
 async def list_runner_process_sessions(
-    config_id: Optional[str] = Query(None, description="Filter by process_config_id"),
+    config_id: str | None = Query(None, description="Filter by process_config_id"),
     limit: int = Query(20, ge=1, le=500),
     _user: User = Depends(get_current_active_user_async),
-) -> List[RunnerProcessSession]:
+) -> list[RunnerProcessSession]:
     pool = await get_runner_pool()
     try:
         async with pool.acquire() as conn:
@@ -97,7 +94,7 @@ async def list_runner_process_sessions(
 
 @router.get(
     "/sessions/{session_id}/output",
-    response_model=List[RunnerProcessSessionOutputLine],
+    response_model=list[RunnerProcessSessionOutputLine],
     summary="Get output lines for a runner process session",
 )
 async def get_runner_process_session_output(
@@ -105,7 +102,7 @@ async def get_runner_process_session_output(
     limit: int = Query(500, ge=1, le=5000),
     offset: int = Query(0, ge=0),
     _user: User = Depends(get_current_active_user_async),
-) -> List[RunnerProcessSessionOutputLine]:
+) -> list[RunnerProcessSessionOutputLine]:
     pool = await get_runner_pool()
     try:
         async with pool.acquire() as conn:
@@ -122,23 +119,29 @@ async def get_runner_process_session_output(
                 offset,
             )
     except Exception as e:
-        logger.error("runner_logs_get_output_failed", error=str(e), session_id=session_id)
+        logger.error(
+            "runner_logs_get_output_failed", error=str(e), session_id=session_id
+        )
         raise HTTPException(status_code=503, detail=f"Runner DB unavailable: {e}")
     return [_row_to_line(r) for r in rows]
 
 
 @router.get(
     "/search",
-    response_model=List[RunnerProcessLogSearchHit],
+    response_model=list[RunnerProcessLogSearchHit],
     summary="Search runner process log lines (ILIKE)",
 )
 async def search_runner_process_logs(
-    q: str = Query(..., min_length=1, description="Substring to search for (case-insensitive)"),
-    config_id: Optional[str] = Query(None),
+    q: str = Query(
+        ..., min_length=1, description="Substring to search for (case-insensitive)"
+    ),
+    config_id: str | None = Query(None),
     limit: int = Query(200, ge=1, le=2000),
     _user: User = Depends(get_current_active_user_async),
-) -> List[RunnerProcessLogSearchHit]:
-    pattern = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+) -> list[RunnerProcessLogSearchHit]:
+    pattern = (
+        "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    )
     pool = await get_runner_pool()
     try:
         async with pool.acquire() as conn:

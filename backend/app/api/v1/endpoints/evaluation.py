@@ -24,6 +24,9 @@ Endpoints:
 from uuid import UUID
 
 import structlog
+from app.api.deps import current_active_user, get_async_db
+from app.models.user import User
+from app.repositories.evaluation import EvaluationRepository
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from qontinui_schemas.api.evaluation import (
     DatasetItemCreate,
@@ -42,10 +45,6 @@ from qontinui_schemas.api.evaluation import (
     ExperimentSummary,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.api.deps import current_active_user, get_async_db
-from app.models.user import User
-from app.repositories.evaluation import EvaluationRepository
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

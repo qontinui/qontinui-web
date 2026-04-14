@@ -9,10 +9,9 @@ import asyncio
 from datetime import UTC, datetime
 
 import structlog
-from sqlalchemy import delete
-
 from app.db.session import AsyncSessionLocal
 from app.models.clipboard import ClipboardEntry
+from sqlalchemy import delete
 
 logger = structlog.get_logger(__name__)
 

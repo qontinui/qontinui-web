@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-
 from app.models.test_deficiency import (
     DeficiencySeverity,
     DeficiencyStatus,

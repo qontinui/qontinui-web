@@ -14,6 +14,9 @@ Endpoints:
 """
 
 import structlog
+from app.api.deps import current_active_user, get_async_db
+from app.models.user import User
+from app.repositories.prompt_version import PromptVersionRepository
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from qontinui_schemas.api.prompt_versions import (
     PromptVersionCreate,
@@ -22,10 +25,6 @@ from qontinui_schemas.api.prompt_versions import (
     PromptVersionResponse,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.api.deps import current_active_user, get_async_db
-from app.models.user import User
-from app.repositories.prompt_version import PromptVersionRepository
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

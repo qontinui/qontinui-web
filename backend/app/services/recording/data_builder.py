@@ -10,7 +10,6 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import structlog
-
 from app.models.recording import (
     Recording,
     RecordingContext,

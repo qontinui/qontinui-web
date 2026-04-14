@@ -38,10 +38,9 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
+from app.models.audit_log import AuditLog
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.audit_log import AuditLog
 
 logger = structlog.get_logger(__name__)
 

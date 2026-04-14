@@ -7,9 +7,8 @@ Provides Pydantic models for state discovery API responses.
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
-
 from app.schemas.base import IsoDatetime
+from pydantic import BaseModel, Field
 
 
 class StateTransition(BaseModel):

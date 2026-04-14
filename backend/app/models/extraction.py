@@ -3,11 +3,10 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from app.db.base import Base
 from sqlalchemy import JSON, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import relationship
-
-from app.db.base import Base
 
 
 class ExtractionSession(Base):

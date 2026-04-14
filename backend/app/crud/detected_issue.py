@@ -7,9 +7,6 @@ Provides database operations for issues detected during AI-assisted automation.
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import desc, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.detected_issue import DetectedIssue
 from app.schemas.detected_issue import (
     DetectedIssueCreate,
@@ -17,6 +14,8 @@ from app.schemas.detected_issue import (
     IssueStats,
     IssueSyncItem,
 )
+from sqlalchemy import desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def create_detected_issue(

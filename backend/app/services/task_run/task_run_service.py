@@ -10,8 +10,6 @@ from datetime import UTC, date, datetime
 from uuid import UUID
 
 import structlog
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.task_run import TaskRun, TaskRunStatus, TaskType
 from app.repositories.task_run import (
     DeferredQuestionRepository,
@@ -49,6 +47,7 @@ from app.services.task_run.schemas import (
     TaskRunSessionUpdate,
     TaskRunUpdate,
 )
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -357,9 +356,8 @@ class TaskRunService:
             Dictionary with total count, breakdowns by severity/category/status,
             and recent findings.
         """
-        from sqlalchemy import func, select
-
         from app.models.task_run import TaskRunFinding
+        from sqlalchemy import func, select
 
         # Get all task run IDs for this user
         task_run_ids_query = select(TaskRun.id).where(

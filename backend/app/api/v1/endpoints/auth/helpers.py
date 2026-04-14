@@ -1,11 +1,10 @@
 """Shared helper functions for auth endpoints."""
 
 import structlog
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.core.config import settings
 from app.models.device_session import DeviceSession
 from app.services.device_session_service import device_session_service
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

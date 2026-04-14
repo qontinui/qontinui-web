@@ -9,9 +9,6 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import HTTPException, status
-from pydantic import ValidationError
-
 from app.crud.project import get_project
 from app.services.websocket_manager import connection_manager
 from app.utils.authorization import verify_project_access
@@ -30,6 +27,8 @@ from app.websockets.collaboration.message_handlers import (
     handle_sync_state,
 )
 from app.websockets.collaboration.sync_manager import CollaborationSyncManager
+from fastapi import HTTPException, status
+from pydantic import ValidationError
 
 logger = structlog.get_logger(__name__)
 

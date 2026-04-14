@@ -14,8 +14,6 @@ from typing import Any, cast
 from uuid import UUID
 
 import structlog
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.crud.project import get_project
 from app.crud.version import (
     create_version,
@@ -31,6 +29,7 @@ from app.schemas.version import (
     ProjectVersionListItem,
     VersionComparisonResponse,
 )
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

@@ -7,9 +7,6 @@ Provides REST API for browsing, searching, and managing discovered custom functi
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import current_active_user, get_async_db
 from app.crud import custom_function as crud
 from app.models.project import Project
@@ -21,6 +18,8 @@ from app.schemas.custom_function import (
     CustomFunctionUpdate,
     FunctionStats,
 )
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

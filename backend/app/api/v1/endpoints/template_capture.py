@@ -7,6 +7,11 @@ from uuid import UUID
 import httpx
 import numpy as np
 import structlog
+from app.api.deps import current_active_user, get_async_db
+from app.models import ApplicationProfile, TemplateCandidate, User
+from app.services.template_candidate_storage_service import (
+    TemplateCandidateStorageService,
+)
 from fastapi import APIRouter, Depends, HTTPException, status
 from PIL import Image
 from pydantic import BaseModel
@@ -33,12 +38,6 @@ from qontinui_schemas.template_capture import (
 )
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.api.deps import current_active_user, get_async_db
-from app.models import ApplicationProfile, TemplateCandidate, User
-from app.services.template_candidate_storage_service import (
-    TemplateCandidateStorageService,
-)
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)

@@ -14,8 +14,6 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.collaboration import ActivityLog, ProjectLock
 from app.models.organization import Organization, OrganizationInvitation
 from app.services.collaboration import (
@@ -23,6 +21,7 @@ from app.services.collaboration import (
     locking_service,
     sharing_service,
 )
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

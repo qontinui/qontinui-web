@@ -226,9 +226,8 @@ class TestFilePathValidator:
 
     def test_validate_path_traversal(self, project_dir: Path):
         """Test that path traversal attempts are blocked."""
-        from fastapi import HTTPException
-
         from app.services.file_loader import FilePathValidator
+        from fastapi import HTTPException
 
         validator = FilePathValidator()
 
@@ -247,9 +246,8 @@ class TestFilePathValidator:
 
     def test_validate_absolute_path(self, project_dir: Path):
         """Test that absolute paths are blocked."""
-        from fastapi import HTTPException
-
         from app.services.file_loader import FilePathValidator
+        from fastapi import HTTPException
 
         validator = FilePathValidator()
 
@@ -260,9 +258,8 @@ class TestFilePathValidator:
 
     def test_validate_non_python_file(self, project_dir: Path):
         """Test that non-Python files are rejected."""
-        from fastapi import HTTPException
-
         from app.services.file_loader import FilePathValidator
+        from fastapi import HTTPException
 
         validator = FilePathValidator()
 
@@ -277,9 +274,8 @@ class TestFilePathValidator:
 
     def test_validate_missing_file(self, project_dir: Path):
         """Test that missing files are rejected."""
-        from fastapi import HTTPException
-
         from app.services.file_loader import FilePathValidator
+        from fastapi import HTTPException
 
         validator = FilePathValidator()
 

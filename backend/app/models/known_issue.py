@@ -9,12 +9,11 @@ problems detected during workflow execution.
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+from app.db.base import Base
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
-
-from app.db.base import Base
 
 
 class KnownIssue(Base):

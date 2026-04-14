@@ -9,14 +9,13 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.main import app
 from app.models.project import Project
 from app.models.runner_connection import RunnerConnection
 from app.models.software_test_run import SoftwareTestRun, TestRunStatus
 from app.models.test_deficiency import DeficiencySeverity, TestDeficiency
+from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .conftest import (
     create_test_deficiencies,

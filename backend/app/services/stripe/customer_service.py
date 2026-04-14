@@ -4,11 +4,10 @@ import asyncio
 from typing import Any
 
 import stripe
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.subscription import Subscription, SubscriptionTier
 from app.models.user import User
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class StripeCustomerService:

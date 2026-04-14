@@ -13,9 +13,6 @@ For new code, consider importing directly from app.services.recording.
 
 from typing import Any
 
-from fastapi import UploadFile
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.recording import Recording, RecordingFrame
 from app.schemas.recording import (
     DiscoveredStateResponse,
@@ -31,6 +28,8 @@ from app.services.recording import (
     RecordingResponseBuilder,
     RecordingStorageManager,
 )
+from fastapi import UploadFile
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class RecordingService:

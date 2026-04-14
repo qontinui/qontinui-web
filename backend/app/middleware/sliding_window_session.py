@@ -11,9 +11,6 @@ This middleware:
 from typing import Any, cast
 
 import structlog
-from fastapi import Request, Response
-from starlette.middleware.base import BaseHTTPMiddleware
-
 from app.core.config import settings
 from app.core.security import (
     create_access_token,
@@ -24,6 +21,8 @@ from app.core.security import (
 )
 from app.crud.session_activity import is_session_expired, update_last_activity
 from app.db.session import AsyncSessionLocal
+from fastapi import Request, Response
+from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = structlog.get_logger(__name__)
 

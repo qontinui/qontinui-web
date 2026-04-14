@@ -10,7 +10,6 @@ from typing import Any
 
 import httpx
 import structlog
-
 from app.schemas.test_notifications import (
     CoverageAlertNotification,
     DeficiencyNotification,

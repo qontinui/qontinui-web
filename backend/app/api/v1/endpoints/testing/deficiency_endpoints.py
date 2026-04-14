@@ -12,10 +12,6 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, Query, status
-from qontinui_schemas.common import utc_now
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import current_active_user, get_async_db
 from app.models.user import User
 from app.schemas.testing import (
@@ -28,6 +24,9 @@ from app.schemas.testing import (
 )
 from app.services.deficiency_management_service import DeficiencyManagementService
 from app.services.test_run_service import TestRunService
+from fastapi import APIRouter, Depends, Query, status
+from qontinui_schemas.common import utc_now
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .deps import (
     DeficiencyNotFoundError,

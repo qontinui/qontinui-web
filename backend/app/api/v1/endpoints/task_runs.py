@@ -19,15 +19,6 @@ from datetime import date
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
-from qontinui_schemas.execution.verification_result import (
-    VerificationResultResponse,
-    VerificationResultsBatchRequest,
-    VerificationResultsListResponse,
-)
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import current_active_user, get_async_db
 from app.models.user import User
 from app.services.task_run import TaskRunVerificationService
@@ -53,6 +44,14 @@ from app.services.task_run_service import (
     TaskRunSessionUpdate,
     TaskRunUpdate,
 )
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
+from qontinui_schemas.execution.verification_result import (
+    VerificationResultResponse,
+    VerificationResultsBatchRequest,
+    VerificationResultsListResponse,
+)
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

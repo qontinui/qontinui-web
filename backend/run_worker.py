@@ -3,9 +3,8 @@
 
 import logging
 
-from arq import run_worker
-
 from app.worker.settings import WorkerSettings
+from arq import run_worker
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

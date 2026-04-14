@@ -9,11 +9,10 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
+from app.models.code_package import CodePackage, PackageRating
 from sqlalchemy import and_, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-
-from app.models.code_package import CodePackage, PackageRating
 
 logger = structlog.get_logger(__name__)
 

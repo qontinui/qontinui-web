@@ -12,10 +12,9 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from app.models.automation_session import AutomationSession
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.automation_session import AutomationSession
 
 logger = structlog.get_logger(__name__)
 

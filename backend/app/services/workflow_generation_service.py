@@ -10,13 +10,12 @@ from typing import cast
 from uuid import UUID
 
 import structlog
+from app.models.capture import CaptureScreenshot, CaptureSession, LearnedWorkflow
 from fastapi import HTTPException
 from fastapi import status as http_status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-
-from app.models.capture import CaptureScreenshot, CaptureSession, LearnedWorkflow
 
 logger = structlog.get_logger(__name__)
 

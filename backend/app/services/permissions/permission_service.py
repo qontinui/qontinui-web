@@ -7,8 +7,6 @@ service class that preserves the original PermissionService interface.
 
 from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.organization import Organization, PermissionLevel, TeamMember, TeamRole
 from app.models.project import Project
 from app.services.permissions.helpers import (
@@ -28,6 +26,7 @@ from app.services.permissions.project_access import (
     get_user_accessible_projects,
     get_user_permission_level,
 )
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class PermissionService:

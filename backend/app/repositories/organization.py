@@ -7,10 +7,6 @@ Provides async CRUD operations for organization-related models.
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import and_, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
-
 from app.models.organization import (
     Organization,
     OrganizationInvitation,
@@ -19,6 +15,9 @@ from app.models.organization import (
 )
 from app.models.project import Project
 from app.models.user import User
+from sqlalchemy import and_, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 
 class OrganizationRepository:

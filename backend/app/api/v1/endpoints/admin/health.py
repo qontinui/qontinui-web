@@ -3,10 +3,6 @@
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_async_db
 from app.api.v1.endpoints.admin.dependencies import require_admin
 from app.models.user import User
@@ -20,6 +16,9 @@ from app.schemas.health import (
     TokenBlacklistStats,
 )
 from app.services.health_service import health_service
+from fastapi import APIRouter, Depends
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)

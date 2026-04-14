@@ -9,16 +9,15 @@ from typing import Literal, cast
 from uuid import UUID
 
 import structlog
-from fastapi import UploadFile
-from PIL import Image
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.core.error_codes import ErrorCode
 from app.middleware.error_handler import validation_error
 from app.models.project_assets import ProjectScreenshot
 from app.schemas.project_assets import ProjectScreenshotResponse
 from app.services.object_storage import object_storage
 from app.services.storage_service import StorageQuotaExceeded, StorageService
+from fastapi import UploadFile
+from PIL import Image
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

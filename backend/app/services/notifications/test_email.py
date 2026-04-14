@@ -7,9 +7,6 @@ Provides utilities for sending test-related notification emails.
 from typing import Any
 
 import structlog
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.project import Project
 from app.models.software_test_run import SoftwareTestRun
 from app.models.test_deficiency import TestDeficiency
@@ -20,6 +17,8 @@ from app.schemas.test_notifications import (
 )
 from app.services.email.email_template_service import EmailTemplateService
 from app.services.email.email_transport_service import EmailTransportService
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

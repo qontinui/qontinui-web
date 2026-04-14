@@ -8,9 +8,8 @@ import io
 
 import httpx
 import structlog
-from PIL import Image
-
 from app.core.config import settings
+from PIL import Image
 
 logger = structlog.get_logger(__name__)
 

@@ -7,12 +7,11 @@ Extracts database query logic from project_images.py endpoints into reusable met
 from uuid import UUID
 
 import structlog
+from app.models.project_assets import ProjectImage, ProjectScreenshot
+from app.repositories.base import BaseRepository
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.project_assets import ProjectImage, ProjectScreenshot
-from app.repositories.base import BaseRepository
 
 logger = structlog.get_logger(__name__)
 

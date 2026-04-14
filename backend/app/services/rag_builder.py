@@ -13,12 +13,11 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.crud.project import get_project, update_project
 from app.schemas.project import ProjectUpdate
 from app.services.rag.embedding_processor import embedding_processor
 from app.services.rag.entity_crud import element_crud, state_crud, transition_crud
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

@@ -12,11 +12,10 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.crud.version import create_command, get_command_count, get_commands_by_project
 from app.models.edit_command import EditCommand
 from app.schemas.version import EditCommandCreate, EditCommandHistoryResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

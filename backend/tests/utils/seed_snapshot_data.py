@@ -7,9 +7,8 @@ Creates test snapshot runs in the database for Playwright tests to use.
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.crud import snapshot as snapshot_crud
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def create_test_snapshots(db: AsyncSession) -> list[str]:

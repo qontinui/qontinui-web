@@ -14,10 +14,6 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.models.project import Project
 from app.models.state_discovery_result import StateDiscoveryResult
@@ -32,6 +28,9 @@ from app.schemas.state_discovery_result import (
     StateMachineExport,
     StateMachineImport,
 )
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

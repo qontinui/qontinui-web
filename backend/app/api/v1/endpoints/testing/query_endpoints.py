@@ -12,9 +12,6 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import current_active_user, get_async_db
 from app.models.user import User
 from app.repositories import TestRunRepository
@@ -29,6 +26,8 @@ from app.schemas.testing import (
     TransitionReliabilityStats,
 )
 from app.services.test_run_service import TestRunService
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .deps import (
     get_test_run_service,

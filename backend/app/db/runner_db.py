@@ -18,16 +18,14 @@ in.
 from __future__ import annotations
 
 import os
-from typing import Optional
 
 import asyncpg
 import structlog
-
 from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
 
-_pool: Optional[asyncpg.Pool] = None
+_pool: asyncpg.Pool | None = None
 
 
 def _runner_dsn() -> str:
@@ -66,7 +64,10 @@ async def get_runner_pool() -> asyncpg.Pool:
     global _pool
     if _pool is None:
         dsn = _runner_dsn()
-        logger.info("runner_db_pool_initializing", dsn_host=dsn.split("@")[-1].split("/")[0] if "@" in dsn else "local")
+        logger.info(
+            "runner_db_pool_initializing",
+            dsn_host=dsn.split("@")[-1].split("/")[0] if "@" in dsn else "local",
+        )
         _pool = await asyncpg.create_pool(
             dsn=dsn,
             min_size=1,

@@ -47,6 +47,7 @@ def _get_provider():
 
 # ── Request / response schemas ─────────────────────────────────────
 
+
 class TextEmbeddingRequest(BaseModel):
     text: str
     model: str = "minilm"
@@ -71,6 +72,7 @@ class BatchEmbeddingResponse(BaseModel):
 
 
 # ── Endpoints ──────────────────────────────────────────────────────
+
 
 @router.post("/compute-text", response_model=TextEmbeddingResponse)
 def compute_text_embedding(request: TextEmbeddingRequest):

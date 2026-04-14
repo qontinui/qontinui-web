@@ -11,18 +11,17 @@ import io
 from uuid import UUID
 
 import structlog
-from fastapi import HTTPException, status
-from PIL import Image
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-
 from app.models.capture import CaptureDetectedElement, CaptureScreenshot, CaptureSession
 from app.services.object_storage import object_storage
 
 # DEPRECATED: CV-heavy service removed - moved to qontinui library
 # from app.services.region_analyzer import RegionAnalyzer
 from app.services.template_matcher_service import TemplateMatcherService
+from fastapi import HTTPException, status
+from PIL import Image
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 logger = structlog.get_logger(__name__)
 
