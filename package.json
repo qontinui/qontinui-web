@@ -6,6 +6,7 @@
     "type-check": "cd frontend && npx tsc --noEmit"
   },
   "devDependencies": {
+    "patch-package": "^8.0.1",
     "typescript": "^5"
   }
 }

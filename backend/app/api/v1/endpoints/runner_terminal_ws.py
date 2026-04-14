@@ -7,7 +7,7 @@ and receive real-time terminal output.
 
 import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from qontinui_schemas.common import utc_now
 from sqlalchemy import select
 
@@ -33,7 +33,7 @@ class TerminalMessage(BaseModel):
     title: str | None = None
     working_dir: str | None = None
     request_id: str | None = None
-    params: dict = {}
+    params: dict = Field(default_factory=dict)
 
 
 @router.websocket("/ws/runner/terminal/{connection_id}")
@@ -242,6 +242,12 @@ async def websocket_runner_terminal_endpoint(
                     )
 
                 elif message.type == "terminal_input":
+                    if not message.terminal_id:
+                        await websocket.send_json(
+                            {"type": "error", "message": f"terminal_id is required for {message.type}"}
+                        )
+                        continue
+
                     # Forward terminal input to runner (fire-and-forget, no ack)
                     input_msg = {
                         "type": "terminal_input",
@@ -263,6 +269,12 @@ async def websocket_runner_terminal_endpoint(
                         )
 
                 elif message.type == "terminal_resize":
+                    if not message.terminal_id:
+                        await websocket.send_json(
+                            {"type": "error", "message": f"terminal_id is required for {message.type}"}
+                        )
+                        continue
+
                     # Forward resize to runner (fire-and-forget, no ack)
                     resize_msg = {
                         "type": "terminal_resize",
@@ -343,6 +355,12 @@ async def websocket_runner_terminal_endpoint(
                         )
 
                 elif message.type == "terminal_close":
+                    if not message.terminal_id:
+                        await websocket.send_json(
+                            {"type": "error", "message": f"terminal_id is required for {message.type}"}
+                        )
+                        continue
+
                     # Close a terminal session on the runner
                     close_msg = {
                         "type": "terminal_close",
@@ -372,6 +390,12 @@ async def websocket_runner_terminal_endpoint(
                         )
 
                 elif message.type == "terminal_buffer":
+                    if not message.terminal_id:
+                        await websocket.send_json(
+                            {"type": "error", "message": f"terminal_id is required for {message.type}"}
+                        )
+                        continue
+
                     # Request terminal buffer/history from runner
                     buffer_msg = {
                         "type": "terminal_buffer",
@@ -425,7 +449,7 @@ async def websocket_runner_terminal_endpoint(
                 )
                 try:
                     await websocket.send_json(
-                        {"type": "error", "message": f"Error: {e}"}
+                        {"type": "error", "message": "Internal server error processing terminal message"}
                     )
                 except Exception:
                     break

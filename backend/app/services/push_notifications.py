@@ -183,11 +183,13 @@ async def dispatch_push_for_event(db: AsyncSession, event: WorkflowEvent) -> Non
     if event.run_id:
         data["run_id"] = event.run_id
 
-    # Collapse session_completed notifications per run so the device shows
-    # one updating notification instead of N separate ones.
+    # Collapse notifications so the device shows one updating notification
+    # instead of N separate ones.
     collapse_id = None
     if event_type == "session_completed" and event.run_id:
         collapse_id = f"session-completed-{event.run_id}"
+    elif event_type == "terminal_exited" and event.device_id:
+        collapse_id = f"terminal-exited-{event.device_id}"
 
     await send_push_notifications(
         tokens=tokens,
