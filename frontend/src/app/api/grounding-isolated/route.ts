@@ -136,6 +136,9 @@ export async function GET(request: NextRequest) {
   const bg = sp.get("bg") ?? "solid-white";
   const left = Math.max(0, Math.min(100, parseFloat(sp.get("left") ?? "50")));
   const top = Math.max(0, Math.min(100, parseFloat(sp.get("top") ?? "50")));
+  // Optional — capture-host uses this to correlate bbox reports back to
+  // the sample index it just advanced to.
+  const sampleIndex = parseInt(sp.get("sampleIndex") ?? "-1", 10);
 
   const bgStyle = resolveBg(bg);
   const isDark = theme === "dark";
@@ -168,22 +171,33 @@ export async function GET(request: NextRequest) {
   </div>
   <script>
     // Measure the grounding target element after render and expose the bbox
-    // so the capture script can read it via /api/grounding-isolated/bbox polling.
+    // via (a) window.__GROUNDING_BBOX__, (b) body data-attr, (c) a postMessage
+    // to the parent window (when the page is embedded by the capture-host).
+    var SAMPLE_INDEX = ${Number.isFinite(sampleIndex) ? sampleIndex : -1};
     requestAnimationFrame(function() {
       var el = document.querySelector('[data-grounding-target="true"]');
       if (!el) return;
       var r = el.getBoundingClientRect();
-      window.__GROUNDING_BBOX__ = {
+      var bbox = {
         x: Math.round(r.x), y: Math.round(r.y),
         width: Math.round(r.width), height: Math.round(r.height),
         viewportWidth: window.innerWidth, viewportHeight: window.innerHeight,
         component: el.getAttribute('data-component-type'),
         variant: el.getAttribute('data-component-variant'),
+        sampleIndex: SAMPLE_INDEX,
         ready: true
       };
-      // Also set it as a data attribute on body for easy extraction
-      document.body.setAttribute('data-grounding-bbox',
-        JSON.stringify(window.__GROUNDING_BBOX__));
+      window.__GROUNDING_BBOX__ = bbox;
+      document.body.setAttribute('data-grounding-bbox', JSON.stringify(bbox));
+      // Notify the capture-host (or any parent) that we've rendered this
+      // sample, so it can drive mss screenshot + dataset write.
+      try {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage(
+            Object.assign({ kind: 'grounding-bbox' }, bbox), '*'
+          );
+        }
+      } catch (e) { /* cross-origin */ }
     });
   </script>
 </body>
