@@ -51,12 +51,12 @@ export default function CaptureHostPage() {
   // script can drive the iframe via setValue/click commands.
   const inputRegistered = useUIElement({
     id: "capture-next-url",
-    description: "Pending isolated-sample URL the host iframe will load next",
+    label: "Pending isolated-sample URL the host iframe will load next",
     type: "input",
   });
   const advanceBtnRegistered = useUIElement({
     id: "capture-advance",
-    description:
+    label:
       "Click to load the pending URL into the host iframe and move to the next sample",
     type: "button",
   });
