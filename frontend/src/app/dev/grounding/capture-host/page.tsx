@@ -1,20 +1,15 @@
 "use client";
 
 /**
- * Grounding Capture Host — inline implementation of the capture-host
- * pattern.
+ * Grounding Capture Host
  *
- * The reusable primitives `<CaptureHostFrame>` and `useUIBridgeEcho` live
- * in `@qontinui/ui-bridge/react` and are the recommended entry-point for
- * new apps adopting this pattern. This page keeps an inline copy because
- * it's tightly coupled to the `/api/grounding-isolated` iframe protocol
- * and has been tested against the qontinui-runner capture script.
+ * Inline implementation of the capture-host pattern, coupled to the
+ * `/api/grounding-isolated` iframe protocol used by the qontinui-runner
+ * capture script.
  *
- * If you just need a standard capture host, prefer:
- * ```tsx
- * import { CaptureHostFrame } from '@qontinui/ui-bridge/react';
- * <CaptureHostFrame messageKind="grounding-bbox" initialSrc={...} />
- * ```
+ * For new apps, prefer the reusable primitives from the UI Bridge SDK:
+ *   import { CaptureHostFrame } from '@qontinui/ui-bridge/react';
+ *   <CaptureHostFrame messageKind="grounding-bbox" initialSrc={...} />
  *
  * Pattern docs: see `proj_ui_bridge_capture_host_pattern.md` in memory.
  */
@@ -32,15 +27,15 @@ interface IframeBbox {
   variant?: string;
 }
 
+const INITIAL_URL =
+  "/api/grounding-isolated?component=Button&variant=default&bg=solid-white&left=50&top=50";
+
 export default function GroundingCaptureHostPage() {
-  const [currentUrl, setCurrentUrl] = useState(
-    "/api/grounding-isolated?component=Button&variant=default&bg=solid-white&left=50&top=50",
-  );
+  const [currentUrl, setCurrentUrl] = useState(INITIAL_URL);
   const [sampleIndex, setSampleIndex] = useState(-1);
   const [lastBbox, setLastBbox] = useState<IframeBbox | null>(null);
   const urlInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Register control elements + echo outputs with UI Bridge.
   useUIElement({
     id: "capture-next-url",
     label: "Pending isolated-sample URL the host iframe will load next",
@@ -62,7 +57,6 @@ export default function GroundingCaptureHostPage() {
     type: "input",
   });
 
-  // Receive bbox messages from the iframe.
   useEffect(() => {
     function onMessage(ev: MessageEvent) {
       const data = ev.data;
@@ -74,7 +68,7 @@ export default function GroundingCaptureHostPage() {
         return;
       }
       const d = data as Record<string, unknown>;
-      const bbox: IframeBbox = {
+      setLastBbox({
         x: Number(d.x ?? 0),
         y: Number(d.y ?? 0),
         width: Number(d.width ?? 0),
@@ -82,8 +76,7 @@ export default function GroundingCaptureHostPage() {
         sampleIndex: Number(d.sampleIndex ?? -1),
         component: d.component as string | undefined,
         variant: d.variant as string | undefined,
-      };
-      setLastBbox(bbox);
+      });
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
@@ -153,8 +146,8 @@ export default function GroundingCaptureHostPage() {
           ? `${lastBbox.x},${lastBbox.y} ${lastBbox.width}×${lastBbox.height}`
           : "(none)"}
       </div>
-      {/* Echo inputs — registered with UI Bridge so automation reads the
-          bbox from /control/snapshot. Two IDs for compatibility: legacy
+      {/* Echo inputs — registered with UI Bridge so automation reads the bbox
+          from /control/snapshot. Two IDs for compatibility: legacy
           `capture-last-bbox` and the SDK default `capture-last-echo`. */}
       <input
         id="capture-last-bbox"
@@ -195,6 +188,7 @@ export default function GroundingCaptureHostPage() {
         }}
       />
       <iframe
+        key={currentUrl}
         src={currentUrl}
         title="grounding-sample"
         data-grounding-iframe="true"
