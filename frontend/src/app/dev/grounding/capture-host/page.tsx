@@ -1,28 +1,22 @@
 "use client";
 
 /**
- * Grounding Capture Host — outer page that keeps the UI Bridge SDK stable
- * while cycling an inner iframe through isolated-component variants.
+ * Grounding Capture Host — inline implementation of the capture-host
+ * pattern.
  *
- * Why:
- *   The standalone isolated-component page (/dev/grounding/isolated) renders
- *   a position:fixed backdrop that has been observed to destabilise the UI
- *   Bridge provider tree on some Next.js 15 builds — heartbeats stop and
- *   navigation commands can't be delivered.  Hosting the isolated content in
- *   an iframe isolates the risk: the outer page is a normal App-Router page
- *   with the full provider stack, so the SDK stays connected for the entire
- *   capture run.
+ * The reusable primitives `<CaptureHostFrame>` and `useUIBridgeEcho` live
+ * in `@qontinui/ui-bridge/react` and are the recommended entry-point for
+ * new apps adopting this pattern. This page keeps an inline copy because
+ * it's tightly coupled to the `/api/grounding-isolated` iframe protocol
+ * and has been tested against the qontinui-runner capture script.
  *
- * How:
- *   - The capture script writes JSON `{"url": "/api/grounding-isolated?..."}`
- *     into a UI Bridge-registered `<input>` via setValue, then clicks a
- *     `<button>` to advance the iframe.
- *   - After each navigation, the inner iframe posts a message back with the
- *     target element's bbox (viewport-relative); we render it into a
- *     `data-current-bbox` attribute on `<body>` so `/control/snapshot` can
- *     return it along with the iframe element.
- *   - The capture script takes its `mss` screenshot once it sees a fresh
- *     `data-current-sample-index`.
+ * If you just need a standard capture host, prefer:
+ * ```tsx
+ * import { CaptureHostFrame } from '@qontinui/ui-bridge/react';
+ * <CaptureHostFrame messageKind="grounding-bbox" initialSrc={...} />
+ * ```
+ *
+ * Pattern docs: see `proj_ui_bridge_capture_host_pattern.md` in memory.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -38,83 +32,74 @@ interface IframeBbox {
   variant?: string;
 }
 
-export default function CaptureHostPage() {
-  const [pendingUrl, setPendingUrl] = useState("");
+export default function GroundingCaptureHostPage() {
   const [currentUrl, setCurrentUrl] = useState(
     "/api/grounding-isolated?component=Button&variant=default&bg=solid-white&left=50&top=50",
   );
   const [sampleIndex, setSampleIndex] = useState(-1);
   const [lastBbox, setLastBbox] = useState<IframeBbox | null>(null);
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const urlInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Register the URL input + advance button with UI Bridge so the capture
-  // script can drive the iframe via setValue/click commands. Also register
-  // a read-only "bbox echo" input whose value is the JSON-serialised last
-  // reported bbox; the capture script reads it from /control/snapshot.
-  const inputRegistered = useUIElement({
+  // Register control elements + echo outputs with UI Bridge.
+  useUIElement({
     id: "capture-next-url",
     label: "Pending isolated-sample URL the host iframe will load next",
     type: "input",
   });
-  const advanceBtnRegistered = useUIElement({
+  useUIElement({
     id: "capture-advance",
-    label:
-      "Click to load the pending URL into the host iframe and move to the next sample",
+    label: "Load the pending URL into the host iframe",
     type: "button",
   });
-  const bboxEchoRegistered = useUIElement({
+  useUIElement({
     id: "capture-last-bbox",
-    label:
-      "Read-only JSON echo of the last bbox reported by the inner iframe",
+    label: "JSON echo of the last bbox reported by the iframe",
     type: "input",
   });
-  // Void the return values; the hooks just side-effect register the elements.
-  void inputRegistered;
-  void advanceBtnRegistered;
-  void bboxEchoRegistered;
+  useUIElement({
+    id: "capture-last-echo",
+    label: "Alias of capture-last-bbox for SDK parity",
+    type: "input",
+  });
 
-  // Receive bbox messages from the iframe and surface them via body attrs
+  // Receive bbox messages from the iframe.
   useEffect(() => {
     function onMessage(ev: MessageEvent) {
       const data = ev.data;
       if (
         typeof data !== "object" ||
         data === null ||
-        data.kind !== "grounding-bbox"
+        (data as { kind?: unknown }).kind !== "grounding-bbox"
       ) {
         return;
       }
+      const d = data as Record<string, unknown>;
       const bbox: IframeBbox = {
-        x: Number(data.x ?? 0),
-        y: Number(data.y ?? 0),
-        width: Number(data.width ?? 0),
-        height: Number(data.height ?? 0),
-        sampleIndex: Number(data.sampleIndex ?? -1),
-        component: data.component,
-        variant: data.variant,
+        x: Number(d.x ?? 0),
+        y: Number(d.y ?? 0),
+        width: Number(d.width ?? 0),
+        height: Number(d.height ?? 0),
+        sampleIndex: Number(d.sampleIndex ?? -1),
+        component: d.component as string | undefined,
+        variant: d.variant as string | undefined,
       };
       setLastBbox(bbox);
-      // Surface for snapshot-based extraction
-      document.body.setAttribute(
-        "data-current-bbox",
-        JSON.stringify(bbox),
-      );
-      document.body.setAttribute(
-        "data-current-sample-index",
-        String(bbox.sampleIndex),
-      );
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
   const advance = useCallback(() => {
-    if (!pendingUrl) return;
-    const next = pendingUrl;
-    setPendingUrl("");
+    const input = urlInputRef.current;
+    if (!input) return;
+    const next = input.value;
+    if (!next) return;
+    input.value = "";
     setSampleIndex((i) => i + 1);
     setCurrentUrl(next);
-  }, [pendingUrl]);
+  }, []);
+
+  const bboxJson = lastBbox ? JSON.stringify(lastBbox) : "";
 
   return (
     <div style={{ padding: 16, fontFamily: "system-ui, sans-serif" }}>
@@ -132,9 +117,9 @@ export default function CaptureHostPage() {
         </label>
         <input
           id="capture-next-url"
+          ref={urlInputRef}
           type="text"
-          value={pendingUrl}
-          onChange={(e) => setPendingUrl(e.target.value)}
+          defaultValue=""
           placeholder="/api/grounding-isolated?component=Button&..."
           style={{
             flex: 1,
@@ -147,6 +132,7 @@ export default function CaptureHostPage() {
         />
         <button
           id="capture-advance"
+          type="button"
           onClick={advance}
           style={{
             padding: "4px 12px",
@@ -162,30 +148,53 @@ export default function CaptureHostPage() {
         </button>
       </div>
       <div style={{ fontSize: 11, color: "#666", marginBottom: 8 }}>
-        sample #{sampleIndex} — bbox: {lastBbox ? `${lastBbox.x},${lastBbox.y} ${lastBbox.width}×${lastBbox.height}` : "(none)"}
+        sample #{sampleIndex} — bbox:{" "}
+        {lastBbox
+          ? `${lastBbox.x},${lastBbox.y} ${lastBbox.width}×${lastBbox.height}`
+          : "(none)"}
       </div>
-      {/* Hidden echo input — the capture script reads its value from the
-          UI Bridge snapshot to recover the iframe's measured bbox. */}
+      {/* Echo inputs — registered with UI Bridge so automation reads the
+          bbox from /control/snapshot. Two IDs for compatibility: legacy
+          `capture-last-bbox` and the SDK default `capture-last-echo`. */}
       <input
         id="capture-last-bbox"
         type="text"
         readOnly
-        value={lastBbox ? JSON.stringify(lastBbox) : ""}
+        value={bboxJson}
         aria-hidden="true"
         tabIndex={-1}
         style={{
           position: "absolute",
-          width: 1,
-          height: 1,
+          top: 0,
+          left: 0,
+          width: 2,
+          height: 2,
           padding: 0,
-          margin: -1,
-          overflow: "hidden",
-          clip: "rect(0 0 0 0)",
           border: 0,
+          opacity: 0.01,
+          pointerEvents: "none",
+        }}
+      />
+      <input
+        id="capture-last-echo"
+        type="text"
+        readOnly
+        value={bboxJson}
+        aria-hidden="true"
+        tabIndex={-1}
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 2,
+          width: 2,
+          height: 2,
+          padding: 0,
+          border: 0,
+          opacity: 0.01,
+          pointerEvents: "none",
         }}
       />
       <iframe
-        ref={iframeRef}
         src={currentUrl}
         title="grounding-sample"
         data-grounding-iframe="true"
