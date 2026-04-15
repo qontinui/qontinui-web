@@ -154,6 +154,7 @@ export async function GET(request: NextRequest) {
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, -apple-system, sans-serif; }
   </style>
+  <script src="/html2canvas.min.js"></script>
 </head>
 <body class="${isDark ? "dark bg-background text-foreground" : "bg-background text-foreground"}">
   <div
@@ -246,6 +247,41 @@ export async function GET(request: NextRequest) {
           body: JSON.stringify(bbox),
           keepalive: true
         });
+      } catch (e) { /* ignore */ }
+      // Render the iframe's DOM to a PNG via html2canvas and POST it to
+      // the screenshot channel. This lets the capture driver pull real
+      // screenshots regardless of tab focus — mss screen-capture only sees
+      // whichever tab is visible on the captured monitor, whereas canvas
+      // rendering works in backgrounded tabs too.
+      try {
+        var hasH2C = false;
+        try { hasH2C = typeof html2canvas === 'function'; } catch (e) { /* ignore */ }
+        if (hasH2C && !window.__GROUNDING_SHOT_TAKEN__) {
+          window.__GROUNDING_SHOT_TAKEN__ = true;
+          html2canvas(document.body, {
+            backgroundColor: null,
+            logging: false,
+            width: window.innerWidth,
+            height: window.innerHeight,
+            windowWidth: window.innerWidth,
+            windowHeight: window.innerHeight
+          }).then(function(canvas) {
+            try {
+              var dataUrl = canvas.toDataURL('image/png');
+              fetch('/api/grounding-isolated/screenshot', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  sampleIndex: SAMPLE_INDEX,
+                  dataUrl: dataUrl,
+                  width: canvas.width,
+                  height: canvas.height
+                }),
+                keepalive: true
+              });
+            } catch (e) { /* ignore */ }
+          }).catch(function() { /* render failed — fall back to mss */ });
+        }
       } catch (e) { /* ignore */ }
     }
     setTimeout(measureAndReport, 0);
