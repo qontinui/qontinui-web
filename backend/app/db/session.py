@@ -3,11 +3,11 @@ import ssl
 from collections.abc import AsyncGenerator
 
 import structlog
-from app.core.config import settings
 from sqlalchemy import create_engine
-from sqlalchemy.ext.asyncio import (AsyncSession, async_sessionmaker,
-                                    create_async_engine)
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
+
+from app.core.config import settings
 
 # Sync engine only for Alembic migrations and init_db
 database_url_str = str(settings.DATABASE_URL)
@@ -44,6 +44,17 @@ else:
     # For local development without SSL (Docker PostgreSQL)
     # asyncpg tries SSL by default, so we need to explicitly disable it
     connect_args["ssl"] = False  # type: ignore[assignment]
+
+# Shared-schema mode: when the web backend uses the same PG instance as the
+# Tauri runner (dev/self-hosted), set search_path so unqualified table
+# references resolve against `runner.*` (which has the full schema + user data)
+# before falling back to `public.*`. Matches runner_db.py's behaviour and the
+# Tauri runner's own per-connection `SET search_path TO runner, public`.
+#
+# Controlled by WEB_DB_USE_RUNNER_SCHEMA env var (default: true for dev).
+# Set to "false" in production where the web backend has its own public.* tables.
+if os.getenv("WEB_DB_USE_RUNNER_SCHEMA", "true").lower() == "true":
+    connect_args["server_settings"] = {"search_path": "runner,public"}  # type: ignore[assignment]
 
 # ============================================================================
 # OPTIMIZED CONNECTION POOL CONFIGURATION
