@@ -9,15 +9,17 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
-from app.models.task_run import TaskRunAutomation, TaskRunStatus
-from app.repositories.task_run import (TaskRunAutomationRepository,
-                                       TaskRunRepository)
-from app.services.task_run.mappers import model_to_automation_response
-from app.services.task_run.schemas import (StepProgressResponse,
-                                           TaskRunAutomationCreate,
-                                           TaskRunAutomationResponse,
-                                           TaskRunAutomationUpdate)
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.task_run import TaskRunAutomation, TaskRunStatus
+from app.repositories.task_run import TaskRunAutomationRepository, TaskRunRepository
+from app.services.task_run.mappers import model_to_automation_response
+from app.services.task_run.schemas import (
+    StepProgressResponse,
+    TaskRunAutomationCreate,
+    TaskRunAutomationResponse,
+    TaskRunAutomationUpdate,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -196,7 +198,7 @@ class TaskRunAutomationService:
             return None
 
         # Check if task is currently running
-        is_running = task_run.status == TaskRunStatus.RUNNING
+        is_running = task_run.status == TaskRunStatus.running
 
         # Try to get progress from the latest automation record
         automations = await self.automation_repo.get_automations_for_task_run(
@@ -261,13 +263,13 @@ class TaskRunAutomationService:
 
         phase = "pending"
         phase_description = None
-        if task_run.status == TaskRunStatus.RUNNING:
+        if task_run.status == TaskRunStatus.running:
             phase = "running"
             phase_description = "Task is running"
-        elif task_run.status == TaskRunStatus.COMPLETE:
+        elif task_run.status == TaskRunStatus.complete:
             phase = "completed"
             phase_description = "Task completed"
-        elif task_run.status == TaskRunStatus.FAILED:
+        elif task_run.status == TaskRunStatus.failed:
             phase = "failed"
             phase_description = "Task failed"
 

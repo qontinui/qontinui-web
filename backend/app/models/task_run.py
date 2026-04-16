@@ -11,9 +11,31 @@ Migrated from ai_task.py - renamed for unified architecture.
 """
 
 from datetime import UTC, datetime
-from enum import StrEnum
 from uuid import UUID, uuid4
 
+# Source of truth for these enum shapes lives in
+# ``qontinui-schemas/rust/src/task_run.rs``.  Re-exported under the local
+# names the rest of this package already uses so call sites don't need the
+# ``TaskRun*`` prefix.  If a new variant lands on the Rust side that doesn't
+# yet exist in the corresponding PG ENUM, an Alembic
+# ``ALTER TYPE ... ADD VALUE`` migration is still required — see
+# ``tg21f6g7h8c9`` and ``uh32g7h8i9d0`` for the pattern.
+from qontinui_schemas.generated import (
+    TaskRunFindingActionType as FindingActionType,
+)
+from qontinui_schemas.generated import (
+    TaskRunFindingCategory as FindingCategory,
+)
+from qontinui_schemas.generated import (
+    TaskRunFindingSeverity as FindingSeverity,
+)
+from qontinui_schemas.generated import (
+    TaskRunFindingStatus as FindingStatus,
+)
+from qontinui_schemas.generated import (
+    TaskRunStatus,
+    TaskType,
+)
 from sqlalchemy import (
     Boolean,
     DateTime,
@@ -30,81 +52,6 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-
-
-class TaskType(StrEnum):
-    """Task type enumeration for unified task runs."""
-
-    TASK = "task"  # General AI task
-    AUTOMATION = "automation"  # Pure GUI automation
-    SCHEDULED = "scheduled"  # Scheduled/triggered task
-
-
-class TaskRunStatus(StrEnum):
-    """Task run status enumeration."""
-
-    RUNNING = "running"
-    COMPLETE = "complete"
-    FAILED = "failed"
-    STOPPED = "stopped"
-
-
-class FindingCategory(StrEnum):
-    """Task run finding category enumeration.
-
-    Must stay in sync with ``qontinui_schemas.generated.TaskRunFindingCategory``
-    (source of truth: ``qontinui-schemas/rust/src/task_run.rs``).  The PG ENUM
-    type ``finding_category`` must also accept every value here — new values
-    require an Alembic migration with ``ALTER TYPE ... ADD VALUE``.
-    """
-
-    CODE_BUG = "code_bug"
-    SECURITY = "security"
-    PERFORMANCE = "performance"
-    TODO = "todo"
-    ENHANCEMENT = "enhancement"
-    CONFIG_ISSUE = "config_issue"
-    TEST_ISSUE = "test_issue"
-    DOCUMENTATION = "documentation"
-    RUNTIME_ISSUE = "runtime_issue"
-    ALREADY_FIXED = "already_fixed"
-    EXPECTED_BEHAVIOR = "expected_behavior"
-    DATA_MIGRATION = "data_migration"
-    WARNING = "warning"
-
-
-class FindingSeverity(StrEnum):
-    """Task run finding severity enumeration."""
-
-    CRITICAL = "critical"
-    HIGH = "high"
-    MEDIUM = "medium"
-    LOW = "low"
-    INFO = "info"
-
-
-class FindingStatus(StrEnum):
-    """Task run finding status enumeration."""
-
-    DETECTED = "detected"
-    IN_PROGRESS = "in_progress"
-    NEEDS_INPUT = "needs_input"
-    RESOLVED = "resolved"
-    WONT_FIX = "wont_fix"
-    DEFERRED = "deferred"
-
-
-class FindingActionType(StrEnum):
-    """Task run finding action type enumeration.
-
-    Must stay in sync with ``qontinui_schemas.generated.TaskRunFindingActionType``
-    (source of truth: ``qontinui-schemas/rust/src/task_run.rs``).
-    """
-
-    AUTO_FIX = "auto_fix"
-    NEEDS_USER_INPUT = "needs_user_input"
-    MANUAL = "manual"
-    INFORMATIONAL = "informational"
 
 
 class TaskRun(Base):
@@ -173,7 +120,7 @@ class TaskRun(Base):
             values_callable=lambda x: [e.value for e in x],
         ),
         nullable=False,
-        default=TaskType.TASK,
+        default=TaskType.task,
         index=True,
         comment="Type of task: task, automation, scheduled",
     )
@@ -201,7 +148,7 @@ class TaskRun(Base):
             values_callable=lambda x: [e.value for e in x],
         ),
         nullable=False,
-        default=TaskRunStatus.RUNNING,
+        default=TaskRunStatus.running,
         index=True,
     )
 
@@ -482,7 +429,7 @@ class TaskRunFinding(Base):
             values_callable=lambda x: [e.value for e in x],
         ),
         nullable=False,
-        default=FindingStatus.DETECTED,
+        default=FindingStatus.detected,
         index=True,
     )
 
@@ -494,7 +441,7 @@ class TaskRunFinding(Base):
             values_callable=lambda x: [e.value for e in x],
         ),
         nullable=False,
-        default=FindingActionType.AUTO_FIX,
+        default=FindingActionType.auto_fix,
     )
 
     # Deduplication

@@ -108,7 +108,7 @@ class TaskRunService:
             task_type=TaskType(task_data.task_type),
             config_id=task_data.config_id,
             workflow_name=task_data.workflow_name,
-            status=TaskRunStatus.RUNNING,
+            status=TaskRunStatus.running,
             max_sessions=task_data.max_sessions,
             auto_continue=task_data.auto_continue,
             execution_steps_json=task_data.execution_steps_json,
