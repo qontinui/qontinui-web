@@ -4,7 +4,7 @@ import type { ProjectSettings } from "@/types/project-settings";
 import type { Workflow } from "@/lib/action-schema/action-types";
 
 // Import Category from qontinui-schemas (single source of truth)
-import type { Category } from "@qontinui/schemas/config";
+import type { Category } from "@qontinui/shared-types/config";
 // Re-export for backward compatibility with existing imports
 export type { Category };
 

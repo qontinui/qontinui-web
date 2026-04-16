@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import type {
   AccessibilityNode,
   AccessibilityRole,
-} from "@qontinui/schemas/accessibility";
+} from "@qontinui/shared-types/accessibility";
 
 interface AccessibilityNodeItemProps {
   node: AccessibilityNode;
@@ -106,7 +106,12 @@ export function AccessibilityNodeItem({
         )}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
         onClick={() => onSelectNode(node)}
-        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectNode(node); } }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onSelectNode(node);
+          }
+        }}
       >
         {/* Expand/Collapse button */}
         {hasChildren ? (

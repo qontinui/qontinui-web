@@ -56,7 +56,7 @@ function convertApiNodes(apiNodes: ApiNode[]): DisplayNode[] {
       end_timestamp: node.end_timestamp,
       duration: node.duration,
       status: node.status as NodeStatus,
-      metadata: node.metadata,
+      metadata: { is_expandable: false, is_inline: false, ...node.metadata },
       error: node.error,
       children: (node.children as ApiNode[]).map(convert),
       is_expanded: node.is_expanded,

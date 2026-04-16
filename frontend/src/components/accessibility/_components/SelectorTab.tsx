@@ -6,7 +6,7 @@ import { AccessibilitySelectorBuilder } from "../AccessibilitySelectorBuilder";
 import type {
   AccessibilityNode,
   AccessibilitySelector,
-} from "@qontinui/schemas/accessibility";
+} from "@qontinui/shared-types/accessibility";
 
 interface SelectorTabProps {
   currentSelector: AccessibilitySelector;

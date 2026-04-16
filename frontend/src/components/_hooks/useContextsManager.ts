@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { toast } from "sonner";
 import { useAutomationStore } from "@/stores/automation";
-import type { Context } from "@qontinui/schemas/config";
+import type { Context } from "@qontinui/shared-types/config";
 import {
   CONTEXT_CATEGORIES,
   countAutoIncludeRules,

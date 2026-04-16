@@ -33,7 +33,7 @@ export function treeEventToUnifiedStep(
   stepNumber: number
 ): UnifiedExecutionStep {
   const node = event.node;
-  const metadata = node.metadata ?? {};
+  const metadata = node.metadata ?? { is_expandable: false, is_inline: false };
   const runtime = metadata.runtime;
   const stateContext = metadata.state_context;
 
@@ -110,7 +110,7 @@ export function displayNodeToUnifiedStep(
   node: DisplayNode,
   stepNumber: number
 ): UnifiedExecutionStep {
-  const metadata = node.metadata ?? {};
+  const metadata = node.metadata ?? { is_expandable: false, is_inline: false };
   const runtime = metadata.runtime;
   const stateContext = metadata.state_context;
 

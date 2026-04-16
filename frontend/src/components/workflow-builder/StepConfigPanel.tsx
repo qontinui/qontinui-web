@@ -78,7 +78,15 @@ export function StepConfigPanel() {
               <span className="text-xs text-zinc-400">
                 From skill:{" "}
                 <span className="text-zinc-300 font-medium">
-                  {selectedStep.skill_origin.skill_slug}
+                  {/* skill_origin is typed as an opaque map on the wire; all
+                      runner/web-produced origins include `skill_slug`. */}
+                  {String(
+                    (
+                      selectedStep.skill_origin as
+                        | { skill_slug?: string }
+                        | undefined
+                    )?.skill_slug ?? ""
+                  )}
                 </span>
               </span>
               <button

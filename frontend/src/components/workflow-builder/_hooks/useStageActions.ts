@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from "react";
 import { useWorkflowBuilder as useSharedWorkflowBuilder } from "@qontinui/workflow-ui";
 import { generateStepId, type WorkflowStage } from "@/types/unified-workflow";
+import { DEFAULT_STAGE_FLAGS } from "../workflowDefaults";
 
 type SharedContext = ReturnType<typeof useSharedWorkflowBuilder>;
 
@@ -26,6 +27,7 @@ export function useStageActions(
         agentic_steps: [],
         completion_steps: [],
         max_iterations: sharedState.workflow.max_iterations ?? 10,
+        ...DEFAULT_STAGE_FLAGS,
       };
       dispatch({ type: "ADD_STAGE", stage: newStage });
     },

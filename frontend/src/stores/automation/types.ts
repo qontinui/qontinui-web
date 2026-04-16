@@ -41,7 +41,7 @@ import type {
 } from "@/contexts/automation-context/types";
 import type { ProjectSettings } from "@/types/project-settings";
 import type { Workflow } from "@/lib/action-schema/action-types";
-import type { Context } from "@qontinui/schemas/config";
+import type { Context } from "@qontinui/shared-types/config";
 
 // Re-export domain types for convenience
 export type {

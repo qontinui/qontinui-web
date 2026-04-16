@@ -1,13 +1,13 @@
 /**
  * Tree Event Types for qontinui-web
  *
- * Re-exports types from qontinui-schemas and adds frontend-specific extensions.
- * This provides a single import point for all tree event types in the web frontend.
+ * Re-exports from @qontinui/shared-types/tree-events (the canonical
+ * Rust-derived types) plus frontend-specific extensions. Single source of
+ * truth: qontinui-schemas/rust/src/tree_events.rs.
  *
  * @module tree-events
  */
 
-// Re-export all types from the shared schema
 export type {
   MatchLocation,
   TopMatch,
@@ -24,21 +24,20 @@ export type {
   TreeEventListResponse,
   ExecutionTreeResponse,
   DisplayNode,
-} from "@qontinui/schemas/tree_events";
-
-// Re-export enums (values, not just types)
-export {
+  // These are string-literal union types (from Rust schemars via
+  // json-schema-to-typescript), not runtime TS enums. Grep verified no
+  // `NodeType.X` / `ActionType.X` value uses in web/frontend today.
   NodeType,
   NodeStatus,
   TreeEventType,
   ActionType,
-} from "@qontinui/schemas/tree_events";
+} from "@qontinui/shared-types/tree-events";
 
 // Import for local use
 import type {
   DisplayNode as SchemaDisplayNode,
   TreeEvent,
-} from "@qontinui/schemas/tree_events";
+} from "@qontinui/shared-types/tree-events";
 
 /**
  * Extended DisplayNode with additional frontend state

@@ -6,7 +6,7 @@ import type {
   AccessibilitySnapshot,
   AccessibilityNode,
   AccessibilitySelector,
-} from "@qontinui/schemas/accessibility";
+} from "@qontinui/shared-types/accessibility";
 
 interface UseAccessibilityTreeOptions {
   /** Runner API base URL */

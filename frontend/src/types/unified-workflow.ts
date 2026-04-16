@@ -31,7 +31,6 @@ export type {
   UiBridgeStep,
   WorkflowStep,
   StepTypeName,
-  UnifiedStep,
   SetupStep,
   VerificationStep,
   AgenticStep,
@@ -53,6 +52,16 @@ export {
   PHASE_INFO,
   DEFAULT_SUMMARY_PROMPT,
 } from "@qontinui/shared-types/workflow";
+
+// Web UI treats workflow steps as strictly-canonical values — every
+// consumer narrows by the `type` discriminator and reads typed fields. The
+// wire contract's `UnifiedStep = CanonicalStep | { [k: string]: unknown }`
+// preserves lossless round-trip of unknown step shapes, but that `Other`
+// variant defeats field-level type inference at every consumer site. Alias
+// the web's `UnifiedStep` to `CanonicalStep` so the UI keeps its strict
+// view. The wire-typed variant from `@qontinui/shared-types/workflow`
+// still exists for code that needs to round-trip unknown shapes.
+export type { CanonicalStep as UnifiedStep } from "@qontinui/shared-types/workflow";
 
 // =============================================================================
 // Re-exports from @qontinui/workflow-utils

@@ -194,12 +194,18 @@ function LogSourceSelect({
   );
 }
 
+// Schemars promoted these HealthCheckUrl fields (previously `#[serde(default)]`)
+// to required on the TS side; keep the UI minimal by spreading these
+// defaults onto anything the form writes back.
+const DEFAULT_HEALTH_CHECK_FIELDS = {
+  expected_status: 200,
+  is_critical: true,
+  timeout_seconds: 30,
+} as const;
+
 function HealthCheckUrls({ workflow, updateWorkflow }: SettingRenderProps) {
   if (workflow.health_check_enabled === false) return null;
-  const urls = (workflow.health_check_urls ?? []) as Array<{
-    name: string;
-    url: string;
-  }>;
+  const urls = workflow.health_check_urls ?? [];
   return (
     <div>
       <p className="block text-xs font-medium text-zinc-400 mb-1">
@@ -213,7 +219,7 @@ function HealthCheckUrls({ workflow, updateWorkflow }: SettingRenderProps) {
             value={hc.name}
             onChange={(e) => {
               const updated = urls.map((item, j) =>
-                j === i ? { name: e.target.value, url: item.url } : item
+                j === i ? { ...item, name: e.target.value } : item
               );
               updateWorkflow({ health_check_urls: updated });
             }}
@@ -224,7 +230,7 @@ function HealthCheckUrls({ workflow, updateWorkflow }: SettingRenderProps) {
             value={hc.url}
             onChange={(e) => {
               const updated = urls.map((item, j) =>
-                j === i ? { name: item.name, url: e.target.value } : item
+                j === i ? { ...item, url: e.target.value } : item
               );
               updateWorkflow({ health_check_urls: updated });
             }}
@@ -245,7 +251,10 @@ function HealthCheckUrls({ workflow, updateWorkflow }: SettingRenderProps) {
         className="text-xs text-blue-400 hover:text-blue-300"
         onClick={() => {
           updateWorkflow({
-            health_check_urls: [...urls, { name: "", url: "" }],
+            health_check_urls: [
+              ...urls,
+              { name: "", url: "", ...DEFAULT_HEALTH_CHECK_FIELDS },
+            ],
           });
         }}
       >
@@ -286,10 +295,12 @@ function ResolvedModelPreview({ workflow }: SettingRenderProps) {
 
   const rows = MODEL_OVERRIDE_PHASES.map((phase) => ({
     ...phase,
+    // Schema tightened workflow.model to `string | null | undefined`; the
+    // helper wants `string | undefined`, so coerce null to undefined.
     resolved: resolveModelForPhase(
       phase.key,
       overrides,
-      workflow.model,
+      workflow.model ?? undefined,
       undefined
     ),
   }));

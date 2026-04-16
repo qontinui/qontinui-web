@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
-import type { Context } from "@qontinui/schemas/config";
+import type { Context } from "@qontinui/shared-types/config";
 import {
   getCategoryColor,
   CONTEXT_CATEGORIES,

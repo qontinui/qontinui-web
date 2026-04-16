@@ -42,11 +42,14 @@ export function useStepActions(shared: SharedContext) {
 
   const reorderSteps = useCallback(
     (phase: WorkflowPhase, stepIds: string[]) => {
-      const currentSteps = shared.currentPhaseSteps(phase);
+      // shared.currentPhaseSteps returns wire-side UnifiedStep (open `Other`
+      // variant); narrow to the web's strict view (= CanonicalStep) since
+      // builder-managed workflows only contain canonical step shapes.
+      const currentSteps = shared.currentPhaseSteps(phase) as UnifiedStep[];
       const stepMap = new Map(currentSteps.map((s) => [s.id, s]));
       const reordered: UnifiedStep[] = [];
       for (const id of stepIds) {
-        const step = stepMap.get(id);
+        const step = stepMap.get(id as string);
         if (step) reordered.push(step);
       }
       for (const step of currentSteps) {
@@ -72,7 +75,9 @@ export function useStepActions(shared: SharedContext) {
   );
 
   const getSelectedStep = useCallback((): UnifiedStep | null => {
-    return shared.selectedStep;
+    // shared.selectedStep is wire-side (open `Other` variant); narrow to
+    // the web's strict view since builder-managed steps are canonical.
+    return (shared.selectedStep ?? null) as UnifiedStep | null;
   }, [shared.selectedStep]);
 
   const togglePhase = useCallback(
@@ -93,7 +98,10 @@ export function useStepActions(shared: SharedContext) {
 
   const getActiveSteps = useCallback(
     (phase: WorkflowPhase): UnifiedStep[] => {
-      return shared.currentPhaseSteps(phase);
+      // shared.currentPhaseSteps returns wire-side UnifiedStep[] (open
+      // `Other` variant); narrow to web's strict view since the builder
+      // only produces canonical step shapes.
+      return shared.currentPhaseSteps(phase) as UnifiedStep[];
     },
     [shared]
   );

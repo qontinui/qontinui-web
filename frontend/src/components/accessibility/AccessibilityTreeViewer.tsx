@@ -28,7 +28,7 @@ import type {
   AccessibilityNode,
   AccessibilitySnapshot,
   AccessibilityRole,
-} from "@qontinui/schemas/accessibility";
+} from "@qontinui/shared-types/accessibility";
 
 interface AccessibilityTreeViewerProps {
   snapshot: AccessibilitySnapshot | null;

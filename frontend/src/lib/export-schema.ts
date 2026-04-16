@@ -69,7 +69,7 @@ import type {
   Category,
   Context,
   ContextAutoInclude,
-} from "@qontinui/schemas/config";
+} from "@qontinui/shared-types/config";
 // Re-export for backward compatibility with existing imports
 export type { Category, Context, ContextAutoInclude };
 

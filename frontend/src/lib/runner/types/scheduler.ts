@@ -2,12 +2,12 @@
 // Scheduler Types - TypeScript equivalents of Rust scheduler types
 // =============================================================================
 
-// Schedule expression - tagged union matching Rust's serde(tag = "type", content = "value")
-export type ScheduleExpression =
-  | { type: "Once"; value: string } // ISO 8601 datetime
-  | { type: "Cron"; value: string } // Cron expression
-  | { type: "Interval"; value: number } // Seconds
-  | { type: "Condition"; value: { rearm_delay_minutes?: number } }; // Condition-only
+// Re-export ScheduleExpression from the canonical @qontinui/shared-types
+// package. The local duplicate definition had `rearm_delay_minutes?: number`,
+// but the schemars-tightened TS type promotes it to required, causing a
+// mismatch at the describeSchedule() call site.
+import type { ScheduleExpression } from "@qontinui/shared-types/scheduler";
+export type { ScheduleExpression };
 
 // =============================================================================
 // Condition Types

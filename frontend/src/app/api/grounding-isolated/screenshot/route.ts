@@ -22,14 +22,17 @@ interface StoredScreenshot {
 }
 
 const MAX_ENTRIES = 64;
-const store: Map<number, StoredScreenshot> = (
-  globalThis as unknown as {
-    __groundingScreenshotStore?: Map<number, StoredScreenshot>;
-  }
-).__groundingScreenshotStore ??
-(((globalThis as unknown as {
-  __groundingScreenshotStore?: Map<number, StoredScreenshot>;
-}).__groundingScreenshotStore = new Map<number, StoredScreenshot>()));
+const store: Map<number, StoredScreenshot> =
+  (
+    globalThis as unknown as {
+      __groundingScreenshotStore?: Map<number, StoredScreenshot>;
+    }
+  ).__groundingScreenshotStore ??
+  ((
+    globalThis as unknown as {
+      __groundingScreenshotStore?: Map<number, StoredScreenshot>;
+    }
+  ).__groundingScreenshotStore = new Map<number, StoredScreenshot>());
 
 function evictOldest(): void {
   while (store.size > MAX_ENTRIES) {
@@ -58,14 +61,16 @@ export async function POST(request: NextRequest) {
       if (!match) {
         return NextResponse.json(
           { ok: false, error: "dataUrl missing or invalid" },
-          { status: 400 },
+          { status: 400 }
         );
       }
-      png = Buffer.from(match[1], "base64");
+      // match[1] is guaranteed by the regex above; explicit non-null for
+      // the buffer overload selector under noUncheckedIndexedAccess.
+      png = Buffer.from(match[1]!, "base64");
     } else {
       // Binary blob form.
       sampleIndex = Number(
-        request.nextUrl.searchParams.get("sampleIndex") ?? "-1",
+        request.nextUrl.searchParams.get("sampleIndex") ?? "-1"
       );
       width = Number(request.nextUrl.searchParams.get("width") ?? "0");
       height = Number(request.nextUrl.searchParams.get("height") ?? "0");
@@ -90,7 +95,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: (err as Error).message ?? "invalid payload" },
-      { status: 400 },
+      { status: 400 }
     );
   }
 }
@@ -114,7 +119,7 @@ export async function GET(request: NextRequest) {
   if (!Number.isFinite(sampleIndex)) {
     return NextResponse.json(
       { ok: false, error: "invalid sampleIndex" },
-      { status: 400 },
+      { status: 400 }
     );
   }
   const shot = store.get(sampleIndex);

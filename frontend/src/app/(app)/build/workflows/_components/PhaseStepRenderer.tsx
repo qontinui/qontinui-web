@@ -19,7 +19,13 @@ export function PhaseStepRenderer({
 
   const handleQuickAddStep = useCallback(
     (type: string, targetPhase: WorkflowPhase) => {
-      const step = createDefaultStep(type as UnifiedStep["type"], targetPhase);
+      // createDefaultStep returns the wire-side UnifiedStep (open `Other`
+      // variant); the defaults factory only produces canonical shapes, so
+      // narrow to the web's strict view here.
+      const step = createDefaultStep(
+        type as UnifiedStep["type"],
+        targetPhase,
+      ) as UnifiedStep;
       addStep(step, targetPhase);
     },
     [addStep]

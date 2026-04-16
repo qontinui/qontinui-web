@@ -16,6 +16,7 @@ import { useWebWorkflowState } from "./_hooks/useWebWorkflowState";
 import { useStepActions } from "./_hooks/useStepActions";
 import { useStageActions } from "./_hooks/useStageActions";
 import { useWorkflowApi } from "./_hooks/useWorkflowApi";
+import { DEFAULT_WORKFLOW_FLAGS } from "./workflowDefaults";
 
 const WorkflowBuilderContext =
   createContext<WorkflowBuilderContextValue | null>(null);
@@ -112,13 +113,19 @@ export function WorkflowBuilderProvider({
   initialWorkflow,
 }: WorkflowBuilderProviderProps) {
   const storedWorkflow = !initialWorkflow ? loadFromStorage() : null;
-  const resolvedInitial = initialWorkflow ??
-    storedWorkflow ?? {
+  // createDefaultWorkflow()'s declared return type is an Omit of strict
+  // UnifiedWorkflow, but UnifiedWorkflow's index signature defeats spread
+  // inference; cast once we've spread the schemars-required defaults.
+  const resolvedInitial: UnifiedWorkflow =
+    initialWorkflow ??
+    storedWorkflow ??
+    ({
+      ...DEFAULT_WORKFLOW_FLAGS,
       ...createDefaultWorkflow(),
       id: generateStepId(),
       created_at: new Date().toISOString(),
       modified_at: new Date().toISOString(),
-    };
+    } as UnifiedWorkflow);
 
   return (
     <SharedWorkflowBuilderProvider initialWorkflow={resolvedInitial}>

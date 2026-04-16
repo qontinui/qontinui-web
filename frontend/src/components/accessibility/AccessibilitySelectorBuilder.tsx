@@ -28,7 +28,7 @@ import type {
   AccessibilitySelector,
   AccessibilityNode,
   AccessibilityRole,
-} from "@qontinui/schemas/accessibility";
+} from "@qontinui/shared-types/accessibility";
 
 interface AccessibilitySelectorBuilderProps {
   selector: AccessibilitySelector;
@@ -126,6 +126,9 @@ export function AccessibilitySelectorBuilder({
       role: selectedNode.role,
       name: selectedNode.name ?? undefined,
       is_interactive: selectedNode.is_interactive ?? undefined,
+      // case_sensitive defaults to true on the Rust side (serde default);
+      // after the codegen's default→required promotion it's required in TS.
+      case_sensitive: true,
     };
 
     if (selectedNode.automation_id) {
@@ -157,7 +160,7 @@ export function AccessibilitySelectorBuilder({
 
   // Clear selector
   const handleClearSelector = useCallback(() => {
-    const emptySelector: AccessibilitySelector = {};
+    const emptySelector: AccessibilitySelector = { case_sensitive: true };
     setLocalSelector(emptySelector);
     onChange(emptySelector);
     setSelectedRoles([]);

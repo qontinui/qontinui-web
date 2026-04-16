@@ -115,7 +115,11 @@ export function PhaseSection({
         _selectedIds,
         _onToggleSelect
       ) => {
-        const sortableIds = stepsToRender.map((s) => s.id);
+        // workflow-ui's wire `UnifiedStep` includes an open `Other` variant
+        // with `id: unknown`; runner/web-produced steps are always canonical,
+        // so narrow here for dnd/key access.
+        const typedSteps = stepsToRender as UnifiedStep[];
+        const sortableIds = typedSteps.map((s) => s.id);
         return (
           <DndContext
             sensors={sensors}
@@ -127,7 +131,7 @@ export function PhaseSection({
               strategy={verticalListSortingStrategy}
             >
               <div className="space-y-1">
-                {stepsToRender.map((step, index) => (
+                {typedSteps.map((step, index) => (
                   <div key={step.id} className="flex-1">
                     {renderStep(step, index)}
                   </div>

@@ -363,7 +363,10 @@ export function WorkflowEditor({
         onClose={() => setShowAddStateSteps(false)}
         onAddSteps={(steps) => {
           for (const { step, phase } of steps) {
-            addStep(step, phase);
+            // Modal callback hands wire-side UnifiedStep; the web builder
+            // tracks strict canonical steps, and the state generator only
+            // emits canonical shapes, so narrow at the boundary.
+            addStep(step as UnifiedStep, phase);
           }
           toast.success(`Added ${steps.length} step(s) from state config`);
         }}
@@ -373,7 +376,10 @@ export function WorkflowEditor({
         isOpen={showCurlImport}
         onClose={() => setShowCurlImport(false)}
         onImport={(step, phase) => {
-          addStep(step, phase);
+          // CurlImportDialog emits a CommandStep; addStep expects the
+          // web's strict UnifiedStep (CanonicalStep union) — CommandStep
+          // is one arm of that union so narrow at the callsite.
+          addStep(step as unknown as UnifiedStep, phase);
           toast.success("Curl command imported as step");
         }}
       />
@@ -382,18 +388,20 @@ export function WorkflowEditor({
         isOpen={showGenerateFromStates}
         onClose={() => setShowGenerateFromStates(false)}
         onWorkflowGenerated={(generated) => {
-          // Apply generated steps to the current workflow
+          // Apply generated steps to the current workflow. UnifiedWorkflow
+          // step arrays are wire-side; generator always emits canonical
+          // steps, so narrow at each boundary.
           if (generated.setup_steps) {
-            for (const step of generated.setup_steps) addStep(step, "setup");
+            for (const step of generated.setup_steps) addStep(step as UnifiedStep, "setup");
           }
           if (generated.verification_steps) {
-            for (const step of generated.verification_steps) addStep(step, "verification");
+            for (const step of generated.verification_steps) addStep(step as UnifiedStep, "verification");
           }
           if (generated.agentic_steps) {
-            for (const step of generated.agentic_steps) addStep(step, "agentic");
+            for (const step of generated.agentic_steps) addStep(step as UnifiedStep, "agentic");
           }
           if (generated.completion_steps) {
-            for (const step of generated.completion_steps) addStep(step, "completion");
+            for (const step of generated.completion_steps) addStep(step as UnifiedStep, "completion");
           }
           toast.success(`Generated workflow with ${(generated.setup_steps?.length ?? 0) + (generated.verification_steps?.length ?? 0) + (generated.agentic_steps?.length ?? 0) + (generated.completion_steps?.length ?? 0)} steps`);
         }}

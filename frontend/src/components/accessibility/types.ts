@@ -1,7 +1,7 @@
 import type {
   AccessibilityNode,
   AccessibilitySelector,
-} from "@qontinui/schemas/accessibility";
+} from "@qontinui/shared-types/accessibility";
 
 export interface AccessibilityExplorerProps {
   /** Callback when a selector is configured for use in automation */

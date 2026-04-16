@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import type {
   AccessibilityNode,
   AccessibilitySnapshot,
-} from "@qontinui/schemas/accessibility";
+} from "@qontinui/shared-types/accessibility";
 
 interface AccessibilityBoundsOverlayProps {
   /** The accessibility snapshot containing nodes with bounds */
@@ -223,7 +223,12 @@ export function AccessibilityBoundsOverlay({
                   tabIndex={0}
                   key={boundsNode.node.ref}
                   onClick={() => handleNodeClick(boundsNode)}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      (e.currentTarget as HTMLElement).click();
+                    }
+                  }}
                   onMouseEnter={() => handleNodeHover(boundsNode)}
                   onMouseLeave={() => handleNodeHover(null)}
                   className={cn(

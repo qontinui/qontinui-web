@@ -147,7 +147,9 @@ export function useConstraints(
       ]);
 
       setConstraints(activeConstraints);
-      setConfigPath(config.path);
+      // Schema tightened config.path to `string | null | undefined`; the
+      // state setter accepts `string | undefined`, so coerce null to undefined.
+      setConfigPath(config.path ?? undefined);
 
       // Parse resource limits from the raw TOML if available.
       let limits: ResourceLimits = {};

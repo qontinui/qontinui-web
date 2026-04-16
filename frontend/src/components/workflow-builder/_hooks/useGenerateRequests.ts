@@ -34,8 +34,11 @@ interface UseGenerateRequestsParams {
   investigateCodebase: boolean;
   includeDesignGuidance: boolean;
   verificationDepth: "smoke" | "standard" | "thorough" | "regression";
+  // Schemars tightened ModelOverrideConfig fields to `string | null | undefined`.
+  // Accept the typed ModelOverrides map directly and let the request builder
+  // pass it along.
   generationModelOverrides:
-    | Record<string, { provider?: string; model?: string }>
+    | Record<string, { provider?: string | null; model?: string | null }>
     | undefined;
 
   // Actions
@@ -103,7 +106,19 @@ export function useGenerateRequests(params: UseGenerateRequestsParams) {
       reflection_mode: reflectionMode,
       investigate_codebase: investigateCodebase,
       include_design_guidance: includeDesignGuidance || undefined,
-      model_overrides: generationModelOverrides,
+      // Convert shared-types' nullable provider/model fields to plain
+      // `string | undefined` that the runner's GenerateWorkflowRequest expects.
+      model_overrides: generationModelOverrides
+        ? Object.fromEntries(
+            Object.entries(generationModelOverrides).map(([k, v]) => [
+              k,
+              {
+                provider: v.provider ?? undefined,
+                model: v.model ?? undefined,
+              },
+            ])
+          )
+        : undefined,
       verification_depth:
         verificationDepth !== "standard" ? verificationDepth : undefined,
     };

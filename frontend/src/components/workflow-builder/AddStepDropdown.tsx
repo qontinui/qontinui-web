@@ -39,6 +39,9 @@ import {
   type UnifiedStep,
   type WorkflowPhase,
 } from "@/types/unified-workflow";
+// workflow-ui uses the wire-side UnifiedStep (open `Other` variant); its
+// callback hands us those, so type the handler params against that package.
+import type { UnifiedStep as WireUnifiedStep } from "@qontinui/shared-types/workflow";
 import { SkillCatalogConcrete } from "@qontinui/workflow-ui/components";
 import { SkillSharingPanel } from "./SkillSharingPanel";
 
@@ -98,11 +101,12 @@ export function AddStepDropdown({
   const [showSharingPanel, setShowSharingPanel] = useState(false);
   const phaseInfo = PHASE_INFO[phase];
 
-  // Handle skill catalog adding steps
+  // Handle skill catalog adding steps. workflow-ui passes wire-side steps;
+  // the skill catalog only emits canonical step shapes, so narrow on entry.
   const handleAddSteps = useCallback(
-    (steps: UnifiedStep[], targetPhase: WorkflowPhase) => {
+    (steps: WireUnifiedStep[], targetPhase: WorkflowPhase) => {
       for (const step of steps) {
-        onAddStep(step, targetPhase);
+        onAddStep(step as UnifiedStep, targetPhase);
       }
       onClose();
     },

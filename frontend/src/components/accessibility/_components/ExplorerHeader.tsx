@@ -10,7 +10,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import type { AccessibilitySnapshot } from "@qontinui/schemas/accessibility";
+import type { AccessibilitySnapshot } from "@qontinui/shared-types/accessibility";
 
 interface ExplorerHeaderProps {
   snapshot: AccessibilitySnapshot | null;

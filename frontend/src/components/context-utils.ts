@@ -1,4 +1,7 @@
-import type { Context, ContextAutoInclude } from "@qontinui/schemas/config";
+import type {
+  Context,
+  ContextAutoInclude,
+} from "@qontinui/shared-types/config";
 import { Eye, FormInput, GitBranch, MessageSquare } from "lucide-react";
 
 // Predefined categories for contexts
@@ -130,7 +133,7 @@ export function formDataToContext(
     name: formData.name.trim(),
     content: formData.content,
     category: formData.category || null,
-    tags: parseCommaSeparated(formData.tags),
+    tags: parseCommaSeparated(formData.tags) ?? [],
     autoInclude: hasAutoIncludeRules ? autoInclude : null,
     createdAt: existingContext?.createdAt || now,
     modifiedAt: now,

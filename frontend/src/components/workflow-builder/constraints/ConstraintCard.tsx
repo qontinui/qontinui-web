@@ -20,9 +20,12 @@ import {
 import type {
   Constraint,
   ConstraintCheck,
-  ConstraintCheckType,
   ConstraintSeverity,
 } from "@qontinui/shared-types/constraints";
+
+// Schemars no longer emits `ConstraintCheckType` as a named alias; derive it
+// from the discriminator on the tagged `ConstraintCheck` union.
+type ConstraintCheckType = ConstraintCheck["type"];
 import {
   severityBadgeColor,
   severityLabel,
@@ -189,10 +192,14 @@ export function ConstraintCard({
         <div className="px-3 pb-3 pt-1 space-y-3 border-t border-zinc-700/30">
           {/* Name */}
           <div>
-            <label htmlFor="name-8" className="block text-xs font-medium text-zinc-400 mb-1">
+            <label
+              htmlFor="name-8"
+              className="block text-xs font-medium text-zinc-400 mb-1"
+            >
               Name
             </label>
-            <input id="name-8"
+            <input
+              id="name-8"
               type="text"
               value={constraint.name}
               onChange={(e) => onUpdate({ name: e.target.value })}
@@ -203,10 +210,14 @@ export function ConstraintCard({
 
           {/* Description */}
           <div>
-            <label htmlFor="description-7" className="block text-xs font-medium text-zinc-400 mb-1">
+            <label
+              htmlFor="description-7"
+              className="block text-xs font-medium text-zinc-400 mb-1"
+            >
               Description
             </label>
-            <textarea id="description-7"
+            <textarea
+              id="description-7"
               value={constraint.description}
               onChange={(e) => onUpdate({ description: e.target.value })}
               placeholder="Why this constraint exists (shown to the AI on violation)..."
@@ -218,10 +229,14 @@ export function ConstraintCard({
           {/* Severity + Check Type row */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label htmlFor="severity-6" className="block text-xs font-medium text-zinc-400 mb-1">
+              <label
+                htmlFor="severity-6"
+                className="block text-xs font-medium text-zinc-400 mb-1"
+              >
                 Severity
               </label>
-              <select id="severity-6"
+              <select
+                id="severity-6"
                 value={constraint.severity}
                 onChange={(e) =>
                   onUpdate({ severity: e.target.value as ConstraintSeverity })
@@ -236,10 +251,14 @@ export function ConstraintCard({
               </select>
             </div>
             <div>
-              <label htmlFor="check-type-5" className="block text-xs font-medium text-zinc-400 mb-1">
+              <label
+                htmlFor="check-type-5"
+                className="block text-xs font-medium text-zinc-400 mb-1"
+              >
                 Check Type
               </label>
-              <select id="check-type-5"
+              <select
+                id="check-type-5"
                 value={constraint.check.type}
                 onChange={(e) =>
                   handleCheckTypeChange(e.target.value as ConstraintCheckType)
@@ -303,10 +322,14 @@ function CheckEditor({
             />
           </div>
           <div>
-            <label htmlFor="file-glob--optional-4" className="block text-[10px] font-medium text-zinc-500 mb-0.5">
+            <label
+              htmlFor="file-glob--optional-4"
+              className="block text-[10px] font-medium text-zinc-500 mb-0.5"
+            >
               File Glob (optional)
             </label>
-            <input id="file-glob--optional-4"
+            <input
+              id="file-glob--optional-4"
               type="text"
               value={check.file_glob ?? ""}
               onChange={(e) =>
@@ -331,10 +354,14 @@ function CheckEditor({
       return (
         <>
           <div>
-            <label htmlFor="command-3" className="block text-[10px] font-medium text-zinc-500 mb-0.5">
+            <label
+              htmlFor="command-3"
+              className="block text-[10px] font-medium text-zinc-500 mb-0.5"
+            >
               Command
             </label>
-            <input id="command-3"
+            <input
+              id="command-3"
               type="text"
               value={check.cmd}
               onChange={(e) => onChange({ ...check, cmd: e.target.value })}
@@ -344,10 +371,14 @@ function CheckEditor({
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label htmlFor="working-directory--optional-2" className="block text-[10px] font-medium text-zinc-500 mb-0.5">
+              <label
+                htmlFor="working-directory--optional-2"
+                className="block text-[10px] font-medium text-zinc-500 mb-0.5"
+              >
                 Working Directory (optional)
               </label>
-              <input id="working-directory--optional-2"
+              <input
+                id="working-directory--optional-2"
                 type="text"
                 value={check.cwd ?? ""}
                 onChange={(e) =>
@@ -358,10 +389,14 @@ function CheckEditor({
               />
             </div>
             <div>
-              <label htmlFor="timeout--seconds-1" className="block text-[10px] font-medium text-zinc-500 mb-0.5">
+              <label
+                htmlFor="timeout--seconds-1"
+                className="block text-[10px] font-medium text-zinc-500 mb-0.5"
+              >
                 Timeout (seconds)
               </label>
-              <input id="timeout--seconds-1"
+              <input
+                id="timeout--seconds-1"
                 type="number"
                 value={check.timeout_secs}
                 onChange={(e) =>
@@ -379,6 +414,10 @@ function CheckEditor({
           </div>
         </>
       );
+    default:
+      // Union is exhaustively covered above; default keeps TS happy since
+      // the `type` field is `string` on the open wire contract.
+      return null;
   }
 }
 
@@ -395,13 +434,17 @@ function FileScopeEditor({
 }) {
   return (
     <div>
-      <label htmlFor="allowed-paths-0" className="block text-[10px] font-medium text-zinc-500 mb-1">
+      <label
+        htmlFor="allowed-paths-0"
+        className="block text-[10px] font-medium text-zinc-500 mb-1"
+      >
         Allowed Paths
       </label>
       <div className="space-y-1.5">
         {allowedPaths.map((path, index) => (
           <div key={index} className="flex items-center gap-1.5">
-            <input id="allowed-paths-0"
+            <input
+              id="allowed-paths-0"
               type="text"
               value={path}
               onChange={(e) => {

@@ -18,11 +18,14 @@ import { useStagePhaseOverrides } from "../_hooks/useStagePhaseOverrides";
 // ---------------------------------------------------------------------------
 
 export interface StageSettingsProps {
+  // Accept the WorkflowStage shape (nullable provider/model/max_iterations)
+  // directly so the caller doesn't need to re-map.
   stage: {
     description?: string;
-    max_iterations?: number;
-    provider?: string;
-    model?: string;
+    /** `null` = unlimited; a positive value caps the verification-agentic loop. */
+    max_iterations?: number | null;
+    provider?: string | null;
+    model?: string | null;
     model_overrides?: ModelOverrides;
   };
   onUpdate: (updates: Record<string, unknown>) => void;
