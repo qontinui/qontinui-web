@@ -6,17 +6,31 @@ Converts SQLAlchemy models to Pydantic response schemas.
 
 from typing import Any
 
-from app.models.task_run import (DeferredQuestion, TaskRun, TaskRunAutomation,
-                                 TaskRunFinding, TaskRunSession)
-from app.services.task_run.schemas import (DeferredQuestionResponse,
-                                           TaskRunAutomationResponse,
-                                           TaskRunFindingResponse,
-                                           TaskRunResponse,
-                                           TaskRunSessionResponse)
+from app.models.task_run import (
+    DeferredQuestion,
+    TaskRun,
+    TaskRunAutomation,
+    TaskRunFinding,
+    TaskRunSession,
+)
+from app.services.task_run.schemas import (
+    DeferredQuestionResponse,
+    TaskRunAutomationResponse,
+    TaskRunFindingResponse,
+    TaskRunResponse,
+    TaskRunSessionResponse,
+)
 
 
 def _get_enum_value(val: Any) -> str:
-    """Get string value from enum or string."""
+    """Get string value from enum or string.
+
+    The resulting bare string is accepted by every Pydantic enum field in
+    the response schemas because those fields use ``StrEnum`` types
+    imported from ``qontinui_schemas.generated`` — Pydantic coerces the
+    string to the correct enum variant at validation time.  Mypy doesn't
+    model that coercion, so call sites below use ``# type: ignore[arg-type]``.
+    """
     if hasattr(val, "value"):
         return str(val.value)
     return str(val)
@@ -31,10 +45,10 @@ def model_to_task_run_response(task_run: TaskRun) -> TaskRunResponse:
         runner_id=task_run.runner_id,
         task_name=task_run.task_name,
         prompt=task_run.prompt,
-        task_type=_get_enum_value(task_run.task_type),
+        task_type=_get_enum_value(task_run.task_type),  # type: ignore[arg-type]
         config_id=task_run.config_id,
         workflow_name=task_run.workflow_name,
-        status=_get_enum_value(task_run.status),
+        status=_get_enum_value(task_run.status),  # type: ignore[arg-type]
         sessions_count=task_run.sessions_count,
         max_sessions=task_run.max_sessions,
         auto_continue=task_run.auto_continue,
@@ -69,10 +83,10 @@ def model_to_finding_response(finding: TaskRunFinding) -> TaskRunFindingResponse
     return TaskRunFindingResponse(
         id=finding.id,
         task_run_id=finding.task_run_id,
-        category=_get_enum_value(finding.category),
-        severity=_get_enum_value(finding.severity),
-        status=_get_enum_value(finding.status),
-        action_type=_get_enum_value(finding.action_type),
+        category=_get_enum_value(finding.category),  # type: ignore[arg-type]
+        severity=_get_enum_value(finding.severity),  # type: ignore[arg-type]
+        status=_get_enum_value(finding.status),  # type: ignore[arg-type]
+        action_type=_get_enum_value(finding.action_type),  # type: ignore[arg-type]
         signature_hash=finding.signature_hash,
         title=finding.title,
         description=finding.description,

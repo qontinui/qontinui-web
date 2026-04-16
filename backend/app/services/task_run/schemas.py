@@ -3,6 +3,13 @@ Pydantic request/response schemas for Task Run operations.
 
 Defines all data transfer objects used by task run services
 and API endpoints.
+
+Status / category / severity enums are imported from
+``qontinui_schemas.generated`` (source of truth:
+``qontinui-schemas/rust/src/task_run.rs``). Request/response envelope
+shapes remain hand-authored here because they use SQLAlchemy-aligned
+``UUID``/``datetime`` typing at the HTTP boundary; the generated types
+use ``str`` for cross-language-wire compatibility.
 """
 
 from datetime import datetime
@@ -10,6 +17,14 @@ from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+from qontinui_schemas.generated import (
+    TaskRunFindingActionType,
+    TaskRunFindingCategory,
+    TaskRunFindingSeverity,
+    TaskRunFindingStatus,
+    TaskRunStatus,
+    TaskType,
+)
 
 # =============================================================================
 # Request Schemas
@@ -24,7 +39,7 @@ class TaskRunCreate(BaseModel):
     runner_id: str | None = None
     task_name: str
     prompt: str | None = None  # NULL for pure automation tasks
-    task_type: str = "task"  # task, automation, scheduled
+    task_type: TaskType = TaskType.task
     config_id: str | None = None
     workflow_name: str | None = None
     max_sessions: int | None = None
@@ -36,7 +51,7 @@ class TaskRunCreate(BaseModel):
 class TaskRunUpdate(BaseModel):
     """Request to update a task run."""
 
-    status: str | None = None
+    status: TaskRunStatus | None = None
     sessions_count: int | None = None
     output_summary: str | None = None
     summary: str | None = None
@@ -68,10 +83,10 @@ class TaskRunFindingCreate(BaseModel):
     """Request to create a finding."""
 
     id: UUID | None = None  # Allow runner to specify ID
-    category: str
-    severity: str
-    status: str = "detected"
-    action_type: str = "auto_fix"
+    category: TaskRunFindingCategory
+    severity: TaskRunFindingSeverity
+    status: TaskRunFindingStatus = TaskRunFindingStatus.detected
+    action_type: TaskRunFindingActionType = TaskRunFindingActionType.auto_fix
     signature_hash: str | None = None
     title: str
     description: str
@@ -89,7 +104,7 @@ class TaskRunFindingCreate(BaseModel):
 class TaskRunFindingUpdate(BaseModel):
     """Request to update a finding."""
 
-    status: str | None = None
+    status: TaskRunFindingStatus | None = None
     resolution: str | None = None
     resolved_in_session: int | None = None
     resolved_at: datetime | None = None
@@ -182,10 +197,10 @@ class TaskRunResponse(BaseModel):
     runner_id: str | None
     task_name: str
     prompt: str | None
-    task_type: str
+    task_type: TaskType
     config_id: str | None
     workflow_name: str | None
-    status: str
+    status: TaskRunStatus
     sessions_count: int
     max_sessions: int | None
     auto_continue: bool
@@ -218,10 +233,10 @@ class TaskRunFindingResponse(BaseModel):
 
     id: UUID
     task_run_id: UUID
-    category: str
-    severity: str
-    status: str
-    action_type: str
+    category: TaskRunFindingCategory
+    severity: TaskRunFindingSeverity
+    status: TaskRunFindingStatus
+    action_type: TaskRunFindingActionType
     signature_hash: str | None
     title: str
     description: str
