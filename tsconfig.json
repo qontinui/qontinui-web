@@ -4,8 +4,7 @@
     "ignoreDeprecations": "6.0",
     "baseUrl": "./frontend",
     "paths": {
-      "@/*": ["./src/*"],
-      "@qontinui/schemas/*": ["../../qontinui-schemas/generated/typescript/*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": [
