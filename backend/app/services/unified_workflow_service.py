@@ -9,11 +9,18 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from app.models.unified_workflow import UnifiedWorkflow
-from app.repositories.unified_workflow import UnifiedWorkflowRepository
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
+
+# Import via direct module path rather than the top-level generated package
+# because the package `__init__` registers every generated type, and any
+# temporarily-broken per-type file during a concurrent regen cascades into
+# import failures for unrelated types. `FullRunnerStep` is stable.
+from qontinui_schemas.generated.per_type.full_runner_step import FullRunnerStep
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.unified_workflow import UnifiedWorkflow
+from app.repositories.unified_workflow import UnifiedWorkflowRepository
 
 logger = structlog.get_logger(__name__)
 
@@ -31,10 +38,10 @@ class UnifiedWorkflowCreate(BaseModel):
     description: str = ""
     category: str = "general"
     tags: list[str] = Field(default_factory=list)
-    setup_steps: list[Any] = Field(default_factory=list)
-    verification_steps: list[Any] = Field(default_factory=list)
-    agentic_steps: list[Any] = Field(default_factory=list)
-    completion_steps: list[Any] = Field(default_factory=list)
+    setup_steps: list[FullRunnerStep] = Field(default_factory=list)
+    verification_steps: list[FullRunnerStep] = Field(default_factory=list)
+    agentic_steps: list[FullRunnerStep] = Field(default_factory=list)
+    completion_steps: list[FullRunnerStep] = Field(default_factory=list)
     max_iterations: int = 10
     timeout_seconds: int | None = None
     provider: str | None = None
@@ -68,10 +75,10 @@ class UnifiedWorkflowUpdate(BaseModel):
     description: str | None = None
     category: str | None = None
     tags: list[str] | None = None
-    setup_steps: list[Any] | None = None
-    verification_steps: list[Any] | None = None
-    agentic_steps: list[Any] | None = None
-    completion_steps: list[Any] | None = None
+    setup_steps: list[FullRunnerStep] | None = None
+    verification_steps: list[FullRunnerStep] | None = None
+    agentic_steps: list[FullRunnerStep] | None = None
+    completion_steps: list[FullRunnerStep] | None = None
     max_iterations: int | None = None
     timeout_seconds: int | None = None
     provider: str | None = None
@@ -99,6 +106,12 @@ class UnifiedWorkflowUpdate(BaseModel):
 
 
 class UnifiedWorkflowResponse(BaseModel):
+    # Response uses `list[Any]` (not `list[FullRunnerStep]`) on step arrays so
+    # historical DB rows that pre-date the typed contract still serialize
+    # out cleanly. Validation is enforced at the API boundary on the Create
+    # and Update DTOs above — invalid step payloads cannot enter the system.
+    # Tighten this to `list[FullRunnerStep]` once a backfill confirms all
+    # stored workflows validate.
     """Response for a workflow."""
 
     id: str
@@ -264,10 +277,12 @@ class UnifiedWorkflowService:
             description=data.description,
             category=data.category,
             tags=data.tags,
-            setup_steps=data.setup_steps,
-            verification_steps=data.verification_steps,
-            agentic_steps=data.agentic_steps,
-            completion_steps=data.completion_steps,
+            setup_steps=[s.model_dump(mode="json") for s in data.setup_steps],
+            verification_steps=[
+                s.model_dump(mode="json") for s in data.verification_steps
+            ],
+            agentic_steps=[s.model_dump(mode="json") for s in data.agentic_steps],
+            completion_steps=[s.model_dump(mode="json") for s in data.completion_steps],
             max_iterations=data.max_iterations,
             timeout_seconds=data.timeout_seconds,
             provider=data.provider,

@@ -25,19 +25,49 @@ up separately.
 
 from __future__ import annotations
 
+import importlib.util
 from enum import Enum
+from pathlib import Path
 
 import pytest
-from qontinui_schemas.generated import (
-    TaskRunFindingActionType,
-    TaskRunFindingCategory,
-    TaskRunFindingSeverity,
-    TaskRunFindingStatus,
-    TaskRunStatus,
-    TaskType,
-)
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+
+def _load_enum(module_stem: str, class_name: str) -> type[Enum]:
+    """Load a generated enum from its per-type file, bypassing the package.
+
+    ``qontinui_schemas.generated.__init__`` eagerly imports every per-type
+    module, so any transiently-missing file (common during concurrent
+    codegen) takes down the whole namespace.  Loading each enum module in
+    isolation keeps this parity test resilient to that flakiness.
+    """
+    import qontinui_schemas as _root
+
+    schemas_root = Path(_root.__file__).resolve().parent
+    module_path = schemas_root / "generated" / "per_type" / f"{module_stem}.py"
+    spec = importlib.util.spec_from_file_location(
+        f"_enum_parity_{module_stem}", module_path
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    cls: type[Enum] = getattr(module, class_name)
+    return cls
+
+
+TaskType = _load_enum("task_type", "TaskType")
+TaskRunStatus = _load_enum("task_run_status", "TaskRunStatus")
+TaskRunFindingCategory = _load_enum(
+    "task_run_finding_category", "TaskRunFindingCategory"
+)
+TaskRunFindingSeverity = _load_enum(
+    "task_run_finding_severity", "TaskRunFindingSeverity"
+)
+TaskRunFindingStatus = _load_enum("task_run_finding_status", "TaskRunFindingStatus")
+TaskRunFindingActionType = _load_enum(
+    "task_run_finding_action_type", "TaskRunFindingActionType"
+)
 
 # (python_enum_class, pg_enum_type_name) pairs — one row per enum contract.
 ENUM_PAIRS: list[tuple[type[Enum], str]] = [
