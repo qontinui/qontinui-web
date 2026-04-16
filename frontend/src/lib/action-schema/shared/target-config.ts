@@ -1,7 +1,7 @@
 /**
  * Target configuration - used by actions that need to locate something on screen.
  *
- * This file imports types from @qontinui/schemas/targets (the single source of truth)
+ * This file imports types from @qontinui/shared-types/targets (the single source of truth)
  * and extends them with frontend-specific compatibility features.
  *
  * IMPORTANT: Target types use camelCase for the type discriminator:
@@ -30,11 +30,11 @@ import type {
   PollingConfig,
   PatternOptions,
   MatchAdjustment,
-} from "@qontinui/schemas/targets";
+} from "@qontinui/shared-types/targets";
 
 // SearchStrategy enum - defined locally to avoid runtime dependency on @qontinui/schemas
 // (which is not published to npm and unavailable in CI/Vercel builds).
-// Must stay in sync with @qontinui/schemas/targets SearchStrategy.
+// Must stay in sync with @qontinui/shared-types/targets SearchStrategy.
 export enum SearchStrategy {
   FIRST = "FIRST",
   ALL = "ALL",

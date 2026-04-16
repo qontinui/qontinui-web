@@ -7,7 +7,7 @@
  *
  * CHANGELOG v2.12.0:
  * - Normalized target type from "StateImage" to "stateImage" (lowercase 'i')
- * - Target types now sourced from @qontinui/schemas/targets (single source of truth)
+ * - Target types now sourced from @qontinui/shared-types/targets (single source of truth)
  * - Fixes case sensitivity bug where Python expected lowercase but UI produced uppercase
  *
  * CHANGELOG v2.11.0:

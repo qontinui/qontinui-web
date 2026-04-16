@@ -4,8 +4,10 @@
  * Re-exports shared types from @qontinui/schemas and adds frontend-specific types.
  */
 
-// Re-export enum (value export is fine)
-export { JobStatus } from "@qontinui/schemas/rag";
+// JobStatus is a string-literal union type (Rust schemars → TS), not a
+// runtime enum. Grep verified no `JobStatus.X` value uses exist, so
+// type-only re-export is safe.
+export type { JobStatus } from "@qontinui/shared-types/rag";
 
 // Re-export types (must use 'export type' with isolatedModules)
 export type {
@@ -25,7 +27,7 @@ export type {
   // States
   StateFilterItem,
   StatesResponse,
-} from "@qontinui/schemas/rag";
+} from "@qontinui/shared-types/rag";
 
 // ============================================================================
 // Frontend-specific types (not in shared schema)
