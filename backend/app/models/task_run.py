@@ -95,10 +95,15 @@ class FindingStatus(StrEnum):
 
 
 class FindingActionType(StrEnum):
-    """Task run finding action type enumeration."""
+    """Task run finding action type enumeration.
+
+    Must stay in sync with ``qontinui_schemas.generated.TaskRunFindingActionType``
+    (source of truth: ``qontinui-schemas/rust/src/task_run.rs``).
+    """
 
     AUTO_FIX = "auto_fix"
     NEEDS_USER_INPUT = "needs_user_input"
+    MANUAL = "manual"
     INFORMATIONAL = "informational"
 
 
