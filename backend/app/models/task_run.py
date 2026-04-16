@@ -14,12 +14,22 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from app.db.base import Base
-from sqlalchemy import (Boolean, DateTime, Enum, Float, ForeignKey, Integer,
-                        String, Text, text)
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base
 
 
 class TaskType(StrEnum):
@@ -40,7 +50,13 @@ class TaskRunStatus(StrEnum):
 
 
 class FindingCategory(StrEnum):
-    """Task run finding category enumeration."""
+    """Task run finding category enumeration.
+
+    Must stay in sync with ``qontinui_schemas.generated.TaskRunFindingCategory``
+    (source of truth: ``qontinui-schemas/rust/src/task_run.rs``).  The PG ENUM
+    type ``finding_category`` must also accept every value here — new values
+    require an Alembic migration with ``ALTER TYPE ... ADD VALUE``.
+    """
 
     CODE_BUG = "code_bug"
     SECURITY = "security"
@@ -53,6 +69,8 @@ class FindingCategory(StrEnum):
     RUNTIME_ISSUE = "runtime_issue"
     ALREADY_FIXED = "already_fixed"
     EXPECTED_BEHAVIOR = "expected_behavior"
+    DATA_MIGRATION = "data_migration"
+    WARNING = "warning"
 
 
 class FindingSeverity(StrEnum):
