@@ -12,18 +12,29 @@ works across horizontally-scaled backend instances.
 
 import asyncio
 import json
+import urllib.error
+import urllib.request
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated
 
 import structlog
+from fastapi import (
+    APIRouter,
+    Depends,
+    Request,
+    Response,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
+from fastapi.responses import JSONResponse
+
 from app.api.deps import current_active_user, get_current_user_from_ws
 from app.config.redis_config import get_redis
 from app.core.config import settings
 from app.models.user import User
 from app.services.device_bridge_service import DeviceBridgeService
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, status
-from fastapi.responses import JSONResponse
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -573,3 +584,100 @@ async def list_available_devices(
     )
 
     return JSONResponse(content={"devices": devices, "count": len(devices)})
+
+
+# ---------------------------------------------------------------------------
+# E. Runner proxy — lets remote phones reach the runner through the backend
+# ---------------------------------------------------------------------------
+
+
+@router.api_route(
+    "/runner-proxy/{path:path}",
+    methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
+)
+async def runner_proxy(
+    request: Request,
+    path: str,
+    user: Annotated[User, Depends(current_active_user)],
+) -> Response:
+    """
+    Proxy HTTP requests to the runner for remote mobile devices.
+
+    The phone can't reach the runner directly (it's on a different network).
+    This endpoint forwards requests through the backend which IS co-located
+    with the runner.
+
+    URL mapping:
+        GET /api/v1/device-bridge/runner-proxy/health
+          -> GET http://127.0.0.1:9876/health
+
+    The runner port is looked up from the user's most recent active connection.
+    Falls back to port 9876 (default runner port).
+    """
+    user_id = str(user.id)
+
+    # Find the runner port from active connections
+    runner_port = 9876  # default
+    try:
+        from sqlalchemy import text
+
+        from app.db.session import AsyncSessionLocal
+
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                text(
+                    "SELECT runner_port FROM runner_connections "
+                    "WHERE user_id = :uid AND disconnected_at IS NULL "
+                    "ORDER BY connected_at DESC LIMIT 1"
+                ),
+                {"uid": user_id},
+            )
+            row = result.fetchone()
+            if row and row[0]:
+                runner_port = row[0]
+    except Exception as e:
+        logger.debug("runner_proxy_port_lookup_failed", error=str(e))
+
+    target_url = f"http://127.0.0.1:{runner_port}/{path}"
+    if request.url.query:
+        target_url += f"?{request.url.query}"
+
+    try:
+        body = await request.body()
+        headers = {
+            k: v
+            for k, v in request.headers.items()
+            if k.lower()
+            not in ("host", "connection", "transfer-encoding", "content-length")
+        }
+        req = urllib.request.Request(
+            target_url,
+            data=body if body else None,
+            headers=headers,
+            method=request.method,
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            resp_body = resp.read()
+            resp_headers = dict(resp.getheaders())
+            # Remove hop-by-hop headers
+            for hdr in ("transfer-encoding", "connection", "keep-alive"):
+                resp_headers.pop(hdr, None)
+            return Response(
+                content=resp_body,
+                status_code=resp.status,
+                headers=resp_headers,
+            )
+    except urllib.error.HTTPError as e:
+        body_bytes = e.read() if hasattr(e, "read") else b""
+        return Response(content=body_bytes, status_code=e.code)
+    except urllib.error.URLError:
+        return JSONResponse(
+            status_code=502,
+            content={"detail": f"Runner not reachable at port {runner_port}"},
+        )
+    except Exception as e:
+        logger.error("runner_proxy_error", error=str(e), path=path)
+        return JSONResponse(
+            status_code=502,
+            content={"detail": f"Proxy error: {str(e)}"},
+        )
