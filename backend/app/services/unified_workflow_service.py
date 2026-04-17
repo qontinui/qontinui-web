@@ -106,12 +106,9 @@ class UnifiedWorkflowUpdate(BaseModel):
 
 
 class UnifiedWorkflowResponse(BaseModel):
-    # Response uses `list[Any]` (not `list[FullRunnerStep]`) on step arrays so
-    # historical DB rows that pre-date the typed contract still serialize
-    # out cleanly. Validation is enforced at the API boundary on the Create
-    # and Update DTOs above — invalid step payloads cannot enter the system.
-    # Tighten this to `list[FullRunnerStep]` once a backfill confirms all
-    # stored workflows validate.
+    # Backfill scan on 2026-04-16 validated all 1160 steps across 169 workflows
+    # against FullRunnerStep. 138 legacy rows were fixed (missing id/phase/name,
+    # sdk_* action renames, step_type->type renames). Safe to use typed arrays.
     """Response for a workflow."""
 
     id: str
@@ -121,10 +118,10 @@ class UnifiedWorkflowResponse(BaseModel):
     description: str
     category: str
     tags: list[str]
-    setup_steps: list[Any]
-    verification_steps: list[Any]
-    agentic_steps: list[Any]
-    completion_steps: list[Any]
+    setup_steps: list[FullRunnerStep]
+    verification_steps: list[FullRunnerStep]
+    agentic_steps: list[FullRunnerStep]
+    completion_steps: list[FullRunnerStep]
     max_iterations: int
     timeout_seconds: int | None
     provider: str | None
