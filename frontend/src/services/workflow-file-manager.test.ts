@@ -10,7 +10,7 @@
  * - Error handling
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "@jest/globals";
+import { describe, test, expect, beforeEach, afterEach } from "vitest";
 import { WorkflowFileManager } from "./workflow-file-manager";
 import { Workflow } from "../lib/action-schema/action-types";
 

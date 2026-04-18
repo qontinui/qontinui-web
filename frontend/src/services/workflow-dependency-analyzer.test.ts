@@ -2,7 +2,7 @@
  * Tests for Workflow Dependency Analyzer
  */
 
-import { describe, it, expect, beforeEach } from "@jest/globals";
+import { describe, it, expect, beforeEach } from "vitest";
 import { Workflow, createAction } from "../lib/action-schema/action-types";
 import { WorkflowDependencyAnalyzer } from "./workflow-dependency-analyzer";
 

@@ -57,4 +57,13 @@ import type {
   DEFAULT_TEST_TIMEOUT as _DEFAULT_TEST_TIMEOUT,
 } from "./types";
 
-// Type compilation verification - types are imported above to verify they compile
+import { describe, it, expect } from "vitest";
+
+// The imports above are the real test: they verify that every public type in
+// ./types compiles. This describe block exists so vitest doesn't flag the
+// file as empty, and pins the intent.
+describe("workflow-organization type surface", () => {
+  it("compiles all exported types", () => {
+    expect(true).toBe(true);
+  });
+});

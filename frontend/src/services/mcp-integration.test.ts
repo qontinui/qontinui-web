@@ -316,12 +316,31 @@ describe("MCPClient", () => {
     });
 
     it("should handle generation timeout", async () => {
+      // generateWorkflow uses a 60s per-request AbortController timeout. The
+      // mock has to honor the AbortSignal — real fetch rejects with
+      // AbortError when aborted, and the client's catch branch turns that
+      // into an MCPError("Request timeout").
       fetchMock.mockImplementationOnce(
-        () => new Promise((resolve) => setTimeout(resolve, 100000))
+        (_url: string, init?: { signal?: AbortSignal }) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => {
+              const err = new Error("The operation was aborted");
+              err.name = "AbortError";
+              reject(err);
+            });
+          })
       );
 
-      await expect(client.generateWorkflow("test")).rejects.toThrow("timeout");
-    }, 10000);
+      vi.useFakeTimers();
+      try {
+        const promise = client.generateWorkflow("test");
+        promise.catch(() => undefined);
+        await vi.advanceTimersByTimeAsync(60_001);
+        await expect(promise).rejects.toThrow("timeout");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   // ==========================================================================

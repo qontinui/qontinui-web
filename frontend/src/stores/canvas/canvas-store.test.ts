@@ -45,8 +45,18 @@ const createMockWorkflow = (): Workflow => ({
 // ============================================================================
 
 describe("WorkflowSlice", () => {
+  // workflow-slice.setWorkflow() calls get().recordHistory(), so every test
+  // needs the history slice alongside the workflow slice.
+  const makeStore = () =>
+    create(
+      immer((...a) => ({
+        ...createWorkflowSlice(...a),
+        ...createHistorySlice(...a),
+      })) as unknown
+    );
+
   it("should set workflow", () => {
-    const useStore = create(immer(createWorkflowSlice as unknown));
+    const useStore = makeStore();
     const workflow = createMockWorkflow();
 
     useStore.getState().setWorkflow(workflow);
@@ -56,7 +66,7 @@ describe("WorkflowSlice", () => {
   });
 
   it("should clear workflow", () => {
-    const useStore = create(immer(createWorkflowSlice as unknown));
+    const useStore = makeStore();
     const workflow = createMockWorkflow();
 
     useStore.getState().setWorkflow(workflow);
@@ -67,7 +77,7 @@ describe("WorkflowSlice", () => {
   });
 
   it("should validate workflow", async () => {
-    const useStore = create(immer(createWorkflowSlice as unknown));
+    const useStore = makeStore();
     const workflow = createMockWorkflow();
 
     useStore.getState().setWorkflow(workflow);
@@ -291,7 +301,13 @@ describe("HistorySlice", () => {
   });
 
   it("should check canUndo", () => {
-    expect(useStore.getState().canUndo()).toBe(true); // After setWorkflow
+    // After setWorkflow only, historyIndex is 0 (one entry), so canUndo is
+    // false — there's nothing prior to undo to. It becomes true once a
+    // second entry exists.
+    expect(useStore.getState().canUndo()).toBe(false);
+
+    useStore.getState().addAction(createMockAction("action-1"));
+    expect(useStore.getState().canUndo()).toBe(true);
   });
 
   it("should check canRedo", () => {

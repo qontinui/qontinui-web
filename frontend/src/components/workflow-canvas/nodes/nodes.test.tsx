@@ -5,7 +5,7 @@
  * with various configurations and states.
  */
 
-import { describe, it, expect } from "@jest/globals";
+import { describe, it, expect } from "vitest";
 import { Action } from "@/lib/action-schema/action-types";
 import {
   getNodeSummary,

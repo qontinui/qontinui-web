@@ -50,9 +50,12 @@ const createMockWorkflow = (): Workflow => ({
 
 describe("Canvas Store", () => {
   beforeEach(() => {
-    // Reset store before each test
+    // Reset store before each test. Viewport must also be reset because
+    // persist middleware retains zoom/position across tests, otherwise a
+    // prior test's setViewport/zoomIn leaks into later assertions.
     useCanvasStore.getState().clearWorkflow();
     useCanvasStore.getState().clearHistory();
+    useCanvasStore.getState().setViewport({ x: 0, y: 0, zoom: 1 });
   });
 
   describe("Initialization", () => {
@@ -291,7 +294,9 @@ describe("Canvas Store", () => {
     it("should report canUndo correctly", () => {
       const { canUndo, updateAction } = useCanvasStore.getState();
 
-      expect(canUndo()).toBe(true); // Initial state recorded
+      // After setWorkflow only, there's one history entry at index 0, so
+      // nothing to undo to. canUndo becomes true once a second entry exists.
+      expect(canUndo()).toBe(false);
 
       updateAction("action-1", { name: "Changed" });
       expect(canUndo()).toBe(true);

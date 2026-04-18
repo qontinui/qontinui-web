@@ -4,7 +4,7 @@
  * Comprehensive test suite for the workflow canvas component.
  */
 
-import { describe, it, expect } from "@jest/globals";
+import { describe, it, expect } from "vitest";
 import {
   workflowToReactFlow,
   reactFlowToWorkflow,

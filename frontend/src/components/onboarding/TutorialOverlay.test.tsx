@@ -487,3 +487,16 @@ export const testScenarios = {
   simulateNewUserFlow,
   measurePerformance,
 };
+
+import { describe, it, expect } from "vitest";
+
+// This file is a collection of manual-testing utilities run from the browser
+// console, not an automated test suite. Vitest still picks it up due to the
+// .test.tsx extension; this smoke test keeps the file from failing as
+// "no tests found".
+describe("TutorialOverlay test utilities", () => {
+  it("exposes the expected helper surface", () => {
+    expect(testScenarios).toHaveProperty("testBasicFlow");
+    expect(testScenarios).toHaveProperty("measurePerformance");
+  });
+});

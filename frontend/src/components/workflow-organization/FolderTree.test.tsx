@@ -4,7 +4,7 @@
  * Tests for FolderTree component and utilities
  */
 
-import { describe, it, expect } from "@jest/globals";
+import { describe, it, expect } from "vitest";
 import {
   createFolder,
   generateFolderId,
