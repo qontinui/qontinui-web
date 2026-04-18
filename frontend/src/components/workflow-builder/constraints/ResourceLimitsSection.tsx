@@ -27,10 +27,10 @@ export function ResourceLimitsSection({
   const [expanded, setExpanded] = useState(false);
 
   const hasAnyLimit =
-    resourceLimits.max_wall_time_secs != null ||
-    resourceLimits.max_files_modified != null ||
-    resourceLimits.max_agentic_time_ms != null ||
-    resourceLimits.warning_threshold != null;
+    resourceLimits.maxWallTimeSecs != null ||
+    resourceLimits.maxFilesModified != null ||
+    resourceLimits.maxAgenticTimeMs != null ||
+    resourceLimits.warningThreshold != null;
 
   return (
     <div>
@@ -61,17 +61,21 @@ export function ResourceLimitsSection({
         <div className="mt-2 space-y-3 px-3">
           {/* Max Wall Time */}
           <div>
-            <label htmlFor="max-wall-time--seconds-3" className="block text-xs font-medium text-zinc-400 mb-1">
+            <label
+              htmlFor="max-wall-time--seconds-3"
+              className="block text-xs font-medium text-zinc-400 mb-1"
+            >
               Max Wall Time (seconds)
             </label>
-            <input id="max-wall-time--seconds-3"
+            <input
+              id="max-wall-time--seconds-3"
               type="number"
-              value={resourceLimits.max_wall_time_secs ?? ""}
+              value={resourceLimits.maxWallTimeSecs ?? ""}
               onChange={(e) => {
                 const val = e.target.value
                   ? parseInt(e.target.value, 10)
                   : undefined;
-                onUpdate({ max_wall_time_secs: val });
+                onUpdate({ maxWallTimeSecs: val });
               }}
               placeholder="No limit"
               min={0}
@@ -84,17 +88,21 @@ export function ResourceLimitsSection({
 
           {/* Max Files Modified */}
           <div>
-            <label htmlFor="max-files-modified-2" className="block text-xs font-medium text-zinc-400 mb-1">
+            <label
+              htmlFor="max-files-modified-2"
+              className="block text-xs font-medium text-zinc-400 mb-1"
+            >
               Max Files Modified
             </label>
-            <input id="max-files-modified-2"
+            <input
+              id="max-files-modified-2"
               type="number"
-              value={resourceLimits.max_files_modified ?? ""}
+              value={resourceLimits.maxFilesModified ?? ""}
               onChange={(e) => {
                 const val = e.target.value
                   ? parseInt(e.target.value, 10)
                   : undefined;
-                onUpdate({ max_files_modified: val });
+                onUpdate({ maxFilesModified: val });
               }}
               placeholder="No limit"
               min={0}
@@ -107,17 +115,21 @@ export function ResourceLimitsSection({
 
           {/* Max Agentic Time */}
           <div>
-            <label htmlFor="max-agentic-time--ms-1" className="block text-xs font-medium text-zinc-400 mb-1">
+            <label
+              htmlFor="max-agentic-time--ms-1"
+              className="block text-xs font-medium text-zinc-400 mb-1"
+            >
               Max Agentic Time (ms)
             </label>
-            <input id="max-agentic-time--ms-1"
+            <input
+              id="max-agentic-time--ms-1"
               type="number"
-              value={resourceLimits.max_agentic_time_ms ?? ""}
+              value={resourceLimits.maxAgenticTimeMs ?? ""}
               onChange={(e) => {
                 const val = e.target.value
                   ? parseInt(e.target.value, 10)
                   : undefined;
-                onUpdate({ max_agentic_time_ms: val });
+                onUpdate({ maxAgenticTimeMs: val });
               }}
               placeholder="No limit"
               min={0}
@@ -130,17 +142,21 @@ export function ResourceLimitsSection({
 
           {/* Warning Threshold */}
           <div>
-            <label htmlFor="warning-threshold-0" className="block text-xs font-medium text-zinc-400 mb-1">
+            <label
+              htmlFor="warning-threshold-0"
+              className="block text-xs font-medium text-zinc-400 mb-1"
+            >
               Warning Threshold
             </label>
-            <input id="warning-threshold-0"
+            <input
+              id="warning-threshold-0"
               type="number"
-              value={resourceLimits.warning_threshold ?? ""}
+              value={resourceLimits.warningThreshold ?? ""}
               onChange={(e) => {
                 const val = e.target.value
                   ? parseFloat(e.target.value)
                   : undefined;
-                onUpdate({ warning_threshold: val });
+                onUpdate({ warningThreshold: val });
               }}
               placeholder={String(DEFAULT_WARNING_THRESHOLD)}
               min={0}

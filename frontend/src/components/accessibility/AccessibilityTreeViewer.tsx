@@ -141,8 +141,8 @@ export function AccessibilityTreeViewer({
           <h3 className="font-semibold text-sm">Accessibility Tree</h3>
           {snapshot && (
             <span className="text-xs text-muted-foreground">
-              {snapshot.total_nodes ?? 0} nodes (
-              {snapshot.interactive_nodes ?? 0} interactive)
+              {snapshot.totalNodes ?? 0} nodes ({snapshot.interactiveNodes ?? 0}{" "}
+              interactive)
             </span>
           )}
         </div>

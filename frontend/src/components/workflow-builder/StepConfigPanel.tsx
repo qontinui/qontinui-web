@@ -73,16 +73,16 @@ export function StepConfigPanel() {
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-4">
           {/* Skill Origin Badge */}
-          {selectedStep.skill_origin && (
+          {selectedStep.skillOrigin && (
             <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 bg-zinc-800/50 border border-zinc-700/50 rounded-md">
               <span className="text-xs text-zinc-400">
                 From skill:{" "}
                 <span className="text-zinc-300 font-medium">
-                  {/* skill_origin is typed as an opaque map on the wire; all
+                  {/* skillOrigin is typed as an opaque map on the wire; all
                       runner/web-produced origins include `skill_slug`. */}
                   {String(
                     (
-                      selectedStep.skill_origin as
+                      selectedStep.skillOrigin as
                         | { skill_slug?: string }
                         | undefined
                     )?.skill_slug ?? ""
@@ -91,7 +91,7 @@ export function StepConfigPanel() {
               </span>
               <button
                 className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors"
-                onClick={() => handleUpdate({ skill_origin: undefined })}
+                onClick={() => handleUpdate({ skillOrigin: undefined })}
                 title="Detach from skill — converts to raw step"
               >
                 Detach

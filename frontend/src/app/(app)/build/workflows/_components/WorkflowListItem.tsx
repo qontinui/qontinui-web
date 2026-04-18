@@ -14,10 +14,10 @@ export function WorkflowListItem({
   onClick: () => void;
 }) {
   const stepCount =
-    (workflow.setup_steps?.length ?? 0) +
-    (workflow.verification_steps?.length ?? 0) +
-    (workflow.agentic_steps?.length ?? 0) +
-    (workflow.completion_steps?.length ?? 0);
+    (workflow.setupSteps?.length ?? 0) +
+    (workflow.verificationSteps?.length ?? 0) +
+    (workflow.agenticSteps?.length ?? 0) +
+    (workflow.completionSteps?.length ?? 0);
 
   return (
     <div

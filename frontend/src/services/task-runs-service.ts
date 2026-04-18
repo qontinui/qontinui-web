@@ -51,13 +51,13 @@ export class TaskRunsService {
     const params = new URLSearchParams();
 
     if (filters) {
-      if (filters.project_id) params.append("project_id", filters.project_id);
+      if (filters.projectId) params.append("project_id", filters.projectId);
       if (filters.status) params.append("status", filters.status);
-      if (filters.start_date) params.append("start_date", filters.start_date);
-      if (filters.end_date) params.append("end_date", filters.end_date);
-      if (filters.offset !== undefined)
+      if (filters.startDate) params.append("start_date", filters.startDate);
+      if (filters.endDate) params.append("end_date", filters.endDate);
+      if (filters.offset !== undefined && filters.offset !== null)
         params.append("offset", String(filters.offset));
-      if (filters.limit !== undefined)
+      if (filters.limit !== undefined && filters.limit !== null)
         params.append("limit", String(filters.limit));
     }
 

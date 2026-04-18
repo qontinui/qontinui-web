@@ -9,8 +9,8 @@ import type { StepUpdateHandler } from "./step-config-types";
 type CommandMode = "shell" | "check" | "test";
 
 function detectCommandMode(step: CommandStep): CommandMode {
-  if (step.test_type || step.test_id) return "test";
-  if (step.check_type || step.check_group_id) return "check";
+  if (step.testType || step.testId) return "test";
+  if (step.checkType || step.checkGroupId) return "check";
   return "shell";
 }
 
@@ -72,9 +72,9 @@ function ShellCommandFields({
           type="text"
           className="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 text-sm focus:ring-2 focus:ring-blue-500/50"
           placeholder="Relative to project root"
-          value={step.working_directory ?? ""}
+          value={step.workingDirectory ?? ""}
           onChange={(e) =>
-            onUpdate({ working_directory: e.target.value || undefined })
+            onUpdate({ workingDirectory: e.target.value || undefined })
           }
         />
       </div>
@@ -86,10 +86,10 @@ function ShellCommandFields({
           <input
             type="number"
             className="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 text-sm focus:ring-2 focus:ring-blue-500/50"
-            value={step.timeout_seconds ?? 60}
+            value={step.timeoutSeconds ?? 60}
             onChange={(e) =>
               onUpdate({
-                timeout_seconds: parseInt(e.target.value) || undefined,
+                timeoutSeconds: parseInt(e.target.value) || undefined,
               })
             }
           />
@@ -99,8 +99,8 @@ function ShellCommandFields({
             <input
               type="checkbox"
               className="rounded"
-              checked={step.fail_on_error !== false}
-              onChange={(e) => onUpdate({ fail_on_error: e.target.checked })}
+              checked={step.failOnError !== false}
+              onChange={(e) => onUpdate({ failOnError: e.target.checked })}
             />
             Fail on error
           </label>
@@ -111,9 +111,9 @@ function ShellCommandFields({
           <input
             type="checkbox"
             className="rounded"
-            checked={step.run_on_subsequent_iterations ?? false}
+            checked={step.runOnSubsequentIterations ?? false}
             onChange={(e) =>
-              onUpdate({ run_on_subsequent_iterations: e.target.checked })
+              onUpdate({ runOnSubsequentIterations: e.target.checked })
             }
           />
           Run on subsequent iterations
@@ -137,8 +137,8 @@ function CheckFieldsConfig({
           Check Type
         </p>
         <select
-          value={step.check_type ?? "custom_command"}
-          onChange={(e) => onUpdate({ check_type: e.target.value })}
+          value={step.checkType ?? "custom_command"}
+          onChange={(e) => onUpdate({ checkType: e.target.value })}
           className="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 text-sm focus:ring-2 focus:ring-blue-500/50"
         >
           <option value="lint">Lint</option>
@@ -169,9 +169,9 @@ function CheckFieldsConfig({
         <input
           type="number"
           className="w-32 px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 text-sm focus:ring-2 focus:ring-blue-500/50"
-          value={step.timeout_seconds ?? 60}
+          value={step.timeoutSeconds ?? 60}
           onChange={(e) =>
-            onUpdate({ timeout_seconds: parseInt(e.target.value) || undefined })
+            onUpdate({ timeoutSeconds: parseInt(e.target.value) || undefined })
           }
         />
       </div>
@@ -179,8 +179,8 @@ function CheckFieldsConfig({
         <input
           type="checkbox"
           className="rounded"
-          checked={step.auto_fix ?? false}
-          onChange={(e) => onUpdate({ auto_fix: e.target.checked })}
+          checked={step.autoFix ?? false}
+          onChange={(e) => onUpdate({ autoFix: e.target.checked })}
         />
         Auto-fix
       </label>
@@ -202,8 +202,8 @@ function TestFieldsConfig({
           Test Type
         </p>
         <select
-          value={step.test_type ?? "custom_command"}
-          onChange={(e) => onUpdate({ test_type: e.target.value as TestType })}
+          value={step.testType ?? "custom_command"}
+          onChange={(e) => onUpdate({ testType: e.target.value as TestType })}
           className="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 text-sm focus:ring-2 focus:ring-blue-500/50"
         >
           <option value="playwright">Playwright (Browser)</option>
@@ -214,9 +214,9 @@ function TestFieldsConfig({
         </select>
       </div>
 
-      {(step.test_type === "custom_command" ||
-        step.test_type === "python" ||
-        step.test_type === "repository") && (
+      {(step.testType === "custom_command" ||
+        step.testType === "python" ||
+        step.testType === "repository") && (
         <div>
           <p className="block text-xs font-medium text-zinc-400 mb-1">
             Command
@@ -226,9 +226,9 @@ function TestFieldsConfig({
             value={step.command ?? ""}
             onChange={(e) => onUpdate({ command: e.target.value })}
             placeholder={
-              step.test_type === "python"
+              step.testType === "python"
                 ? "python test_script.py"
-                : step.test_type === "repository"
+                : step.testType === "repository"
                   ? "npm test"
                   : "command to run"
             }
@@ -237,17 +237,17 @@ function TestFieldsConfig({
         </div>
       )}
 
-      {step.test_type === "playwright" && (
+      {step.testType === "playwright" && (
         <>
           <div>
             <p className="block text-xs font-medium text-zinc-400 mb-1">
               Execution Mode
             </p>
             <select
-              value={step.execution_mode ?? "independent"}
+              value={step.executionMode ?? "independent"}
               onChange={(e) =>
                 onUpdate({
-                  execution_mode: e.target.value as PlaywrightExecutionMode,
+                  executionMode: e.target.value as PlaywrightExecutionMode,
                 })
               }
               className="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 text-sm focus:ring-2 focus:ring-blue-500/50"
@@ -262,9 +262,9 @@ function TestFieldsConfig({
             </p>
             <input
               type="text"
-              value={step.target_url ?? ""}
+              value={step.targetUrl ?? ""}
               onChange={(e) =>
-                onUpdate({ target_url: e.target.value || undefined })
+                onUpdate({ targetUrl: e.target.value || undefined })
               }
               placeholder="http://localhost:3000"
               className="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 text-sm focus:ring-2 focus:ring-blue-500/50"
@@ -280,9 +280,9 @@ function TestFieldsConfig({
         <input
           type="number"
           className="w-32 px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 text-sm focus:ring-2 focus:ring-blue-500/50"
-          value={step.timeout_seconds ?? 60}
+          value={step.timeoutSeconds ?? 60}
           onChange={(e) =>
-            onUpdate({ timeout_seconds: parseInt(e.target.value) || undefined })
+            onUpdate({ timeoutSeconds: parseInt(e.target.value) || undefined })
           }
         />
       </div>
@@ -303,31 +303,31 @@ export function CommandStepConfig({
     // Clear fields from the old mode
     const clearFields: Record<string, undefined> = {};
     if (mode === "test" && newMode !== "test") {
-      clearFields.test_type = undefined;
-      clearFields.test_id = undefined;
+      clearFields.testType = undefined;
+      clearFields.testId = undefined;
       clearFields.code = undefined;
-      clearFields.script_id = undefined;
-      clearFields.script_content = undefined;
-      clearFields.target_url = undefined;
-      clearFields.fused_script_id = undefined;
-      clearFields.execution_mode = undefined;
+      clearFields.scriptId = undefined;
+      clearFields.scriptContent = undefined;
+      clearFields.targetUrl = undefined;
+      clearFields.fusedScriptId = undefined;
+      clearFields.executionMode = undefined;
     }
     if (mode === "check" && newMode !== "check") {
-      clearFields.check_type = undefined;
-      clearFields.check_id = undefined;
-      clearFields.check_group_id = undefined;
+      clearFields.checkType = undefined;
+      clearFields.checkId = undefined;
+      clearFields.checkGroupId = undefined;
       clearFields.tool = undefined;
-      clearFields.config_path = undefined;
-      clearFields.auto_fix = undefined;
-      clearFields.fail_on_warning = undefined;
+      clearFields.configPath = undefined;
+      clearFields.autoFix = undefined;
+      clearFields.failOnWarning = undefined;
     }
     // Set defaults for the new mode
     const setFields: Record<string, unknown> = {};
     if (newMode === "test") {
-      setFields.test_type = "custom_command";
+      setFields.testType = "custom_command";
     }
     if (newMode === "check") {
-      setFields.check_type = "custom_command";
+      setFields.checkType = "custom_command";
     }
     onUpdate({ ...clearFields, ...setFields });
   };

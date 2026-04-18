@@ -136,7 +136,7 @@ export default function LibraryPage() {
           type: "workflow",
           description: w.description,
           updated_at: w.modified_at,
-          created_at: w.created_at,
+          created_at: w.createdAt,
           assetType: "workflow",
         })
       );

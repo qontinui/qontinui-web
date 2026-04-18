@@ -34,11 +34,11 @@ interface CheckIssueDetailProps {
 interface CheckResultProps {
   name: string;
   status: string;
-  duration_ms: number;
-  issues_found: number;
-  issues_fixed: number;
-  files_checked: number;
-  error_message?: string | null;
+  durationMs: number;
+  issuesFound: number;
+  issuesFixed: number;
+  filesChecked: number;
+  errorMessage?: string | null;
   output?: string | null;
   issues: CheckIssueDetailProps[];
 }
@@ -98,7 +98,7 @@ export function CheckResultCard({ check }: { check: CheckResultProps }) {
   const isPassed = check.status === "passed";
   const isSkipped = check.status === "skipped";
   const hasIssues = check.issues && check.issues.length > 0;
-  const hasDetails = hasIssues || !!check.error_message || !!check.output;
+  const hasDetails = hasIssues || !!check.errorMessage || !!check.output;
 
   return (
     <div
@@ -132,7 +132,7 @@ export function CheckResultCard({ check }: { check: CheckResultProps }) {
             {check.name}
           </span>
 
-          {check.issues_found > 0 && (
+          {check.issuesFound > 0 && (
             <span
               className={`text-xs px-1.5 py-0.5 rounded ${
                 isPassed
@@ -140,8 +140,8 @@ export function CheckResultCard({ check }: { check: CheckResultProps }) {
                   : "bg-red-500/20 text-red-400"
               }`}
             >
-              {check.issues_found} issue{check.issues_found !== 1 ? "s" : ""}
-              {check.issues_fixed > 0 && ` (${check.issues_fixed} fixed)`}
+              {check.issuesFound} issue{check.issuesFound !== 1 ? "s" : ""}
+              {check.issuesFixed > 0 && ` (${check.issuesFixed} fixed)`}
             </span>
           )}
         </div>
@@ -149,12 +149,12 @@ export function CheckResultCard({ check }: { check: CheckResultProps }) {
         <div className="flex items-center gap-2 text-xs text-text-muted">
           <span className="flex items-center gap-1">
             <Clock className="size-3" />
-            {formatDurationMs(check.duration_ms)}
+            {formatDurationMs(check.durationMs)}
           </span>
 
-          {check.files_checked > 0 && (
+          {check.filesChecked > 0 && (
             <span>
-              {check.files_checked} file{check.files_checked !== 1 ? "s" : ""}
+              {check.filesChecked} file{check.filesChecked !== 1 ? "s" : ""}
             </span>
           )}
 
@@ -170,14 +170,14 @@ export function CheckResultCard({ check }: { check: CheckResultProps }) {
       {isExpanded && hasDetails && (
         <div className="border-t border-border-subtle/30 px-3 py-2 space-y-3">
           {/* Error message */}
-          {check.error_message && (
+          {check.errorMessage && (
             <div>
               <h5 className="text-xs font-medium text-red-400 mb-1 flex items-center gap-1">
                 <AlertCircle className="size-3" />
                 Error
               </h5>
               <pre className="text-xs font-mono bg-red-500/10 p-2 rounded text-red-300 whitespace-pre-wrap overflow-x-auto max-h-24 overflow-y-auto">
-                {check.error_message}
+                {check.errorMessage}
               </pre>
             </div>
           )}

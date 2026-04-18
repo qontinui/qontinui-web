@@ -23,10 +23,10 @@ export interface StageSettingsProps {
   stage: {
     description?: string;
     /** `null` = unlimited; a positive value caps the verification-agentic loop. */
-    max_iterations?: number | null;
+    maxIterations?: number | null;
     provider?: string | null;
     model?: string | null;
-    model_overrides?: ModelOverrides;
+    modelOverrides?: ModelOverrides;
   };
   onUpdate: (updates: Record<string, unknown>) => void;
 }
@@ -46,7 +46,7 @@ export function StageSettings({ stage, onUpdate }: StageSettingsProps) {
   const [expanded, setExpanded] = useState(false);
 
   const { stageOverrides, hasPhaseOverrides } = useStagePhaseOverrides(
-    stage.model_overrides,
+    stage.modelOverrides,
     onUpdate
   );
 
@@ -109,9 +109,9 @@ function StageBasicFields({
         <Input
           id="ss-max-iterations"
           type="number"
-          value={stage.max_iterations ?? 10}
+          value={stage.maxIterations ?? 10}
           onChange={(e) =>
-            onUpdate({ max_iterations: parseInt(e.target.value) || 10 })
+            onUpdate({ maxIterations: parseInt(e.target.value) || 10 })
           }
           className="h-7 text-xs bg-zinc-800/50 border-zinc-700"
           min={1}
@@ -219,7 +219,7 @@ function StagePhaseOverridesPanel({
                 );
                 if (preset)
                   onUpdate({
-                    model_overrides:
+                    modelOverrides:
                       Object.keys(preset.overrides).length > 0
                         ? preset.overrides
                         : undefined,
@@ -237,7 +237,7 @@ function StagePhaseOverridesPanel({
             {hasPhaseOverrides && (
               <button
                 type="button"
-                onClick={() => onUpdate({ model_overrides: undefined })}
+                onClick={() => onUpdate({ modelOverrides: undefined })}
                 className="h-6 px-1.5 text-[10px] text-zinc-400 hover:text-red-400 border border-zinc-700 rounded"
               >
                 Reset

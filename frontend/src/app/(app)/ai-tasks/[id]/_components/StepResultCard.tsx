@@ -31,19 +31,19 @@ function StepStatusIcon({ success }: { success: boolean }) {
 
 export function StepResultCard({ step }: { step: VerificationStepResult }) {
   const [expanded, setExpanded] = useState(false);
-  const details = step.verification_details;
+  const details = step.verificationDetails;
   const hasEvidence =
-    !!step.screenshot_path ||
-    !!details?.page_snapshot ||
-    !!step.output_data?.log_output ||
-    !!step.output_data?.console_output;
+    !!step.screenshotPath ||
+    !!details?.pageSnapshot ||
+    !!(step.outputData?.["log_output"] as string | undefined) ||
+    !!(step.outputData?.["console_output"] as string | undefined);
   const hasExpandableContent =
     step.error ||
     details?.stdout ||
     details?.stderr ||
-    details?.console_output ||
-    details?.assertions_total !== null ||
-    (details?.check_results && details.check_results.length > 0) ||
+    details?.consoleOutput ||
+    details?.assertionsTotal !== null ||
+    (details?.checkResults && details.checkResults.length > 0) ||
     hasEvidence;
 
   return (
@@ -56,14 +56,14 @@ export function StepResultCard({ step }: { step: VerificationStepResult }) {
         <div className="flex items-center gap-3">
           <StepStatusIcon success={step.success} />
           <div>
-            <div className="text-sm font-medium">{step.step_name}</div>
+            <div className="text-sm font-medium">{step.stepName}</div>
             <div className="flex items-center gap-2 mt-0.5">
               <Badge className="bg-surface-raised text-text-muted border-border-subtle text-[10px] px-1.5 py-0">
-                {step.step_type}
+                {step.stepType}
               </Badge>
-              {step.config?.check_type && (
+              {step.config?.checkType && (
                 <Badge className="bg-brand-secondary/10 text-brand-secondary border-brand-secondary/30 text-[10px] px-1.5 py-0">
-                  {step.config.check_type}
+                  {step.config.checkType}
                 </Badge>
               )}
             </div>
@@ -72,7 +72,7 @@ export function StepResultCard({ step }: { step: VerificationStepResult }) {
         <div className="flex items-center gap-2">
           <span className="text-xs text-text-muted">
             <Clock className="w-3 h-3 inline mr-1" />
-            {formatDurationMs(step.duration_ms)}
+            {formatDurationMs(step.durationMs)}
           </span>
           {hasExpandableContent &&
             (expanded ? (
@@ -96,8 +96,8 @@ export function StepResultCard({ step }: { step: VerificationStepResult }) {
             </div>
           )}
 
-          {details?.assertions_total !== null &&
-            details?.assertions_total !== undefined && (
+          {details?.assertionsTotal !== null &&
+            details?.assertionsTotal !== undefined && (
               <div>
                 <div className="flex items-center gap-1.5 text-xs font-medium text-text-muted mb-1">
                   <ShieldCheck className="w-3 h-3" />
@@ -106,27 +106,27 @@ export function StepResultCard({ step }: { step: VerificationStepResult }) {
                 <div className="flex items-center gap-2">
                   <Badge
                     className={`text-[10px] px-1.5 py-0 ${
-                      details.assertions_passed === details.assertions_total
+                      details.assertionsPassed === details.assertionsTotal
                         ? "bg-green-500/20 text-green-400 border-green-500/30"
                         : "bg-red-500/20 text-red-400 border-red-500/30"
                     }`}
                   >
-                    {details.assertions_passed ?? 0} /{" "}
-                    {details.assertions_total} passed
+                    {details.assertionsPassed ?? 0} / {details.assertionsTotal}{" "}
+                    passed
                   </Badge>
                 </div>
               </div>
             )}
 
-          {details?.exit_code !== null && details?.exit_code !== undefined && (
+          {details?.exitCode !== null && details?.exitCode !== undefined && (
             <div className="text-xs text-text-muted">
               Exit code:{" "}
               <span
                 className={
-                  details.exit_code === 0 ? "text-green-400" : "text-red-400"
+                  details.exitCode === 0 ? "text-green-400" : "text-red-400"
                 }
               >
-                {details.exit_code}
+                {details.exitCode}
               </span>
             </div>
           )}
@@ -155,26 +155,26 @@ export function StepResultCard({ step }: { step: VerificationStepResult }) {
             </div>
           )}
 
-          {details?.console_output && (
+          {details?.consoleOutput && (
             <div>
               <div className="flex items-center gap-1.5 text-xs font-medium text-text-muted mb-1">
                 <FileCode className="w-3 h-3" />
                 Console Output
               </div>
               <pre className="text-xs text-text-secondary bg-surface-canvas/50 px-3 py-2 rounded font-mono whitespace-pre-wrap max-h-[300px] overflow-y-auto">
-                {details.console_output}
+                {details.consoleOutput}
               </pre>
             </div>
           )}
 
-          {details?.check_results && details.check_results.length > 0 && (
+          {details?.checkResults && details.checkResults.length > 0 && (
             <div>
               <div className="flex items-center gap-1.5 text-xs font-medium text-text-muted mb-2">
                 <Activity className="w-3 h-3" />
-                Check Results ({details.check_results.length})
+                Check Results ({details.checkResults.length})
               </div>
               <div className="space-y-1.5">
-                {details.check_results.map((check, idx) => (
+                {details.checkResults.map((check, idx) => (
                   <CheckResultCard key={idx} check={check} />
                 ))}
               </div>
@@ -184,7 +184,7 @@ export function StepResultCard({ step }: { step: VerificationStepResult }) {
           {(() => {
             const compResult =
               step.comparison_result ??
-              (step.output_data?.comparison_result as
+              (step.outputData?.["comparison_result"] as
                 | ComparisonResult
                 | undefined);
             return compResult ? (

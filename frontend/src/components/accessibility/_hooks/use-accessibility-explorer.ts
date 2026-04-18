@@ -31,7 +31,7 @@ export function useAccessibilityExplorer({
 
   // Selector state
   const [currentSelector, setCurrentSelector] = useState<AccessibilitySelector>(
-    { case_sensitive: true }
+    { caseSensitive: true }
   );
   const [matchCount, setMatchCount] = useState(0);
 
@@ -98,14 +98,14 @@ export function useAccessibilityExplorer({
       selectNode(node);
       setActionRef(node.ref);
 
-      // Pre-fill selector from selected node. `case_sensitive` defaults to
+      // Pre-fill selector from selected node. `caseSensitive` defaults to
       // true on the Rust side; required after the codegen default→required
       // promotion.
       setCurrentSelector({
         role: node.role,
         name: node.name || undefined,
-        is_interactive: node.is_interactive || undefined,
-        case_sensitive: true,
+        isInteractive: node.isInteractive || undefined,
+        caseSensitive: true,
       });
     },
     [selectNode]

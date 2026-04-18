@@ -90,7 +90,12 @@ function ScreenshotEvidence({ path }: { path: string }) {
         tabIndex={0}
         className="relative bg-surface-canvas/50 rounded overflow-hidden cursor-pointer"
         onClick={() => setExpanded(!expanded)}
-        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            (e.currentTarget as HTMLElement).click();
+          }
+        }}
       >
         {!loaded && (
           <div className="h-32 flex items-center justify-center text-text-muted text-xs">
@@ -119,12 +124,15 @@ function ScreenshotEvidence({ path }: { path: string }) {
 }
 
 export function EvidenceSection({ step }: { step: VerificationStepResult }) {
-  const details = step.verification_details;
+  const details = step.verificationDetails;
 
-  const hasScreenshot = !!step.screenshot_path;
-  const hasPageSnapshot = !!details?.page_snapshot;
-  const hasLogOutput =
-    !!step.output_data?.log_output || !!step.output_data?.console_output;
+  const hasScreenshot = !!step.screenshotPath;
+  const hasPageSnapshot = !!details?.pageSnapshot;
+  const logOutput = step.outputData?.["log_output"] as string | undefined;
+  const consoleOutput = step.outputData?.["console_output"] as
+    | string
+    | undefined;
+  const hasLogOutput = !!logOutput || !!consoleOutput;
 
   if (!hasScreenshot && !hasPageSnapshot && !hasLogOutput) {
     return null;
@@ -136,17 +144,13 @@ export function EvidenceSection({ step }: { step: VerificationStepResult }) {
         Evidence
       </div>
       <div className="space-y-2">
-        {hasScreenshot && <ScreenshotEvidence path={step.screenshot_path!} />}
+        {hasScreenshot && <ScreenshotEvidence path={step.screenshotPath!} />}
 
         {hasLogOutput && (
           <CollapsibleTextBlock
             label="Log Output"
             icon={<TerminalIcon className="w-3 h-3" />}
-            text={
-              (step.output_data?.log_output as string) ||
-              (step.output_data?.console_output as string) ||
-              ""
-            }
+            text={logOutput || consoleOutput || ""}
             className="text-text-secondary"
             defaultCollapsed
           />
@@ -156,7 +160,7 @@ export function EvidenceSection({ step }: { step: VerificationStepResult }) {
           <CollapsibleTextBlock
             label="DOM Snapshot"
             icon={<Code2 className="w-3 h-3" />}
-            text={details!.page_snapshot!}
+            text={details!.pageSnapshot!}
             className="text-text-secondary"
             defaultCollapsed
           />

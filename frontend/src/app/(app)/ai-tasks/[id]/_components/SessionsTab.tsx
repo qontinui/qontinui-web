@@ -40,25 +40,22 @@ export function SessionsTab({
               </div>
               <div className="text-left">
                 <div className="font-medium">
-                  Session {session.session_number || index + 1}
+                  Session {session.sessionNumber || index + 1}
                 </div>
                 <div className="text-sm text-muted-foreground">
-                  {format(
-                    new Date(session.started_at),
-                    "MMM dd, yyyy HH:mm:ss"
-                  )}
+                  {format(new Date(session.startedAt), "MMM dd, yyyy HH:mm:ss")}
                   {" - "}
-                  {session.ended_at
-                    ? format(new Date(session.ended_at), "HH:mm:ss")
+                  {session.endedAt
+                    ? format(new Date(session.endedAt), "HH:mm:ss")
                     : "In progress..."}
                 </div>
               </div>
             </div>
             <div className="flex items-center gap-4">
               <div className="text-sm text-muted-foreground">
-                {formatDuration(session.duration_seconds)}
+                {formatDuration(session.durationSeconds)}
               </div>
-              {session.ended_at ? (
+              {session.endedAt ? (
                 <Badge className="bg-green-500/10 text-green-500 border-green-500/30">
                   Complete
                 </Badge>
@@ -74,10 +71,10 @@ export function SessionsTab({
               )}
             </div>
           </button>
-          {isExpanded(session.id) && session.output_summary && (
+          {isExpanded(session.id) && session.outputSummary && (
             <div className="border-t border-border p-4 bg-muted/50">
               <pre className="text-sm text-muted-foreground whitespace-pre-wrap font-mono overflow-x-auto max-h-[400px] overflow-y-auto">
-                {session.output_summary}
+                {session.outputSummary}
               </pre>
             </div>
           )}

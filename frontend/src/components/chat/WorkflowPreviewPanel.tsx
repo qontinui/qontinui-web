@@ -283,13 +283,13 @@ function getStepsForPhase(
 ): UnifiedStep[] {
   switch (phase) {
     case "setup":
-      return (workflow.setup_steps as UnifiedStep[]) || [];
+      return (workflow.setupSteps as UnifiedStep[]) || [];
     case "verification":
-      return (workflow.verification_steps as UnifiedStep[]) || [];
+      return (workflow.verificationSteps as UnifiedStep[]) || [];
     case "agentic":
-      return (workflow.agentic_steps as UnifiedStep[]) || [];
+      return (workflow.agenticSteps as UnifiedStep[]) || [];
     case "completion":
-      return (workflow.completion_steps as UnifiedStep[]) || [];
+      return (workflow.completionSteps as UnifiedStep[]) || [];
     default:
       return [];
   }

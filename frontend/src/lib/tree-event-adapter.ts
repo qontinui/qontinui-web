@@ -33,9 +33,9 @@ export function treeEventToUnifiedStep(
   stepNumber: number
 ): UnifiedExecutionStep {
   const node = event.node;
-  const metadata = node.metadata ?? { is_expandable: false, is_inline: false };
+  const metadata = node.metadata ?? { isExpandable: false, isInline: false };
   const runtime = metadata.runtime;
-  const stateContext = metadata.state_context;
+  const stateContext = metadata.stateContext;
 
   // Calculate duration in ms
   const durationMs = node.duration ? node.duration * 1000 : 0;
@@ -53,25 +53,25 @@ export function treeEventToUnifiedStep(
       height: runtime.location.h ?? undefined,
       confidence: runtime.confidence ?? undefined,
     };
-  } else if (runtime?.clicked_at) {
+  } else if (runtime?.clickedAt) {
     matchLocation = {
-      x: runtime.clicked_at.x,
-      y: runtime.clicked_at.y,
+      x: runtime.clickedAt.x,
+      y: runtime.clickedAt.y,
     };
   }
 
   // Build input data if available
   let inputData: UnifiedExecutionStep["inputData"] | undefined;
-  if (runtime?.typed_text) {
-    inputData = { text: runtime.typed_text };
+  if (runtime?.typedText) {
+    inputData = { text: runtime.typedText };
   }
 
   // Build state context
   let unifiedStateContext: UnifiedExecutionStep["stateContext"] | undefined;
   if (stateContext) {
     unifiedStateContext = {
-      activeBefore: stateContext.active_before,
-      activeAfter: stateContext.active_after,
+      activeBefore: stateContext.activeBefore,
+      activeAfter: stateContext.activeAfter,
       changed: stateContext.changed,
       activated: stateContext.activated,
       deactivated: stateContext.deactivated,
@@ -79,16 +79,16 @@ export function treeEventToUnifiedStep(
   }
 
   // Extract action type from metadata config or runtime
-  const actionType = (metadata.config as Record<string, unknown>)
+  const actionType = (metadata.config as Record<string, unknown> | null)
     ?.action_type as string | undefined;
 
   return {
     stepNumber,
     timestamp,
     durationMs,
-    stepType: event.event_type as UnifiedExecutionStep["stepType"],
+    stepType: event.eventType as UnifiedExecutionStep["stepType"],
     name: node.name,
-    nodeType: node.node_type as "workflow" | "action" | "transition",
+    nodeType: node.nodeType as "workflow" | "action" | "transition",
     status: node.status as "pending" | "running" | "success" | "failed",
     error: node.error,
     nodeId: node.id,
@@ -96,7 +96,7 @@ export function treeEventToUnifiedStep(
     stateContext: unifiedStateContext,
     matchLocation,
     inputData,
-    screenshotUrl: metadata.screenshot_reference ?? undefined,
+    screenshotUrl: metadata.screenshotReference ?? undefined,
     metadata: metadata as Record<string, unknown>,
     originalTreeEvent: event,
     isRealExecution: true,
@@ -110,9 +110,9 @@ export function displayNodeToUnifiedStep(
   node: DisplayNode,
   stepNumber: number
 ): UnifiedExecutionStep {
-  const metadata = node.metadata ?? { is_expandable: false, is_inline: false };
+  const metadata = node.metadata ?? { isExpandable: false, isInline: false };
   const runtime = metadata.runtime;
-  const stateContext = metadata.state_context;
+  const stateContext = metadata.stateContext;
 
   // Calculate duration in ms
   const durationMs = node.duration ? node.duration * 1000 : 0;
@@ -122,14 +122,14 @@ export function displayNodeToUnifiedStep(
 
   // Determine event type based on node status
   let stepType: UnifiedExecutionStep["stepType"];
-  if (node.node_type === "workflow") {
+  if (node.nodeType === "workflow") {
     stepType =
       node.status === "success"
         ? "workflow_completed"
         : node.status === "failed"
           ? "workflow_failed"
           : "workflow_started";
-  } else if (node.node_type === "transition") {
+  } else if (node.nodeType === "transition") {
     stepType =
       node.status === "success"
         ? "transition_completed"
@@ -159,16 +159,16 @@ export function displayNodeToUnifiedStep(
 
   // Build input data if available
   let inputData: UnifiedExecutionStep["inputData"] | undefined;
-  if (runtime?.typed_text) {
-    inputData = { text: runtime.typed_text };
+  if (runtime?.typedText) {
+    inputData = { text: runtime.typedText };
   }
 
   // Build state context
   let unifiedStateContext: UnifiedExecutionStep["stateContext"] | undefined;
   if (stateContext) {
     unifiedStateContext = {
-      activeBefore: stateContext.active_before,
-      activeAfter: stateContext.active_after,
+      activeBefore: stateContext.activeBefore,
+      activeAfter: stateContext.activeAfter,
       changed: stateContext.changed,
       activated: stateContext.activated,
       deactivated: stateContext.deactivated,
@@ -176,7 +176,7 @@ export function displayNodeToUnifiedStep(
   }
 
   // Extract action type from metadata config
-  const actionType = (metadata.config as Record<string, unknown>)
+  const actionType = (metadata.config as Record<string, unknown> | null)
     ?.action_type as string | undefined;
 
   return {
@@ -185,7 +185,7 @@ export function displayNodeToUnifiedStep(
     durationMs,
     stepType,
     name: node.name,
-    nodeType: node.node_type as "workflow" | "action" | "transition",
+    nodeType: node.nodeType as "workflow" | "action" | "transition",
     status: node.status as "pending" | "running" | "success" | "failed",
     error: node.error,
     nodeId: node.id,
@@ -193,7 +193,7 @@ export function displayNodeToUnifiedStep(
     stateContext: unifiedStateContext,
     matchLocation,
     inputData,
-    screenshotUrl: metadata.screenshot_reference ?? undefined,
+    screenshotUrl: metadata.screenshotReference ?? undefined,
     metadata: metadata as Record<string, unknown>,
     isRealExecution: true,
   };
@@ -344,7 +344,7 @@ export function displayNodesToUnifiedSteps(
 
   function traverse(node: DisplayNode) {
     // Only include action nodes in the flat list
-    if (node.node_type === "action") {
+    if (node.nodeType === "action") {
       steps.push(displayNodeToUnifiedStep(node, stepNumber++));
     }
     // Traverse children

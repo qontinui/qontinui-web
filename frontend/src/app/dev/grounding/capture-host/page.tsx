@@ -93,9 +93,12 @@ export default function GroundingCaptureHostPage() {
     if (!real) return;
     const interval = Math.max(
       1500,
-      parseInt(params.get("interval") ?? "8000", 10),
+      parseInt(params.get("interval") ?? "8000", 10)
     );
-    const routes = real.split(",").filter(Boolean);
+    const routes = real
+      .split(",")
+      .map((r) => decodeURIComponent(r))
+      .filter(Boolean);
     let idx = 0;
     let cancelled = false;
 
@@ -155,7 +158,7 @@ export default function GroundingCaptureHostPage() {
   // product UI, not synthetic isolated samples.
   const captureReal = useCallback(async () => {
     const iframe = document.querySelector<HTMLIFrameElement>(
-      "iframe[data-grounding-iframe='true']",
+      "iframe[data-grounding-iframe='true']"
     );
     if (!iframe) return;
     const doc = iframe.contentDocument;
@@ -211,7 +214,14 @@ export default function GroundingCaptureHostPage() {
       }
     }
 
-    const h2c = (window as { html2canvas?: (el: HTMLElement, opts?: Record<string, unknown>) => Promise<HTMLCanvasElement> }).html2canvas;
+    const h2c = (
+      window as {
+        html2canvas?: (
+          el: HTMLElement,
+          opts?: Record<string, unknown>
+        ) => Promise<HTMLCanvasElement>;
+      }
+    ).html2canvas;
     if (!h2c) return;
     const canvas = await h2c(doc.body, {
       backgroundColor: null,

@@ -13,7 +13,7 @@ export function TaskHeader({ task }: TaskHeaderProps) {
       <div className="bg-background px-6 py-4">
         <div className="flex items-center gap-3 mb-2">
           <StatusIcon status={task.status} />
-          <h2 className="text-base font-semibold">{task.task_name}</h2>
+          <h2 className="text-base font-semibold">{task.taskName}</h2>
           <StatusBadge status={task.status} />
         </div>
         {task.prompt && (
@@ -23,15 +23,15 @@ export function TaskHeader({ task }: TaskHeaderProps) {
         )}
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
           <span>
-            Created: {format(new Date(task.created_at), "MMM dd, yyyy HH:mm")}
+            Created: {format(new Date(task.createdAt), "MMM dd, yyyy HH:mm")}
           </span>
-          {task.completed_at && (
+          {task.completedAt && (
             <span>
               Completed:{" "}
-              {format(new Date(task.completed_at), "MMM dd, yyyy HH:mm")}
+              {format(new Date(task.completedAt), "MMM dd, yyyy HH:mm")}
             </span>
           )}
-          <span>Duration: {formatDuration(task.duration_seconds)}</span>
+          <span>Duration: {formatDuration(task.durationSeconds)}</span>
         </div>
       </div>
       <div className="bg-background px-6 py-4 flex items-center gap-6">

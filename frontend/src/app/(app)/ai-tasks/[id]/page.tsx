@@ -97,7 +97,7 @@ export default function AITaskDetailPage() {
                       <ClipboardCheck className="w-4 h-4 mr-2" />
                       Verification
                     </TabsTrigger>
-                    {task.output_summary && (
+                    {task.outputSummary && (
                       <TabsTrigger value="output">
                         <FileText className="w-4 h-4 mr-2" />
                         Output
@@ -126,9 +126,9 @@ export default function AITaskDetailPage() {
                     <VerificationResultsTab taskId={taskId} />
                   </TabsContent>
 
-                  {task.output_summary && (
+                  {task.outputSummary && (
                     <TabsContent value="output" className="mt-4">
-                      <OutputTab outputSummary={task.output_summary} />
+                      <OutputTab outputSummary={task.outputSummary!} />
                     </TabsContent>
                   )}
                 </Tabs>

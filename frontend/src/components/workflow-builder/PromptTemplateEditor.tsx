@@ -42,7 +42,7 @@ export function PromptTemplateEditor({
   onClose,
 }: PromptTemplateEditorProps) {
   const { state, updateWorkflow } = useWorkflowBuilder();
-  const workflowTemplate = state.workflow.prompt_template;
+  const workflowTemplate = state.workflow.promptTemplate;
   const isUsingWorkflowTemplate =
     workflowTemplate !== null && workflowTemplate !== undefined;
 
@@ -105,7 +105,7 @@ export function PromptTemplateEditor({
   // Save the template
   const handleSave = useCallback(() => {
     if (activeScope === "workflow") {
-      updateWorkflow({ prompt_template: template || null });
+      updateWorkflow({ promptTemplate: template || null });
     } else {
       // If the user saved the exact default text, clear the override instead
       if (template === DEFAULT_UNIFIED_PROMPT_TEMPLATE) {
@@ -132,7 +132,7 @@ export function PromptTemplateEditor({
 
   // Clear the workflow-level template (remove override)
   const handleClearWorkflowTemplate = useCallback(() => {
-    updateWorkflow({ prompt_template: null });
+    updateWorkflow({ promptTemplate: null });
     setActiveScope("global");
     setTemplate(getGlobalPromptTemplate());
     setHasChanges(false);

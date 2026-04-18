@@ -22,16 +22,16 @@ export function useStageActions(
         id: generateStepId(),
         name,
         description: "",
-        setup_steps: [],
-        verification_steps: [],
-        agentic_steps: [],
-        completion_steps: [],
-        max_iterations: sharedState.workflow.max_iterations ?? 10,
+        setupSteps: [],
+        verificationSteps: [],
+        agenticSteps: [],
+        completionSteps: [],
+        maxIterations: sharedState.workflow.maxIterations ?? 10,
         ...DEFAULT_STAGE_FLAGS,
       };
       dispatch({ type: "ADD_STAGE", stage: newStage });
     },
-    [dispatch, sharedState.workflow.max_iterations]
+    [dispatch, sharedState.workflow.maxIterations]
   );
 
   const removeStage = useCallback(

@@ -9,9 +9,7 @@ export function SummaryBanner({
   data: VerificationResultsListResponse;
 }) {
   const passRate =
-    data.count > 0
-      ? Math.round((data.passed_iterations / data.count) * 100)
-      : 0;
+    data.count > 0 ? Math.round((data.passedIterations / data.count) * 100) : 0;
 
   return (
     <Card className="bg-surface-raised/50 border-border-subtle/50">
@@ -26,13 +24,13 @@ export function SummaryBanner({
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-green-500">
-                {data.passed_iterations}
+                {data.passedIterations}
               </div>
               <div className="text-xs text-text-muted">Passed</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-red-500">
-                {data.failed_iterations}
+                {data.failedIterations}
               </div>
               <div className="text-xs text-text-muted">Failed</div>
             </div>

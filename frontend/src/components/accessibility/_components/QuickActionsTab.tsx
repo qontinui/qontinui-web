@@ -110,7 +110,7 @@ export function QuickActionsTab({
                 {selectedNode.ref}
               </Badge>
               <Badge variant="outline">{selectedNode.role}</Badge>
-              {selectedNode.is_interactive && (
+              {selectedNode.isInteractive && (
                 <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/30">
                   Interactive
                 </Badge>

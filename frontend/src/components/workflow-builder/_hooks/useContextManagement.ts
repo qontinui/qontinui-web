@@ -19,14 +19,14 @@ export function useContextManagement() {
   } = useContextsDetailed();
 
   const contextIds = useMemo(
-    () => workflow.context_ids ?? [],
-    [workflow.context_ids]
+    () => workflow.contextIds ?? [],
+    [workflow.contextIds]
   );
   const disabledContextIds = useMemo(
-    () => new Set(workflow.disabled_context_ids ?? []),
-    [workflow.disabled_context_ids]
+    () => new Set(workflow.disabledContextIds ?? []),
+    [workflow.disabledContextIds]
   );
-  const autoIncludeEnabled = workflow.auto_include_contexts ?? true;
+  const autoIncludeEnabled = workflow.autoIncludeContexts ?? true;
 
   const autoDetectedContexts = useMemo(() => {
     if (!autoIncludeEnabled || !contexts) return [];
@@ -36,7 +36,7 @@ export function useContextManagement() {
   const addContext = useCallback(
     (contextId: string) => {
       if (!contextIds.includes(contextId)) {
-        updateWorkflow({ context_ids: [...contextIds, contextId] });
+        updateWorkflow({ contextIds: [...contextIds, contextId] });
       }
     },
     [contextIds, updateWorkflow]
@@ -45,7 +45,7 @@ export function useContextManagement() {
   const removeContext = useCallback(
     (contextId: string) => {
       updateWorkflow({
-        context_ids: contextIds.filter((id) => id !== contextId),
+        contextIds: contextIds.filter((id) => id !== contextId),
       });
     },
     [contextIds, updateWorkflow]
@@ -59,7 +59,7 @@ export function useContextManagement() {
       } else {
         disabled.add(contextId);
       }
-      updateWorkflow({ disabled_context_ids: Array.from(disabled) });
+      updateWorkflow({ disabled_contextIds: Array.from(disabled) });
     },
     [disabledContextIds, updateWorkflow]
   );
@@ -77,7 +77,7 @@ export function useContextManagement() {
 
   const setAutoInclude = useCallback(
     (value: boolean) => {
-      updateWorkflow({ auto_include_contexts: value });
+      updateWorkflow({ autoIncludeContexts: value });
     },
     [updateWorkflow]
   );

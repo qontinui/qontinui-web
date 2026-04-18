@@ -44,14 +44,14 @@ export function useStagePhaseOverrides(
         (current as Record<string, ModelOverrideConfig>)[phaseKey] = phaseCfg;
       }
       onUpdate({
-        model_overrides: Object.keys(current).length > 0 ? current : undefined,
+        modelOverrides: Object.keys(current).length > 0 ? current : undefined,
       });
     },
     [stageOverrides, onUpdate]
   );
 
   const resetOverrides = useCallback(() => {
-    onUpdate({ model_overrides: undefined });
+    onUpdate({ modelOverrides: undefined });
   }, [onUpdate]);
 
   return {

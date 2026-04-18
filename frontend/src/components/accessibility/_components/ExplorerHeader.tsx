@@ -34,7 +34,7 @@ export function ExplorerHeader({
         <h2 className="text-sm font-semibold">Accessibility Explorer</h2>
         {snapshot && (
           <Badge variant="secondary" className="text-xs">
-            {snapshot.interactive_nodes} interactive
+            {snapshot.interactiveNodes} interactive
           </Badge>
         )}
       </div>

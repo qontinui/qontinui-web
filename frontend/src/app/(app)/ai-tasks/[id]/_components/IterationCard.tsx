@@ -23,7 +23,7 @@ export function IterationCard({
   result: VerificationResultResponse;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const phase = result.result_json;
+  const phase = result.resultJson;
 
   return (
     <div className="border border-border-subtle/50 rounded-lg overflow-hidden">
@@ -33,9 +33,9 @@ export function IterationCard({
       >
         <div className="flex items-center gap-4">
           <div className="flex-shrink-0">
-            {result.all_passed ? (
+            {result.allPassed ? (
               <ShieldCheck className="w-6 h-6 text-green-500" />
-            ) : result.critical_failure ? (
+            ) : result.criticalFailure ? (
               <ShieldX className="w-6 h-6 text-red-500" />
             ) : (
               <Shield className="w-6 h-6 text-yellow-500" />
@@ -44,30 +44,30 @@ export function IterationCard({
           <div className="text-left">
             <div className="font-medium">Iteration {result.iteration}</div>
             <div className="text-sm text-text-muted mt-0.5">
-              {formatDurationMs(result.total_duration_ms)}
+              {formatDurationMs(result.totalDurationMs)}
             </div>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {result.passed_steps > 0 && (
+          {result.passedSteps > 0 && (
             <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
               <CheckCircle2 className="w-3 h-3 mr-1" />
-              {result.passed_steps} passed
+              {result.passedSteps} passed
             </Badge>
           )}
-          {result.failed_steps > 0 && (
+          {result.failedSteps > 0 && (
             <Badge className="bg-red-500/20 text-red-400 border-red-500/30">
               <XCircle className="w-3 h-3 mr-1" />
-              {result.failed_steps} failed
+              {result.failedSteps} failed
             </Badge>
           )}
-          {result.skipped_steps > 0 && (
+          {result.skippedSteps > 0 && (
             <Badge className="bg-surface-raised text-text-muted border-border-subtle">
               <SkipForward className="w-3 h-3 mr-1" />
-              {result.skipped_steps} skipped
+              {result.skippedSteps} skipped
             </Badge>
           )}
-          {result.critical_failure && (
+          {result.criticalFailure && (
             <Badge className="bg-red-500/20 text-red-400 border-red-500/30">
               <AlertTriangle className="w-3 h-3 mr-1" />
               Critical
@@ -82,15 +82,15 @@ export function IterationCard({
       </button>
       {expanded && (
         <div className="border-t border-border-subtle/50 px-5 py-4 bg-surface-canvas/30 space-y-4">
-          {phase.gate_based_evaluation &&
-            phase.gate_results &&
-            phase.gate_results.length > 0 && (
+          {phase.gateBasedEvaluation &&
+            phase.gateResults &&
+            phase.gateResults.length > 0 && (
               <div>
                 <div className="text-xs font-medium text-text-muted mb-2 uppercase tracking-wider">
                   Gate Evaluations
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {phase.gate_results.map((gate, idx) => (
+                  {phase.gateResults.map((gate, idx) => (
                     <Badge
                       key={idx}
                       className={`text-xs ${
@@ -104,7 +104,7 @@ export function IterationCard({
                       ) : (
                         <XCircle className="w-3 h-3 mr-1" />
                       )}
-                      {gate.gate_name}
+                      {gate.gateName}
                     </Badge>
                   ))}
                 </div>
@@ -113,10 +113,10 @@ export function IterationCard({
 
           <div>
             <div className="text-xs font-medium text-text-muted mb-2 uppercase tracking-wider">
-              Step Results ({phase.step_results.length})
+              Step Results ({phase.stepResults.length})
             </div>
             <div className="space-y-2">
-              {phase.step_results.map((step, idx) => (
+              {phase.stepResults.map((step, idx) => (
                 <StepResultCard key={idx} step={step} />
               ))}
             </div>

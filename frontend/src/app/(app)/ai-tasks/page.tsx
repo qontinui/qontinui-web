@@ -243,7 +243,7 @@ function AITasksPageContent() {
                           </div>
                         </td>
                         <td className="px-6 py-2.5">
-                          <div className="font-medium">{task.task_name}</div>
+                          <div className="font-medium">{task.taskName}</div>
                           {task.prompt && (
                             <div className="text-xs text-muted-foreground truncate max-w-[300px]">
                               {task.prompt.substring(0, 100)}
@@ -256,20 +256,20 @@ function AITasksPageContent() {
                             variant="secondary"
                             className="bg-purple-500/10 text-purple-400 border-purple-500/30"
                           >
-                            {task.sessions_count || 0}
+                            {task.sessionsCount || 0}
                           </Badge>
                         </td>
                         <td className="px-6 py-2.5">
                           <div className="text-sm text-muted-foreground">
                             {format(
-                              new Date(task.created_at),
+                              new Date(task.createdAt),
                               "MMM dd, yyyy HH:mm"
                             )}
                           </div>
                         </td>
                         <td className="px-3 py-2.5">
                           <div className="text-sm">
-                            {formatDuration(task.duration_seconds)}
+                            {formatDuration(task.durationSeconds)}
                           </div>
                         </td>
                       </tr>

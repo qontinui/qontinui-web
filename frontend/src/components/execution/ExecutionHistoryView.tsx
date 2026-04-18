@@ -50,16 +50,16 @@ function convertApiNodes(apiNodes: ApiNode[]): DisplayNode[] {
   function convert(node: ApiNode): DisplayNode {
     return {
       id: node.id,
-      node_type: node.node_type as NodeType,
+      nodeType: node.node_type as NodeType,
       name: node.name,
       timestamp: node.timestamp,
-      end_timestamp: node.end_timestamp,
-      duration: node.duration,
+      endTimestamp: node.end_timestamp ?? null,
+      duration: node.duration ?? null,
       status: node.status as NodeStatus,
-      metadata: { is_expandable: false, is_inline: false, ...node.metadata },
-      error: node.error,
+      metadata: { isExpandable: false, isInline: false, ...node.metadata },
+      error: node.error ?? null,
       children: (node.children as ApiNode[]).map(convert),
-      is_expanded: node.is_expanded,
+      isExpanded: node.is_expanded,
       level: node.level,
     };
   }

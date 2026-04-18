@@ -56,10 +56,10 @@ export function StageSelector() {
             index={index}
             isActive={currentStageIndex === index}
             stepCount={
-              (stage.setup_steps?.length ?? 0) +
-              (stage.verification_steps?.length ?? 0) +
-              (stage.agentic_steps?.length ?? 0) +
-              (stage.completion_steps?.length ?? 0)
+              (stage.setupSteps?.length ?? 0) +
+              (stage.verificationSteps?.length ?? 0) +
+              (stage.agenticSteps?.length ?? 0) +
+              (stage.completionSteps?.length ?? 0)
             }
             onSelect={() => selectStage(index)}
             onRename={(name) => updateStage(index, { name })}
@@ -87,9 +87,9 @@ export function StageSelector() {
             Stop on failure
             <input
               type="checkbox"
-              checked={state.workflow.stop_on_failure ?? false}
+              checked={state.workflow.stopOnFailure ?? false}
               onChange={(e) =>
-                updateWorkflow({ stop_on_failure: e.target.checked })
+                updateWorkflow({ stopOnFailure: e.target.checked })
               }
               className="size-3"
             />

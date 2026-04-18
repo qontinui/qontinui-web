@@ -76,7 +76,7 @@ function NumberSetting({
           updateWorkflow({
             [def.key]: e.target.value
               ? parseInt(e.target.value)
-              : def.key === "timeout_seconds"
+              : def.key === "timeoutSeconds"
                 ? null
                 : undefined,
           })

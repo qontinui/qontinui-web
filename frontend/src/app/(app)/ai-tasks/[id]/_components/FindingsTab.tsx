@@ -113,14 +113,14 @@ function FindingCard({
               <p className="text-sm text-foreground">{finding.resolution}</p>
             </div>
           )}
-          {finding.file_path && (
+          {finding.filePath && (
             <div>
               <h4 className="text-sm font-medium text-muted-foreground mb-1">
                 Location
               </h4>
               <code className="text-sm text-primary bg-primary/10 px-2 py-1 rounded">
-                {finding.file_path}
-                {finding.line_number && `:${finding.line_number}`}
+                {finding.filePath}
+                {finding.lineNumber && `:${finding.lineNumber}`}
               </code>
             </div>
           )}

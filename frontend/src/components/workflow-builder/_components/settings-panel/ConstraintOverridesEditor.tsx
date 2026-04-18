@@ -49,7 +49,7 @@ export function ConstraintOverridesEditor({
   workflow,
   updateWorkflow,
 }: SettingRenderProps) {
-  const overrides = workflow.constraint_overrides;
+  const overrides = workflow.constraintOverrides;
 
   const [constraints, setConstraints] = useState<Constraint[]>([]);
   const [loading, setLoading] = useState(true);
@@ -94,7 +94,7 @@ export function ConstraintOverridesEditor({
 
     // Clean up: only store if there are actual overrides
     updateWorkflow({
-      constraint_overrides:
+      constraintOverrides:
         Object.keys(updated).length > 0 ? updated : undefined,
     });
   };
@@ -184,7 +184,7 @@ export function ConstraintOverridesEditor({
       {overrideCount > 0 && (
         <button
           type="button"
-          onClick={() => updateWorkflow({ constraint_overrides: undefined })}
+          onClick={() => updateWorkflow({ constraintOverrides: undefined })}
           className="text-[10px] text-zinc-500 hover:text-red-400 transition-colors"
         >
           Clear all overrides

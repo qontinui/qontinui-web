@@ -36,10 +36,10 @@ function formatDate(dateStr?: string): string {
 
 function countSteps(workflow: UnifiedWorkflow): number {
   return (
-    (workflow.setup_steps?.length ?? 0) +
-    (workflow.agentic_steps?.length ?? 0) +
-    (workflow.verification_steps?.length ?? 0) +
-    (workflow.completion_steps?.length ?? 0)
+    (workflow.setupSteps?.length ?? 0) +
+    (workflow.agenticSteps?.length ?? 0) +
+    (workflow.verificationSteps?.length ?? 0) +
+    (workflow.completionSteps?.length ?? 0)
   );
 }
 
@@ -158,12 +158,12 @@ export default function FlowDesignerPage() {
                           </h3>
                           <div className="flex items-center gap-2 text-xs text-text-muted mt-0.5">
                             <span data-content-role="metric" data-content-label="step count">{countSteps(workflow)} steps</span>
-                            {(workflow.modified_at || workflow.created_at) && (
+                            {(workflow.modified_at || workflow.createdAt) && (
                               <>
                                 <span>&middot;</span>
                                 <span>
                                   {formatDate(
-                                    workflow.modified_at || workflow.created_at
+                                    workflow.modified_at || workflow.createdAt
                                   )}
                                 </span>
                               </>
@@ -200,7 +200,7 @@ export default function FlowDesignerPage() {
                   <CardContent className="p-0">
                     <div className="min-h-[500px] flex flex-col items-center justify-center gap-6 p-8">
                       {/* Phase indicators as flow blocks */}
-                      {(selectedWorkflow.setup_steps?.length ?? 0) > 0 && (
+                      {(selectedWorkflow.setupSteps?.length ?? 0) > 0 && (
                         <div className="w-full max-w-md">
                           <Card className="bg-blue-500/10 border-blue-500/30">
                             <CardContent className="p-4 text-center">
@@ -211,8 +211,8 @@ export default function FlowDesignerPage() {
                                 Setup Phase
                               </Badge>
                               <p className="text-sm text-text-muted">
-                                {selectedWorkflow.setup_steps?.length} step
-                                {(selectedWorkflow.setup_steps?.length ?? 0) !== 1
+                                {selectedWorkflow.setupSteps?.length} step
+                                {(selectedWorkflow.setupSteps?.length ?? 0) !== 1
                                   ? "s"
                                   : ""}
                               </p>
@@ -224,7 +224,7 @@ export default function FlowDesignerPage() {
                         </div>
                       )}
 
-                      {(selectedWorkflow.verification_steps?.length ?? 0) >
+                      {(selectedWorkflow.verificationSteps?.length ?? 0) >
                         0 && (
                         <div className="w-full max-w-md">
                           <Card className="bg-yellow-500/10 border-yellow-500/30">
@@ -236,9 +236,9 @@ export default function FlowDesignerPage() {
                                 Verification Phase
                               </Badge>
                               <p className="text-sm text-text-muted">
-                                {selectedWorkflow.verification_steps?.length}{" "}
+                                {selectedWorkflow.verificationSteps?.length}{" "}
                                 step
-                                {(selectedWorkflow.verification_steps?.length ??
+                                {(selectedWorkflow.verificationSteps?.length ??
                                   0) !== 1
                                   ? "s"
                                   : ""}
@@ -251,7 +251,7 @@ export default function FlowDesignerPage() {
                         </div>
                       )}
 
-                      {(selectedWorkflow.agentic_steps?.length ?? 0) > 0 && (
+                      {(selectedWorkflow.agenticSteps?.length ?? 0) > 0 && (
                         <div className="w-full max-w-md">
                           <Card className="bg-purple-500/10 border-purple-500/30">
                             <CardContent className="p-4 text-center">
@@ -262,8 +262,8 @@ export default function FlowDesignerPage() {
                                 Agentic Phase
                               </Badge>
                               <p className="text-sm text-text-muted">
-                                {selectedWorkflow.agentic_steps?.length} step
-                                {(selectedWorkflow.agentic_steps?.length ?? 0) !== 1
+                                {selectedWorkflow.agenticSteps?.length} step
+                                {(selectedWorkflow.agenticSteps?.length ?? 0) !== 1
                                   ? "s"
                                   : ""}
                               </p>
@@ -275,7 +275,7 @@ export default function FlowDesignerPage() {
                         </div>
                       )}
 
-                      {(selectedWorkflow.completion_steps?.length ?? 0) > 0 && (
+                      {(selectedWorkflow.completionSteps?.length ?? 0) > 0 && (
                         <div className="w-full max-w-md">
                           <Card className="bg-green-500/10 border-green-500/30">
                             <CardContent className="p-4 text-center">
@@ -286,8 +286,8 @@ export default function FlowDesignerPage() {
                                 Completion Phase
                               </Badge>
                               <p className="text-sm text-text-muted">
-                                {selectedWorkflow.completion_steps?.length} step
-                                {(selectedWorkflow.completion_steps?.length ??
+                                {selectedWorkflow.completionSteps?.length} step
+                                {(selectedWorkflow.completionSteps?.length ??
                                   0) !== 1
                                   ? "s"
                                   : ""}

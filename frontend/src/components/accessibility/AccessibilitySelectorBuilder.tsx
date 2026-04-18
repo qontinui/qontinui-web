@@ -125,18 +125,18 @@ export function AccessibilitySelectorBuilder({
     const newSelector: AccessibilitySelector = {
       role: selectedNode.role,
       name: selectedNode.name ?? undefined,
-      is_interactive: selectedNode.is_interactive ?? undefined,
-      // case_sensitive defaults to true on the Rust side (serde default);
+      isInteractive: selectedNode.isInteractive ?? undefined,
+      // caseSensitive defaults to true on the Rust side (serde default);
       // after the codegen's default→required promotion it's required in TS.
-      case_sensitive: true,
+      caseSensitive: true,
     };
 
-    if (selectedNode.automation_id) {
-      newSelector.automation_id = selectedNode.automation_id;
+    if (selectedNode.automationId) {
+      newSelector.automationId = selectedNode.automationId;
     }
 
-    if (selectedNode.class_name) {
-      newSelector.class_name = selectedNode.class_name;
+    if (selectedNode.className) {
+      newSelector.className = selectedNode.className;
     }
 
     setLocalSelector(newSelector);
@@ -160,7 +160,7 @@ export function AccessibilitySelectorBuilder({
 
   // Clear selector
   const handleClearSelector = useCallback(() => {
-    const emptySelector: AccessibilitySelector = { case_sensitive: true };
+    const emptySelector: AccessibilitySelector = { caseSensitive: true };
     setLocalSelector(emptySelector);
     onChange(emptySelector);
     setSelectedRoles([]);
@@ -286,8 +286,8 @@ export function AccessibilitySelectorBuilder({
                 onChange={(e) =>
                   updateSelector({
                     name: e.target.value || undefined,
-                    name_contains: undefined,
-                    name_pattern: undefined,
+                    nameContains: undefined,
+                    namePattern: undefined,
                   })
                 }
               />
@@ -296,12 +296,12 @@ export function AccessibilitySelectorBuilder({
               <Label className="text-xs text-muted-foreground">Contains</Label>
               <Input
                 placeholder="Partial match..."
-                value={localSelector.name_contains ?? ""}
+                value={localSelector.nameContains ?? ""}
                 onChange={(e) =>
                   updateSelector({
-                    name_contains: e.target.value || undefined,
+                    nameContains: e.target.value || undefined,
                     name: undefined,
-                    name_pattern: undefined,
+                    namePattern: undefined,
                   })
                 }
               />
@@ -323,7 +323,7 @@ export function AccessibilitySelectorBuilder({
                 onChange={(e) =>
                   updateSelector({
                     value: e.target.value || undefined,
-                    value_contains: undefined,
+                    valueContains: undefined,
                   })
                 }
               />
@@ -332,10 +332,10 @@ export function AccessibilitySelectorBuilder({
               <Label className="text-xs text-muted-foreground">Contains</Label>
               <Input
                 placeholder="Partial match..."
-                value={localSelector.value_contains ?? ""}
+                value={localSelector.valueContains ?? ""}
                 onChange={(e) =>
                   updateSelector({
-                    value_contains: e.target.value || undefined,
+                    valueContains: e.target.value || undefined,
                     value: undefined,
                   })
                 }
@@ -350,9 +350,9 @@ export function AccessibilitySelectorBuilder({
             <Label className="text-xs">Automation ID</Label>
             <Input
               placeholder="data-testid..."
-              value={localSelector.automation_id ?? ""}
+              value={localSelector.automationId ?? ""}
               onChange={(e) =>
-                updateSelector({ automation_id: e.target.value || undefined })
+                updateSelector({ automationId: e.target.value || undefined })
               }
             />
           </div>
@@ -360,9 +360,9 @@ export function AccessibilitySelectorBuilder({
             <Label className="text-xs">Class Name</Label>
             <Input
               placeholder="CSS class..."
-              value={localSelector.class_name ?? ""}
+              value={localSelector.className ?? ""}
               onChange={(e) =>
-                updateSelector({ class_name: e.target.value || undefined })
+                updateSelector({ className: e.target.value || undefined })
               }
             />
           </div>
@@ -373,9 +373,9 @@ export function AccessibilitySelectorBuilder({
           <div className="flex items-center gap-2">
             <Switch
               id="is-interactive"
-              checked={localSelector.is_interactive ?? false}
+              checked={localSelector.isInteractive ?? false}
               onCheckedChange={(checked) =>
-                updateSelector({ is_interactive: checked || undefined })
+                updateSelector({ isInteractive: checked || undefined })
               }
             />
             <Label htmlFor="is-interactive" className="text-sm">
@@ -385,9 +385,9 @@ export function AccessibilitySelectorBuilder({
           <div className="flex items-center gap-2">
             <Switch
               id="case-sensitive"
-              checked={localSelector.case_sensitive ?? true}
+              checked={localSelector.caseSensitive ?? true}
               onCheckedChange={(checked) =>
-                updateSelector({ case_sensitive: checked })
+                updateSelector({ caseSensitive: checked })
               }
             />
             <Label htmlFor="case-sensitive" className="text-sm">

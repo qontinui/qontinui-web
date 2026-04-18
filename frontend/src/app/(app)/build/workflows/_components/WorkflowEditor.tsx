@@ -334,13 +334,13 @@ export function WorkflowEditor({
         <>
           <SettingsPanel />
           <FlowControlPanel
-            flowControlJson={state.workflow.flow_control_json ?? null}
-            phaseTimeoutsJson={state.workflow.phase_timeouts_json ?? null}
+            flowControlJson={state.workflow.flowControlJson ?? null}
+            phaseTimeoutsJson={state.workflow.phaseTimeoutsJson ?? null}
             onFlowControlChange={(json) =>
-              updateWorkflow({ flow_control_json: json })
+              updateWorkflow({ flowControlJson: json })
             }
             onPhaseTimeoutsChange={(json) =>
-              updateWorkflow({ phase_timeouts_json: json })
+              updateWorkflow({ phaseTimeoutsJson: json })
             }
           />
         </>
@@ -391,19 +391,19 @@ export function WorkflowEditor({
           // Apply generated steps to the current workflow. UnifiedWorkflow
           // step arrays are wire-side; generator always emits canonical
           // steps, so narrow at each boundary.
-          if (generated.setup_steps) {
-            for (const step of generated.setup_steps) addStep(step as UnifiedStep, "setup");
+          if (generated.setupSteps) {
+            for (const step of generated.setupSteps) addStep(step as UnifiedStep, "setup");
           }
-          if (generated.verification_steps) {
-            for (const step of generated.verification_steps) addStep(step as UnifiedStep, "verification");
+          if (generated.verificationSteps) {
+            for (const step of generated.verificationSteps) addStep(step as UnifiedStep, "verification");
           }
-          if (generated.agentic_steps) {
-            for (const step of generated.agentic_steps) addStep(step as UnifiedStep, "agentic");
+          if (generated.agenticSteps) {
+            for (const step of generated.agenticSteps) addStep(step as UnifiedStep, "agentic");
           }
-          if (generated.completion_steps) {
-            for (const step of generated.completion_steps) addStep(step as UnifiedStep, "completion");
+          if (generated.completionSteps) {
+            for (const step of generated.completionSteps) addStep(step as UnifiedStep, "completion");
           }
-          toast.success(`Generated workflow with ${(generated.setup_steps?.length ?? 0) + (generated.verification_steps?.length ?? 0) + (generated.agentic_steps?.length ?? 0) + (generated.completion_steps?.length ?? 0)} steps`);
+          toast.success(`Generated workflow with ${(generated.setupSteps?.length ?? 0) + (generated.verificationSteps?.length ?? 0) + (generated.agenticSteps?.length ?? 0) + (generated.completionSteps?.length ?? 0)} steps`);
         }}
       />
     </div>

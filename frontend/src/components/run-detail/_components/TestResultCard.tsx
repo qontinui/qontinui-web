@@ -112,7 +112,20 @@ export function TestResultCard({
               </h4>
               <div className="space-y-2">
                 {test.check_results.map((check, idx) => (
-                  <CheckResultCard key={idx} check={check} />
+                  <CheckResultCard
+                    key={idx}
+                    check={{
+                      name: check.name,
+                      status: check.status,
+                      durationMs: check.duration_ms,
+                      issuesFound: check.issues_found,
+                      issuesFixed: check.issues_fixed,
+                      filesChecked: check.files_checked,
+                      errorMessage: check.error_message,
+                      output: check.output,
+                      issues: check.issues,
+                    }}
+                  />
                 ))}
               </div>
             </div>

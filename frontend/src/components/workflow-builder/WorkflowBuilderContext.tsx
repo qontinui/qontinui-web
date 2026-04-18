@@ -123,7 +123,7 @@ export function WorkflowBuilderProvider({
       ...DEFAULT_WORKFLOW_FLAGS,
       ...createDefaultWorkflow(),
       id: generateStepId(),
-      created_at: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
       modified_at: new Date().toISOString(),
     } as UnifiedWorkflow);
 

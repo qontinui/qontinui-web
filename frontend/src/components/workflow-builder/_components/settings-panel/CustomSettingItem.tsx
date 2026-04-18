@@ -175,11 +175,11 @@ function LogSourceSelect({
         id="sp-log-sources"
         className={selectClass}
         value={getLogSourceValue(
-          workflow.log_source_selection as LogSourceSelection | undefined
+          workflow.logSourceSelection as LogSourceSelection | undefined
         )}
         onChange={(e) =>
           updateWorkflow({
-            log_source_selection: parseLogSourceValue(e.target.value),
+            logSourceSelection: parseLogSourceValue(e.target.value),
           })
         }
       >
@@ -198,14 +198,14 @@ function LogSourceSelect({
 // to required on the TS side; keep the UI minimal by spreading these
 // defaults onto anything the form writes back.
 const DEFAULT_HEALTH_CHECK_FIELDS = {
-  expected_status: 200,
-  is_critical: true,
-  timeout_seconds: 30,
+  expectedStatus: 200,
+  isCritical: true,
+  timeoutSeconds: 30,
 } as const;
 
 function HealthCheckUrls({ workflow, updateWorkflow }: SettingRenderProps) {
-  if (workflow.health_check_enabled === false) return null;
-  const urls = workflow.health_check_urls ?? [];
+  if (workflow.healthCheckEnabled === false) return null;
+  const urls = workflow.healthCheckUrls ?? [];
   return (
     <div>
       <p className="block text-xs font-medium text-zinc-400 mb-1">
@@ -221,7 +221,7 @@ function HealthCheckUrls({ workflow, updateWorkflow }: SettingRenderProps) {
               const updated = urls.map((item, j) =>
                 j === i ? { ...item, name: e.target.value } : item
               );
-              updateWorkflow({ health_check_urls: updated });
+              updateWorkflow({ healthCheckUrls: updated });
             }}
           />
           <Input
@@ -232,14 +232,14 @@ function HealthCheckUrls({ workflow, updateWorkflow }: SettingRenderProps) {
               const updated = urls.map((item, j) =>
                 j === i ? { ...item, url: e.target.value } : item
               );
-              updateWorkflow({ health_check_urls: updated });
+              updateWorkflow({ healthCheckUrls: updated });
             }}
           />
           <button
             className="text-red-400 hover:text-red-300 text-sm px-1"
             onClick={() => {
               updateWorkflow({
-                health_check_urls: urls.filter((_, j) => j !== i),
+                healthCheckUrls: urls.filter((_, j) => j !== i),
               });
             }}
           >
@@ -251,7 +251,7 @@ function HealthCheckUrls({ workflow, updateWorkflow }: SettingRenderProps) {
         className="text-xs text-blue-400 hover:text-blue-300"
         onClick={() => {
           updateWorkflow({
-            health_check_urls: [
+            healthCheckUrls: [
               ...urls,
               { name: "", url: "", ...DEFAULT_HEALTH_CHECK_FIELDS },
             ],
@@ -279,7 +279,7 @@ function PromptTemplateTrigger({
       >
         <FileCode className="w-4 h-4 text-amber-400" />
         <span>Edit Prompt Template</span>
-        {workflow.prompt_template && (
+        {workflow.promptTemplate && (
           <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">
             Custom
           </span>
@@ -291,7 +291,7 @@ function PromptTemplateTrigger({
 
 function ResolvedModelPreview({ workflow }: SettingRenderProps) {
   const overrides: ModelOverrides =
-    (workflow.model_overrides as ModelOverrides) ?? {};
+    (workflow.modelOverrides as ModelOverrides) ?? {};
 
   const rows = MODEL_OVERRIDE_PHASES.map((phase) => ({
     ...phase,
@@ -346,7 +346,7 @@ function ResolvedModelPreview({ workflow }: SettingRenderProps) {
 
 function PerPhaseModelSelect({ workflow, updateWorkflow }: SettingRenderProps) {
   const overrides: ModelOverrides =
-    (workflow.model_overrides as ModelOverrides) ?? {};
+    (workflow.modelOverrides as ModelOverrides) ?? {};
   const hasOverrides = MODEL_OVERRIDE_PHASES.some((phase) => {
     const cfg = overrides[phase.key as keyof ModelOverrides];
     return cfg?.provider || cfg?.model;
@@ -373,7 +373,7 @@ function PerPhaseModelSelect({ workflow, updateWorkflow }: SettingRenderProps) {
       (current as Record<string, ModelOverrideConfig>)[phaseKey] = phaseCfg;
     }
     updateWorkflow({
-      model_overrides: Object.keys(current).length > 0 ? current : undefined,
+      modelOverrides: Object.keys(current).length > 0 ? current : undefined,
     });
   };
 
@@ -382,7 +382,7 @@ function PerPhaseModelSelect({ workflow, updateWorkflow }: SettingRenderProps) {
     const preset = MODEL_PRESETS.find((p) => p.id === presetId);
     if (preset) {
       updateWorkflow({
-        model_overrides:
+        modelOverrides:
           Object.keys(preset.overrides).length > 0
             ? preset.overrides
             : undefined,
@@ -439,7 +439,7 @@ function PerPhaseModelSelect({ workflow, updateWorkflow }: SettingRenderProps) {
                     if (stored) {
                       const parsed = JSON.parse(stored);
                       if (parsed && typeof parsed === "object") {
-                        updateWorkflow({ model_overrides: parsed });
+                        updateWorkflow({ modelOverrides: parsed });
                       }
                     }
                   } catch {
@@ -455,7 +455,7 @@ function PerPhaseModelSelect({ workflow, updateWorkflow }: SettingRenderProps) {
             {hasOverrides && (
               <button
                 type="button"
-                onClick={() => updateWorkflow({ model_overrides: undefined })}
+                onClick={() => updateWorkflow({ modelOverrides: undefined })}
                 className="h-7 px-2 text-[11px] text-zinc-400 hover:text-red-400 border border-zinc-700 rounded hover:border-red-500/30 transition-colors"
               >
                 Reset

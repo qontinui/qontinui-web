@@ -8,7 +8,7 @@ export function loadFromStorage(): UnifiedWorkflow | null {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
-      if (parsed && typeof parsed === "object" && "setup_steps" in parsed) {
+      if (parsed && typeof parsed === "object" && "setupSteps" in parsed) {
         return parsed as UnifiedWorkflow;
       }
     }
@@ -23,7 +23,7 @@ export function loadOriginalFromStorage(): UnifiedWorkflow | null {
     const stored = localStorage.getItem(STORAGE_KEY_ORIGINAL);
     if (stored) {
       const parsed = JSON.parse(stored);
-      if (parsed && typeof parsed === "object" && "setup_steps" in parsed) {
+      if (parsed && typeof parsed === "object" && "setupSteps" in parsed) {
         return parsed as UnifiedWorkflow;
       }
     }
