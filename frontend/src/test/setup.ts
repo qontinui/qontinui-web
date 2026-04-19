@@ -50,6 +50,25 @@ global.ResizeObserver = class ResizeObserver {
   unobserve() {}
 } as unknown;
 
+// jsdom doesn't implement PointerEvent capture APIs or scrollIntoView, but
+// Radix UI (Select, Popover, etc.) calls them unconditionally on pointer events.
+// Without these, every Radix-driven interaction in a test throws
+// `target.hasPointerCapture is not a function` and aborts the test file.
+if (typeof Element !== "undefined") {
+  if (!Element.prototype.hasPointerCapture) {
+    Element.prototype.hasPointerCapture = () => false;
+  }
+  if (!Element.prototype.setPointerCapture) {
+    Element.prototype.setPointerCapture = () => {};
+  }
+  if (!Element.prototype.releasePointerCapture) {
+    Element.prototype.releasePointerCapture = () => {};
+  }
+  if (!Element.prototype.scrollIntoView) {
+    Element.prototype.scrollIntoView = () => {};
+  }
+}
+
 // Suppress console errors in tests (optional - can be removed if you want to see them)
 // global.console.error = vi.fn();
 // global.console.warn = vi.fn();
