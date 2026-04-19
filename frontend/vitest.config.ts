@@ -4,6 +4,15 @@ import path from "path";
 
 export default defineConfig({
   plugins: [react()],
+  // Vitest 4.x bundles rolldown-vite internally; its transformer is oxc, not esbuild.
+  // @vitejs/plugin-react 4.x only wires JSX into esbuild, so .tsx files fail to parse
+  // under vitest without this explicit oxc JSX config.
+  oxc: {
+    jsx: {
+      runtime: "automatic",
+      importSource: "react",
+    },
+  },
   test: {
     globals: true,
     environment: "jsdom",

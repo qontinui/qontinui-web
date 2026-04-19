@@ -29,9 +29,9 @@ import { useFavoriteNodes } from "@/stores/favorite-nodes";
 import { useRecentNodes } from "@/stores/recent-nodes";
 
 // Mock stores
-jest.mock("@/stores/favorite-nodes");
-jest.mock("@/stores/recent-nodes");
-jest.mock("@xyflow/react", () => ({
+vi.mock("@/stores/favorite-nodes");
+vi.mock("@/stores/recent-nodes");
+vi.mock("@xyflow/react", () => ({
   useReactFlow: () => ({
     screenToFlowPosition: ({ x, y }: unknown) => ({ x, y }),
     getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
@@ -39,20 +39,20 @@ jest.mock("@xyflow/react", () => ({
 }));
 
 describe("NodePalette", () => {
-  const mockOnNodeAdd = jest.fn();
+  const mockOnNodeAdd = vi.fn();
   const mockCanvasRef = { current: document.createElement("div") };
 
   beforeEach(() => {
-    jest.clearAllMocks();
-    (useFavoriteNodes as jest.Mock).mockReturnValue({
+    vi.clearAllMocks();
+    (useFavoriteNodes as ReturnType<typeof vi.fn>).mockReturnValue({
       favorites: [],
       isFavorite: () => false,
-      toggleFavorite: jest.fn(),
+      toggleFavorite: vi.fn(),
       getFavorites: () => [],
     });
-    (useRecentNodes as jest.Mock).mockReturnValue({
+    (useRecentNodes as ReturnType<typeof vi.fn>).mockReturnValue({
       recentNodes: [],
-      addRecentNode: jest.fn(),
+      addRecentNode: vi.fn(),
       getRecentNodes: () => [],
       isRecent: () => false,
     });
@@ -174,10 +174,10 @@ describe("NodePalette", () => {
 
   describe("Favorites", () => {
     it("shows favorites section when favorites exist", () => {
-      (useFavoriteNodes as jest.Mock).mockReturnValue({
+      (useFavoriteNodes as ReturnType<typeof vi.fn>).mockReturnValue({
         favorites: [{ type: "CLICK", order: 0, addedAt: Date.now() }],
         isFavorite: (type: string) => type === "CLICK",
-        toggleFavorite: jest.fn(),
+        toggleFavorite: vi.fn(),
         getFavorites: () => [{ type: "CLICK", order: 0, addedAt: Date.now() }],
       });
 
@@ -199,9 +199,9 @@ describe("NodePalette", () => {
 
   describe("Recent Nodes", () => {
     it("shows recent section when recent nodes exist", () => {
-      (useRecentNodes as jest.Mock).mockReturnValue({
+      (useRecentNodes as ReturnType<typeof vi.fn>).mockReturnValue({
         recentNodes: [{ type: "FIND", lastUsed: Date.now(), useCount: 1 }],
-        addRecentNode: jest.fn(),
+        addRecentNode: vi.fn(),
         getRecentNodes: () => [
           { type: "FIND", lastUsed: Date.now(), useCount: 1 },
         ],
@@ -218,11 +218,11 @@ describe("NodePalette", () => {
 });
 
 describe("NodeSearch", () => {
-  const mockOnSelect = jest.fn();
-  const mockOnClose = jest.fn();
+  const mockOnSelect = vi.fn();
+  const mockOnClose = vi.fn();
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe("Rendering", () => {
@@ -363,16 +363,16 @@ describe("NodeSearch", () => {
 
 describe("PaletteItem", () => {
   const mockMetadata = NODE_METADATA.CLICK;
-  const mockOnDragStart = jest.fn();
-  const mockOnAdd = jest.fn();
+  const mockOnDragStart = vi.fn();
+  const mockOnAdd = vi.fn();
 
   beforeEach(() => {
-    jest.clearAllMocks();
-    (useFavoriteNodes as jest.Mock).mockReturnValue({
+    vi.clearAllMocks();
+    (useFavoriteNodes as ReturnType<typeof vi.fn>).mockReturnValue({
       isFavorite: () => false,
-      toggleFavorite: jest.fn(),
+      toggleFavorite: vi.fn(),
     });
-    (useRecentNodes as jest.Mock).mockReturnValue({
+    (useRecentNodes as ReturnType<typeof vi.fn>).mockReturnValue({
       isRecent: () => false,
     });
   });
@@ -413,7 +413,7 @@ describe("PaletteItem", () => {
   });
 
   it("shows recent badge for recent nodes", () => {
-    (useRecentNodes as jest.Mock).mockReturnValue({
+    (useRecentNodes as ReturnType<typeof vi.fn>).mockReturnValue({
       isRecent: (type: string) => type === "CLICK",
     });
 
@@ -423,8 +423,8 @@ describe("PaletteItem", () => {
   });
 
   it("toggles favorite when star button is clicked", () => {
-    const mockToggleFavorite = jest.fn();
-    (useFavoriteNodes as jest.Mock).mockReturnValue({
+    const mockToggleFavorite = vi.fn();
+    (useFavoriteNodes as ReturnType<typeof vi.fn>).mockReturnValue({
       isFavorite: () => false,
       toggleFavorite: mockToggleFavorite,
     });
@@ -439,13 +439,13 @@ describe("PaletteItem", () => {
 });
 
 describe("QuickAddMenu", () => {
-  const mockOnSelect = jest.fn();
-  const mockOnClose = jest.fn();
+  const mockOnSelect = vi.fn();
+  const mockOnClose = vi.fn();
   const mockPosition = { x: 100, y: 100 };
 
   beforeEach(() => {
-    jest.clearAllMocks();
-    (useRecentNodes as jest.Mock).mockReturnValue({
+    vi.clearAllMocks();
+    (useRecentNodes as ReturnType<typeof vi.fn>).mockReturnValue({
       recentNodes: [],
       getRecentNodes: () => [],
     });
@@ -551,7 +551,7 @@ describe("QuickAddMenu", () => {
   });
 
   it("shows recent nodes section when recent nodes exist", () => {
-    (useRecentNodes as jest.Mock).mockReturnValue({
+    (useRecentNodes as ReturnType<typeof vi.fn>).mockReturnValue({
       recentNodes: [{ type: "CLICK", lastUsed: Date.now(), useCount: 1 }],
       getRecentNodes: () => [
         { type: "CLICK", lastUsed: Date.now(), useCount: 1 },
@@ -574,7 +574,7 @@ describe("QuickAddMenu", () => {
 describe("Integration Tests", () => {
   it("full workflow: search, select, and add node", async () => {
     const user = userEvent.setup();
-    const mockOnNodeAdd = jest.fn();
+    const mockOnNodeAdd = vi.fn();
     const mockCanvasRef = { current: document.createElement("div") };
 
     render(<NodePalette onNodeAdd={mockOnNodeAdd} canvasRef={mockCanvasRef} />);
@@ -602,11 +602,11 @@ describe("Integration Tests", () => {
 
   it("favorites workflow: add to favorites and access from favorites section", async () => {
     const favorites: unknown[] = [];
-    const mockToggleFavorite = jest.fn((type) => {
+    const mockToggleFavorite = vi.fn((type) => {
       favorites.push({ type, order: 0, addedAt: Date.now() });
     });
 
-    (useFavoriteNodes as jest.Mock).mockImplementation(() => ({
+    (useFavoriteNodes as ReturnType<typeof vi.fn>).mockImplementation(() => ({
       favorites,
       isFavorite: (type: string) => favorites.some((f) => f.type === type),
       toggleFavorite: mockToggleFavorite,
@@ -615,7 +615,7 @@ describe("Integration Tests", () => {
 
     const { rerender } = render(
       <NodePalette
-        onNodeAdd={jest.fn()}
+        onNodeAdd={vi.fn()}
         canvasRef={{ current: document.createElement("div") }}
       />
     );
@@ -628,7 +628,7 @@ describe("Integration Tests", () => {
     expect(mockToggleFavorite).toHaveBeenCalledWith("FIND");
 
     // Update mock to include favorited item
-    (useFavoriteNodes as jest.Mock).mockReturnValue({
+    (useFavoriteNodes as ReturnType<typeof vi.fn>).mockReturnValue({
       favorites: [{ type: "FIND", order: 0, addedAt: Date.now() }],
       isFavorite: (type: string) => type === "FIND",
       toggleFavorite: mockToggleFavorite,
@@ -638,7 +638,7 @@ describe("Integration Tests", () => {
     // Rerender to show favorites section
     rerender(
       <NodePalette
-        onNodeAdd={jest.fn()}
+        onNodeAdd={vi.fn()}
         canvasRef={{ current: document.createElement("div") }}
       />
     );
