@@ -143,6 +143,7 @@ export function CheckpointListEditor({
             size="sm"
             onClick={addCheckpoint}
             disabled={!newCheckpointName.trim() || !!current[newCheckpointName]}
+            aria-label="Add checkpoint"
             className="bg-brand-primary hover:bg-brand-primary/80 text-black"
           >
             <Plus className="w-4 h-4" />
@@ -210,6 +211,7 @@ export function CheckpointListEditor({
                           e.stopPropagation();
                           removeCheckpoint(name);
                         }}
+                        aria-label={`Remove checkpoint ${name}`}
                         className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -334,6 +336,7 @@ export function CheckpointListEditor({
                                       onClick={() =>
                                         removeClaudeReview(name, i)
                                       }
+                                      aria-label={`Remove review instruction ${i + 1}`}
                                       className="text-red-400 hover:text-red-300 hover:bg-red-500/10 h-8 w-8 p-0"
                                     >
                                       <Trash2 className="w-3 h-3" />

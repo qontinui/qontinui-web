@@ -346,6 +346,7 @@ export function SuccessCriteriaEditor({
                   <button
                     onClick={() => handleRemoveState(state)}
                     className="ml-1 hover:bg-surface-raised rounded p-0.5"
+                    aria-label={`Remove state ${state}`}
                     title="Remove state"
                   >
                     <X className="w-3 h-3" />
