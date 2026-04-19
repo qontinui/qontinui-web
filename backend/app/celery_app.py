@@ -11,8 +11,9 @@ This module sets up Celery for handling long-running tasks like:
 import os
 from typing import Any
 
-from app.core.config import settings
 from celery import Celery  # type: ignore[import-not-found]
+
+from app.core.config import settings
 
 # Get Redis URL from settings with fallback
 REDIS_URL = getattr(settings, "REDIS_URL", None) or os.getenv(
@@ -20,7 +21,14 @@ REDIS_URL = getattr(settings, "REDIS_URL", None) or os.getenv(
 )
 
 celery_app = Celery(
-    "qontinui", broker=REDIS_URL, backend=REDIS_URL, include=["app.tasks"]
+    "qontinui",
+    broker=REDIS_URL,
+    backend=REDIS_URL,
+    include=[
+        "app.tasks",
+        # Phase 3D — scheduled workflow dispatch task registered for redbeat.
+        "app.tasks.scheduled_dispatch",
+    ],
 )
 
 # Celery configuration
@@ -37,10 +45,28 @@ celery_app.conf.update(
     worker_max_tasks_per_child=1000,
 )
 
+# ---------------------------------------------------------------------------
+# Phase 3D — celery-beat scheduler (redbeat).
+#
+# Redbeat stores schedule entries in Redis (same instance as the broker), so
+# entries survive a backend restart but are lost if Redis itself is flushed.
+# The backend startup hook in ``app.main`` re-syncs DB rows to redbeat to
+# cover that case.
+#
+# Key-prefix convention: ``qontinui:redbeat:`` for redbeat's own internal
+# state, ``qontinui:schedule:{scheduled_run.id}`` for individual entries
+# (handled by redbeat_manager).
+# ---------------------------------------------------------------------------
+celery_app.conf.beat_scheduler = "redbeat.RedBeatScheduler"
+celery_app.conf.redbeat_redis_url = REDIS_URL
+celery_app.conf.redbeat_lock_key = "qontinui:redbeat:lock"
+celery_app.conf.redbeat_key_prefix = "qontinui:redbeat:"
+
 # Task routing
 celery_app.conf.task_routes = {
     "app.tasks.image.*": {"queue": "image-processing"},
     "app.tasks.email.*": {"queue": "email"},
+    "app.tasks.scheduled_dispatch.*": {"queue": "default"},
     "app.tasks.*": {"queue": "default"},
 }
 

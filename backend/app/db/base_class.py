@@ -14,6 +14,7 @@ from app.models.phase_result import PhaseResult  # noqa
 from app.models.project import Project  # noqa
 from app.models.runner import Runner  # noqa
 from app.models.runner_token import RunnerToken  # noqa
+from app.models.scheduled_workflow_run import ScheduledWorkflowRun  # noqa
 from app.models.session_activity import SessionActivity  # noqa
 from app.models.shared_file import SharedFile  # noqa
 from app.models.snapshot import SnapshotAction  # noqa

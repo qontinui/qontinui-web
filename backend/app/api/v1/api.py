@@ -72,6 +72,7 @@ from app.api.v1.endpoints import (
     runner_terminal_ws,
     runners,
     runners_fleet,
+    scheduled_runs,
     screenshots,
     security_endpoints,
     semantic_search,
@@ -282,6 +283,12 @@ api_router.include_router(
 # Workflow dispatch — user-triggered routing to server-mode runners
 api_router.include_router(
     workflow_dispatch.router, prefix="/workflows", tags=["workflow-dispatch"]
+)
+# Scheduled workflow runs (cron-driven dispatch via celery-beat / redbeat)
+api_router.include_router(
+    scheduled_runs.router,
+    prefix="/scheduled-runs",
+    tags=["scheduled-runs"],
 )
 # Cross-entity semantic search
 api_router.include_router(

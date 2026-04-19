@@ -129,7 +129,7 @@ def _patch_httpx(mock_response: MagicMock | None = None, *, side_effect=None):
     ``async with httpx.AsyncClient(...) as client:`` — the mock wires up the
     context-manager protocol.
     """
-    cm = patch("app.api.v1.endpoints.workflow_dispatch.httpx.AsyncClient")
+    cm = patch("app.services.workflow_dispatcher.httpx.AsyncClient")
 
     def _configure(MockClient):
         instance = AsyncMock()

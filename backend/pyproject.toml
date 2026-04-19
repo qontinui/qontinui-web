@@ -50,6 +50,8 @@ qontinui-schemas = {path = "../../qontinui-schemas", develop = true}
 qontinui = {path = "../../qontinui", develop = true, extras = ["embeddings"]}
 pgvector = "^0.4.2"
 geoip2 = "^5.2.0"
+celery-redbeat = "^2.2"
+croniter = "^6"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.0"
@@ -159,6 +161,7 @@ ignore = [
 known-first-party = ["app"]
 
 # Optional ML dependencies
+
 
 
 

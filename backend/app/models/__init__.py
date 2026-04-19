@@ -118,6 +118,7 @@ from app.models.runner import Runner
 from app.models.runner_connection import RunnerConnection
 from app.models.runner_device import RunnerDevice
 from app.models.runner_token import RunnerToken
+from app.models.scheduled_workflow_run import ScheduledWorkflowRun
 from app.models.screenshot_input_association import ScreenshotInputAssociation
 from app.models.session_activity import SessionActivity
 from app.models.skill import Skill
@@ -314,6 +315,8 @@ __all__ = [
     # Runner Fleet Registry
     "Runner",
     "RunnerToken",
+    # Scheduled Workflow Runs (cron-driven dispatch — Phase 3D)
+    "ScheduledWorkflowRun",
     # Phase Results (server-mode runner phase-completion records)
     "PhaseResult",
     # Version History & Event Sourcing

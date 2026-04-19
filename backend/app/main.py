@@ -2,30 +2,35 @@ import asyncio
 import time
 from pathlib import Path
 
-from app.api.v1.api import api_router
-from app.config.logging_config import configure_logging, get_logger
-from app.core.config import settings
-from app.db.init_db import init_db
-from app.db.session import AsyncSessionLocal
-from app.middleware.database_timing import (DatabaseTimingMiddleware,
-                                            init_database_timing)
-from app.middleware.error_handler import (AppError, app_exception_handler,
-                                          general_exception_handler,
-                                          http_exception_handler,
-                                          validation_exception_handler)
-from app.middleware.logging_middleware import LoggingMiddleware
-from app.middleware.metrics_middleware import MetricsMiddleware
-from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
-from app.middleware.request_id import RequestIDMiddleware
-from app.middleware.security_headers import SecurityHeadersMiddleware
-from app.middleware.sliding_window_session import \
-    SlidingWindowSessionMiddleware
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from app.api.v1.api import api_router
+from app.config.logging_config import configure_logging, get_logger
+from app.core.config import settings
+from app.db.init_db import init_db
+from app.db.session import AsyncSessionLocal
+from app.middleware.database_timing import (
+    DatabaseTimingMiddleware,
+    init_database_timing,
+)
+from app.middleware.error_handler import (
+    AppError,
+    app_exception_handler,
+    general_exception_handler,
+    http_exception_handler,
+    validation_exception_handler,
+)
+from app.middleware.logging_middleware import LoggingMiddleware
+from app.middleware.metrics_middleware import MetricsMiddleware
+from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
+from app.middleware.request_id import RequestIDMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.middleware.sliding_window_session import SlidingWindowSessionMiddleware
 
 # Configure structured logging
 configure_logging(environment=settings.ENVIRONMENT)
@@ -324,6 +329,31 @@ async def startup_event():
             note="Continuing without file cleanup",
         )
 
+    # Phase 3D — resync scheduled_workflow_runs rows into redbeat on startup
+    # so a Redis flush doesn't silently drop schedules. Guarded behind
+    # REDIS_ENABLED because redbeat requires Redis.
+    if settings.REDIS_ENABLED:
+        try:
+            from app.services.redbeat_manager import resync_all_enabled_from_db
+
+            reinstalled = await resync_all_enabled_from_db()
+            logger.info(
+                "redbeat_startup_resync_complete",
+                reinstalled=reinstalled,
+            )
+        except Exception as e:
+            logger.warning(
+                "redbeat_startup_resync_failed",
+                error=str(e),
+                error_type=type(e).__name__,
+                note="Continuing; schedules may fire only after next edit.",
+            )
+    else:
+        logger.info(
+            "redbeat_startup_resync_skipped",
+            note="Redis disabled — scheduled_workflow_runs won't fire",
+        )
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -407,8 +437,9 @@ async def health_check():
 
     # Check async database connectivity
     try:
-        from app.db.session import AsyncSessionLocal
         from sqlalchemy import text
+
+        from app.db.session import AsyncSessionLocal
 
         async with AsyncSessionLocal() as session:
             await session.execute(text("SELECT 1"))
