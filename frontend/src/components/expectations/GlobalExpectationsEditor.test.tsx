@@ -5,10 +5,33 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { GlobalExpectationsEditor } from "./GlobalExpectationsEditor";
 import type { GlobalExpectations } from "@/lib/expectations/types";
+
+/**
+ * Stateful harness so controlled inputs receive the accumulated value as
+ * the user types characters.
+ */
+function Harness(props: {
+  initial?: GlobalExpectations;
+  onChange?: (value: GlobalExpectations) => void;
+}) {
+  const [value, setValue] = useState<GlobalExpectations | undefined>(
+    props.initial
+  );
+  return (
+    <GlobalExpectationsEditor
+      expectations={value}
+      onChange={(v) => {
+        setValue(v);
+        props.onChange?.(v);
+      }}
+    />
+  );
+}
 
 describe("GlobalExpectationsEditor", () => {
   const mockOnChange = vi.fn();
@@ -146,12 +169,7 @@ describe("GlobalExpectationsEditor", () => {
     it("should update max_action_duration_ms", async () => {
       const user = userEvent.setup();
 
-      render(
-        <GlobalExpectationsEditor
-          expectations={undefined}
-          onChange={mockOnChange}
-        />
-      );
+      render(<Harness onChange={mockOnChange} />);
 
       const input = screen.getByPlaceholderText("10000");
       await user.clear(input);
@@ -169,12 +187,7 @@ describe("GlobalExpectationsEditor", () => {
     it("should update max_total_duration_ms", async () => {
       const user = userEvent.setup();
 
-      render(
-        <GlobalExpectationsEditor
-          expectations={undefined}
-          onChange={mockOnChange}
-        />
-      );
+      render(<Harness onChange={mockOnChange} />);
 
       const input = screen.getByPlaceholderText("300000");
       await user.clear(input);
@@ -266,6 +279,8 @@ describe("GlobalExpectationsEditor", () => {
     });
 
     it("should update min_confidence_threshold", async () => {
+      const user = userEvent.setup();
+
       render(
         <GlobalExpectationsEditor
           expectations={undefined}
@@ -273,12 +288,13 @@ describe("GlobalExpectationsEditor", () => {
         />
       );
 
-      // Find the slider
+      // Radix's slider exposes role="slider" on the thumb div (not an input)
+      // so fireEvent.change is a no-op. Keyboard nudging is the supported
+      // way to drive the slider in tests.
       const sliders = screen.getAllByRole("slider");
       const confidenceSlider = sliders[0];
-
-      // Simulate slider change
-      fireEvent.change(confidenceSlider, { target: { value: "0.9" } });
+      confidenceSlider.focus();
+      await user.keyboard("{ArrowRight}");
 
       await waitFor(() => {
         expect(mockOnChange).toHaveBeenCalledWith(
@@ -399,12 +415,7 @@ describe("GlobalExpectationsEditor", () => {
     it("should handle very large timing values", async () => {
       const user = userEvent.setup();
 
-      render(
-        <GlobalExpectationsEditor
-          expectations={undefined}
-          onChange={mockOnChange}
-        />
-      );
+      render(<Harness onChange={mockOnChange} />);
 
       const input = screen.getByPlaceholderText("300000");
       await user.clear(input);

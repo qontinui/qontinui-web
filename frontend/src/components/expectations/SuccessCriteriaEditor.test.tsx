@@ -5,10 +5,44 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { SuccessCriteriaEditor } from "./SuccessCriteriaEditor";
 import type { SuccessCriteria } from "@/lib/expectations/types";
+
+/**
+ * Stateful harness so onChange patches flow back into the editor's props.
+ * Needed for controlled-input tests (typing multi-char values, accumulated
+ * state across clicks).
+ */
+function Harness(props: {
+  initial?: SuccessCriteria;
+  availableCheckpoints?: string[];
+  availableStates?: string[];
+  onChange?: (value: SuccessCriteria) => void;
+}) {
+  const [value, setValue] = useState<SuccessCriteria | undefined>(
+    props.initial
+  );
+  return (
+    <SuccessCriteriaEditor
+      criteria={value}
+      onChange={(v) => {
+        setValue(v);
+        props.onChange?.(v);
+      }}
+      availableCheckpoints={props.availableCheckpoints}
+      availableStates={props.availableStates}
+    />
+  );
+}
 
 describe("SuccessCriteriaEditor", () => {
   const mockOnChange = vi.fn();
@@ -256,8 +290,8 @@ describe("SuccessCriteriaEditor", () => {
       };
 
       render(
-        <SuccessCriteriaEditor
-          criteria={criteria}
+        <Harness
+          initial={criteria}
           onChange={mockOnChange}
           availableCheckpoints={[]}
         />
@@ -401,9 +435,10 @@ describe("SuccessCriteriaEditor", () => {
         <SuccessCriteriaEditor criteria={criteria} onChange={mockOnChange} />
       );
 
-      // Find the X button for state-1
-      const badge = screen.getByText("state-1").closest("div");
-      const removeButton = within(badge as HTMLElement).getByRole("button");
+      // Each badge's X button has an aria-label derived from the state name.
+      const removeButton = screen.getByRole("button", {
+        name: /remove state state-1/i,
+      });
       await user.click(removeButton);
 
       await waitFor(() => {
@@ -518,9 +553,11 @@ describe("SuccessCriteriaEditor", () => {
       const select = screen.getAllByRole("combobox")[1];
       await user.click(select);
 
-      // state-1 should not be in the dropdown
-      expect(screen.queryByText("state-1")).not.toBeInTheDocument();
-      expect(screen.getByText("state-2")).toBeInTheDocument();
+      // state-1 is shown as a selected badge above the dropdown, so a page-wide
+      // queryByText would always find it. Scope the assertion to the listbox.
+      const listbox = await screen.findByRole("listbox");
+      expect(within(listbox).queryByText("state-1")).not.toBeInTheDocument();
+      expect(within(listbox).getByText("state-2")).toBeInTheDocument();
     });
   });
 
@@ -532,9 +569,7 @@ describe("SuccessCriteriaEditor", () => {
         custom_expression: "",
       };
 
-      render(
-        <SuccessCriteriaEditor criteria={criteria} onChange={mockOnChange} />
-      );
+      render(<Harness initial={criteria} onChange={mockOnChange} />);
 
       const textarea = screen.getByPlaceholderText(/Enter Python expression/i);
       await user.type(textarea, "len(matches) > 5");
@@ -557,9 +592,7 @@ describe("SuccessCriteriaEditor", () => {
         type: "all_actions_pass",
       };
 
-      render(
-        <SuccessCriteriaEditor criteria={criteria} onChange={mockOnChange} />
-      );
+      render(<Harness initial={criteria} onChange={mockOnChange} />);
 
       const textarea = screen.getByPlaceholderText(/Add a description/i);
       await user.type(textarea, "Test description");
@@ -631,19 +664,18 @@ describe("SuccessCriteriaEditor", () => {
     });
 
     it("should handle zero values for numeric inputs", async () => {
-      const user = userEvent.setup();
       const criteria: SuccessCriteria = {
         type: "max_failures",
         max_failures: 5,
       };
 
-      render(
-        <SuccessCriteriaEditor criteria={criteria} onChange={mockOnChange} />
-      );
+      render(<Harness initial={criteria} onChange={mockOnChange} />);
 
+      // handleMaxFailuresChange rejects empty strings (NaN), which means
+      // user.clear() + user.type() would re-use the stale "5" and produce
+      // "50" instead of "0". fireEvent.change sets the DOM value directly.
       const input = screen.getByDisplayValue("5");
-      await user.clear(input);
-      await user.type(input, "0");
+      fireEvent.change(input, { target: { value: "0" } });
 
       await waitFor(() => {
         expect(mockOnChange).toHaveBeenCalledWith(

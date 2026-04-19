@@ -152,14 +152,24 @@ describe("ExpectationsPanel", () => {
         expect(screen.getByText("Success Criteria")).toBeInTheDocument();
       });
 
-      // Success criteria should be set by default to all_actions_pass
-      expect(mockOnChange).toHaveBeenCalledWith(
-        expect.objectContaining({
-          success_criteria: expect.objectContaining({
-            type: "all_actions_pass",
-          }),
-        })
-      );
+      // Change the criteria type to verify changes propagate through the panel.
+      // (The panel itself doesn't emit anything just from switching tabs —
+      // only actual edits on the child editor should bubble up.)
+      const typeCombobox = screen.getByRole("combobox");
+      await user.click(typeCombobox);
+
+      const minMatchesOption = await screen.findByText("Minimum Matches");
+      await user.click(minMatchesOption);
+
+      await waitFor(() => {
+        expect(mockOnChange).toHaveBeenCalledWith(
+          expect.objectContaining({
+            success_criteria: expect.objectContaining({
+              type: "min_matches",
+            }),
+          })
+        );
+      });
     });
   });
 
@@ -185,7 +195,9 @@ describe("ExpectationsPanel", () => {
       const input = screen.getByPlaceholderText("Enter checkpoint name");
       await user.type(input, "test-checkpoint");
 
-      const addButton = screen.getByRole("button", { name: /plus/i });
+      const addButton = screen.getByRole("button", {
+        name: /^add checkpoint$/i,
+      });
       await user.click(addButton);
 
       await waitFor(() => {

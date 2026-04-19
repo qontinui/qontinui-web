@@ -7,8 +7,33 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { ActionExpectationsEditor } from "./ActionExpectationsEditor";
 import type { ActionExpectations } from "@/lib/expectations/types";
+
+/**
+ * Stateful harness so onChange patches flow back into the editor's props.
+ * Required for any test that types multi-character values or depends on
+ * the accumulated state (e.g. toggling a switch that then conditionally
+ * renders more UI).
+ */
+function Harness(props: {
+  initial?: ActionExpectations;
+  onChange?: (value: ActionExpectations) => void;
+}) {
+  const [value, setValue] = useState<ActionExpectations | undefined>(
+    props.initial
+  );
+  return (
+    <ActionExpectationsEditor
+      expectations={value}
+      onChange={(v) => {
+        setValue(v);
+        props.onChange?.(v);
+      }}
+    />
+  );
+}
 
 describe("ActionExpectationsEditor", () => {
   const mockOnChange = vi.fn();
@@ -184,12 +209,7 @@ describe("ActionExpectationsEditor", () => {
     it("should show checkpoint name field when enabled", async () => {
       const user = userEvent.setup();
 
-      render(
-        <ActionExpectationsEditor
-          expectations={undefined}
-          onChange={mockOnChange}
-        />
-      );
+      render(<Harness onChange={mockOnChange} />);
 
       // Initially checkpoint name should not be visible
       expect(
@@ -215,12 +235,7 @@ describe("ActionExpectationsEditor", () => {
         checkpoint_name: "test-checkpoint",
       };
 
-      render(
-        <ActionExpectationsEditor
-          expectations={expectations}
-          onChange={mockOnChange}
-        />
-      );
+      render(<Harness initial={expectations} onChange={mockOnChange} />);
 
       // Checkpoint name should be visible
       expect(screen.getByDisplayValue("test-checkpoint")).toBeInTheDocument();
@@ -244,12 +259,7 @@ describe("ActionExpectationsEditor", () => {
         checkpoint_name: "",
       };
 
-      render(
-        <ActionExpectationsEditor
-          expectations={expectations}
-          onChange={mockOnChange}
-        />
-      );
+      render(<Harness initial={expectations} onChange={mockOnChange} />);
 
       const input = screen.getByPlaceholderText("Enter checkpoint name");
       await user.type(input, "my-checkpoint");
@@ -316,12 +326,7 @@ describe("ActionExpectationsEditor", () => {
     it("should update retry_delay_ms", async () => {
       const user = userEvent.setup();
 
-      render(
-        <ActionExpectationsEditor
-          expectations={undefined}
-          onChange={mockOnChange}
-        />
-      );
+      render(<Harness onChange={mockOnChange} />);
 
       const input = screen.getByPlaceholderText("1000");
       await user.clear(input);
@@ -366,12 +371,7 @@ describe("ActionExpectationsEditor", () => {
     it("should update max_duration_ms", async () => {
       const user = userEvent.setup();
 
-      render(
-        <ActionExpectationsEditor
-          expectations={undefined}
-          onChange={mockOnChange}
-        />
-      );
+      render(<Harness onChange={mockOnChange} />);
 
       const input = screen.getByPlaceholderText("Inherit from global");
       await user.type(input, "15000");
@@ -415,12 +415,7 @@ describe("ActionExpectationsEditor", () => {
     it("should update expected_state_after", async () => {
       const user = userEvent.setup();
 
-      render(
-        <ActionExpectationsEditor
-          expectations={undefined}
-          onChange={mockOnChange}
-        />
-      );
+      render(<Harness onChange={mockOnChange} />);
 
       const input = screen.getByPlaceholderText("State name");
       await user.type(input, "dashboard");
@@ -545,12 +540,7 @@ describe("ActionExpectationsEditor", () => {
     it("should handle very large numeric values", async () => {
       const user = userEvent.setup();
 
-      render(
-        <ActionExpectationsEditor
-          expectations={undefined}
-          onChange={mockOnChange}
-        />
-      );
+      render(<Harness onChange={mockOnChange} />);
 
       const durationInput = screen.getByPlaceholderText("Inherit from global");
       await user.type(durationInput, "9999999");
@@ -567,21 +557,15 @@ describe("ActionExpectationsEditor", () => {
     it("should handle all switches being enabled", async () => {
       const user = userEvent.setup();
 
-      render(
-        <ActionExpectationsEditor
-          expectations={undefined}
-          onChange={mockOnChange}
-        />
-      );
+      render(<Harness onChange={mockOnChange} />);
 
-      const switches = screen.getAllByRole("switch");
-
-      // Enable all switches
-      for (const switchEl of switches) {
-        if (
-          (switchEl as HTMLInputElement).getAttribute("data-state") ===
-          "unchecked"
-        ) {
+      // Re-query inside the loop since the harness re-renders and replaces
+      // switch elements after each click.
+      let switches = screen.getAllByRole("switch");
+      for (let i = 0; i < switches.length; i++) {
+        switches = screen.getAllByRole("switch");
+        const switchEl = switches[i];
+        if (switchEl.getAttribute("data-state") === "unchecked") {
           await user.click(switchEl);
         }
       }
@@ -624,18 +608,10 @@ describe("ActionExpectationsEditor", () => {
     it("should handle checkpoint name when capture is toggled on and off", async () => {
       const user = userEvent.setup();
 
-      render(
-        <ActionExpectationsEditor
-          expectations={undefined}
-          onChange={mockOnChange}
-        />
-      );
+      render(<Harness onChange={mockOnChange} />);
 
-      const switches = screen.getAllByRole("switch");
-      const captureAfterSwitch = switches[2];
-
-      // Enable capture
-      await user.click(captureAfterSwitch);
+      // Enable capture (re-query switches because the harness re-renders).
+      await user.click(screen.getAllByRole("switch")[2]);
 
       await waitFor(() => {
         expect(
@@ -648,9 +624,9 @@ describe("ActionExpectationsEditor", () => {
       await user.type(input, "test");
 
       // Disable capture
-      await user.click(captureAfterSwitch);
+      await user.click(screen.getAllByRole("switch")[2]);
 
-      // Field should be hidden but value preserved in state
+      // Field should be hidden
       await waitFor(() => {
         expect(screen.queryByDisplayValue("test")).not.toBeInTheDocument();
       });
