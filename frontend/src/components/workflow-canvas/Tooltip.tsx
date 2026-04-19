@@ -49,13 +49,19 @@ export function Tooltip({
         {children}
       </div>
 
-      {isVisible && position && (
+      {isVisible && (
+        // Render as soon as isVisible is true — even before the first
+        // position measurement — so the tooltip element exists in the DOM
+        // for useTooltipPosition to measure via tooltipRef. Until `position`
+        // is computed, keep the tooltip off-screen and invisible so there's
+        // no visible flicker at (0, 0).
         <div
           ref={tooltipRef}
           className="fixed z-[10000] pointer-events-none"
           style={{
-            left: `${position.x}px`,
-            top: `${position.y}px`,
+            left: position ? `${position.x}px` : "-9999px",
+            top: position ? `${position.y}px` : "-9999px",
+            visibility: position ? "visible" : "hidden",
           }}
         >
           <div
