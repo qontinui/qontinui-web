@@ -21,6 +21,7 @@ import {
   Loader2,
   AlertTriangle,
   MessageSquareWarning,
+  ListTree,
 } from "lucide-react";
 
 // Lazy-load tab components to prevent main thread blocking during initial load
@@ -59,6 +60,11 @@ const DeferredQuestionsTab = lazy(() =>
     default: m.DeferredQuestionsTab,
   }))
 );
+const PhaseTimeline = lazy(() =>
+  import("@/components/server-runners/PhaseTimeline").then((m) => ({
+    default: m.PhaseTimeline,
+  }))
+);
 
 function TabFallback() {
   return (
@@ -92,6 +98,7 @@ const VALID_TABS = [
   "data-logs",
   "errors",
   "decisions",
+  "phase-timeline",
 ];
 
 function RunDetailContentInner({ runId }: { runId: string }) {
@@ -252,6 +259,10 @@ function RunDetailContentInner({ runId }: { runId: string }) {
               <MessageSquareWarning className="size-3.5" />
               Decisions
             </TabsTrigger>
+            <TabsTrigger value="phase-timeline" className="gap-1.5">
+              <ListTree className="size-3.5" />
+              Phase Timeline
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="summary">
@@ -290,6 +301,11 @@ function RunDetailContentInner({ runId }: { runId: string }) {
           <TabsContent value="decisions">
             <Suspense fallback={<TabFallback />}>
               <DeferredQuestionsTab taskRunId={run.id} />
+            </Suspense>
+          </TabsContent>
+          <TabsContent value="phase-timeline">
+            <Suspense fallback={<TabFallback />}>
+              <PhaseTimeline executionId={run.id} />
             </Suspense>
           </TabsContent>
         </Tabs>

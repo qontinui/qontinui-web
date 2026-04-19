@@ -15,6 +15,7 @@ import { GenerateFromStatesModal } from "@/components/workflow-builder/GenerateF
 import { Button } from "@/components/ui/button";
 import { generateStepId, type UnifiedStep, type WorkflowPhase } from "@/types/unified-workflow";
 import { PhaseStepRenderer } from "./PhaseStepRenderer";
+import { DispatchWorkflowButton } from "@/components/server-runners/DispatchWorkflowButton";
 import {
   Play,
   Download,
@@ -26,8 +27,10 @@ import {
   ShieldCheck,
   Terminal,
   GitBranch,
+  CalendarClock,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 
 export function WorkflowEditor({
   onRun,
@@ -40,6 +43,7 @@ export function WorkflowEditor({
 }) {
   const { state, addStep, saveWorkflow, exportWorkflow, importWorkflow, setWorkflow, updateWorkflow, hasUnsavedChanges, getActiveSteps } =
     useWorkflowBuilder();
+  const router = useRouter();
   const [showSettings, setShowSettings] = useState(false);
   const [showConstraints, setShowConstraints] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
@@ -231,6 +235,28 @@ export function WorkflowEditor({
             <Play className="size-4" />
             Run
           </Button>
+          {state.workflow.id && (
+            <DispatchWorkflowButton
+              workflowId={state.workflow.id}
+              workflowName={state.workflow.name}
+              className="h-8"
+            />
+          )}
+          {state.workflow.id && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8"
+              onClick={() =>
+                router.push(
+                  `/workflows/${state.workflow.id}/schedules`
+                )
+              }
+              title="Manage scheduled runs for this workflow"
+            >
+              <CalendarClock className="size-4" />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"

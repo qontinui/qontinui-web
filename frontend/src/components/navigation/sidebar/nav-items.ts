@@ -27,6 +27,8 @@ import {
   AlertCircle,
   BookOpen,
   ScanSearch,
+  Server,
+  CalendarClock,
 } from "lucide-react";
 import type { NavItem } from "./types";
 
@@ -38,6 +40,28 @@ import type { NavItem } from "./types";
 // =============================================================================
 
 export const devNavItems: NavItem[] = [
+  // ===========================================================================
+  // Server-mode runner fleet (production-visible).
+  // ===========================================================================
+  {
+    id: "runner-fleet",
+    label: "Runner Fleet",
+    description: "Server-mode runners and auth tokens",
+    icon: React.createElement(Server, { className: "size-5" }),
+    route: "/runners/fleet",
+    color: "#10B981",
+    group: "Runners",
+  },
+  {
+    id: "scheduled-runs",
+    label: "Scheduled Runs",
+    description: "Cron-style workflow dispatches",
+    icon: React.createElement(CalendarClock, { className: "size-5" }),
+    route: "/scheduled-runs",
+    color: "#0EA5E9",
+    group: "Runners",
+  },
+
   // ===========================================================================
   // Dev Dashboard (dev-only, top-level for easy access)
   // ===========================================================================
