@@ -8,6 +8,7 @@ registration of a server-mode/headless runner instance. The runner registers
 on startup, heartbeats periodically, and is deregistered when shut down.
 """
 
+import secrets
 from datetime import datetime
 from uuid import UUID, uuid4
 
@@ -18,6 +19,18 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+
+
+def _new_dispatch_secret() -> str:
+    """Mirror of ``server_default`` for Python-side inserts.
+
+    Using both a Python ``default`` and a ``server_default`` is intentional:
+    the server_default handles raw SQL inserts (migrations, test fixtures
+    bypassing the ORM), while the Python default keeps us working on test
+    databases where the ``pgcrypto`` extension isn't installed and
+    ``gen_random_bytes`` doesn't exist.
+    """
+    return secrets.token_hex(32)
 
 
 class Runner(Base):
@@ -113,6 +126,25 @@ class Runner(Base):
         nullable=True,
         index=True,
         comment="Token used at registration (nullable for legacy/test)",
+    )
+
+    # Per-runner machine-to-machine dispatch secret.
+    #
+    # Stored plaintext (64-hex = 32 random bytes). This is an intentional
+    # tradeoff: web needs to *use* the secret to authenticate when POSTing
+    # `/api/workflows/run` on the runner, so we cannot hash it. The blast
+    # radius is one runner — rotation is handled by re-registration, which
+    # overwrites the column.
+    dispatch_secret: Mapped[str] = mapped_column(
+        String(128),
+        nullable=False,
+        default=_new_dispatch_secret,
+        server_default=text("encode(gen_random_bytes(32), 'hex')"),
+        comment=(
+            "Per-runner m2m secret used by web to authenticate workflow "
+            "dispatch POSTs to the runner. Stored plaintext; rotated on "
+            "re-registration."
+        ),
     )
 
     # Relationships

@@ -202,6 +202,7 @@ async def register_runner(
     return RunnerRegistrationResponse(
         runner_id=record.id,
         registered_at=record.last_heartbeat or record.created_at,
+        dispatch_secret=record.dispatch_secret,
     )
 
 

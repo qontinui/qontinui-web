@@ -93,6 +93,7 @@ from app.api.v1.endpoints import (
     videos,
     visual_baselines,
     visual_comparison,
+    workflow_dispatch,
     workflow_step_types,
 )
 from app.api.v1.endpoints import auth as auth_pkg
@@ -277,6 +278,10 @@ api_router.include_router(skills.router, prefix="/skills", tags=["skills"])
 # Unified workflows (workflow definitions - source of truth)
 api_router.include_router(
     unified_workflows.router, prefix="/unified-workflows", tags=["unified-workflows"]
+)
+# Workflow dispatch — user-triggered routing to server-mode runners
+api_router.include_router(
+    workflow_dispatch.router, prefix="/workflows", tags=["workflow-dispatch"]
 )
 # Cross-entity semantic search
 api_router.include_router(

@@ -190,6 +190,19 @@ async def get_runner_token(
 # ---------------------------------------------------------------------------
 
 
+def _generate_dispatch_secret() -> str:
+    """Generate a fresh per-runner dispatch secret.
+
+    Returns a 64-character hex string (32 random bytes). Mirrors the
+    ``server_default`` on :attr:`~app.models.runner.Runner.dispatch_secret`
+    so rows created in Python get the same shape as rows created via raw
+    SQL / ``server_default``.
+    """
+    import secrets
+
+    return secrets.token_hex(32)
+
+
 async def register_runner(
     db: AsyncSession,
     *,
@@ -209,6 +222,12 @@ async def register_runner(
     exists for this user, its metadata is refreshed rather than creating a
     duplicate. Newly registered or re-registered runners are marked
     ``status="healthy"`` and have their heartbeat timestamp set to now.
+
+    Every call rotates ``dispatch_secret``: the runner is expected to capture
+    it off the response and replace any value it had cached. A plain-text
+    secret is always returned on the response — hashed storage is impossible
+    because web itself needs to present the value as a bearer when
+    dispatching workflows.
     """
     query = select(Runner).where(Runner.user_id == user_id, Runner.name == name)
     result = await db.execute(query)
@@ -225,6 +244,7 @@ async def register_runner(
         existing.restate_healthy = restate_healthy
         existing.last_heartbeat = now
         existing.status = "healthy"
+        existing.dispatch_secret = _generate_dispatch_secret()
         if runner_token_id is not None:
             existing.runner_token_id = runner_token_id
         await db.commit()
@@ -243,6 +263,7 @@ async def register_runner(
         last_heartbeat=now,
         status="healthy",
         runner_token_id=runner_token_id,
+        dispatch_secret=_generate_dispatch_secret(),
     )
     db.add(record)
     await db.commit()
