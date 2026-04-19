@@ -6,10 +6,11 @@ Called as a background task after workflow events are ingested.
 
 import httpx
 import structlog
-from app.models.push_device import PushDevice
-from app.models.workflow_event import WorkflowEvent
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.push_device import PushDevice
+from app.models.workflow_event import WorkflowEvent
 
 logger = structlog.get_logger(__name__)
 
@@ -28,6 +29,7 @@ EVENT_DISPLAY = {
     "runner_recovered": {"title": "Runner Recovered", "category": "runner"},
     "build_failed": {"title": "Build Failed", "category": "build"},
     "verification_failed": {"title": "Verification Failed", "category": "verification"},
+    "phase_completed": {"title": "Phase Completed", "category": "phase"},
 }
 
 # Event types that warrant high-priority notifications

@@ -2,14 +2,54 @@
 CRUD operations for runner connections.
 
 This module provides database operations for tracking runner connection history.
+It also re-exports the runner-token and runner-registry CRUD from
+:mod:`app.crud.runner_crud` so legacy call-sites that do ``from app.crud
+import runner`` continue to work.
 """
 
 from uuid import UUID
 
-from app.models.runner_connection import RunnerConnection
 from qontinui_schemas.common import utc_now
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.crud.runner_crud import (
+    create_runner_token,
+    delete_runner,
+    get_runner,
+    get_runner_token,
+    heartbeat_runner,
+    list_runner_tokens,
+    list_runners,
+    register_runner,
+    revoke_runner_token,
+    validate_runner_token,
+)
+from app.models.runner_connection import RunnerConnection
+
+__all__ = [
+    # Runner token + fleet CRUD (re-exported from runner_crud)
+    "create_runner_token",
+    "validate_runner_token",
+    "revoke_runner_token",
+    "list_runner_tokens",
+    "get_runner_token",
+    "register_runner",
+    "heartbeat_runner",
+    "list_runners",
+    "get_runner",
+    "delete_runner",
+    # Connection history CRUD (defined below)
+    "create_connection_record",
+    "update_connection_runner_name",
+    "update_connection_runner_port",
+    "close_connection_record",
+    "get_connection_history",
+    "get_active_connections",
+    "get_active_connection_for_project",
+    "close_orphaned_connections",
+    "get_connection_by_session_id",
+]
 
 
 async def create_connection_record(

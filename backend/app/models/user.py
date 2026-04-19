@@ -1,10 +1,11 @@
 from datetime import UTC, datetime
 
-from app.db.base import Base
 from fastapi_users.db import SQLAlchemyBaseUserTableUUID
 from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base
 
 
 class User(SQLAlchemyBaseUserTableUUID, Base):
@@ -117,6 +118,12 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     )
     runner_connections = relationship(
         "RunnerConnection", back_populates="user", cascade="all, delete-orphan"
+    )
+    runner_tokens = relationship(
+        "RunnerToken", back_populates="user", cascade="all, delete-orphan"
+    )
+    runners = relationship(
+        "Runner", back_populates="user", cascade="all, delete-orphan"
     )
     project_versions = relationship(
         "ProjectVersion", back_populates="created_by_user", cascade="all, delete-orphan"

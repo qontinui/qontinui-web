@@ -1,44 +1,102 @@
 """API v1 router configuration."""
 
-from app.api.v1.endpoints import admin as admin_pkg
-from app.api.v1.endpoints import (admin_ws, ai_prompts, analytics, annotations,
-                                  annotations_ws, audit_logs)
-from app.api.v1.endpoints import auth as auth_pkg
-from app.api.v1.endpoints import (automation, automation_ws,
-                                  background_removal, batch_import, billing,
-                                  capture, chat_sessions, clipboard,
-                                  code_execution, code_packages, collaboration,
-                                  collaboration_ws, conflicts, constraints,
-                                  custom_functions, dev_dashboard,
-                                  device_bridge_ws, discoveries,
-                                  element_annotations, error_monitor,
-                                  evaluation, events, execution, export,
-                                  exports, extraction, feedback,
-                                  feedback_scores, files_sharing,
-                                  finding_categories, health, historical,
-                                  images, integration_testing, issues,
-                                  known_issues, library, notifications,
-                                  organizations, project_files, project_images,
-                                  project_screenshots, project_sync, projects,
-                                  prompt_versions, public, push_devices,
-                                  rag_builder, rag_dashboard,
-                                  recording_pipeline, recordings, render_logs,
-                                  runner_chat, runner_chat_ws,
-                                  runner_command_ws, runner_devices,
-                                  runner_logs, runner_status_ws,
-                                  runner_terminal_ws, runners, screenshots,
-                                  security_endpoints, semantic_search,
-                                  settings, skills, snapshots, state_discovery,
-                                  state_discovery_results,
-                                  state_machine_configs, task_runs,
-                                  template_capture)
-from app.api.v1.endpoints import testing as testing_pkg
-from app.api.v1.endpoints import (training, training_datasets,
-                                  ui_bridge_states, unified_workflows, users,
-                                  variables, versions, videos,
-                                  visual_baselines, visual_comparison,
-                                  workflow_step_types)
 from fastapi import APIRouter
+
+from app.api.v1.endpoints import admin as admin_pkg
+from app.api.v1.endpoints import (
+    admin_ws,
+    ai_prompts,
+    analytics,
+    annotations,
+    annotations_ws,
+    audit_logs,
+    automation,
+    automation_ws,
+    background_removal,
+    batch_import,
+    billing,
+    capture,
+    chat_sessions,
+    clipboard,
+    code_execution,
+    code_packages,
+    collaboration,
+    collaboration_ws,
+    conflicts,
+    constraints,
+    custom_functions,
+    dev_dashboard,
+    device_bridge_ws,
+    discoveries,
+    element_annotations,
+    error_monitor,
+    evaluation,
+    events,
+    execution,
+    export,
+    exports,
+    extraction,
+    feedback,
+    feedback_scores,
+    files_sharing,
+    finding_categories,
+    health,
+    historical,
+    images,
+    integration_testing,
+    issues,
+    known_issues,
+    library,
+    notifications,
+    organizations,
+    phase_results,
+    project_files,
+    project_images,
+    project_screenshots,
+    project_sync,
+    projects,
+    prompt_versions,
+    public,
+    push_devices,
+    rag_builder,
+    rag_dashboard,
+    recording_pipeline,
+    recordings,
+    render_logs,
+    runner_chat,
+    runner_chat_ws,
+    runner_command_ws,
+    runner_devices,
+    runner_logs,
+    runner_status_ws,
+    runner_terminal_ws,
+    runners,
+    runners_fleet,
+    screenshots,
+    security_endpoints,
+    semantic_search,
+    settings,
+    skills,
+    snapshots,
+    state_discovery,
+    state_discovery_results,
+    state_machine_configs,
+    task_runs,
+    template_capture,
+    training,
+    training_datasets,
+    ui_bridge_states,
+    unified_workflows,
+    users,
+    variables,
+    versions,
+    videos,
+    visual_baselines,
+    visual_comparison,
+    workflow_step_types,
+)
+from app.api.v1.endpoints import auth as auth_pkg
+from app.api.v1.endpoints import testing as testing_pkg
 
 api_router = APIRouter()
 
@@ -102,6 +160,10 @@ api_router.include_router(
 )
 api_router.include_router(videos.router, prefix="/videos", tags=["videos"])
 api_router.include_router(runners.router, prefix="/runners", tags=["runners"])
+# Runner fleet — token management + server-mode runner registration/heartbeat
+api_router.include_router(
+    runners_fleet.router, prefix="/runners", tags=["runners-fleet"]
+)
 # Dev dashboard — fleet registry and aggregation (unauthenticated, dev-only)
 api_router.include_router(
     dev_dashboard.router, prefix="/dev-dashboard", tags=["dev-dashboard"]
@@ -246,6 +308,10 @@ api_router.include_router(prompt_versions.router, tags=["prompt-versions"])
 api_router.include_router(evaluation.router, prefix="/evaluation", tags=["evaluation"])
 # Workflow events (runner-to-cloud event ingestion for push notifications)
 api_router.include_router(events.router, prefix="/events", tags=["events"])
+# Phase results (server-mode runner phase-completion history)
+api_router.include_router(
+    phase_results.router, prefix="/phase-results", tags=["phase-results"]
+)
 # Push device registration (mobile push notification tokens)
 api_router.include_router(push_devices.router, prefix="/devices", tags=["push-devices"])
 # Clipboard sync relay (cross-device clipboard sharing)

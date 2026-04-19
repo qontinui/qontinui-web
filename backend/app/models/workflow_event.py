@@ -4,11 +4,11 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import uuid4
 
-from app.db.base import Base
-from sqlalchemy import (Boolean, Column, DateTime, ForeignKey, String, Text,
-                        text)
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
+
+from app.db.base import Base
 
 
 class WorkflowEventType(StrEnum):
@@ -25,6 +25,7 @@ class WorkflowEventType(StrEnum):
     RUNNER_RECOVERED = "runner_recovered"
     BUILD_FAILED = "build_failed"
     VERIFICATION_FAILED = "verification_failed"
+    PHASE_COMPLETED = "phase_completed"
 
 
 class WorkflowEvent(Base):

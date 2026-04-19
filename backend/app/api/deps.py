@@ -17,23 +17,29 @@ __all__ = [
     "get_verified_user_async",
     "get_current_user_from_ws",
     "get_runner_user_from_token",
+    "get_authenticated_runner",
 ]
 
 from typing import cast
 from uuid import UUID
 
 import structlog
-from app.core.config import settings
-from app.models.user import User
 from fastapi import HTTPException, status
 from jose import JWTError, jwt
+
+from app.core.config import settings
+from app.models.user import User
 
 logger = structlog.get_logger(__name__)
 
 # Export database dependencies
 # Export fastapi-users dependencies
-from app.auth.config import (current_active_user, current_active_user_optional,
-                             current_superuser, current_verified_user)
+from app.auth.config import (
+    current_active_user,
+    current_active_user_optional,
+    current_superuser,
+    current_verified_user,
+)
 from app.db.session import get_async_db
 
 # Export database session getter (for backward compatibility with sync-style imports)
@@ -115,8 +121,9 @@ async def get_current_user_from_ws(token: str) -> User:
     # Get user from database
     # Use the db session from the generator - do NOT call close() explicitly
     # as the async context manager in get_async_db() handles cleanup
-    from app.db.session import AsyncSessionLocal
     from sqlalchemy import select
+
+    from app.db.session import AsyncSessionLocal
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(
@@ -141,79 +148,105 @@ async def get_current_user_from_ws(token: str) -> User:
 
 async def get_runner_user_from_token(
     token: str,
-    db: "AsyncSession",
-) -> User:
+    db: "AsyncSession | None" = None,
+) -> tuple[User, "RunnerToken"]:
     """
-    Validate JWT and return associated user for runner endpoints.
+    Authenticate a runner bearer token.
 
-    This is used by the desktop runner when making API calls.
+    This is the primary authentication entrypoint for headless qontinui runner
+    processes. The raw bearer token (shape ``qontinui_runner_<64 hex>``) is
+    looked up in the ``runner_tokens`` table, verified with Argon2, and the
+    associated user is returned along with the token record.
 
     Args:
-        token: JWT access token
-        db: Database session
+        token: Plain runner bearer token.
+        db: Optional pre-existing async session. When ``None`` (the default),
+            a short-lived :class:`AsyncSessionLocal` session is opened for
+            the duration of this call. Pass an explicit session when calling
+            from tests that rely on a rollback-bounded transactional session.
 
     Returns:
-        User object if authenticated
+        Tuple ``(user, runner_token)``.
 
     Raises:
-        HTTPException if authentication fails
+        HTTPException 401: Token is missing, malformed, expired, revoked, or
+        the associated user is inactive.
     """
     from sqlalchemy import select
 
-    try:
-        # Verify it looks like a JWT (3 parts separated by dots)
-        if token.count(".") != 2:
+    from app.crud.runner_crud import validate_runner_token
+    from app.db.session import AsyncSessionLocal
+    from app.models.runner_token import RunnerToken  # noqa: F401 — runtime import
+
+    async def _authenticate(session: "AsyncSession") -> tuple[User, "RunnerToken"]:
+        runner_token = await validate_runner_token(session, token)
+        if runner_token is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token format",
+                detail="Invalid or expired token",
             )
 
-        # Decode JWT token
-        secret_key = cast(str, settings.ACCESS_SECRET_KEY)
-        payload = jwt.decode(
-            token,
-            secret_key,
-            algorithms=[settings.ALGORITHM],
-            audience="fastapi-users:auth",
+        result = await session.execute(
+            select(User).where(User.id == runner_token.user_id)  # type: ignore[arg-type]
         )
-
-        # Extract user ID
-        user_id_str: str | None = payload.get("sub")
-        if not user_id_str:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token payload",
-            )
-
-        user_id = UUID(user_id_str)
-
-        # Get user from database
-        result = await db.execute(select(User).where(User.id == user_id))  # type: ignore[arg-type]
         user = result.scalar_one_or_none()
 
-        if not user:
+        if user is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="User not found",
             )
-
         if not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User account is inactive",
+                detail="User is not active",
             )
 
-        return user
+        return user, runner_token
 
-    except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-        )
+    if db is not None:
+        return await _authenticate(db)
+
+    async with AsyncSessionLocal() as owned_session:
+        return await _authenticate(owned_session)
 
 
-# Type annotation for forward reference
-from typing import TYPE_CHECKING
+# Type annotations for forward references
+from typing import TYPE_CHECKING  # noqa: E402
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlalchemy.ext.asyncio import AsyncSession  # noqa: F401
+
+    from app.models.runner_token import RunnerToken
+
+
+# ---------------------------------------------------------------------------
+# Runner-token FastAPI dependencies
+# ---------------------------------------------------------------------------
+
+from fastapi import Depends  # noqa: E402
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer  # noqa: E402
+
+_runner_bearer_scheme = HTTPBearer(auto_error=True)
+
+
+async def get_authenticated_runner(
+    credentials: HTTPAuthorizationCredentials = Depends(_runner_bearer_scheme),
+) -> "RunnerToken":
+    """FastAPI dependency — authenticate the caller as a runner and return
+    the :class:`~app.models.runner_token.RunnerToken` row they presented.
+
+    Endpoints that only need the owning user can use the narrower
+    :func:`get_authenticated_runner_user` dependency instead.
+    """
+    _user, runner_token = await get_runner_user_from_token(credentials.credentials)
+    return runner_token
+
+
+async def get_authenticated_runner_user(
+    credentials: HTTPAuthorizationCredentials = Depends(_runner_bearer_scheme),
+) -> User:
+    """FastAPI dependency — authenticate the caller as a runner and return
+    the owning :class:`~app.models.user.User`."""
+    user, _runner_token = await get_runner_user_from_token(credentials.credentials)
+    return user

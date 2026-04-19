@@ -2,11 +2,12 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+
 import app.core.passlib_bcrypt5_compat  # noqa: F401  # bcrypt 5 compat patch
 from app.core.config import settings
 from app.services.auth.token_blacklist_service import token_blacklist_service
-from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["argon2", "bcrypt"], deprecated="auto")
 
@@ -85,6 +86,54 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_password_hash(password: str) -> str:
     return cast(str, pwd_context.hash(password))
+
+
+# ---------------------------------------------------------------------------
+# Runner tokens
+# ---------------------------------------------------------------------------
+#
+# Runner tokens are long-lived bearer tokens used by headless qontinui runner
+# processes to authenticate with the backend. Unlike short-lived access JWTs,
+# runner tokens are persisted in the database (hashed with Argon2) and can be
+# revoked by the owning user.
+#
+# Plain token shape:  "qontinui_runner_" + 64 hex chars  (80 chars total).
+# Storage:            Argon2 hash in `runner_tokens.token_hash` (VARCHAR(255)).
+
+RUNNER_TOKEN_PREFIX = "qontinui_runner_"
+
+
+def generate_runner_token() -> str:
+    """Generate a new runner bearer token.
+
+    Returns a token of the form ``qontinui_runner_<64 hex chars>``. The hex
+    suffix is 32 cryptographically random bytes rendered as 64 lowercase hex
+    characters, giving ~256 bits of entropy.
+    """
+    return RUNNER_TOKEN_PREFIX + secrets.token_hex(32)
+
+
+def hash_runner_token(token: str) -> str:
+    """Hash a runner token for storage using Argon2 (via passlib).
+
+    Each call produces a different hash because Argon2 includes a random salt.
+    The returned string is the complete passlib/modular-crypt style hash and
+    can be passed back to :func:`verify_runner_token` to check plaintext.
+    """
+    return cast(str, pwd_context.hash(token))
+
+
+def verify_runner_token(plain: str, hashed: str) -> bool:
+    """Verify a plain runner token against a stored Argon2 hash.
+
+    Uses passlib's constant-time verify under the hood. Returns ``False`` on
+    any error (including malformed hashes) to avoid leaking whether the hash
+    format was bad vs. the token value was wrong.
+    """
+    try:
+        return cast(bool, pwd_context.verify(plain, hashed))
+    except Exception:
+        return False
 
 
 def decode_token(token: str) -> dict[Any, Any]:

@@ -8,18 +8,24 @@ This module provides:
 
 from uuid import UUID
 
-from app.api.deps import get_async_db, get_runner_user_from_token
-from app.models.user import User
-from app.services.deficiency_management_service import (
-    DeficiencyManagementService, DeficiencyNotFoundError,
-    deficiency_management_service)
-from app.services.test_run_service import (ProjectAccessDeniedError,
-                                           ProjectNotFoundError,
-                                           TestRunNotFoundError,
-                                           TestRunService, test_run_service)
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_runner_user_from_token
+from app.models.user import User
+from app.services.deficiency_management_service import (
+    DeficiencyManagementService,
+    DeficiencyNotFoundError,
+    deficiency_management_service,
+)
+from app.services.test_run_service import (
+    ProjectAccessDeniedError,
+    ProjectNotFoundError,
+    TestRunNotFoundError,
+    TestRunService,
+    test_run_service,
+)
 
 # HTTP Bearer scheme for runner token authentication
 security = HTTPBearer()
@@ -42,10 +48,10 @@ def get_deficiency_service() -> DeficiencyManagementService:
 
 async def get_runner_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: AsyncSession = Depends(get_async_db),
 ) -> User:
-    """Validate JWT and return associated user for runner endpoints."""
-    return await get_runner_user_from_token(credentials.credentials, db)
+    """Validate runner bearer token and return the associated user."""
+    user, _runner_token = await get_runner_user_from_token(credentials.credentials)
+    return user
 
 
 # ============================================================================

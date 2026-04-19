@@ -1,22 +1,39 @@
 """Workflow event ingestion and retrieval endpoints."""
 
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID as PyUUID
 
 import structlog
-from app.api.deps import get_async_db, get_current_active_user_async
-from app.db.session import AsyncSessionLocal
-from app.middleware.rate_limit import user_limiter
-from app.models.runner_device import RunnerDevice
-from app.models.user import User
-from app.models.workflow_event import WorkflowEvent, WorkflowEventType
-from app.schemas.workflow_event import (WorkflowEventCreate,
-                                        WorkflowEventResponse)
-from app.services.push_notifications import dispatch_push_for_event
-from fastapi import (APIRouter, BackgroundTasks, Depends, HTTPException, Query,
-                     Request, Response, status)
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import (
+    get_async_db,
+    get_authenticated_runner,
+    get_current_active_user_async,
+)
+from app.db.session import AsyncSessionLocal
+from app.middleware.rate_limit import user_limiter
+from app.models.phase_result import PhaseResult
+from app.models.runner import Runner
+from app.models.runner_device import RunnerDevice
+from app.models.runner_token import RunnerToken
+from app.models.user import User
+from app.models.workflow_event import WorkflowEvent, WorkflowEventType
+from app.schemas.phase_result import PhaseResultIngestRequest, PhaseResultResponse
+from app.schemas.workflow_event import WorkflowEventCreate, WorkflowEventResponse
+from app.services.push_notifications import dispatch_push_for_event
 
 logger = structlog.get_logger(__name__)
 
@@ -131,6 +148,166 @@ async def ingest_workflow_event(
     background_tasks.add_task(_dispatch_push, event.id)
 
     return WorkflowEventResponse.model_validate(event)
+
+
+# Shared background dispatcher for push notifications. Defined at module scope
+# so ``/phase-completed`` can reuse the same fan-out path as ``/workflow``.
+async def _dispatch_push_for_event_id(event_id: PyUUID) -> None:
+    async with AsyncSessionLocal() as bg_db:
+        result = await bg_db.execute(
+            select(WorkflowEvent).where(WorkflowEvent.id == event_id)
+        )
+        bg_event = result.scalar_one_or_none()
+        if bg_event:
+            await dispatch_push_for_event(bg_db, bg_event)
+
+
+@router.post(
+    "/phase-completed",
+    response_model=PhaseResultResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses={
+        202: {"description": "Phase result accepted and persisted"},
+        401: {
+            "description": "Missing or invalid runner token",
+            "content": {
+                "application/json": {"example": {"detail": "Invalid or expired token"}}
+            },
+        },
+    },
+)
+async def ingest_phase_completed(
+    *,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_async_db),
+    payload: PhaseResultIngestRequest,
+    runner_token: RunnerToken = Depends(get_authenticated_runner),
+) -> Any:
+    """
+    Ingest a phase-completion result from a server-mode runner.
+
+    Authenticated with a runner bearer token (phase 3A auth). The handler:
+
+    1. Resolves a ``runner_id`` for the row:
+       * If ``payload.runner_id`` is set, the handler looks up that runner and
+         verifies it is owned by the authenticated token's user (else 403).
+         This is the Phase 3B path — the runner passes its own id after
+         registration, avoiding cross-runner misattribution for users with
+         multiple runners.
+       * Otherwise, the handler falls back to the legacy "most-recently
+         heartbeated runner owned by this user" heuristic so older runners
+         still attribute correctly until they upgrade.
+    2. Persists a ``PhaseResult`` row (runner_id may be NULL if the user has
+       no registered runner yet).
+    3. Also writes a companion ``WorkflowEvent`` row with
+       ``event_type="phase_completed"``, keeping the existing SSE / push
+       notification pipeline simple — each subscriber receives a slim event
+       payload with the phase_result id and can fetch the full record via the
+       read endpoints if needed.
+    4. Fan-outs a push notification in the background.
+
+    Returns ``202 Accepted`` with the created phase-result record. Duplicates
+    are not deduplicated; repeated deliveries create additional rows.
+    """
+    # Resolve a runner_id for this user.
+    matched_runner: Runner | None = None
+    if payload.runner_id is not None:
+        # Explicit runner_id path (Phase 3B): verify the authenticated token's
+        # user owns the referenced runner; else 403.
+        explicit_result = await db.execute(
+            select(Runner).where(Runner.id == payload.runner_id)
+        )
+        matched_runner = explicit_result.scalar_one_or_none()
+        if matched_runner is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Runner not found",
+            )
+        if matched_runner.user_id != runner_token.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Runner belongs to a different user",
+            )
+    else:
+        # Fallback (legacy): most-recently-heartbeated runner owned by this
+        # user. Still nullable: if no runner has registered yet, the row is
+        # written with NULL runner_id.
+        runner_result = await db.execute(
+            select(Runner)
+            .where(Runner.user_id == runner_token.user_id)
+            .order_by(
+                Runner.last_heartbeat.desc().nullslast(),
+                Runner.created_at.desc(),
+            )
+            .limit(1)
+        )
+        matched_runner = runner_result.scalar_one_or_none()
+    runner_id = matched_runner.id if matched_runner is not None else None
+
+    phase_result = PhaseResult(
+        runner_id=runner_id,
+        execution_id=payload.execution_id,
+        phase=payload.phase,
+        iteration=payload.iteration,
+        stage_index=payload.stage_index,
+        success=payload.success,
+        all_passed=payload.all_passed,
+        duration_ms=payload.duration_ms,
+        failure_context=payload.failure_context,
+        commit_hash=payload.commit_hash,
+        step_results=[sr.model_dump(mode="json") for sr in payload.step_results],
+        variables_set=payload.variables_set,
+    )
+    db.add(phase_result)
+    await db.flush()  # materialize id before wrapping in WorkflowEvent
+
+    runner_name = matched_runner.name if matched_runner is not None else "unknown"
+    device_id = (
+        str(matched_runner.id) if matched_runner is not None else "server-runner"
+    )
+    summary = (
+        f"Phase '{payload.phase}' "
+        f"{'succeeded' if payload.success else 'failed'}"
+        f" in {payload.duration_ms}ms"
+    )
+
+    event = WorkflowEvent(
+        user_id=runner_token.user_id,
+        event_type=WorkflowEventType.PHASE_COMPLETED.value,
+        device_id=device_id,
+        runner_name=runner_name,
+        run_id=payload.execution_id,
+        summary=summary,
+        payload={
+            "phase_result_id": str(phase_result.id),
+            "phase": payload.phase,
+            "success": payload.success,
+            "all_passed": payload.all_passed,
+            "iteration": payload.iteration,
+            "stage_index": payload.stage_index,
+            "duration_ms": payload.duration_ms,
+        },
+        timestamp=datetime.now(UTC),
+    )
+    db.add(event)
+    await db.commit()
+    await db.refresh(phase_result)
+    await db.refresh(event)
+
+    logger.info(
+        "phase_result_ingested",
+        user_id=str(runner_token.user_id),
+        runner_id=str(runner_id) if runner_id is not None else None,
+        phase_result_id=str(phase_result.id),
+        execution_id=payload.execution_id,
+        phase=payload.phase,
+        success=payload.success,
+    )
+
+    # Fan out the event in the background.
+    background_tasks.add_task(_dispatch_push_for_event_id, PyUUID(str(event.id)))
+
+    return PhaseResultResponse.model_validate(phase_result)
 
 
 @router.get(
