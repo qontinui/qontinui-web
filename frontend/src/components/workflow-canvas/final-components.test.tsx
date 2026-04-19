@@ -106,7 +106,10 @@ vi.mock("@/services/layout-statistics", () => ({
   }),
 }));
 
-// Mock the format-converter module for ConversionWizard tests
+// Mock the format-converter module for ConversionWizard tests. The
+// FormatSwitcherDialog path also calls convertToSequential / convertToGraph
+// on the returned converter, so stub those as well to avoid log-noise and
+// potential state updates during the preview effect.
 vi.mock("@/services/format-converter", () => ({
   getFormatConverter: () => ({
     previewConversion: () => ({
@@ -124,6 +127,16 @@ vi.mock("@/services/format-converter", () => ({
       recommendation: "safe",
     }),
     convert: (workflow: Workflow) => ({
+      success: true,
+      workflow,
+      warnings: [],
+    }),
+    convertToSequential: async (workflow: Workflow) => ({
+      success: true,
+      workflow,
+      warnings: [],
+    }),
+    convertToGraph: async (workflow: Workflow) => ({
       success: true,
       workflow,
       warnings: [],

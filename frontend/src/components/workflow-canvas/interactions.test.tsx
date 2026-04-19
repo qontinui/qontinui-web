@@ -69,7 +69,7 @@ describe("ContextMenu", () => {
     expect(onClickMock).toHaveBeenCalledTimes(1);
   });
 
-  it("shows submenu on hover", async () => {
+  it("shows submenu when parent is activated", async () => {
     const items = [
       {
         label: "Parent",
@@ -85,8 +85,10 @@ describe("ContextMenu", () => {
       />
     );
 
+    // The current ContextMenu opens submenus on click (handleItemClick
+    // toggles activeSubmenu), not on hover. Mirror that behavior.
     const parent = screen.getByText("Parent");
-    await userEvent.hover(parent);
+    await userEvent.click(parent);
 
     await waitFor(() => {
       expect(screen.getByText("Child")).toBeInTheDocument();

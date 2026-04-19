@@ -230,14 +230,18 @@ describe("validateConnection", () => {
   const { nodes, edges } = workflowToReactFlow(simpleWorkflow);
 
   it("should allow valid connections", () => {
-    const attempt: ConnectionAttempt = {
-      source: "action-2",
+    // action-1 -> action-2 already exists in simpleWorkflow; reversing
+    // (action-2 -> action-1) would create a cycle, which validateConnection
+    // correctly rejects. Use fresh nodes with no existing edges to exercise
+    // the "valid" branch of the validator.
+    const freshAttempt: ConnectionAttempt = {
+      source: "action-1",
       sourceHandle: "main-0",
-      target: "action-1",
+      target: "action-2",
       targetHandle: "input-0",
     };
 
-    const result = validateConnection(attempt, nodes, edges);
+    const result = validateConnection(freshAttempt, nodes, []);
     expect(result.valid).toBe(true);
   });
 
