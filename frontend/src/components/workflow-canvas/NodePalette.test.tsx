@@ -11,6 +11,7 @@
  */
 
 import React from "react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   render,
   screen,
@@ -24,18 +25,88 @@ import { NodeSearch } from "./NodeSearch";
 import { PaletteItem } from "./PaletteItem";
 import { QuickAddMenu } from "./QuickAddMenu";
 import { NODE_METADATA } from "./palette-config";
-import { useFavoriteNodes } from "@/stores/favorite-nodes";
-import { useRecentNodes } from "@/stores/recent-nodes";
+import {
+  useFavoriteNodes,
+  useFavoriteNodeTypes,
+  useIsFavoriteNode,
+  useToggleFavorite,
+} from "@/stores/favorite-nodes";
+import {
+  useRecentNodes,
+  useRecentNodeTypes,
+  useIsRecentNode,
+} from "@/stores/recent-nodes";
 
-// Mock stores
-vi.mock("@/stores/favorite-nodes");
-vi.mock("@/stores/recent-nodes");
+// Mock stores. The components under test import the derived hooks
+// (useFavoriteNodeTypes, useIsFavoriteNode, useToggleFavorite,
+// useRecentNodeTypes, useIsRecentNode) in addition to the main store hook,
+// so we mock the whole module and provide each export.
+vi.mock("@/stores/favorite-nodes", () => ({
+  useFavoriteNodes: vi.fn(),
+  useFavoriteNodeTypes: vi.fn(),
+  useIsFavoriteNode: vi.fn(),
+  useToggleFavorite: vi.fn(),
+}));
+vi.mock("@/stores/recent-nodes", () => ({
+  useRecentNodes: vi.fn(),
+  useRecentNodeTypes: vi.fn(),
+  useIsRecentNode: vi.fn(),
+  useFrequentNodeTypes: vi.fn(() => []),
+}));
 vi.mock("@xyflow/react", () => ({
   useReactFlow: () => ({
-    screenToFlowPosition: ({ x, y }: unknown) => ({ x, y }),
+    screenToFlowPosition: ({ x, y }: { x: number; y: number }) => ({ x, y }),
     getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
   }),
 }));
+
+// Shared test helpers: installs defaults on the derived hooks so
+// individual tests only need to override what they specifically care about.
+function installDefaultFavoriteMocks(overrides?: {
+  favoriteTypes?: string[];
+  isFavorite?: (type: string) => boolean;
+  toggleFavorite?: (type: string) => void;
+}) {
+  (useFavoriteNodes as ReturnType<typeof vi.fn>).mockReturnValue({
+    favorites: [],
+    isFavorite: overrides?.isFavorite ?? (() => false),
+    toggleFavorite: overrides?.toggleFavorite ?? vi.fn(),
+    getFavorites: () => [],
+  });
+  (useFavoriteNodeTypes as ReturnType<typeof vi.fn>).mockReturnValue(
+    overrides?.favoriteTypes ?? []
+  );
+  (useIsFavoriteNode as ReturnType<typeof vi.fn>).mockImplementation(
+    (type: string) =>
+      overrides?.isFavorite
+        ? overrides.isFavorite(type)
+        : (overrides?.favoriteTypes ?? []).includes(type)
+  );
+  (useToggleFavorite as ReturnType<typeof vi.fn>).mockReturnValue(
+    overrides?.toggleFavorite ?? vi.fn()
+  );
+}
+
+function installDefaultRecentMocks(overrides?: {
+  recentTypes?: string[];
+  isRecent?: (type: string) => boolean;
+}) {
+  (useRecentNodes as ReturnType<typeof vi.fn>).mockReturnValue({
+    recentNodes: [],
+    addRecentNode: vi.fn(),
+    getRecentNodes: () => [],
+    isRecent: overrides?.isRecent ?? (() => false),
+  });
+  (useRecentNodeTypes as ReturnType<typeof vi.fn>).mockReturnValue(
+    overrides?.recentTypes ?? []
+  );
+  (useIsRecentNode as ReturnType<typeof vi.fn>).mockImplementation(
+    (type: string) =>
+      overrides?.isRecent
+        ? overrides.isRecent(type)
+        : (overrides?.recentTypes ?? []).includes(type)
+  );
+}
 
 describe("NodePalette", () => {
   const mockOnNodeAdd = vi.fn();
@@ -43,18 +114,8 @@ describe("NodePalette", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    (useFavoriteNodes as ReturnType<typeof vi.fn>).mockReturnValue({
-      favorites: [],
-      isFavorite: () => false,
-      toggleFavorite: vi.fn(),
-      getFavorites: () => [],
-    });
-    (useRecentNodes as ReturnType<typeof vi.fn>).mockReturnValue({
-      recentNodes: [],
-      addRecentNode: vi.fn(),
-      getRecentNodes: () => [],
-      isRecent: () => false,
-    });
+    installDefaultFavoriteMocks();
+    installDefaultRecentMocks();
   });
 
   describe("Rendering", () => {
@@ -64,12 +125,20 @@ describe("NodePalette", () => {
       );
 
       expect(screen.getByText("Nodes")).toBeInTheDocument();
-      expect(screen.getByText("Find")).toBeInTheDocument();
-      expect(screen.getByText("Mouse")).toBeInTheDocument();
-      expect(screen.getByText("Keyboard")).toBeInTheDocument();
-      expect(screen.getByText("Control Flow")).toBeInTheDocument();
-      expect(screen.getByText("Data")).toBeInTheDocument();
-      expect(screen.getByText("State")).toBeInTheDocument();
+      // Category titles appear alongside palette items of the same name, so
+      // assert against the category title class rather than the bare label.
+      const categoryTitles = document.querySelectorAll(
+        ".node-palette__category-title"
+      );
+      const categoryLabels = Array.from(categoryTitles).map(
+        (n) => n.textContent
+      );
+      expect(categoryLabels).toContain("Find");
+      expect(categoryLabels).toContain("Mouse");
+      expect(categoryLabels).toContain("Keyboard");
+      expect(categoryLabels).toContain("Control Flow");
+      expect(categoryLabels).toContain("Data");
+      expect(categoryLabels).toContain("State");
     });
 
     it("renders in collapsed state when defaultCollapsed is true", () => {
@@ -105,24 +174,34 @@ describe("NodePalette", () => {
         <NodePalette onNodeAdd={mockOnNodeAdd} canvasRef={mockCanvasRef} />
       );
 
-      const findCategory = screen.getByText("Find").closest("button");
+      // "Find" text appears both as a category title and as the FIND palette
+      // item label; target the category header by its title-class descendant.
+      const findTitle = Array.from(
+        document.querySelectorAll(".node-palette__category-title")
+      ).find((n) => n.textContent === "Find") as HTMLElement;
+      const findCategory = findTitle.closest("button");
       expect(findCategory).toBeInTheDocument();
 
-      // Should be expanded by default
-      expect(screen.getByText(/Find element on screen/i)).toBeInTheDocument();
+      // Should be expanded by default — the FIND node's description is
+      // visible only when its category is expanded.
+      expect(
+        screen.getByText(/Find element on screen using image matching/i)
+      ).toBeInTheDocument();
 
       // Collapse
       fireEvent.click(findCategory!);
       await waitFor(() => {
         expect(
-          screen.queryByText(/Find element on screen/i)
+          screen.queryByText(/Find element on screen using image matching/i)
         ).not.toBeInTheDocument();
       });
 
       // Expand again
       fireEvent.click(findCategory!);
       await waitFor(() => {
-        expect(screen.getByText(/Find element on screen/i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/Find element on screen using image matching/i)
+        ).toBeInTheDocument();
       });
     });
 
@@ -135,7 +214,8 @@ describe("NodePalette", () => {
       fireEvent.click(expandAllButton);
 
       await waitFor(() => {
-        expect(screen.getByText(/Click on an element/i)).toBeInTheDocument();
+        // Match current palette-config descriptions for CLICK and TYPE.
+        expect(screen.getByText(/Click on element/i)).toBeInTheDocument();
         expect(screen.getByText(/Type text into/i)).toBeInTheDocument();
       });
     });
@@ -149,9 +229,7 @@ describe("NodePalette", () => {
       fireEvent.click(collapseAllButton);
 
       await waitFor(() => {
-        expect(
-          screen.queryByText(/Click on an element/i)
-        ).not.toBeInTheDocument();
+        expect(screen.queryByText(/Click on element/i)).not.toBeInTheDocument();
       });
     });
   });
@@ -162,7 +240,11 @@ describe("NodePalette", () => {
         <NodePalette onNodeAdd={mockOnNodeAdd} canvasRef={mockCanvasRef} />
       );
 
-      const findNode = screen.getByText("Find").closest(".palette-item");
+      // Target the FIND palette item by its data-node-type attribute so we
+      // don't collide with the "Find" category-title button.
+      const findNode = document.querySelector(
+        '.palette-item[data-node-type="FIND"]'
+      );
       expect(findNode).toBeInTheDocument();
 
       fireEvent.click(findNode!);
@@ -173,12 +255,7 @@ describe("NodePalette", () => {
 
   describe("Favorites", () => {
     it("shows favorites section when favorites exist", () => {
-      (useFavoriteNodes as ReturnType<typeof vi.fn>).mockReturnValue({
-        favorites: [{ type: "CLICK", order: 0, addedAt: Date.now() }],
-        isFavorite: (type: string) => type === "CLICK",
-        toggleFavorite: vi.fn(),
-        getFavorites: () => [{ type: "CLICK", order: 0, addedAt: Date.now() }],
-      });
+      installDefaultFavoriteMocks({ favoriteTypes: ["CLICK"] });
 
       render(
         <NodePalette onNodeAdd={mockOnNodeAdd} canvasRef={mockCanvasRef} />
@@ -198,12 +275,8 @@ describe("NodePalette", () => {
 
   describe("Recent Nodes", () => {
     it("shows recent section when recent nodes exist", () => {
-      (useRecentNodes as ReturnType<typeof vi.fn>).mockReturnValue({
-        recentNodes: [{ type: "FIND", lastUsed: Date.now(), useCount: 1 }],
-        addRecentNode: vi.fn(),
-        getRecentNodes: () => [
-          { type: "FIND", lastUsed: Date.now(), useCount: 1 },
-        ],
+      installDefaultRecentMocks({
+        recentTypes: ["FIND"],
         isRecent: (type: string) => type === "FIND",
       });
 
@@ -211,7 +284,12 @@ describe("NodePalette", () => {
         <NodePalette onNodeAdd={mockOnNodeAdd} canvasRef={mockCanvasRef} />
       );
 
-      expect(screen.getByText("Recent")).toBeInTheDocument();
+      // Both the section title and the per-item "Recent" badge share the
+      // "Recent" label; target the section title specifically by its class.
+      const sectionTitles = Array.from(
+        document.querySelectorAll(".node-palette__section-title")
+      ).map((n) => n.textContent);
+      expect(sectionTitles).toContain("Recent");
     });
   });
 });
@@ -367,20 +445,16 @@ describe("PaletteItem", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    (useFavoriteNodes as ReturnType<typeof vi.fn>).mockReturnValue({
-      isFavorite: () => false,
-      toggleFavorite: vi.fn(),
-    });
-    (useRecentNodes as ReturnType<typeof vi.fn>).mockReturnValue({
-      isRecent: () => false,
-    });
+    installDefaultFavoriteMocks();
+    installDefaultRecentMocks();
   });
 
   it("renders node metadata correctly", () => {
     render(<PaletteItem metadata={mockMetadata} />);
 
     expect(screen.getByText("Click")).toBeInTheDocument();
-    expect(screen.getByText(/Click on an element/i)).toBeInTheDocument();
+    // Matches NODE_METADATA.CLICK.description in palette-config.ts.
+    expect(screen.getByText(/Click on element/i)).toBeInTheDocument();
   });
 
   it("calls onAdd when clicked", () => {
@@ -412,7 +486,7 @@ describe("PaletteItem", () => {
   });
 
   it("shows recent badge for recent nodes", () => {
-    (useRecentNodes as ReturnType<typeof vi.fn>).mockReturnValue({
+    installDefaultRecentMocks({
       isRecent: (type: string) => type === "CLICK",
     });
 
@@ -423,10 +497,7 @@ describe("PaletteItem", () => {
 
   it("toggles favorite when star button is clicked", () => {
     const mockToggleFavorite = vi.fn();
-    (useFavoriteNodes as ReturnType<typeof vi.fn>).mockReturnValue({
-      isFavorite: () => false,
-      toggleFavorite: mockToggleFavorite,
-    });
+    installDefaultFavoriteMocks({ toggleFavorite: mockToggleFavorite });
 
     render(<PaletteItem metadata={mockMetadata} />);
 
@@ -444,10 +515,8 @@ describe("QuickAddMenu", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    (useRecentNodes as ReturnType<typeof vi.fn>).mockReturnValue({
-      recentNodes: [],
-      getRecentNodes: () => [],
-    });
+    installDefaultRecentMocks();
+    installDefaultFavoriteMocks();
   });
 
   it("renders when open", () => {
@@ -550,12 +619,7 @@ describe("QuickAddMenu", () => {
   });
 
   it("shows recent nodes section when recent nodes exist", () => {
-    (useRecentNodes as ReturnType<typeof vi.fn>).mockReturnValue({
-      recentNodes: [{ type: "CLICK", lastUsed: Date.now(), useCount: 1 }],
-      getRecentNodes: () => [
-        { type: "CLICK", lastUsed: Date.now(), useCount: 1 },
-      ],
-    });
+    installDefaultRecentMocks({ recentTypes: ["CLICK"] });
 
     render(
       <QuickAddMenu
@@ -586,9 +650,10 @@ describe("Integration Tests", () => {
     const input = screen.getByPlaceholderText(/search/i);
     await user.type(input, "click");
 
-    // Select first result
+    // Select first result — "Click" appears on both the search result item
+    // and the palette item in the Mouse category, so use getAllByText.
     await waitFor(() => {
-      expect(screen.getByText("Click")).toBeInTheDocument();
+      expect(screen.getAllByText("Click").length).toBeGreaterThan(0);
     });
 
     fireEvent.keyDown(input, { key: "Enter" });
@@ -600,17 +665,9 @@ describe("Integration Tests", () => {
   });
 
   it("favorites workflow: add to favorites and access from favorites section", async () => {
-    const favorites: unknown[] = [];
-    const mockToggleFavorite = vi.fn((type) => {
-      favorites.push({ type, order: 0, addedAt: Date.now() });
-    });
-
-    (useFavoriteNodes as ReturnType<typeof vi.fn>).mockImplementation(() => ({
-      favorites,
-      isFavorite: (type: string) => favorites.some((f) => f.type === type),
-      toggleFavorite: mockToggleFavorite,
-      getFavorites: () => favorites,
-    }));
+    const mockToggleFavorite = vi.fn();
+    installDefaultFavoriteMocks({ toggleFavorite: mockToggleFavorite });
+    installDefaultRecentMocks();
 
     const { rerender } = render(
       <NodePalette
@@ -619,19 +676,21 @@ describe("Integration Tests", () => {
       />
     );
 
-    // Find and favorite a node
-    const findNode = screen.getByText("Find").closest(".palette-item");
+    // Find and favorite the FIND palette item. Target it by data attribute
+    // since "Find" appears both as a category title and as an item label.
+    const findNode = document.querySelector(
+      '.palette-item[data-node-type="FIND"]'
+    ) as HTMLElement | null;
+    expect(findNode).not.toBeNull();
     const favoriteButton = within(findNode!).getByTitle("Add to favorites");
     fireEvent.click(favoriteButton);
 
     expect(mockToggleFavorite).toHaveBeenCalledWith("FIND");
 
     // Update mock to include favorited item
-    (useFavoriteNodes as ReturnType<typeof vi.fn>).mockReturnValue({
-      favorites: [{ type: "FIND", order: 0, addedAt: Date.now() }],
-      isFavorite: (type: string) => type === "FIND",
+    installDefaultFavoriteMocks({
+      favoriteTypes: ["FIND"],
       toggleFavorite: mockToggleFavorite,
-      getFavorites: () => [{ type: "FIND", order: 0, addedAt: Date.now() }],
     });
 
     // Rerender to show favorites section
