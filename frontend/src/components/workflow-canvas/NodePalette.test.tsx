@@ -19,7 +19,6 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import "@testing-library/jest-dom";
 import { NodePalette } from "./NodePalette";
 import { NodeSearch } from "./NodeSearch";
 import { PaletteItem } from "./PaletteItem";

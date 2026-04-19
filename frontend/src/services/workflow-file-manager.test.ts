@@ -10,7 +10,7 @@
  * - Error handling
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "vitest";
+import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
 import { WorkflowFileManager } from "./workflow-file-manager";
 import { Workflow } from "../lib/action-schema/action-types";
 
@@ -400,7 +400,7 @@ describe("WorkflowFileManager", () => {
       // Mock clipboard API
       Object.assign(navigator, {
         clipboard: {
-          writeText: jest.fn().mockResolvedValue(undefined),
+          writeText: vi.fn().mockResolvedValue(undefined),
         },
       });
 
