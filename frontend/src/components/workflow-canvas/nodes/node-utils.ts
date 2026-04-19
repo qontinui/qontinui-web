@@ -156,7 +156,7 @@ export function getNodeSummary(action: Action): string {
       return "Find element on screen";
 
     case "VANISH":
-      return "Wait for element to vanish";
+      return "Vanish: wait for element to disappear";
 
     // Mouse Actions
     case "CLICK":
@@ -164,7 +164,25 @@ export function getNodeSummary(action: Action): string {
       if (!clickConfig.target || clickConfig.target === "Current Position") {
         return "Click at current position";
       }
-      return `Click ${clickConfig.target}`;
+      // Extract a human-readable label from target, which may be either
+      // a string or a structured { text?, image? } target object.
+      const clickTarget = clickConfig.target as
+        | string
+        | { text?: string; image?: string; name?: string }
+        | undefined;
+      let clickLabel: string;
+      if (typeof clickTarget === "string") {
+        clickLabel = clickTarget;
+      } else if (clickTarget && typeof clickTarget === "object") {
+        clickLabel =
+          clickTarget.text ??
+          clickTarget.name ??
+          clickTarget.image ??
+          "element";
+      } else {
+        clickLabel = "element";
+      }
+      return `Click "${clickLabel}"`;
 
     case "MOUSE_MOVE":
       return "Move mouse";
@@ -310,6 +328,12 @@ export function getNodeSummary(action: Action): string {
  * Get number of outputs for an action
  */
 export function getOutputCount(action: Action): number {
+  // LOOP has 2 outputs (loop body + main continuation)
+  // getActionOutputCount doesn't know about LOOP, so handle it here to stay
+  // consistent with getOutputHandleIds (which returns ["loop", "main"]).
+  if (action.type === "LOOP") {
+    return 2;
+  }
   return getActionOutputCount(action.type, action.config);
 }
 
