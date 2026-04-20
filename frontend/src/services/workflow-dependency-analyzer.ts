@@ -486,10 +486,12 @@ export class WorkflowDependencyAnalyzer {
     const leaves: string[] = [];
 
     for (const [id, node] of nodes) {
-      if (node.outDegree === 0) {
+      // Root = top-level entry point (no workflows depend on it)
+      if (node.inDegree === 0) {
         roots.push(id);
       }
-      if (node.inDegree === 0) {
+      // Leaf = bottom of dependency chain (doesn't depend on anything)
+      if (node.outDegree === 0) {
         leaves.push(id);
       }
     }

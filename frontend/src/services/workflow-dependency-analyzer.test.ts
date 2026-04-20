@@ -2,7 +2,7 @@
  * Tests for Workflow Dependency Analyzer
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { Workflow, createAction } from "../lib/action-schema/action-types";
 import { WorkflowDependencyAnalyzer } from "./workflow-dependency-analyzer";
 
@@ -512,10 +512,16 @@ describe("WorkflowDependencyAnalyzer", () => {
     });
 
     it("should rebuild graph when cache disabled", () => {
-      const graph1 = analyzer.buildDependencyGraph(testWorkflows, false);
-      const graph2 = analyzer.buildDependencyGraph(testWorkflows, false);
+      vi.useFakeTimers({ now: 0 });
+      try {
+        const graph1 = analyzer.buildDependencyGraph(testWorkflows, false);
+        vi.advanceTimersByTime(1);
+        const graph2 = analyzer.buildDependencyGraph(testWorkflows, false);
 
-      expect(graph1.timestamp).not.toBe(graph2.timestamp);
+        expect(graph1.timestamp).not.toBe(graph2.timestamp);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
