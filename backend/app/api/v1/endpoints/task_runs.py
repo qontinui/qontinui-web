@@ -30,8 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_active_user, get_async_db
 from app.models.user import User
-from app.services.task_run import TaskRunVerificationService
-from app.services.task_run_service import (
+from app.services.task_run import (
     DeferredQuestionBatch,
     DeferredQuestionResponse,
     DeferredQuestionUpdate,
@@ -52,6 +51,7 @@ from app.services.task_run_service import (
     TaskRunSessionResponse,
     TaskRunSessionUpdate,
     TaskRunUpdate,
+    TaskRunVerificationService,
 )
 
 logger = structlog.get_logger(__name__)
