@@ -16,8 +16,8 @@ import shutil
 import sys
 
 import structlog
-from app.models.code_package import (CodePackage, PackageVersion,
-                                     SecurityScanStatus)
+
+from app.models.code_package import CodePackage, PackageVersion, SecurityScanStatus
 from app.schemas.package import SafetyCheckResult
 from app.services.project_directory import ProjectDirectoryManager
 

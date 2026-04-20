@@ -7,10 +7,11 @@ Extracted from crud/code_package.py for SRP compliance.
 
 from datetime import UTC, datetime, timedelta
 
-from app.models.code_package import CodePackage
 from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+from app.models.code_package import CodePackage
 
 
 class PackageSearchService:

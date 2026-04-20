@@ -9,6 +9,7 @@ Create Date: 2025-11-10 23:15:00
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -22,22 +23,19 @@ def upgrade() -> None:
     # Check if subscriptions table exists and if user_id is INTEGER
     conn = op.get_bind()
     result = conn.execute(
-        sa.text(
-            """
+        sa.text("""
         SELECT data_type
         FROM information_schema.columns
         WHERE table_name = 'subscriptions'
         AND column_name = 'user_id'
-    """
-        )
+    """)
     )
     row = result.fetchone()
 
     if row and row[0] == "integer":
         # If there's data, we need to be careful
         # For pre-launch, safest to just drop and recreate
-        op.execute(
-            """
+        op.execute("""
             -- Drop the subscriptions table if it exists with wrong schema
             DROP TABLE IF EXISTS subscriptions CASCADE;
 
@@ -62,8 +60,7 @@ def upgrade() -> None:
             CREATE INDEX ix_subscriptions_id ON subscriptions(id);
             CREATE INDEX ix_subscriptions_stripe_customer_id ON subscriptions(stripe_customer_id);
             CREATE INDEX ix_subscriptions_stripe_subscription_id ON subscriptions(stripe_subscription_id);
-        """
-        )
+        """)
 
 
 def downgrade() -> None:

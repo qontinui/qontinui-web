@@ -8,20 +8,21 @@ from datetime import UTC, datetime
 from typing import Any
 
 import structlog
-from app.api.deps import (current_superuser, get_async_db,
-                          get_current_active_user_async)
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import current_superuser, get_async_db, get_current_active_user_async
 from app.config.redis_config import get_redis
 from app.crud import runner as runner_crud
 from app.models.user import User as UserModel
-from app.schemas.runner import (ConnectionCleanupResponse,
-                                ExecuteWorkflowRequest,
-                                ExecuteWorkflowResponse,
-                                RunnerConnectionHistory,
-                                RunnerConnectionResponse)
-from app.services.runner_connection_manager import \
-    get_runner_connection_manager
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from app.schemas.runner import (
+    ConnectionCleanupResponse,
+    ExecuteWorkflowRequest,
+    ExecuteWorkflowResponse,
+    RunnerConnectionHistory,
+    RunnerConnectionResponse,
+)
+from app.services.runner_connection_manager import get_runner_connection_manager
 
 logger = structlog.get_logger(__name__)
 
@@ -137,8 +138,9 @@ async def disconnect_runner(
     Raises:
         404: If connection not found or not owned by user
     """
-    from app.models.runner_connection import RunnerConnection
     from sqlalchemy import select
+
+    from app.models.runner_connection import RunnerConnection
 
     # Verify connection exists and belongs to user
     query = select(RunnerConnection).where(
@@ -270,8 +272,9 @@ async def execute_workflow_on_runner(
     """
     import uuid
 
-    from app.models.runner_connection import RunnerConnection
     from sqlalchemy import select
+
+    from app.models.runner_connection import RunnerConnection
 
     # Verify connection exists and belongs to user
     query = select(RunnerConnection).where(

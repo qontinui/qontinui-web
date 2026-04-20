@@ -12,9 +12,14 @@ from typing import Any
 
 import httpx
 import structlog
-from app.schemas.dev_dashboard import (ClaudeSessionInfo, ClaudeSessionReport,
-                                       FleetStatus, RegisteredRunner,
-                                       RunnerHeartbeat)
+
+from app.schemas.dev_dashboard import (
+    ClaudeSessionInfo,
+    ClaudeSessionReport,
+    FleetStatus,
+    RegisteredRunner,
+    RunnerHeartbeat,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -24,9 +29,9 @@ class FleetRegistry:
 
     def __init__(self) -> None:
         self._runners: dict[str, RegisteredRunner] = {}  # id -> runner
-        self._claude_sessions: dict[str, list[ClaudeSessionInfo]] = (
-            {}
-        )  # hostname -> sessions
+        self._claude_sessions: dict[
+            str, list[ClaudeSessionInfo]
+        ] = {}  # hostname -> sessions
         self._lock = asyncio.Lock()
 
     async def register_heartbeat(self, heartbeat: RunnerHeartbeat) -> RegisteredRunner:

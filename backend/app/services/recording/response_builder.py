@@ -8,10 +8,14 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.models.recording import Recording, RecordingFrame
-from app.schemas.recording import (DiscoveredStateResponse,
-                                   DiscoveredTransitionResponse, FrameResponse,
-                                   ProcessingJobStatus, RecordingResponse,
-                                   RecordingStats)
+from app.schemas.recording import (
+    DiscoveredStateResponse,
+    DiscoveredTransitionResponse,
+    FrameResponse,
+    ProcessingJobStatus,
+    RecordingResponse,
+    RecordingStats,
+)
 
 
 class RecordingResponseBuilder:

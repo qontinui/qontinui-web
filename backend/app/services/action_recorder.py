@@ -9,11 +9,12 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
-from app.models.capture import CaptureAction, CaptureScreenshot, CaptureSession
-from app.schemas.capture import CaptureActionCreate
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.capture import CaptureAction, CaptureScreenshot, CaptureSession
+from app.schemas.capture import CaptureActionCreate
 
 logger = structlog.get_logger(__name__)
 

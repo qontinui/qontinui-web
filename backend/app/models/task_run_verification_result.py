@@ -9,12 +9,20 @@ in a single iteration, including summary stats and the full result JSON.
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from app.db.base import Base
-from sqlalchemy import (BigInteger, Boolean, DateTime, ForeignKey, Integer,
-                        UniqueConstraint, text)
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base
 
 
 class TaskRunVerificationResult(Base):

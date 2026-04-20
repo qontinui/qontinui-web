@@ -5,8 +5,9 @@ Pydantic schemas for annotation API
 from typing import Any
 from uuid import UUID
 
-from app.schemas.base import IsoDatetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.schemas.base import IsoDatetime
 
 # Screenshot schema for multi-screenshot support
 

@@ -16,13 +16,14 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from app.api.deps import get_async_db
-from app.models.snapshot import SnapshotAction, SnapshotRun
-from app.models.video_capture import HistoricalResult
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_async_db
+from app.models.snapshot import SnapshotAction, SnapshotRun
+from app.models.video_capture import HistoricalResult
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

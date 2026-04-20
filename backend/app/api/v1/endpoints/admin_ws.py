@@ -4,12 +4,13 @@ import asyncio
 from datetime import UTC, datetime
 
 import structlog
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
+from fastapi.exceptions import HTTPException
+
 from app.api.deps import get_current_user_from_ws
 from app.db.session import AsyncSessionLocal
 from app.models.user import User
 from app.services.health_service import health_service
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
-from fastapi.exceptions import HTTPException
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -274,29 +275,29 @@ async def websocket_specific_metrics(
                         metrics_data["redis"] = await health_service.get_redis_status()
 
                     if "database" in requested_metrics:
-                        metrics_data["database"] = (
-                            await health_service.get_database_health(db)
-                        )
+                        metrics_data[
+                            "database"
+                        ] = await health_service.get_database_health(db)
 
                     if "security" in requested_metrics:
-                        metrics_data["security"] = (
-                            await health_service.get_security_warnings(db)
-                        )
+                        metrics_data[
+                            "security"
+                        ] = await health_service.get_security_warnings(db)
 
                     if "sessions" in requested_metrics:
-                        metrics_data["sessions"] = (
-                            await health_service.get_session_stats(db)
-                        )
+                        metrics_data[
+                            "sessions"
+                        ] = await health_service.get_session_stats(db)
 
                     if "blacklist" in requested_metrics:
-                        metrics_data["blacklist"] = (
-                            await health_service.get_token_blacklist_stats(db)
-                        )
+                        metrics_data[
+                            "blacklist"
+                        ] = await health_service.get_token_blacklist_stats(db)
 
                     if "system" in requested_metrics:
-                        metrics_data["system"] = (
-                            await health_service.get_system_metrics()
-                        )
+                        metrics_data[
+                            "system"
+                        ] = await health_service.get_system_metrics()
 
                     # Send update
                     await websocket.send_json(

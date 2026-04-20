@@ -13,13 +13,22 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from app.models.task_run import (DeferredQuestion, FindingCategory,
-                                 FindingSeverity, FindingStatus, TaskRun,
-                                 TaskRunAutomation, TaskRunFinding,
-                                 TaskRunSession, TaskRunStatus, TaskType)
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+from app.models.task_run import (
+    DeferredQuestion,
+    FindingCategory,
+    FindingSeverity,
+    FindingStatus,
+    TaskRun,
+    TaskRunAutomation,
+    TaskRunFinding,
+    TaskRunSession,
+    TaskRunStatus,
+    TaskType,
+)
 
 logger = structlog.get_logger(__name__)
 

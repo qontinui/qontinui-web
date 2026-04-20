@@ -9,13 +9,14 @@ from pathlib import Path
 from uuid import UUID
 
 import structlog
-from app.models.capture import CaptureScreenshot, CaptureSession
-from app.schemas.capture import CaptureSessionCreate, CaptureSessionUpdate
-from app.services.object_storage import object_storage
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+from app.models.capture import CaptureScreenshot, CaptureSession
+from app.schemas.capture import CaptureSessionCreate, CaptureSessionUpdate
+from app.services.object_storage import object_storage
 
 logger = structlog.get_logger(__name__)
 

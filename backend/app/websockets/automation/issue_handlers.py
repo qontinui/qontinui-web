@@ -9,10 +9,11 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.crud import detected_issue as issue_crud
 from app.schemas.detected_issue import IssueSource, IssueSyncItem
 from app.websockets.automation.schemas import WSMessage, make_timestamp
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

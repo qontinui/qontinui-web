@@ -14,8 +14,9 @@ This migration creates the complete automation infrastructure:
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB, UUID
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "67c33a12bedb"

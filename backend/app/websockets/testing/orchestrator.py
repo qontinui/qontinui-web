@@ -13,25 +13,36 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from app.models.project import Project
-from app.models.software_test_run import SoftwareTestRun, TestRunStatus
-from app.models.test_deficiency import (DeficiencySeverity, DeficiencyStatus,
-                                        DeficiencyType, TestDeficiency)
-from app.models.transition_execution import (TransitionExecution,
-                                             TransitionExecutionStatus)
-from app.models.user import User
-from app.schemas.testing_ws import (DeficiencyData, SessionEndData,
-                                    SessionStartData, TransitionCompletedData,
-                                    TransitionStartedData)
-from app.websockets.message_types import (create_error_response,
-                                          create_timestamp)
-from app.websockets.testing.screenshot_handler import \
-    handle_screenshot as _handle_screenshot
 from pydantic import ValidationError
 from qontinui_schemas.common import utc_now
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
+
+from app.models.project import Project
+from app.models.software_test_run import SoftwareTestRun, TestRunStatus
+from app.models.test_deficiency import (
+    DeficiencySeverity,
+    DeficiencyStatus,
+    DeficiencyType,
+    TestDeficiency,
+)
+from app.models.transition_execution import (
+    TransitionExecution,
+    TransitionExecutionStatus,
+)
+from app.models.user import User
+from app.schemas.testing_ws import (
+    DeficiencyData,
+    SessionEndData,
+    SessionStartData,
+    TransitionCompletedData,
+    TransitionStartedData,
+)
+from app.websockets.message_types import create_error_response, create_timestamp
+from app.websockets.testing.screenshot_handler import (
+    handle_screenshot as _handle_screenshot,
+)
 
 logger = structlog.get_logger(__name__)
 

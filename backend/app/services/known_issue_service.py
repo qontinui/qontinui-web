@@ -9,11 +9,12 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from app.models.known_issue import KnownIssue
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.known_issue import KnownIssue
 
 logger = structlog.get_logger(__name__)
 

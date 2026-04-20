@@ -12,10 +12,19 @@ Built-in entries are seeded on first access; users can also create custom entrie
 from datetime import UTC, datetime
 from uuid import UUID
 
-from app.db.base import Base
-from sqlalchemy import (Boolean, DateTime, ForeignKey, Integer, String, Text,
-                        UniqueConstraint, text)
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db.base import Base
 
 
 class StepTypeConfig(Base):

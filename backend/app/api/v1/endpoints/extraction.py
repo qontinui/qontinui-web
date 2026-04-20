@@ -6,22 +6,27 @@ from typing import Any, cast
 from uuid import UUID
 
 import structlog
-from app.api import deps
-from app.models.extraction import ExtractionAnnotation, ExtractionSession
-from app.models.sync_lock import SyncLock
-from app.models.user import User
-from app.schemas.extraction import (AnnotationUpdate,
-                                    ExtractionAnnotationResponse,
-                                    ExtractionSessionCreate,
-                                    ExtractionSessionDetail,
-                                    ExtractionSessionResponse,
-                                    ExtractionSessionUpdate, ImportMode,
-                                    ImportResult, StateImportRequest,
-                                    StateMachineUpdate)
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+from app.api import deps
+from app.models.extraction import ExtractionAnnotation, ExtractionSession
+from app.models.sync_lock import SyncLock
+from app.models.user import User
+from app.schemas.extraction import (
+    AnnotationUpdate,
+    ExtractionAnnotationResponse,
+    ExtractionSessionCreate,
+    ExtractionSessionDetail,
+    ExtractionSessionResponse,
+    ExtractionSessionUpdate,
+    ImportMode,
+    ImportResult,
+    StateImportRequest,
+    StateMachineUpdate,
+)
 
 logger = structlog.get_logger(__name__)
 

@@ -10,10 +10,11 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.collaboration import ProjectLock
 from app.repositories.collaboration.lock_repository import lock_repository
 from app.services.distributed_lock_service import distributed_lock_service
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

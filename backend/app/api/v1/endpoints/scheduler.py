@@ -10,9 +10,10 @@ This endpoint requires user authentication and project access.
 
 from typing import Any
 
+from fastapi import APIRouter, Depends, HTTPException
+
 from app.api.deps import current_active_user
 from app.models.user import User
-from fastapi import APIRouter, Depends, HTTPException
 
 router = APIRouter(tags=["scheduler"], prefix="/scheduler")
 
@@ -268,9 +269,7 @@ async def get_schedule_details(
     try:
         schedule_executions = sorted(
             schedule_executions, key=lambda r: r.get("startTime", ""), reverse=True
-        )[
-            :10
-        ]  # Last 10 executions
+        )[:10]  # Last 10 executions
     except Exception:
         schedule_executions = schedule_executions[:10]
 

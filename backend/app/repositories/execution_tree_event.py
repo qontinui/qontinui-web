@@ -8,9 +8,10 @@ and providing reusable methods for listing, filtering, and tree reconstruction.
 from uuid import UUID
 
 import structlog
-from app.models.execution_tree_event import ExecutionTreeEvent
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.execution_tree_event import ExecutionTreeEvent
 
 logger = structlog.get_logger(__name__)
 

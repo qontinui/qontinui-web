@@ -4,11 +4,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.project import Project
 from app.models.storage_usage import StorageUsage
 from app.services.metrics_service import metrics_service
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @dataclass

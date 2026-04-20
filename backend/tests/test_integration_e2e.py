@@ -17,11 +17,16 @@ from datetime import datetime
 from typing import Any
 
 import pytest
-from app.main import app
 from fastapi.testclient import TestClient
+
+from app.main import app
 from tests.utils.integration_test_helpers import (
-    cleanup_test_data, create_test_actions, create_test_snapshot,
-    generate_mock_execution_result, verify_execution_result)
+    cleanup_test_data,
+    create_test_actions,
+    create_test_snapshot,
+    generate_mock_execution_result,
+    verify_execution_result,
+)
 
 # Create test client
 client = TestClient(app)

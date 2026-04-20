@@ -8,11 +8,12 @@ import time
 from typing import Any
 
 import structlog
+from redis.exceptions import RedisError
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config.redis_config import RedisConfig
 from app.core.config import settings
 from app.services.health.thresholds import THRESHOLDS
-from redis.exceptions import RedisError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

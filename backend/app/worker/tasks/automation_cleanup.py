@@ -10,13 +10,18 @@ from datetime import timedelta
 from typing import Any
 
 import pandas as pd  # type: ignore[import-untyped]
-from app.worker.tasks.cleanup_utils import (CleanupResult, TaskTimer,
-                                            create_error_result,
-                                            create_partial_success_result,
-                                            create_success_result,
-                                            generate_archive_s3_keys, logger,
-                                            upload_dataframes_to_s3)
 from qontinui_schemas.common import utc_now
+
+from app.worker.tasks.cleanup_utils import (
+    CleanupResult,
+    TaskTimer,
+    create_error_result,
+    create_partial_success_result,
+    create_success_result,
+    generate_archive_s3_keys,
+    logger,
+    upload_dataframes_to_s3,
+)
 
 
 async def cleanup_orphaned_sessions(ctx: dict[str, Any]) -> CleanupResult:
@@ -41,9 +46,10 @@ async def cleanup_orphaned_sessions(ctx: dict[str, Any]) -> CleanupResult:
 
     with TaskTimer() as timer:
         try:
+            from sqlalchemy import and_, select
+
             from app.db.session import AsyncSessionLocal
             from app.models.automation_session import AutomationSession
-            from sqlalchemy import and_, select
 
             # Find sessions active for more than 1 hour
             orphan_threshold_minutes = 60
@@ -142,13 +148,14 @@ async def cleanup_old_automation_data(ctx: dict[str, Any]) -> CleanupResult:
 
     with TaskTimer() as timer:
         try:
+            from sqlalchemy import delete, select
+            from sqlalchemy.orm import selectinload
+
             from app.db.session import AsyncSessionLocal
             from app.models.automation import AutomationInputEvent
             from app.models.automation_log import AutomationLog
             from app.models.automation_screenshot import AutomationScreenshot
             from app.models.automation_session import AutomationSession
-            from sqlalchemy import delete, select
-            from sqlalchemy.orm import selectinload
 
             # Archive sessions older than 180 days
             days_to_keep = 180

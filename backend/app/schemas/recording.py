@@ -6,8 +6,9 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from app.schemas.base import IsoDatetime
 from pydantic import BaseModel, Field, field_validator
+
+from app.schemas.base import IsoDatetime
 
 # Enums
 

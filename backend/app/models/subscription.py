@@ -1,10 +1,11 @@
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from app.db.base import Base
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
+
+from app.db.base import Base
 
 
 class SubscriptionStatus(StrEnum):

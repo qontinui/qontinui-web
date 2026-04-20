@@ -5,8 +5,9 @@ These schemas handle runner fleet monitoring across multiple machines.
 No authentication required — dev-only, LAN-accessible.
 """
 
-from app.schemas.base import IsoDatetime
 from pydantic import BaseModel, Field
+
+from app.schemas.base import IsoDatetime
 
 
 class RunnerHeartbeat(BaseModel):

@@ -6,10 +6,11 @@ Provides data access for project comments, discussions, and threaded replies.
 from typing import Any
 from uuid import UUID
 
-from app.models.collaboration import ProjectComment
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
+
+from app.models.collaboration import ProjectComment
 
 
 class CommentRepository:

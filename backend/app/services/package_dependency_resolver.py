@@ -15,6 +15,7 @@ import re
 from dataclasses import dataclass
 
 import structlog
+
 from app.schemas.package import DependencyInfo, DependencyResolutionResult
 
 logger = structlog.get_logger(__name__)

@@ -14,27 +14,42 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from app.api.deps import get_async_db
-from app.models.user import User
-from app.schemas.testing import (CoverageUpdate, CoverageUpdateResponse,
-                                 DeficiencyBatchCreate,
-                                 DeficiencyBatchResponse, ScreenshotMetadata,
-                                 ScreenshotUploadResponse, TestRunComplete,
-                                 TestRunCompleteResponse, TestRunCreate,
-                                 TestRunResponse, TransitionBatchCreate,
-                                 TransitionBatchResponse)
-from app.services.screenshot_upload_service import (InvalidImageError,
-                                                    ScreenshotUploadError,
-                                                    screenshot_upload_service)
-from app.services.test_run_service import TestRunService
-from fastapi import (APIRouter, Depends, File, Form, HTTPException, UploadFile,
-                     status)
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .deps import (ProjectAccessDeniedError, ProjectNotFoundError,
-                   TestRunNotFoundError, get_runner_user, get_test_run_service,
-                   handle_project_access_denied, handle_project_not_found,
-                   handle_test_run_not_found)
+from app.api.deps import get_async_db
+from app.models.user import User
+from app.schemas.testing import (
+    CoverageUpdate,
+    CoverageUpdateResponse,
+    DeficiencyBatchCreate,
+    DeficiencyBatchResponse,
+    ScreenshotMetadata,
+    ScreenshotUploadResponse,
+    TestRunComplete,
+    TestRunCompleteResponse,
+    TestRunCreate,
+    TestRunResponse,
+    TransitionBatchCreate,
+    TransitionBatchResponse,
+)
+from app.services.screenshot_upload_service import (
+    InvalidImageError,
+    ScreenshotUploadError,
+    screenshot_upload_service,
+)
+from app.services.test_run_service import TestRunService
+
+from .deps import (
+    ProjectAccessDeniedError,
+    ProjectNotFoundError,
+    TestRunNotFoundError,
+    get_runner_user,
+    get_test_run_service,
+    handle_project_access_denied,
+    handle_project_not_found,
+    handle_test_run_not_found,
+)
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

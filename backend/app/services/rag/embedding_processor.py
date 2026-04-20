@@ -10,13 +10,14 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.crud.project import get_project, update_project
 from app.models.embedding_generation_job import EmbeddingGenerationJob
 from app.models.project_embedding import ProjectEmbedding
 from app.schemas.project import ProjectUpdate
 from app.services.embedding_service import apply_embedding_results_to_config
-from sqlalchemy import delete
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

@@ -12,18 +12,32 @@ This service maintains backward compatibility while delegating to focused servic
 from datetime import UTC, datetime
 
 import structlog
-from app.models.code_package import (CodePackage, InstallationStatus,
-                                     PackageInstallation, PackageVersion)
-from app.schemas.package import (DependencyResolutionResult, InstallResult,
-                                 UninstallResult, UpdateInfo, UpdateResult)
-from app.services.package_dependency_resolver import (
-    PackageDependencyResolver, package_dependency_resolver)
-from app.services.package_download_service import (PackageDownloadService,
-                                                   package_download_service)
-from app.services.package_validator import PackageValidator, package_validator
-from app.services.project_directory import ProjectDirectoryManager
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.code_package import (
+    CodePackage,
+    InstallationStatus,
+    PackageInstallation,
+    PackageVersion,
+)
+from app.schemas.package import (
+    DependencyResolutionResult,
+    InstallResult,
+    UninstallResult,
+    UpdateInfo,
+    UpdateResult,
+)
+from app.services.package_dependency_resolver import (
+    PackageDependencyResolver,
+    package_dependency_resolver,
+)
+from app.services.package_download_service import (
+    PackageDownloadService,
+    package_download_service,
+)
+from app.services.package_validator import PackageValidator, package_validator
+from app.services.project_directory import ProjectDirectoryManager
 
 logger = structlog.get_logger(__name__)
 

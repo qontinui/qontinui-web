@@ -21,13 +21,14 @@ from uuid import uuid4
 backend_path = Path(__file__).parent
 sys.path.insert(0, str(backend_path))
 
+from PIL import Image, ImageDraw
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.db.session import AsyncSessionLocal
 from app.models.annotation import AnnotationSet
 from app.models.user import User
 from app.services.object_storage import upload_file
-from PIL import Image, ImageDraw
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class GUIScreenshotGenerator:

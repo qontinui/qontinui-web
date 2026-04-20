@@ -63,22 +63,18 @@ def upgrade() -> None:
     # Index 5: Partial index for active automation sessions (PostgreSQL specific)
     # Speeds up: "SELECT * FROM automation_sessions WHERE status IN ('running', 'paused')"
     # Only indexes rows where status is 'running' or 'paused' (much smaller index)
-    op.execute(
-        """
+    op.execute("""
         CREATE INDEX idx_automation_sessions_active
         ON automation_sessions (project_id, status, updated_at)
         WHERE status IN ('running', 'paused')
-    """
-    )
+    """)
 
     # Index 6: GIN index for full-text search on project names (PostgreSQL specific)
     # Speeds up: "SELECT * FROM projects WHERE to_tsvector('english', name) @@ to_tsquery('search query')"
-    op.execute(
-        """
+    op.execute("""
         CREATE INDEX idx_projects_name_fulltext
         ON projects USING gin(to_tsvector('english', name))
-    """
-    )
+    """)
 
     # Index 7: Annotations by screenshot
     # Speeds up: "SELECT * FROM annotations WHERE screenshot_id = ?"

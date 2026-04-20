@@ -7,22 +7,25 @@ All three auto-seed with built-in defaults on first access.
 
 from uuid import UUID
 
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import current_active_user, get_async_db
 from app.crud import workflow_step_type as crud
 from app.models.user import User
-from app.schemas.workflow_step_type import (GuiActionTypeConfigCreate,
-                                            GuiActionTypeConfigListResponse,
-                                            GuiActionTypeConfigResponse,
-                                            GuiActionTypeConfigUpdate,
-                                            StepTypeConfigCreate,
-                                            StepTypeConfigListResponse,
-                                            StepTypeConfigResponse,
-                                            StepTypeConfigUpdate,
-                                            WorkflowPhaseConfigListResponse,
-                                            WorkflowPhaseConfigResponse,
-                                            WorkflowPhaseConfigUpdate)
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from app.schemas.workflow_step_type import (
+    GuiActionTypeConfigCreate,
+    GuiActionTypeConfigListResponse,
+    GuiActionTypeConfigResponse,
+    GuiActionTypeConfigUpdate,
+    StepTypeConfigCreate,
+    StepTypeConfigListResponse,
+    StepTypeConfigResponse,
+    StepTypeConfigUpdate,
+    WorkflowPhaseConfigListResponse,
+    WorkflowPhaseConfigResponse,
+    WorkflowPhaseConfigUpdate,
+)
 
 router = APIRouter()
 

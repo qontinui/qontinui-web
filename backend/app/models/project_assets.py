@@ -12,10 +12,11 @@ import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from app.db.base_class import Base
 from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base_class import Base
 
 if TYPE_CHECKING:
     from app.models.capture import CaptureSession

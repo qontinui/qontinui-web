@@ -8,10 +8,11 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
-from app.models.visual_baseline import VisualBaseline
-from app.services.object_storage import object_storage
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.visual_baseline import VisualBaseline
+from app.services.object_storage import object_storage
 
 logger = structlog.get_logger(__name__)
 

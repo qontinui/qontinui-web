@@ -8,13 +8,21 @@ Provides focused sub-repositories for collaboration-related database operations:
 """
 
 from app.repositories.collaboration.access_repository import (
-    AccessRepository, access_repository)
+    AccessRepository,
+    access_repository,
+)
 from app.repositories.collaboration.activity_repository import (
-    ActivityRepository, activity_repository)
+    ActivityRepository,
+    activity_repository,
+)
 from app.repositories.collaboration.comment_repository import (
-    CommentRepository, comment_repository)
-from app.repositories.collaboration.lock_repository import (LockRepository,
-                                                            lock_repository)
+    CommentRepository,
+    comment_repository,
+)
+from app.repositories.collaboration.lock_repository import (
+    LockRepository,
+    lock_repository,
+)
 
 
 class CollaborationRepository:

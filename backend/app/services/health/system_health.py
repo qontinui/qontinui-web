@@ -8,6 +8,7 @@ from typing import Any
 
 import psutil
 import structlog
+
 from app.services.health.thresholds import THRESHOLDS
 
 logger = structlog.get_logger(__name__)

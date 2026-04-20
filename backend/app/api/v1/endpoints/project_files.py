@@ -13,22 +13,28 @@ Provides endpoints for managing project files and directories:
 from uuid import UUID
 
 import structlog
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api import deps
 from app.core.error_codes import ErrorCode
 from app.crud.project import get_project
 from app.middleware.error_handler import forbidden_error, not_found_error
 from app.models import User
 from app.models.organization import PermissionLevel
-from app.schemas.project_file import (FileContentResponse, FileDeleteResponse,
-                                      FileListResponse, FileUpdateRequest,
-                                      FileUploadRequest, FileUploadResponse,
-                                      FolderCreateRequest,
-                                      FolderCreateResponse,
-                                      ProjectLimitsResponse)
+from app.schemas.project_file import (
+    FileContentResponse,
+    FileDeleteResponse,
+    FileListResponse,
+    FileUpdateRequest,
+    FileUploadRequest,
+    FileUploadResponse,
+    FolderCreateRequest,
+    FolderCreateResponse,
+    ProjectLimitsResponse,
+)
 from app.services.permission_service import permission_service
 from app.services.project_file_service import project_file_service
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

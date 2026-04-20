@@ -10,10 +10,11 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from app.api.deps import get_async_db
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_async_db
 
 logger = structlog.get_logger(__name__)
 
@@ -129,8 +130,7 @@ async def process_recording(
     - Discovered states with confidence scores
     - Detected transitions with reliability metrics
     """
-    from qontinui.state_machine import (RecordingPipeline,
-                                        RecordingPipelineConfig)
+    from qontinui.state_machine import RecordingPipeline, RecordingPipelineConfig
 
     logger.info(
         "recording_pipeline_request",
@@ -240,8 +240,7 @@ async def process_recording_with_playbook(
     Same as /process but additionally generates a playbook markdown file
     from the discovered states, transitions, and extracted variables.
     """
-    from qontinui.state_machine import (RecordingPipeline,
-                                        RecordingPipelineConfig)
+    from qontinui.state_machine import RecordingPipeline, RecordingPipelineConfig
     from qontinui.state_machine.playbook_generator import generate_playbook
 
     logger.info(
@@ -387,17 +386,20 @@ async def merge_recording(
     confidence scores, adds new transitions, and increases observation counts.
     The existing state config is updated in-place.
     """
+    from qontinui.state_machine import RecordingPipeline, RecordingPipelineConfig
+    from qontinui.state_machine.ui_bridge_runtime import (
+        UIBridgeState as UIBridgeStateInternal,
+    )
+    from qontinui.state_machine.ui_bridge_runtime import (
+        UIBridgeTransition as UIBridgeTransitionInternal,
+    )
+    from sqlalchemy import select
+
     from app.models.ui_bridge_state import UIBridgeState as UIBridgeStateModel
     from app.models.ui_bridge_state import UIBridgeStateConfig
-    from app.models.ui_bridge_transition import \
-        UIBridgeTransition as UIBridgeTransitionModel
-    from qontinui.state_machine import (RecordingPipeline,
-                                        RecordingPipelineConfig)
-    from qontinui.state_machine.ui_bridge_runtime import \
-        UIBridgeState as UIBridgeStateInternal
-    from qontinui.state_machine.ui_bridge_runtime import \
-        UIBridgeTransition as UIBridgeTransitionInternal
-    from sqlalchemy import select
+    from app.models.ui_bridge_transition import (
+        UIBridgeTransition as UIBridgeTransitionModel,
+    )
 
     # Load existing config with states and transitions
     config_result = await db.execute(
@@ -597,8 +599,9 @@ async def get_past_experiences(
 
     Filters by project and optionally by app domain or name for similarity matching.
     """
-    from app.models.recording_session import RecordingSession
     from sqlalchemy import select
+
+    from app.models.recording_session import RecordingSession
 
     query = select(RecordingSession).where(
         RecordingSession.project_id == project_id,
@@ -670,8 +673,9 @@ async def _persist_to_pg(
     """
     from app.models.ui_bridge_state import UIBridgeState as UIBridgeStateModel
     from app.models.ui_bridge_state import UIBridgeStateConfig
-    from app.models.ui_bridge_transition import \
-        UIBridgeTransition as UIBridgeTransitionModel
+    from app.models.ui_bridge_transition import (
+        UIBridgeTransition as UIBridgeTransitionModel,
+    )
 
     # Create a state config
     state_config = UIBridgeStateConfig(

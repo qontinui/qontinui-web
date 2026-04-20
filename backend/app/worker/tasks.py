@@ -31,8 +31,7 @@ async def send_email_task(
     logger.info("sending_email", to_email=to_email, subject=subject)
 
     try:
-        from app.services.email.email_transport_service import \
-            EmailTransportService
+        from app.services.email.email_transport_service import EmailTransportService
 
         transport = EmailTransportService()
         await transport.send_email(
@@ -77,10 +76,8 @@ async def send_verification_email_task(
 
     try:
         from app.core.config import settings
-        from app.services.email.email_template_service import \
-            EmailTemplateService
-        from app.services.email.email_transport_service import \
-            EmailTransportService
+        from app.services.email.email_template_service import EmailTemplateService
+        from app.services.email.email_transport_service import EmailTransportService
 
         verify_url = f"{settings.FRONTEND_URL}/verify-email?token={verification_token}"
         context = {"username": username, "verify_url": verify_url}
@@ -133,10 +130,8 @@ async def send_password_reset_email_task(
 
     try:
         from app.core.config import settings
-        from app.services.email.email_template_service import \
-            EmailTemplateService
-        from app.services.email.email_transport_service import \
-            EmailTransportService
+        from app.services.email.email_template_service import EmailTemplateService
+        from app.services.email.email_transport_service import EmailTransportService
 
         reset_url = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
         context = {"username": username, "reset_url": reset_url}
@@ -200,8 +195,7 @@ async def process_uploaded_image(
 
     try:
         from app.db.session import AsyncSessionLocal
-        from app.services.image_processing_service import \
-            ImageProcessingService
+        from app.services.image_processing_service import ImageProcessingService
         from app.services.object_storage import object_storage
         from app.services.storage_service import StorageService
 
@@ -380,11 +374,12 @@ async def cleanup_old_data_task(
     try:
         from datetime import timedelta
 
+        from qontinui_schemas.common import utc_now
+        from sqlalchemy import delete
+
         from app.db.session import AsyncSessionLocal
         from app.models.audit_log import AuditLog
         from app.models.usage_metric import UsageMetric
-        from qontinui_schemas.common import utc_now
-        from sqlalchemy import delete
 
         cutoff_date = utc_now() - timedelta(days=days_to_keep)
         audit_logs_deleted = 0
@@ -448,14 +443,14 @@ async def send_analytics_report_task(
     logger.info("generating_analytics_report", report_type=report_type, user_id=user_id)
 
     try:
+        from qontinui_schemas.common import utc_now
+        from sqlalchemy import select
+
         from app.core.config import settings
         from app.db.session import AsyncSessionLocal
         from app.models.user import User
         from app.services.analytics_service import analytics_service
-        from app.services.email.email_transport_service import \
-            EmailTransportService
-        from qontinui_schemas.common import utc_now
-        from sqlalchemy import select
+        from app.services.email.email_transport_service import EmailTransportService
 
         # Determine days based on report type
         days_map = {"daily": 1, "weekly": 7, "monthly": 30}

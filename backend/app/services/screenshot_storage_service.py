@@ -10,15 +10,16 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
-from app.models.capture import CaptureScreenshot
-from app.services.object_storage import object_storage
-from app.services.session_repository import SessionRepository
-from app.services.storage_service import StorageService
 from fastapi import HTTPException, UploadFile, status
 from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+from app.models.capture import CaptureScreenshot
+from app.services.object_storage import object_storage
+from app.services.session_repository import SessionRepository
+from app.services.storage_service import StorageService
 
 logger = structlog.get_logger(__name__)
 

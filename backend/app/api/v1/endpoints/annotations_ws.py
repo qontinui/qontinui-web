@@ -11,11 +11,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 import structlog
+from fastapi import APIRouter, WebSocket
+from pydantic import BaseModel, Field, ValidationError
+
 from app.models.user import User
 from app.websockets.base import BaseWebSocketHandler, WebSocketContext
 from app.websockets.message_types import create_timestamp
-from fastapi import APIRouter, WebSocket
-from pydantic import BaseModel, Field, ValidationError
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

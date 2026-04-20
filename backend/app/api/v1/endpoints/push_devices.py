@@ -4,14 +4,15 @@ from datetime import UTC, datetime
 from typing import Any
 
 import structlog
+from fastapi import APIRouter, Depends, Request, Response, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.middleware.rate_limit import user_limiter
 from app.models.push_device import PushDevice
 from app.models.user import User
 from app.schemas.push_device import PushDeviceRegister, PushDeviceResponse
-from fastapi import APIRouter, Depends, Request, Response, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

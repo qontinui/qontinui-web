@@ -8,16 +8,16 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 
-from app.db.base import Base
 from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.db.base import Base
+
 if TYPE_CHECKING:
     from app.models.automation_session import AutomationSession
     from app.models.project import Project
-    from app.models.screenshot_input_association import \
-        ScreenshotInputAssociation
+    from app.models.screenshot_input_association import ScreenshotInputAssociation
 
 
 class AutomationScreenshot(Base):

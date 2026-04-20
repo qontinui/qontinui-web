@@ -11,11 +11,12 @@ Provides business logic for:
 from uuid import UUID
 
 import structlog
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.repositories.organization import project_stats_repo, team_member_repo
 from app.schemas.collaboration import OrganizationStatistics
 from app.services.organization.membership_service import membership_service
 from app.services.permission_service import permission_service
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

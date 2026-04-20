@@ -3,12 +3,13 @@ import traceback
 from typing import Any
 
 import structlog
-from app.core.config import settings
-from app.core.error_codes import ErrorCode, get_default_error_code
 from fastapi import HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from app.core.config import settings
+from app.core.error_codes import ErrorCode, get_default_error_code
 
 logger = structlog.get_logger(__name__)
 

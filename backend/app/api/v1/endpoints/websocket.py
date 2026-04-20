@@ -17,24 +17,25 @@ from collections import defaultdict
 from uuid import UUID
 
 import structlog
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
+from qontinui_schemas.common import utc_now
+from sqlalchemy import select
+
 from app.api.deps import get_current_user_from_ws
 from app.config.redis_config import get_redis
 from app.db.session import AsyncSessionLocal
 from app.models.project import Project
 from app.models.user import User
 from app.services.websocket_manager import get_websocket_manager
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
-from qontinui_schemas.common import utc_now
-from sqlalchemy import select
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
 
 # UI Bridge command response correlation
 # Maps command_id -> (runner_websocket, asyncio.Event, result)
-_pending_ui_bridge_commands: dict[str, tuple[WebSocket, asyncio.Event, dict | None]] = (
-    {}
-)
+_pending_ui_bridge_commands: dict[
+    str, tuple[WebSocket, asyncio.Event, dict | None]
+] = {}
 
 # Command timeout in seconds
 UI_BRIDGE_COMMAND_TIMEOUT = 30.0

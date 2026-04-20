@@ -10,10 +10,15 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from app.models.test_deficiency import (DeficiencySeverity, DeficiencyStatus,
-                                        DeficiencyType, TestDeficiency)
-from app.models.transition_execution import TransitionExecution
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.test_deficiency import (
+    DeficiencySeverity,
+    DeficiencyStatus,
+    DeficiencyType,
+    TestDeficiency,
+)
+from app.models.transition_execution import TransitionExecution
 
 logger = structlog.get_logger(__name__)
 

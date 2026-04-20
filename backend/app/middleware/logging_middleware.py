@@ -19,10 +19,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import structlog
-from app.core.logging_helpers import log_error, log_request
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
+
+from app.core.logging_helpers import log_error, log_request
 
 logger = structlog.get_logger(__name__)
 

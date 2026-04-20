@@ -1,7 +1,8 @@
 """Schemas for sync lock operations."""
 
-from app.schemas.base import BaseSchema, IsoDatetime
 from pydantic import Field
+
+from app.schemas.base import BaseSchema, IsoDatetime
 
 
 class SyncLockRequest(BaseSchema):

@@ -11,8 +11,9 @@ from uuid import UUID
 
 import numpy as np
 import structlog
-from app.services.object_storage import object_storage
 from PIL import Image
+
+from app.services.object_storage import object_storage
 
 logger = structlog.get_logger(__name__)
 

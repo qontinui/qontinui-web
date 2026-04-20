@@ -10,16 +10,16 @@ from datetime import datetime
 from uuid import UUID
 
 import structlog
-from app.models.execution_screenshot import (ExecutionScreenshot,
-                                             ExecutionScreenshotType)
+from PIL import Image
+
+# Import schemas from qontinui-schemas
+from qontinui_schemas.api.execution import ExecutionScreenshotResponse, ScreenshotType
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.execution_screenshot import ExecutionScreenshot, ExecutionScreenshotType
 from app.repositories.action_execution import ActionExecutionRepository
 from app.repositories.execution_screenshot import ExecutionScreenshotRepository
 from app.services.object_storage import object_storage
-from PIL import Image
-# Import schemas from qontinui-schemas
-from qontinui_schemas.api.execution import (ExecutionScreenshotResponse,
-                                            ScreenshotType)
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

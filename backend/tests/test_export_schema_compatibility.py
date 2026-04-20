@@ -10,10 +10,16 @@ This test suite ensures that:
 """
 
 import pytest
+
 # Import qontinui-schemas Pydantic models
-from qontinui_schemas.config.models import (Action, ClickActionConfig,
-                                            FindActionConfig, TypeActionConfig,
-                                            Workflow, get_typed_config)
+from qontinui_schemas.config.models import (
+    Action,
+    ClickActionConfig,
+    FindActionConfig,
+    TypeActionConfig,
+    Workflow,
+    get_typed_config,
+)
 
 
 class TestFindActionExport:

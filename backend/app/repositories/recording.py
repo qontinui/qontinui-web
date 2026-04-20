@@ -7,15 +7,21 @@ Extracts database query logic from recordings.py endpoints into reusable methods
 from datetime import UTC, datetime, timedelta
 
 import structlog
-from app.models.discovered_state import DiscoveredState
-from app.models.recording import (DiscoveredTransition, Recording,
-                                  RecordingContext, RecordingFrame,
-                                  RecordingInteraction, RecordingStatus)
-from app.repositories.base import BaseRepository
-from app.services.object_storage import object_storage
 from pydantic import BaseModel
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.discovered_state import DiscoveredState
+from app.models.recording import (
+    DiscoveredTransition,
+    Recording,
+    RecordingContext,
+    RecordingFrame,
+    RecordingInteraction,
+    RecordingStatus,
+)
+from app.repositories.base import BaseRepository
+from app.services.object_storage import object_storage
 
 logger = structlog.get_logger(__name__)
 

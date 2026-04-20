@@ -5,12 +5,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 import stripe
-from app.models.subscription import (Subscription, SubscriptionStatus,
-                                     SubscriptionTier)
-from app.models.user import User
-from app.services.stripe.tier_service import TierService
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.subscription import Subscription, SubscriptionStatus, SubscriptionTier
+from app.models.user import User
+from app.services.stripe.tier_service import TierService
 
 
 class CheckoutCompletedProcessor:

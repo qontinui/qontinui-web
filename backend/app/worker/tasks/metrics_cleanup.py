@@ -9,14 +9,19 @@ from datetime import timedelta
 from typing import Any
 
 import pandas as pd  # type: ignore[import-untyped]
-from app.core.config import settings
-from app.worker.tasks.cleanup_utils import (CleanupResult, TaskTimer,
-                                            create_error_result,
-                                            create_partial_success_result,
-                                            create_success_result,
-                                            generate_archive_s3_keys, logger,
-                                            upload_dataframes_to_s3)
 from qontinui_schemas.common import utc_now
+
+from app.core.config import settings
+from app.worker.tasks.cleanup_utils import (
+    CleanupResult,
+    TaskTimer,
+    create_error_result,
+    create_partial_success_result,
+    create_success_result,
+    generate_archive_s3_keys,
+    logger,
+    upload_dataframes_to_s3,
+)
 
 
 async def cleanup_old_analytics_events(ctx: dict[str, Any]) -> CleanupResult:
@@ -32,9 +37,10 @@ async def cleanup_old_analytics_events(ctx: dict[str, Any]) -> CleanupResult:
 
     with TaskTimer() as timer:
         try:
+            from sqlalchemy import delete
+
             from app.db.session import AsyncSessionLocal
             from app.models.analytics_event import AnalyticsEvent
-            from sqlalchemy import delete
 
             # Use configured cleanup days
             days_to_keep = settings.CLEANUP_ANALYTICS_DAYS
@@ -104,9 +110,10 @@ async def archive_old_analytics_to_s3(ctx: dict[str, Any]) -> CleanupResult:
 
     with TaskTimer() as timer:
         try:
+            from sqlalchemy import delete, select
+
             from app.db.session import AsyncSessionLocal
             from app.models.analytics_event import AnalyticsEvent
-            from sqlalchemy import delete, select
 
             # Archive events older than configured days
             days_to_keep = settings.CLEANUP_ANALYTICS_DAYS

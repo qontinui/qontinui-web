@@ -8,10 +8,11 @@ and other similarity metrics.
 from uuid import UUID
 
 import structlog
-from app.models.automation_screenshot import AutomationScreenshot
-from app.schemas.state_discovery import DiscoveredState
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.automation_screenshot import AutomationScreenshot
+from app.schemas.state_discovery import DiscoveredState
 
 logger = structlog.get_logger(__name__)
 

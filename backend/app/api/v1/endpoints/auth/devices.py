@@ -3,13 +3,13 @@
 import uuid as uuid_lib
 
 import structlog
-from app.api.deps import current_active_user, get_async_db
-from app.models.user import User
-from app.schemas.device_session import (DeviceSessionSummary,
-                                        DeviceSessionUpdate)
-from app.services.device_session_service import device_session_service
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import current_active_user, get_async_db
+from app.models.user import User
+from app.schemas.device_session import DeviceSessionSummary, DeviceSessionUpdate
+from app.services.device_session_service import device_session_service
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

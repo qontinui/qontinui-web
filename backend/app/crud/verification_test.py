@@ -10,17 +10,20 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from sqlalchemy import and_, desc, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
 from app.models.test_result import TestResult
 from app.models.verification_test import VerificationTest
 from app.models.workflow_test_association import WorkflowTestAssociation
 from app.schemas.test_result import TestResultCreate, TestResultUpdate
-from app.schemas.verification_test import (VerificationTestCreate,
-                                           VerificationTestUpdate,
-                                           WorkflowTestAssociationCreate,
-                                           WorkflowTestAssociationUpdate)
-from sqlalchemy import and_, desc, func, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from app.schemas.verification_test import (
+    VerificationTestCreate,
+    VerificationTestUpdate,
+    WorkflowTestAssociationCreate,
+    WorkflowTestAssociationUpdate,
+)
 
 logger = structlog.get_logger(__name__)
 

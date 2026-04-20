@@ -7,10 +7,16 @@ Provides database operations for locks, comments, and activity logs.
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from app.models.collaboration import (ActionType, ActivityLog, ProjectComment,
-                                      ProjectLock, ResourceType)
 from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.collaboration import (
+    ActionType,
+    ActivityLog,
+    ProjectComment,
+    ProjectLock,
+    ResourceType,
+)
 
 
 # ProjectLock CRUD

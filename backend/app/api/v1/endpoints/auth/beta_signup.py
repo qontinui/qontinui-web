@@ -1,15 +1,15 @@
 """Beta signup endpoints."""
 
 import structlog
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from pydantic import BaseModel, EmailStr
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import get_async_db
 from app.crud.user import get_user_by_email
 from app.middleware.rate_limit import auth_rate_limit
 from app.services.auth.password_service import password_service
 from app.services.auth.user_management_service import user_management_service
-from fastapi import (APIRouter, Depends, HTTPException, Request, Response,
-                     status)
-from pydantic import BaseModel, EmailStr
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

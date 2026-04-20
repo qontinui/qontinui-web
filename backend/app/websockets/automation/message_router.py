@@ -11,22 +11,29 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from app.models.user import User
-from app.websockets.automation.connection_handler import ConnectionHandler
-from app.websockets.automation.issue_handlers import (handle_issue_detected,
-                                                      handle_issue_updated,
-                                                      handle_issues_sync)
-from app.websockets.automation.message_handlers import (handle_input_event,
-                                                        handle_screenshot)
-from app.websockets.automation.relay_handlers import (handle_command_response,
-                                                      handle_execution_event,
-                                                      handle_extraction_event,
-                                                      handle_tree_event,
-                                                      handle_unknown_message)
-from app.websockets.automation.schemas import WSMessage, make_timestamp
-from app.websockets.automation.session_manager import SessionManager
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.user import User
+from app.websockets.automation.connection_handler import ConnectionHandler
+from app.websockets.automation.issue_handlers import (
+    handle_issue_detected,
+    handle_issue_updated,
+    handle_issues_sync,
+)
+from app.websockets.automation.message_handlers import (
+    handle_input_event,
+    handle_screenshot,
+)
+from app.websockets.automation.relay_handlers import (
+    handle_command_response,
+    handle_execution_event,
+    handle_extraction_event,
+    handle_tree_event,
+    handle_unknown_message,
+)
+from app.websockets.automation.schemas import WSMessage, make_timestamp
+from app.websockets.automation.session_manager import SessionManager
 
 logger = structlog.get_logger(__name__)
 

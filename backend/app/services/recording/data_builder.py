@@ -10,8 +10,14 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import structlog
-from app.models.recording import (Recording, RecordingContext, RecordingFrame,
-                                  RecordingInteraction, RecordingStatus)
+
+from app.models.recording import (
+    Recording,
+    RecordingContext,
+    RecordingFrame,
+    RecordingInteraction,
+    RecordingStatus,
+)
 from app.services.object_storage import object_storage
 
 logger = structlog.get_logger(__name__)

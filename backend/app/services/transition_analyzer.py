@@ -10,6 +10,7 @@ from typing import cast
 from uuid import UUID
 
 import structlog
+
 from app.models.automation import AutomationInputEvent
 from app.models.automation_screenshot import AutomationScreenshot
 from app.schemas.state_discovery import DiscoveredState, StateTransition

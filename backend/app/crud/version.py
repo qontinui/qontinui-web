@@ -1,10 +1,11 @@
 from uuid import UUID
 
+from sqlalchemy import desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.edit_command import EditCommand
 from app.models.project_version import ProjectVersion
 from app.schemas.version import EditCommandCreate, ProjectVersionCreate
-from sqlalchemy import desc, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 # ProjectVersion CRUD operations

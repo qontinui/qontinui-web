@@ -8,11 +8,11 @@ from typing import Any, cast
 from uuid import UUID
 
 import structlog
-from app.models.collaboration import ActionType, ActivityLog, ResourceType
-from app.repositories.collaboration.activity_repository import \
-    activity_repository
-from app.schemas.collaboration import ActivityLogResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.collaboration import ActionType, ActivityLog, ResourceType
+from app.repositories.collaboration.activity_repository import activity_repository
+from app.schemas.collaboration import ActivityLogResponse
 
 logger = structlog.get_logger(__name__)
 

@@ -8,8 +8,9 @@ and pool usage alerts.
 from typing import Any
 
 import structlog
-from app.services.health.thresholds import THRESHOLDS
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.services.health.thresholds import THRESHOLDS
 
 logger = structlog.get_logger(__name__)
 

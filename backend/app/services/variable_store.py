@@ -8,10 +8,14 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from app.models.workflow_variable import (VariableHistory, VariableScope,
-                                          WorkflowVariable)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.workflow_variable import (
+    VariableHistory,
+    VariableScope,
+    WorkflowVariable,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +55,9 @@ class VariableStore:
         self._persistent_state: dict[str, Any] = {}
         self._project_id = project_id
         self._workflow_id = workflow_id
-        self._pending_writes: list[tuple[str, Any, Any | None]] = (
-            []
-        )  # Queue for async writes
+        self._pending_writes: list[
+            tuple[str, Any, Any | None]
+        ] = []  # Queue for async writes
 
     # ========================================================================
     # Workflow Variables (Read-only)

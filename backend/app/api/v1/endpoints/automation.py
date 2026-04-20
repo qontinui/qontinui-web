@@ -12,26 +12,30 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from app.api.deps import current_active_user, get_async_db
-from app.models.automation_screenshot import AutomationScreenshot
-from app.models.organization import PermissionLevel
-from app.models.user import User
-from app.repositories import AutomationSessionRepository
-from app.repositories.deps import get_automation_session_repository
-from app.schemas.automation import (AutomationSessionListResponse,
-                                    AutomationSessionWithStats,
-                                    ImageRecognitionReport,
-                                    ImageRecognitionStats,
-                                    ScreenshotWithInputs, SessionTimeline,
-                                    TimelineEvent)
-from app.services.object_storage import object_storage
-from app.services.permission_service import permission_service
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from qontinui_schemas.common import utc_now
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+from app.api.deps import current_active_user, get_async_db
+from app.models.automation_screenshot import AutomationScreenshot
+from app.models.organization import PermissionLevel
+from app.models.user import User
+from app.repositories import AutomationSessionRepository
+from app.repositories.deps import get_automation_session_repository
+from app.schemas.automation import (
+    AutomationSessionListResponse,
+    AutomationSessionWithStats,
+    ImageRecognitionReport,
+    ImageRecognitionStats,
+    ScreenshotWithInputs,
+    SessionTimeline,
+    TimelineEvent,
+)
+from app.services.object_storage import object_storage
+from app.services.permission_service import permission_service
 
 logger = structlog.get_logger(__name__)
 

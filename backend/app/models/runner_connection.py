@@ -8,11 +8,12 @@ providing an audit trail and connection history.
 from datetime import datetime
 from uuid import UUID
 
-from app.db.base import Base
 from qontinui_schemas.common import to_utc, utc_now
 from sqlalchemy import DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base
 
 
 class RunnerConnection(Base):

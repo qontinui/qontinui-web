@@ -10,9 +10,12 @@ from typing import Any
 
 import httpx
 import structlog
-from app.schemas.test_notifications import (CoverageAlertNotification,
-                                            DeficiencyNotification,
-                                            TestRunNotification)
+
+from app.schemas.test_notifications import (
+    CoverageAlertNotification,
+    DeficiencyNotification,
+    TestRunNotification,
+)
 
 logger = structlog.get_logger(__name__)
 

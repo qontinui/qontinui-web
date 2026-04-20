@@ -6,10 +6,12 @@ Provides SecurityASTVisitor for traversing Python AST and detecting security iss
 
 import ast
 
-from app.services.security.constants import (BLOCKED_FUNCTIONS,
-                                             BLOCKED_IMPORTS, WARNING_IMPORTS)
-from app.services.security.models import (IssueSeverity, IssueType,
-                                          SecurityIssue)
+from app.services.security.constants import (
+    BLOCKED_FUNCTIONS,
+    BLOCKED_IMPORTS,
+    WARNING_IMPORTS,
+)
+from app.services.security.models import IssueSeverity, IssueType, SecurityIssue
 
 
 class SecurityASTVisitor(ast.NodeVisitor):

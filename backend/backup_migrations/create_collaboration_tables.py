@@ -11,8 +11,9 @@ Creates tables for:
 """
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "collaboration_001"
@@ -25,23 +26,19 @@ def upgrade() -> None:
     """Create collaboration tables."""
 
     # Create resource_type enum
-    op.execute(
-        """
+    op.execute("""
         CREATE TYPE resourcetype AS ENUM (
             'workflow', 'state', 'image', 'transition', 'action', 'project'
         )
-    """
-    )
+    """)
 
     # Create action_type enum
-    op.execute(
-        """
+    op.execute("""
         CREATE TYPE actiontype AS ENUM (
             'created', 'modified', 'deleted', 'shared', 'commented',
             'locked', 'unlocked', 'viewed', 'exported', 'imported'
         )
-    """
-    )
+    """)
 
     # Create project_locks table
     op.create_table(

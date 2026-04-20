@@ -13,12 +13,13 @@ from pathlib import Path
 from typing import BinaryIO
 
 import structlog
+from botocore.exceptions import ClientError
+from fastapi import HTTPException, status
+
 from app.core.config import settings
 from app.services.storage.base import StorageBackend
 from app.services.storage.local_backend import LocalBackend
 from app.services.storage.s3_backend import S3Backend
-from botocore.exceptions import ClientError
-from fastapi import HTTPException, status
 
 logger = structlog.get_logger(__name__)
 

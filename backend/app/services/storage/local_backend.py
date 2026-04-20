@@ -8,9 +8,10 @@ from pathlib import Path
 from typing import BinaryIO
 
 import structlog
+from fastapi import HTTPException, status
+
 from app.core.config import settings
 from app.services.storage.base import StorageBackend
-from fastapi import HTTPException, status
 
 logger = structlog.get_logger(__name__)
 

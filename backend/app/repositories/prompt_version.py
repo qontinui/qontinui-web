@@ -10,11 +10,12 @@ import hashlib
 from uuid import UUID
 
 import structlog
-from app.models.ai_prompt import AIPromptTemplate
-from app.models.prompt_template_version import PromptTemplateVersion
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.ai_prompt import AIPromptTemplate
+from app.models.prompt_template_version import PromptTemplateVersion
 
 logger = structlog.get_logger(__name__)
 

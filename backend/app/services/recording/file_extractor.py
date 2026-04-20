@@ -13,9 +13,10 @@ from datetime import datetime
 from typing import Any
 
 import structlog
-from app.models.recording import Recording
 from fastapi import HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.recording import Recording
 
 from .data_builder import RecordingDataBuilder
 from .metadata_validator import RecordingMetadataValidator

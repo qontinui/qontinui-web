@@ -11,7 +11,9 @@ All functionality has been refactored into:
 
 # Re-export everything from the new location for backward compatibility
 from app.services.notifications.test_notifications import (
-    TestNotificationService, test_notification_service)
+    TestNotificationService,
+    test_notification_service,
+)
 
 __all__ = [
     "TestNotificationService",
