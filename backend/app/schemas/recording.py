@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.base import IsoDatetime
 
@@ -320,8 +320,7 @@ class RecordingResponse(RecordingBase):
     validation_warnings: list[str] = Field(default_factory=list)
     confidence: float | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RecordingListResponse(BaseModel):
@@ -353,8 +352,7 @@ class FrameResponse(BaseModel):
     window_title: str | None = None
     url: str | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Processing job schemas
@@ -382,8 +380,7 @@ class ProcessingLogEntry(BaseModel):
     data: dict[str, Any] | None = None
     progress: float | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Discovered state schemas
@@ -411,8 +408,7 @@ class DiscoveredStateResponse(BaseModel):
     user_approved: bool = False
     converted_to_state_id: str | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Discovered transition schemas
@@ -439,8 +435,7 @@ class DiscoveredTransitionResponse(BaseModel):
     user_approved: bool = False
     converted_to_transition_id: str | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # State structure response
