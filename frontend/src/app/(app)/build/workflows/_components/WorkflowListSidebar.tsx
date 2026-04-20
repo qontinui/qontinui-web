@@ -62,10 +62,10 @@ export function WorkflowListSidebar({
       const newWorkflow = await workflowApi.createWorkflow({
         name: "New Workflow",
         description: "",
-        setup_steps: [],
-        verification_steps: [],
-        agentic_steps: [],
-        completion_steps: [],
+        setupSteps: [],
+        verificationSteps: [],
+        agenticSteps: [],
+        completionSteps: [],
       });
       await refetch();
       onSelectWorkflow(newWorkflow);

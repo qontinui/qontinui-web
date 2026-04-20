@@ -59,7 +59,7 @@ export function useContextManagement() {
       } else {
         disabled.add(contextId);
       }
-      updateWorkflow({ disabled_contextIds: Array.from(disabled) });
+      updateWorkflow({ disabledContextIds: Array.from(disabled) });
     },
     [disabledContextIds, updateWorkflow]
   );

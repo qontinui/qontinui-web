@@ -65,7 +65,7 @@ export function AccessibilityNodeItem({
   const hasChildren = node.children && node.children.length > 0;
   const isExpanded = expandedRefs.has(node.ref);
   const isSelected = selectedRef === node.ref;
-  const isInteractive = node.is_interactive ?? false;
+  const isInteractive = node.isInteractive ?? false;
 
   // If interactiveOnly mode and node is not interactive, skip rendering but still render children
   if (interactiveOnly && !isInteractive && hasChildren) {

@@ -246,7 +246,7 @@ function extractStates(nodes: DisplayNode[]): {
   const finalStates = new Set<string>();
 
   function traverse(node: DisplayNode) {
-    const stateContext = node.metadata?.state_context as
+    const stateContext = node.metadata?.stateContext as
       | {
           active_before?: string[];
           active_after?: string[];

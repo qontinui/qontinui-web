@@ -312,18 +312,17 @@ function parseResourceLimitsFromToml(toml: string): ResourceLimits {
   const section = resourcesMatch[1];
 
   const wallTime = section.match(/max_wall_time_secs\s*=\s*(\d+)/);
-  if (wallTime?.[1]) limits.max_wall_time_secs = parseInt(wallTime[1], 10);
+  if (wallTime?.[1]) limits.maxWallTimeSecs = parseInt(wallTime[1], 10);
 
   const filesModified = section.match(/max_files_modified\s*=\s*(\d+)/);
   if (filesModified?.[1])
-    limits.max_files_modified = parseInt(filesModified[1], 10);
+    limits.maxFilesModified = parseInt(filesModified[1], 10);
 
   const agenticTime = section.match(/max_agentic_time_ms\s*=\s*(\d+)/);
-  if (agenticTime?.[1])
-    limits.max_agentic_time_ms = parseInt(agenticTime[1], 10);
+  if (agenticTime?.[1]) limits.maxAgenticTimeMs = parseInt(agenticTime[1], 10);
 
   const threshold = section.match(/warning_threshold\s*=\s*([\d.]+)/);
-  if (threshold?.[1]) limits.warning_threshold = parseFloat(threshold[1]);
+  if (threshold?.[1]) limits.warningThreshold = parseFloat(threshold[1]);
 
   return limits;
 }

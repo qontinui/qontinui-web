@@ -97,7 +97,7 @@ export function treeEventToUnifiedStep(
     matchLocation,
     inputData,
     screenshotUrl: metadata.screenshotReference ?? undefined,
-    metadata: metadata as Record<string, unknown>,
+    metadata: metadata as unknown as Record<string, unknown>,
     originalTreeEvent: event,
     isRealExecution: true,
   };
@@ -194,7 +194,7 @@ export function displayNodeToUnifiedStep(
     matchLocation,
     inputData,
     screenshotUrl: metadata.screenshotReference ?? undefined,
-    metadata: metadata as Record<string, unknown>,
+    metadata: metadata as unknown as Record<string, unknown>,
     isRealExecution: true,
   };
 }

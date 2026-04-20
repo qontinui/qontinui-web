@@ -123,7 +123,7 @@ export function AccessibilityBoundsOverlay({
 
     const collectNodes = (node: AccessibilityNode) => {
       // Filter by interactivity if enabled
-      if (interactiveOnly && !node.is_interactive) {
+      if (interactiveOnly && !node.isInteractive) {
         // Still collect children
         for (const child of node.children ?? []) {
           collectNodes(child);

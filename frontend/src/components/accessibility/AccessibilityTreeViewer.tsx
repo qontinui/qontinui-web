@@ -92,7 +92,7 @@ export function AccessibilityTreeViewer({
         node.value?.toLowerCase().includes(searchQuery.toLowerCase());
 
       const matchesRole = !roleFilter || node.role === roleFilter;
-      const matchesInteractive = !interactiveOnly || node.is_interactive;
+      const matchesInteractive = !interactiveOnly || node.isInteractive;
 
       // Filter children recursively
       const filteredChildren =

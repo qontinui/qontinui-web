@@ -40,7 +40,7 @@ function AITasksPageContent() {
   const projectId = searchParams.get("project");
 
   const [filters, setFilters] = useState<TaskRunFilters>({
-    project_id: projectId || undefined,
+    projectId: projectId || undefined,
     offset: 0,
     limit: 10,
   });

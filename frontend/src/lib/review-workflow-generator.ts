@@ -223,9 +223,9 @@ export function generateReviewWorkflow(
   return {
     name: config.workflowName,
     description: config.workflowDescription,
-    setup_steps: setupSteps as unknown as SetupStep[],
-    agentic_steps: agenticSteps as unknown as AgenticStep[],
-    verification_steps: verificationSteps as unknown as VerificationStep[],
-    completion_steps: completionSteps as unknown as CompletionStep[],
+    setupSteps: setupSteps as unknown as SetupStep[],
+    agenticSteps: agenticSteps as unknown as AgenticStep[],
+    verificationSteps: verificationSteps as unknown as VerificationStep[],
+    completionSteps: completionSteps as unknown as CompletionStep[],
   };
 }

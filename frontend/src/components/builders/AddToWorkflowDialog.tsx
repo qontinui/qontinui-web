@@ -25,6 +25,7 @@ import {
   generateStepId,
   PHASE_INFO,
   type UnifiedStep,
+  type UnifiedWorkflow,
   type WorkflowPhase,
 } from "@/types/unified-workflow";
 
@@ -112,10 +113,10 @@ export function AddToWorkflowDialog({
       const workflow = await createWorkflow({
         name: "New Workflow",
         description: "",
-        setup_steps: [],
-        verification_steps: [],
-        agentic_steps: [],
-        completion_steps: [],
+        setupSteps: [],
+        verificationSteps: [],
+        agenticSteps: [],
+        completionSteps: [],
         category: "general",
         tags: [],
       });
@@ -137,7 +138,13 @@ export function AddToWorkflowDialog({
     setIsAdding(true);
     try {
       const workflow = await getWorkflow(selectedWorkflowId);
-      const phaseKey = `${selectedPhase}_steps` as `${WorkflowPhase}_steps`;
+      const phaseKeyMap: Record<WorkflowPhase, keyof UnifiedWorkflow> = {
+        setup: "setupSteps",
+        verification: "verificationSteps",
+        agentic: "agenticSteps",
+        completion: "completionSteps",
+      };
+      const phaseKey = phaseKeyMap[selectedPhase];
 
       const newStep = {
         ...stepData,
