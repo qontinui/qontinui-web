@@ -177,8 +177,15 @@ export function hasMergeNodes(workflow: Workflow): boolean {
 
 /**
  * Find all orphaned actions (not connected to the main graph)
+ *
+ * A single-action workflow is trivially connected (the sole action is its
+ * own entry point), so it has no orphans.
  */
 export function findOrphanedActions(workflow: Workflow): string[] {
+  if (workflow.actions.length <= 1) {
+    return [];
+  }
+
   if (Object.keys(workflow.connections).length === 0) {
     return workflow.actions.map((a) => a.id);
   }

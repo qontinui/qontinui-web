@@ -226,19 +226,10 @@ describe("Folder Utilities", () => {
 
       expect(stats.totalFolders).toBe(4);
       expect(stats.maxDepth).toBeGreaterThan(0);
-      expect(stats.emptyFolders).toBe(4); // All empty since no workflows
+      // "Empty" means no workflows AND no subfolders (folder1 has children, so excluded)
+      expect(stats.emptyFolders).toBe(3);
       expect(stats.foldersWithColor).toBe(1);
       expect(stats.foldersWithIcon).toBe(1);
     });
   });
-});
-
-describe("FolderTree Component", () => {
-  // Component tests would go here
-  // These would typically use React Testing Library
-  // Example:
-  // it('should render folder tree', () => {
-  //   render(<FolderTree ... />);
-  //   expect(screen.getByText('All Workflows')).toBeInTheDocument();
-  // });
 });
