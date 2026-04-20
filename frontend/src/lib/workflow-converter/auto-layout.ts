@@ -177,6 +177,12 @@ export class AutoLayout {
       node.depth = 0;
     });
 
+    // In a DAG, the longest path is bounded by the node count. If we ever
+    // try to assign a depth beyond that, we're chasing a cycle (e.g., a LOOP
+    // self-edge) and must stop — otherwise BFS re-enqueues the same nodes at
+    // ever-increasing depths forever.
+    const maxDepth = this.nodes.size;
+
     while (queue.length > 0) {
       const { nodeId, depth } = queue.shift()!;
       const node = this.nodes.get(nodeId);
@@ -187,8 +193,8 @@ export class AutoLayout {
         if (!childNode) return;
 
         const newDepth = depth + 1;
+        if (newDepth > maxDepth) return;
 
-        // Update depth if this path is longer
         if (!visited.has(childId) || childNode.depth < newDepth) {
           childNode.depth = newDepth;
           queue.push({ nodeId: childId, depth: newDepth });
@@ -243,7 +249,10 @@ export class AutoLayout {
    */
   private sortNodesByParentPosition(nodes: LayoutNode[]): void {
     nodes.sort((a, b) => {
-      // Nodes with no parents go first
+      // Nodes with no parents go first; preserve insertion order when both
+      // are orphans so the comparator stays transitive (returning -1 for
+      // both sides violates sort contract and reorders unpredictably).
+      if (a.parents.length === 0 && b.parents.length === 0) return 0;
       if (a.parents.length === 0) return -1;
       if (b.parents.length === 0) return 1;
 
