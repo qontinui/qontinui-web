@@ -10,7 +10,7 @@
  * strategy described in plan §4.
  */
 
-import { NextResponse, type NextRequest } from "next/server";
+import { after, NextResponse, type NextRequest } from "next/server";
 
 import {
   GroundingUnavailableError,
@@ -18,6 +18,7 @@ import {
 } from "@/lib/vga/grounding-client";
 import { readImageDims } from "@/lib/vga/image-dims";
 import { proposeRequestSchema } from "@/lib/vga/schemas";
+import { logShadowSample } from "@/lib/vga/shadow-log";
 import type { VgaProposal } from "@/lib/types/vga";
 
 const DEFAULT_CATEGORIES = [
@@ -30,6 +31,12 @@ const DEFAULT_CATEGORIES = [
 ] as const;
 
 const DEDUPE_PX = 20;
+
+/** Half-edge of the bbox we log with shadow samples. Matches /api/vga/ground. */
+const SHADOW_BOX_HALF = 20;
+
+/** Default grounding model string recorded on shadow samples. */
+const DEFAULT_MODEL = "qontinui-grounding-v5";
 
 function buildCategoryPrompt(category: string): string {
   return (
@@ -84,6 +91,34 @@ export async function POST(request: NextRequest) {
         y: result.y,
         confidence: result.confidence,
         category,
+      });
+
+      // Fire-and-forget shadow-sample write for each non-<none/>
+      // proposal. Mirrors the /api/vga/ground side effect so the v6
+      // training gate sees multi-element proposals too — the builder
+      // runs /propose far more often than /ground. ``after()`` keeps
+      // the write alive past the response (see ground/route.ts).
+      const px = result.x;
+      const py = result.y;
+      const imageBase64 = parsed.data.imageBase64;
+      const stateMachineId = parsed.data.stateMachineId;
+      const targetProcess = parsed.data.targetProcess;
+      const { confidence } = result;
+      after(async () => {
+        await logShadowSample({
+          imageBase64,
+          prompt,
+          predictedBbox: {
+            x: Math.max(0, px - SHADOW_BOX_HALF),
+            y: Math.max(0, py - SHADOW_BOX_HALF),
+            w: SHADOW_BOX_HALF * 2,
+            h: SHADOW_BOX_HALF * 2,
+          },
+          modelUsed: DEFAULT_MODEL,
+          confidence,
+          stateMachineId,
+          targetProcess,
+        });
       });
     }
 

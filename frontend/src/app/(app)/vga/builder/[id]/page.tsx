@@ -315,7 +315,12 @@ export default function VgaBuilderPage({
     }
     setIsProposing(true);
     try {
-      const props = await proposeElements(image.base64);
+      // Pass SM context through so /api/vga/propose can log shadow
+      // samples keyed off our target_process + honor privacy.
+      const props = await proposeElements(image.base64, {
+        stateMachineId: id,
+        targetProcess: sm?.targetProcess,
+      });
       const drafts: ProposalDraft[] = props.map((p) => ({
         ...p,
         draftId: randomId(),
@@ -384,7 +389,12 @@ export default function VgaBuilderPage({
       return;
     }
     try {
-      const r = await groundOnce(image.base64, el.prompt);
+      // Pass SM context through so /api/vga/ground can log a shadow
+      // sample (subject to the SM's privacy flag).
+      const r = await groundOnce(image.base64, el.prompt, {
+        stateMachineId: id,
+        targetProcess: sm?.targetProcess,
+      });
       if (r.x === null || r.y === null) {
         toast.warning("Model could not locate this element in the screenshot");
         return;

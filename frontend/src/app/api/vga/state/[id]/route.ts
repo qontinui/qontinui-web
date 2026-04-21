@@ -15,6 +15,20 @@ import type { VgaStateMachineGraph, VgaStateMachineRow } from "@/lib/types/vga";
 import { buildCanonicalExport, canonicalJsonString } from "@/lib/vga/canonical";
 import { patchStateRequestSchema } from "@/lib/vga/schemas";
 
+/**
+ * Count all elements across all states in a state graph. Used by the
+ * PATCH handler to bump ``v5_confirmed`` when the user adds new
+ * elements (every confirmed proposal becomes a v5 confirmation).
+ */
+function countElements(graph: VgaStateMachineGraph | null | undefined): number {
+  if (!graph || !Array.isArray(graph.states)) return 0;
+  let total = 0;
+  for (const state of graph.states) {
+    if (Array.isArray(state.elements)) total += state.elements.length;
+  }
+  return total;
+}
+
 interface StateMachineDbRow {
   id: string;
   name: string;
@@ -140,6 +154,17 @@ export async function PATCH(
       .update(canonicalJsonString(canonical))
       .digest("hex");
 
+    // Bump v5_confirmed by the element-count delta when the incoming
+    // graph has MORE total elements than the existing row — every added
+    // element is effectively a user-confirmed v5 proposal. Subtracting
+    // is intentionally skipped: deletes happen for many reasons (user
+    // tidies up, renames state, etc.) and the v5_confirmed counter is a
+    // monotonic "how much user signal has this SM accumulated" metric,
+    // not a live inventory.
+    const prevElementCount = countElements(existing.state_graph);
+    const nextElementCount = countElements(nextGraph);
+    const confirmedDelta = Math.max(0, nextElementCount - prevElementCount);
+
     const { rows } = await vgaQuery<StateMachineDbRow>(
       `UPDATE vga_state_machines
           SET name = $2,
@@ -147,6 +172,7 @@ export async function PATCH(
               grounding_model = $4,
               private = $5,
               content_hash = $6,
+              v5_confirmed = v5_confirmed + $7,
               updated_at = NOW()
         WHERE id = $1
         RETURNING *`,
@@ -157,6 +183,7 @@ export async function PATCH(
         nextModel,
         nextPrivate,
         contentHash,
+        confirmedDelta,
       ]
     );
     if (rows.length === 0) {

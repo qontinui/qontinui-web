@@ -6,7 +6,7 @@
  * out without touching the web client.
  */
 
-import { NextResponse, type NextRequest } from "next/server";
+import { after, NextResponse, type NextRequest } from "next/server";
 
 import {
   GroundingParseError,
@@ -15,9 +15,13 @@ import {
 } from "@/lib/vga/grounding-client";
 import { readImageDims } from "@/lib/vga/image-dims";
 import { groundRequestSchema } from "@/lib/vga/schemas";
+import { logShadowSample } from "@/lib/vga/shadow-log";
 
 /** Half-edge of the bbox we return around the predicted point. */
 const BOX_HALF = 20;
+
+/** Default grounding model string recorded on shadow samples. */
+const DEFAULT_MODEL = "qontinui-grounding-v5";
 
 export async function POST(request: NextRequest) {
   let body: unknown;
@@ -57,6 +61,44 @@ export async function POST(request: NextRequest) {
         },
         { status: 200 }
       );
+    }
+
+    // Fire-and-forget shadow-sample write. Must not block the response
+    // path — the user's grounding result takes priority over this log
+    // side effect (see :mod:`qontinui.vga.shadow_log` for the mirror
+    // contract on the Python runtime side).
+    //
+    // We use Next.js's ``after()`` rather than a raw unawaited promise:
+    // route handlers don't keep unawaited promises alive after the
+    // response is sent (the lambda/edge lifecycle model), so a raw
+    // ``void logShadowSample(...)`` silently drops the write in
+    // practice. ``after()`` is Next 15's supported hook for
+    // post-response side effects.
+    if (result.x !== null && result.y !== null) {
+      const x = result.x;
+      const y = result.y;
+      const imageBase64 = parsed.data.imageBase64;
+      const promptValue = parsed.data.prompt;
+      const modelUsed = parsed.data.model ?? DEFAULT_MODEL;
+      const { confidence } = result;
+      const stateMachineId = parsed.data.stateMachineId;
+      const targetProcess = parsed.data.targetProcess;
+      after(async () => {
+        await logShadowSample({
+          imageBase64,
+          prompt: promptValue,
+          predictedBbox: {
+            x: Math.max(0, x - BOX_HALF),
+            y: Math.max(0, y - BOX_HALF),
+            w: BOX_HALF * 2,
+            h: BOX_HALF * 2,
+          },
+          modelUsed,
+          confidence,
+          stateMachineId,
+          targetProcess,
+        });
+      });
     }
 
     return NextResponse.json({

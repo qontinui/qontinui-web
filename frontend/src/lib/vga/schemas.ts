@@ -47,11 +47,23 @@ export const groundRequestSchema = z.object({
   imageBase64: z.string().min(1),
   prompt: z.string().min(1),
   model: z.string().min(1).optional(),
+  // Optional context for shadow-sample logging (closes VGA plan §14 gap).
+  // When both are set AND the referenced SM isn't private, each
+  // grounding call writes one row into ``runner.vga_shadow_samples``.
+  // When either is absent (one-off probes, authoring a fresh SM), the
+  // shadow-log side effect is skipped — the grounding result itself is
+  // always returned.
+  stateMachineId: z.string().uuid().optional(),
+  targetProcess: z.string().optional(),
 });
 
 export const proposeRequestSchema = z.object({
   imageBase64: z.string().min(1),
   categories: z.array(z.string().min(1)).optional(),
+  // Same optional shadow-sample context as /api/vga/ground. See the
+  // comment there for semantics.
+  stateMachineId: z.string().uuid().optional(),
+  targetProcess: z.string().optional(),
 });
 
 export const createStateRequestSchema = z.object({

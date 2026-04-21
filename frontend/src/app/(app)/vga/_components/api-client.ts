@@ -127,13 +127,32 @@ export async function captureScreenshot(monitor: number): Promise<Blob> {
   return resp.blob();
 }
 
+/**
+ * Optional shadow-sample context for the grounding endpoints. When both
+ * are provided AND the referenced SM isn't private, each grounding call
+ * writes a row into ``runner.vga_shadow_samples``. The builder page
+ * passes these through from the loaded SM so the v6 training gate sees
+ * production-distribution data.
+ */
+export interface ShadowContext {
+  stateMachineId?: string;
+  targetProcess?: string;
+}
+
 export async function proposeElements(
-  imageBase64: string
+  imageBase64: string,
+  shadow: ShadowContext = {}
 ): Promise<VgaProposal[]> {
   const resp = await fetch("/api/vga/propose", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ imageBase64 }),
+    body: JSON.stringify({
+      imageBase64,
+      ...(shadow.stateMachineId
+        ? { stateMachineId: shadow.stateMachineId }
+        : {}),
+      ...(shadow.targetProcess ? { targetProcess: shadow.targetProcess } : {}),
+    }),
   });
   const body = await handleJson<{ proposals: VgaProposal[] }>(resp);
   return body.proposals;
@@ -141,7 +160,8 @@ export async function proposeElements(
 
 export async function groundOnce(
   imageBase64: string,
-  prompt: string
+  prompt: string,
+  shadow: ShadowContext = {}
 ): Promise<{
   x: number | null;
   y: number | null;
@@ -152,7 +172,14 @@ export async function groundOnce(
   const resp = await fetch("/api/vga/ground", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ imageBase64, prompt }),
+    body: JSON.stringify({
+      imageBase64,
+      prompt,
+      ...(shadow.stateMachineId
+        ? { stateMachineId: shadow.stateMachineId }
+        : {}),
+      ...(shadow.targetProcess ? { targetProcess: shadow.targetProcess } : {}),
+    }),
   });
   return handleJson(resp);
 }
