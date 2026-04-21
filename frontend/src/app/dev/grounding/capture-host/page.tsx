@@ -45,32 +45,42 @@ export default function GroundingCaptureHostPage() {
   const [lastBbox, setLastBbox] = useState<IframeBbox | null>(null);
   const urlInputRef = useRef<HTMLInputElement | null>(null);
 
-  useUIElement({
+  const { ref: nextUrlUiRef } = useUIElement({
     id: "capture-next-url",
     label: "Pending isolated-sample URL the host iframe will load next",
     type: "input",
   });
-  useUIElement({
+  const { ref: advanceUiRef } = useUIElement({
     id: "capture-advance",
     label: "Load the pending URL into the host iframe",
     type: "button",
   });
-  useUIElement({
+  const { ref: lastBboxUiRef } = useUIElement({
     id: "capture-last-bbox",
     label: "JSON echo of the last bbox reported by the iframe",
     type: "input",
   });
-  useUIElement({
+  const { ref: lastEchoUiRef } = useUIElement({
     id: "capture-last-echo",
     label: "Alias of capture-last-bbox for SDK parity",
     type: "input",
   });
-  useUIElement({
+  const { ref: realExtractUiRef } = useUIElement({
     id: "capture-real-extract",
     label:
       "Extract real-page elements + html2canvas screenshot from iframe — used for real-world eval",
     type: "button",
   });
+
+  // Compose the local ref (used by advance()) with the UI Bridge ref so
+  // both the imperative handle and bbox tracker see the same input node.
+  const setNextUrlRef = useCallback(
+    (node: HTMLInputElement | null) => {
+      urlInputRef.current = node;
+      nextUrlUiRef(node);
+    },
+    [nextUrlUiRef]
+  );
 
   // Load html2canvas on the host (not just inside the isolated iframe) so
   // captureReal() can render the iframe's same-origin DOM into a canvas.
@@ -264,7 +274,7 @@ export default function GroundingCaptureHostPage() {
         </label>
         <input
           id="capture-next-url"
-          ref={urlInputRef}
+          ref={setNextUrlRef}
           type="text"
           defaultValue=""
           placeholder="/api/grounding-isolated?component=Button&..."
@@ -279,6 +289,7 @@ export default function GroundingCaptureHostPage() {
         />
         <button
           id="capture-advance"
+          ref={advanceUiRef}
           type="button"
           onClick={advance}
           style={{
@@ -295,6 +306,7 @@ export default function GroundingCaptureHostPage() {
         </button>
         <button
           id="capture-real-extract"
+          ref={realExtractUiRef}
           type="button"
           onClick={captureReal}
           style={{
@@ -321,6 +333,7 @@ export default function GroundingCaptureHostPage() {
           `capture-last-bbox` and the SDK default `capture-last-echo`. */}
       <input
         id="capture-last-bbox"
+        ref={lastBboxUiRef}
         type="text"
         readOnly
         value={bboxJson}
@@ -340,6 +353,7 @@ export default function GroundingCaptureHostPage() {
       />
       <input
         id="capture-last-echo"
+        ref={lastEchoUiRef}
         type="text"
         readOnly
         value={bboxJson}
