@@ -68,12 +68,15 @@ class SyncLock(Base):
     )
 
     __table_args__ = (
-        # Ensure only one active lock per project
+        # Ensure only one unreleased lock per project. Postgres rejects index
+        # predicates that reference non-IMMUTABLE functions, so we can't filter
+        # by `expires_at > now()` here — expired-but-not-released locks should
+        # be cleaned by a background sweep before they block a new acquire.
         Index(
             "ix_sync_locks_project_active",
             "project_id",
             unique=True,
-            postgresql_where=text("released_at IS NULL AND expires_at > now()"),
+            postgresql_where=text("released_at IS NULL"),
         ),
     )
 

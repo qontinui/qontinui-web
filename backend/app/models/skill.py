@@ -9,7 +9,7 @@ only user-created skills are stored in the database.
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, String, Text, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -37,6 +37,11 @@ class Skill(Base):
 
     organization_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
+        # Matches the fk_skills_organization_id constraint added by
+        # alembic revision p2q3r4s5t6u7. Declared here so Base.metadata
+        # reflects reality — otherwise drop_all orders skills after
+        # organizations and PostgreSQL rejects the organizations drop.
+        ForeignKey("organizations.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )

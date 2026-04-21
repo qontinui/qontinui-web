@@ -77,7 +77,15 @@ class ActionExecution(Base):
 
     screenshot_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("execution_screenshots.id", ondelete="SET NULL"),
+        # action_executions.screenshot_id <-> execution_screenshots.action_execution_id
+        # form a mutual FK cycle. use_alter defers this constraint so metadata
+        # create_all / drop_all order the two tables cleanly.
+        ForeignKey(
+            "execution_screenshots.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_action_executions_screenshot_id",
+        ),
         nullable=True,
         comment="Primary screenshot for this action",
     )

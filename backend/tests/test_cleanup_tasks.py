@@ -18,7 +18,7 @@ from app.worker.tasks import (
 
 
 @pytest.mark.asyncio
-async def test_cleanup_expired_sessions(async_session, test_user):
+async def test_cleanup_expired_sessions(async_db_session, test_user):
     """Test cleanup of expired SessionActivity records."""
     # Create expired session
     expired_session = SessionActivity(
@@ -28,7 +28,7 @@ async def test_cleanup_expired_sessions(async_session, test_user):
         last_activity_at=datetime.now(UTC) - timedelta(days=30),
         absolute_expiry_at=datetime.now(UTC) - timedelta(days=1),  # Expired
     )
-    async_session.add(expired_session)
+    async_db_session.add(expired_session)
 
     # Create active session
     active_session = SessionActivity(
@@ -38,8 +38,8 @@ async def test_cleanup_expired_sessions(async_session, test_user):
         last_activity_at=datetime.now(UTC),
         absolute_expiry_at=datetime.now(UTC) + timedelta(days=30),  # Not expired
     )
-    async_session.add(active_session)
-    await async_session.commit()
+    async_db_session.add(active_session)
+    await async_db_session.commit()
 
     # Run cleanup
     ctx: dict[str, object] = {}
@@ -50,8 +50,8 @@ async def test_cleanup_expired_sessions(async_session, test_user):
     assert result["deleted_count"] == 1
 
     # Verify database state
-    await async_session.refresh(async_session)
-    sessions = await async_session.execute(select(SessionActivity))
+    await async_db_session.refresh(async_db_session)
+    sessions = await async_db_session.execute(select(SessionActivity))
     remaining_sessions = sessions.scalars().all()
 
     assert len(remaining_sessions) == 1
@@ -59,7 +59,7 @@ async def test_cleanup_expired_sessions(async_session, test_user):
 
 
 @pytest.mark.asyncio
-async def test_cleanup_expired_device_sessions(async_session, test_user):
+async def test_cleanup_expired_device_sessions(async_db_session, test_user):
     """Test cleanup of old DeviceSession records."""
     # Create old device session (not accessed in 91 days)
     old_device = DeviceSession(
@@ -71,7 +71,7 @@ async def test_cleanup_expired_device_sessions(async_session, test_user):
         last_seen=datetime.now(UTC) - timedelta(days=91),
         last_ip="192.168.1.1",
     )
-    async_session.add(old_device)
+    async_db_session.add(old_device)
 
     # Create recent device session
     recent_device = DeviceSession(
@@ -83,8 +83,8 @@ async def test_cleanup_expired_device_sessions(async_session, test_user):
         last_seen=datetime.now(UTC) - timedelta(days=10),
         last_ip="192.168.1.2",
     )
-    async_session.add(recent_device)
-    await async_session.commit()
+    async_db_session.add(recent_device)
+    await async_db_session.commit()
 
     # Run cleanup
     ctx: dict[str, object] = {}
@@ -96,8 +96,8 @@ async def test_cleanup_expired_device_sessions(async_session, test_user):
     assert result["days_to_keep"] == 90
 
     # Verify database state
-    await async_session.refresh(async_session)
-    devices = await async_session.execute(select(DeviceSession))
+    await async_db_session.refresh(async_db_session)
+    devices = await async_db_session.execute(select(DeviceSession))
     remaining_devices = devices.scalars().all()
 
     assert len(remaining_devices) == 1
@@ -144,7 +144,7 @@ async def test_cleanup_token_blacklist():
 
 
 @pytest.mark.asyncio
-async def test_run_all_cleanup_tasks(async_session, test_user):
+async def test_run_all_cleanup_tasks(async_db_session, test_user):
     """Test orchestrated cleanup of all tasks."""
     # Create test data
     expired_session = SessionActivity(
@@ -154,7 +154,7 @@ async def test_run_all_cleanup_tasks(async_session, test_user):
         last_activity_at=datetime.now(UTC) - timedelta(days=30),
         absolute_expiry_at=datetime.now(UTC) - timedelta(days=1),
     )
-    async_session.add(expired_session)
+    async_db_session.add(expired_session)
 
     old_device = DeviceSession(
         id=uuid4(),
@@ -165,8 +165,8 @@ async def test_run_all_cleanup_tasks(async_session, test_user):
         last_seen=datetime.now(UTC) - timedelta(days=91),
         last_ip="192.168.1.1",
     )
-    async_session.add(old_device)
-    await async_session.commit()
+    async_db_session.add(old_device)
+    await async_db_session.commit()
 
     # Run all cleanup tasks
     ctx: dict[str, object] = {}

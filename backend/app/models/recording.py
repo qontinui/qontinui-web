@@ -339,7 +339,16 @@ class RecordingInteraction(Base):
         UUID(as_uuid=True), ForeignKey("discovered_states.id"), nullable=True
     )
     transition_id = Column(
-        UUID(as_uuid=True), ForeignKey("discovered_transitions.id"), nullable=True
+        UUID(as_uuid=True),
+        # recording_interactions.transition_id <-> discovered_transitions.trigger_interaction_id
+        # form a mutual FK cycle. use_alter defers this constraint so metadata
+        # create_all / drop_all order the two tables cleanly.
+        ForeignKey(
+            "discovered_transitions.id",
+            use_alter=True,
+            name="fk_recording_interactions_transition_id",
+        ),
+        nullable=True,
     )
 
     # Relationship
