@@ -16,6 +16,7 @@ import {
   GroundingUnavailableError,
   groundOnce,
 } from "@/lib/vga/grounding-client";
+import { readImageDims } from "@/lib/vga/image-dims";
 import { proposeRequestSchema } from "@/lib/vga/schemas";
 import type { VgaProposal } from "@/lib/types/vga";
 
@@ -63,6 +64,7 @@ export async function POST(request: NextRequest) {
   }
 
   const categories = parsed.data.categories ?? [...DEFAULT_CATEGORIES];
+  const dims = readImageDims(parsed.data.imageBase64);
 
   try {
     const proposals: VgaProposal[] = [];
@@ -71,6 +73,8 @@ export async function POST(request: NextRequest) {
       const result = await groundOnce({
         imageBase64: parsed.data.imageBase64,
         prompt,
+        imageWidth: dims?.width,
+        imageHeight: dims?.height,
       });
       if (result.x === null || result.y === null) continue;
       proposals.push({
@@ -83,7 +87,11 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({ proposals: dedupe(proposals) });
+    return NextResponse.json({
+      proposals: dedupe(proposals),
+      imageWidth: dims?.width ?? null,
+      imageHeight: dims?.height ?? null,
+    });
   } catch (err) {
     if (err instanceof GroundingUnavailableError) {
       return NextResponse.json({ error: err.message }, { status: 502 });

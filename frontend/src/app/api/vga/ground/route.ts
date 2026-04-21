@@ -13,6 +13,7 @@ import {
   GroundingUnavailableError,
   groundOnce,
 } from "@/lib/vga/grounding-client";
+import { readImageDims } from "@/lib/vga/image-dims";
 import { groundRequestSchema } from "@/lib/vga/schemas";
 
 /** Half-edge of the bbox we return around the predicted point. */
@@ -35,13 +36,20 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const result = await groundOnce(parsed.data);
+    const dims = readImageDims(parsed.data.imageBase64);
+    const result = await groundOnce({
+      ...parsed.data,
+      imageWidth: dims?.width,
+      imageHeight: dims?.height,
+    });
 
-    if (result.x === null || result.y === null) {
+    if (result.normX === null || result.normY === null) {
       return NextResponse.json(
         {
           x: null,
           y: null,
+          normX: null,
+          normY: null,
           rawResponse: result.rawResponse,
           confidence: 0,
           boxHalf: BOX_HALF,
@@ -51,18 +59,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Normalized coords are useful for the builder overlay layer when
-    // it has the screenshot dimensions handy — keep them here.
-    // Since we don't know the image dimensions server-side, return
-    // `null` for normX/normY and let the caller compute if needed.
     return NextResponse.json({
       x: result.x,
       y: result.y,
-      normX: null,
-      normY: null,
+      normX: result.normX,
+      normY: result.normY,
       boxHalf: BOX_HALF,
       rawResponse: result.rawResponse,
       confidence: result.confidence,
+      imageWidth: dims?.width ?? null,
+      imageHeight: dims?.height ?? null,
     });
   } catch (err) {
     if (err instanceof GroundingParseError) {

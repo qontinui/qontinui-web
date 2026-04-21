@@ -11,12 +11,18 @@
  */
 
 const LLAMA_SWAP_BASE =
-  process.env.QONTINUI_LLAMA_SWAP_URL ?? "http://localhost:5800";
+  process.env.QONTINUI_LLAMA_SWAP_URL ?? "http://localhost:8100";
 const DEFAULT_MODEL = "qontinui-grounding-v5";
 
 /** Extracted point + raw response for caller logging/debugging. */
 export interface GroundResult {
-  /** Absolute x pixel coordinate (rounded to int). `null` if no point parsed. */
+  /** Normalized x in [0, 1] (original model output, pre-pixel-mapping). `null` if no point parsed. */
+  normX: number | null;
+  normY: number | null;
+  /**
+   * Absolute x pixel coordinate (rounded to int) when `imageWidth` is
+   * provided; `null` otherwise. `null` also if no point parsed.
+   */
   x: number | null;
   y: number | null;
   rawResponse: string;
@@ -50,11 +56,22 @@ export class GroundingParseError extends Error {
 const POINT_RE = /<point>\s*([-\d.]+)[\s,]+([-\d.]+)\s*<\/point>/i;
 const NONE_RE = /<none\s*\/?>/i;
 
-/** Dispatch one grounding call and return the parsed point. */
+/** Dispatch one grounding call and return the parsed point.
+ *
+ * Coordinate normalization: v5 emits `<point>x y</point>` where x and y
+ * may be either:
+ *   - fractions in [0, 1]    (current v5 deployment — `<point>0.0253 0.1401</point>`)
+ *   - integers in [0, 1000]  (the training prompt's claimed format)
+ * We auto-detect by magnitude: if either coord is > 1.0 we assume the
+ * 0–1000 convention, else the 0–1 convention. Output `normX`/`normY`
+ * are always in the [0, 1] space so callers don't have to care.
+ */
 export async function groundOnce(args: {
   imageBase64: string;
   prompt: string;
   model?: string;
+  imageWidth?: number;
+  imageHeight?: number;
 }): Promise<GroundResult> {
   const model = args.model ?? DEFAULT_MODEL;
   const url = `${LLAMA_SWAP_BASE}/v1/chat/completions`;
@@ -119,7 +136,14 @@ export async function groundOnce(args: {
   }
 
   if (NONE_RE.test(raw)) {
-    return { x: null, y: null, rawResponse: raw, confidence: 0 };
+    return {
+      x: null,
+      y: null,
+      normX: null,
+      normY: null,
+      rawResponse: raw,
+      confidence: 0,
+    };
   }
 
   const match = raw.match(POINT_RE);
@@ -130,17 +154,30 @@ export async function groundOnce(args: {
     );
   }
 
-  const x = Math.round(Number.parseFloat(match[1]));
-  const y = Math.round(Number.parseFloat(match[2]));
+  const rawX = Number.parseFloat(match[1]);
+  const rawY = Number.parseFloat(match[2]);
 
-  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+  if (!Number.isFinite(rawX) || !Number.isFinite(rawY)) {
     throw new GroundingParseError(
       "Parsed point had non-finite coordinates",
       raw
     );
   }
 
-  return { x, y, rawResponse: raw, confidence: 1 };
+  // Auto-detect coordinate convention. If either coord is above 1.0, the
+  // model is using 0-1000 integers; otherwise it's emitting 0-1 fractions.
+  const isThousands = Math.max(Math.abs(rawX), Math.abs(rawY)) > 1.0;
+  const normX = isThousands ? rawX / 1000.0 : rawX;
+  const normY = isThousands ? rawY / 1000.0 : rawY;
+
+  const x =
+    args.imageWidth !== undefined ? Math.round(normX * args.imageWidth) : null;
+  const y =
+    args.imageHeight !== undefined
+      ? Math.round(normY * args.imageHeight)
+      : null;
+
+  return { x, y, normX, normY, rawResponse: raw, confidence: 1 };
 }
 
 function extractContent(data: unknown): string | null {
