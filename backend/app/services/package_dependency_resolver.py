@@ -108,6 +108,16 @@ class PackageDependencyResolver:
         Returns:
             (is_installed, installed_version)
         """
+        # Standard-library modules have no distribution metadata, but they
+        # are always available. Treat them as installed (no version).
+        import sys
+
+        stdlib_modules: frozenset[str] | set[str] = getattr(
+            sys, "stdlib_module_names", frozenset()
+        )
+        if name in stdlib_modules:
+            return True, None
+
         try:
             installed_version = importlib.metadata.version(name)
 

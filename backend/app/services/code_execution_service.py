@@ -171,14 +171,20 @@ class CodeExecutionService:
                     sys.path.insert(0, project_root)
                     added_to_path = True
 
-            # Create safe execution environment
+            # Create safe execution environment.
+            #
+            # ``__import__`` must be available whenever the user code contains
+            # any ``import`` statement — even for whitelisted standard-library
+            # modules like ``re``/``json``. The CodeValidator has already
+            # AST-checked the code against the whitelist, so exposing the real
+            # ``__import__`` is safe: any disallowed name was rejected earlier.
+            allow_import_stmts = allow_project_imports or bool(request.allowed_imports)
             safe_globals = self.create_safe_globals(
                 request.context,
                 request.inputs,
                 request.allowed_imports,
-                allow_imports=allow_project_imports,
+                allow_imports=allow_import_stmts,
             )
-            safe_locals: dict[str, Any] = {}
 
             # Capture stdout/stderr
             stdout_capture = io.StringIO()
@@ -197,16 +203,21 @@ class CodeExecutionService:
                 sys.stderr = stderr_capture
 
                 with time_limit(request.timeout):
-                    # Execute code
-                    exec(request.code, safe_globals, safe_locals)  # noqa: S102 - sandboxed execution with restricted globals
+                    # Execute code using a single dict for globals+locals so
+                    # that module-level ``import`` statements and function
+                    # definitions share the same namespace; otherwise a
+                    # function defined at module level won't see names (like
+                    # imported modules) introduced by sibling statements at
+                    # the same level.
+                    exec(request.code, safe_globals)  # noqa: S102 - sandboxed execution with restricted globals
 
                     # Get result (last expression or explicit return)
-                    result = safe_locals.get("result", None)
+                    result = safe_globals.get("result", None)
 
                     # If no 'result' variable, try to evaluate as expression
                     if result is None:
                         try:
-                            result = eval(request.code, safe_globals, safe_locals)  # noqa: S307 - sandboxed eval with restricted globals
+                            result = eval(request.code, safe_globals)  # noqa: S307 - sandboxed eval with restricted globals
                         except Exception:
                             # If not an expression, result is None
                             pass

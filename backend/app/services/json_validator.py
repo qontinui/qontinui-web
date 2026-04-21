@@ -426,44 +426,101 @@ class JSONConfigValidator:
                     errors.append(f"Duplicate image ID: {image_id}")
                 image_ids.add(image_id)
 
+            fmt = image.get("format")
+            if fmt and fmt not in self.SUPPORTED_IMAGE_FORMATS:
+                errors.append(
+                    f"Unsupported image format: {fmt} "
+                    f"(supported: {self.SUPPORTED_IMAGE_FORMATS})"
+                )
+
         # Validate states (v1 uses identifyingImages)
         state_ids: set[str] = set()
+        initial_states: list[str] = []
         for state in config_data.get("states", []):
             if not isinstance(state, dict):
                 errors.append("Invalid state format")
                 continue
             state_id = state.get("id")
+            state_name = str(state.get("name") or state_id or "<unknown>")
             if state_id:
                 if state_id in state_ids:
                     errors.append(f"Duplicate state ID: {state_id}")
                 state_ids.add(state_id)
 
-            # v1 format uses identifyingImages
-            for img in state.get("identifyingImages", []):
-                img_id = img.get("imageId") if isinstance(img, dict) else None
-                if img_id and img_id not in image_ids:
-                    errors.append(
-                        f"State {state_id}: references non-existent image: {img_id}"
-                    )
+            if state.get("isInitial"):
+                initial_states.append(state_name)
 
-        # Validate transitions (v1 uses processes)
+            identifying = state.get("identifyingImages", [])
+            if not identifying:
+                errors.append(f"State '{state_name}' has no identifying images")
+            else:
+                for img in identifying:
+                    if not isinstance(img, dict):
+                        continue
+                    img_id = img.get("imageId")
+                    if img_id and img_id not in image_ids:
+                        errors.append(
+                            f"State {state_id}: references non-existent image: {img_id}"
+                        )
+                    threshold = img.get("threshold")
+                    if threshold is not None and not (0.0 <= threshold <= 1.0):
+                        errors.append(
+                            f"State '{state_name}': Invalid threshold "
+                            f"{threshold} for image {img_id} "
+                            f"(must be between 0.0 and 1.0)"
+                        )
+
+        if config_data.get("states"):
+            if len(initial_states) > 1:
+                errors.append(
+                    f"Multiple initial states defined: {initial_states}. "
+                    f"Only one state may be marked as initial."
+                )
+            elif len(initial_states) == 0:
+                warnings.append("No initial state defined in configuration")
+
+        # Validate workflows (v1 uses either processes or workflows key)
         workflow_ids: set[str] = set()
-        for wf in config_data.get("workflows", config_data.get("processes", [])):
-            if isinstance(wf, dict):
-                wf_id = wf.get("id")
-                if wf_id:
-                    workflow_ids.add(wf_id)
+        workflow_entries = config_data.get("workflows") or config_data.get(
+            "processes", []
+        )
+        for wf in workflow_entries:
+            if not isinstance(wf, dict):
+                continue
+            wf_id = wf.get("id")
+            if wf_id:
+                workflow_ids.add(wf_id)
+            fmt = wf.get("format")
+            if fmt is not None and fmt != "graph":
+                errors.append(
+                    f"Invalid workflow format: {fmt!r} for workflow "
+                    f"{wf_id!r}. Must be 'graph'."
+                )
 
+        used_workflow_ids: set[str] = set()
         for transition in config_data.get("transitions", []):
             if not isinstance(transition, dict):
                 continue
             # v1 uses processes, v2 uses workflows
             wf_ids = transition.get("processes") or transition.get("workflows") or []
             for wf_id in wf_ids:
+                used_workflow_ids.add(wf_id)
                 if wf_id not in workflow_ids:
                     errors.append(
                         f"Transition references non-existent workflow: {wf_id}"
                     )
+            # State references
+            for key, label in (("fromState", "fromState"), ("toState", "toState")):
+                ref = transition.get(key)
+                if ref and ref not in state_ids:
+                    errors.append(f"Transition references non-existent {label}: {ref}")
+
+        orphaned_workflows = workflow_ids - used_workflow_ids
+        if orphaned_workflows:
+            warnings.append(
+                f"Orphaned workflows not used in any transition: "
+                f"{sorted(orphaned_workflows)}"
+            )
 
         return ValidationResult(
             valid=len(errors) == 0, errors=errors, warnings=warnings

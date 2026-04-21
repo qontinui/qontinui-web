@@ -536,7 +536,22 @@ class PackageInstaller:
         user_id: str,
         installed_path: str,
     ) -> PackageInstallation:
-        """Record package installation in database."""
+        """Record package installation in database.
+
+        The ``package_installations`` table has a UNIQUE (project_id,
+        package_id) constraint, so when a prior (possibly DISABLED) row
+        already exists we reactivate it in place rather than inserting a
+        duplicate. This is the path exercised by the update flow which
+        uninstalls (DISABLED) then reinstalls.
+        """
+        existing = await self._get_installation(project_id, package_id)
+        if existing is not None:
+            existing.version_id = version_id  # type: ignore[assignment]
+            existing.user_id = user_id  # type: ignore[assignment]
+            existing.status = InstallationStatus.ACTIVE.value  # type: ignore[assignment]
+            existing.installed_at = datetime.now(UTC)  # type: ignore[assignment]
+            return existing
+
         installation = PackageInstallation(
             project_id=project_id,
             package_id=package_id,

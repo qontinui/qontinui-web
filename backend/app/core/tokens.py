@@ -148,11 +148,15 @@ def decode_token(token: str) -> dict[Any, Any]:
     """
     try:
         # Try decoding with ACCESS_SECRET_KEY first (for access tokens)
-        # ACCESS_SECRET_KEY is guaranteed to be str by the config validator
+        # ACCESS_SECRET_KEY is guaranteed to be str by the config validator.
+        # Access tokens created via create_access_token() include the
+        # "fastapi-users:auth" audience claim, so we must specify it here
+        # otherwise jose raises JWTClaimsError("Invalid audience").
         payload = jwt.decode(
             token,
             cast(str, settings.ACCESS_SECRET_KEY),
             algorithms=[settings.ALGORITHM],
+            audience="fastapi-users:auth",
         )
         return cast(dict[Any, Any], payload)
     except JWTError:

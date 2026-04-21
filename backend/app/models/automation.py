@@ -95,7 +95,14 @@ class AutomationInputEvent(Base):
         nullable=True,
     )
 
-    created_at = Column(TIMESTAMP, nullable=False, default=lambda: datetime.now(UTC))
+    # Column is TIMESTAMP WITHOUT TIME ZONE (part of partition key); default
+    # must therefore produce a naive datetime or asyncpg raises
+    # "can't subtract offset-naive and offset-aware datetimes" at encode time.
+    created_at = Column(
+        TIMESTAMP,
+        nullable=False,
+        default=lambda: datetime.now(UTC).replace(tzinfo=None),
+    )
 
     # Relationships
     session = relationship("AutomationSession", back_populates="input_events")
