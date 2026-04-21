@@ -67,6 +67,7 @@ import {
   Video,
   Radio,
   Eye,
+  Target,
 } from "lucide-react";
 
 const ICON_MAP: Record<
@@ -139,6 +140,7 @@ const ICON_MAP: Record<
   Video,
   Radio,
   Eye,
+  Target,
 };
 
 export function resolveIcon(

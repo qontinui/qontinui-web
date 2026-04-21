@@ -13,3 +13,8 @@ yarn.lock
 .vercel
 .env*
 tsconfig.tsbuildinfo
+
+# Byte-exact canonical JSON fixture — prettier would reformat it and
+# break the Py↔TS parity test. See src/lib/vga/canonical.parity.test.ts.
+test-fixtures/vga/canonical-state-machine.canonical.json
+test-fixtures/vga/canonical-state-machine.json

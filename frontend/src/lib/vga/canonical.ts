@@ -10,6 +10,13 @@
  *   3. JSON object keys are sorted alphabetically, recursively.
  *   4. Output uses compact separators (`,` and `:`) — no whitespace.
  *
+ * This file has a parity twin at
+ * `qontinui/src/qontinui/vga/state_machine.py`. Shared fixtures live at
+ * `test-fixtures/vga/canonical-state-machine{,.canonical}.json`. Tests
+ * (`canonical.parity.test.ts` here + `test_vga_canonical_parity.py` on
+ * the Python side) must update both OR canonical JSON will diverge
+ * silently and CI will fail.
+ *
  * The SHA-256 of this output is the `content_hash` used for git-
  * versioning and content-addressable storage. Any drift here silently
  * breaks downstream deduplication. If you change this, mirror the

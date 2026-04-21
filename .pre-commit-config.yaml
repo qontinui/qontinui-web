@@ -4,8 +4,11 @@ repos:
     hooks:
       - id: mixed-line-ending
         args: [--fix=lf]
+        exclude: ^frontend/test-fixtures/vga/canonical-state-machine\.canonical\.json$
       - id: end-of-file-fixer
+        exclude: ^frontend/test-fixtures/vga/canonical-state-machine\.canonical\.json$
       - id: trailing-whitespace
+        exclude: ^frontend/test-fixtures/vga/canonical-state-machine\.canonical\.json$
       - id: check-yaml
       - id: check-added-large-files
       - id: check-merge-conflict
