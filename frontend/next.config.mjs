@@ -109,6 +109,14 @@ const nextConfig = {
           source: '/__ui-bridge__/:path*',
           destination: '/api/ui-bridge/:path*',
         },
+        // VGA canonical JSON export — UI and external tools fetch
+        // `/api/vga/state/<uuid>.json` and round-trip via the import
+        // endpoint. Next.js App Router doesn't support `.json` as part
+        // of a dynamic segment, so we rewrite to a plain subroute.
+        {
+          source: '/api/vga/state/:id.json',
+          destination: '/api/vga/state/:id/export',
+        },
         // UI Bridge control endpoint rewrite for build pages.
         // The runner constructs health-check/snapshot URLs by appending /control/:path
         // to the page URL (e.g., /build/page-sweep/control/snapshot). Rewrite these
