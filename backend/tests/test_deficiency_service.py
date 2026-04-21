@@ -162,7 +162,34 @@ class TestDeficiencyService:
     @pytest.mark.asyncio
     async def test_create_deficiency_from_failure(self, async_db_session):
         """Test automatic deficiency creation from failed transition."""
-        test_run_id = uuid4()
+        from app.models.project import Project
+        from app.models.software_test_run import SoftwareTestRun, TestRunStatus
+        from app.models.user import User
+
+        # Create user -> project -> test run so the FK chain is satisfied.
+        user = User(
+            email=f"defuser_{uuid4().hex[:8]}@example.com",
+            username=f"defuser_{uuid4().hex[:8]}",
+            hashed_password="x",
+            is_active=True,
+            is_verified=True,
+        )
+        async_db_session.add(user)
+        await async_db_session.commit()
+
+        project = Project(name="deficiency-test", owner_id=user.id)
+        async_db_session.add(project)
+        await async_db_session.commit()
+
+        test_run = SoftwareTestRun(
+            project_id=project.id,
+            status=TestRunStatus.RUNNING,
+            started_at=datetime.now(UTC),
+        )
+        async_db_session.add(test_run)
+        await async_db_session.commit()
+        await async_db_session.refresh(test_run)
+        test_run_id = test_run.id
 
         # Create a failed transition
         transition = TransitionExecution(
@@ -212,9 +239,33 @@ class TestDeficiencyService:
     @pytest.mark.asyncio
     async def test_link_screenshot_to_deficiency(self, async_db_session):
         """Test linking screenshots to existing deficiencies."""
+        from app.models.project import Project
+        from app.models.software_test_run import SoftwareTestRun, TestRunStatus
         from app.models.test_deficiency import TestDeficiency
+        from app.models.user import User
 
-        test_run_id = uuid4()
+        # Build the FK chain: user -> project -> test_run.
+        user = User(
+            email=f"linkuser_{uuid4().hex[:8]}@example.com",
+            username=f"linkuser_{uuid4().hex[:8]}",
+            hashed_password="x",
+            is_active=True,
+            is_verified=True,
+        )
+        async_db_session.add(user)
+        await async_db_session.commit()
+        project = Project(name="link-test", owner_id=user.id)
+        async_db_session.add(project)
+        await async_db_session.commit()
+        test_run = SoftwareTestRun(
+            project_id=project.id,
+            status=TestRunStatus.RUNNING,
+            started_at=datetime.now(UTC),
+        )
+        async_db_session.add(test_run)
+        await async_db_session.commit()
+        await async_db_session.refresh(test_run)
+        test_run_id = test_run.id
 
         # Create a deficiency
         deficiency = TestDeficiency(

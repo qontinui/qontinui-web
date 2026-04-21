@@ -455,7 +455,13 @@ class TestInvalidDiscoveries:
         async_db_session: AsyncSession,
         test_user: User,
     ):
-        """Test that a discovery with nonexistent project returns False."""
+        """Test that a discovery with nonexistent project returns False.
+
+        Under PostgreSQL the FK constraint would reject the insert, so we
+        build the Discovery as an unpersisted object and pass it directly
+        to the applier — it should detect the missing project and return
+        False without committing.
+        """
         discovery = Discovery(
             id=uuid4(),
             user_id=test_user.id,
@@ -473,8 +479,9 @@ class TestInvalidDiscoveries:
             runs_observed=5,
             status="pending",
         )
-        async_db_session.add(discovery)
-        await async_db_session.commit()
+        # Intentionally skip the add/commit — the FK would reject the row.
+        # The applier should short-circuit because the referenced project
+        # doesn't exist.
 
         result = await DiscoveryApplier.apply_discovery(
             db=async_db_session,

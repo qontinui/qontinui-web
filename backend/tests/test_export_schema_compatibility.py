@@ -34,7 +34,7 @@ class TestFindActionExport:
             "config": {
                 "target": {
                     "type": "image",
-                    "imageId": "img_login_btn",
+                    "imageIds": ["img_login_btn"],
                     "searchOptions": {"similarity": 0.9, "timeout": 5000},
                 }
             },
@@ -51,7 +51,7 @@ class TestFindActionExport:
         typed_config = get_typed_config(action)
         assert isinstance(typed_config, FindActionConfig)
         assert typed_config.target.type == "image"
-        assert typed_config.target.image_id == "img_login_btn"
+        assert typed_config.target.image_ids == ["img_login_btn"]
         assert typed_config.target.search_options.similarity == 0.9
         assert typed_config.target.search_options.timeout == 5000
 
@@ -132,7 +132,7 @@ class TestFindActionExport:
             "config": {
                 "target": {
                     "type": "image",
-                    "imageId": "img_with_options",
+                    "imageIds": ["img_with_options"],
                     "searchOptions": {"similarity": 0.9},
                 }
             },
@@ -150,7 +150,7 @@ class TestFindActionExport:
             "id": "action_5b",
             "type": "FIND",
             "config": {
-                "target": {"type": "image", "imageId": "img_no_options"},
+                "target": {"type": "image", "imageIds": ["img_no_options"]},
                 "searchOptions": {
                     "similarity": 0.95,
                     "timeout": 10000,
@@ -197,7 +197,7 @@ class TestWorkflowExport:
                 {
                     "id": "action_1",
                     "type": "FIND",
-                    "config": {"target": {"type": "image", "imageId": "img_1"}},
+                    "config": {"target": {"type": "image", "imageIds": ["img_1"]}},
                     "position": [100, 100],
                 },
                 {
@@ -279,7 +279,6 @@ class TestWorkflowExport:
             "settings": {
                 "timeout": 30000,
                 "retryCount": 3,
-                "continueOnError": True,
                 "parallelExecution": False,
                 "maxParallelActions": 1,
             },
@@ -288,8 +287,8 @@ class TestWorkflowExport:
         workflow = Workflow.model_validate(workflow_data)
         assert workflow.settings.timeout == 30000
         assert workflow.settings.retry_count == 3
-        assert workflow.settings.continue_on_error is True
         assert workflow.settings.parallel_execution is False
+        assert workflow.settings.max_parallel_actions == 1
 
     def test_workflow_missing_format_defaults_to_graph(self):
         """Test that workflow defaults to 'graph' format."""
@@ -342,7 +341,7 @@ class TestActionConfigExport:
             "id": "click_1",
             "type": "CLICK",
             "config": {
-                "target": {"type": "image", "imageId": "img_button"},
+                "target": {"type": "image", "imageIds": ["img_button"]},
                 "mouseButton": "LEFT",
                 "numberOfClicks": 1,
             },
@@ -388,7 +387,7 @@ class TestCompleteConfigExport:
                     "config": {
                         "target": {
                             "type": "image",
-                            "imageId": "img_username_field",
+                            "imageIds": ["img_username_field"],
                             "searchOptions": {"similarity": 0.9, "timeout": 5000},
                         }
                     },
@@ -417,7 +416,7 @@ class TestCompleteConfigExport:
                     "type": "FIND",
                     "name": "Find Password Field",
                     "config": {
-                        "target": {"type": "image", "imageId": "img_password_field"}
+                        "target": {"type": "image", "imageIds": ["img_password_field"]}
                     },
                     "position": [100, 200],
                 },
@@ -489,7 +488,7 @@ class TestCompleteConfigExport:
                 "created": "2025-01-01T00:00:00Z",
             },
             "variables": {"local": {"username": "testuser", "password": "password123"}},
-            "settings": {"timeout": 30000, "retryCount": 3, "continueOnError": False},
+            "settings": {"timeout": 30000, "retryCount": 3},
         }
 
         # Validate the entire workflow
@@ -564,7 +563,7 @@ class TestBackwardCompatibility:
             "config": {
                 "target": {
                     "type": "image",
-                    "imageId": "img_1",  # camelCase
+                    "imageIds": ["img_1"],  # camelCase
                     "searchOptions": {
                         "similarity": 0.9,
                         "maxMatchesToActOn": 3,  # camelCase
@@ -575,7 +574,7 @@ class TestBackwardCompatibility:
 
         action = Action.model_validate(action_data)
         typed_config = get_typed_config(action)
-        assert typed_config.target.image_id == "img_1"
+        assert typed_config.target.image_ids == ["img_1"]
         assert typed_config.target.search_options.max_matches_to_act_on == 3
 
     def test_snake_case_field_names(self):
@@ -586,7 +585,7 @@ class TestBackwardCompatibility:
             "config": {
                 "target": {
                     "type": "image",
-                    "image_id": "img_2",  # snake_case
+                    "image_ids": ["img_2"],  # snake_case
                     "search_options": {
                         "similarity": 0.85,
                         "max_matches_to_act_on": 5,  # snake_case
@@ -597,7 +596,7 @@ class TestBackwardCompatibility:
 
         action = Action.model_validate(action_data)
         typed_config = get_typed_config(action)
-        assert typed_config.target.image_id == "img_2"
+        assert typed_config.target.image_ids == ["img_2"]
         assert typed_config.target.search_options.max_matches_to_act_on == 5
 
 
@@ -639,7 +638,7 @@ class TestEdgeCases:
             "config": {
                 "target": {
                     "type": "image",
-                    "imageId": "img_1",
+                    "imageIds": ["img_1"],
                     "searchOptions": None,  # Optional field
                 }
             },

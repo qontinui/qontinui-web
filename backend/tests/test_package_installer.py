@@ -153,10 +153,20 @@ def extract_emails(text: str) -> list:
 async def package_installer(
     async_db_session: AsyncSession, temp_dir: str
 ) -> PackageInstaller:
-    """Create package installer with temp directory."""
+    """Create package installer with temp directory.
+
+    The ``download_service`` in ``PackageInstaller`` has its own internal
+    ``ProjectDirectoryManager`` which is where files actually land. We must
+    point both at the same temp directory for the tests to see the files.
+    """
+    from app.services.package_download_service import PackageDownloadService
+
     project_dir_manager = ProjectDirectoryManager(base_dir=Path(temp_dir))
+    download_service = PackageDownloadService(project_dir_manager=project_dir_manager)
     return PackageInstaller(
-        db_session=async_db_session, project_dir_manager=project_dir_manager
+        db_session=async_db_session,
+        project_dir_manager=project_dir_manager,
+        download_service=download_service,
     )
 
 
@@ -543,37 +553,41 @@ async def test_uninstall_package_not_installed(
 
 
 def test_version_comparison():
-    """Test version comparison logic."""
-    installer = PackageInstaller(db_session=None)  # type: ignore
+    """Test version comparison logic (delegated to dependency resolver)."""
+    from app.services.package_dependency_resolver import (
+        package_dependency_resolver as resolver,
+    )
 
     # Test newer versions
-    assert installer._is_newer_version("2.0.0", "1.0.0") is True
-    assert installer._is_newer_version("1.1.0", "1.0.0") is True
-    assert installer._is_newer_version("1.0.1", "1.0.0") is True
+    assert resolver.is_newer_version("2.0.0", "1.0.0") is True
+    assert resolver.is_newer_version("1.1.0", "1.0.0") is True
+    assert resolver.is_newer_version("1.0.1", "1.0.0") is True
 
     # Test same versions
-    assert installer._is_newer_version("1.0.0", "1.0.0") is False
+    assert resolver.is_newer_version("1.0.0", "1.0.0") is False
 
     # Test older versions
-    assert installer._is_newer_version("1.0.0", "2.0.0") is False
+    assert resolver.is_newer_version("1.0.0", "2.0.0") is False
 
 
 def test_version_satisfies():
-    """Test version satisfaction logic."""
-    installer = PackageInstaller(db_session=None)  # type: ignore
+    """Test version satisfaction logic (delegated to dependency resolver)."""
+    from app.services.package_dependency_resolver import (
+        package_dependency_resolver as resolver,
+    )
 
     # Test >= operator
-    assert installer._version_satisfies("2.1.0", ">=2.0.0") is True
-    assert installer._version_satisfies("2.0.0", ">=2.0.0") is True
-    assert installer._version_satisfies("1.9.0", ">=2.0.0") is False
+    assert resolver.version_satisfies("2.1.0", ">=2.0.0") is True
+    assert resolver.version_satisfies("2.0.0", ">=2.0.0") is True
+    assert resolver.version_satisfies("1.9.0", ">=2.0.0") is False
 
     # Test == operator
-    assert installer._version_satisfies("2.0.0", "==2.0.0") is True
-    assert installer._version_satisfies("2.0.1", "==2.0.0") is False
+    assert resolver.version_satisfies("2.0.0", "==2.0.0") is True
+    assert resolver.version_satisfies("2.0.1", "==2.0.0") is False
 
     # Test > operator
-    assert installer._version_satisfies("2.1.0", ">2.0.0") is True
-    assert installer._version_satisfies("2.0.0", ">2.0.0") is False
+    assert resolver.version_satisfies("2.1.0", ">2.0.0") is True
+    assert resolver.version_satisfies("2.0.0", ">2.0.0") is False
 
 
 # ============================================================================
