@@ -15,6 +15,33 @@
 
 export type ServerRunnerStatus = "healthy" | "unhealthy" | "offline";
 
+/**
+ * Runner-derived overall status (Phase 3J). The runner computes this from
+ * multiple sub-signals and it is distinct from ``status`` (the runner's
+ * self-reported liveness). ``null`` for pre-Phase-3J runners that have not
+ * yet heartbeat with the extended payload.
+ */
+export type ServerRunnerDerivedStatus =
+  | "healthy"
+  | "degraded"
+  | "errored"
+  | "offline"
+  | "starting";
+
+/**
+ * Most recent UI error reported by a runner's React error boundary.
+ * ``null`` on the Runner row means no outstanding UI error.
+ */
+export interface ServerRunnerUiError {
+  message: string;
+  stack: string | null;
+  component_stack: string | null;
+  digest: string | null;
+  first_seen: string;
+  reported_at: string;
+  count: number;
+}
+
 export interface ServerRunner {
   id: string;
   user_id: string;
@@ -27,6 +54,10 @@ export interface ServerRunner {
   restate_healthy: boolean;
   last_heartbeat: string | null;
   status: ServerRunnerStatus;
+  /** Runner-computed overall status; ``null`` for pre-Phase-3J runners. */
+  derived_status: ServerRunnerDerivedStatus | null;
+  /** Most recent outstanding UI error, or ``null`` if none. */
+  ui_error: ServerRunnerUiError | null;
   created_at: string;
 }
 

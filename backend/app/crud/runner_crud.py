@@ -277,8 +277,22 @@ async def heartbeat_runner(
     runner_id: UUID,
     restate_healthy: bool,
     status_value: str,
+    derived_status: str | None = None,
+    ui_error: dict | None = None,
 ) -> Runner | None:
     """Record a heartbeat from a runner, updating liveness fields.
+
+    Phase 3J.5 extended the heartbeat to optionally carry ``derived_status``
+    and ``ui_error``. Both are written on every heartbeat:
+
+    * ``derived_status`` is replaced each heartbeat with the runner's
+      latest value (``None`` from a pre-Phase-3J runner simply keeps the
+      column null).
+    * ``ui_error`` is authoritative each heartbeat: a dict overwrites the
+      column, ``None`` (either explicitly sent as JSON ``null`` or omitted
+      by a pre-Phase-3J runner) clears it. This matches the runner's
+      state machine — the runner holds the current outstanding error and
+      the heartbeat reflects that.
 
     Returns the updated row, or ``None`` if no runner with ``runner_id``
     exists.
@@ -292,6 +306,8 @@ async def heartbeat_runner(
     record.last_heartbeat = utc_now()
     record.restate_healthy = restate_healthy
     record.status = status_value
+    record.derived_status = derived_status
+    record.ui_error = ui_error
     await db.commit()
     await db.refresh(record)
     return record

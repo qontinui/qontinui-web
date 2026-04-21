@@ -23,6 +23,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  AlertTriangle,
   Loader2,
   ServerOff,
   Trash2,
@@ -32,8 +33,35 @@ import {
 } from "lucide-react";
 import { useRunners, useDeregisterRunner } from "@/hooks/useServerRunners";
 import { formatRelativeTime } from "@/utils/formatDuration";
-import type { ServerRunner } from "@/types/server-runner";
+import type { ServerRunner, ServerRunnerUiError } from "@/types/server-runner";
 import { RunnerStatusBadge } from "./RunnerStatusBadge";
+
+/**
+ * Compact human summary of a ui_error payload for the hover tooltip.
+ * Separate from the truncated in-row label so the title attribute retains
+ * the full context (digest, count, first_seen) that the badge cannot fit.
+ */
+function formatUiErrorTitle(err: ServerRunnerUiError): string {
+  const parts = [err.message];
+  if (err.digest) parts.push(`digest=${err.digest}`);
+  parts.push(`count=${err.count}`);
+  parts.push(`first_seen=${err.first_seen}`);
+  parts.push(`reported_at=${err.reported_at}`);
+  if (err.component_stack) {
+    parts.push(`\ncomponent stack:\n${err.component_stack}`);
+  }
+  if (err.stack) {
+    parts.push(`\nstack:\n${err.stack}`);
+  }
+  return parts.join("\n");
+}
+
+const UI_ERROR_MESSAGE_MAX = 60;
+
+function truncateMessage(msg: string): string {
+  if (msg.length <= UI_ERROR_MESSAGE_MAX) return msg;
+  return `${msg.slice(0, UI_ERROR_MESSAGE_MAX - 1)}…`;
+}
 
 export function RunnerFleetTable() {
   const {
@@ -154,7 +182,28 @@ export function RunnerFleetTable() {
                   {runner.hostname}:{runner.port}
                 </TableCell>
                 <TableCell>
-                  <RunnerStatusBadge status={runner.status} />
+                  <div className="flex flex-col gap-1.5">
+                    <RunnerStatusBadge
+                      status={runner.status}
+                      derivedStatus={runner.derived_status}
+                    />
+                    {runner.ui_error ? (
+                      <Badge
+                        variant="outline"
+                        className="border-red-500/50 text-red-400 bg-red-500/10 text-[10px] px-1.5 max-w-[220px] font-normal"
+                        title={formatUiErrorTitle(runner.ui_error)}
+                        aria-label={`UI error: ${runner.ui_error.message}`}
+                      >
+                        <AlertTriangle
+                          className="w-3 h-3 mr-1 shrink-0"
+                          aria-hidden
+                        />
+                        <span className="truncate">
+                          {truncateMessage(runner.ui_error.message)}
+                        </span>
+                      </Badge>
+                    ) : null}
+                  </div>
                 </TableCell>
                 <TableCell className="text-xs text-text-muted">
                   {runner.last_heartbeat

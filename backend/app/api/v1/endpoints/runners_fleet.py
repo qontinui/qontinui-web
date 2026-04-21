@@ -230,11 +230,21 @@ async def heartbeat(
             detail="Runner belongs to a different user",
         )
 
+    # ``ui_error`` is a Pydantic model when present; store the JSON-able dict
+    # form in the JSONB column (not the Pydantic instance itself).
+    ui_error_dict: dict | None = (
+        payload.ui_error.model_dump(mode="json")
+        if payload.ui_error is not None
+        else None
+    )
+
     updated = await runner_crud.heartbeat_runner(
         db,
         runner_id=runner_id,
         restate_healthy=payload.restate_healthy,
         status_value=payload.status,
+        derived_status=payload.derived_status,
+        ui_error=ui_error_dict,
     )
     # Cannot reach None branch after the existence check above.
     assert updated is not None  # noqa: S101

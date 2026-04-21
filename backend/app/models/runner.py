@@ -113,6 +113,34 @@ class Runner(Base):
         comment="healthy | unhealthy | offline",
     )
 
+    # Runner-derived overall status (Phase 3J) — distinct from ``status`` which
+    # is the runner's self-reported liveness. Computed by the runner from
+    # multiple sub-signals (Restate health, UI errors, ...) and one of
+    # ``healthy`` | ``degraded`` | ``errored`` | ``offline`` | ``starting``.
+    # Nullable because pre-Phase-3J runners omit it from their heartbeat.
+    derived_status: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+        comment=(
+            "Runner-derived overall status "
+            "(healthy|degraded|errored|offline|starting); NULL for runners "
+            "that have not yet reported a Phase 3J heartbeat."
+        ),
+    )
+
+    # Most recent UI error reported by the runner (React error boundary
+    # payload) or ``NULL`` if no error is currently outstanding. Cleared when
+    # the runner's error boundary recovers.
+    ui_error: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment=(
+            "Most recent UI error reported by the runner "
+            "(message/stack/component_stack/digest/first_seen/reported_at/"
+            "count) or NULL if none is outstanding."
+        ),
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=utc_now,
