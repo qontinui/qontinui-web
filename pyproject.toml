@@ -41,10 +41,6 @@ ruff = "^0.13.0"
 pylint = "^4"
 types-requests = "^2.32.0"
 
-[tool.black]
-line-length = 88
-target-version = ['py311', 'py312']
-
 [tool.mypy]
 python_version = "3.12"
 warn_return_any = false
@@ -62,7 +58,7 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP"]
 ignore = [
-    "E501",  # Line too long (handled by black)
+    "E501",  # Line too long (handled by formatter)
     "N815",  # Variable in class scope should not be mixedCase (for Pydantic models)
     "E402",  # Module level import not at top (needed for sys.path in alembic)
     "F403",  # Star imports (needed for alembic models)

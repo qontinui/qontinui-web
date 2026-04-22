@@ -76,23 +76,6 @@ types-requests = "^2.32.4.20260107"
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
-[tool.black]
-line-length = 88
-target-version = ["py312"]
-include = '\.pyi?$'
-exclude = '''
-/(
-    \.git
-    | \.mypy_cache
-    | \.pytest_cache
-    | \.venv
-    | venv
-    | __pycache__
-    | alembic
-    | migrations
-)/
-'''
-
 [tool.mypy]
 python_version = "3.12"
 warn_return_any = true
