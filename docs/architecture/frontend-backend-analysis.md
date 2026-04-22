@@ -895,21 +895,12 @@ repos:
       - id: end-of-file-fixer
       - id: check-yaml
 
-  - repo: https://github.com/psf/black
-    rev: 23.3.0
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.0
     hooks:
-      - id: black
-
-  - repo: https://github.com/pycqa/isort
-    rev: 5.12.0
-    hooks:
-      - id: isort
-
-  - repo: https://github.com/pycqa/flake8
-    rev: 6.0.0
-    hooks:
-      - id: flake8
-        args: [--max-line-length=100]
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.3.0

@@ -42,8 +42,8 @@ jobs:
       - name: Run ruff (linting)
         run: poetry run ruff check .
 
-      - name: Run black (formatting)
-        run: poetry run black --check .
+      - name: Run ruff format (formatting)
+        run: poetry run ruff format --check .
 
       - name: Run mypy (type checking)
         run: poetry run mypy app/ --ignore-missing-imports
