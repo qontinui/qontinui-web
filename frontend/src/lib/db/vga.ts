@@ -38,7 +38,7 @@ function getPool(): Pool {
       idleTimeoutMillis: 30_000,
     };
     pool = new Pool(config);
-    pool.on("error", (err) => {
+    pool.on("error", (err: Error) => {
       console.error("[vga-db] idle client error:", err);
     });
   }
