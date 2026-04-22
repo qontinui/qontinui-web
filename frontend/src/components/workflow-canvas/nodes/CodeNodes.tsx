@@ -59,7 +59,7 @@ export function CodeBlockNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
 
     try {
       // Call validation endpoint
-      const response = await fetch("/api/v1/code/validate", {
+      const response = await fetch("/api/v1/code-execution/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

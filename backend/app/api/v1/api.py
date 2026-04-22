@@ -139,7 +139,7 @@ api_router.include_router(
     automation_ws.router, prefix="/automation", tags=["automation-websockets"]
 )
 api_router.include_router(
-    code_execution.router, prefix="/code", tags=["code-execution"]
+    code_execution.router, prefix="/code-execution", tags=["code-execution"]
 )
 api_router.include_router(
     annotations.router, prefix="/annotations", tags=["annotations"]
