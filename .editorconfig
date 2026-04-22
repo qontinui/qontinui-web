@@ -22,3 +22,9 @@ indent_size = 2
 
 [*.{ts,tsx,js,jsx,json,css,html}]
 indent_size = 2
+
+# Canonical JSON fixtures are byte-exact parity targets with no trailing
+# newline — editors must not re-add one, or the TS/Python encoder parity
+# test (src/lib/vga/canonical.parity.test.ts) will fail on a 1-byte drift.
+[**/test-fixtures/vga/*.canonical.json]
+insert_final_newline = false
