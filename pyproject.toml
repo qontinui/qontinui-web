@@ -32,7 +32,6 @@ bcrypt = "^5"
 [tool.poetry.group.dev.dependencies]
 pytest = "^9"
 pytest-asyncio = "^1.2.0"
-black = "^26"
 flake8 = "^7.3.0"
 mypy = "^1.18.1"
 pre-commit = "^4.3.0"
