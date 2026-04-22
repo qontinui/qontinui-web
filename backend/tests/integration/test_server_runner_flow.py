@@ -47,8 +47,10 @@ from app.models.user import User
 from app.models.workflow_event import WorkflowEvent, WorkflowEventType
 from app.schemas.phase_result import PhaseResultIngestRequest, StepResultRecord
 from app.schemas.runner_fleet import (
+    RecentCrashPayload,
     RunnerHeartbeatRequest,
     RunnerRegistrationRequest,
+    UiErrorPayload,
 )
 from app.schemas.workflow_dispatch import WorkflowDispatchRequest
 
@@ -344,6 +346,147 @@ class TestServerRunnerHappyPath:
             assert row.phase == phase
             # And the id matches the one returned by the list endpoint.
             assert str(phase_ids_by_phase[phase]) == pr_id
+
+
+# ---------------------------------------------------------------------------
+# Heartbeat schema extensions — Phase 3J.5 + post-3J follow-up.
+# ---------------------------------------------------------------------------
+
+
+class TestHeartbeatStateExtensions:
+    """End-to-end coverage of the post-Phase-3F heartbeat payload extensions.
+
+    These tests drive the same ``heartbeat`` handler the runner's
+    server-mode loop calls, with the extended payload (``derived_status``,
+    ``ui_error``, ``recent_crash``) that post-Phase-3J runners emit. They
+    guard against the full Pydantic → CRUD → response round-trip silently
+    dropping a field.
+    """
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_persists_and_clears_recent_crash(
+        self,
+        async_db_session: AsyncSession,
+        _server_user: User,
+    ) -> None:
+        _tk, plain = await runner_crud.create_runner_token(
+            db=async_db_session,
+            user_id=_server_user.id,
+            name="crash-runner-token",
+        )
+        _user, token = await get_runner_user_from_token(plain, async_db_session)
+
+        registration = await register_runner(
+            db=async_db_session,
+            runner_token=token,
+            payload=RunnerRegistrationRequest(
+                name="crash-runner",
+                hostname="127.0.0.1",
+                port=9876,
+                capabilities=[],
+                server_mode=True,
+                restate_enabled=False,
+                restate_healthy=False,
+            ),
+        )
+        runner_id = registration.runner_id
+
+        # Step 1 — heartbeat carrying a crash dump + ui_error. The runner's
+        # post-3J payload tips `derived_status` to "errored" when either
+        # signal is present; we assert both are stored verbatim so fleet
+        # consumers can branch on presence rather than re-deriving.
+        crash_in = RecentCrashPayload(
+            file_path="D:/.dev-logs/crash_http.txt",
+            reported_at=utc_now(),
+            panic_location="src-tauri/src/foo.rs:42:9",
+            panic_message="http-path boom",
+            thread="main",
+        )
+        ui_in = UiErrorPayload(
+            message="unrelated render error",
+            first_seen=utc_now(),
+            reported_at=utc_now(),
+            count=3,
+        )
+        errored = await heartbeat(
+            db=async_db_session,
+            runner_token=token,
+            runner_id=runner_id,
+            payload=RunnerHeartbeatRequest(
+                restate_healthy=False,
+                status="healthy",
+                derived_status="errored",
+                ui_error=ui_in,
+                recent_crash=crash_in,
+            ),
+        )
+        assert errored.derived_status == "errored"
+        assert errored.ui_error is not None
+        assert errored.ui_error["message"] == "unrelated render error"
+        assert errored.ui_error["count"] == 3
+        assert errored.recent_crash is not None
+        assert errored.recent_crash["file_path"] == "D:/.dev-logs/crash_http.txt"
+        assert errored.recent_crash["panic_message"] == "http-path boom"
+        assert errored.recent_crash["panic_location"] == "src-tauri/src/foo.rs:42:9"
+        assert errored.recent_crash["thread"] == "main"
+
+        # Step 2 — a subsequent heartbeat without the error fields clears
+        # both JSONB columns. This matches the runner-side "authoritative
+        # per heartbeat" contract: the runner holds the current outstanding
+        # error/crash and every heartbeat reflects that snapshot.
+        cleared = await heartbeat(
+            db=async_db_session,
+            runner_token=token,
+            runner_id=runner_id,
+            payload=RunnerHeartbeatRequest(
+                restate_healthy=False,
+                status="healthy",
+                derived_status="healthy",
+            ),
+        )
+        assert cleared.derived_status == "healthy"
+        assert cleared.ui_error is None
+        assert cleared.recent_crash is None
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_accepts_minimal_body_from_pre_3j_runner(
+        self,
+        async_db_session: AsyncSession,
+        _server_user: User,
+    ) -> None:
+        """Pre-Phase-3J runners still heartbeat with only ``restate_healthy``
+        + ``status``. The new optional fields must default to ``None`` on the
+        request model without rejecting the body."""
+        _tk, plain = await runner_crud.create_runner_token(
+            db=async_db_session,
+            user_id=_server_user.id,
+            name="legacy-runner-token",
+        )
+        _user, token = await get_runner_user_from_token(plain, async_db_session)
+
+        registration = await register_runner(
+            db=async_db_session,
+            runner_token=token,
+            payload=RunnerRegistrationRequest(
+                name="legacy-runner",
+                hostname="127.0.0.1",
+                port=9876,
+                capabilities=[],
+                server_mode=True,
+                restate_enabled=False,
+                restate_healthy=False,
+            ),
+        )
+
+        beat = await heartbeat(
+            db=async_db_session,
+            runner_token=token,
+            runner_id=registration.runner_id,
+            payload=RunnerHeartbeatRequest(restate_healthy=True, status="healthy"),
+        )
+        assert beat.derived_status is None
+        assert beat.ui_error is None
+        assert beat.recent_crash is None
 
 
 # ---------------------------------------------------------------------------
