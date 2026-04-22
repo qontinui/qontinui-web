@@ -164,6 +164,57 @@ class TestRunnerHeartbeat:
         )
         assert result is None
 
+    @pytest.mark.asyncio
+    async def test_heartbeat_stores_and_clears_recent_crash(
+        self, async_db_session: AsyncSession, test_user: User
+    ):
+        """The post-3J follow-up heartbeat field `recent_crash` must round-trip
+        through the JSONB column and be clearable on a subsequent heartbeat.
+        """
+        runner = await runner_crud.register_runner(
+            async_db_session,
+            user_id=test_user.id,
+            name="runner-crash",
+            hostname="localhost",
+            port=1420,
+            capabilities=[],
+            server_mode=True,
+            restate_enabled=False,
+            restate_healthy=False,
+        )
+
+        crash = {
+            "file_path": "D:/.dev-logs/crash_1.txt",
+            "reported_at": "2026-04-22T10:15:30+00:00",
+            "panic_location": "src-tauri/src/foo.rs:42:9",
+            "panic_message": "boom",
+            "thread": "main",
+        }
+        updated = await runner_crud.heartbeat_runner(
+            async_db_session,
+            runner_id=runner.id,
+            restate_healthy=True,
+            status_value="healthy",
+            derived_status="errored",
+            recent_crash=crash,
+        )
+        assert updated is not None
+        assert updated.recent_crash == crash
+        assert updated.derived_status == "errored"
+
+        # A heartbeat without recent_crash (default None) must clear the column,
+        # matching the runner-side "authoritative per heartbeat" contract.
+        cleared = await runner_crud.heartbeat_runner(
+            async_db_session,
+            runner_id=runner.id,
+            restate_healthy=True,
+            status_value="healthy",
+            derived_status="healthy",
+        )
+        assert cleared is not None
+        assert cleared.recent_crash is None
+        assert cleared.derived_status == "healthy"
+
 
 class TestRunnerOwnership:
     """Deregistration and token revocation must honour ownership."""

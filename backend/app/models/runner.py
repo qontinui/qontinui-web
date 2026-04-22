@@ -141,6 +141,21 @@ class Runner(Base):
         ),
     )
 
+    # Most recent Rust crash dump surfaced by the runner's startup scanner
+    # (``file_path/reported_at/panic_location/panic_message/thread``) or
+    # ``NULL`` when no fresh dump is present. Post-3J follow-up: non-unwinding
+    # Rust panics abort the process before the React boundary can fire, so
+    # this column is the only fleet-level signal for that class.
+    recent_crash: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment=(
+            "Most recent Rust crash dump surfaced by the runner's startup "
+            "scanner (file_path/reported_at/panic_location/panic_message/"
+            "thread) or NULL if no fresh dump is present."
+        ),
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=utc_now,

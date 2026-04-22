@@ -279,11 +279,13 @@ async def heartbeat_runner(
     status_value: str,
     derived_status: str | None = None,
     ui_error: dict | None = None,
+    recent_crash: dict | None = None,
 ) -> Runner | None:
     """Record a heartbeat from a runner, updating liveness fields.
 
     Phase 3J.5 extended the heartbeat to optionally carry ``derived_status``
-    and ``ui_error``. Both are written on every heartbeat:
+    and ``ui_error``; the post-3J follow-up also carries ``recent_crash`` for
+    a fresh Rust panic dump. All three are written on every heartbeat:
 
     * ``derived_status`` is replaced each heartbeat with the runner's
       latest value (``None`` from a pre-Phase-3J runner simply keeps the
@@ -293,6 +295,9 @@ async def heartbeat_runner(
       by a pre-Phase-3J runner) clears it. This matches the runner's
       state machine — the runner holds the current outstanding error and
       the heartbeat reflects that.
+    * ``recent_crash`` follows the same authoritative-per-heartbeat model:
+      a dict overwrites, ``None`` clears. Pre-post-3J runners omit the
+      field and the column stays as ``NULL``.
 
     Returns the updated row, or ``None`` if no runner with ``runner_id``
     exists.
@@ -308,6 +313,7 @@ async def heartbeat_runner(
     record.status = status_value
     record.derived_status = derived_status
     record.ui_error = ui_error
+    record.recent_crash = recent_crash
     await db.commit()
     await db.refresh(record)
     return record
