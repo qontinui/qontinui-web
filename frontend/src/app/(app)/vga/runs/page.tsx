@@ -11,7 +11,7 @@
  * page reload preserves the view.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
@@ -118,7 +118,28 @@ export default function VgaRunsIndexPage() {
     return Number.isFinite(raw) && raw > 0 ? raw : 1;
   });
 
-  // Sync state → URL query string.
+  // Bidirectional URL ↔ state sync via a single "last synced" ref. Without
+  // this, the state→URL effect runs on mount with default state before the
+  // URL→state hook has settled, stomping query params the user navigated in
+  // with. The ref lets each direction announce the string it just wrote so
+  // the other direction skips echoing it.
+  const lastSyncedRef = useRef<string>(sp.toString());
+
+  // URL → state: seed from sp whenever the URL changes externally (link
+  // click, back/forward, direct nav).
+  useEffect(() => {
+    const spStr = sp.toString();
+    if (spStr === lastSyncedRef.current) return;
+    lastSyncedRef.current = spStr;
+    setStatus(sp.get("status") ?? "all");
+    setTargetProcess(sp.get("target_process") ?? "");
+    setSince(sp.get("since") ?? "");
+    setUntil(sp.get("until") ?? "");
+    const rawPage = Number.parseInt(sp.get("page") ?? "1", 10);
+    setPage(Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1);
+  }, [sp]);
+
+  // State → URL: only when the user actually changed a filter.
   useEffect(() => {
     const next = new URLSearchParams();
     if (status !== "all") next.set("status", status);
@@ -127,13 +148,12 @@ export default function VgaRunsIndexPage() {
     if (until) next.set("until", until);
     if (page > 1) next.set("page", String(page));
     const nextStr = next.toString();
-    const currentStr = sp.toString();
-    if (nextStr !== currentStr) {
-      router.replace(`/vga/runs${nextStr ? `?${nextStr}` : ""}`, {
-        scroll: false,
-      });
-    }
-  }, [status, targetProcess, since, until, page, router, sp]);
+    if (nextStr === lastSyncedRef.current) return;
+    lastSyncedRef.current = nextStr;
+    router.replace(`/vga/runs${nextStr ? `?${nextStr}` : ""}`, {
+      scroll: false,
+    });
+  }, [status, targetProcess, since, until, page, router]);
 
   // Query string for the API call.
   const apiParams = useMemo(() => {
