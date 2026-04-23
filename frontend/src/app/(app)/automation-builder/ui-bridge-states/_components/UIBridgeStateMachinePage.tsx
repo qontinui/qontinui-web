@@ -313,12 +313,18 @@ export function UIBridgeStateMachinePage() {
               transitions={sm.fullConfig?.transitions ?? []}
               selectedStateId={sm.selectedStateId}
               selectedTransitionId={sm.selectedTransitionId}
+              // Hidden-tab gate: ReactFlow's onSelectionChange fires when its
+              // tab becomes hidden, which would clobber selections made in
+              // other tabs. Only accept graph-origin selection changes while
+              // the graph is actually the active tab.
               onSelectState={(id) => {
+                if (activeTab !== "graph") return;
                 sm.setSelectedStateId(id);
                 sm.setSelectedTransitionId(null);
                 setShowNewTransition(false);
               }}
               onSelectTransition={(id) => {
+                if (activeTab !== "graph") return;
                 sm.setSelectedTransitionId(id);
                 sm.setSelectedStateId(null);
                 setShowNewTransition(false);
