@@ -4,7 +4,7 @@ import os
 import re
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
@@ -362,8 +362,8 @@ async def validate_file_path(
     *,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(deps.current_active_user),
-    file_path: str,
-    project_id: str | None = None,
+    file_path: str = Body(..., description="Relative path to validate"),
+    project_id: str | None = Body(None, description="Project ID for scoping"),
 ) -> dict:
     """
     Validate a file path for security and accessibility.
@@ -414,9 +414,9 @@ async def load_file_content(
     *,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(deps.current_active_user),
-    file_path: str,
-    project_id: str | None = None,
-    use_cache: bool = True,
+    file_path: str = Body(..., description="Relative path to file"),
+    project_id: str | None = Body(None, description="Project ID"),
+    use_cache: bool = Body(True, description="Whether to use cached content"),
 ) -> dict:
     """
     Load content of a Python file.
@@ -463,12 +463,14 @@ async def execute_file_code(
     *,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(deps.current_active_user),
-    file_path: str,
-    function_name: str | None = None,
-    context: dict | None = None,
-    inputs: dict | None = None,
-    timeout: int = 30,
-    project_id: str | None = None,
+    file_path: str = Body(..., description="Relative path to Python file"),
+    function_name: str | None = Body(
+        None, description="Optional function name to call"
+    ),
+    context: dict | None = Body(None, description="Execution context"),
+    inputs: dict | None = Body(None, description="Input variables for the function"),
+    timeout: int = Body(30, ge=1, le=60, description="Execution timeout in seconds"),
+    project_id: str | None = Body(None, description="Project ID"),
 ) -> CodeExecutionResult:
     """
     Execute code from a Python file.

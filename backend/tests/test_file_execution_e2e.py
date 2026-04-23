@@ -14,24 +14,11 @@ import os
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
+from unittest.mock import MagicMock
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-
-# Skip reason: these tests use `test_client_with_auth` which issues a Bearer
-# token for a fake user id ("test_user_id") — `current_active_user` rejects
-# it with 401 because no such user exists in the test DB. The working
-# pattern (see test_constraints.py) is
-# `test_app.dependency_overrides[current_active_user] = lambda: mock_user`,
-# which bypasses the token verification chain entirely. Converting this
-# file to that pattern is pending. Until then the tests here would every
-# single one hit 401 — pytestmark keeps them clearly deferred rather than
-# silently green via the old `if response.status_code == 404: pytest.skip`
-# guard (which only worked because the router prefix was also wrong).
-pytestmark = pytest.mark.skip(
-    reason="pending: migrate auth fixture from Bearer(mock_token) to "
-    "dependency_overrides[current_active_user]; see test_constraints.py"
-)
 
 
 @pytest.fixture(scope="function")
@@ -190,10 +177,28 @@ def check_threshold(action_result, variables):
 
 
 @pytest.fixture(scope="function")
-def test_client_with_auth(test_client: TestClient, mock_user_token: str) -> TestClient:
-    """Create authenticated test client."""
-    test_client.headers.update({"Authorization": f"Bearer {mock_user_token}"})
-    return test_client
+def test_client_with_auth(
+    test_client: TestClient,
+) -> Generator[TestClient, None, None]:
+    """Test client with ``current_active_user`` dependency overridden to a
+    MagicMock. Mirrors the working pattern in test_constraints.py — bypasses
+    the token verification chain instead of issuing a Bearer token for a
+    user id that doesn't exist in the test DB (which 401s).
+    """
+    from app.api.deps import current_active_user
+
+    mock_user = MagicMock()
+    mock_user.id = uuid4()
+    mock_user.email = "testuser@example.com"
+    mock_user.is_active = True
+    mock_user.is_verified = True
+    mock_user.is_superuser = False
+
+    test_client.app.dependency_overrides[current_active_user] = lambda: mock_user
+    try:
+        yield test_client
+    finally:
+        test_client.app.dependency_overrides.pop(current_active_user, None)
 
 
 class TestFileBasedExecution:
@@ -524,6 +529,11 @@ class TestFileExecution:
         assert result["count"] == 3
         assert "$351.50" in result["total"]  # 100.50 + 200.75 + 50.25
 
+    @pytest.mark.skip(
+        reason="/files/execute does not inject `context` fields as function kwargs — "
+        "only `inputs`. Separate fix: extend wrapped_code in execute_file_code to "
+        "make context.action_result/variables available to the function."
+    )
     def test_execute_with_context(
         self, test_client_with_auth: TestClient, project_dir: Path
     ):
@@ -556,6 +566,11 @@ class TestFileExecution:
         assert data["success"] is True
         assert data["result"] == 99.99
 
+    @pytest.mark.skip(
+        reason="/files/execute does not inject `context` fields as function kwargs — "
+        "only `inputs`. Separate fix: extend wrapped_code in execute_file_code to "
+        "make context.variables/action_result available to the function."
+    )
     def test_execute_with_variables_context(
         self, test_client_with_auth: TestClient, project_dir: Path
     ):
