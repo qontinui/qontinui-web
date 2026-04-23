@@ -440,6 +440,7 @@ export function UIBridgeStateMachinePage() {
           <TransitionsPanel
             states={sm.fullConfig?.states ?? []}
             transitions={sm.fullConfig?.transitions ?? []}
+            selectedTransitionId={sm.selectedTransitionId}
             onSelectTransition={(id) => {
               sm.setSelectedTransitionId(id);
               sm.setSelectedStateId(null);
