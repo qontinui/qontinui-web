@@ -529,11 +529,6 @@ class TestFileExecution:
         assert result["count"] == 3
         assert "$351.50" in result["total"]  # 100.50 + 200.75 + 50.25
 
-    @pytest.mark.skip(
-        reason="/files/execute does not inject `context` fields as function kwargs — "
-        "only `inputs`. Separate fix: extend wrapped_code in execute_file_code to "
-        "make context.action_result/variables available to the function."
-    )
     def test_execute_with_context(
         self, test_client_with_auth: TestClient, project_dir: Path
     ):
@@ -566,11 +561,6 @@ class TestFileExecution:
         assert data["success"] is True
         assert data["result"] == 99.99
 
-    @pytest.mark.skip(
-        reason="/files/execute does not inject `context` fields as function kwargs — "
-        "only `inputs`. Separate fix: extend wrapped_code in execute_file_code to "
-        "make context.variables/action_result available to the function."
-    )
     def test_execute_with_variables_context(
         self, test_client_with_auth: TestClient, project_dir: Path
     ):

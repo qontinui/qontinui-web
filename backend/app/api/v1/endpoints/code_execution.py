@@ -1,5 +1,6 @@
 """Code execution API endpoints for inline Python code and custom functions."""
 
+import ast
 import os
 import re
 from pathlib import Path
@@ -17,6 +18,38 @@ from app.services.code_execution_service import (
 )
 
 router = APIRouter()
+
+# Context fields recognised by `/files/execute` — if the target function
+# declares a parameter with one of these names (and the caller did not
+# override it in `inputs`), the value from the request's `context` is
+# passed. Order does not matter; matching is by name.
+_CONTEXT_FIELDS = ("action_result", "variables", "workflow_state", "active_states")
+
+
+def _extract_function_signature(
+    code: str, function_name: str
+) -> tuple[list[str], bool]:
+    """Parse user code and return (positional_and_kwonly_param_names, has_kwargs).
+
+    Used by `/files/execute` to pick which kwargs to pass when wrapping the
+    call. Falls back to ``([], False)`` on unparseable code or missing
+    function — callers treat that as "pass only inputs" (legacy behaviour).
+    """
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return [], False
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == function_name
+        ):
+            named = [a.arg for a in node.args.args] + [
+                a.arg for a in node.args.kwonlyargs
+            ]
+            has_kwargs = node.args.kwarg is not None
+            return named, has_kwargs
+    return [], False
 
 
 def _get_safe_project_root(project_id: str | None) -> Path:
@@ -500,11 +533,30 @@ async def execute_file_code(
 
         # If function name specified, wrap code to call function
         if function_name:
-            # Prepare input kwargs
+            # Pick the kwargs to pass. Candidates are: context fields the
+            # function declares as parameters, plus everything in ``inputs``.
+            # Inputs override context on name collision.
             input_kwargs = inputs or {}
-            kwargs_str = ", ".join(f"{k}={repr(v)}" for k, v in input_kwargs.items())
+            candidates: dict = {}
+            if context:
+                for field in _CONTEXT_FIELDS:
+                    if field in context:
+                        candidates[field] = context[field]
+            candidates.update(input_kwargs)
 
-            # Wrap code to call function
+            named_params, has_kwargs = _extract_function_signature(code, function_name)
+            if has_kwargs:
+                # Function accepts **kwargs — pass everything.
+                passed = candidates
+            elif named_params:
+                # Drop candidates the function cannot accept (would TypeError).
+                passed = {k: v for k, v in candidates.items() if k in named_params}
+            else:
+                # Couldn't parse or function not found — fall back to inputs
+                # only (preserves pre-2026-04-23 behaviour).
+                passed = dict(input_kwargs)
+
+            kwargs_str = ", ".join(f"{k}={v!r}" for k, v in passed.items())
             wrapped_code = f"{code}\n\nresult = {function_name}({kwargs_str})"
             code = wrapped_code
 
