@@ -66,6 +66,7 @@ import {
   Repeat,
   Video,
   Radio,
+  Radar,
   Eye,
   Target,
 } from "lucide-react";
@@ -139,6 +140,7 @@ const ICON_MAP: Record<
   Repeat,
   Video,
   Radio,
+  Radar,
   Eye,
   Target,
 };
