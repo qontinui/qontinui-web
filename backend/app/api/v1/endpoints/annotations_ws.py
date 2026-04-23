@@ -707,10 +707,6 @@ class AnnotationWebSocketHandler(BaseWebSocketHandler):
         )
 
 
-# Create handler instance
-annotation_ws_handler = AnnotationWebSocketHandler()
-
-
 # ============================================================================
 # WebSocket Endpoint
 # ============================================================================
