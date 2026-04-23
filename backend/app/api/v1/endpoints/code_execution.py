@@ -533,6 +533,14 @@ async def execute_file_code(
 
         # If function name specified, wrap code to call function
         if function_name:
+            # Validate function_name is a plain Python identifier to prevent
+            # code injection via the generated call expression.
+            if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", function_name):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid function_name: must be a valid Python identifier",
+                )
+
             # Pick the kwargs to pass. Candidates are: context fields the
             # function declares as parameters, plus everything in ``inputs``.
             # Inputs override context on name collision.

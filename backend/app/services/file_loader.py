@@ -211,7 +211,22 @@ class PythonFileLoader:
             List of relative file paths
         """
         # Validate directory path
-        dir_path = self.project_root / directory
+        dir_path = (self.project_root / directory).resolve()
+
+        # Prevent path traversal: resolved path must be inside project_root
+        resolved_root = self.project_root.resolve()
+        try:
+            dir_path.relative_to(resolved_root)
+        except ValueError:
+            logger.warning(
+                "directory_outside_project_root",
+                directory=directory,
+                project_root=str(resolved_root),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Directory must be within the project root",
+            )
 
         if not dir_path.exists():
             raise HTTPException(
