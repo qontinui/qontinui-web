@@ -87,6 +87,7 @@
     "react-dom": "19.1.5",
     "react-hook-form": "^7.62.0",
     "react-markdown": "^10.1.0",
+    "react-window": "^2.2.7",
     "reactflow": "^11.11.4",
     "recharts": "^3.2.1",
     "rehype-raw": "^7.0.0",
