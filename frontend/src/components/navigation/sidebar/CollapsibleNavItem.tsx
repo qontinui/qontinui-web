@@ -22,6 +22,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useNavigationItem, NavigationItemShell } from "qontinui-navigation";
 import type { NavItem } from "./types";
 import { NestedSubGroup } from "./NestedSubGroup";
 
@@ -42,6 +43,12 @@ export function CollapsibleNavItem({
 }: CollapsibleNavItemProps) {
   const [isOpen, setIsOpen] = useState(false);
   const isParentActive = isRouteActive(item.route, item);
+
+  // Register the parent navigation entry with the UI Bridge. "Activate"
+  // means "open the group so children become reachable" — that mirrors
+  // what a user's click does via CollapsibleTrigger in the expanded
+  // layout and via DropdownMenu in the collapsed layout.
+  useNavigationItem(item, () => setIsOpen(true));
 
   // Helper: check if any descendant is active (supports grandchildren)
   const isAnyDescendantActive = useCallback(
@@ -221,46 +228,51 @@ export function CollapsibleNavItem({
             }
             const isChildActive = isRouteActive(child.route, child);
             return (
-              <button
+              <NavigationItemShell
                 key={child.id}
-                data-route={child.route}
-                onClick={() => onNavigate(child.route)}
-                className={cn(
-                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
-                  isChildActive
-                    ? "bg-surface-hover text-text-primary"
-                    : "text-text-muted hover:bg-surface-hover hover:text-text-primary"
-                )}
+                item={child}
+                onActivate={() => onNavigate(child.route)}
               >
-                <span
-                  style={{ color: isChildActive ? child.color : undefined }}
+                <button
+                  data-route={child.route}
+                  onClick={() => onNavigate(child.route)}
+                  className={cn(
+                    "flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
+                    isChildActive
+                      ? "bg-surface-hover text-text-primary"
+                      : "text-text-muted hover:bg-surface-hover hover:text-text-primary"
+                  )}
                 >
-                  {child.icon}
-                </span>
-                <span className="flex-1">{child.label}</span>
-                {mounted && child.hiddenInProd && (
-                  <Badge
-                    variant="outline"
-                    className="h-4 px-1 text-[9px] font-medium border-gray-500/30 bg-gray-500/10 text-gray-400"
+                  <span
+                    style={{ color: isChildActive ? child.color : undefined }}
                   >
-                    dev
-                  </Badge>
-                )}
-                {child.badge && (
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      "h-4 px-1 text-[9px] font-medium",
-                      child.badge === "beta" &&
-                        "border-amber-500/30 bg-amber-500/10 text-amber-400",
-                      child.badge === "experimental" &&
-                        "border-purple-500/30 bg-purple-500/10 text-purple-400"
-                    )}
-                  >
-                    {child.badge}
-                  </Badge>
-                )}
-              </button>
+                    {child.icon}
+                  </span>
+                  <span className="flex-1">{child.label}</span>
+                  {mounted && child.hiddenInProd && (
+                    <Badge
+                      variant="outline"
+                      className="h-4 px-1 text-[9px] font-medium border-gray-500/30 bg-gray-500/10 text-gray-400"
+                    >
+                      dev
+                    </Badge>
+                  )}
+                  {child.badge && (
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "h-4 px-1 text-[9px] font-medium",
+                        child.badge === "beta" &&
+                          "border-amber-500/30 bg-amber-500/10 text-amber-400",
+                        child.badge === "experimental" &&
+                          "border-purple-500/30 bg-purple-500/10 text-purple-400"
+                      )}
+                    >
+                      {child.badge}
+                    </Badge>
+                  )}
+                </button>
+              </NavigationItemShell>
             );
           })}
         </div>

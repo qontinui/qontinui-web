@@ -10,6 +10,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { useNavigationItem, NavigationItemShell } from "qontinui-navigation";
 import type { NavItem } from "./types";
 
 export interface NestedSubGroupProps {
@@ -29,6 +30,10 @@ export function NestedSubGroup({
   const isGroupActive = item.children?.some((child) =>
     isRouteActive(child.route, child)
   );
+
+  // Register the nested-group parent with the UI Bridge. Activating it
+  // opens the group, matching a user click on the CollapsibleTrigger.
+  useNavigationItem(item, () => setIsOpen(true));
 
   React.useEffect(() => {
     if (isGroupActive) setIsOpen(true);
@@ -63,32 +68,37 @@ export function NestedSubGroup({
           {item.children?.map((grandchild) => {
             const isActive = isRouteActive(grandchild.route, grandchild);
             return (
-              <button
+              <NavigationItemShell
                 key={grandchild.id}
-                data-route={grandchild.route}
-                onClick={() => onNavigate(grandchild.route)}
-                className={cn(
-                  "flex items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors",
-                  isActive
-                    ? "bg-surface-hover text-text-primary"
-                    : "text-text-muted hover:bg-surface-hover hover:text-text-primary"
-                )}
+                item={grandchild}
+                onActivate={() => onNavigate(grandchild.route)}
               >
-                <span
-                  style={{ color: isActive ? grandchild.color : undefined }}
+                <button
+                  data-route={grandchild.route}
+                  onClick={() => onNavigate(grandchild.route)}
+                  className={cn(
+                    "flex items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors",
+                    isActive
+                      ? "bg-surface-hover text-text-primary"
+                      : "text-text-muted hover:bg-surface-hover hover:text-text-primary"
+                  )}
                 >
-                  {grandchild.icon}
-                </span>
-                <span className="flex-1">{grandchild.label}</span>
-                {mounted && grandchild.hiddenInProd && (
-                  <Badge
-                    variant="outline"
-                    className="h-3.5 px-1 text-[8px] font-medium border-gray-500/30 bg-gray-500/10 text-gray-400"
+                  <span
+                    style={{ color: isActive ? grandchild.color : undefined }}
                   >
-                    dev
-                  </Badge>
-                )}
-              </button>
+                    {grandchild.icon}
+                  </span>
+                  <span className="flex-1">{grandchild.label}</span>
+                  {mounted && grandchild.hiddenInProd && (
+                    <Badge
+                      variant="outline"
+                      className="h-3.5 px-1 text-[8px] font-medium border-gray-500/30 bg-gray-500/10 text-gray-400"
+                    >
+                      dev
+                    </Badge>
+                  )}
+                </button>
+              </NavigationItemShell>
             );
           })}
         </div>

@@ -7,6 +7,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useNavigationItem } from "qontinui-navigation";
 import type { NavItem } from "./types";
 
 export interface NavItemButtonProps {
@@ -24,6 +25,12 @@ export function NavItemButton({
   onClick,
   mounted,
 }: NavItemButtonProps) {
+  // Register this nav entry with the UI Bridge so agent-driven discovery
+  // can see every leaf item as `nav:<item.id>`. The hook is a no-op when
+  // `@qontinui/ui-bridge` isn't wired up (e.g. during SSR hydration in a
+  // test env), so it's safe to call unconditionally.
+  useNavigationItem(item, onClick ?? (() => {}));
+
   const content = (
     <button
       onClick={onClick}
