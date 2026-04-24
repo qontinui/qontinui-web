@@ -13,6 +13,18 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-scripts:/docker-entrypoint-initdb.d
+    # Harden against orphan-backend accumulation when dev runners crash or
+    # are force-killed. With the defaults (tcp_keepalives_idle=7200,
+    # idle_in_transaction_session_timeout=0), a dead TCP client leaves its
+    # server backend alive for ~2 hours; an abandoned transaction holds
+    # row locks forever. A single dev session can easily produce 10+
+    # orphans that survive until a container restart.
+    command: >
+      postgres
+      -c idle_in_transaction_session_timeout=300000
+      -c tcp_keepalives_idle=60
+      -c tcp_keepalives_interval=10
+      -c tcp_keepalives_count=6
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U qontinui_user -d qontinui_db"]
       interval: 10s
