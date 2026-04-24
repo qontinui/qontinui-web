@@ -12,6 +12,7 @@ works across horizontally-scaled backend instances.
 
 import asyncio
 import json
+import re
 import urllib.error
 import urllib.request
 import uuid
@@ -47,6 +48,31 @@ logger = structlog.get_logger(__name__)
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat() + "Z"
+
+
+# Allowed port range for runner instances (primary + temp runners)
+_RUNNER_PORT_MIN = 9876
+_RUNNER_PORT_MAX = 9899
+
+# Pattern for safe proxy path segments — allows alphanumeric, hyphens, underscores,
+# dots, and forward slashes only. Rejects characters that could rewrite the URL
+# (e.g., '@', ':', '?', '#') even if FastAPI strips some of them first.
+_SAFE_PATH_RE = re.compile(r"^[a-zA-Z0-9/_\-\.]*$")
+
+
+def _validate_runner_port(port: int) -> None:
+    """Raise ValueError if port is outside the allowed runner port range."""
+    if not (_RUNNER_PORT_MIN <= port <= _RUNNER_PORT_MAX):
+        raise ValueError(
+            f"Runner port {port} is outside the allowed range "
+            f"{_RUNNER_PORT_MIN}–{_RUNNER_PORT_MAX}"
+        )
+
+
+def _validate_proxy_path(path: str) -> None:
+    """Raise ValueError if path contains characters that could redirect the URL."""
+    if not _SAFE_PATH_RE.match(path):
+        raise ValueError(f"Proxy path contains disallowed characters: {path!r}")
 
 
 def _redis_unavailable_response() -> JSONResponse:
@@ -637,6 +663,15 @@ async def runner_proxy(
                 runner_port = row[0]
     except Exception as e:
         logger.debug("runner_proxy_port_lookup_failed", error=str(e))
+
+    # Validate port and path before constructing the URL to prevent SSRF.
+    # The port must be in the known runner port range; the path must contain
+    # only safe characters so it cannot redirect the request to a different host.
+    try:
+        _validate_runner_port(runner_port)
+        _validate_proxy_path(path)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
 
     target_url = f"http://127.0.0.1:{runner_port}/{path}"
     if request.url.query:

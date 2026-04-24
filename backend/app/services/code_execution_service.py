@@ -214,10 +214,14 @@ class CodeExecutionService:
                     # Get result (last expression or explicit return)
                     result = safe_globals.get("result", None)
 
-                    # If no 'result' variable, try to evaluate as expression
+                    # If no 'result' variable, try to evaluate as expression.
+                    # Safe because: (1) code was already AST-validated by
+                    # CodeValidator against the import whitelist, (2) builtins
+                    # are restricted to the safe set in safe_globals, and
+                    # (3) execution has already been time-limited above.
                     if result is None:
                         try:
-                            result = eval(request.code, safe_globals)  # noqa: S307 - sandboxed eval with restricted globals
+                            result = eval(request.code, safe_globals)  # noqa: S307 - sandboxed eval, see comment above
                         except Exception:
                             # If not an expression, result is None
                             pass

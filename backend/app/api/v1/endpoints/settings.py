@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -20,13 +21,26 @@ router = APIRouter()
 # Redis key for storing settings per user
 SETTINGS_KEY_PREFIX = "qontinui:settings:user:"
 
+# Matches a standard UUID (hex digits and hyphens only) so that user_id
+# values are never interpolated into Redis keys without validation.
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
+)
+
+
+def _safe_settings_key(user_id: str) -> str:
+    """Return the Redis key for *user_id*, rejecting non-UUID values."""
+    if not _UUID_RE.match(user_id):
+        raise ValueError(f"user_id is not a valid UUID: {user_id!r}")
+    return f"{SETTINGS_KEY_PREFIX}{user_id}"
+
 
 async def _get_stored_settings(
     redis: aioredis.Redis, user_id: str
 ) -> dict[str, Any] | None:
     """Get stored settings from Redis for a user."""
     try:
-        data = await redis.get(f"{SETTINGS_KEY_PREFIX}{user_id}")
+        data = await redis.get(_safe_settings_key(user_id))
         if data:
             return json.loads(data)  # type: ignore[no-any-return]
     except Exception as e:
@@ -40,7 +54,7 @@ async def _save_settings(
     """Save settings to Redis for a user."""
     try:
         await redis.set(
-            f"{SETTINGS_KEY_PREFIX}{user_id}",
+            _safe_settings_key(user_id),
             json.dumps(settings),
         )
         return True
@@ -52,7 +66,7 @@ async def _save_settings(
 async def _delete_settings(redis: aioredis.Redis, user_id: str) -> bool:
     """Delete stored settings from Redis for a user."""
     try:
-        await redis.delete(f"{SETTINGS_KEY_PREFIX}{user_id}")
+        await redis.delete(_safe_settings_key(user_id))
         return True
     except Exception as e:
         logger.warning(f"Failed to delete settings from Redis: {e}")
