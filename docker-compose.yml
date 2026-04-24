@@ -3,6 +3,7 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     container_name: qontinui-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: qontinui_user
       POSTGRES_PASSWORD: qontinui_dev_password
