@@ -311,6 +311,7 @@ export function UIBridgeStateMachinePage() {
             <UIBridgeStateGraph
               states={sm.fullConfig?.states ?? []}
               transitions={sm.fullConfig?.transitions ?? []}
+              configId={sm.selectedConfigId ?? null}
               selectedStateId={sm.selectedStateId}
               selectedTransitionId={sm.selectedTransitionId}
               // Hidden-tab gate: ReactFlow's onSelectionChange fires when its
