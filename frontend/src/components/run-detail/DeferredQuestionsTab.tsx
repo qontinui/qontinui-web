@@ -75,14 +75,14 @@ export function DeferredQuestionsTab({ taskRunId }: DeferredQuestionsTabProps) {
   ) => {
     setReviewingId(questionId);
     try {
-      const result = await runnerFetch<{ reviewed: boolean; rework_task_run_id?: string }>(
-        `/task-runs/${taskRunId}/deferred-questions/${questionId}/review`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status, comment }),
-        }
-      );
+      const result = await runnerFetch<{
+        reviewed: boolean;
+        rework_task_run_id?: string;
+      }>(`/task-runs/${taskRunId}/deferred-questions/${questionId}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, comment }),
+      });
       toast.success(
         status === "approved"
           ? "Decision approved"
@@ -109,12 +109,15 @@ export function DeferredQuestionsTab({ taskRunId }: DeferredQuestionsTabProps) {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question_ids: pendingIds, status: "approved" }),
+          body: JSON.stringify({
+            question_ids: pendingIds,
+            status: "approved",
+          }),
         }
       );
       toast.success(`Approved ${pendingIds.length} decision(s)`);
       fetchQuestions();
-    } catch (err) {
+    } catch {
       toast.error("Bulk approve failed");
     }
   };
@@ -184,7 +187,9 @@ export function DeferredQuestionsTab({ taskRunId }: DeferredQuestionsTabProps) {
                   <ChevronRight className="h-4 w-4" />
                 )}
               </button>
-              <span className="text-sm font-medium">Iteration {q.iteration}</span>
+              <span className="text-sm font-medium">
+                Iteration {q.iteration}
+              </span>
               <Badge variant={riskColor(q.risk_level)} className="text-xs">
                 {q.risk_level}
               </Badge>
@@ -247,9 +252,7 @@ export function DeferredQuestionsTab({ taskRunId }: DeferredQuestionsTabProps) {
             {typeof context.summary === "string" && (
               <div>
                 <span className="font-medium">Summary:</span>{" "}
-                <span className="text-text-secondary">
-                  {context.summary}
-                </span>
+                <span className="text-text-secondary">{context.summary}</span>
               </div>
             )}
             {Array.isArray(context.files_modified) &&
@@ -266,7 +269,9 @@ export function DeferredQuestionsTab({ taskRunId }: DeferredQuestionsTabProps) {
             {q.reviewer_comment && (
               <div>
                 <span className="font-medium">Review comment:</span>{" "}
-                <span className="text-text-secondary">{q.reviewer_comment}</span>
+                <span className="text-text-secondary">
+                  {q.reviewer_comment}
+                </span>
               </div>
             )}
             {q.git_checkpoint && (

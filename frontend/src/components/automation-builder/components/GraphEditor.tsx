@@ -118,7 +118,7 @@ function GraphEditorInner({
       log.debug("handleNodeAdd called with:", nodeType);
       onAddNode(nodeType);
     },
-    [onAddNode, workflow.actions.length]
+    [onAddNode]
   );
 
   return (
