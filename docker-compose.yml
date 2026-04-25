@@ -69,10 +69,10 @@ services:
     image: minio/mc:latest
     container_name: qontinui-minio-client
     depends_on:
-      - minio
+      minio:
+        condition: service_healthy
     entrypoint: >
       /bin/sh -c "
-      sleep 5;
       /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin;
       /usr/bin/mc mb myminio/qontinui --ignore-existing;
       /usr/bin/mc anonymous set download myminio/qontinui;

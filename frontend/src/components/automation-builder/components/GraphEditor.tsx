@@ -9,8 +9,6 @@
 import React, { useCallback, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { createLogger } from "@/lib/logger";
-
-const log = createLogger("GraphEditor");
 import { WorkflowCanvas, type EdgeInfo } from "@/components/workflow-canvas";
 import { NodePalette } from "@/components/workflow-canvas/NodePalette";
 import type {
@@ -21,6 +19,8 @@ import type {
 } from "@/lib/action-schema/action-types";
 import { EdgePropertiesPanel } from "./EdgePropertiesPanel";
 import type { GraphEditorProps } from "../types";
+
+const log = createLogger("GraphEditor");
 
 function GraphEditorInner({
   workflow,

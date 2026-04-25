@@ -41,7 +41,6 @@ import type {
   StateMachineStateUpdate,
   PathfindingResult,
 } from "@qontinui/shared-types";
-import { useAutomationStore } from "@/stores/automation";
 import { useStateMachineDiscovery } from "../_hooks/useStateMachineDiscovery";
 
 const TABS = [
@@ -59,7 +58,6 @@ export function UIBridgeStateMachinePage() {
   const sm = useUIBridgeStateMachine();
   const transitions = useUIBridgeTransitions(sm.selectedConfigId);
   const exporter = useExportStateMachine(sm.selectedConfigId);
-  const projectId = useAutomationStore((s) => s.projectId);
   const discovery = useStateMachineDiscovery(sm.projectId);
 
   const [activeTab, setActiveTab] = useState<TabValue>("discovery");
@@ -113,10 +111,10 @@ export function UIBridgeStateMachinePage() {
   // Save state updates (used by StateDetailPanel and drag-and-drop)
   const handleSaveState = useCallback(
     async (stateId: string, updates: StateMachineStateUpdate) => {
-      if (!projectId || !sm.selectedConfigId) return;
+      if (!sm.projectId || !sm.selectedConfigId) return;
       try {
         const res = await fetch(
-          `/api/v1/projects/${projectId}/ui-bridge-configs/${sm.selectedConfigId}/states/${stateId}`,
+          `/api/v1/projects/${sm.projectId}/ui-bridge-configs/${sm.selectedConfigId}/states/${stateId}`,
           {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
@@ -126,13 +124,14 @@ export function UIBridgeStateMachinePage() {
         );
         if (!res.ok) {
           toast.error("Failed to update state");
+          return;
         }
+        sm.refresh();
       } catch {
         toast.error("Failed to update state");
       }
-      sm.refresh();
     },
-    [projectId, sm]
+    [sm]
   );
 
   // Handle element update for drag-and-drop reassignment
