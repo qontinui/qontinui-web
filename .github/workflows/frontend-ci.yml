@@ -19,13 +19,48 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout qontinui-web
         uses: actions/checkout@v4
+
+      - name: Checkout qontinui-schemas
+        uses: actions/checkout@v4
+        with:
+          repository: jspinak/qontinui-schemas
+          path: ../qontinui-schemas
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout ui-bridge
+        uses: actions/checkout@v4
+        with:
+          repository: qontinui/ui-bridge
+          path: ../ui-bridge
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout qontinui-workflow-ui
+        uses: actions/checkout@v4
+        with:
+          repository: qontinui/qontinui-workflow-ui
+          path: ../qontinui-workflow-ui
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout qontinui-workflow-utils
+        uses: actions/checkout@v4
+        with:
+          repository: qontinui/qontinui-workflow-utils
+          path: ../qontinui-workflow-utils
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout qontinui-navigation
+        uses: actions/checkout@v4
+        with:
+          repository: qontinui/qontinui-navigation
+          path: ../qontinui-navigation
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
