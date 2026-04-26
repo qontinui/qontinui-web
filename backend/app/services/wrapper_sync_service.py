@@ -1,7 +1,7 @@
 """Wrapper registry sync service — Phase 6.
 
 Pulls the canonical ``registry.json`` from
-``github.com/qontinui/wrappers-registry`` and upserts the rows into the
+``github.com/jspinak/wrappers-registry`` and upserts the rows into the
 ``wrapper_entries`` table. Designed to run on application startup AND
 hourly thereafter via an asyncio background task created in
 :mod:`app.main`'s startup hook.
@@ -35,7 +35,7 @@ from app.models.wrapper_entry import WrapperEntry
 logger = structlog.get_logger(__name__)
 
 REGISTRY_URL = (
-    "https://raw.githubusercontent.com/qontinui/wrappers-registry/main/registry.json"
+    "https://raw.githubusercontent.com/jspinak/wrappers-registry/main/registry.json"
 )
 DEFAULT_SYNC_INTERVAL_SECONDS = 3600  # one hour
 

@@ -1,7 +1,7 @@
 """Wrapper marketplace models — Phase 6 of the wrapper-runner integration plan.
 
 The canonical wrapper registry lives at
-``github.com/qontinui/wrappers-registry`` (a single ``registry.json``).
+``github.com/jspinak/wrappers-registry`` (a single ``registry.json``).
 This module owns the social/marketplace surface that augments it on
 qontinui-web:
 
