@@ -138,6 +138,7 @@ ignore = [
 "create_tables.py" = ["E402"]  # Script with path setup
 "generate_test_data.py" = ["E402"]  # Script with path setup
 "setup_annotations.py" = ["E402"]  # Script with path setup
+"alembic/env.py" = ["E402", "F403"]  # Standard alembic env.py: imports follow sys.path setup, wildcard imports model registry
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]

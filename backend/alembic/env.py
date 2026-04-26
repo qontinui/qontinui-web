@@ -1,9 +1,10 @@
 import os
 from logging.config import fileConfig
 
-from alembic import context
 from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
+
+from alembic import context
 
 # Load .env file
 load_dotenv()
@@ -37,6 +38,24 @@ from app.db.base_class import *  # Import all models
 
 target_metadata = Base.metadata
 
+
+def include_object(object, name, type_, reflected, compare_to):
+    """Filter what alembic compares during autogenerate.
+
+    The DB is shared with qontinui-runner, which manages its own tables
+    in the ``runner`` schema via native (non-alembic) migrations. With
+    ``include_schemas=True`` set below, alembic would otherwise see
+    those runner-managed tables and propose dropping them. This filter
+    limits cross-schema reflection to runner.* tables that web alembic
+    actually owns (i.e., tables a SQLAlchemy model declares with
+    ``__table_args__ = {"schema": "runner"}``). Currently that's just
+    ``runner.users`` (see ``app/models/user.py``).
+    """
+    if type_ == "table" and reflected and getattr(object, "schema", None) == "runner":
+        return f"runner.{name}" in target_metadata.tables
+    return True
+
+
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
@@ -61,6 +80,8 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_schemas=True,
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -81,7 +102,12 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            include_schemas=True,
+            include_object=include_object,
+        )
 
         with context.begin_transaction():
             context.run_migrations()
