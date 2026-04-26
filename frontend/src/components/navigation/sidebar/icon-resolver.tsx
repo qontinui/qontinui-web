@@ -69,6 +69,7 @@ import {
   Radar,
   Eye,
   Target,
+  Package,
 } from "lucide-react";
 
 const ICON_MAP: Record<
@@ -143,6 +144,7 @@ const ICON_MAP: Record<
   Radar,
   Eye,
   Target,
+  Package,
 };
 
 export function resolveIcon(
