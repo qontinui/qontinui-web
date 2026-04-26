@@ -229,8 +229,8 @@ export interface ExtractionAnnotation {
 }
 
 export interface ExtractionSessionConfig {
-  /** Viewport sizes to use for extraction */
-  viewports?: any[];
+  /** Viewport sizes to use for extraction ([width, height] tuples) */
+  viewports?: [number, number][];
   /** Whether to capture hover states */
   capture_hover_states?: boolean;
   /** Whether to capture focus states */

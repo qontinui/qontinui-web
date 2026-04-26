@@ -30,7 +30,7 @@ export function BuildRefreshBanner() {
   useBuildIdWatcher({
     pollUrl: "/api/health",
     pollIntervalMs: 30_000,
-    onBuildIdChange: (_oldId, newId) => {
+    onBuildIdChange: (_oldId: string | null, newId: string) => {
       // One-shot latch: once we've flipped to stale, ignore any further
       // build-id divergences. The hook itself only fires once per mount,
       // but if the user clicks Refresh and the page reloads from the OLD
