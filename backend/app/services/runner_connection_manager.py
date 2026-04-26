@@ -17,6 +17,7 @@ Services:
 """
 
 import asyncio
+import json
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -34,6 +35,15 @@ from app.services.runner.state_repository import RunnerStateRepository
 from app.services.runner.terminal_relay import TerminalRelayService
 
 logger = structlog.get_logger(__name__)
+
+# Redis TTL for the user:{user_id}:connections reverse-lookup set entries.
+# Matches the per-connection TTL used by RunnerStateRepository so a stale
+# user-set entry expires roughly in lockstep with the connection it points to.
+USER_CONNECTIONS_TTL_SECONDS = 300
+
+# Wake-intent Redis key prefix and TTL. Used by Phase F.2 wake-from-web.
+WAKE_INTENT_KEY_PREFIX = "wake_intent"
+WAKE_INTENT_TTL_SECONDS = 60
 
 
 class RunnerConnectionManager:
@@ -115,6 +125,11 @@ class RunnerConnectionManager:
             ip_address=ip_address,
         )
 
+        # Persist a user -> connection_id reverse lookup so Phase F.2's
+        # is_user_online() can find a live connection without scanning every
+        # metadata key. Stored as a Redis set with a refreshed TTL.
+        await self._save_user_connection_mapping(user_id, connection_id)
+
         # Build a thread-safe send callback for relay services
         send_lock = self._ws_send_locks[connection_id]
 
@@ -155,6 +170,35 @@ class RunnerConnectionManager:
             redis_state_stored=True,
         )
 
+        # Phase F.2: if a wake intent is pending for this user, fulfill it now
+        # and surface a runner.woke event so the frontend can transition out
+        # of its "waking" state and dispatch the queued task.
+        try:
+            fulfilled = await self.fulfill_wake_intent(str(user_id), connection_id)
+            if fulfilled is not None:
+                task_id_value = fulfilled.get("task_id")
+                await self._publisher.publish_runner_woke(
+                    user_id=user_id,
+                    connection_id=connection_id,
+                    intent_id=fulfilled.get("intent_id"),
+                    task_id=str(task_id_value) if task_id_value else None,
+                    reason=fulfilled.get("reason"),
+                )
+                logger.info(
+                    "wake_intent_fulfilled",
+                    connection_id=connection_id,
+                    user_id=str(user_id),
+                    intent_id=fulfilled.get("intent_id"),
+                )
+        except Exception as e:
+            # Wake-intent fulfillment must never block runner registration.
+            logger.error(
+                "wake_intent_fulfill_error",
+                connection_id=connection_id,
+                user_id=str(user_id),
+                error=str(e),
+            )
+
     async def unregister_runner(
         self, connection_id: int, user_id: UUID | None = None
     ) -> None:
@@ -178,6 +222,11 @@ class RunnerConnectionManager:
 
         # Remove from Redis
         await self._state_repo.delete_connection_state(connection_id)
+
+        # Remove the user -> connection reverse-lookup entry so a subsequent
+        # is_user_online() check correctly returns "offline".
+        if user_id is not None:
+            await self._remove_user_connection_mapping(user_id, connection_id)
 
         # Remove from memory
         self._registry.unregister_runner(connection_id)
@@ -602,6 +651,201 @@ class RunnerConnectionManager:
             Metadata dict or None if not found
         """
         return await self._state_repo.get_connection_metadata(connection_id)
+
+    # ========================================================================
+    # User → Connection Reverse Lookup (Phase F.2)
+    # ========================================================================
+
+    @staticmethod
+    def _user_connections_key(user_id: str | UUID) -> str:
+        """Redis set key holding all live connection_ids for a given user."""
+        return f"user:{user_id}:connections"
+
+    async def _save_user_connection_mapping(
+        self, user_id: UUID, connection_id: int
+    ) -> None:
+        """Add ``connection_id`` to the user's reverse-lookup set in Redis."""
+        key = self._user_connections_key(user_id)
+        try:
+            await self._redis.sadd(key, str(connection_id))  # type: ignore[misc]
+            await self._redis.expire(key, USER_CONNECTIONS_TTL_SECONDS)
+        except Exception as e:
+            logger.error(
+                "user_connection_mapping_save_failed",
+                connection_id=connection_id,
+                user_id=str(user_id),
+                error=str(e),
+            )
+
+    async def _remove_user_connection_mapping(
+        self, user_id: UUID, connection_id: int
+    ) -> None:
+        """Remove ``connection_id`` from the user's reverse-lookup set."""
+        key = self._user_connections_key(user_id)
+        try:
+            await self._redis.srem(key, str(connection_id))  # type: ignore[misc]
+        except Exception as e:
+            logger.error(
+                "user_connection_mapping_remove_failed",
+                connection_id=connection_id,
+                user_id=str(user_id),
+                error=str(e),
+            )
+
+    async def is_user_online(self, user_id: str | UUID) -> int | None:
+        """
+        Return one live ``connection_id`` for ``user_id`` if any is online.
+
+        Looks up the per-user Redis set written by ``register_runner`` and
+        validates each candidate via ``is_runner_connected_redis`` so dead
+        entries (TTL-expired connections) are skipped. Returns the first
+        live connection_id, or ``None`` if the user has no live runner.
+
+        Args:
+            user_id: Owner user ID (str or UUID).
+
+        Returns:
+            A live connection_id, or None if the user is not online.
+        """
+        key = self._user_connections_key(user_id)
+        try:
+            members = await self._redis.smembers(key)  # type: ignore[misc]
+        except Exception as e:
+            logger.error(
+                "user_connections_lookup_failed",
+                user_id=str(user_id),
+                error=str(e),
+            )
+            return None
+
+        if not members:
+            return None
+
+        for raw in members:
+            value = raw.decode() if isinstance(raw, bytes) else raw
+            try:
+                conn_id = int(value)
+            except (TypeError, ValueError):
+                logger.warning(
+                    "user_connection_invalid_member",
+                    user_id=str(user_id),
+                    value=value,
+                )
+                # Best-effort cleanup: drop garbage entries so future lookups
+                # aren't slowed by them.
+                try:
+                    await self._redis.srem(key, value)  # type: ignore[misc]
+                except Exception:
+                    pass
+                continue
+
+            if await self.is_runner_connected_redis(conn_id):
+                return conn_id
+
+            # Stale entry — TTL expired on connection state but the set still
+            # remembers it. Clean up so the next caller doesn't repeat the
+            # work.
+            try:
+                await self._redis.srem(key, value)  # type: ignore[misc]
+            except Exception:
+                pass
+
+        return None
+
+    # ========================================================================
+    # Wake Intents (Phase F.2)
+    # ========================================================================
+
+    @staticmethod
+    def _wake_intent_pattern(user_id: str | UUID) -> str:
+        return f"{WAKE_INTENT_KEY_PREFIX}:{user_id}:*"
+
+    async def fulfill_wake_intent(
+        self, user_id: str, connection_id: int
+    ) -> dict[str, Any] | None:
+        """
+        Find and consume a pending wake intent for ``user_id``.
+
+        Scans Redis for keys matching ``wake_intent:{user_id}:*``. If a
+        non-expired intent exists, deletes it and returns the parsed
+        payload. Designed to be called immediately after a runner
+        registers so the frontend can be notified that its wake request
+        was honoured.
+
+        Args:
+            user_id: Owner user ID (string form, matching how the wake
+                endpoint stores it).
+            connection_id: The connection that just came online (logged
+                only — not stored back into the payload).
+
+        Returns:
+            The intent payload (dict including ``intent_id``) on success,
+            or None if no pending intent was found.
+        """
+        pattern = self._wake_intent_pattern(user_id)
+        try:
+            keys: list[Any] = await self._redis.keys(pattern)
+        except Exception as e:
+            logger.error(
+                "wake_intent_scan_failed",
+                user_id=user_id,
+                connection_id=connection_id,
+                error=str(e),
+            )
+            return None
+
+        for raw_key in keys:
+            key = raw_key.decode() if isinstance(raw_key, bytes) else raw_key
+            try:
+                raw_value = await self._redis.get(key)
+            except Exception as e:
+                logger.error(
+                    "wake_intent_get_failed",
+                    user_id=user_id,
+                    key=key,
+                    error=str(e),
+                )
+                continue
+
+            if raw_value is None:
+                # TTL expired between keys() and get() — skip.
+                continue
+
+            try:
+                payload: dict[str, Any] = json.loads(raw_value)
+            except (TypeError, ValueError) as e:
+                logger.warning(
+                    "wake_intent_payload_invalid",
+                    user_id=user_id,
+                    key=key,
+                    error=str(e),
+                )
+                # Drop the corrupt key so it doesn't keep tripping us.
+                try:
+                    await self._redis.delete(key)
+                except Exception:
+                    pass
+                continue
+
+            # Delete first so we never fulfill the same intent twice.
+            try:
+                await self._redis.delete(key)
+            except Exception as e:
+                logger.error(
+                    "wake_intent_delete_failed",
+                    user_id=user_id,
+                    key=key,
+                    error=str(e),
+                )
+
+            # Extract intent_id from the key tail if missing from payload.
+            if "intent_id" not in payload:
+                tail = key.split(":")[-1]
+                payload["intent_id"] = tail
+
+            return payload
+
+        return None
 
     # ========================================================================
     # Force Disconnect

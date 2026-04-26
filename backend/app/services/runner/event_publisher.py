@@ -187,6 +187,34 @@ class RunnerEventPublisher:
                 error_type=type(e).__name__,
             )
 
+    async def publish_runner_woke(
+        self,
+        user_id: UUID,
+        connection_id: int,
+        intent_id: str | None,
+        task_id: str | None,
+        reason: str | None,
+    ) -> None:
+        """Publish a ``runner.woke`` event after a wake-intent is fulfilled.
+
+        The qontinui-web frontend listens for this event over the
+        per-user Redis pub/sub channel to transition the wake-modal out
+        of its "waking" state and dispatch the queued task. The event
+        name is the canonical contract between the backend and the
+        Phase F-runner deep-link handler.
+        """
+        await self._publish_status_update(
+            user_id=user_id,
+            message={
+                "type": "runner.woke",
+                "connection_id": connection_id,
+                "intent_id": intent_id,
+                "task_id": task_id,
+                "reason": reason,
+                "timestamp": utc_now().isoformat(),
+            },
+        )
+
     async def _publish_status_update(
         self, user_id: UUID, message: dict[str, Any]
     ) -> None:

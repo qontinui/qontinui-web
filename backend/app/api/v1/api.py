@@ -70,6 +70,7 @@ from app.api.v1.endpoints import (
     runner_logs,
     runner_status_ws,
     runner_terminal_ws,
+    runner_wake,
     runners,
     runners_fleet,
     scheduled_runs,
@@ -162,6 +163,8 @@ api_router.include_router(
 )
 api_router.include_router(videos.router, prefix="/videos", tags=["videos"])
 api_router.include_router(runners.router, prefix="/runners", tags=["runners"])
+# Wake an offline runner from the web (Phase F.2 of scheduler reliability plan)
+api_router.include_router(runner_wake.router, prefix="/runner", tags=["runner-wake"])
 # Runner fleet — token management + server-mode runner registration/heartbeat
 api_router.include_router(
     runners_fleet.router, prefix="/runners", tags=["runners-fleet"]
