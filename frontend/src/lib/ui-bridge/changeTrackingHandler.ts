@@ -37,11 +37,19 @@ export interface ChangeTrackerLike {
 
 /** Dependencies needed only for the `analyzeStructuredChanges` command. */
 export interface ChangeTrackingDeps {
-  /* eslint-disable @typescript-eslint/no-explicit-any */
-  createSnapshot: (...args: any[]) => any;
-  createSnapshotManager: (...args: any[]) => any;
-  analyzeStructuredChanges: (...args: any[]) => any;
-  /* eslint-enable @typescript-eslint/no-explicit-any */
+  createSnapshot: (...args: unknown[]) => {
+    elements: {
+      id: unknown;
+      type: unknown;
+      label: unknown;
+      actions: unknown;
+      state: unknown;
+    }[];
+  };
+  createSnapshotManager: (...args: unknown[]) => {
+    createSnapshot: (opts: unknown) => unknown;
+  };
+  analyzeStructuredChanges: (...args: unknown[]) => unknown;
 }
 
 /**
@@ -138,8 +146,7 @@ export async function handleChangeTrackingCommand(
         const manager = deps.createSnapshotManager({});
         const currentSemantic = manager.createSnapshot({
           timestamp: Date.now(),
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          elements: snap.elements.map((e: any) => ({
+          elements: snap.elements.map((e) => ({
             id: e.id,
             type: e.type,
             label: e.label,

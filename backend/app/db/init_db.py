@@ -4,8 +4,36 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.security import get_password_hash
 
-# Import models to register them with Base
-from app.db.base_class import *  # noqa
+# Import Base and all models to register them with SQLAlchemy metadata
+from app.db.base import Base  # noqa: F401
+from app.db.base_class import (  # noqa: F401
+    AnalyticsEvent,
+    Annotation,
+    AnnotationSet,
+    AuditLog,
+    CaptureDetectedElement,
+    ClipboardEntry,
+    DeviceSession,
+    DomainKnowledge,
+    ErrorMonitorEntry,
+    ExtractionAnnotation,
+    FrameIndex,
+    Macro,
+    PhaseResult,
+    Project,
+    Runner,
+    RunnerToken,
+    ScheduledWorkflowRun,
+    SessionActivity,
+    SharedFile,
+    SnapshotAction,
+    StorageUsage,
+    Subscription,
+    TaskRun,
+    UIBridgeTransition,
+    UsageMetric,
+    WrapperEntry,
+)
 from app.models.user import User
 
 
