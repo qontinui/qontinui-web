@@ -234,29 +234,20 @@ self.addEventListener('message', (event) => {
     );
   }
 
-  // Build-id changed — purge every cache that does NOT match the current
-  // CACHE_NAME and skip waiting so the next reload picks up the new SW.
-  // Sent by the page when `useBuildIdWatcher` detects /api/health reports
-  // a build-id different from the meta tag the page was served with.
+  // Build-id changed — call skipWaiting so the *waiting* worker activates
+  // immediately. The page routes this message to `registration.waiting`
+  // (see notifyBuildIdChange in lib/service-worker.ts), so `self` here is
+  // the NEW SW with the NEW CACHE_NAME. Its own `activate` handler then
+  // evicts every cache that does not match its CACHE_NAME (i.e. the
+  // previous build's caches).
+  //
+  // Eviction MUST NOT happen here: if this handler runs in the OLD SW
+  // (no pending update yet, message routed to controller as fallback),
+  // `CACHE_NAME` is the stale id and "delete everything else" would wipe
+  // the freshly-staged new cache. skipWaiting() in the old SW is a
+  // harmless no-op.
   if (event.data.type === 'BUILD_ID_CHANGED') {
-    event.waitUntil(
-      caches
-        .keys()
-        .then((cacheNames) =>
-          Promise.all(
-            cacheNames
-              .filter(
-                (name) =>
-                  name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME
-              )
-              .map((name) => {
-                console.log('[ServiceWorker] BUILD_ID_CHANGED — deleting cache:', name);
-                return caches.delete(name);
-              })
-          )
-        )
-        .then(() => self.skipWaiting())
-    );
+    self.skipWaiting();
   }
 });
 

@@ -154,7 +154,22 @@ function postBuild() {
     );
     return;
   }
-  const substituted = template.replaceAll('__BUILD_ID__', id);
+  // Anchor substitution to the CACHE_VERSION declaration line specifically.
+  // A blanket `replaceAll('__BUILD_ID__', id)` would silently substitute any
+  // future occurrence (comments, log strings, unrelated identifiers) with the
+  // raw id — easy to accidentally break with a refactor. Match only the exact
+  // line `const CACHE_VERSION = '__BUILD_ID__';` (allowing single or double
+  // quotes and incidental whitespace).
+  const SW_CACHE_VERSION_RE =
+    /(const\s+CACHE_VERSION\s*=\s*['"])__BUILD_ID__(['"]\s*;?)/g;
+  const matches = template.match(SW_CACHE_VERSION_RE);
+  if (!matches || matches.length === 0) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[inject-build-id] post: WARNING — found __BUILD_ID__ token in ${SW_TEMPLATE} but not on a \`const CACHE_VERSION = '__BUILD_ID__';\` line. Has sw.js been restructured? The deployed SW will ship with the literal __BUILD_ID__ token, breaking cache invalidation.`
+    );
+  }
+  const substituted = template.replace(SW_CACHE_VERSION_RE, `$1${id}$2`);
 
   // Targets: every plausible build output the deploy might serve from.
   // `next build` with `output: 'standalone'` does NOT copy `public/` into
@@ -165,6 +180,11 @@ function postBuild() {
   const standaloneApp = findStandaloneAppDir();
   if (standaloneApp) {
     targets.push(join(standaloneApp, 'public/sw.js'));
+  } else {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[inject-build-id] post: WARNING — standalone output dir not found under ${STANDALONE_ROOT}. sw.js will ship with the literal __BUILD_ID__ token, breaking cache invalidation. Ensure next.config.mjs has output:'standalone' for production deploys.`
+    );
   }
   // Also drop a copy at .next/standalone/public/sw.js for any deploy script
   // that flattens to that location — harmless if unused.

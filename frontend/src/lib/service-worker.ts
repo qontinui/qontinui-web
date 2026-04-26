@@ -194,17 +194,30 @@ class ServiceWorkerManager {
    * yet, or the user is on a browser that doesn't support SWs).
    */
   notifyBuildIdChange(buildId: string): void {
-    const active =
-      this.registration?.active ??
+    // Trigger a registration update so the browser discovers any newly-
+    // deployed sw.js before we look for `waiting`. This is best-effort —
+    // we don't await it because the message target resolution below
+    // already falls back to the controller if no waiting worker has
+    // materialized yet.
+    void this.registration?.update().catch(() => {
+      /* update() can reject in restricted contexts — ignore */
+    });
+
+    // The intent is to tell the NEW (waiting) SW to skipWaiting so it
+    // activates and (in its activate handler) evicts old caches. Posting
+    // to `controller` / `registration.active` would target the OLD/active
+    // SW, whose CACHE_NAME is the stale id — wrong worker.
+    const target =
+      this.registration?.waiting ??
       (typeof navigator !== "undefined"
         ? (navigator.serviceWorker?.controller ?? null)
         : null);
-    if (!active) {
-      log.debug("notifyBuildIdChange: no active SW to notify");
+    if (!target) {
+      log.debug("notifyBuildIdChange: no waiting/controller SW to notify");
       return;
     }
     try {
-      active.postMessage({ type: "BUILD_ID_CHANGED", buildId });
+      target.postMessage({ type: "BUILD_ID_CHANGED", buildId });
       log.debug(`notifyBuildIdChange: posted BUILD_ID_CHANGED (${buildId})`);
     } catch (error) {
       console.error("[ServiceWorker] notifyBuildIdChange failed:", error);

@@ -15,7 +15,12 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export function GET() {
-  const buildId = process.env.NEXT_PUBLIC_BUILD_ID || BUILD_ID || "unknown";
+  // BUILD_ID is inlined at build time from src/generated/build-id.ts (which
+  // scripts/inject-build-id.mjs regenerates pre-build). The previous
+  // `process.env.NEXT_PUBLIC_BUILD_ID` fallback was redundant — both come
+  // from the same pre-build step and Next inlines NEXT_PUBLIC_* env vars
+  // at build time too, so they're literally identical strings.
+  const buildId = BUILD_ID || "unknown";
   return NextResponse.json(
     { ok: true, buildId },
     {

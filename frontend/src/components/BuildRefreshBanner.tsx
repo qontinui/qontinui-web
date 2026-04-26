@@ -31,6 +31,14 @@ export function BuildRefreshBanner() {
     pollUrl: "/api/health",
     pollIntervalMs: 30_000,
     onBuildIdChange: (_oldId, newId) => {
+      // One-shot latch: once we've flipped to stale, ignore any further
+      // build-id divergences. The hook itself only fires once per mount,
+      // but if the user clicks Refresh and the page reloads from the OLD
+      // SW's cached HTML, the meta tag is still the OLD build-id while
+      // /api/health (no-store) returns the NEW one — without this guard
+      // the banner re-fires every poll interval until the SW finally
+      // takes over and serves fresh HTML.
+      if (stale) return;
       // Best-effort cache purge before user reload. If the SW isn't
       // controlling the page yet, this is a no-op and the next `load`
       // event registers the freshly-deployed SW anyway.
