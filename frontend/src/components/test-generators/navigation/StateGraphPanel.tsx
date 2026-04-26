@@ -6,7 +6,8 @@
  */
 
 import { useState, useMemo, useCallback } from "react";
-import ReactFlow, {
+import {
+  ReactFlow,
   type Node,
   type Edge,
   Background,
@@ -15,8 +16,8 @@ import ReactFlow, {
   useNodesState,
   useEdgesState,
   type NodeMouseHandler,
-} from "reactflow";
-import "reactflow/dist/style.css";
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 import { StateDetailSidebar } from "./StateDetailSidebar";
 import type { NonVisualState, NonVisualTransition } from "../types";
 

@@ -3,8 +3,8 @@
 import { useMemo, useCallback } from "react";
 import {
   ReactFlow,
-  Node,
-  Edge,
+  type Node,
+  type Edge,
   Background,
   Controls,
   MiniMap,
@@ -12,8 +12,8 @@ import {
   useNodesState,
   useEdgesState,
   ConnectionMode,
-} from "reactflow";
-import "reactflow/dist/style.css";
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 
 import type {
   SuggestedTransition,

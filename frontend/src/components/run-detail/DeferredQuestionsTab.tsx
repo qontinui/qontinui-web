@@ -41,6 +41,8 @@ export function DeferredQuestionsTab({ taskRunId }: DeferredQuestionsTabProps) {
   const [loading, setLoading] = useState(true);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
 
   const fetchQuestions = useCallback(async () => {
     try {
@@ -208,7 +210,7 @@ export function DeferredQuestionsTab({ taskRunId }: DeferredQuestionsTabProps) {
                   size="sm"
                   variant="outline"
                   onClick={() => handleReview(q.id, "approved")}
-                  disabled={isReviewing}
+                  disabled={isReviewing || rejectingId === q.id}
                   className="text-xs"
                 >
                   Approve
@@ -217,12 +219,10 @@ export function DeferredQuestionsTab({ taskRunId }: DeferredQuestionsTabProps) {
                   size="sm"
                   variant="destructive"
                   onClick={() => {
-                    const comment = prompt("Why was this decision wrong?");
-                    if (comment !== null) {
-                      handleReview(q.id, "rejected", comment || undefined);
-                    }
+                    setRejectingId(q.id);
+                    setRejectReason("");
                   }}
-                  disabled={isReviewing}
+                  disabled={isReviewing || rejectingId === q.id}
                   className="text-xs"
                 >
                   Reject
@@ -238,6 +238,45 @@ export function DeferredQuestionsTab({ taskRunId }: DeferredQuestionsTabProps) {
             )}
           </div>
         </div>
+
+        {rejectingId === q.id && (
+          <div className="mt-3 ml-7 space-y-2">
+            <textarea
+              className="w-full text-sm rounded border border-border-default bg-surface-base px-2 py-1.5 resize-none text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-border-focus"
+              rows={3}
+              placeholder="Why was this decision wrong? (optional)"
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              autoFocus
+            />
+            <div className="flex gap-1.5">
+              <Button
+                size="sm"
+                variant="destructive"
+                className="text-xs"
+                disabled={isReviewing}
+                onClick={() => {
+                  handleReview(q.id, "rejected", rejectReason || undefined);
+                  setRejectingId(null);
+                  setRejectReason("");
+                }}
+              >
+                Confirm Reject
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs"
+                onClick={() => {
+                  setRejectingId(null);
+                  setRejectReason("");
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
 
         {isExpanded && (
           <div className="mt-3 ml-7 space-y-2 text-sm">

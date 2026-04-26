@@ -75,3 +75,7 @@ jobs:
       - name: TypeScript check
         working-directory: ./frontend
         run: npx tsc --noEmit
+
+      - name: Unit tests
+        working-directory: ./frontend
+        run: npm test

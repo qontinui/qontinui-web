@@ -40,6 +40,8 @@ export function DeferredQuestionsFloatingPanel({
   const [expanded, setExpanded] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
   const fetchRef = useRef(false);
 
   const fetchQuestions = useCallback(async () => {
@@ -109,16 +111,11 @@ export function DeferredQuestionsFloatingPanel({
 
   const handleReview = async (
     questionId: string,
-    status: "approved" | "rejected"
+    status: "approved" | "rejected",
+    comment?: string
   ) => {
     setReviewingId(questionId);
     try {
-      const comment =
-        status === "rejected" ? prompt("Why was this wrong?") : undefined;
-      if (status === "rejected" && comment === null) {
-        setReviewingId(null);
-        return;
-      }
       await runnerFetch(
         `/task-runs/${runId}/deferred-questions/${questionId}/review`,
         {
@@ -127,7 +124,9 @@ export function DeferredQuestionsFloatingPanel({
           body: JSON.stringify({ status, comment: comment || undefined }),
         }
       );
-      toast.success(status === "approved" ? "Approved" : "Rejected — rework triggered");
+      toast.success(
+        status === "approved" ? "Approved" : "Rejected — rework triggered"
+      );
       fetchQuestions();
     } catch {
       toast.error("Review failed");
@@ -206,7 +205,7 @@ export function DeferredQuestionsFloatingPanel({
                   size="sm"
                   variant="outline"
                   className="h-6 text-[10px] px-2"
-                  disabled={reviewingId === q.id}
+                  disabled={reviewingId === q.id || rejectingId === q.id}
                   onClick={() => handleReview(q.id, "approved")}
                 >
                   <CheckCircle2 className="size-3 mr-0.5" />
@@ -216,12 +215,57 @@ export function DeferredQuestionsFloatingPanel({
                   size="sm"
                   variant="destructive"
                   className="h-6 text-[10px] px-2"
-                  disabled={reviewingId === q.id}
-                  onClick={() => handleReview(q.id, "rejected")}
+                  disabled={reviewingId === q.id || rejectingId === q.id}
+                  onClick={() => {
+                    setRejectingId(q.id);
+                    setRejectReason("");
+                  }}
                 >
                   Reject
                 </Button>
               </div>
+              {rejectingId === q.id && (
+                <div className="space-y-1.5 pt-1">
+                  <textarea
+                    className="w-full text-xs rounded border border-border-default bg-surface-base px-2 py-1 resize-none text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-border-focus"
+                    rows={2}
+                    placeholder="Why was this wrong? (optional)"
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    autoFocus
+                  />
+                  <div className="flex gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      className="h-6 text-[10px] px-2"
+                      disabled={reviewingId === q.id}
+                      onClick={() => {
+                        handleReview(
+                          q.id,
+                          "rejected",
+                          rejectReason || undefined
+                        );
+                        setRejectingId(null);
+                        setRejectReason("");
+                      }}
+                    >
+                      Confirm
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 text-[10px] px-2"
+                      onClick={() => {
+                        setRejectingId(null);
+                        setRejectReason("");
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
