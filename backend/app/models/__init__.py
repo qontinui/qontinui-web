@@ -230,6 +230,12 @@ from app.models.workflow_variable import (
     VariableScope,
     WorkflowVariable,
 )
+from app.models.wrapper_entry import (
+    WrapperComment,
+    WrapperEntry,
+    WrapperInstallEvent,
+    WrapperRating,
+)
 
 __all__ = [
     # User and Auth
@@ -489,4 +495,9 @@ __all__ = [
     "WorkflowEventType",
     # Push Devices (mobile push notification tokens)
     "PushDevice",
+    # Wrapper marketplace (Phase 6)
+    "WrapperEntry",
+    "WrapperRating",
+    "WrapperComment",
+    "WrapperInstallEvent",
 ]

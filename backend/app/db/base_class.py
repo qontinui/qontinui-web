@@ -29,3 +29,4 @@ from app.models.ui_bridge_transition import UIBridgeTransition  # noqa
 from app.models.usage_metric import UsageMetric  # noqa
 from app.models.user import User  # noqa
 from app.models.video_capture import FrameIndex  # noqa
+from app.models.wrapper_entry import WrapperEntry  # noqa

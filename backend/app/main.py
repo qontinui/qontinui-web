@@ -171,6 +171,13 @@ from app.api.embeddings import router as embeddings_router  # noqa: E402
 
 app.include_router(embeddings_router, prefix="/api/embeddings", tags=["embeddings"])
 
+# Mount wrapper marketplace at /api/wrappers (no /v1 prefix — the runner's
+# install-event pings target /api/wrappers/<id>/install-events directly per
+# the wrapper-runner integration plan, Phase 6).
+from app.api.v1.endpoints.wrappers import router as wrappers_router  # noqa: E402
+
+app.include_router(wrappers_router, prefix="/api/wrappers", tags=["wrappers"])
+
 # Mount static files for avatars
 uploads_dir = Path("uploads")
 uploads_dir.mkdir(exist_ok=True)
@@ -180,6 +187,7 @@ app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 _cleanup_task: asyncio.Task | None = None
 _clipboard_cleanup_task: asyncio.Task | None = None
 _file_cleanup_task: asyncio.Task | None = None
+_wrapper_sync_task: asyncio.Task | None = None
 
 
 @app.on_event("startup")
@@ -329,6 +337,24 @@ async def startup_event():
             note="Continuing without file cleanup",
         )
 
+    # Phase 6 — start the wrapper-registry sync background task. Pulls
+    # registry.json from github.com/qontinui/wrappers-registry on startup
+    # and every hour thereafter, upserting wrapper_entries. Failures are
+    # logged inside the loop and never propagate.
+    try:
+        from app.services.wrapper_sync_service import start_sync_job
+
+        global _wrapper_sync_task
+        _wrapper_sync_task = start_sync_job()
+        logger.info("wrapper_registry_sync_started", interval_seconds=3600)
+    except (ImportError, RuntimeError) as e:
+        logger.warning(
+            "wrapper_registry_sync_failed_to_start",
+            error=str(e),
+            error_type=type(e).__name__,
+            note="Continuing without wrapper registry sync",
+        )
+
     # Phase 3D — resync scheduled_workflow_runs rows into redbeat on startup
     # so a Redis flush doesn't silently drop schedules. Guarded behind
     # REDIS_ENABLED because redbeat requires Redis.
@@ -383,6 +409,14 @@ async def shutdown_event():
             await _file_cleanup_task
         except asyncio.CancelledError:
             logger.info("file_cleanup_task_cancelled")
+
+    global _wrapper_sync_task
+    if _wrapper_sync_task is not None:
+        _wrapper_sync_task.cancel()
+        try:
+            await _wrapper_sync_task
+        except asyncio.CancelledError:
+            logger.info("wrapper_registry_sync_task_cancelled")
 
     # Close Redis connection
     if settings.REDIS_ENABLED:
