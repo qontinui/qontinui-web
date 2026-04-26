@@ -338,7 +338,7 @@ async def startup_event():
         )
 
     # Phase 6 — start the wrapper-registry sync background task. Pulls
-    # registry.json from github.com/jspinak/wrappers-registry on startup
+    # registry.json from github.com/qontinui/wrappers-registry on startup
     # and every hour thereafter, upserting wrapper_entries. Failures are
     # logged inside the loop and never propagate.
     try:

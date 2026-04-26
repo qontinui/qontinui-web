@@ -6,7 +6,7 @@ Create Date: 2026-04-25
 
 Phase 6 of the wrapper-runner integration plan — backend storage for the
 qontinui-web wrapper marketplace. The canonical registry lives at
-``github.com/jspinak/wrappers-registry`` (a single ``registry.json``);
+``github.com/qontinui/wrappers-registry`` (a single ``registry.json``);
 this migration adds the social/marketplace surface that augments it:
 
 * ``wrapper_entries`` — synced hourly from registry.json. One row per
