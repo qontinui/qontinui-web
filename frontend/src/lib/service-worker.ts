@@ -181,6 +181,37 @@ class ServiceWorkerManager {
   }
 
   /**
+   * Notify the active service worker that the server has shipped a new
+   * build. The SW responds by purging every cache whose name doesn't match
+   * its current CACHE_NAME and calling `skipWaiting()`.
+   *
+   * Paired with `useBuildIdWatcher` from @qontinui/ui-bridge/react: when
+   * polled `/api/health` returns a `buildId` that differs from the meta
+   * tag the page was served with, the watcher fires `onBuildIdChange`
+   * which calls this method.
+   *
+   * No-ops if no SW is active (page hasn't completed initial registration
+   * yet, or the user is on a browser that doesn't support SWs).
+   */
+  notifyBuildIdChange(buildId: string): void {
+    const active =
+      this.registration?.active ??
+      (typeof navigator !== "undefined"
+        ? (navigator.serviceWorker?.controller ?? null)
+        : null);
+    if (!active) {
+      log.debug("notifyBuildIdChange: no active SW to notify");
+      return;
+    }
+    try {
+      active.postMessage({ type: "BUILD_ID_CHANGED", buildId });
+      log.debug(`notifyBuildIdChange: posted BUILD_ID_CHANGED (${buildId})`);
+    } catch (error) {
+      console.error("[ServiceWorker] notifyBuildIdChange failed:", error);
+    }
+  }
+
+  /**
    * Handle messages from service worker
    */
   private handleMessage(event: MessageEvent): void {

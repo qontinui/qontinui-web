@@ -48,3 +48,7 @@ next-env.d.ts
 
 # dev notes
 BUILDER_PARITY_CHECKLIST.md
+
+# scripts/inject-build-id.mjs overwrites src/generated/build-id.ts on every
+# `npm run build`. The file is committed with a `dev` placeholder so a fresh
+# checkout passes `tsc --noEmit` without running the build first.

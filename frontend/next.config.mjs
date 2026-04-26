@@ -97,6 +97,18 @@ const nextConfig = {
           { key: 'Access-Control-Allow-Headers', value: 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization' },
         ],
       },
+      {
+        // Service worker must never be cached by the browser or any
+        // intermediate proxy — otherwise users get stuck on an old SW for
+        // up to 24h after a deploy. The SW itself controls cache lifetime
+        // for all other static assets via the build-id token in CACHE_NAME.
+        source: '/sw.js',
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+          { key: 'Pragma', value: 'no-cache' },
+          { key: 'Expires', value: '0' },
+        ],
+      },
     ]
   },
   async rewrites() {

@@ -10,6 +10,8 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { DevDebugInit } from "@/components/dev-debug-init";
 import { ClientOverlays } from "@/components/ClientOverlays";
 import { WorkflowUIProvider } from "@/lib/providers/workflow-ui-provider";
+import { BuildRefreshBanner } from "@/components/BuildRefreshBanner";
+import { BUILD_ID } from "@/generated/build-id";
 import "./globals.css";
 import "@/styles/tutorial.css";
 
@@ -43,8 +45,16 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Build-id mirrors the supervisor's `<meta name="build-id">` tag so
+  // `useBuildIdWatcher` (from @qontinui/ui-bridge/react) picks it up
+  // identically across hosts. Source of truth is the generated module
+  // (regenerated on every `npm run build`); env var is the secondary path.
+  const buildId = process.env.NEXT_PUBLIC_BUILD_ID || BUILD_ID;
   return (
     <html lang="en" className="dark">
+      <head>
+        <meta name="build-id" content={buildId} />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
@@ -62,6 +72,7 @@ export default function RootLayout({
                     >
                       {children}
                       <ClientOverlays />
+                      <BuildRefreshBanner />
                     </RenderLogWrapper>
                   </UIBridgeWrapper>
                 </WorkflowUIProvider>

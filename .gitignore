@@ -34,7 +34,8 @@ yarn-error.log*
 .pnpm-debug.log*
 package-lock.json
 next.config.js
-frontend/scripts
+frontend/scripts/*
+!frontend/scripts/inject-build-id.mjs
 
 # Documentation is now committed to the repository
 # (Previously excluded, but now included for project documentation)

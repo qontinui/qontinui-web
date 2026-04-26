@@ -7,7 +7,14 @@
  * - Push notifications (future)
  */
 
-const CACHE_NAME = 'qontinui-v2';
+// CACHE_VERSION is replaced at build time by scripts/inject-build-id.mjs
+// (post-build pass). The unsubstituted token is the development default —
+// it stays stable across `next dev` reloads and only changes after a real
+// production build runs. The src file under public/ is the template; only
+// the copy in .next/standalone/public/ gets the real id.
+const CACHE_VERSION = '__BUILD_ID__';
+const CACHE_NAME = 'qontinui-' + CACHE_VERSION;
+const CACHE_PREFIX = 'qontinui-';
 const SYNC_TAG = 'sync-screenshots';
 
 // Assets to cache for offline use
@@ -224,6 +231,31 @@ self.addEventListener('message', (event) => {
       caches.open(CACHE_NAME).then((cache) => {
         return cache.addAll(event.data.urls);
       })
+    );
+  }
+
+  // Build-id changed — purge every cache that does NOT match the current
+  // CACHE_NAME and skip waiting so the next reload picks up the new SW.
+  // Sent by the page when `useBuildIdWatcher` detects /api/health reports
+  // a build-id different from the meta tag the page was served with.
+  if (event.data.type === 'BUILD_ID_CHANGED') {
+    event.waitUntil(
+      caches
+        .keys()
+        .then((cacheNames) =>
+          Promise.all(
+            cacheNames
+              .filter(
+                (name) =>
+                  name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME
+              )
+              .map((name) => {
+                console.log('[ServiceWorker] BUILD_ID_CHANGED — deleting cache:', name);
+                return caches.delete(name);
+              })
+          )
+        )
+        .then(() => self.skipWaiting())
     );
   }
 });
