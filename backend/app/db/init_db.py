@@ -1,3 +1,4 @@
+import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,6 +37,8 @@ from app.db.base_class import (  # noqa: F401
 )
 from app.models.user import User
 
+logger = structlog.get_logger(__name__)
+
 
 async def init_db(db: AsyncSession) -> None:
     """Initialize database with first superuser (async version)."""
@@ -65,4 +68,4 @@ async def init_db(db: AsyncSession) -> None:
             db.add(user)
             await db.commit()
             await db.refresh(user)
-            print(f"Created first superuser: {settings.FIRST_SUPERUSER_EMAIL}")
+            logger.info("created_first_superuser", email=settings.FIRST_SUPERUSER_EMAIL)
