@@ -27,7 +27,7 @@ class RunnerDevice(Base):
     )
     user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("runner.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

@@ -28,7 +28,7 @@ class ClipboardEntry(Base):
         server_default=text("gen_random_uuid()"),
     )
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("runner.users.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     # Source device info

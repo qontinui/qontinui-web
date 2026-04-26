@@ -48,7 +48,9 @@ class ExtractionSession(Base):
 
     # User who created
     created_by = Column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+        UUID(as_uuid=True),
+        ForeignKey("runner.users.id", ondelete="SET NULL"),
+        nullable=True,
     )
 
     # Relationships

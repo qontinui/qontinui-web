@@ -59,7 +59,9 @@ class AnalysisJob(Base):
     created_at = Column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
-    created_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_by_id = Column(
+        UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=False
+    )
 
     # Relationships
     annotation_set = relationship("AnnotationSet", foreign_keys=[annotation_set_id])

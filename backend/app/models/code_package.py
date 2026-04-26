@@ -98,7 +98,9 @@ class CodePackage(Base):
     description = Column(Text, nullable=False)
     long_description = Column(Text, nullable=True)
     author_id = Column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        nullable=False,
     )
     category_id = Column(
         Integer,
@@ -251,7 +253,9 @@ class PackageInstallation(Base):
         nullable=False,
     )
     user_id = Column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        nullable=False,
     )
     status = Column(
         String, default=InstallationStatus.ACTIVE.value, nullable=False, index=True
@@ -307,7 +311,9 @@ class PackageRating(Base):
         index=True,
     )
     user_id = Column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        nullable=False,
     )
     rating = Column(
         Integer, nullable=False

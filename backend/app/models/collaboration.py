@@ -77,7 +77,7 @@ class ProjectLock(Base):
     )
     user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("runner.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -152,7 +152,7 @@ class ProjectComment(Base):
     )  # Optional: specific action/state
     author_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("runner.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -165,7 +165,9 @@ class ProjectComment(Base):
     )  # Array of user IDs mentioned in comment
     resolved: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     resolved_by: Mapped[PyUUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+        UUID(as_uuid=True),
+        ForeignKey("runner.users.id", ondelete="SET NULL"),
+        nullable=True,
     )
     resolved_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -231,7 +233,7 @@ class ActivityLog(Base):
     )
     user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("runner.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -346,13 +348,13 @@ class ConflictLog(Base):
     remote_version: Mapped[int] = mapped_column(Integer, nullable=False)
     local_user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("runner.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     remote_user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("runner.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

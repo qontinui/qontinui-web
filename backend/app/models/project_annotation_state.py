@@ -86,7 +86,7 @@ class ProjectAnnotationState(Base):
     )
     updated_by_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("users.id"),
+        ForeignKey("runner.users.id"),
         nullable=True,
         comment="User who last updated the annotations",
     )

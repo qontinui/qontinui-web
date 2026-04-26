@@ -57,7 +57,7 @@ class ElementAnnotationSet(Base):
         nullable=False,
     )
     created_by_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=False
     )
 
     # Relationships

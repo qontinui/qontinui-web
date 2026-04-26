@@ -33,7 +33,7 @@ class SessionActivity(Base):
         primary_key=True, server_default=text("gen_random_uuid()")
     )
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("runner.users.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     # JWT ID from the refresh token - used to invalidate specific sessions

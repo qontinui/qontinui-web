@@ -35,7 +35,7 @@ class Project(Base):
     configuration = Column(JSON, nullable=False, default={})
     version = Column(Integer, nullable=False, default=1)
     is_public = Column(Boolean, nullable=False, default=False, index=True)
-    owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    owner_id = Column(UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=False)
     organization_id = Column(
         UUID(as_uuid=True),
         ForeignKey("organizations.id", ondelete="SET NULL"),

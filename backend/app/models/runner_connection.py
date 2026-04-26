@@ -32,7 +32,7 @@ class RunnerConnection(Base):
 
     # Foreign key to user
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("runner.users.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     # Connection timestamps (always timezone-aware UTC)

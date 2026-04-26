@@ -40,7 +40,9 @@ class ProjectVersion(Base):
         JSON, nullable=False
     )  # Full project state including configuration
     created_by = Column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+        UUID(as_uuid=True),
+        ForeignKey("runner.users.id", ondelete="SET NULL"),
+        nullable=True,
     )
     created_at = Column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False

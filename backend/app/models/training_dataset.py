@@ -122,7 +122,9 @@ class TrainingDataset(Base):
         onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
-    created_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_by_id = Column(
+        UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=False
+    )
 
     # Relationships
     images = relationship(
@@ -176,7 +178,9 @@ class TrainingDatasetImage(Base):
 
     # Review status
     reviewed = Column(Boolean, nullable=False, default=False)
-    reviewed_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    reviewed_by_id = Column(
+        UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=True
+    )
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
     reviewer_notes = Column(Text, nullable=True)
 
@@ -250,7 +254,9 @@ class TrainingDatasetAnnotation(Base):
         default=ReviewStatus.PENDING,
     )
     reviewer_notes = Column(Text, nullable=True)
-    reviewed_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    reviewed_by_id = Column(
+        UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=True
+    )
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
 
     # Timestamps
@@ -324,7 +330,9 @@ class TrainingDatasetExportJob(Base):
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
     completed_at = Column(DateTime(timezone=True), nullable=True)
-    created_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_by_id = Column(
+        UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=False
+    )
 
     # Relationships
     dataset = relationship("TrainingDataset", back_populates="export_jobs")

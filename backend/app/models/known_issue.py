@@ -38,7 +38,7 @@ class KnownIssue(Base):
 
     created_by_user_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("runner.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

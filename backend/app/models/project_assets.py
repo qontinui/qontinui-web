@@ -46,7 +46,7 @@ class ProjectScreenshot(Base):
         UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE")
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE")
+        ForeignKey("runner.users.id", ondelete="CASCADE")
     )
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -132,7 +132,7 @@ class ProjectImage(Base):
         UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE")
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE")
+        ForeignKey("runner.users.id", ondelete="CASCADE")
     )
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)

@@ -155,7 +155,7 @@ class WrapperRating(Base):
 
     user_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("runner.users.id", ondelete="CASCADE"),
         nullable=False,
     )
 
@@ -193,7 +193,7 @@ class WrapperComment(Base):
 
     user_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("runner.users.id", ondelete="CASCADE"),
         nullable=False,
     )
 

@@ -73,7 +73,7 @@ class LearnedWorkflow(Base):
         DateTime(timezone=True), nullable=True
     )
     reviewer_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("runner.users.id", ondelete="SET NULL"), nullable=True
     )
 
     # If published, metadata about the workflow integration

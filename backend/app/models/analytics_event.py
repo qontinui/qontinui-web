@@ -36,7 +36,7 @@ class AnalyticsEvent(Base):
 
     # User association (nullable for system-wide events)
     user_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+        ForeignKey("runner.users.id", ondelete="CASCADE"), nullable=True, index=True
     )
 
     # Event properties (flexible JSON storage)

@@ -67,7 +67,7 @@ class TemplateCandidate(Base):
     )
     reviewed_by_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="SET NULL"),
+        ForeignKey("runner.users.id", ondelete="SET NULL"),
         nullable=True,
     )
     reviewed_at: Mapped[datetime | None] = mapped_column(

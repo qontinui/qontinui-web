@@ -19,7 +19,7 @@ class AutomationVideo(Base):
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(String, nullable=False, index=True, unique=True)
     user_id = Column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+        UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=False, index=True
     )
     project_id = Column(
         UUID(as_uuid=True), ForeignKey("projects.id"), nullable=True, index=True

@@ -24,7 +24,7 @@ class DeviceSession(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("runner.users.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     # Device fingerprint (hash of device characteristics)

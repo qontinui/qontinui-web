@@ -55,7 +55,7 @@ class Organization(Base):
     name = Column(String, nullable=False, index=True)
     slug = Column(String, unique=True, nullable=False, index=True)
     description = Column(Text, nullable=True)
-    owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    owner_id = Column(UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=False)
     avatar_url = Column(String, nullable=True)
     settings = Column(JSON, default={}, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
@@ -115,11 +115,15 @@ class TeamMember(Base):
         nullable=False,
     )
     user_id = Column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        nullable=False,
     )
     role = Column(String, default=TeamRole.MEMBER.value, nullable=False)
     permissions = Column(JSON, default={}, nullable=False)
-    invited_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    invited_by = Column(
+        UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=True
+    )
     joined_at = Column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
@@ -174,7 +178,9 @@ class OrganizationInvitation(Base):
     email = Column(String, nullable=False)
     role = Column(String, default=TeamRole.MEMBER.value, nullable=False)
     invited_by = Column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+        UUID(as_uuid=True),
+        ForeignKey("runner.users.id", ondelete="SET NULL"),
+        nullable=True,
     )
     token = Column(String, unique=True, nullable=False, index=True)
     expires_at = Column(DateTime(timezone=True), nullable=False)
@@ -247,7 +253,9 @@ class ProjectAccessControl(Base):
         nullable=False,
     )
     user_id = Column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True
+        UUID(as_uuid=True),
+        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        nullable=True,
     )
     organization_id = Column(
         UUID(as_uuid=True),
@@ -258,7 +266,9 @@ class ProjectAccessControl(Base):
         String, default=PermissionLevel.VIEW.value, nullable=False
     )
     created_by = Column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+        UUID(as_uuid=True),
+        ForeignKey("runner.users.id", ondelete="SET NULL"),
+        nullable=True,
     )
     expires_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(

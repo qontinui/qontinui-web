@@ -13,7 +13,7 @@ class AuditLog(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="SET NULL"),
+        ForeignKey("runner.users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -41,7 +41,7 @@ class AuditLog(Base):
     )
     target_user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="SET NULL"),
+        ForeignKey("runner.users.id", ondelete="SET NULL"),
         nullable=True,
         comment="User being affected by the action (for permission/membership changes)",
     )

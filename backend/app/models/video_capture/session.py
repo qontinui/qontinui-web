@@ -115,7 +115,9 @@ class VideoCaptureSession(Base):
 
     # User who created the session
     created_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+        UUID(as_uuid=True),
+        ForeignKey("runner.users.id", ondelete="SET NULL"),
+        nullable=True,
     )
 
     # Session status

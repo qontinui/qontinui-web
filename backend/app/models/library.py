@@ -31,7 +31,7 @@ class Check(Base):
 
     created_by_user_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("runner.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -95,7 +95,7 @@ class CheckGroup(Base):
 
     created_by_user_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("runner.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -157,7 +157,7 @@ class ShellCommand(Base):
 
     created_by_user_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("runner.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -214,7 +214,7 @@ class SavedApiRequest(Base):
 
     created_by_user_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("runner.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -274,7 +274,7 @@ class Context(Base):
 
     created_by_user_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("runner.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -335,7 +335,7 @@ class Macro(Base):
 
     created_by_user_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("runner.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -392,7 +392,7 @@ class PromptSnippet(Base):
 
     created_by_user_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("runner.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

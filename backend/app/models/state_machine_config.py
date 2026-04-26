@@ -30,7 +30,7 @@ class StateMachineConfig(Base):
         UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False, index=True
     )
     created_by = Column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+        UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=False, index=True
     )
 
     name = Column(String, nullable=False, index=True)

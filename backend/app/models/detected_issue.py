@@ -44,7 +44,7 @@ class DetectedIssue(Base):
         index=True,
     )
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("runner.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

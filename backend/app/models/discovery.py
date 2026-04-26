@@ -43,7 +43,7 @@ class Discovery(Base):
         primary_key=True, server_default=text("gen_random_uuid()")
     )
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("runner.users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     project_id: Mapped[UUID] = mapped_column(
         ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
@@ -82,7 +82,7 @@ class Discovery(Base):
         DateTime(timezone=True), nullable=True
     )
     reviewed_by_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("runner.users.id", ondelete="SET NULL"), nullable=True
     )
     user_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     applied_to_config: Mapped[bool] = mapped_column(

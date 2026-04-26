@@ -64,7 +64,9 @@ class Recording(Base):
         nullable=False,
         index=True,
     )
-    created_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_by_id = Column(
+        UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=False
+    )
 
     # Recording metadata
     name = Column(String, nullable=False)

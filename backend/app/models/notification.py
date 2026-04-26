@@ -55,7 +55,7 @@ class Notification(Base):
     )
     user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("runner.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -74,7 +74,7 @@ class Notification(Base):
     resource_id = Column(String, nullable=True)  # ID of the specific resource
     actor_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="SET NULL"),
+        ForeignKey("runner.users.id", ondelete="SET NULL"),
         nullable=True,
     )  # Who triggered the notification
     read: Mapped[bool] = mapped_column(
@@ -125,7 +125,7 @@ class NotificationPreferences(Base):
     )
     user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("runner.users.id", ondelete="CASCADE"),
         unique=True,
         nullable=False,
     )

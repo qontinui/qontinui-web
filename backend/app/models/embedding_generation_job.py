@@ -41,7 +41,7 @@ class EmbeddingGenerationJob(Base):
 
     # User who triggered the job
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("runner.users.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     # Job status
