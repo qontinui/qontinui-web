@@ -24,7 +24,9 @@ import {
   WifiOff,
   Download,
   LogIn,
-  FolderOpen,
+  Settings,
+  ShieldCheck,
+  Info,
 } from "lucide-react";
 import Link from "next/link";
 import { useDisconnectRunner } from "@/hooks/useRunners";
@@ -119,13 +121,21 @@ export function ActiveConnectionsList() {
             },
             {
               icon: LogIn,
-              label: "Log In",
-              description: "Sign in with your Qontinui account credentials",
+              label: "Open the Runner and sign in",
+              description:
+                "Launch the desktop app and sign in with your Qontinui account",
             },
             {
-              icon: FolderOpen,
-              label: "Select a Project",
-              description: "Choose a project folder for the runner to work in",
+              icon: Settings,
+              label: "Settings → Web Integration",
+              description:
+                "In the runner, find the Web Integration section in Settings",
+            },
+            {
+              icon: ShieldCheck,
+              label: "Click Authorize",
+              description:
+                "Approve the runner in the consent page that opens — it will appear here",
             },
           ].map((step, i) => (
             <div key={step.label} className="flex items-start gap-3">
@@ -156,6 +166,19 @@ export function ActiveConnectionsList() {
 
   return (
     <>
+      <Card className="bg-surface-raised/60 border-border-subtle p-4 mb-4 flex items-start gap-3">
+        <Info className="w-5 h-5 text-text-muted shrink-0 mt-0.5" aria-hidden />
+        <div className="text-sm text-text-muted">
+          <span className="font-medium text-white">
+            Need to connect another runner?
+          </span>{" "}
+          Open it on the new machine, then go to{" "}
+          <span className="text-white">
+            Settings → Web Integration → Authorize
+          </span>
+          . It will show up here once it heartbeats.
+        </div>
+      </Card>
       <div className="grid gap-4">
         {connections.map((connection) => (
           <Card
