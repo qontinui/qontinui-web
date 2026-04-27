@@ -1,11 +1,12 @@
 """
 Runner fleet registry model.
 
-Distinct from :class:`~app.models.runner_connection.RunnerConnection` (which
-tracks transient WebSocket sessions) and :class:`~app.models.runner_token.RunnerToken`
-(which holds credentials), a ``Runner`` row represents a long-lived
-registration of a server-mode/headless runner instance. The runner registers
-on startup, heartbeats periodically, and is deregistered when shut down.
+Distinct from :class:`~app.models.runner_session.RunnerSession` (which
+tracks WebSocket session history) and
+:class:`~app.models.runner_token.RunnerToken` (which holds credentials),
+a ``Runner`` row represents a long-lived registration of a runner
+instance. The runner registers on startup via WebSocket, heartbeats
+over the same WS connection, and is deregistered when shut down.
 """
 
 import secrets
@@ -13,7 +14,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from qontinui_schemas.common import utc_now
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, text
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -105,6 +106,37 @@ class Runner(Base):
         nullable=True,
     )
 
+    # WebSocket presence — id of the open RunnerSession row, or NULL while
+    # disconnected. Definitive "is the runner online right now" signal —
+    # complements ``last_heartbeat`` which is the freshness measure.
+    ws_session_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        nullable=True,
+        comment=(
+            "id of the open runner_sessions row while the runner's WebSocket "
+            "is connected; NULL when disconnected. Authoritative liveness "
+            "signal — distinct from last_heartbeat (freshness)."
+        ),
+    )
+
+    ws_connected_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When the current WebSocket session opened, NULL when offline.",
+    )
+
+    os: Mapped[str | None] = mapped_column(
+        String,
+        nullable=True,
+        comment="Operating system family ('windows' / 'macos' / 'linux').",
+    )
+
+    os_version: Mapped[str | None] = mapped_column(
+        String,
+        nullable=True,
+        comment="Operating system version string.",
+    )
+
     status: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
@@ -194,6 +226,12 @@ class Runner(Base):
     user = relationship("User", back_populates="runners")
     runner_token = relationship(
         "RunnerToken", back_populates="runners", foreign_keys=[runner_token_id]
+    )
+    sessions = relationship(
+        "RunnerSession",
+        back_populates="runner",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     def __repr__(self) -> str:

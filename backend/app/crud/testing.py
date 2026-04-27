@@ -36,7 +36,7 @@ from app.models.transition_execution import (
 async def create_test_run(
     db: AsyncSession,
     project_id: UUID,
-    runner_connection_id: int | None,
+    runner_session_id: int | None,
     workflow_id: str | None,
     configuration_snapshot: dict[str, Any],
     test_mode: str | None = None,
@@ -48,7 +48,7 @@ async def create_test_run(
     """Create a new test run."""
     test_run = SoftwareTestRun(
         project_id=project_id,
-        runner_connection_id=runner_connection_id,
+        runner_session_id=runner_session_id,
         workflow_id=workflow_id,
         status=TestRunStatus.RUNNING,
         started_at=datetime.now(UTC),

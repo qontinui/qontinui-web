@@ -117,8 +117,8 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     automation_sessions = relationship(
         "AutomationSession", back_populates="user", cascade="all, delete-orphan"
     )
-    runner_connections = relationship(
-        "RunnerConnection", back_populates="user", cascade="all, delete-orphan"
+    runner_sessions = relationship(
+        "RunnerSession", back_populates="user", cascade="all, delete-orphan"
     )
     runner_tokens = relationship(
         "RunnerToken", back_populates="user", cascade="all, delete-orphan"
@@ -142,9 +142,6 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         "TestDeficiency",
         back_populates="assigned_to",
         foreign_keys="TestDeficiency.assigned_to_user_id",
-    )
-    runner_devices = relationship(
-        "RunnerDevice", back_populates="user", cascade="all, delete-orphan"
     )
     workflow_events = relationship(
         "WorkflowEvent", back_populates="user", cascade="all, delete-orphan"
