@@ -81,7 +81,7 @@ class BatchEmbeddingResponse(BaseModel):
 
 
 @router.post("/compute-text", response_model=TextEmbeddingResponse)
-def compute_text_embedding(request: TextEmbeddingRequest):
+def compute_text_embedding(request: TextEmbeddingRequest) -> TextEmbeddingResponse:
     """Compute a single 384-dim text embedding.
 
     Uses `def` (not `async def`) so FastAPI runs the CPU-bound
@@ -107,7 +107,7 @@ def compute_text_embedding(request: TextEmbeddingRequest):
 
 
 @router.post("/compute-batch", response_model=BatchEmbeddingResponse)
-def compute_batch_embedding(request: BatchEmbeddingRequest):
+def compute_batch_embedding(request: BatchEmbeddingRequest) -> BatchEmbeddingResponse:
     """Compute 384-dim embeddings for multiple texts."""
     try:
         provider = _get_provider()
@@ -127,7 +127,7 @@ def compute_batch_embedding(request: BatchEmbeddingRequest):
 
 
 @router.get("/status")
-def embedding_status():
+def embedding_status() -> dict[str, object]:
     """Health/status probe for the embedding service."""
     try:
         provider = _get_provider()
