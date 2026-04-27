@@ -24,7 +24,6 @@ import vgaRunsSpec from "@/app/(app)/vga/runs/vga-runs.spec.uibridge.json";
 
 interface RawSpec {
   specId: string;
-  // JSON imports infer string for literal union fields (e.g. severity); `any` is correct at this boundary.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   json: any;
 }
