@@ -27,7 +27,6 @@ from app.db.session import AsyncSessionLocal
 from app.middleware.rate_limit import user_limiter
 from app.models.phase_result import PhaseResult
 from app.models.runner import Runner
-from app.models.runner_device import RunnerDevice
 from app.models.runner_token import RunnerToken
 from app.models.user import User
 from app.models.workflow_event import WorkflowEvent, WorkflowEventType
@@ -76,13 +75,15 @@ async def ingest_workflow_event(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     event_in: WorkflowEventCreate,
-    current_user: User = Depends(get_current_active_user_async),
+    runner_token: RunnerToken = Depends(get_authenticated_runner),
 ) -> Any:
     """
     Ingest a workflow event from a runner.
 
-    Runners call this at key lifecycle points (run start, complete, fail, HITL, etc.).
-    The event is stored and will trigger push notifications to the user's mobile devices.
+    Runners call this at key lifecycle points (run start, complete, fail, HITL,
+    etc.). Authenticated with a runner bearer token; the event is associated
+    with the token's owning user. The stored event triggers push notifications
+    to the user's mobile devices.
     """
     # Validate event type
     valid_types = {e.value for e in WorkflowEventType}
@@ -92,25 +93,11 @@ async def ingest_workflow_event(
             detail=f"Invalid event_type '{event_in.event_type}'. Must be one of: {', '.join(sorted(valid_types))}",
         )
 
-    # Verify device belongs to this user
-    result = await db.execute(
-        select(RunnerDevice).where(
-            RunnerDevice.device_id == event_in.device_id,
-            RunnerDevice.user_id == current_user.id,
-            RunnerDevice.is_active == True,  # noqa: E712
-        )
-    )
-    device = result.scalar_one_or_none()
-
-    if not device:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Device not registered to this user or inactive",
-        )
+    user_id = runner_token.user_id
 
     logger.info(
         "workflow_event_ingested",
-        user_id=current_user.id,
+        user_id=user_id,
         event_type=event_in.event_type,
         device_id=event_in.device_id,
         runner_name=event_in.runner_name,
@@ -119,7 +106,7 @@ async def ingest_workflow_event(
 
     # Create event
     event = WorkflowEvent(
-        user_id=current_user.id,
+        user_id=user_id,
         event_type=event_in.event_type,
         device_id=event_in.device_id,
         runner_name=event_in.runner_name,

@@ -1,9 +1,11 @@
 """
-Background task for cleaning up stale runner connections.
+Background task for cleaning up stale runner sessions.
 
-This task runs periodically to identify database connections marked as active
-(disconnected_at IS NULL) but are no longer actually WebSocket-connected,
-and marks them as disconnected.
+This task runs periodically to identify ``RunnerSession`` rows marked as
+active (``disconnected_at IS NULL``) whose ``Runner`` parent has no live
+WebSocket (per the in-process+Redis registry). It closes the session
+row, clears the parent ``ws_session_id`` pointer, and notifies the
+manager.
 """
 
 import asyncio
@@ -14,122 +16,107 @@ from sqlalchemy import select
 
 from app.config.redis_config import get_redis
 from app.db.session import AsyncSessionLocal
-from app.models.runner_connection import RunnerConnection
-from app.services.runner_connection_manager import get_runner_connection_manager
+from app.models.runner import Runner
+from app.models.runner_session import RunnerSession
+from app.services.runner_websocket_manager import get_runner_websocket_manager
 
 logger = structlog.get_logger(__name__)
 
 
 async def cleanup_stale_connections() -> dict[str, int]:
     """
-    Clean up database connections that are marked active but not WebSocket-connected.
-
-    This function:
-    1. Queries all connections where disconnected_at IS NULL
-    2. Checks if each connection_id is in the RunnerConnectionManager.runner_connections dict
-    3. If NOT in memory but in DB as "active", marks it as disconnected with
-       disconnected_at = now() and calculates duration_seconds
+    Close ``RunnerSession`` rows whose runner is no longer connected.
 
     Returns:
         Dictionary with cleanup statistics:
-        - total_active: Total number of active connections in DB
-        - stale_found: Number of stale connections found
-        - cleaned: Number of connections successfully cleaned up
+        - total_active: Total number of active sessions in DB
+        - stale_found: Number of stale sessions found
+        - cleaned: Number of sessions successfully cleaned up
     """
-    stats = {
-        "total_active": 0,
-        "stale_found": 0,
-        "cleaned": 0,
-    }
+    stats = {"total_active": 0, "stale_found": 0, "cleaned": 0}
 
     try:
-        # Get Redis client and runner connection manager
         redis_client = await get_redis()
-        runner_manager = await get_runner_connection_manager(redis_client)
+        runner_manager = await get_runner_websocket_manager(redis_client)
 
-        # Get set of currently connected runner IDs across all processes (Redis-backed)
-        connected_ids = set(await runner_manager.get_all_connected_runner_ids_redis())
+        connected_ids = set(await runner_manager.get_all_connected_ids())
 
-        # Query database for active connections
         async with AsyncSessionLocal() as db:
-            # Get all active connections (disconnected_at IS NULL)
-            query = select(RunnerConnection).where(
-                RunnerConnection.disconnected_at.is_(None)
-            )
+            query = select(RunnerSession).where(RunnerSession.disconnected_at.is_(None))
             result = await db.execute(query)
-            active_connections = list(result.scalars().all())
+            active_sessions = list(result.scalars().all())
 
-            stats["total_active"] = len(active_connections)
+            stats["total_active"] = len(active_sessions)
 
-            # Find stale connections (in DB but not in memory)
-            stale_connections = [
-                conn for conn in active_connections if conn.id not in connected_ids
+            stale_sessions = [
+                s for s in active_sessions if str(s.runner_id) not in connected_ids
             ]
-            stats["stale_found"] = len(stale_connections)
+            stats["stale_found"] = len(stale_sessions)
 
-            if stale_connections:
+            if stale_sessions:
                 logger.info(
-                    "cleanup_stale_connections_found",
+                    "cleanup_stale_sessions_found",
                     total_active=stats["total_active"],
                     stale_found=stats["stale_found"],
-                    stale_ids=[conn.id for conn in stale_connections],
                 )
 
-                # Mark stale connections as disconnected
-                # Use utc_now() for timezone-aware datetime (matches model's DateTime(timezone=True))
                 now = utc_now()
-                cleaned_connections = []
-
-                for conn in stale_connections:
+                cleaned_runner_ids: list[str] = []
+                for session in stale_sessions:
                     try:
-                        conn.disconnected_at = now
-                        conn.calculate_duration()
+                        session.disconnected_at = now
+                        session.calculate_duration()
                         stats["cleaned"] += 1
-                        cleaned_connections.append(conn)
-
-                        logger.debug(
-                            "stale_connection_cleaned",
-                            connection_id=conn.id,
-                            user_id=str(conn.user_id),
-                            connected_at=conn.connected_at.isoformat(),
-                            duration_seconds=conn.duration_seconds,
-                        )
+                        cleaned_runner_ids.append(str(session.runner_id))
                     except Exception as e:
                         logger.error(
-                            "stale_connection_cleanup_error",
-                            connection_id=conn.id,
+                            "stale_session_cleanup_error",
+                            session_pk=session.id,
                             error=str(e),
                         )
 
-                # Commit all changes
+                # Clear ws_session_id on parent runners whose session was just
+                # closed.
+                for rid in set(cleaned_runner_ids):
+                    runner_query = select(Runner).where(Runner.id == rid)
+                    runner_result = await db.execute(runner_query)
+                    runner = runner_result.scalar_one_or_none()
+                    if (
+                        runner is not None
+                        and str(runner.ws_session_id or "")
+                        and (runner.ws_session_id in {s.id for s in stale_sessions})
+                    ):
+                        runner.ws_session_id = None
+                        runner.ws_connected_at = None
+
                 await db.commit()
 
-                # Send disconnect notifications to frontend for each cleaned connection
-                for conn in cleaned_connections:
+                # Notify the manager (best-effort) for each cleaned runner.
+                for rid in set(cleaned_runner_ids):
                     try:
-                        await runner_manager.unregister_runner(conn.id, conn.user_id)
+                        await runner_manager.unregister(rid)
                     except Exception as e:
                         logger.error(
-                            "stale_connection_notify_error",
-                            connection_id=conn.id,
+                            "stale_session_notify_error",
+                            runner_id=rid,
                             error=str(e),
                         )
 
                 logger.info(
-                    "cleanup_stale_connections_completed",
+                    "cleanup_stale_sessions_completed",
                     total_active=stats["total_active"],
                     stale_found=stats["stale_found"],
                     cleaned=stats["cleaned"],
                 )
             else:
                 logger.debug(
-                    "cleanup_no_stale_connections",
+                    "cleanup_no_stale_sessions",
                     total_active=stats["total_active"],
                 )
 
     except Exception as e:
         logger.error(
-            "cleanup_stale_connections_error",
+            "cleanup_stale_sessions_error",
             error=str(e),
             error_type=type(e).__name__,
             exc_info=True,
@@ -139,36 +126,18 @@ async def cleanup_stale_connections() -> dict[str, int]:
 
 
 async def run_cleanup_loop(interval_seconds: int = 60) -> None:
-    """
-    Background loop that periodically cleans up stale connections.
-
-    This function runs indefinitely, executing cleanup_stale_connections()
-    every interval_seconds. It's designed to be run as an asyncio task.
-
-    Args:
-        interval_seconds: Time between cleanup runs (default: 60)
-    """
-    logger.info(
-        "cleanup_loop_started",
-        interval_seconds=interval_seconds,
-    )
+    """Background loop that periodically cleans up stale sessions."""
+    logger.info("cleanup_loop_started", interval_seconds=interval_seconds)
 
     while True:
         try:
             stats = await cleanup_stale_connections()
-
-            # Only log if we found stale connections
             if stats["stale_found"] > 0:
-                logger.info(
-                    "cleanup_loop_cycle_completed",
-                    stats=stats,
-                )
+                logger.info("cleanup_loop_cycle_completed", stats=stats)
         except Exception as e:
             logger.error(
                 "cleanup_loop_error",
                 error=str(e),
                 error_type=type(e).__name__,
             )
-
-        # Wait before next cleanup cycle
         await asyncio.sleep(interval_seconds)

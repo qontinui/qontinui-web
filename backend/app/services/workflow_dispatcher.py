@@ -1,4 +1,4 @@
-"""Shared dispatcher service — Phase 3D refactor.
+"""Shared dispatcher service — Phase 3D refactor (Phase 2B updated).
 
 Both the user-facing ``POST /api/v1/workflows/{id}/dispatch`` endpoint and
 the Celery task that fires on cron end up doing the same three things:
@@ -6,13 +6,11 @@ the Celery task that fires on cron end up doing the same three things:
 1. Verify the workflow exists and the caller owns it.
 2. Resolve a target runner ("auto" → healthiest owned; UUID → ownership +
    health check).
-3. POST to the runner with the ``dispatch_secret`` as the bearer, parse
-   the response, and return an ``execution_id``.
-
-Before Phase 3D that logic lived inside the endpoint handler, which meant
-the Celery task would have to duplicate it. This module is the single
-implementation; the endpoint is now a thin HTTP shell and the Celery task
-calls it directly.
+3. Send the workflow to the runner. Preferred transport is the unified
+   WebSocket channel (``runner.ws_session_id IS NOT NULL`` → fan via
+   :class:`RunnerWebSocketManager`). HTTP-with-``dispatch_secret`` is the
+   fallback while the runner still uses the legacy heartbeat path —
+   Phase 5 cleanup will remove this once the runner has migrated.
 
 Error reporting uses :class:`DispatchError` — the endpoint maps it to
 ``HTTPException``, the Celery task serialises it into ``last_error``.
@@ -20,6 +18,7 @@ Error reporting uses :class:`DispatchError` — the endpoint maps it to
 
 from __future__ import annotations
 
+import uuid as _uuid
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -31,9 +30,11 @@ from qontinui_schemas.common import utc_now
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config.redis_config import get_redis
 from app.models.runner import Runner
 from app.models.unified_workflow import UnifiedWorkflow
 from app.schemas.workflow_dispatch import WorkflowDispatchResponse
+from app.services.runner_websocket_manager import get_runner_websocket_manager
 
 logger = structlog.get_logger(__name__)
 
@@ -235,7 +236,44 @@ async def dispatch_workflow_to_runner(
             )
 
     # ------------------------------------------------------------------
-    # 3. POST to the runner.
+    # 3a. WS-preferred dispatch. If the runner has an open WebSocket
+    #     (``ws_session_id`` set), relay the dispatch as a typed message
+    #     instead of going over HTTP. The runner ACKs over the same WS;
+    #     the synchronous "execution_id" we historically returned is
+    #     replaced by a server-minted ``run_id`` that the runner echoes.
+    # ------------------------------------------------------------------
+    if runner.ws_session_id is not None:
+        redis = await get_redis()
+        manager = await get_runner_websocket_manager(redis)
+        if manager.is_connected(runner.id):
+            run_id = str(_uuid.uuid4())
+            sent = await manager.send_dispatch(
+                runner.id,
+                {
+                    "run_id": run_id,
+                    "workflow_id": str(workflow_id),
+                    "parent_task_run_id": parent_task_run_id,
+                },
+            )
+            if sent:
+                logger.info(
+                    "workflow_dispatched_ws",
+                    user_id=str(user_id),
+                    workflow_id=str(workflow_id),
+                    runner_id=str(runner.id),
+                    run_id=run_id,
+                )
+                return WorkflowDispatchResponse(
+                    execution_id=run_id,
+                    runner_id=runner.id,
+                    runner_hostname=runner.hostname,
+                    runner_port=runner.port,
+                    dispatched_at=utc_now(),
+                    task_run_id=None,
+                )
+
+    # ------------------------------------------------------------------
+    # 3b. HTTP fallback (legacy path until Phase 5 cleanup).
     # ------------------------------------------------------------------
     runner_url = f"http://{runner.hostname}:{runner.port}/api/workflows/run"
     request_body = {

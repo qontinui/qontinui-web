@@ -1,88 +1,56 @@
 """
-Pydantic schemas for runner connection management.
+Pydantic schemas for the unified runner API surface (Phase 2B).
 
-These schemas handle validation and serialization for runner connections.
+The canonical wire shape — a runner row as seen by every consumer (web,
+mobile, runner UI) — comes from the generated
+``qontinui_schemas.generated.per_type.runner.Runner`` model. Importing
+the canonical type rather than redefining it keeps web, mobile, and
+runner type-coherent without manual sync.
+
+This module only defines slim *request* schemas (dispatch, session
+history filters) — the response side simply returns the canonical
+``Runner``.
 """
+
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.base import IsoDatetime
 
 
-class RunnerConnectionResponse(BaseModel):
-    """Schema for returning runner connection information."""
+class DispatchRunnerRequest(BaseModel):
+    """Request body for ``POST /api/v1/runners/{id}/dispatch``."""
+
+    workflow_id: UUID = Field(..., description="Workflow to dispatch to the runner.")
+    payload: dict | None = Field(
+        default=None,
+        description="Optional opaque payload forwarded verbatim to the runner.",
+    )
+
+
+class DispatchRunnerResponse(BaseModel):
+    """Response body for ``POST /api/v1/runners/{id}/dispatch``."""
+
+    run_id: str = Field(..., description="Server-side identifier for this dispatch.")
+    dispatched_at: IsoDatetime
+    transport: str = Field(
+        ...,
+        description="Transport used: ``ws`` (preferred) or ``http`` (fallback).",
+    )
+
+
+class RunnerSessionResponse(BaseModel):
+    """Slim response shape for one row in the runner sessions audit log."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    runner_name: str = Field(
-        default="Desktop Runner",
-        description="Name of the runner",
-    )
+    runner_id: UUID
+    user_id: UUID
     connected_at: IsoDatetime
     disconnected_at: IsoDatetime | None
     duration_seconds: int | None
     ip_address: str | None
-    project_id: str | None
-    project_name: str | None = None
-    runner_port: int | None = Field(
-        default=None,
-        description="HTTP API port the runner is listening on",
-    )
-    ws_connected: bool = Field(
-        default=False,
-        description="Whether the runner is currently WebSocket-connected",
-    )
-
-
-class RunnerConnectionHistory(BaseModel):
-    """Schema for paginated connection history."""
-
-    connections: list[RunnerConnectionResponse]
-    total: int = Field(
-        ..., description="Total number of connections (across all pages)"
-    )
-    active_count: int = Field(..., description="Number of currently active connections")
-    limit: int
-    offset: int
-
-
-class ConnectionCleanupResponse(BaseModel):
-    """Schema for connection cleanup response."""
-
-    total_active: int = Field(
-        ..., description="Total number of active connections found in database"
-    )
-    stale_found: int = Field(..., description="Number of stale connections identified")
-    cleaned: int = Field(
-        ..., description="Number of connections successfully cleaned up"
-    )
-    message: str = Field(..., description="Human-readable status message")
-
-
-class ExecuteWorkflowRequest(BaseModel):
-    """Schema for executing a workflow on a connected runner."""
-
-    workflow: dict = Field(
-        ...,
-        description="The workflow configuration to execute",
-    )
-    variables: dict | None = Field(
-        default=None,
-        description="Optional variables to pass to the workflow execution",
-    )
-
-
-class ExecuteWorkflowResponse(BaseModel):
-    """Schema for workflow execution response."""
-
-    execution_id: str = Field(
-        ..., description="Unique ID for tracking this workflow execution"
-    )
-    status: str = Field(
-        ..., description="Status of the execution request (sent, failed)"
-    )
-    message: str = Field(..., description="Human-readable status message")
-    connection_id: int = Field(
-        ..., description="The runner connection ID that received the workflow"
-    )
+    project_id: UUID | None
+    session_id: str | None

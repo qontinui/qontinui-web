@@ -1,9 +1,11 @@
 """
-Pydantic schemas for the server-mode runner fleet registry.
+Pydantic schemas for the runner-side HTTP fleet registry path.
 
-Kept separate from :mod:`app.schemas.runner` (which owns the older
-``RunnerConnection`` websocket-history API) to avoid conflating the two
-models.
+These cover the runner-token-authenticated ``POST /runners/register`` and
+``POST /runners/{id}/heartbeat`` endpoints — kept alive in
+``app/api/v1/endpoints/runners.py`` until Phase 5 cleanup so the running
+runner (which still uses HTTP heartbeats) keeps working. The unified
+runner-side WebSocket ``WS /api/v1/runners/ws`` is the new code path.
 """
 
 from typing import Any

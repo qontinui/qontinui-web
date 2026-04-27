@@ -1,26 +1,36 @@
-"""Connection lifecycle management for automation WebSocket.
+"""Connection lifecycle management for the legacy automation WebSocket.
 
-Handles the connection setup, authentication, runner registration,
-and cleanup for automation runner WebSocket connections.
+Handles the connection setup, authentication, runner registration, and
+cleanup for the JWT-keyed automation runner WebSocket. This is the
+*legacy* path; new code uses ``WS /api/v1/runners/ws`` (header-keyed,
+runner-token auth). The legacy mount stays alive until Phase 5 cleanup
+because the running runner depends on it.
+
+Phase 2B note: this handler now upserts a parent ``Runner`` row keyed by
+``(user_id, "Desktop Runner")`` and writes a ``RunnerSession`` audit row
+per connection (instead of the deleted ``RunnerConnection`` table).
 """
 
-import json
 from typing import Any
+from uuid import UUID
 
 import structlog
 from fastapi import WebSocket, status
+from qontinui_schemas.common import utc_now
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user_from_ws
 from app.config.redis_config import get_redis
-from app.crud import runner as runner_crud
+from app.crud import runner_crud
+from app.crud import runner_session as runner_session_crud
 from app.db.session import AsyncSessionLocal
-from app.models.runner_connection import RunnerConnection
+from app.models.runner import Runner
+from app.models.runner_session import RunnerSession
 from app.models.user import User
-from app.services.runner_connection_manager import (
-    RunnerConnectionManager,
-    get_runner_connection_manager,
+from app.services.runner_websocket_manager import (
+    RunnerWebSocketManager,
+    get_runner_websocket_manager,
 )
 from app.websockets.automation.schemas import make_timestamp
 from app.websockets.automation.session_manager import SessionManager
@@ -51,11 +61,17 @@ class ConnectionHandler:
         self.token = token
         self.db: AsyncSession | None = None
         self.user: User | None = None
-        self.connection_record: RunnerConnection | None = None
-        self.runner_manager: RunnerConnectionManager | None = None
+        self.runner_record: Runner | None = None
+        self.session_record: RunnerSession | None = None
+        self.runner_manager: RunnerWebSocketManager | None = None
         self.redis_client: Any = None
         self.session_manager: SessionManager | None = None
         self.session_key = f"ws_runner_{id(websocket)}"
+
+    @property
+    def runner_id(self) -> UUID | None:
+        """Return the parent Runner row id, if registered."""
+        return self.runner_record.id if self.runner_record else None
 
     @property
     def client_ip(self) -> str:
@@ -234,7 +250,7 @@ class ConnectionHandler:
         return True
 
     async def register_runner(self) -> bool:
-        """Register runner connection with connection manager.
+        """Upsert a Runner row + RunnerSession, register with the manager.
 
         Returns:
             True if registration succeeded, False otherwise.
@@ -243,54 +259,74 @@ class ConnectionHandler:
             return False
 
         try:
-            # Extract IP from WebSocket
             client_host = self.websocket.client.host if self.websocket.client else None
+            runner_name = "Desktop Runner"
 
-            # Create connection record
-            self.connection_record = await runner_crud.create_connection_record(
+            # Upsert the Runner row keyed by (user_id, name).
+            self.runner_record = await runner_crud.register_runner(
                 db=self.db,
+                user_id=self.user.id,
+                name=runner_name,
+                hostname=client_host or "localhost",
+                port=0,
+                capabilities=[],
+                server_mode=False,
+                restate_enabled=False,
+                restate_healthy=False,
+                runner_token_id=None,
+            )
+
+            # Create a RunnerSession audit row.
+            self.session_record = await runner_session_crud.create_session_record(
+                db=self.db,
+                runner_id=self.runner_record.id,
                 user_id=self.user.id,
                 ip_address=client_host,
             )
 
-            # Clean up orphaned connections
-            closed_connection_ids = await runner_crud.close_orphaned_connections(
+            # Set ws_session_id pointer on the Runner row.
+            self.runner_record.ws_session_id = self.session_record.id
+            self.runner_record.ws_connected_at = self.session_record.connected_at
+            await self.db.commit()
+            await self.db.refresh(self.runner_record)
+
+            # Close any orphaned RunnerSession rows for this user (other than ours).
+            closed_session_pks = await runner_session_crud.close_orphaned_sessions(
                 db=self.db,
                 user_id=self.user.id,
-                exclude_connection_id=self.connection_record.id,
+                exclude_session_id=self.session_record.id,
             )
-            if closed_connection_ids:
+            if closed_session_pks:
                 logger.info(
-                    "orphaned_connections_closed",
-                    count=len(closed_connection_ids),
-                    connection_ids=closed_connection_ids,
+                    "orphaned_sessions_closed",
+                    count=len(closed_session_pks),
                     user_id=str(self.user.id),
                 )
-                # Send disconnect notifications for orphaned connections
-                self.redis_client = await get_redis()
-                self.runner_manager = await get_runner_connection_manager(
-                    self.redis_client
-                )
-                for closed_id in closed_connection_ids:
-                    await self.runner_manager.unregister_runner(closed_id, self.user.id)
 
             logger.info(
-                "runner_connection_logged",
-                connection_id=self.connection_record.id,
+                "automation_ws_runner_registered",
+                runner_id=str(self.runner_record.id),
+                session_pk=self.session_record.id,
                 auth_method="jwt",
             )
 
-            # Register runner with connection manager for frontend command relay
             self.redis_client = await get_redis()
-            self.runner_manager = await get_runner_connection_manager(self.redis_client)
-            await self.runner_manager.register_runner(
-                connection_id=self.connection_record.id,
+            self.runner_manager = await get_runner_websocket_manager(self.redis_client)
+            await self.runner_manager.register(
+                runner_id=self.runner_record.id,
                 websocket=self.websocket,
                 user_id=self.user.id,
-                runner_name=self.connection_record.runner_name,
+                runner_name=runner_name,
                 ip_address=client_host,
-                connected_at=self.connection_record.connected_at,
-                project_id=self.connection_record.project_id,
+                connected_at=utc_now().isoformat(),
+            )
+
+            await self.runner_manager.publish_runner_connected(
+                runner_id=self.runner_record.id,
+                user_id=self.user.id,
+                runner_name=runner_name,
+                connected_at=utc_now().isoformat(),
+                ip_address=client_host,
             )
 
             return True
@@ -334,148 +370,95 @@ class ConnectionHandler:
         )
 
     async def update_runner_name(self, runner_name: str) -> None:
-        """Update runner name in connection record and Redis.
-
-        Args:
-            runner_name: Name of the runner.
-        """
-        if not self.connection_record or not self.db or not self.user:
+        """Update the parent Runner row's name on the legacy WS path."""
+        if not self.runner_record or not self.db:
             return
-
         try:
-            await runner_crud.update_connection_runner_name(
-                db=self.db,
-                connection_id=self.connection_record.id,
-                runner_name=runner_name,
-            )
-
-            # Update Redis metadata
-            if self.runner_manager and self.redis_client:
-                metadata = await self.runner_manager.get_connection_metadata(
-                    self.connection_record.id
-                )
-                if metadata:
-                    metadata["runner_name"] = runner_name
-                    metadata_key = (
-                        f"runner:connection:{self.connection_record.id}:metadata"
-                    )
-                    await self.redis_client.set(
-                        metadata_key, json.dumps(metadata), ex=300
-                    )
-
-                # Publish runner_name_updated event to frontend
-                await self.runner_manager.publish_runner_name_update(
-                    connection_id=self.connection_record.id,
-                    runner_name=runner_name,
-                    user_id=self.user.id,
-                )
-
+            self.runner_record.name = runner_name
+            await self.db.commit()
             logger.info(
                 "runner_name_updated",
-                connection_id=self.connection_record.id,
+                runner_id=str(self.runner_record.id),
                 runner_name=runner_name,
             )
-
         except Exception as e:
             logger.error(
                 "runner_name_update_failed",
-                connection_id=self.connection_record.id,
+                runner_id=str(self.runner_record.id) if self.runner_record else None,
                 error=str(e),
             )
 
     async def update_runner_port(self, runner_port: int) -> None:
-        """Update runner port in connection record and Redis.
-
-        Args:
-            runner_port: HTTP API port the runner is listening on.
-        """
-        if not self.connection_record or not self.db or not self.user:
+        """Update the parent Runner row's port on the legacy WS path."""
+        if not self.runner_record or not self.db:
             return
-
         try:
-            await runner_crud.update_connection_runner_port(
-                db=self.db,
-                connection_id=self.connection_record.id,
-                runner_port=runner_port,
-            )
-
-            # Update Redis metadata
-            if self.runner_manager and self.redis_client:
-                metadata = await self.runner_manager.get_connection_metadata(
-                    self.connection_record.id
-                )
-                if metadata:
-                    metadata["runner_port"] = runner_port
-                    metadata_key = (
-                        f"runner:connection:{self.connection_record.id}:metadata"
-                    )
-                    await self.redis_client.set(
-                        metadata_key, json.dumps(metadata), ex=300
-                    )
-
-                # Publish runner_port_updated event to frontend
-                await self.runner_manager.publish_runner_port_update(
-                    connection_id=self.connection_record.id,
-                    runner_port=runner_port,
-                    user_id=self.user.id,
-                )
-
+            self.runner_record.port = runner_port
+            await self.db.commit()
             logger.info(
                 "runner_port_updated",
-                connection_id=self.connection_record.id,
+                runner_id=str(self.runner_record.id),
                 runner_port=runner_port,
             )
-
         except Exception as e:
             logger.error(
                 "runner_port_update_failed",
-                connection_id=self.connection_record.id,
+                runner_id=str(self.runner_record.id) if self.runner_record else None,
                 error=str(e),
             )
 
     async def cleanup(self) -> None:
         """Clean up resources on disconnect."""
-        # Clean up rate limiting state
         RateLimiter.cleanup_session(self.session_key)
 
-        # Unregister runner from connection manager
-        if self.connection_record:
+        if self.runner_record:
             try:
                 redis_client = await get_redis()
-                runner_manager = await get_runner_connection_manager(redis_client)
-                await runner_manager.unregister_runner(
-                    self.connection_record.id,
+                runner_manager = await get_runner_websocket_manager(redis_client)
+                await runner_manager.unregister(
+                    self.runner_record.id,
                     self.user.id if self.user else None,
                 )
             except Exception as e:
                 logger.error(
                     "runner_unregister_failed",
-                    connection_id=(
-                        self.connection_record.id if self.connection_record else None
-                    ),
+                    runner_id=str(self.runner_record.id),
                     error=str(e),
                 )
 
-        # Close connection record - use a fresh session to avoid race conditions
-        if self.connection_record:
+        # Close session row + clear ws_session_id pointer.
+        if self.session_record:
             try:
                 async with AsyncSessionLocal() as cleanup_db:
-                    await runner_crud.close_connection_record(
-                        db=cleanup_db,
-                        connection_id=self.connection_record.id,
+                    await runner_session_crud.close_session_record(
+                        cleanup_db, self.session_record.id
                     )
-                    await cleanup_db.commit()
-                logger.info(
-                    "runner_connection_closed",
-                    connection_id=self.connection_record.id,
-                    duration_seconds=self.connection_record.duration_seconds,
-                )
+                    if self.runner_record is not None:
+                        from sqlalchemy import select as _select
+
+                        runner_in_cleanup = await cleanup_db.execute(
+                            _select(Runner).where(Runner.id == self.runner_record.id)
+                        )
+                        runner_row = runner_in_cleanup.scalar_one_or_none()
+                        if runner_row is not None:
+                            runner_row.ws_session_id = None
+                            runner_row.ws_connected_at = None
+                            await cleanup_db.commit()
             except Exception as e:
                 logger.error(
-                    "runner_connection_close_failed",
+                    "runner_session_close_failed",
                     error=str(e),
                     error_type=type(e).__name__,
                 )
+
+            try:
+                if self.runner_manager and self.user:
+                    await self.runner_manager.publish_runner_disconnected(
+                        runner_id=self.runner_record.id if self.runner_record else "",
+                        user_id=self.user.id,
+                    )
+            except Exception:
+                pass
 
         # Close the main database session safely
         # Avoid rollback() as it can cause IllegalStateChangeError if there's an
@@ -521,54 +504,37 @@ class ConnectionHandler:
 
     async def refresh_connection_ttl(self) -> None:
         """Refresh Redis TTL on heartbeat."""
-        if self.connection_record and self.runner_manager:
-            await self.runner_manager.refresh_connection_ttl(self.connection_record.id)
+        if self.runner_record and self.runner_manager:
+            await self.runner_manager.refresh_ttl(self.runner_record.id)
 
     async def send_to_frontends(self, message: dict[str, Any]) -> None:
-        """Relay message to connected frontends.
-
-        Args:
-            message: Message to relay.
-        """
-        if self.connection_record and self.runner_manager:
+        """Relay message to connected frontends."""
+        if self.runner_record and self.runner_manager:
             await self.runner_manager.send_response_to_frontends(
-                self.connection_record.id,
-                message,
+                self.runner_record.id, message
             )
 
     async def send_chat_to_mobiles(self, message: dict[str, Any]) -> None:
-        """Relay chat response to connected mobiles via Redis pub/sub.
-
-        Args:
-            message: Chat response message to relay.
-        """
-        if self.connection_record and self.runner_manager:
+        """Relay chat response to connected mobiles via Redis pub/sub."""
+        if self.runner_record and self.runner_manager:
             await self.runner_manager.send_chat_response_to_mobiles(
-                self.connection_record.id,
-                message,
+                self.runner_record.id, message
             )
 
     async def send_terminal_to_mobiles(self, message: dict[str, Any]) -> None:
-        """Relay terminal response to connected mobiles via Redis pub/sub.
-
-        Args:
-            message: Terminal response message to relay.
-        """
-        if self.connection_record and self.runner_manager:
+        """Relay terminal response to connected mobiles via Redis pub/sub."""
+        if self.runner_record and self.runner_manager:
             await self.runner_manager.send_terminal_response_to_mobiles(
-                self.connection_record.id,
-                message,
+                self.runner_record.id, message
             )
 
     async def broadcast_status_event(self, event: dict[str, Any]) -> None:
-        """Broadcast event to status channel for frontend monitoring.
+        """Broadcast event to status channel for frontend monitoring."""
+        import json as _json
 
-        Args:
-            event: Event to broadcast.
-        """
         if self.runner_manager and self.redis_client and self.user:
             channel = f"runner:status:updates:{self.user.id}"
             try:
-                await self.redis_client.publish(channel, json.dumps(event))
+                await self.redis_client.publish(channel, _json.dumps(event))
             except Exception as e:
                 logger.error("status_broadcast_failed", error=str(e))

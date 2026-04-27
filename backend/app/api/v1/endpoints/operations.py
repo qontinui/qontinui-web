@@ -1,16 +1,31 @@
 """
-Dev Dashboard API — Fleet monitoring across machines.
+Operations API — Fleet & cross-machine monitoring.
 
-These endpoints are unauthenticated (dev-only, LAN access).
+Renamed from ``dev_dashboard.py``. The route prefix moves from
+``/dev-dashboard`` to ``/operations`` and the endpoints become
+user-authenticated (premium-feature material). The `runners` list now
+uses the canonical `Runner` wire shape (``derived_status``, etc.) so
+consumers don't need a separate mental model for fleet vs runners.
+
+Note: the ``/operations/heartbeat`` and ``/operations/claude-sessions``
+ingestion endpoints stay unauthenticated (LAN-only) — they are the
+cross-machine beacon path. Phase 5 cleanup may collapse them into the
+new ``runners`` table.
 """
 
-import structlog
-from fastapi import APIRouter, HTTPException, Query
+from typing import Any
 
+import structlog
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_async_db, get_current_active_user_async
+from app.api.v1.endpoints.runners import _runner_to_wire
+from app.crud import runner_crud
+from app.models.user import User as UserModel
 from app.schemas.dev_dashboard import (
     AggregatedTaskRuns,
     ClaudeSessionReport,
-    FleetStatus,
     RegisteredRunner,
     RunnerHeartbeat,
     RunnerTaskRun,
@@ -21,9 +36,12 @@ logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 
+# ---- Cross-machine beacon (unauth, LAN-only — kept verbatim) -------------
+
+
 @router.post("/heartbeat", response_model=RegisteredRunner)
 async def runner_heartbeat(heartbeat: RunnerHeartbeat) -> RegisteredRunner:
-    """Receive heartbeat from a runner. Called every 30s by each runner."""
+    """Receive heartbeat from a runner (cross-machine beacon)."""
     registry = get_fleet_registry()
     runner = await registry.register_heartbeat(heartbeat)
     logger.debug(
@@ -46,16 +64,46 @@ async def report_claude_sessions(report: ClaudeSessionReport) -> dict:
     }
 
 
-@router.get("/fleet", response_model=FleetStatus)
-async def get_fleet_status() -> FleetStatus:
-    """Get full fleet status - all runners, health, tasks, claude sessions."""
+# ---- Operations dashboard endpoints (auth, user-scoped) ------------------
+
+
+@router.get("/fleet")
+async def get_fleet_status(
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> dict[str, Any]:
+    """Return the user's fleet (runners + cross-machine Claude sessions).
+
+    Response shape:
+        ``{ "runners": list[Runner], "claude_sessions": dict[hostname, list[ClaudeSession]] }``
+
+    The ``runners`` list uses the canonical wire shape (with
+    ``derived_status``, ``ws_connected``, ...). The ``claude_sessions``
+    section comes from the in-memory cross-machine fleet registry.
+    """
+    runners = await runner_crud.list_runners(db, current_user.id)
+    wire_runners = [_runner_to_wire(r).model_dump(mode="json") for r in runners]
+
     registry = get_fleet_registry()
-    return await registry.get_fleet_status()
+    fleet_status = await registry.get_fleet_status()
+
+    return {
+        "runners": wire_runners,
+        "claude_sessions": {
+            hostname: [s.model_dump(mode="json") for s in sessions]
+            for hostname, sessions in fleet_status.claude_sessions.items()
+        },
+        "total_claude_sessions": fleet_status.total_claude_sessions,
+    }
 
 
 @router.get("/fleet/tasks", response_model=AggregatedTaskRuns)
-async def get_all_tasks() -> AggregatedTaskRuns:
-    """Get all running tasks across all runners."""
+async def get_all_tasks(
+    *,
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> AggregatedTaskRuns:
+    """Get all running tasks across all runners (cross-machine beacon)."""
     registry = get_fleet_registry()
     tasks = await registry.get_all_running_tasks()
     return AggregatedTaskRuns(
@@ -69,6 +117,7 @@ async def get_runner_task_output(
     runner_id: str,
     task_run_id: str = Query(...),
     tail_chars: int = Query(default=5000),
+    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> dict:
     """Proxy to a specific runner to get task output."""
     registry = get_fleet_registry()
@@ -89,6 +138,7 @@ async def get_runner_task_output(
 async def get_runner_workflow_state(
     runner_id: str,
     task_run_id: str = Query(...),
+    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> dict:
     """Proxy to a specific runner to get workflow state."""
     registry = get_fleet_registry()
@@ -105,8 +155,11 @@ async def get_runner_workflow_state(
 
 
 @router.delete("/fleet/runners/{runner_id}")
-async def remove_runner(runner_id: str) -> dict:
-    """Manually remove a runner from the registry."""
+async def remove_runner(
+    runner_id: str,
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> dict:
+    """Manually remove a runner from the cross-machine beacon registry."""
     registry = get_fleet_registry()
     removed = await registry.remove_runner(runner_id)
     if not removed:

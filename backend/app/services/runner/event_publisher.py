@@ -32,7 +32,7 @@ class RunnerEventPublisher:
     async def publish_runner_connected(
         self,
         user_id: UUID,
-        connection_id: int,
+        runner_id: str,
         runner_name: str | None,
         connected_at: datetime,
         ip_address: str | None = None,
@@ -44,7 +44,7 @@ class RunnerEventPublisher:
 
         Args:
             user_id: Owner user ID
-            connection_id: Database connection record ID
+            runner_id: Database connection record ID
             runner_name: Runner name
             connected_at: Connection timestamp
             ip_address: Optional IP address
@@ -52,7 +52,7 @@ class RunnerEventPublisher:
             runner_port: Optional HTTP API port the runner is listening on
         """
         connection_data = {
-            "id": connection_id,
+            "id": runner_id,
             "runner_name": runner_name or "Desktop Runner",
             "connected_at": connected_at.isoformat(),
             "disconnected_at": None,
@@ -75,20 +75,20 @@ class RunnerEventPublisher:
     async def publish_runner_disconnected(
         self,
         user_id: UUID,
-        connection_id: int,
+        runner_id: str,
     ) -> None:
         """
         Publish a runner disconnected event.
 
         Args:
             user_id: Owner user ID
-            connection_id: Database connection record ID
+            runner_id: Database connection record ID
         """
         await self._publish_status_update(
             user_id=user_id,
             message={
                 "type": "runner_disconnected",
-                "connection_id": connection_id,
+                "runner_id": runner_id,
                 "timestamp": utc_now().isoformat(),
             },
         )
@@ -96,7 +96,7 @@ class RunnerEventPublisher:
     async def publish_runner_name_updated(
         self,
         user_id: UUID,
-        connection_id: int,
+        runner_id: str,
         runner_name: str,
     ) -> None:
         """
@@ -107,12 +107,12 @@ class RunnerEventPublisher:
 
         Args:
             user_id: User ID to send the update to
-            connection_id: Database connection record ID
+            runner_id: Database connection record ID
             runner_name: The updated runner name
         """
         logger.info(
             "runner_name_update_publishing",
-            connection_id=connection_id,
+            runner_id=runner_id,
             runner_name=runner_name,
             user_id=str(user_id),
         )
@@ -121,21 +121,21 @@ class RunnerEventPublisher:
                 user_id=user_id,
                 message={
                     "type": "runner_name_updated",
-                    "connection_id": connection_id,
+                    "runner_id": runner_id,
                     "runner_name": runner_name,
                     "timestamp": utc_now().isoformat(),
                 },
             )
             logger.info(
                 "runner_name_update_published",
-                connection_id=connection_id,
+                runner_id=runner_id,
                 runner_name=runner_name,
                 user_id=str(user_id),
             )
         except Exception as e:
             logger.error(
                 "runner_name_update_publish_error",
-                connection_id=connection_id,
+                runner_id=runner_id,
                 error=str(e),
                 error_type=type(e).__name__,
             )
@@ -143,7 +143,7 @@ class RunnerEventPublisher:
     async def publish_runner_port_updated(
         self,
         user_id: UUID,
-        connection_id: int,
+        runner_id: str,
         runner_port: int,
     ) -> None:
         """
@@ -154,12 +154,12 @@ class RunnerEventPublisher:
 
         Args:
             user_id: User ID to send the update to
-            connection_id: Database connection record ID
+            runner_id: Database connection record ID
             runner_port: The HTTP API port the runner is listening on
         """
         logger.info(
             "runner_port_update_publishing",
-            connection_id=connection_id,
+            runner_id=runner_id,
             runner_port=runner_port,
             user_id=str(user_id),
         )
@@ -168,21 +168,21 @@ class RunnerEventPublisher:
                 user_id=user_id,
                 message={
                     "type": "runner_port_updated",
-                    "connection_id": connection_id,
+                    "runner_id": runner_id,
                     "runner_port": runner_port,
                     "timestamp": utc_now().isoformat(),
                 },
             )
             logger.info(
                 "runner_port_update_published",
-                connection_id=connection_id,
+                runner_id=runner_id,
                 runner_port=runner_port,
                 user_id=str(user_id),
             )
         except Exception as e:
             logger.error(
                 "runner_port_update_publish_error",
-                connection_id=connection_id,
+                runner_id=runner_id,
                 error=str(e),
                 error_type=type(e).__name__,
             )
@@ -190,7 +190,7 @@ class RunnerEventPublisher:
     async def publish_runner_woke(
         self,
         user_id: UUID,
-        connection_id: int,
+        runner_id: str,
         intent_id: str | None,
         task_id: str | None,
         reason: str | None,
@@ -207,7 +207,7 @@ class RunnerEventPublisher:
             user_id=user_id,
             message={
                 "type": "runner.woke",
-                "connection_id": connection_id,
+                "runner_id": runner_id,
                 "intent_id": intent_id,
                 "task_id": task_id,
                 "reason": reason,

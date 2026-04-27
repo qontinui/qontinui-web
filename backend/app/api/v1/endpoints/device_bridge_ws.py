@@ -642,7 +642,7 @@ async def runner_proxy(
     """
     user_id = str(user.id)
 
-    # Find the runner port from active connections
+    # Find the runner port from the unified runners table.
     runner_port = 9876  # default
     try:
         from sqlalchemy import text
@@ -652,9 +652,9 @@ async def runner_proxy(
         async with AsyncSessionLocal() as db:
             result = await db.execute(
                 text(
-                    "SELECT runner_port FROM runner_connections "
-                    "WHERE user_id = :uid AND disconnected_at IS NULL "
-                    "ORDER BY connected_at DESC LIMIT 1"
+                    "SELECT port FROM runners "
+                    "WHERE user_id = :uid AND ws_session_id IS NOT NULL "
+                    "ORDER BY ws_connected_at DESC NULLS LAST LIMIT 1"
                 ),
                 {"uid": user_id},
             )

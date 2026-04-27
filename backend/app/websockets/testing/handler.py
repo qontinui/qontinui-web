@@ -13,7 +13,8 @@ from pydantic import ValidationError
 from qontinui_schemas.common import utc_now
 
 from app.config.redis_config import get_redis
-from app.crud import runner as runner_crud
+from app.crud import runner_crud
+from app.crud import runner_session as runner_session_crud
 from app.schemas.testing_ws import WSTestMessage
 from app.services.websocket_manager import get_websocket_manager
 from app.websockets.base import BaseWebSocketHandler, WebSocketContext
@@ -67,23 +68,38 @@ class TestingWebSocketHandler(BaseWebSocketHandler):
         Returns:
             False to close the connection, None/True to continue.
         """
-        # Log connection record
+        # Log connection record — upsert a parent Runner row plus a
+        # RunnerSession (audit) row for this WS connection.
         try:
             client_host = (
                 context.websocket.client.host if context.websocket.client else None
             )
-            self.connection_record = await runner_crud.create_connection_record(
+            runner_row = await runner_crud.register_runner(
                 db=context.db,
+                user_id=context.user.id,
+                name="Testing Runner",
+                hostname=client_host or "localhost",
+                port=0,
+                capabilities=[],
+                server_mode=False,
+                restate_enabled=False,
+                restate_healthy=False,
+                runner_token_id=None,
+            )
+            self.connection_record = await runner_session_crud.create_session_record(
+                db=context.db,
+                runner_id=runner_row.id,
                 user_id=context.user.id,
                 ip_address=client_host,
             )
             self.logger.info(
-                "testing_runner_connection_logged",
-                connection_id=self.connection_record.id,
+                "testing_runner_session_logged",
+                runner_id=str(runner_row.id),
+                session_pk=self.connection_record.id,
             )
         except Exception as e:
             self.logger.error(
-                "testing_runner_connection_log_failed",
+                "testing_runner_session_log_failed",
                 error=str(e),
                 error_type=type(e).__name__,
             )
@@ -341,20 +357,20 @@ class TestingWebSocketHandler(BaseWebSocketHandler):
         Args:
             context: WebSocket context.
         """
-        # Close connection record
+        # Close session row
         if self.connection_record and context.db:
             try:
-                await runner_crud.close_connection_record(
+                await runner_session_crud.close_session_record(
                     db=context.db,
-                    connection_id=self.connection_record.id,
+                    session_pk=self.connection_record.id,
                 )
                 self.logger.info(
-                    "testing_runner_connection_closed",
-                    connection_id=self.connection_record.id,
+                    "testing_runner_session_closed",
+                    session_pk=self.connection_record.id,
                 )
             except Exception as e:
                 self.logger.error(
-                    "testing_runner_connection_close_failed",
+                    "testing_runner_session_close_failed",
                     error=str(e),
                 )
 

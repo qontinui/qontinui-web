@@ -24,8 +24,8 @@ class RunnerStateRepository:
     Uses TTL-based auto-cleanup for crash scenarios.
 
     Redis keys:
-    - runner:connection:{connection_id}:active - Indicates active connection
-    - runner:connection:{connection_id}:metadata - Connection metadata (JSON)
+    - runner:connection:{runner_id}:active - Indicates active connection
+    - runner:connection:{runner_id}:metadata - Connection metadata (JSON)
     """
 
     def __init__(self, redis_client: aioredis.Redis):
@@ -33,7 +33,7 @@ class RunnerStateRepository:
 
     async def save_connection_state(
         self,
-        connection_id: int,
+        runner_id: str,
         user_id: str,
         connected_at: str,
         runner_name: str | None = None,
@@ -44,15 +44,15 @@ class RunnerStateRepository:
         Save connection state to Redis.
 
         Args:
-            connection_id: Database connection record ID
+            runner_id: Database connection record ID
             user_id: Owner user ID (as string)
             connected_at: ISO format timestamp
             runner_name: Optional runner name
             ip_address: Optional IP address
             runner_port: Optional HTTP API port the runner is listening on
         """
-        active_key = f"runner:connection:{connection_id}:active"
-        metadata_key = f"runner:connection:{connection_id}:metadata"
+        active_key = f"runner:connection:{runner_id}:active"
+        metadata_key = f"runner:connection:{runner_id}:metadata"
 
         # Set active flag with TTL
         await self._redis.set(active_key, "1", ex=REDIS_CONNECTION_TTL)
@@ -71,23 +71,21 @@ class RunnerStateRepository:
 
         logger.debug(
             "connection_state_saved",
-            connection_id=connection_id,
+            runner_id=runner_id,
             user_id=user_id,
         )
 
-    async def delete_connection_state(self, connection_id: int) -> None:
+    async def delete_connection_state(self, runner_id: str) -> None:
         """Remove connection state from Redis."""
-        active_key = f"runner:connection:{connection_id}:active"
-        metadata_key = f"runner:connection:{connection_id}:metadata"
+        active_key = f"runner:connection:{runner_id}:active"
+        metadata_key = f"runner:connection:{runner_id}:metadata"
         await self._redis.delete(active_key)
         await self._redis.delete(metadata_key)
-        logger.debug("connection_state_deleted", connection_id=connection_id)
+        logger.debug("connection_state_deleted", runner_id=runner_id)
 
-    async def get_connection_metadata(
-        self, connection_id: int
-    ) -> dict[str, Any] | None:
+    async def get_connection_metadata(self, runner_id: str) -> dict[str, Any] | None:
         """Get connection metadata from Redis."""
-        metadata_key = f"runner:connection:{connection_id}:metadata"
+        metadata_key = f"runner:connection:{runner_id}:metadata"
         try:
             metadata_json = await self._redis.get(metadata_key)
             if metadata_json:
@@ -95,37 +93,33 @@ class RunnerStateRepository:
                 return result
             return None
         except Exception as e:
-            logger.error(
-                "get_metadata_failed", connection_id=connection_id, error=str(e)
-            )
+            logger.error("get_metadata_failed", runner_id=runner_id, error=str(e))
             return None
 
-    async def update_metadata(
-        self, connection_id: int, updates: dict[str, Any]
-    ) -> bool:
+    async def update_metadata(self, runner_id: str, updates: dict[str, Any]) -> bool:
         """Update specific fields in connection metadata."""
-        metadata = await self.get_connection_metadata(connection_id)
+        metadata = await self.get_connection_metadata(runner_id)
         if not metadata:
             return False
 
         metadata.update(updates)
-        metadata_key = f"runner:connection:{connection_id}:metadata"
+        metadata_key = f"runner:connection:{runner_id}:metadata"
         await self._redis.set(
             metadata_key, json.dumps(metadata), ex=REDIS_CONNECTION_TTL
         )
         return True
 
-    async def is_connected_redis(self, connection_id: int) -> bool:
+    async def is_connected_redis(self, runner_id: str) -> bool:
         """
         Check if a runner is connected across all processes (Redis check).
 
         Queries Redis state to determine if any process has an active connection.
         """
-        active_key = f"runner:connection:{connection_id}:active"
+        active_key = f"runner:connection:{runner_id}:active"
         exists = await self._redis.exists(active_key)
         return bool(exists > 0)
 
-    async def get_all_connected_ids(self) -> list[int]:
+    async def get_all_connected_ids(self) -> list[str]:
         """
         Get all connected runner connection IDs across all processes.
 
@@ -133,29 +127,26 @@ class RunnerStateRepository:
         """
         try:
             keys = await self._redis.keys("runner:connection:*:active")
-            connection_ids = []
+            runner_ids: list[str] = []
             for key in keys:
                 key_str = key.decode() if isinstance(key, bytes) else key
                 parts = key_str.split(":")
                 if len(parts) == 4:
-                    try:
-                        connection_ids.append(int(parts[2]))
-                    except ValueError:
-                        logger.warning("invalid_redis_key_format", key=key_str)
-            return connection_ids
+                    runner_ids.append(parts[2])
+            return runner_ids
         except Exception as e:
             logger.error("redis_scan_failed", error=str(e))
             return []
 
-    async def refresh_ttl(self, connection_id: int) -> bool:
+    async def refresh_ttl(self, runner_id: str) -> bool:
         """
         Refresh the TTL on connection keys (called on heartbeat).
 
         Returns:
             True if refresh successful, False if connection not found
         """
-        active_key = f"runner:connection:{connection_id}:active"
-        metadata_key = f"runner:connection:{connection_id}:metadata"
+        active_key = f"runner:connection:{runner_id}:active"
+        metadata_key = f"runner:connection:{runner_id}:metadata"
 
         try:
             active_updated = await self._redis.expire(active_key, REDIS_CONNECTION_TTL)
@@ -164,17 +155,15 @@ class RunnerStateRepository:
             )
 
             if active_updated and metadata_updated:
-                logger.debug("connection_ttl_refreshed", connection_id=connection_id)
+                logger.debug("connection_ttl_refreshed", runner_id=runner_id)
                 return True
             else:
-                logger.warning(
-                    "connection_ttl_refresh_failed", connection_id=connection_id
-                )
+                logger.warning("connection_ttl_refresh_failed", runner_id=runner_id)
                 return False
         except Exception as e:
             logger.error(
                 "connection_ttl_refresh_error",
-                connection_id=connection_id,
+                runner_id=runner_id,
                 error=str(e),
             )
             return False

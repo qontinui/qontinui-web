@@ -204,9 +204,9 @@ class MessageRouter:
 
         logger.info(
             "runner_info_received",
-            connection_id=(
-                self.connection.connection_record.id
-                if self.connection.connection_record
+            runner_id=(
+                str(self.connection.runner_record.id)
+                if self.connection.runner_record
                 else None
             ),
             runner_name=runner_name,
@@ -541,9 +541,9 @@ class MessageRouter:
         )
 
     def _get_connection_id(self) -> Any:
-        """Get connection ID for logging."""
+        """Get runner ID for logging (legacy name retained for log fields)."""
         return (
-            self.connection.connection_record.id
-            if self.connection.connection_record
+            str(self.connection.runner_record.id)
+            if self.connection.runner_record
             else None
         )
