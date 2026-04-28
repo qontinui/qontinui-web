@@ -138,7 +138,6 @@ async def websocket_runner_unified_endpoint(websocket: WebSocket) -> None:
                 hostname=hostname,
                 port=port,
                 capabilities=list(capabilities),
-                server_mode=True,
                 restate_enabled=False,
                 restate_healthy=False,
                 runner_token_id=runner_token_id,

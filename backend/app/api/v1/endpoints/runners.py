@@ -322,8 +322,7 @@ async def dispatch_to_runner(
 
     Sends a typed ``dispatch`` message over the runner's WebSocket if it
     is currently connected (``runner.ws_session_id IS NOT NULL``); 503
-    otherwise. WS is the sole dispatch channel — the legacy HTTP
-    ``dispatch_secret`` path was removed in Phase 5A.
+    otherwise. WS is the sole dispatch channel.
     """
     record = await runner_crud.get_runner(db, runner_id)
     record = _ensure_owned(record, current_user.id)

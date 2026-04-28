@@ -81,7 +81,6 @@ class TestingWebSocketHandler(BaseWebSocketHandler):
                 hostname=client_host or "localhost",
                 port=0,
                 capabilities=[],
-                server_mode=False,
                 restate_enabled=False,
                 restate_healthy=False,
                 runner_token_id=None,

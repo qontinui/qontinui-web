@@ -8,8 +8,7 @@ the Celery task that fires on cron end up doing the same three things:
    health check).
 3. Send the workflow to the runner over the unified WebSocket channel
    (``runner.ws_session_id IS NOT NULL`` → fan via
-   :class:`RunnerWebSocketManager`). The legacy HTTP-with-``dispatch_secret``
-   fallback was removed in Phase 5A — every runner now connects via WS.
+   :class:`RunnerWebSocketManager`). Every runner connects via WS.
 
 Error reporting uses :class:`DispatchError` — the endpoint maps it to
 ``HTTPException``, the Celery task serialises it into ``last_error``.

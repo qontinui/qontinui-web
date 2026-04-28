@@ -48,10 +48,12 @@ launch the qontinui-runner once before applying this revision.
 
 Idempotency
 -----------
-``op.add_column`` calls fail loudly on re-add. The backfill, rename,
-and drop SQL is wrapped in DO-blocks that early-return when the
-target state is already in place, so ``alembic upgrade head`` can be
-re-run without spurious errors after a partial apply.
+The hand-written SQL (backfill, drop) is wrapped in DO-blocks that
+early-return when the target state is already in place. The
+alembic-helper steps (``add_column``, ``rename_table``,
+``drop_column``) are NOT idempotent and will fail on re-apply. This
+is fine in practice because Postgres runs the migration in a single
+transaction — partial-apply leaves the DB unchanged.
 """
 
 from collections.abc import Sequence
