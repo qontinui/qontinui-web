@@ -28,7 +28,7 @@ const WAKE_TIMEOUT_MS = 30_000;
 type WakeApiResponse =
   | {
       status: "already_online";
-      connection_id: number;
+      runner_id: string;
     }
   | {
       status: "wake_required";
@@ -45,7 +45,7 @@ interface WakeRunnerModalProps {
   /** Optional task to dispatch once the runner reports back online. */
   taskId?: string;
   /** Called once a wake is confirmed (already-online or runner.woke event). */
-  onDispatch: (connectionId: number | null) => void;
+  onDispatch: (runnerId: string | null) => void;
 }
 
 type Phase = "idle" | "waking" | "failed";
@@ -62,8 +62,8 @@ type Phase = "idle" | "waking" | "failed";
  *   30-second "Waking runner..." spinner. The wake is confirmed either by
  *   a ``runner.woke`` Redis pub/sub event arriving over the per-user
  *   status WebSocket OR by the
- *   :func:`useRealtimeConnectionsContext` hook reporting that a
- *   connection has appeared. Whichever fires first wins.
+ *   :func:`useRealtimeConnectionsContext` hook reporting that a runner
+ *   has appeared. Whichever fires first wins.
  *
  * - "Run in cloud" is a deliberate placeholder for the next phase
  *   (cloud fallback execution). It is rendered DISABLED with a
@@ -82,8 +82,8 @@ export function WakeRunnerModal({
 
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const dispatchedRef = useRef(false);
-  const { connections } = useRealtimeConnectionsContext();
-  const watchConnectionsRef = useRef(false);
+  const { runners } = useRealtimeConnectionsContext();
+  const watchRunnersRef = useRef(false);
 
   // Reset state when the modal closes.
   useEffect(() => {
@@ -93,36 +93,36 @@ export function WakeRunnerModal({
         timeoutRef.current = null;
       }
       dispatchedRef.current = false;
-      watchConnectionsRef.current = false;
+      watchRunnersRef.current = false;
       setPhase("idle");
       setErrorMessage(null);
     }
   }, [open]);
 
-  // Confirm wake when a connection appears in the realtime context. This is
+  // Confirm wake when a runner appears in the realtime context. This is
   // the fallback path: the WS event ``runner.woke`` is the canonical signal
   // but if it's missed for any reason, the existing ``runner_connected``
   // event (already piped through ``RealtimeConnectionsProvider``) will
-  // surface as a new entry in ``connections`` within a couple of seconds.
+  // surface as a new entry in ``runners`` within a couple of seconds.
   useEffect(() => {
-    if (phase !== "waking" || !watchConnectionsRef.current) return;
+    if (phase !== "waking" || !watchRunnersRef.current) return;
     if (dispatchedRef.current) return;
-    if (connections.length === 0) return;
-    log.debug("Runner connection observed during wake; dispatching", {
-      connections: connections.length,
+    if (runners.length === 0) return;
+    log.debug("Runner observed during wake; dispatching", {
+      runners: runners.length,
     });
     dispatchedRef.current = true;
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
     }
-    const conn = connections[0];
-    onDispatch(conn ? conn.id : null);
+    const runner = runners[0];
+    onDispatch(runner ? runner.id : null);
     onClose();
-  }, [connections, phase, onDispatch, onClose]);
+  }, [runners, phase, onDispatch, onClose]);
 
   // Subscribe to the per-user runner.woke WS event. We piggy-back on the
-  // existing /ws/runner/status connection by opening a parallel listener;
+  // existing /runners/status connection by opening a parallel listener;
   // the realtime-connections context owns the primary one but doesn't
   // surface raw messages to consumers. A short-lived parallel WS keeps the
   // change additive.
@@ -145,7 +145,7 @@ export function WakeRunnerModal({
           process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
         const wsProto = apiUrl.startsWith("https") ? "wss" : "ws";
         const apiHost = apiUrl.replace(/^https?:\/\//, "");
-        const wsUrl = `${wsProto}://${apiHost}/api/v1/ws/runner/status?token=${encodeURIComponent(token)}`;
+        const wsUrl = `${wsProto}://${apiHost}/api/v1/runners/status?token=${encodeURIComponent(token)}`;
 
         ws = new WebSocket(wsUrl);
         ws.onmessage = (ev) => {
@@ -158,12 +158,10 @@ export function WakeRunnerModal({
                 clearTimeout(timeoutRef.current);
                 timeoutRef.current = null;
               }
-              const cid =
-                typeof msg.connection_id === "number"
-                  ? msg.connection_id
-                  : null;
-              log.debug("runner.woke event received", { connection_id: cid });
-              onDispatch(cid);
+              const rid =
+                typeof msg.runner_id === "string" ? msg.runner_id : null;
+              log.debug("runner.woke event received", { runner_id: rid });
+              onDispatch(rid);
               onClose();
             }
           } catch {
@@ -186,7 +184,7 @@ export function WakeRunnerModal({
     setPhase("waking");
     setErrorMessage(null);
     dispatchedRef.current = false;
-    watchConnectionsRef.current = false;
+    watchRunnersRef.current = false;
     try {
       const body: { reason: string; task_id?: string } = {
         reason: "frontend dispatch",
@@ -208,10 +206,10 @@ export function WakeRunnerModal({
 
       if (data.status === "already_online") {
         log.debug("Runner already online; dispatching directly", {
-          connection_id: data.connection_id,
+          runner_id: data.runner_id,
         });
         dispatchedRef.current = true;
-        onDispatch(data.connection_id);
+        onDispatch(data.runner_id);
         onClose();
         return;
       }
@@ -222,8 +220,8 @@ export function WakeRunnerModal({
       });
       // Note: the realtime-connections context polls on its own (every 30s)
       // and emits ``runner_connected`` events as soon as the runner
-      // registers. We just need to start observing the connections list.
-      watchConnectionsRef.current = true;
+      // registers. We just need to start observing the runners list.
+      watchRunnersRef.current = true;
       window.location.href = data.wake_url;
 
       timeoutRef.current = setTimeout(() => {

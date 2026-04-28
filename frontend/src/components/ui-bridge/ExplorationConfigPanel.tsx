@@ -67,10 +67,10 @@ export function ExplorationConfigPanel({
   isRunning,
   onStart,
   onStop,
-  connections,
-  connectionsLoading,
-  selectedConnectionId,
-  onConnectionChange,
+  runners,
+  runnersLoading,
+  selectedRunnerId,
+  onRunnerChange,
   browserTabs = DEFAULT_BROWSER_TABS,
   browserTabsLoading = false,
   browserTabsError = null,
@@ -81,8 +81,8 @@ export function ExplorationConfigPanel({
   const [isRequirementsOpen, setIsRequirementsOpen] = useState(false);
 
   const progressPercent = computeProgressPercent(progress, config);
-  const canStart = canStartExploration(config, selectedConnectionId);
-  const disabledReason = getStartDisabledReason(config, selectedConnectionId);
+  const canStart = canStartExploration(config, selectedRunnerId);
+  const disabledReason = getStartDisabledReason(config, selectedRunnerId);
 
   const currentTargetType = config.targetType || "web";
   const currentRequirements =
@@ -114,10 +114,10 @@ export function ExplorationConfigPanel({
       {!hideRunnerSection && (
         <RunnerConfigSection
           targetType={config.targetType}
-          connections={connections}
-          connectionsLoading={connectionsLoading}
-          selectedConnectionId={selectedConnectionId}
-          onConnectionChange={onConnectionChange}
+          runners={runners}
+          runnersLoading={runnersLoading}
+          selectedRunnerId={selectedRunnerId}
+          onRunnerChange={onRunnerChange}
           isRunning={isRunning}
         />
       )}

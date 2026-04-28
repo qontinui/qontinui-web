@@ -8,7 +8,7 @@ import type {
   TargetType,
   UIBridgeExplorationConfig,
 } from "@/hooks/useUIBridgeExploration";
-import type { RunnerConnection } from "@/types/runner";
+import type { Runner } from "@qontinui/shared-types";
 
 export interface ExplorationConfigPanelProps {
   config: UIBridgeExplorationConfig;
@@ -17,14 +17,14 @@ export interface ExplorationConfigPanelProps {
   isRunning: boolean;
   onStart: () => void;
   onStop: () => void;
-  /** Available runner connections from database */
-  connections: RunnerConnection[];
-  /** Whether connections are loading */
-  connectionsLoading: boolean;
-  /** Currently selected connection ID */
-  selectedConnectionId: number | null;
-  /** Handler for connection selection change */
-  onConnectionChange: (connectionId: number | null) => void;
+  /** Available runners (online). */
+  runners: Runner[];
+  /** Whether runners are loading */
+  runnersLoading: boolean;
+  /** Currently selected runner ID (UUID) */
+  selectedRunnerId: string | null;
+  /** Handler for runner selection change */
+  onRunnerChange: (runnerId: string | null) => void;
   /** Browser tabs available for extension exploration */
   browserTabs?: BrowserTab[];
   /** Whether browser tabs are loading */
@@ -54,4 +54,4 @@ export type {
   TargetType,
   UIBridgeExplorationConfig,
 };
-export type { RunnerConnection };
+export type { Runner };

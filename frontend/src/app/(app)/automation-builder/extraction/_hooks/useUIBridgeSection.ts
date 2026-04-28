@@ -19,62 +19,69 @@ export function useUIBridgeSection({
 }: UseUIBridgeSectionArgs) {
   const exploration = useUIBridgeExploration();
   const recording = useUIBridgeRecording();
-  const { connections, isLoading: connectionsLoading } =
-    useRealtimeConnections();
+  const { runners, isLoading: runnersLoading } = useRealtimeConnections();
 
   // Keep a ref to state so callbacks can access setters without re-creating
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  // Auto-select first runner when connections load
+  // Auto-select first runner when runners load
   useEffect(() => {
     if (
-      state.selectedConnectionId === null &&
-      connections.length > 0 &&
-      !connectionsLoading
+      state.selectedRunnerId === null &&
+      runners.length > 0 &&
+      !runnersLoading
     ) {
-      state.setSelectedConnectionId(connections[0]?.id ?? null);
+      state.setSelectedRunnerId(runners[0]?.id ?? null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- setSelectedConnectionId is stable
-  }, [connections, connectionsLoading, state.selectedConnectionId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setSelectedRunnerId is stable
+  }, [runners, runnersLoading, state.selectedRunnerId]);
 
-  // Connection change handler
-  const onConnectionChange = useCallback(
-    (connectionId: number | null) => {
-      state.setSelectedConnectionId(connectionId);
+  // Runner change handler
+  const onRunnerChange = useCallback(
+    (runnerId: string | null) => {
+      state.setSelectedRunnerId(runnerId);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setter is stable
-    [state.setSelectedConnectionId]
+    [state.setSelectedRunnerId]
   );
 
-  // Construct runner URL from connection
+  // Construct runner URL from runner UUID
   const getRunnerUrl = useCallback(
-    (connectionId: number | null): string | null => {
+    (runnerId: string | null): string | null => {
       if (exploration.config.targetType === "extension") {
         return "http://127.0.0.1:9876";
       }
 
-      if (connectionId === null) return null;
+      if (runnerId === null) return null;
 
-      const conn = connections.find((c) => c.id === connectionId);
-      if (!conn?.ip_address) return null;
+      const runner = runners.find((r) => r.id === runnerId);
+      if (!runner) return null;
 
-      const ip = conn.ip_address;
-      if (ip === "127.0.0.1" || ip === "::1" || ip.startsWith("localhost")) {
-        return "http://127.0.0.1:9876";
+      const ip = runner.ipAddress;
+      const host = runner.hostname;
+      const port = runner.port ?? 9876;
+      if (
+        !ip ||
+        ip === "127.0.0.1" ||
+        ip === "::1" ||
+        ip.startsWith("localhost")
+      ) {
+        return `http://127.0.0.1:${port}`;
       }
-      return `http://${ip}:9876`;
+      const target = ip || host;
+      return `http://${target}:${port}`;
     },
-    [connections, exploration.config.targetType]
+    [runners, exploration.config.targetType]
   );
 
   // Refresh browser tabs
   const handleRefreshBrowserTabs = useCallback(() => {
-    const runnerUrl = getRunnerUrl(state.selectedConnectionId);
+    const runnerUrl = getRunnerUrl(state.selectedRunnerId);
     logger.info("[Extraction] Fetching browser tabs, runnerUrl:", runnerUrl);
     exploration.fetchBrowserTabs(runnerUrl);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exploration.fetchBrowserTabs, getRunnerUrl, state.selectedConnectionId]);
+  }, [exploration.fetchBrowserTabs, getRunnerUrl, state.selectedRunnerId]);
 
   // Auto-fetch browser tabs when extension mode is selected
   useEffect(() => {
@@ -86,11 +93,11 @@ export function useUIBridgeSection({
   // Select browser tab
   const handleSelectBrowserTab = useCallback(
     async (tabId: number | null) => {
-      const runnerUrl = getRunnerUrl(state.selectedConnectionId);
+      const runnerUrl = getRunnerUrl(state.selectedRunnerId);
       await exploration.selectBrowserTab(runnerUrl, tabId);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [exploration.selectBrowserTab, getRunnerUrl, state.selectedConnectionId]
+    [exploration.selectBrowserTab, getRunnerUrl, state.selectedRunnerId]
   );
 
   // Load render log sessions
@@ -204,9 +211,9 @@ export function useUIBridgeSection({
   return {
     exploration,
     recording,
-    connections,
-    connectionsLoading,
-    onConnectionChange,
+    runners,
+    runnersLoading,
+    onRunnerChange,
     getRunnerUrl,
     handleRefreshBrowserTabs,
     handleSelectBrowserTab,

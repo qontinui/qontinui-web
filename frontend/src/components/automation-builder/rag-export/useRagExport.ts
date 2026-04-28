@@ -8,7 +8,7 @@ import type {
   RAGExportStatus,
   EmbeddingProgress,
 } from "@/services/rag-export-service";
-import type { RunnerConnection } from "@/types/runner";
+import type { Runner } from "@qontinui/shared-types";
 import type { ExportResult, UseRagExportReturn } from "./types";
 
 export function useRagExport(projectId: string | null): UseRagExportReturn {
@@ -128,7 +128,7 @@ export function useRagExport(projectId: string | null): UseRagExportReturn {
     }
   };
 
-  const handleTransferToRunner = async (connections: RunnerConnection[]) => {
+  const handleTransferToRunner = async (runners: Runner[]) => {
     if (!projectId) {
       toast.error("No project selected");
       return;
@@ -139,9 +139,7 @@ export function useRagExport(projectId: string | null): UseRagExportReturn {
       return;
     }
 
-    const selectedRunner = connections.find(
-      (c) => String(c.id) === selectedRunnerId
-    );
+    const selectedRunner = runners.find((r) => r.id === selectedRunnerId);
     if (!selectedRunner) {
       toast.error("Selected runner not found");
       return;
@@ -167,7 +165,7 @@ export function useRagExport(projectId: string | null): UseRagExportReturn {
         toast.success("RAG config transferred to runner successfully");
         setLastExportResult({
           success: true,
-          message: `Transferred to ${selectedRunner.runner_name}`,
+          message: `Transferred to ${selectedRunner.name}`,
           elementCount: result.element_count,
           exportSize: result.export_size_bytes,
         });

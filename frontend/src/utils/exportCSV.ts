@@ -1,47 +1,47 @@
-import type { RunnerConnection } from "@/types/runner";
+import type { RunnerSession } from "@/types/runner";
 import { formatDuration } from "./formatDuration";
 
 /**
- * Export connection history as CSV file
+ * Export runner-session history as a CSV file.
  */
-export function exportConnectionHistoryCSV(
-  connections: RunnerConnection[],
-  filename: string = "connection-history.csv"
+export function exportRunnerSessionsCSV(
+  sessions: RunnerSession[],
+  filename: string = "runner-sessions.csv"
 ): void {
-  if (connections.length === 0) {
-    console.warn("No connections to export");
+  if (sessions.length === 0) {
+    console.warn("No sessions to export");
     return;
   }
 
   // Define CSV headers
   const headers = [
     "Runner Name",
+    "Runner ID",
     "Connected At",
     "Disconnected At",
     "Duration",
     "IP Address",
-    "Project ID",
-    "Project Name",
-    "Connection ID",
+    "User Agent",
+    "Session ID",
   ];
 
-  // Convert connections to CSV rows
-  const rows = connections.map((conn) => {
-    const duration = conn.duration_seconds
-      ? formatDuration(conn.duration_seconds)
-      : conn.disconnected_at
+  // Convert sessions to CSV rows
+  const rows = sessions.map((s) => {
+    const duration = s.duration_seconds
+      ? formatDuration(s.duration_seconds)
+      : s.disconnected_at
         ? "Calculating..."
         : "Active";
 
     return [
-      escapeCSVField(conn.runner_name || "Unknown"),
-      escapeCSVField(conn.connected_at || ""),
-      escapeCSVField(conn.disconnected_at || "Active"),
+      escapeCSVField(s.runner_name || "Unknown"),
+      escapeCSVField(s.runner_id),
+      escapeCSVField(s.connected_at || ""),
+      escapeCSVField(s.disconnected_at || "Active"),
       escapeCSVField(duration),
-      escapeCSVField(conn.ip_address || "Unknown"),
-      escapeCSVField(conn.project_id?.toString() || ""),
-      escapeCSVField(conn.project_name || ""),
-      escapeCSVField(conn.id.toString()),
+      escapeCSVField(s.ip_address || "Unknown"),
+      escapeCSVField(s.user_agent || ""),
+      escapeCSVField(String(s.id)),
     ];
   });
 

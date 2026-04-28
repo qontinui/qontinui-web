@@ -29,6 +29,7 @@ import {
   ScanSearch,
   Server,
   CalendarClock,
+  Activity,
 } from "lucide-react";
 import type { NavItem } from "./types";
 
@@ -41,14 +42,16 @@ import type { NavItem } from "./types";
 
 export const devNavItems: NavItem[] = [
   // ===========================================================================
-  // Server-mode runner fleet (production-visible).
+  // Runners (production-visible). The unified /runners page covers online
+  // runners, session history, and auth tokens — Phase 4B folded the old
+  // /runners/fleet page into here.
   // ===========================================================================
   {
     id: "runner-fleet",
-    label: "Runner Fleet",
-    description: "Server-mode runners and auth tokens",
+    label: "Runners",
+    description: "Online runners, session history, and auth tokens",
     icon: React.createElement(Server, { className: "size-5" }),
-    route: "/runners/fleet",
+    route: "/runners",
     color: "#10B981",
     group: "Runners",
   },
@@ -63,18 +66,18 @@ export const devNavItems: NavItem[] = [
   },
 
   // ===========================================================================
-  // Dev Dashboard (dev-only, top-level for easy access)
+  // Operations — first-class fleet view (Phase 4B promotion of the former
+  // /dev-dashboard). Cross-machine view of runners, Claude Code sessions,
+  // and active workflows.
   // ===========================================================================
   {
-    id: "dev-dashboard",
-    label: "Dev Dashboard",
-    description: "Fleet monitoring across all runners and machines",
-    icon: React.createElement(LayoutDashboard, { className: "size-5" }),
-    route: "/dev-dashboard",
+    id: "operations",
+    label: "Operations",
+    description: "Cross-machine fleet view",
+    icon: React.createElement(Activity, { className: "size-5" }),
+    route: "/operations",
     color: "#10B981",
-    hiddenInProd: true,
-    productMode: "ai",
-    group: "Dev",
+    group: "Runners",
   },
 
   // ===========================================================================

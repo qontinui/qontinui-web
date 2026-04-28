@@ -112,7 +112,7 @@ export default function ConnectRunnerPage() {
   };
 
   const handleCancel = () => {
-    router.push("/runners/fleet");
+    router.push("/runners");
   };
 
   if (authLoading) {

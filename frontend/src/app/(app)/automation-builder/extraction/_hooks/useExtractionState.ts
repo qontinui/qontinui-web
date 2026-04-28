@@ -131,10 +131,8 @@ export function useExtractionState() {
     null
   );
 
-  // Runner connections
-  const [selectedConnectionId, setSelectedConnectionId] = useState<
-    number | null
-  >(null);
+  // Runner selection (UUID of the active runner, or null)
+  const [selectedRunnerId, setSelectedRunnerId] = useState<string | null>(null);
 
   // URL method ref
   const methodSetRef = useRef(false);
@@ -287,9 +285,9 @@ export function useExtractionState() {
     recordingRenders,
     setRecordingRenders,
 
-    // Runner connections
-    selectedConnectionId,
-    setSelectedConnectionId,
+    // Runner selection
+    selectedRunnerId,
+    setSelectedRunnerId,
 
     // Refs
     methodSetRef,

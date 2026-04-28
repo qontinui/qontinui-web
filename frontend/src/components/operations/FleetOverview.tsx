@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { MachineCard } from "./MachineCard";
 import { TaskRunCard } from "./TaskRunCard";
-import { DASHBOARD_API, POLL_INTERVAL_MS, relativeTime } from "./utils";
+import { OPERATIONS_API, POLL_INTERVAL_MS, relativeTime } from "./utils";
 import type {
   FleetStatus,
   AggregatedTaskRuns,
@@ -30,14 +30,15 @@ function buildMachineGroups(fleet: FleetStatus): MachineGroup[] {
   const byHost = new Map<string, MachineGroup>();
 
   for (const runner of fleet.runners) {
-    let group = byHost.get(runner.hostname);
+    const hostname = runner.hostname ?? "unknown";
+    let group = byHost.get(hostname);
     if (!group) {
       group = {
-        hostname: runner.hostname,
+        hostname,
         runners: [],
-        claudeSessions: fleet.claude_sessions[runner.hostname] ?? [],
+        claudeSessions: fleet.claude_sessions[hostname] ?? [],
       };
-      byHost.set(runner.hostname, group);
+      byHost.set(hostname, group);
     }
     group.runners.push(runner);
   }
@@ -55,8 +56,12 @@ function buildMachineGroups(fleet: FleetStatus): MachineGroup[] {
 
   // Sort: healthy machines first, then alphabetically
   return Array.from(byHost.values()).sort((a, b) => {
-    const aHealthy = a.runners.some((r) => r.is_healthy) ? 0 : 1;
-    const bHealthy = b.runners.some((r) => r.is_healthy) ? 0 : 1;
+    const aHealthy = a.runners.some((r) => r.derivedStatus === "healthy")
+      ? 0
+      : 1;
+    const bHealthy = b.runners.some((r) => r.derivedStatus === "healthy")
+      ? 0
+      : 1;
     if (aHealthy !== bHealthy) return aHealthy - bHealthy;
     return a.hostname.localeCompare(b.hostname);
   });
@@ -102,8 +107,8 @@ export function FleetOverview() {
   const fetchData = useCallback(async () => {
     try {
       const [fleetRes, tasksRes] = await Promise.allSettled([
-        fetch(`${DASHBOARD_API}/fleet`),
-        fetch(`${DASHBOARD_API}/fleet/tasks`),
+        fetch(`${OPERATIONS_API}/fleet`),
+        fetch(`${OPERATIONS_API}/fleet/tasks`),
       ]);
 
       if (fleetRes.status === "fulfilled" && fleetRes.value.ok) {
@@ -115,7 +120,7 @@ export function FleetOverview() {
           fleetRes.status === "rejected"
             ? (fleetRes.reason as Error).message
             : `HTTP ${fleetRes.value.status}`;
-        setError(`Fleet API unreachable: ${reason}`);
+        setError(`Operations API unreachable: ${reason}`);
       }
 
       if (tasksRes.status === "fulfilled" && tasksRes.value.ok) {
@@ -129,7 +134,7 @@ export function FleetOverview() {
       setLastUpdated(new Date());
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Failed to reach dev dashboard API"
+        err instanceof Error ? err.message : "Failed to reach operations API"
       );
     } finally {
       setLoading(false);
@@ -185,7 +190,7 @@ export function FleetOverview() {
         <p className="text-xs">
           Make sure the backend is running at{" "}
           <code className="bg-muted px-1 rounded">localhost:8000</code> and the
-          dev-dashboard endpoints are deployed.
+          operations endpoints are deployed.
         </p>
       </div>
     );
@@ -247,10 +252,10 @@ export function FleetOverview() {
         {isEmpty ? (
           <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
             <Server className="h-10 w-10 opacity-30" />
-            <p className="text-sm font-medium">No runners connected</p>
+            <p className="text-sm font-medium">No runners online</p>
             <p className="text-xs max-w-sm text-center">
-              Start a qontinui-runner instance with heartbeat enabled, or launch
-              a Claude Code session on any machine to see it here.
+              Connect a runner via Settings → Backend Connection, or launch a
+              Claude Code session on any machine to see it here.
             </p>
           </div>
         ) : (

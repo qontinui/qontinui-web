@@ -220,7 +220,7 @@ function ExtractionPageContentInner() {
           status: "idle",
         }));
       } else {
-        const runnerUrl = uiBridge.getRunnerUrl(state.selectedConnectionId);
+        const runnerUrl = uiBridge.getRunnerUrl(state.selectedRunnerId);
         if (runnerUrl) {
           const response = await fetch(`${runnerUrl}/uitars-extraction/stop`, {
             method: "POST",
@@ -240,7 +240,7 @@ function ExtractionPageContentInner() {
       state.pollingRef.current = null;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setters and refs are stable
-  }, [config.method, uiBridge.getRunnerUrl, state.selectedConnectionId]);
+  }, [config.method, uiBridge.getRunnerUrl, state.selectedRunnerId]);
 
   // Start extraction handler
   const handleStartExtraction = useCallback(async () => {
@@ -621,10 +621,10 @@ function ExtractionPageContentInner() {
                           setStateUuidMap={state.setStateUuidMap}
                           discoveryStrategy={state.discoveryStrategy}
                           setDiscoveryStrategy={state.setDiscoveryStrategy}
-                          connections={uiBridge.connections}
-                          connectionsLoading={uiBridge.connectionsLoading}
-                          selectedConnectionId={state.selectedConnectionId}
-                          onConnectionChange={uiBridge.onConnectionChange}
+                          runners={uiBridge.runners}
+                          runnersLoading={uiBridge.runnersLoading}
+                          selectedRunnerId={state.selectedRunnerId}
+                          onRunnerChange={uiBridge.onRunnerChange}
                           getRunnerUrl={uiBridge.getRunnerUrl}
                           onRefreshBrowserTabs={
                             uiBridge.handleRefreshBrowserTabs
@@ -1268,7 +1268,14 @@ function ExtractionPageContentInner() {
                                     onClick={() =>
                                       annotationStore.selectElement(element.id)
                                     }
-                                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter" || e.key === " ") {
+                                        e.preventDefault();
+                                        (
+                                          e.currentTarget as HTMLElement
+                                        ).click();
+                                      }
+                                    }}
                                   >
                                     <div className="flex items-center justify-between">
                                       <div className="flex items-center gap-2">

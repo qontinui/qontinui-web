@@ -9,9 +9,10 @@ import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Loader2, Monitor, History } from "lucide-react";
+import { ArrowLeft, Loader2, Monitor, History, KeyRound } from "lucide-react";
 import { ActiveConnectionsList } from "@/components/runners/ActiveConnectionsList";
 import { ConnectionHistoryTable } from "@/components/runners/ConnectionHistoryTable";
+import { RunnerTokenList } from "@/components/server-runners/RunnerTokenList";
 import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
 
 const pageSpec = pageSpecJson as unknown as SpecConfig;
@@ -20,9 +21,9 @@ export default function RunnersPage() {
   usePageSpecs({ runners: pageSpec });
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState("active");
+  const [activeTab, setActiveTab] = useState("online");
 
-  const { connections: activeConnections } = useRealtimeConnections();
+  const { runners: onlineRunners } = useRealtimeConnections();
 
   const handleBackToDashboard = () => {
     router.push("/build/workflows");
@@ -46,7 +47,7 @@ export default function RunnersPage() {
     return null;
   }
 
-  const activeConnectionCount = activeConnections?.length || 0;
+  const onlineCount = onlineRunners?.length || 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-surface-raised to-surface-canvas text-white">
@@ -68,12 +69,12 @@ export default function RunnersPage() {
             <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
               Runner Management
             </h1>
-            {activeConnectionCount > 0 && (
+            {onlineCount > 0 && (
               <Badge
                 variant="outline"
                 className="border-green-500/50 text-green-500"
               >
-                {activeConnectionCount} Active
+                {onlineCount} Online
               </Badge>
             )}
           </div>
@@ -83,10 +84,10 @@ export default function RunnersPage() {
       {/* Main Content */}
       <main className="p-6 max-w-7xl mx-auto">
         <div className="mb-8">
-          <h2 className="text-3xl font-bold mb-2">Manage Desktop Runners</h2>
+          <h2 className="text-3xl font-bold mb-2">Manage Runners</h2>
           <p className="text-text-muted">
-            Monitor connections and view connection history for your desktop
-            runners
+            Online runners, session history, and the auth tokens runners use to
+            register themselves.
           </p>
         </div>
 
@@ -97,48 +98,67 @@ export default function RunnersPage() {
           className="space-y-6"
         >
           <TabsList className="bg-surface-raised border border-border-subtle">
-            <TabsTrigger value="active" className="gap-2">
+            <TabsTrigger value="online" className="gap-2">
               <Monitor className="w-4 h-4" />
-              Active Connections
-              {activeConnectionCount > 0 && (
+              Online Runners
+              {onlineCount > 0 && (
                 <Badge
                   variant="outline"
                   className="ml-1 border-green-500/50 text-green-500 text-xs"
                 >
-                  {activeConnectionCount}
+                  {onlineCount}
                 </Badge>
               )}
             </TabsTrigger>
             <TabsTrigger value="history" className="gap-2">
               <History className="w-4 h-4" />
-              Connection History
+              Session History
+            </TabsTrigger>
+            <TabsTrigger value="tokens" className="gap-2">
+              <KeyRound className="w-4 h-4" />
+              Auth Tokens
             </TabsTrigger>
           </TabsList>
 
-          {/* Tab 1: Active Connections */}
-          <TabsContent value="active" className="space-y-6">
+          {/* Tab 1: Online Runners */}
+          <TabsContent value="online" className="space-y-6">
             <div className="flex justify-between items-center">
               <div>
-                <h3 className="text-xl font-semibold">Active Connections</h3>
+                <h3 className="text-xl font-semibold">Online Runners</h3>
                 <p className="text-sm text-text-muted">
-                  Real-time view of currently connected runners
+                  Runners reachable right now — anything healthy, degraded, or
+                  starting.
                 </p>
               </div>
             </div>
             <ActiveConnectionsList />
           </TabsContent>
 
-          {/* Tab 2: Connection History */}
+          {/* Tab 2: Session History */}
           <TabsContent value="history" className="space-y-6">
             <div className="flex justify-between items-center">
               <div>
-                <h3 className="text-xl font-semibold">Connection History</h3>
+                <h3 className="text-xl font-semibold">Session History</h3>
                 <p className="text-sm text-text-muted">
-                  View and search past runner connections
+                  Audit log of past WebSocket sessions per runner.
                 </p>
               </div>
             </div>
             <ConnectionHistoryTable />
+          </TabsContent>
+
+          {/* Tab 3: Auth Tokens */}
+          <TabsContent value="tokens" className="space-y-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <h3 className="text-xl font-semibold">Runner Auth Tokens</h3>
+                <p className="text-sm text-text-muted">
+                  Long-lived bearer tokens that runners use to register and
+                  authenticate against this account.
+                </p>
+              </div>
+            </div>
+            <RunnerTokenList />
           </TabsContent>
         </Tabs>
       </main>

@@ -1,6 +1,7 @@
 "use client";
 
 import { Monitor, ChevronDown, Check } from "lucide-react";
+import type { Runner } from "@qontinui/shared-types";
 import {
   Tooltip,
   TooltipContent,
@@ -32,11 +33,9 @@ function StatusDot({ status }: { status: "connected" | "no-port" | "none" }) {
   );
 }
 
-function getStatus(
-  runners: { runner_port: number | null }[]
-): "connected" | "no-port" | "none" {
+function getStatus(runners: Runner[]): "connected" | "no-port" | "none" {
   if (runners.length === 0) return "none";
-  if (runners.some((r) => r.runner_port != null)) return "connected";
+  if (runners.some((r) => r.port != null)) return "connected";
   return "no-port";
 }
 
@@ -46,13 +45,11 @@ export function RunnerSelector({ isCollapsed }: RunnerSelectorProps) {
 
   const status = getStatus(runners);
   const label = activeRunner
-    ? (activeRunner.runner_name ?? "Runner")
+    ? (activeRunner.name ?? "Runner")
     : runners.length === 0
       ? "No runner"
       : "Runner";
-  const portLabel = activeRunner?.runner_port
-    ? `:${activeRunner.runner_port}`
-    : "";
+  const portLabel = activeRunner?.port ? `:${activeRunner.port}` : "";
 
   // Collapsed: just show a status dot with tooltip
   if (isCollapsed) {
@@ -118,15 +115,11 @@ export function RunnerSelector({ isCollapsed }: RunnerSelectorProps) {
             onClick={() => selectRunner(runner.id)}
             className="flex items-center gap-2"
           >
-            <StatusDot
-              status={runner.runner_port != null ? "connected" : "no-port"}
-            />
+            <StatusDot status={runner.port != null ? "connected" : "no-port"} />
             <span className="flex-1 truncate text-xs">
-              {runner.runner_name}
-              {runner.runner_port != null && (
-                <span className="ml-1 text-text-subtle">
-                  :{runner.runner_port}
-                </span>
+              {runner.name}
+              {runner.port != null && (
+                <span className="ml-1 text-text-subtle">:{runner.port}</span>
               )}
             </span>
             {activeRunner?.id === runner.id && (

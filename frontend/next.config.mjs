@@ -65,6 +65,24 @@ const nextConfig = {
   // Prevent Next.js from stripping trailing slashes on API routes
   // FastAPI requires trailing slashes on some endpoints
   skipTrailingSlashRedirect: true,
+  async redirects() {
+    return [
+      // Phase 4B: /runners/fleet was folded into /runners (single page,
+      // tabbed Online + Sessions + Auth Tokens).
+      {
+        source: '/runners/fleet',
+        destination: '/runners',
+        permanent: true,
+      },
+      // Phase 4B: /dev-dashboard was renamed to /operations (first-class
+      // user-facing fleet view).
+      {
+        source: '/dev-dashboard',
+        destination: '/operations',
+        permanent: true,
+      },
+    ]
+  },
   eslint: {
     // Warning: This allows production builds to successfully complete even if
     // your project has ESLint errors.

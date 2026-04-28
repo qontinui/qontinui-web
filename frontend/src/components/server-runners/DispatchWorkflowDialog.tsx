@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Dialog,
@@ -42,13 +42,11 @@ function dispatchErrorMessage(err: unknown): string {
   if (err instanceof DispatchError) {
     switch (err.status) {
       case 503:
-        return "No healthy runners available. Register and start a server-mode runner from the Fleet page.";
+        return "Runner is not WebSocket-connected. Wait for it to reconnect, or pick a different runner.";
       case 502:
         return "Runner unreachable. It may have just gone offline — try again, or pick a different target.";
       case 504:
         return "Runner timed out accepting the dispatch. Try again, or pick a different target.";
-      case 409:
-        return "Selected target is not a server-mode runner.";
       case 404:
         return "Workflow or runner not found (or not owned by you).";
       default:
@@ -68,21 +66,36 @@ export function DispatchWorkflowDialog({
 }: DispatchWorkflowDialogProps) {
   const router = useRouter();
   const { data: runners, isLoading: runnersLoading } = useRunners();
-  const [target, setTarget] = useState<string>("auto");
+  const [target, setTarget] = useState<string>("");
   const dispatchMutation = useDispatchWorkflow();
 
+  // Anything healthy is dispatchable. The unified Runner shape doesn't
+  // carry a server_mode flag — it's gone in Phase 2.
   const healthyRunners = useMemo(() => {
     if (!runners) return [];
-    return runners.filter((r) => r.server_mode && r.status === "healthy");
+    return runners.filter((r) => r.derivedStatus === "healthy");
   }, [runners]);
 
+  // Auto-pick the first healthy runner when the dialog opens / runners load.
+  useEffect(() => {
+    if (!open) return;
+    if (target) return;
+    if (healthyRunners.length > 0) {
+      setTarget(healthyRunners[0]!.id);
+    }
+  }, [open, healthyRunners, target]);
+
   const handleSubmit = async () => {
+    if (!target) {
+      toast.error("Pick a healthy runner first.");
+      return;
+    }
     try {
       const result = await dispatchMutation.mutateAsync({
-        workflowId,
-        data: { target },
+        runnerId: target,
+        data: { workflow_id: workflowId },
       });
-      toast.success(`Dispatched to ${result.runner_hostname}`, {
+      toast.success(`Dispatched to ${result.runner_name}`, {
         description: `Execution ID: ${result.execution_id.slice(0, 8)}...`,
       });
       onOpenChange(false);
@@ -130,17 +143,17 @@ export function DispatchWorkflowDialog({
               <SelectValue placeholder="Select a runner" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="auto">
-                <span className="flex items-center gap-2">
-                  <Server className="w-3.5 h-3.5 text-brand-primary" />
-                  Auto (pick any healthy runner)
-                </span>
-              </SelectItem>
               {healthyRunners.map((runner) => (
                 <SelectItem key={runner.id} value={runner.id}>
-                  {runner.name}{" "}
-                  <span className="text-text-muted">
-                    ({runner.hostname}:{runner.port})
+                  <span className="flex items-center gap-2">
+                    <Server className="w-3.5 h-3.5 text-brand-primary" />
+                    {runner.name}{" "}
+                    {runner.hostname ? (
+                      <span className="text-text-muted">
+                        ({runner.hostname}
+                        {runner.port ? `:${runner.port}` : ""})
+                      </span>
+                    ) : null}
                   </span>
                 </SelectItem>
               ))}
@@ -148,8 +161,7 @@ export function DispatchWorkflowDialog({
           </Select>
           {!runnersLoading && healthyRunners.length === 0 && (
             <p className="text-xs text-amber-400">
-              No healthy server-mode runners found. Use Auto to still try (may
-              fail with 503), or register one from the Fleet page.
+              No healthy runners found. Register or wake one and try again.
             </p>
           )}
         </div>
@@ -165,7 +177,7 @@ export function DispatchWorkflowDialog({
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={dispatchMutation.isPending}
+            disabled={dispatchMutation.isPending || !target}
             className="bg-brand-primary hover:bg-brand-primary/80 text-black"
           >
             {dispatchMutation.isPending ? (

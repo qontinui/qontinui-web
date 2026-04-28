@@ -9,7 +9,7 @@ import React, {
   useCallback,
   type ReactNode,
 } from "react";
-import { RunnerConnection } from "@/types/runner";
+import type { Runner } from "@qontinui/shared-types";
 import { runnerService } from "@/services/service-factory";
 import { createLogger } from "@/lib/logger";
 
@@ -20,10 +20,15 @@ const log = createLogger("RealtimeConnections");
 // ============================================================================
 
 interface RealtimeConnectionsContextValue {
-  connections: RunnerConnection[];
+  /**
+   * Runners that are reachable right now — derivedStatus is one of
+   * `healthy`, `degraded`, or `starting`. Backed by `GET /api/v1/runners`
+   * (status filter) plus the `/runners/status` WebSocket push channel.
+   */
+  runners: Runner[];
   isConnected: boolean;
   isLoading: boolean;
-  refetch: () => Promise<RunnerConnection[]>;
+  refetch: () => Promise<Runner[]>;
 }
 
 const RealtimeConnectionsContext = createContext<
@@ -31,18 +36,31 @@ const RealtimeConnectionsContext = createContext<
 >(undefined);
 
 // ============================================================================
+// WebSocket message shapes
+// ============================================================================
+
+type WsMessage =
+  | { type: "initial_state"; runners: Runner[] }
+  | { type: "runner_connected"; runner: Runner }
+  | { type: "runner_disconnected"; runner_id: string }
+  | { type: "runner_updated"; runner: Runner }
+  | { type: "error"; error: string };
+
+// ============================================================================
 // Provider
 // ============================================================================
 
 const MAX_RECONNECT_ATTEMPTS = 5;
 const POLLING_INTERVAL_MS = 30000;
+/** Status filter for "online" runners — anything actively reachable. */
+const ONLINE_STATUS_FILTER = "healthy,degraded,starting";
 
 export function RealtimeConnectionsProvider({
   children,
 }: {
   children: ReactNode;
 }) {
-  const [connections, setConnections] = useState<RunnerConnection[]>([]);
+  const [runners, setRunners] = useState<Runner[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const wsRef = useRef<WebSocket | null>(null);
@@ -51,18 +69,15 @@ export function RealtimeConnectionsProvider({
   const reconnectAttemptsRef = useRef(0);
   const cleanedUpRef = useRef(false);
 
-  // Fetch connections via REST API (used for initial load and fallback)
-  const fetchConnections = useCallback(async () => {
+  // Fetch runners via REST API (used for initial load and polling fallback)
+  const fetchRunners = useCallback(async () => {
     try {
-      const data = await runnerService.getActiveConnections();
-      setConnections(data);
+      const data = await runnerService.getRunners(ONLINE_STATUS_FILTER);
+      setRunners(data);
       setIsLoading(false);
       return data;
     } catch (error) {
-      console.error(
-        "[RealtimeConnections] Failed to fetch connections:",
-        error
-      );
+      console.error("[RealtimeConnections] Failed to fetch runners:", error);
       setIsLoading(false);
       return [];
     }
@@ -76,10 +91,10 @@ export function RealtimeConnectionsProvider({
 
     pollingIntervalRef.current = setInterval(() => {
       if (!document.hidden) {
-        fetchConnections();
+        fetchRunners();
       }
     }, POLLING_INTERVAL_MS);
-  }, [fetchConnections]);
+  }, [fetchRunners]);
 
   // Stop polling
   const stopPolling = useCallback(() => {
@@ -137,16 +152,16 @@ export function RealtimeConnectionsProvider({
       console.warn(
         "[RealtimeConnections] No access token found, using polling"
       );
-      fetchConnections();
+      fetchRunners();
       startPolling();
       return;
     }
 
-    // Build WebSocket URL
+    // Build WebSocket URL — Phase 2 path: /api/v1/runners/status
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
     const wsProtocol = apiUrl.startsWith("https") ? "wss" : "ws";
     const apiHost = apiUrl.replace(/^https?:\/\//, "");
-    const wsUrl = `${wsProtocol}://${apiHost}/api/v1/ws/runner/status?token=${encodeURIComponent(token)}`;
+    const wsUrl = `${wsProtocol}://${apiHost}/api/v1/runners/status?token=${encodeURIComponent(token)}`;
 
     try {
       const ws = new WebSocket(wsUrl);
@@ -194,37 +209,30 @@ export function RealtimeConnectionsProvider({
 
       ws.onmessage = (event) => {
         try {
-          const message = JSON.parse(event.data);
+          const message = JSON.parse(event.data) as WsMessage;
 
           if (message.type === "initial_state") {
-            setConnections(message.connections);
+            setRunners(message.runners);
             setIsLoading(false);
           } else if (message.type === "runner_connected") {
-            if (message.connection) {
-              setConnections((prev) => {
-                const exists = prev.some((c) => c.id === message.connection.id);
-                if (exists) return prev;
-                return [...prev, message.connection];
-              });
-            }
+            setRunners((prev) => {
+              const exists = prev.some((r) => r.id === message.runner.id);
+              if (exists) {
+                // Replace with the latest snapshot.
+                return prev.map((r) =>
+                  r.id === message.runner.id ? message.runner : r
+                );
+              }
+              return [...prev, message.runner];
+            });
           } else if (message.type === "runner_disconnected") {
-            setConnections((prev) =>
-              prev.filter((c) => c.id !== message.connection_id)
+            setRunners((prev) =>
+              prev.filter((r) => r.id !== message.runner_id)
             );
-          } else if (message.type === "runner_name_updated") {
-            setConnections((prev) =>
-              prev.map((c) =>
-                c.id === message.connection_id
-                  ? { ...c, runner_name: message.runner_name }
-                  : c
-              )
-            );
-          } else if (message.type === "runner_port_updated") {
-            setConnections((prev) =>
-              prev.map((c) =>
-                c.id === message.connection_id
-                  ? { ...c, runner_port: message.runner_port }
-                  : c
+          } else if (message.type === "runner_updated") {
+            setRunners((prev) =>
+              prev.map((r) =>
+                r.id === message.runner.id ? { ...r, ...message.runner } : r
               )
             );
           } else if (message.type === "error") {
@@ -239,10 +247,10 @@ export function RealtimeConnectionsProvider({
       };
     } catch (error) {
       console.error("[RealtimeConnections] Failed to create WebSocket:", error);
-      fetchConnections();
+      fetchRunners();
       startPolling();
     }
-  }, [fetchConnections, startPolling, stopPolling]);
+  }, [fetchRunners, startPolling, stopPolling]);
 
   // Handle visibility changes: disconnect when hidden, reconnect when visible
   useEffect(() => {
@@ -256,7 +264,7 @@ export function RealtimeConnectionsProvider({
       } else {
         // Tab visible: reconnect
         reconnectAttemptsRef.current = 0;
-        fetchConnections();
+        fetchRunners();
         connectWebSocket();
       }
     };
@@ -269,7 +277,7 @@ export function RealtimeConnectionsProvider({
     clearReconnect,
     closeWebSocket,
     stopPolling,
-    fetchConnections,
+    fetchRunners,
     connectWebSocket,
   ]);
 
@@ -277,7 +285,7 @@ export function RealtimeConnectionsProvider({
   useEffect(() => {
     cleanedUpRef.current = false;
 
-    fetchConnections();
+    fetchRunners();
     connectWebSocket();
 
     return () => {
@@ -287,7 +295,7 @@ export function RealtimeConnectionsProvider({
       clearReconnect();
     };
   }, [
-    fetchConnections,
+    fetchRunners,
     connectWebSocket,
     closeWebSocket,
     stopPolling,
@@ -295,10 +303,10 @@ export function RealtimeConnectionsProvider({
   ]);
 
   const value: RealtimeConnectionsContextValue = {
-    connections,
+    runners,
     isConnected,
     isLoading,
-    refetch: fetchConnections,
+    refetch: fetchRunners,
   };
 
   return (

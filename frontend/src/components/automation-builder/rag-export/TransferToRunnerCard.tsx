@@ -26,12 +26,12 @@ import {
   Brain,
   CheckCircle2,
 } from "lucide-react";
-import type { RunnerConnection } from "@/types/runner";
+import type { Runner } from "@qontinui/shared-types";
 import type { EmbeddingProgress } from "@/services/rag-export-service";
 
 interface TransferToRunnerCardProps {
-  activeConnections: RunnerConnection[] | undefined;
-  connectionsLoading: boolean;
+  activeRunners: Runner[] | undefined;
+  runnersLoading: boolean;
   selectedRunnerId: string | null;
   setSelectedRunnerId: (id: string | null) => void;
   isExporting: boolean;
@@ -42,8 +42,8 @@ interface TransferToRunnerCardProps {
 }
 
 export function TransferToRunnerCard({
-  activeConnections,
-  connectionsLoading,
+  activeRunners,
+  runnersLoading,
   selectedRunnerId,
   setSelectedRunnerId,
   isExporting,
@@ -66,12 +66,12 @@ export function TransferToRunnerCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {connectionsLoading ? (
+        {runnersLoading ? (
           <div className="flex items-center gap-2 text-text-muted">
             <Loader2 className="w-4 h-4 animate-spin" />
-            Checking for connected runners...
+            Checking for online runners...
           </div>
-        ) : activeConnections && activeConnections.length > 0 ? (
+        ) : activeRunners && activeRunners.length > 0 ? (
           <>
             <div className="space-y-2">
               <Label>Select Runner</Label>
@@ -83,14 +83,14 @@ export function TransferToRunnerCard({
                   <SelectValue placeholder="Choose a runner..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {activeConnections.map((conn) => (
-                    <SelectItem key={conn.id} value={String(conn.id)}>
+                  {activeRunners.map((runner) => (
+                    <SelectItem key={runner.id} value={runner.id}>
                       <div className="flex items-center gap-2">
                         <div className="w-2 h-2 bg-green-500 rounded-full" />
-                        {conn.runner_name}
-                        {conn.project_name && (
+                        {runner.name}
+                        {runner.hostname && (
                           <span className="text-text-muted">
-                            ({conn.project_name})
+                            ({runner.hostname})
                           </span>
                         )}
                       </div>

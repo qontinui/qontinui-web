@@ -32,7 +32,7 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
     handleTransferToRunner,
   } = useRagExport(projectId);
 
-  const { connections: activeConnections, isLoading: connectionsLoading } =
+  const { runners: activeRunners, isLoading: runnersLoading } =
     useRealtimeConnections();
 
   if (!projectId) {
@@ -61,15 +61,15 @@ export function RAGExportPanel({ projectId }: RAGExportPanelProps) {
       <ExportOptionsCard options={options} setOptions={setOptions} />
 
       <TransferToRunnerCard
-        activeConnections={activeConnections}
-        connectionsLoading={connectionsLoading}
+        activeRunners={activeRunners}
+        runnersLoading={runnersLoading}
         selectedRunnerId={selectedRunnerId}
         setSelectedRunnerId={setSelectedRunnerId}
         isExporting={isExporting}
         isTransferring={isTransferring}
         exportProgress={exportProgress}
         embeddingProgress={embeddingProgress}
-        onTransfer={() => handleTransferToRunner(activeConnections || [])}
+        onTransfer={() => handleTransferToRunner(activeRunners || [])}
       />
 
       <DownloadExportCard

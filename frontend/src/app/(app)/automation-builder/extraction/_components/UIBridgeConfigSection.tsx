@@ -32,7 +32,7 @@ import {
   Compass,
   Circle,
 } from "lucide-react";
-import type { RunnerConnection } from "@/types/runner";
+import type { Runner } from "@qontinui/shared-types";
 import type {
   UIBridgeDiscoveryResult,
   SavedConfig,
@@ -78,11 +78,11 @@ export interface UIBridgeConfigSectionProps {
   setStateUuidMap: (map: Record<string, string>) => void;
   discoveryStrategy: DiscoveryStrategy;
   setDiscoveryStrategy: (strategy: DiscoveryStrategy) => void;
-  connections: RunnerConnection[];
-  connectionsLoading: boolean;
-  selectedConnectionId: number | null;
-  onConnectionChange: (connectionId: number | null) => void;
-  getRunnerUrl: (connectionId: number | null) => string | null;
+  runners: Runner[];
+  runnersLoading: boolean;
+  selectedRunnerId: string | null;
+  onRunnerChange: (runnerId: string | null) => void;
+  getRunnerUrl: (runnerId: string | null) => string | null;
   onRefreshBrowserTabs: () => void;
   onSelectBrowserTab: (tabId: number | null) => Promise<void>;
 }
@@ -125,10 +125,10 @@ export function UIBridgeConfigSection({
   setStateUuidMap,
   discoveryStrategy,
   setDiscoveryStrategy,
-  connections,
-  connectionsLoading,
-  selectedConnectionId,
-  onConnectionChange,
+  runners,
+  runnersLoading,
+  selectedRunnerId,
+  onRunnerChange,
   getRunnerUrl,
   onRefreshBrowserTabs,
   onSelectBrowserTab,
@@ -202,17 +202,17 @@ export function UIBridgeConfigSection({
               onConfigChange={exploration.updateConfig}
               progress={exploration.progress}
               isRunning={exploration.isRunning}
-              connections={connections}
-              connectionsLoading={connectionsLoading}
-              selectedConnectionId={selectedConnectionId}
-              onConnectionChange={onConnectionChange}
+              runners={runners}
+              runnersLoading={runnersLoading}
+              selectedRunnerId={selectedRunnerId}
+              onRunnerChange={onRunnerChange}
               browserTabs={exploration.browserTabs}
               browserTabsLoading={exploration.browserTabsLoading}
               browserTabsError={exploration.browserTabsError}
               onRefreshBrowserTabs={onRefreshBrowserTabs}
               onSelectBrowserTab={onSelectBrowserTab}
               onStart={async () => {
-                const runnerUrl = getRunnerUrl(selectedConnectionId);
+                const runnerUrl = getRunnerUrl(selectedRunnerId);
                 if (!runnerUrl) {
                   toast.error("Please select a connected runner");
                   return;
@@ -250,7 +250,7 @@ export function UIBridgeConfigSection({
                 }
               }}
               onStop={() => {
-                const runnerUrl = getRunnerUrl(selectedConnectionId);
+                const runnerUrl = getRunnerUrl(selectedRunnerId);
                 exploration.stopExploration(runnerUrl || undefined);
               }}
             />
@@ -292,7 +292,7 @@ export function UIBridgeConfigSection({
               isStarting={recording.isStarting}
               isStopping={recording.isStopping}
               onStartRecording={async (tabId, options) => {
-                const runnerUrl = getRunnerUrl(selectedConnectionId);
+                const runnerUrl = getRunnerUrl(selectedRunnerId);
                 if (!runnerUrl) {
                   toast.error("Please select a connected runner");
                   return;
@@ -302,7 +302,7 @@ export function UIBridgeConfigSection({
                 recording.startPolling(runnerUrl);
               }}
               onStopRecording={async () => {
-                const runnerUrl = getRunnerUrl(selectedConnectionId);
+                const runnerUrl = getRunnerUrl(selectedRunnerId);
                 if (!runnerUrl) return;
                 recording.stopPolling();
                 const result = await recording.stopRecording(runnerUrl);
@@ -325,7 +325,7 @@ export function UIBridgeConfigSection({
                 }
               }}
               onCaptureNow={async () => {
-                const runnerUrl = getRunnerUrl(selectedConnectionId);
+                const runnerUrl = getRunnerUrl(selectedRunnerId);
                 if (runnerUrl) {
                   await recording.captureNow(runnerUrl);
                 }
@@ -478,8 +478,13 @@ export function UIBridgeConfigSection({
           {/* Upload / Load Tab */}
           <TabsContent value="upload" className="space-y-4">
             <div className="flex items-center gap-4 flex-wrap">
-              <label aria-label="Upload file" htmlFor="type--file-0" className="cursor-pointer">
-                <input id="type--file-0"
+              <label
+                aria-label="Upload file"
+                htmlFor="type--file-0"
+                className="cursor-pointer"
+              >
+                <input
+                  id="type--file-0"
                   type="file"
                   accept=".json"
                   onChange={(e) => {

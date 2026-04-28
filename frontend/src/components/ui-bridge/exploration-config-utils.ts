@@ -29,10 +29,10 @@ export function computeProgressPercent(
  */
 export function canStartExploration(
   config: UIBridgeExplorationConfig,
-  selectedConnectionId: number | null
+  selectedRunnerId: string | null
 ): boolean {
   return (
-    (config.targetType === "extension" || selectedConnectionId !== null) &&
+    (config.targetType === "extension" || selectedRunnerId !== null) &&
     (config.targetType === "extension" || !!config.targetUrl)
   );
 }
@@ -42,9 +42,9 @@ export function canStartExploration(
  */
 export function getStartDisabledReason(
   config: UIBridgeExplorationConfig,
-  selectedConnectionId: number | null
+  selectedRunnerId: string | null
 ): string | undefined {
-  if (config.targetType !== "extension" && !selectedConnectionId) {
+  if (config.targetType !== "extension" && !selectedRunnerId) {
     return "Select a connected runner";
   }
   if (config.targetType !== "extension" && !config.targetUrl) {

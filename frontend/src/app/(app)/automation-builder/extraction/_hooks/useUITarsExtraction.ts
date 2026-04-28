@@ -22,7 +22,7 @@ interface UseUITarsExtractionArgs {
   };
   configMethod: string;
   selectedMonitors: number[];
-  getRunnerUrl: (connectionId: number | null) => string | null;
+  getRunnerUrl: (runnerId: string | null) => string | null;
 }
 
 export function useUITarsExtraction({
@@ -34,7 +34,7 @@ export function useUITarsExtraction({
 }: UseUITarsExtractionArgs) {
   // Poll for UI-TARS extraction status
   const pollExtractionStatus = useCallback(async () => {
-    const runnerUrl = getRunnerUrl(state.selectedConnectionId);
+    const runnerUrl = getRunnerUrl(state.selectedRunnerId);
     if (!runnerUrl) return;
 
     try {
@@ -81,11 +81,11 @@ export function useUITarsExtraction({
       logger.error("Error polling extraction status:", error);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setters are stable
-  }, [uitarsConfig.maxSteps, getRunnerUrl, state.selectedConnectionId]);
+  }, [uitarsConfig.maxSteps, getRunnerUrl, state.selectedRunnerId]);
 
   // Start UI-TARS extraction
   const startUITarsExtraction = useCallback(async () => {
-    const runnerUrl = getRunnerUrl(state.selectedConnectionId);
+    const runnerUrl = getRunnerUrl(state.selectedRunnerId);
     if (!runnerUrl) {
       toast.error("Please select a connected runner");
       return;
@@ -143,7 +143,7 @@ export function useUITarsExtraction({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setters are stable
   }, [
     getRunnerUrl,
-    state.selectedConnectionId,
+    state.selectedRunnerId,
     uitarsConfig,
     configMethod,
     selectedMonitors,

@@ -11,23 +11,23 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { AlertCircle, Compass, Loader2 } from "lucide-react";
-import type { RunnerConnection, TargetType } from "../exploration-config-types";
+import type { Runner, TargetType } from "../exploration-config-types";
 
 interface RunnerConfigSectionProps {
   targetType: TargetType;
-  connections: RunnerConnection[];
-  connectionsLoading: boolean;
-  selectedConnectionId: number | null;
-  onConnectionChange: (connectionId: number | null) => void;
+  runners: Runner[];
+  runnersLoading: boolean;
+  selectedRunnerId: string | null;
+  onRunnerChange: (runnerId: string | null) => void;
   isRunning: boolean;
 }
 
 export function RunnerConfigSection({
   targetType,
-  connections,
-  connectionsLoading,
-  selectedConnectionId,
-  onConnectionChange,
+  runners,
+  runnersLoading,
+  selectedRunnerId,
+  onRunnerChange,
   isRunning,
 }: RunnerConfigSectionProps) {
   return (
@@ -54,42 +54,40 @@ export function RunnerConfigSection({
               connected&quot;.
             </p>
           </div>
-        ) : connectionsLoading ? (
+        ) : runnersLoading ? (
           <div className="flex items-center gap-2 text-text-muted">
             <Loader2 className="w-4 h-4 animate-spin" />
             <span className="text-sm">Loading runners...</span>
           </div>
-        ) : connections.length === 0 ? (
+        ) : runners.length === 0 ? (
           <Alert
             variant="destructive"
             className="border-red-500/30 bg-red-500/10"
           >
             <AlertCircle className="h-4 w-4" />
             <AlertDescription className="text-xs">
-              No runners connected. Connect a runner from the Runners page
-              first, or use Browser Extension mode for local exploration.
+              No runners online. Connect a runner from the Runners page first,
+              or use Browser Extension mode for local exploration.
             </AlertDescription>
           </Alert>
         ) : (
           <Select
-            value={selectedConnectionId?.toString() || ""}
-            onValueChange={(value) =>
-              onConnectionChange(value ? parseInt(value, 10) : null)
-            }
+            value={selectedRunnerId ?? ""}
+            onValueChange={(value) => onRunnerChange(value || null)}
             disabled={isRunning}
           >
             <SelectTrigger className="bg-surface-canvas border-brand-primary/20">
               <SelectValue placeholder="Select a runner" />
             </SelectTrigger>
             <SelectContent>
-              {connections.map((conn) => (
-                <SelectItem key={conn.id} value={conn.id.toString()}>
+              {runners.map((runner) => (
+                <SelectItem key={runner.id} value={runner.id}>
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 bg-green-500 rounded-full" />
-                    <span>{conn.runner_name}</span>
-                    {conn.project_name && (
+                    <span>{runner.name}</span>
+                    {runner.hostname && (
                       <span className="text-text-muted text-xs">
-                        ({conn.project_name})
+                        ({runner.hostname})
                       </span>
                     )}
                   </div>

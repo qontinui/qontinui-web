@@ -16,12 +16,12 @@ const pageSpec = pageSpecJson as unknown as SpecConfig;
 export default function ChatPage() {
   usePageSpecs({ chat: pageSpec });
   const router = useRouter();
-  const { connections } = useRealtimeConnections();
+  const { runners } = useRealtimeConnections();
   const [isCreating, setIsCreating] = useState(false);
   const createTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const activeConnection = connections[0] || null;
-  const isRunnerConnected = !!activeConnection;
+  const activeRunner = runners[0] || null;
+  const isRunnerConnected = !!activeRunner;
 
   // Clear timeout on unmount
   useEffect(() => {
@@ -33,7 +33,7 @@ export default function ChatPage() {
   }, []);
 
   const { createSession, isConnected: isChatWsConnected } = useChatWebSocket({
-    connectionId: activeConnection?.id ?? null,
+    runnerId: activeRunner?.id ?? null,
     onSessionCreated: useCallback(
       (id: string) => {
         if (createTimeoutRef.current) {
