@@ -483,7 +483,6 @@ class TestCeleryTask:
             hostname="127.0.0.1",
             port=1420,
             capabilities=[],
-            server_mode=True,
             restate_enabled=False,
             restate_healthy=False,
         )

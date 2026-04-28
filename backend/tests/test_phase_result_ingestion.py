@@ -65,7 +65,6 @@ async def _register_runner(
         hostname="127.0.0.1",
         port=1420,
         capabilities=["gui_automation"],
-        server_mode=True,
         restate_enabled=False,
         restate_healthy=False,
         runner_token_id=token_id,
