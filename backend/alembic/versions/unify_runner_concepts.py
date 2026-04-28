@@ -114,7 +114,7 @@ BEGIN
     SELECT
         o.user_id,
         o.runner_name,
-        COALESCE(host(o.ip_address), 'unknown'),
+        COALESCE(o.ip_address, 'unknown'),
         COALESCE(o.runner_port, 0),
         '[]'::jsonb,
         false,
