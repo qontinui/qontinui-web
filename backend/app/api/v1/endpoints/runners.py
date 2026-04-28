@@ -1,18 +1,13 @@
 """
-Unified runner API surface (Phase 2B).
+Unified runner API surface.
 
-Consolidates the previously-split:
+Consolidates the previously-split ``runners.py`` (runner-connection
+history) and ``runners_fleet.py`` (server-mode fleet registry +
+runner-token CRUD) into one canonical surface keyed by ``Runner.id``
+(UUID). The runner-session audit log lives at ``/runners/sessions``.
 
-* ``runners.py`` — runner-connection history (``RunnerConnection``).
-* ``runners_fleet.py`` — server-mode fleet registry / runner-token CRUD.
-
-into one canonical surface keyed by ``Runner.id`` (UUID). The runner
-session audit log lives at ``/runners/sessions``.
-
-The fleet ``register`` and ``heartbeat`` endpoints are preserved here for
-the running runner (which still uses HTTP heartbeats). They will be
-deleted in Phase 5 cleanup once the runner has migrated to the new
-``WS /api/v1/runners/ws`` channel.
+The legacy HTTP register/heartbeat path was removed in Phase 5A — every
+runner now connects via the unified ``WS /api/v1/runners/ws`` channel.
 """
 
 from datetime import timedelta
@@ -34,24 +29,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
     get_async_db,
-    get_authenticated_runner,
     get_current_active_user_async,
 )
 from app.config.redis_config import get_redis
 from app.crud import runner_crud
 from app.crud import runner_session as runner_session_crud
 from app.models.runner import Runner
-from app.models.runner_token import RunnerToken
 from app.models.user import User as UserModel
 from app.schemas.runner import (
     DispatchRunnerRequest,
     DispatchRunnerResponse,
     RunnerSessionResponse,
-)
-from app.schemas.runner_fleet import (
-    RunnerHeartbeatRequest,
-    RunnerRegistrationRequest,
-    RunnerRegistrationResponse,
 )
 from app.schemas.runner_token import (
     RunnerTokenCreate,
@@ -334,10 +322,8 @@ async def dispatch_to_runner(
 
     Sends a typed ``dispatch`` message over the runner's WebSocket if it
     is currently connected (``runner.ws_session_id IS NOT NULL``); 503
-    otherwise. The unified architecture uses WS as the sole dispatch
-    channel — the legacy HTTP fallback lives in
-    :mod:`app.services.workflow_dispatcher` and is retained for the
-    fleet/heartbeat path until Phase 3 ships.
+    otherwise. WS is the sole dispatch channel — the legacy HTTP
+    ``dispatch_secret`` path was removed in Phase 5A.
     """
     record = await runner_crud.get_runner(db, runner_id)
     record = _ensure_owned(record, current_user.id)
@@ -377,90 +363,3 @@ async def dispatch_to_runner(
         dispatched_at=utc_now(),
         transport="ws",
     )
-
-
-# ---------------------------------------------------------------------------
-# Runner-authenticated endpoints — fleet register / heartbeat
-# ---------------------------------------------------------------------------
-# Preserved verbatim from runners_fleet.py. The running runner depends on
-# these; Phase 3 migrates the runner to ``WS /api/v1/runners/ws`` and
-# Phase 5 deletes them.
-
-
-@router.post("/register", response_model=RunnerRegistrationResponse)
-async def register_runner(
-    *,
-    db: AsyncSession = Depends(get_async_db),
-    runner_token: RunnerToken = Depends(get_authenticated_runner),
-    payload: RunnerRegistrationRequest,
-) -> Any:
-    """Register a server-mode runner (HTTP fallback, runner-token auth)."""
-    record = await runner_crud.register_runner(
-        db,
-        user_id=runner_token.user_id,
-        name=payload.name,
-        hostname=payload.hostname,
-        port=payload.port,
-        capabilities=payload.capabilities,
-        server_mode=payload.server_mode,
-        restate_enabled=payload.restate_enabled,
-        restate_healthy=payload.restate_healthy,
-        runner_token_id=runner_token.id,
-    )
-    logger.info(
-        "runner_registered",
-        user_id=str(runner_token.user_id),
-        runner_id=str(record.id),
-        name=record.name,
-        hostname=record.hostname,
-        port=record.port,
-    )
-    return RunnerRegistrationResponse(
-        runner_id=record.id,
-        registered_at=record.last_heartbeat or record.created_at,
-        dispatch_secret=record.dispatch_secret,
-    )
-
-
-@router.post("/{runner_id}/heartbeat", response_model=RunnerWire)
-async def heartbeat(
-    *,
-    db: AsyncSession = Depends(get_async_db),
-    runner_token: RunnerToken = Depends(get_authenticated_runner),
-    runner_id: UUID,
-    payload: RunnerHeartbeatRequest,
-) -> Any:
-    """Record a heartbeat from a runner (HTTP fallback, runner-token auth)."""
-    existing = await runner_crud.get_runner(db, runner_id)
-    if existing is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Runner not found"
-        )
-    if existing.user_id != runner_token.user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Runner belongs to a different user",
-        )
-
-    ui_error_dict: dict | None = (
-        payload.ui_error.model_dump(mode="json")
-        if payload.ui_error is not None
-        else None
-    )
-    recent_crash_dict: dict | None = (
-        payload.recent_crash.model_dump(mode="json")
-        if payload.recent_crash is not None
-        else None
-    )
-
-    updated = await runner_crud.heartbeat_runner(
-        db,
-        runner_id=runner_id,
-        restate_healthy=payload.restate_healthy,
-        status_value=payload.status,
-        derived_status=payload.derived_status,
-        ui_error=ui_error_dict,
-        recent_crash=recent_crash_dict,
-    )
-    assert updated is not None  # noqa: S101 — guarded by lookup above
-    return _runner_to_wire(updated)

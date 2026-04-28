@@ -475,7 +475,7 @@ class TestCeleryTask:
         from app.crud import runner_crud
         from app.services.workflow_dispatcher import dispatch_workflow_to_runner
 
-        # Register a healthy runner for the dispatcher to find.
+        # Register a runner with an open WS session for the dispatcher to find.
         runner = await runner_crud.register_runner(
             async_db_session,
             user_id=test_user.id,
@@ -489,6 +489,9 @@ class TestCeleryTask:
         )
         runner.last_heartbeat = utc_now() - timedelta(seconds=5)
         runner.status = "healthy"
+        # Phase 5A: WS is the sole dispatch channel — mark this runner as
+        # WS-connected so the dispatcher relays to it.
+        runner.ws_session_id = 1
         await async_db_session.commit()
 
         # Create the scheduled run.
@@ -504,12 +507,6 @@ class TestCeleryTask:
                     workflow_id=_workflow.id,
                 ),
             )
-
-        # Stub the outbound HTTP POST.
-        mock_resp = MagicMock()
-        mock_resp.status_code = 202
-        mock_resp.json.return_value = {"execution_id": "exec-happy-123"}
-        mock_resp.text = "{}"
 
         async def _run_task_body(scheduled_run_id: str):
             """Re-implementation of the task body against ``async_db_session``.
@@ -545,23 +542,35 @@ class TestCeleryTask:
                 "execution_id": result.execution_id,
             }
 
-        with patch("app.services.workflow_dispatcher.httpx.AsyncClient") as MockClient:
-            instance = AsyncMock()
-            instance.__aenter__.return_value = instance
-            instance.__aexit__.return_value = False
-            instance.post.return_value = mock_resp
-            MockClient.return_value = instance
+        # Patch the WS manager — it's the only dispatch channel after Phase 5A.
+        fake_manager = MagicMock()
+        fake_manager.is_connected = MagicMock(return_value=True)
+        fake_manager.send_dispatch = AsyncMock(return_value=True)
 
+        async def _fake_get_redis():
+            return MagicMock()
+
+        with (
+            patch("app.services.workflow_dispatcher.get_redis", _fake_get_redis),
+            patch(
+                "app.services.workflow_dispatcher.get_runner_websocket_manager",
+                AsyncMock(return_value=fake_manager),
+            ),
+        ):
             result = await _run_task_body(str(row.id))
 
         assert result["status"] == "dispatched"
-        assert result["execution_id"] == "exec-happy-123"
+        # Phase 5A: WS dispatch mints a server-side run_id (UUID string).
+        assert isinstance(result["execution_id"], str)
+        assert len(result["execution_id"]) == 36  # UUID4 string
 
         await async_db_session.refresh(row)
         assert row.last_status == "dispatched"
-        assert row.last_execution_id == "exec-happy-123"
+        assert row.last_execution_id == result["execution_id"]
         assert row.last_fired_at is not None
         assert row.last_error is None
+        # The WS dispatch was actually invoked.
+        fake_manager.send_dispatch.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------

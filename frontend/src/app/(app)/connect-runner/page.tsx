@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Phase 3G-web-polish: one-click runner token provisioning landing page.
+ * One-click runner token provisioning landing page.
  *
  * The runner's Settings UI opens this URL with:
  *   ?state=<64-hex>              — random per-flow state, echoed back in redirect
@@ -10,7 +10,8 @@
  *
  * On "Connect" click we POST to /api/v1/runners/tokens, then redirect the
  * browser to `<callback>?state=<state>&token=<plain>&token_id=<id>`. The
- * runner's HTTP endpoint captures the token and registers with web.
+ * runner's local callback handler captures the token, persists it, and
+ * opens a persistent WebSocket to /api/v1/runners/ws to register with web.
  *
  * Security:
  *   - Token creation requires an explicit button click; no GET-triggered
@@ -142,20 +143,24 @@ export default function ConnectRunnerPage() {
           {validation.ok ? (
             <>
               <p className="text-text-muted mb-4">
-                You&apos;re about to create a token for runner{" "}
-                <strong className="text-white">{runnerName}</strong>.
+                You&apos;re about to authorize{" "}
+                <strong className="text-white">{runnerName}</strong> to connect
+                to your account.
               </p>
               <div className="rounded-md border border-border-subtle bg-surface-canvas/60 p-4 mb-4 space-y-2 text-sm text-text-muted">
-                <p>This token will let the runner:</p>
+                <p>Once authorized, this runner will:</p>
                 <ul className="list-disc pl-5 space-y-1">
-                  <li>Register with qontinui-web</li>
-                  <li>Send heartbeats so we know it&apos;s alive</li>
-                  <li>Accept dispatched workflows</li>
-                  <li>Stream execution events back here</li>
+                  <li>Connect to qontinui-web over a persistent WebSocket</li>
+                  <li>
+                    Become available to dispatch from the web and mobile apps
+                  </li>
+                  <li>
+                    Stream execution events, terminals, and chat back here
+                  </li>
                 </ul>
                 <p className="pt-2">
-                  You can revoke this token anytime from{" "}
-                  <em>Runner Fleet &rarr; Tokens</em>.
+                  You can revoke this authorization anytime from{" "}
+                  <em>Runners &rarr; Tokens</em>.
                 </p>
               </div>
 
@@ -235,7 +240,7 @@ export default function ConnectRunnerPage() {
                   onClick={handleCancel}
                   className="border-border-default"
                 >
-                  Back to Runner Fleet
+                  Back to Runners
                 </Button>
               </div>
             </>

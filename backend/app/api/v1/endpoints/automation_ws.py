@@ -1,11 +1,13 @@
-"""WebSocket endpoints for automation streaming.
+"""WebSocket endpoint for monitoring automation sessions.
 
-Provides real-time automation monitoring, log streaming, and session management.
-
-This module provides the WebSocket route definitions and delegates business logic
-to specialized handler modules in app.websockets.automation.
+The legacy runner-side WebSocket (``/ws/automation/runner``) was removed
+in Phase 5A — every runner now connects via the unified
+``WS /api/v1/runners/ws`` channel. This module retains the
+session-monitor endpoint that lets multiple frontend clients watch a
+single ``AutomationSession`` via Redis Pub/Sub.
 """
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
@@ -17,167 +19,15 @@ from app.config.redis_config import get_redis
 from app.db.session import AsyncSessionLocal
 from app.models.automation_session import AutomationSession
 from app.services.websocket_manager import get_websocket_manager
-from app.websockets.automation import ConnectionHandler, MessageRouter, make_timestamp
 from app.websockets.rate_limiter import RateLimiter
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
 
 
-@router.websocket("/ws/automation/runner")
-async def websocket_runner_endpoint(
-    websocket: WebSocket,
-    token: str | None = None,
-) -> None:
-    """WebSocket endpoint for automation runner streaming.
-
-    Connection URL:
-        ws://localhost:8000/api/v1/automation/ws/automation/runner?token=<jwt_token>
-
-    Query Parameters:
-        token: JWT access token for authentication
-
-    Message Types (Client -> Server):
-        - session_start: Start new automation session
-          {"type": "session_start", "data": {"workflow_name": "LoginFlow"}}
-
-        - log: Send automation log
-          {"type": "log", "data": {"level": "info", "message": "Action completed"}}
-
-        - screenshot: Send screenshot with metadata
-          {"type": "screenshot", "data": {"image": "base64...", "metadata": {...}}}
-
-        - input_event: Send input event (mouse, keyboard)
-          {"type": "input_event", "data": {"event_type": "mouse.clicked", ...}}
-
-        - session_end: End automation session
-          {"type": "session_end", "data": {"status": "success"}}
-
-        - heartbeat: Keep connection alive
-          {"type": "heartbeat"}
-
-    Message Types (Server -> Client):
-        - session_started: Session created successfully
-        - session_ended: Session completed
-        - error: Error message
-        - heartbeat_ack: Heartbeat acknowledgment
-        - policy_violation: Streaming not enabled or limit reached
-
-    Features:
-        - Authentication and authorization
-        - User streaming settings enforcement
-        - Monthly session limit tracking
-        - Automatic heartbeat/ping-pong
-        - Graceful disconnect handling
-        - Rate limiting: 5 connections per minute per IP, 60 messages per minute
-    """
-    # Create connection handler
-    connection = ConnectionHandler(websocket, token)
-
-    # Check connection rate limit
-    if not await connection.check_rate_limit():
-        return
-
-    # Accept the connection
-    await connection.accept_connection()
-
-    try:
-        # Authenticate user
-        if not await connection.authenticate():
-            return
-
-        # Set up database session
-        if not await connection.setup_database():
-            return
-
-        # Check streaming permissions
-        if not await connection.check_streaming_permissions():
-            return
-
-        # Check session limits
-        if not await connection.check_session_limits():
-            return
-
-        # Register runner with connection manager
-        await connection.register_runner()
-
-        # Send connection acknowledgment
-        await connection.send_connected_ack()
-
-        # Create session manager and message router
-        assert connection.session_manager is not None
-        router_handler = MessageRouter(connection, connection.session_manager)
-
-        # Main message loop
-        # Connection health is managed by protocol-level WebSocket pings
-        # (uvicorn ws_ping_interval/ws_ping_timeout), not application-level timeouts.
-        while True:
-            try:
-                data = await websocket.receive_json()
-
-                # Check message rate limit
-                if not RateLimiter.check_message_rate_limit(
-                    connection.session_key,
-                    limit=60,
-                    window=60,
-                ):
-                    await websocket.send_json(
-                        {
-                            "type": "error",
-                            "message": (
-                                "Message rate limit exceeded. "
-                                "Maximum 60 messages per minute."
-                            ),
-                        }
-                    )
-                    logger.warning(
-                        "websocket_message_rate_limited",
-                        user_id=str(connection.user.id) if connection.user else None,
-                        session_key=connection.session_key,
-                        limit=60,
-                    )
-                    continue
-
-                # Route message to appropriate handler
-                response = await router_handler.route_message(data)
-
-                # Send response if one was returned
-                if response is not None:
-                    await websocket.send_json(response)
-
-            except WebSocketDisconnect:
-                logger.info(
-                    "automation_ws_client_disconnected",
-                    user_id=str(connection.user.id) if connection.user else None,
-                )
-                break
-
-            except Exception as e:
-                logger.error(
-                    "automation_ws_message_error",
-                    user_id=str(connection.user.id) if connection.user else None,
-                    error=str(e),
-                    error_type=type(e).__name__,
-                )
-                try:
-                    await websocket.send_json(
-                        {
-                            "type": "error",
-                            "message": f"Message processing error: {str(e)}",
-                        }
-                    )
-                except Exception:
-                    break
-
-    except Exception as e:
-        logger.error(
-            "automation_ws_fatal_error",
-            error=str(e),
-            error_type=type(e).__name__,
-        )
-
-    finally:
-        await connection.cleanup()
+def make_timestamp() -> str:
+    """Generate ISO format timestamp string with Z suffix."""
+    return datetime.now(UTC).isoformat() + "Z"
 
 
 @router.websocket("/ws/automation/monitor/{session_id}")

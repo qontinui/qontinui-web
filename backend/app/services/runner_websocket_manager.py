@@ -434,6 +434,9 @@ class RunnerWebSocketManager:
     def _wake_intent_pattern(user_id: str | UUID) -> str:
         return f"{WAKE_INTENT_KEY_PREFIX}:{user_id}:*"
 
+    # Wake-intent auto-trigger removed; callers fulfill explicitly via
+    # fulfill_wake_intent() once a runner has fully registered (the Phase
+    # 4B web flow polls /runners/{id}/wake → fulfill).
     async def fulfill_wake_intent(
         self, user_id: str, runner_id: UUID | str
     ) -> dict[str, Any] | None:
