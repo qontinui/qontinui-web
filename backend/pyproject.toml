@@ -155,3 +155,14 @@ optional = true
 
 [tool.poetry.group.ml.dependencies]
 qontinui-train = {path = "../../qontinui-train", develop = true}
+
+# qontinui (regular dep) declares pytorch-cu128 as the source for
+# torch / torchvision. Poetry sources don't transitively inherit
+# from path-deps, so the source must be declared here too — even
+# though backend itself doesn't directly pin torch — otherwise
+# `poetry lock` errors with "Repository 'pytorch-cu128' does not exist"
+# when resolving qontinui's torch constraint.
+[[tool.poetry.source]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+priority = "explicit"

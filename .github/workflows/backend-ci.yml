@@ -25,6 +25,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # qontinui (a path-dep) pulls in torch from pytorch-cu128 — wheels
+      # are large enough to overflow the runner's default disk. Remove
+      # preinstalled SDKs/runtimes that this workflow doesn't use.
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          swap-storage: false
+
       # Backend's pyproject.toml has path-deps on sibling repos
       # (qontinui-schemas, qontinui). actions/checkout@v4 refuses
       # `path:` outside the workspace, so clone them via git directly.
@@ -91,6 +104,19 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      # qontinui (a path-dep) pulls in torch from pytorch-cu128 — wheels
+      # are large enough to overflow the runner's default disk. Remove
+      # preinstalled SDKs/runtimes that this workflow doesn't use.
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          swap-storage: false
 
       # Backend's pyproject.toml has path-deps on sibling repos
       # (qontinui-schemas, qontinui). actions/checkout@v4 refuses
@@ -171,6 +197,16 @@ jobs:
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          swap-storage: false
 
       - name: Checkout sibling repos (qontinui-schemas, qontinui)
         run: |

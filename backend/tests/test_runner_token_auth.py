@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
 
 from app.api.deps import get_runner_user_from_token as authenticate_runner  # noqa: E402
 from app.core.security import generate_runner_token, hash_runner_token  # noqa: E402
-from app.crud import runner as runner_crud  # noqa: E402
+from app.crud import runner_crud  # noqa: E402
 from app.models.user import User  # noqa: E402
 
 
