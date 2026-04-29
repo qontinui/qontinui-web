@@ -169,6 +169,18 @@ jobs:
         working-directory: ./frontend
         run: npx playwright install --with-deps chromium
 
+      # Some alembic migrations (unify_runner_concepts onward) reference
+      # the `runner` schema, which is created by
+      # qontinui-web/init-scripts/01-create-runner-schema.sql in dev's
+      # docker-entrypoint-initdb.d. CI service containers don't run
+      # those init scripts, so create the schema explicitly.
+      - name: Create runner schema
+        env:
+          PGPASSWORD: test_password
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          psql -h localhost -U test_user -d test_db -c "CREATE SCHEMA IF NOT EXISTS runner;"
+
       - name: Run database migrations
         working-directory: ./backend
         env:
