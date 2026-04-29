@@ -1,3 +1,18 @@
+# Stage 1: clone the sibling path-deps that pyproject.toml references
+# at ../../qontinui-schemas and ../../qontinui. With WORKDIR=/app in the
+# runtime stage, those paths resolve to /qontinui-schemas and /qontinui.
+# Cloning here keeps the runtime image free of git.
+FROM python:3.12-slim AS sibling-deps
+
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+RUN git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
+RUN git clone --depth 1 https://github.com/jspinak/qontinui.git
+
+
+# Stage 2: runtime image
 FROM python:3.12-slim
 
 # Set working directory
@@ -14,14 +29,21 @@ RUN apt-get update && apt-get install -y \
 # Install poetry
 RUN pip install poetry==1.8.3
 
+# Copy sibling path-deps to where pyproject.toml expects them.
+# pyproject says `qontinui-schemas = {path = "../../qontinui-schemas"}`,
+# which from /app resolves to /qontinui-schemas. Same for qontinui.
+COPY --from=sibling-deps /src/qontinui-schemas /qontinui-schemas
+COPY --from=sibling-deps /src/qontinui /qontinui
+
 # Copy dependency files
 COPY pyproject.toml poetry.lock* ./
 
 # Configure poetry to not create virtual env
 RUN poetry config virtualenvs.create false
 
-# Install dependencies
-# Cache bust: 2025-11-09-22:51
+# Install dependencies (--no-dev skips dev group; the optional ml group
+# stays disabled, so qontinui-train (which doesn't exist as a public repo)
+# is not needed).
 RUN poetry install --no-dev --no-interaction --no-ansi
 
 # Copy application code
