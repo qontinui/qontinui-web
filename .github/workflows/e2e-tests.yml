@@ -20,6 +20,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # backend/pyproject.toml has a path dep on ../../qontinui-schemas;
+      # without this clone, `pip install -e .` fails with ENOENT.
+      - name: Clone qontinui-schemas
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git clone --depth 1 \
+            "https://x-access-token:${GH_TOKEN}@github.com/qontinui/qontinui-schemas.git" \
+            ../qontinui-schemas
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
@@ -97,6 +107,30 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # Both backend pyproject.toml and frontend package.json have path
+      # deps on these five sibling repos. Without this clone, `pip
+      # install -e .` and `npm ci` fail with ENOENT.
+      - name: Clone sibling dependencies
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          for spec in \
+            "qontinui/qontinui-schemas" \
+            "qontinui/ui-bridge" \
+            "qontinui/qontinui-workflow-ui" \
+            "qontinui/qontinui-workflow-utils" \
+            "qontinui/qontinui-navigation" \
+          ; do
+            repo_name="${spec#*/}"
+            target="../${repo_name}"
+            echo "::group::Cloning ${spec} → ${target}"
+            git clone --depth 1 \
+              "https://x-access-token:${GH_TOKEN}@github.com/${spec}.git" \
+              "${target}"
+            echo "::endgroup::"
+          done
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -205,6 +239,29 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # Same sibling deps as the frontend-tests job — both backend and
+      # frontend installs need them.
+      - name: Clone sibling dependencies
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          for spec in \
+            "qontinui/qontinui-schemas" \
+            "qontinui/ui-bridge" \
+            "qontinui/qontinui-workflow-ui" \
+            "qontinui/qontinui-workflow-utils" \
+            "qontinui/qontinui-navigation" \
+          ; do
+            repo_name="${spec#*/}"
+            target="../${repo_name}"
+            echo "::group::Cloning ${spec} → ${target}"
+            git clone --depth 1 \
+              "https://x-access-token:${GH_TOKEN}@github.com/${spec}.git" \
+              "${target}"
+            echo "::endgroup::"
+          done
 
       - name: Set up Python
         uses: actions/setup-python@v5
