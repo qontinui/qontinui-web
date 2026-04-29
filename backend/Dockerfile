@@ -26,8 +26,10 @@ RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install poetry
-RUN pip install poetry==1.8.3
+# Install poetry. 2.x understands the PEP 621 [project] metadata block
+# in pyproject.toml; 1.8.3 errors with "fields are required in package
+# mode" because it only reads [tool.poetry].
+RUN pip install poetry==2.3.2
 
 # Copy sibling path-deps to where pyproject.toml expects them.
 # pyproject says `qontinui-schemas = {path = "../../qontinui-schemas"}`,
