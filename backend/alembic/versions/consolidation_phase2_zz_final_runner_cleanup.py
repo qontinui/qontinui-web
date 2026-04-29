@@ -80,10 +80,41 @@ def upgrade() -> None:
     # 1. Drop runner-native bookkeeping table.
     op.execute("DROP TABLE IF EXISTS runner.schema_migrations CASCADE")
 
-    # 2. Relocate identity / device-registry tables from runner.* to auth.*.
+    # 2. Relocate identity / device-registry tables to auth.*.
     #    SET SCHEMA preserves FK relationships; cross-schema FKs follow
     #    automatically.
-    op.execute("ALTER TABLE IF EXISTS runner.users SET SCHEMA auth")
+    #
+    #    Two source schemas are tried for `users`:
+    #    - runner.users — the runner-native MIGRATIONS regime: runner-
+    #      native v20 moved public.users -> runner.users; this revision
+    #      moves it on to auth.users.
+    #    - public.users — the fresh-canonical-DB regime: the runner-
+    #      native MIGRATIONS array isn't running, so users stayed in
+    #      public (e8a3c5b9d142 was amended to skip its drop when
+    #      runner.users doesn't exist). Move public.users -> auth.users.
+    #    Whichever exists, the table ends in auth.users.
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = 'runner' AND table_name = 'users'
+            ) THEN
+                ALTER TABLE runner.users SET SCHEMA auth;
+                RAISE NOTICE 'Moved runner.users -> auth.users';
+            ELSIF EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'users'
+            ) THEN
+                ALTER TABLE public.users SET SCHEMA auth;
+                RAISE NOTICE 'Moved public.users -> auth.users';
+            ELSE
+                RAISE NOTICE 'No users table found in runner or public; skipping move';
+            END IF;
+        END $$;
+        """
+    )
     op.execute("ALTER TABLE IF EXISTS runner.runners SET SCHEMA auth")
     op.execute("ALTER TABLE IF EXISTS runner.runner_sessions SET SCHEMA auth")
 
