@@ -11,6 +11,14 @@ WORKDIR /src
 RUN git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
 RUN git clone --depth 1 https://github.com/jspinak/qontinui.git
 
+# Stub for the optional `ml` group's qontinui-train path-dep. Poetry 2.x
+# validates path-deps in optional groups even when `--only main` excludes
+# them — the path must exist as a parseable poetry project, even though
+# we never install it in CI/Docker.
+RUN mkdir -p /src/qontinui-train && \
+    printf '[project]\nname = "qontinui-train"\nversion = "0.0.0"\ndescription = "stub"\nauthors = [{name = "stub"}]\n' \
+        > /src/qontinui-train/pyproject.toml
+
 
 # Stage 2: runtime image
 FROM python:3.12-slim
@@ -36,6 +44,7 @@ RUN pip install poetry==2.3.2
 # which from /app resolves to /qontinui-schemas. Same for qontinui.
 COPY --from=sibling-deps /src/qontinui-schemas /qontinui-schemas
 COPY --from=sibling-deps /src/qontinui /qontinui
+COPY --from=sibling-deps /src/qontinui-train /qontinui-train
 
 # Copy dependency files
 COPY pyproject.toml poetry.lock* ./

@@ -242,6 +242,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The Dockerfile installs torch from pytorch-cu128 (multi-GB wheels);
+      # the runner's default disk allocation isn't enough for the build
+      # layers + image cache. Free the host's preinstalled SDKs before
+      # docker build runs.
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          swap-storage: false
+
       - name: Build Docker image
         run: docker build -t qontinui-backend:test .
 
