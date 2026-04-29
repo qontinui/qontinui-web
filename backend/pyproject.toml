@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Backend for qontinui-web"
 readme = "README.md"
 requires-python = ">=3.12"
+license = "AGPL-3.0-or-later"
 authors = [
     {name = "Joshua Spinak", email = "jspinak@hotmail.com"}
 ]

@@ -1,3 +1,17 @@
+<!-- BEGIN License & CLA preamble — added 2026-04-29 during AGPL rollout -->
+## License & CLA
+
+This project is licensed under the **GNU Affero General Public License v3.0 or later** (`AGPL-3.0-or-later`). See [`LICENSE`](LICENSE) for the full text. Contributors should be aware:
+
+- AGPL is a strong copyleft license. Anyone who runs a modified version of this project as a network service must publish their modifications under AGPL too.
+- For typical self-hosting, internal use, forking, or contributing back, AGPL behaves like GPL.
+
+All non-trivial contributions require signing the qontinui Contributor License Agreement (CLA). The CLA is administered via [cla-assistant.io](https://cla-assistant.io/) — when you open a pull request, the CLA bot will comment with a one-click sign link, and signing applies across all qontinui repositories. The CLA text lives in [`CLA.md`](CLA.md). It grants Joshua Spinak the right to relicense your contribution under any future license; you retain copyright in your contributions.
+
+The remainder of this document covers contribution mechanics specific to this repository.
+
+<!-- END License & CLA preamble -->
+
 # Contributing to Qontinui Web
 
 We love your input! We want to make contributing to this project as easy and transparent as possible, whether it's:
@@ -25,7 +39,7 @@ Pull requests are the best way to propose changes to the codebase. We actively w
 
 ## Any contributions you make will be under the project's license
 
-When you submit code changes, your submissions are understood to be under the same proprietary license that covers the project. Feel free to contact the maintainers if that's a concern.
+When you submit code changes, your submissions are understood to be under the same AGPL-3.0-or-later license that covers the project, plus the relicensing grant in the [CLA](CLA.md). Feel free to contact the maintainers if that's a concern.
 
 ## Report Bugs Using GitHub's Issues
 
@@ -66,7 +80,7 @@ We use GitHub issues to track public bugs. Report a bug by [opening a new issue]
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the same proprietary license as the project.
+By contributing, you agree that your contributions will be licensed under the same GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later) that covers the project, and you agree to the additional relicensing grant in the [CLA](CLA.md).
 
 ## Questions?
 

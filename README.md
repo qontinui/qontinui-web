@@ -131,9 +131,7 @@ Please note that this project is released with a [Code of Conduct](CODE_OF_CONDU
 
 ## License
 
-This is proprietary software. Copyright (c) 2025 Joshua Spinak. All rights reserved.
-
-See [LICENSE](LICENSE) file for details.
+Licensed under the GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later). See [LICENSE](LICENSE) for full terms. Contributing requires signing the [CLA](CLA.md) — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Contact
 
