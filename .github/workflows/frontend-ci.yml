@@ -22,40 +22,18 @@ jobs:
       - name: Checkout qontinui-web
         uses: actions/checkout@v4
 
-      - name: Checkout qontinui-schemas
-        uses: actions/checkout@v4
-        with:
-          repository: jspinak/qontinui-schemas
-          path: ../qontinui-schemas
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Checkout ui-bridge
-        uses: actions/checkout@v4
-        with:
-          repository: qontinui/ui-bridge
-          path: ../ui-bridge
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Checkout qontinui-workflow-ui
-        uses: actions/checkout@v4
-        with:
-          repository: qontinui/qontinui-workflow-ui
-          path: ../qontinui-workflow-ui
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Checkout qontinui-workflow-utils
-        uses: actions/checkout@v4
-        with:
-          repository: qontinui/qontinui-workflow-utils
-          path: ../qontinui-workflow-utils
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Checkout qontinui-navigation
-        uses: actions/checkout@v4
-        with:
-          repository: qontinui/qontinui-navigation
-          path: ../qontinui-navigation
-          token: ${{ secrets.GITHUB_TOKEN }}
+      # actions/checkout@v4 refuses `path:` outside the workspace, so
+      # clone the sibling repos via git directly. All repos here are
+      # public, so no auth needed. (Previous config tried `jspinak/qontinui-schemas`
+      # which doesn't exist — the actual repo is `qontinui/qontinui-schemas`.)
+      - name: Checkout sibling repos
+        run: |
+          cd "$GITHUB_WORKSPACE/.."
+          git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
+          git clone --depth 1 https://github.com/qontinui/ui-bridge.git
+          git clone --depth 1 https://github.com/qontinui/qontinui-workflow-ui.git
+          git clone --depth 1 https://github.com/qontinui/qontinui-workflow-utils.git
+          git clone --depth 1 https://github.com/qontinui/qontinui-navigation.git
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
