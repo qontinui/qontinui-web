@@ -7,11 +7,17 @@ Create Date: 2026-04-29
 Phase 1, batch 1 of the migration consolidation (see
 ``D:/qontinui-root/tmp_migration_consolidation_plan.md``).
 
-Creates the four canonical schemas (``project``, ``coord``, ``agent``,
-``auth``) per topology plan §4 and enables the ``vector`` extension.
-Replaces the runner's self-bootstrap at ``mod.rs:1497-1502`` (which
-ran ``CREATE SCHEMA IF NOT EXISTS runner`` on every connect) and the
+Creates the five canonical schemas (``project``, ``coord``, ``agent``,
+``auth``, ``cloud``) per topology plan §4 + cloud-control carve-out
+plan §5, and enables the ``vector`` extension. Replaces the runner's
+self-bootstrap at ``mod.rs:1497-1502`` (which ran ``CREATE SCHEMA IF
+NOT EXISTS runner`` on every connect) and the
 ``qontinui-web/init-scripts/01-create-runner-schema.sql`` bootstrap.
+
+The ``cloud`` schema is OSS-managed (migrations live here) but
+populated only on cloud-control deployments — self-host installs
+have an empty ``cloud`` schema. See ``tmp_cloud_control_carve_out.md``
+§5 for the rationale.
 
 This is the first revision off ``b4d8e1c93f27`` (current alembic head
 as of 2026-04-29). All subsequent Phase 1 batches depend on this.
@@ -46,11 +52,13 @@ def upgrade() -> None:
     op.execute("CREATE SCHEMA IF NOT EXISTS coord")
     op.execute("CREATE SCHEMA IF NOT EXISTS agent")
     op.execute("CREATE SCHEMA IF NOT EXISTS auth")
+    op.execute("CREATE SCHEMA IF NOT EXISTS cloud")
 
     op.execute("GRANT ALL ON SCHEMA project TO qontinui_user")
     op.execute("GRANT ALL ON SCHEMA coord TO qontinui_user")
     op.execute("GRANT ALL ON SCHEMA agent TO qontinui_user")
     op.execute("GRANT ALL ON SCHEMA auth TO qontinui_user")
+    op.execute("GRANT ALL ON SCHEMA cloud TO qontinui_user")
 
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
@@ -70,3 +78,4 @@ def downgrade() -> None:
     op.execute("DROP SCHEMA IF EXISTS coord RESTRICT")
     op.execute("DROP SCHEMA IF EXISTS agent RESTRICT")
     op.execute("DROP SCHEMA IF EXISTS auth RESTRICT")
+    op.execute("DROP SCHEMA IF EXISTS cloud RESTRICT")
