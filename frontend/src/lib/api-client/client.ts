@@ -891,19 +891,6 @@ class ApiClient {
     }
   }
 
-  async getRunnerWebSocketUrl(): Promise<string> {
-    const wsProtocol = API_BASE_URL.startsWith("https") ? "wss" : "ws";
-    const url = API_BASE_URL.replace(/^https?:\/\//, "");
-    const baseUrl = `${wsProtocol}://${url}/api/v1/automation/ws/automation/runner`;
-
-    const token = await this.getWebSocketToken();
-    if (token) {
-      return `${baseUrl}?token=${encodeURIComponent(token)}`;
-    }
-
-    return baseUrl;
-  }
-
   async getRunnerStatusWebSocketUrl(): Promise<string> {
     const wsProtocol = API_BASE_URL.startsWith("https") ? "wss" : "ws";
     const url = API_BASE_URL.replace(/^https?:\/\//, "");

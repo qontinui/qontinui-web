@@ -1,343 +1,364 @@
 """
-API endpoints for runner connection management.
+Unified runner API surface.
 
-Provides REST API for viewing and managing desktop runner connections.
+Consolidates the previously-split ``runners.py`` (runner-connection
+history) and ``runners_fleet.py`` (server-mode fleet registry +
+runner-token CRUD) into one canonical surface keyed by ``Runner.id``
+(UUID). The runner-session audit log lives at ``/runners/sessions``.
+
+The legacy HTTP register/heartbeat path was removed in Phase 5A — every
+runner now connects via the unified ``WS /api/v1/runners/ws`` channel.
 """
 
-from datetime import UTC, datetime
+from datetime import timedelta
 from typing import Any
+from uuid import UUID, uuid4
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from qontinui_schemas.common import utc_now
+from qontinui_schemas.generated.per_type.runner import (
+    Runner as RunnerWire,
+)
+from qontinui_schemas.generated.per_type.runner import (
+    RunnerCrash,
+    RunnerStatus,
+    RunnerUiError,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import current_superuser, get_async_db, get_current_active_user_async
+from app.api.deps import (
+    get_async_db,
+    get_current_active_user_async,
+)
 from app.config.redis_config import get_redis
-from app.crud import runner as runner_crud
+from app.crud import runner_crud
+from app.crud import runner_session as runner_session_crud
+from app.models.runner import Runner
 from app.models.user import User as UserModel
 from app.schemas.runner import (
-    ConnectionCleanupResponse,
-    ExecuteWorkflowRequest,
-    ExecuteWorkflowResponse,
-    RunnerConnectionHistory,
-    RunnerConnectionResponse,
+    DispatchRunnerRequest,
+    DispatchRunnerResponse,
+    RunnerSessionResponse,
 )
-from app.services.runner_connection_manager import get_runner_connection_manager
+from app.schemas.runner_token import (
+    RunnerTokenCreate,
+    RunnerTokenCreatedResponse,
+    RunnerTokenResponse,
+)
+from app.services.runner_websocket_manager import get_runner_websocket_manager
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
 
-@router.get("/connections", response_model=RunnerConnectionHistory)
-async def get_connection_history(
-    *,
-    db: AsyncSession = Depends(get_async_db),
-    current_user: UserModel = Depends(get_current_active_user_async),
-    limit: int = 50,
-    offset: int = 0,
-) -> Any:
+# ---------------------------------------------------------------------------
+# derived_status & runner-to-wire serialization
+# ---------------------------------------------------------------------------
+
+# Heartbeat freshness windows (kept aligned with workflow_dispatcher).
+_HEALTHY_HEARTBEAT_WINDOW_SECONDS = 90
+_DEGRADED_HEARTBEAT_WINDOW_SECONDS = 5 * 60
+
+
+def _derive_status(runner: Runner) -> RunnerStatus:
+    """Compute the canonical status for a runner row.
+
+    Preference order:
+      * ``ws_session_id`` set → ``healthy`` (definitive WS presence wins).
+      * ``ui_error`` set → ``errored`` (overrides degraded but not healthy).
+      * Heartbeat fresh (≤90s) → ``healthy``.
+      * Heartbeat stale-ish (≤5min) → ``degraded``.
+      * Otherwise → ``offline``, except when the runner has never
+        heartbeated yet (``starting``).
     """
-    Get connection history with pagination.
+    if runner.ws_session_id is not None:
+        return RunnerStatus.healthy
 
-    Args:
-        limit: Maximum number of connections to return (default: 50, max: 100)
-        offset: Number of connections to skip (for pagination)
+    if runner.ui_error is not None:
+        return RunnerStatus.errored
 
-    Returns:
-        Paginated connection history
-    """
-    limit = min(limit, 100)
+    if runner.last_heartbeat is None:
+        return RunnerStatus.starting
 
-    connections, total = await runner_crud.get_connection_history(
-        db=db,
-        user_id=current_user.id,
-        limit=limit,
-        offset=offset,
-    )
-
-    active_connections = await runner_crud.get_active_connections(
-        db=db,
-        user_id=current_user.id,
-    )
-
-    return RunnerConnectionHistory(
-        connections=[
-            RunnerConnectionResponse(
-                id=conn.id,
-                runner_name=conn.runner_name or "Desktop Runner",
-                connected_at=conn.connected_at,
-                disconnected_at=conn.disconnected_at,
-                duration_seconds=conn.duration_seconds,
-                ip_address=conn.ip_address,
-                project_id=str(conn.project_id) if conn.project_id else None,
-                runner_port=conn.runner_port,
-            )
-            for conn in connections
-        ],
-        total=total,
-        active_count=len(active_connections),
-        limit=limit,
-        offset=offset,
-    )
+    age = utc_now() - runner.last_heartbeat
+    if age <= timedelta(seconds=_HEALTHY_HEARTBEAT_WINDOW_SECONDS):
+        return RunnerStatus.healthy
+    if age <= timedelta(seconds=_DEGRADED_HEARTBEAT_WINDOW_SECONDS):
+        return RunnerStatus.degraded
+    return RunnerStatus.offline
 
 
-@router.get("/connections/active", response_model=list[RunnerConnectionResponse])
-async def get_active_connections(
-    *,
-    db: AsyncSession = Depends(get_async_db),
-    current_user: UserModel = Depends(get_current_active_user_async),
-) -> Any:
-    """
-    Get currently active runner connections.
-
-    Returns:
-        List of active connections with WebSocket connection status
-    """
-    active_connections = await runner_crud.get_active_connections(
-        db=db,
-        user_id=current_user.id,
-    )
-
-    # Get WebSocket connection status from runner connection manager
-    redis_client = await get_redis()
-    runner_manager = await get_runner_connection_manager(redis_client)
-    ws_connected_ids = set(await runner_manager.get_all_connected_runner_ids_redis())
-
-    return [
-        RunnerConnectionResponse(
-            id=conn.id,
-            runner_name=conn.runner_name or "Desktop Runner",
-            connected_at=conn.connected_at,
-            disconnected_at=conn.disconnected_at,
-            duration_seconds=conn.duration_seconds,
-            ip_address=conn.ip_address,
-            project_id=str(conn.project_id) if conn.project_id else None,
-            runner_port=conn.runner_port,
-            ws_connected=conn.id in ws_connected_ids,
+def _ui_error_from(value: dict[str, Any] | None) -> RunnerUiError | None:
+    if not value:
+        return None
+    try:
+        return RunnerUiError.model_validate(value)
+    except Exception:
+        # Tolerate older/newer shapes — surface raw content where possible.
+        return RunnerUiError(
+            kind=str(value.get("kind", value.get("digest", "ui_error"))),
+            message=str(value.get("message", "")),
+            reportedAt=str(value.get("reported_at") or value.get("reportedAt") or ""),
+            detail=value.get("stack") or value.get("detail"),
         )
-        for conn in active_connections
-    ]
+
+
+def _recent_crash_from(value: dict[str, Any] | None) -> RunnerCrash | None:
+    if not value:
+        return None
+    try:
+        return RunnerCrash.model_validate(value)
+    except Exception:
+        return RunnerCrash(
+            filePath=str(value.get("file_path", value.get("filePath", ""))),
+            panicLocation=str(
+                value.get("panic_location", value.get("panicLocation", ""))
+            ),
+            panicMessage=str(value.get("panic_message", value.get("panicMessage", ""))),
+            reportedAt=str(value.get("reported_at", value.get("reportedAt", ""))),
+            thread=str(value.get("thread", "")),
+        )
+
+
+def _runner_to_wire(runner: Runner) -> RunnerWire:
+    """Convert a SQLAlchemy ``Runner`` row to the canonical wire shape."""
+    return RunnerWire(
+        id=str(runner.id),
+        userId=str(runner.user_id),
+        name=runner.name,
+        hostname=runner.hostname,
+        ipAddress=None,
+        port=runner.port,
+        os=runner.os,
+        osVersion=runner.os_version,
+        capabilities=list(runner.capabilities or []),
+        derivedStatus=_derive_status(runner),
+        lastHeartbeat=(
+            runner.last_heartbeat.isoformat() if runner.last_heartbeat else None
+        ),
+        wsConnected=runner.ws_session_id is not None,
+        uiError=_ui_error_from(runner.ui_error),
+        recentCrash=_recent_crash_from(runner.recent_crash),
+        createdAt=runner.created_at.isoformat(),
+    )
+
+
+def _ensure_owned(runner: Runner | None, user_id: UUID) -> Runner:
+    if runner is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Runner not found"
+        )
+    if runner.user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Runner not found"
+        )
+    return runner
+
+
+# ---------------------------------------------------------------------------
+# User-authenticated endpoints — runner CRUD & dispatch
+# ---------------------------------------------------------------------------
+
+
+@router.get("", response_model=list[RunnerWire])
+async def list_runners(
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_active_user_async),
+    status_filter: str | None = Query(
+        default=None,
+        alias="status",
+        description=(
+            "Comma-separated list of derived statuses to include "
+            "(e.g. ``healthy,degraded``)."
+        ),
+    ),
+) -> Any:
+    """List all runners owned by ``current_user``.
+
+    Optional ``?status=healthy,degraded`` filter narrows by derived
+    status (computed server-side).
+    """
+    runners = await runner_crud.list_runners(db, current_user.id)
+    wire_runners = [_runner_to_wire(r) for r in runners]
+
+    if status_filter:
+        allowed = {s.strip() for s in status_filter.split(",") if s.strip()}
+        wire_runners = [r for r in wire_runners if r.derivedStatus.value in allowed]
+
+    return wire_runners
+
+
+@router.get("/sessions", response_model=list[RunnerSessionResponse])
+async def list_sessions(
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_active_user_async),
+    runner_id: UUID | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> Any:
+    """Return the runner-session audit log (history) for the current user."""
+    sessions, _total = await runner_session_crud.get_session_history(
+        db,
+        current_user.id,
+        runner_id=runner_id,
+        limit=limit,
+        offset=offset,
+    )
+    return [RunnerSessionResponse.model_validate(s) for s in sessions]
+
+
+# ---- Runner tokens (folded from runners_fleet.py) ------------------------
 
 
 @router.post(
-    "/connections/{connection_id}/disconnect", status_code=status.HTTP_204_NO_CONTENT
+    "/tokens",
+    response_model=RunnerTokenCreatedResponse,
+    status_code=status.HTTP_201_CREATED,
 )
-async def disconnect_runner(
+async def create_token(
     *,
     db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
-    connection_id: int,
+    payload: RunnerTokenCreate,
+) -> Any:
+    """Mint a new runner bearer token for ``current_user``."""
+    record, plain_token = await runner_crud.create_runner_token(
+        db=db,
+        user_id=current_user.id,
+        name=payload.name,
+        expires_in_days=payload.expires_in_days,
+    )
+    logger.info(
+        "runner_token_created",
+        user_id=str(current_user.id),
+        token_id=str(record.id),
+        name=record.name,
+        expires_in_days=payload.expires_in_days,
+    )
+    return RunnerTokenCreatedResponse(
+        token_record=RunnerTokenResponse.model_validate(record),
+        plain_token=plain_token,
+    )
+
+
+@router.get("/tokens", response_model=list[RunnerTokenResponse])
+async def list_tokens(
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """Return ``current_user``'s runner tokens (hashes hidden)."""
+    tokens = await runner_crud.list_runner_tokens(db, current_user.id)
+    return [RunnerTokenResponse.model_validate(t) for t in tokens]
+
+
+@router.delete("/tokens/{token_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_token(
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_active_user_async),
+    token_id: UUID,
 ) -> None:
-    """
-    Disconnect an active runner connection.
-
-    Args:
-        connection_id: The runner connection ID to disconnect
-
-    Raises:
-        404: If connection not found or not owned by user
-    """
-    from sqlalchemy import select
-
-    from app.models.runner_connection import RunnerConnection
-
-    # Verify connection exists and belongs to user
-    query = select(RunnerConnection).where(
-        RunnerConnection.id == connection_id,
-        RunnerConnection.user_id == current_user.id,
-        RunnerConnection.disconnected_at.is_(None),
+    """Revoke a runner token owned by ``current_user``."""
+    await runner_crud.revoke_runner_token(
+        db=db, token_id=token_id, user_id=current_user.id
     )
-    result = await db.execute(query)
-    connection = result.scalar_one_or_none()
-
-    if not connection:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Runner connection not found or already disconnected",
-        )
-
-    # Close the connection record
-    await runner_crud.close_connection_record(
-        db=db,
-        connection_id=connection_id,
-    )
-
-    # Try to disconnect via WebSocket if connected
-    try:
-        redis_client = await get_redis()
-        runner_manager = await get_runner_connection_manager(redis_client)
-        await runner_manager.disconnect_runner(connection_id)
-    except Exception as e:
-        logger.warning(
-            "disconnect_websocket_failed",
-            connection_id=connection_id,
-            error=str(e),
-        )
-
     logger.info(
-        "runner_disconnected",
-        connection_id=connection_id,
+        "runner_token_revoked",
         user_id=str(current_user.id),
+        token_id=str(token_id),
     )
 
 
-@router.post("/connections/cleanup", response_model=ConnectionCleanupResponse)
-async def cleanup_stale_connections(
-    *,
-    current_user: UserModel = Depends(current_superuser),
-) -> Any:
-    """
-    Manually trigger cleanup of stale runner connections.
-
-    This endpoint allows administrators to manually trigger the cleanup process
-    that normally runs automatically every 60 seconds in the background.
-
-    **Admin only**: This endpoint requires superuser privileges.
-
-    Returns:
-        Cleanup statistics including total active connections, stale found, and cleaned
-    """
-    from app.tasks.connection_cleanup import cleanup_stale_connections
-
-    logger.info(
-        "manual_cleanup_triggered",
-        user_id=str(current_user.id),
-        username=current_user.username,
-    )
-
-    try:
-        stats = await cleanup_stale_connections()
-
-        message = (
-            f"Cleanup completed successfully. "
-            f"Found {stats['total_active']} active connections, "
-            f"identified {stats['stale_found']} stale connections, "
-            f"cleaned up {stats['cleaned']} connections."
-        )
-
-        logger.info(
-            "manual_cleanup_completed",
-            user_id=str(current_user.id),
-            stats=stats,
-        )
-
-        return ConnectionCleanupResponse(
-            total_active=stats["total_active"],
-            stale_found=stats["stale_found"],
-            cleaned=stats["cleaned"],
-            message=message,
-        )
-    except Exception as e:
-        logger.error(
-            "manual_cleanup_error",
-            user_id=str(current_user.id),
-            error=str(e),
-            error_type=type(e).__name__,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Cleanup failed: {str(e)}",
-        )
+# ---- Single-runner read / delete / dispatch -----------------------------
 
 
-@router.post(
-    "/connections/{connection_id}/execute",
-    response_model=ExecuteWorkflowResponse,
-)
-async def execute_workflow_on_runner(
+@router.get("/{runner_id}", response_model=RunnerWire)
+async def get_runner(
     *,
     db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
-    connection_id: int,
-    request: ExecuteWorkflowRequest,
+    runner_id: UUID,
 ) -> Any:
-    """
-    Send a workflow configuration to a connected runner for execution.
+    """Fetch a single runner by id (must be owned by ``current_user``)."""
+    record = await runner_crud.get_runner(db, runner_id)
+    record = _ensure_owned(record, current_user.id)
+    return _runner_to_wire(record)
 
-    This endpoint sends the workflow configuration to the specified runner
-    via WebSocket command. The runner will receive the configuration and
-    begin execution.
 
-    Args:
-        connection_id: The runner connection ID to send the workflow to
-        request: The workflow execution request containing the configuration
-
-    Returns:
-        ExecuteWorkflowResponse with execution_id and status
-
-    Raises:
-        404: If connection not found or not owned by user
-        400: If runner is not currently connected
-    """
-    import uuid
-
-    from sqlalchemy import select
-
-    from app.models.runner_connection import RunnerConnection
-
-    # Verify connection exists and belongs to user
-    query = select(RunnerConnection).where(
-        RunnerConnection.id == connection_id,
-        RunnerConnection.user_id == current_user.id,
-        RunnerConnection.disconnected_at.is_(None),
+@router.delete("/{runner_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def deregister_runner(
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_active_user_async),
+    runner_id: UUID,
+) -> None:
+    """Deregister (delete) a runner owned by ``current_user``."""
+    await runner_crud.delete_runner(db, runner_id, current_user.id)
+    logger.info(
+        "runner_deregistered",
+        user_id=str(current_user.id),
+        runner_id=str(runner_id),
     )
-    result = await db.execute(query)
-    connection = result.scalar_one_or_none()
 
-    if not connection:
+
+@router.post(
+    "/{runner_id}/dispatch",
+    response_model=DispatchRunnerResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def dispatch_to_runner(
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_active_user_async),
+    runner_id: UUID,
+    payload: DispatchRunnerRequest,
+) -> Any:
+    """Dispatch a workflow to a connected runner.
+
+    Sends a typed ``dispatch`` message over the runner's WebSocket if it
+    is currently connected (``runner.ws_session_id IS NOT NULL``); 503
+    otherwise. WS is the sole dispatch channel.
+    """
+    record = await runner_crud.get_runner(db, runner_id)
+    record = _ensure_owned(record, current_user.id)
+
+    redis = await get_redis()
+    manager = await get_runner_websocket_manager(redis)
+
+    if record.ws_session_id is None or not manager.is_connected(record.id):
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Runner connection not found or not owned by you",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "runner_offline",
+                "message": "Runner is not connected via WebSocket.",
+            },
         )
 
-    # Get runner connection manager and verify runner is connected
-    redis_client = await get_redis()
-    runner_manager = await get_runner_connection_manager(redis_client)
-
-    if not runner_manager.is_runner_connected(connection_id):
-        is_connected = await runner_manager.is_runner_connected_redis(connection_id)
-        if not is_connected:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Runner is not currently connected. Please ensure the runner is running and connected.",
-            )
-
-    # Generate execution ID
-    execution_id = str(uuid.uuid4())
-
-    # Build the execute_workflow command
-    command_msg = {
-        "type": "command",
-        "command": "execute_workflow",
-        "params": {
-            "execution_id": execution_id,
-            "workflow": request.workflow,
-            "variables": request.variables or {},
+    run_id = str(uuid4())
+    sent = await manager.send_dispatch(
+        record.id,
+        {
+            "run_id": run_id,
+            "workflow_id": str(payload.workflow_id),
+            "payload": payload.payload or {},
         },
-        "timestamp": datetime.now(UTC).isoformat() + "Z",
-    }
-
-    # Send command to runner
-    sent = await runner_manager.send_command_to_runner(connection_id, command_msg)
-
+    )
     if not sent:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to send workflow to runner. Please try again.",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "dispatch_failed",
+                "message": "Could not relay dispatch over WebSocket.",
+            },
         )
 
-    logger.info(
-        "workflow_execution_sent",
-        connection_id=connection_id,
-        user_id=str(current_user.id),
-        execution_id=execution_id,
-        workflow_name=request.workflow.get("name", "Unknown"),
-    )
-
-    return ExecuteWorkflowResponse(
-        execution_id=execution_id,
-        status="sent",
-        message=f"Workflow sent to runner. Execution ID: {execution_id}",
-        connection_id=connection_id,
+    return DispatchRunnerResponse(
+        run_id=run_id,
+        dispatched_at=utc_now(),
+        transport="ws",
     )

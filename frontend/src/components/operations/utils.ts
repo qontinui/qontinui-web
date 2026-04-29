@@ -1,11 +1,11 @@
 // ============================================================================
-// Dev Dashboard Utility Helpers
+// Operations Page Utility Helpers
 // ============================================================================
 
 import { ApiConfig } from "@/services/api-config";
 
-/** API base for the dev-dashboard endpoints. */
-export const DASHBOARD_API = `${ApiConfig.API_BASE_URL}/api/v1/dev-dashboard`;
+/** API base for the operations endpoints (Phase 2 unified surface). */
+export const OPERATIONS_API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
 
 /** Polling interval in milliseconds. */
 export const POLL_INTERVAL_MS = 5_000;

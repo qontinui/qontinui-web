@@ -37,11 +37,11 @@ from redis import asyncio as aioredis
 from app.api.deps import get_current_active_user_async
 from app.config.redis_config import get_redis
 from app.models.user import User as UserModel
-from app.services.runner_connection_manager import (
+from app.services.runner_websocket_manager import (
     WAKE_INTENT_KEY_PREFIX,
     WAKE_INTENT_TTL_SECONDS,
-    RunnerConnectionManager,
-    get_runner_connection_manager,
+    RunnerWebSocketManager,
+    get_runner_websocket_manager,
 )
 
 logger = structlog.get_logger(__name__)
@@ -69,7 +69,7 @@ class WakeRequest(BaseModel):
 
 class WakeAlreadyOnlineResponse(BaseModel):
     status: str = Field("already_online", description="Discriminator value.")
-    connection_id: int
+    runner_id: str = Field(..., description="Live runner ID (UUID) for this user.")
 
 
 class WakeRequiredResponse(BaseModel):
@@ -94,9 +94,9 @@ def _build_wake_url(intent_id: str, task_id: UUID | None) -> str:
 
 async def _get_manager(
     redis: Annotated[aioredis.Redis, Depends(get_redis)],
-) -> RunnerConnectionManager:
-    """Resolve the singleton ``RunnerConnectionManager`` for DI."""
-    return await get_runner_connection_manager(redis)
+) -> RunnerWebSocketManager:
+    """Resolve the singleton ``RunnerWebSocketManager`` for DI."""
+    return await get_runner_websocket_manager(redis)
 
 
 @router.post(
@@ -111,7 +111,7 @@ async def wake_runner(
     payload: WakeRequest,
     current_user: Annotated[UserModel, Depends(get_current_active_user_async)],
     redis: Annotated[aioredis.Redis, Depends(get_redis)],
-    manager: Annotated[RunnerConnectionManager, Depends(_get_manager)],
+    manager: Annotated[RunnerWebSocketManager, Depends(_get_manager)],
 ) -> Any:
     """Return either ``already_online`` or a wake-URL the caller navigates to.
 
@@ -134,17 +134,17 @@ async def wake_runner(
         )
 
     # Fast path: runner already online → caller can dispatch normally.
-    online_connection_id = await manager.is_user_online(user_id)
-    if online_connection_id is not None:
+    online_runner_id = await manager.is_user_online(user_id)
+    if online_runner_id is not None:
         logger.info(
             "wake_runner_already_online",
             user_id=str(user_id),
-            connection_id=online_connection_id,
+            runner_id=online_runner_id,
             reason=payload.reason,
         )
         return WakeAlreadyOnlineResponse(
             status="already_online",
-            connection_id=online_connection_id,
+            runner_id=online_runner_id,
         )
 
     # Slow path: mint a wake intent, store with TTL, return deep link.

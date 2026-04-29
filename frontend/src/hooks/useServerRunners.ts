@@ -7,7 +7,8 @@ import {
   keepPreviousData,
 } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { listRunners, getRunner, deregisterRunner } from "@/lib/api/runners";
+import type { Runner } from "@qontinui/shared-types";
+import { listRunners, getRunner, deleteRunner } from "@/lib/api/runners";
 import {
   createRunnerToken,
   listRunnerTokens,
@@ -31,8 +32,8 @@ import type {
 } from "@/types/server-runner";
 
 /**
- * React Query hooks for the server-mode runner fleet, runner tokens,
- * workflow dispatch, phase results and scheduled runs.
+ * React Query hooks for the unified runner endpoint surface, runner
+ * tokens, workflow dispatch, phase results and scheduled runs.
  */
 
 // =============================================================================
@@ -59,9 +60,9 @@ export const serverRunnerKeys = {
 // =============================================================================
 
 export function useRunners(refetchIntervalMs: number = 10000) {
-  return useQuery({
+  return useQuery<Runner[], Error>({
     queryKey: serverRunnerKeys.runners(),
-    queryFn: listRunners,
+    queryFn: () => listRunners(),
     refetchInterval: (query) => {
       if (query.state.error) return false;
       return refetchIntervalMs;
@@ -72,7 +73,7 @@ export function useRunners(refetchIntervalMs: number = 10000) {
 }
 
 export function useRunner(runnerId: string | null) {
-  return useQuery({
+  return useQuery<Runner, Error>({
     queryKey: runnerId ? serverRunnerKeys.runner(runnerId) : ["runner", null],
     queryFn: () => getRunner(runnerId as string),
     enabled: Boolean(runnerId),
@@ -82,7 +83,7 @@ export function useRunner(runnerId: string | null) {
 export function useDeregisterRunner() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: deregisterRunner,
+    mutationFn: deleteRunner,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: serverRunnerKeys.runners() });
       toast.success("Runner deregistered");
@@ -139,12 +140,12 @@ export function useRevokeRunnerToken() {
 export function useDispatchWorkflow() {
   return useMutation({
     mutationFn: ({
-      workflowId,
+      runnerId,
       data,
     }: {
-      workflowId: string;
+      runnerId: string;
       data: DispatchRequest;
-    }) => dispatchWorkflow(workflowId, data),
+    }) => dispatchWorkflow(runnerId, data),
   });
 }
 

@@ -1,65 +1,11 @@
 /**
- * Server-Mode Runner Types
+ * Runner token, dispatch, phase result, and scheduled-run types.
  *
- * Matches backend schemas for Phase 3 server-mode runner fleet:
- *   - Server-mode runners (registered via QONTINUI_RUNNER_TOKEN)
- *   - Runner auth tokens (long-lived bearer tokens for runners)
- *   - Workflow dispatch (send workflow to a registered runner)
- *   - Phase results (streamed iteration-by-iteration results)
- *   - Scheduled workflow runs (cron-style recurring dispatch)
+ * The {@link Runner} entity itself lives in `@qontinui/shared-types` (see
+ * `src/types/runner.ts`). This module carries the auxiliary concerns that
+ * surround a runner: long-lived auth tokens, workflow-dispatch payloads,
+ * iteration phase results, and cron-style scheduled dispatches.
  */
-
-// =============================================================================
-// Runner fleet
-// =============================================================================
-
-export type ServerRunnerStatus = "healthy" | "unhealthy" | "offline";
-
-/**
- * Runner-derived overall status (Phase 3J). The runner computes this from
- * multiple sub-signals and it is distinct from ``status`` (the runner's
- * self-reported liveness). ``null`` for pre-Phase-3J runners that have not
- * yet heartbeat with the extended payload.
- */
-export type ServerRunnerDerivedStatus =
-  | "healthy"
-  | "degraded"
-  | "errored"
-  | "offline"
-  | "starting";
-
-/**
- * Most recent UI error reported by a runner's React error boundary.
- * ``null`` on the Runner row means no outstanding UI error.
- */
-export interface ServerRunnerUiError {
-  message: string;
-  stack: string | null;
-  component_stack: string | null;
-  digest: string | null;
-  first_seen: string;
-  reported_at: string;
-  count: number;
-}
-
-export interface ServerRunner {
-  id: string;
-  user_id: string;
-  name: string;
-  hostname: string;
-  port: number;
-  capabilities: string[];
-  server_mode: boolean;
-  restate_enabled: boolean;
-  restate_healthy: boolean;
-  last_heartbeat: string | null;
-  status: ServerRunnerStatus;
-  /** Runner-computed overall status; ``null`` for pre-Phase-3J runners. */
-  derived_status: ServerRunnerDerivedStatus | null;
-  /** Most recent outstanding UI error, or ``null`` if none. */
-  ui_error: ServerRunnerUiError | null;
-  created_at: string;
-}
 
 // =============================================================================
 // Runner tokens
@@ -92,15 +38,15 @@ export interface CreateRunnerTokenResponse {
 export type DispatchTarget = "auto" | string; // "auto" or a runner UUID
 
 export interface DispatchRequest {
-  target: DispatchTarget;
+  workflow_id: string;
+  payload?: Record<string, unknown>;
   parent_task_run_id?: string;
 }
 
 export interface DispatchResponse {
   execution_id: string;
   runner_id: string;
-  runner_hostname: string;
-  runner_port: number;
+  runner_name: string;
   dispatched_at: string;
   task_run_id: string;
 }

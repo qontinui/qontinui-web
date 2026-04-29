@@ -10,7 +10,7 @@ import React, {
   useRef,
   type ReactNode,
 } from "react";
-import { RunnerConnection } from "@/types/runner";
+import type { Runner } from "@qontinui/shared-types";
 import { useRealtimeConnectionsContext } from "@/contexts/realtime-connections-context";
 import { setRunnerApiBase, RUNNER_API_BASE } from "@/lib/runner/api-client";
 
@@ -20,11 +20,11 @@ import { setRunnerApiBase, RUNNER_API_BASE } from "@/lib/runner/api-client";
 
 interface ActiveRunnerContextValue {
   /** The currently selected runner, or null if none available */
-  activeRunner: RunnerConnection | null;
-  /** All connected runners */
-  runners: RunnerConnection[];
-  /** Select a runner by connection ID, or null to auto-select */
-  selectRunner: (connectionId: number | null) => void;
+  activeRunner: Runner | null;
+  /** All selectable runners (healthy or degraded) */
+  runners: Runner[];
+  /** Select a runner by id (UUID), or null to auto-select */
+  selectRunner: (runnerId: string | null) => void;
   /** Whether multiple runners are connected */
   isMultiRunner: boolean;
 }
@@ -39,9 +39,9 @@ const ActiveRunnerContext = createContext<ActiveRunnerContextValue | undefined>(
 
 const STORAGE_KEY = "qontinui:activeRunnerId";
 
-function buildRunnerApiBase(runner: RunnerConnection): string {
-  if (runner.runner_port) {
-    return `http://localhost:${runner.runner_port}`;
+function buildRunnerApiBase(runner: Runner): string {
+  if (runner.port) {
+    return `http://localhost:${runner.port}`;
   }
   return RUNNER_API_BASE; // fallback to default 9876
 }
@@ -51,22 +51,24 @@ function buildRunnerApiBase(runner: RunnerConnection): string {
 // ============================================================================
 
 export function ActiveRunnerProvider({ children }: { children: ReactNode }) {
-  const { connections } = useRealtimeConnectionsContext();
-  const [selectedId, setSelectedId] = useState<number | null>(() => {
+  const { runners: allRunners } = useRealtimeConnectionsContext();
+  const [selectedId, setSelectedId] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (!stored) return null;
-    const parsed = parseInt(stored, 10);
-    return Number.isNaN(parsed) ? null : parsed;
+    return localStorage.getItem(STORAGE_KEY);
   });
 
-  // Track previous connections to detect disconnections
-  const prevConnectionsRef = useRef<RunnerConnection[]>([]);
+  // Track previous runners to detect disconnections
+  const prevRunnersRef = useRef<Runner[]>([]);
 
-  // Only consider runners that are WebSocket-connected
+  // Selectable runners: anything heartbeating (healthy or degraded). Fleet-
+  // online runners that don't have a live WebSocket are still selectable
+  // because the user may want to pick them and then health-check the port.
   const runners = useMemo(
-    () => connections.filter((c) => c.ws_connected),
-    [connections]
+    () =>
+      allRunners.filter(
+        (r) => r.derivedStatus === "healthy" || r.derivedStatus === "degraded"
+      ),
+    [allRunners]
   );
 
   // Resolve the active runner
@@ -88,26 +90,26 @@ export function ActiveRunnerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (selectedId !== null && !runners.some((r) => r.id === selectedId)) {
       // Selected runner is gone — check if it was previously connected
-      const wasConnected = prevConnectionsRef.current.some(
+      const wasConnected = prevRunnersRef.current.some(
         (r) => r.id === selectedId
       );
       if (wasConnected && runners.length > 0) {
         // Auto-select first available runner
         const fallbackId = runners[0]!.id;
         setSelectedId(fallbackId);
-        localStorage.setItem(STORAGE_KEY, String(fallbackId));
+        localStorage.setItem(STORAGE_KEY, fallbackId);
       } else if (runners.length === 0) {
         setSelectedId(null);
         localStorage.removeItem(STORAGE_KEY);
       }
     }
-    prevConnectionsRef.current = runners;
+    prevRunnersRef.current = runners;
   }, [runners, selectedId]);
 
-  const selectRunner = useCallback((connectionId: number | null) => {
-    setSelectedId(connectionId);
-    if (connectionId !== null) {
-      localStorage.setItem(STORAGE_KEY, String(connectionId));
+  const selectRunner = useCallback((runnerId: string | null) => {
+    setSelectedId(runnerId);
+    if (runnerId !== null) {
+      localStorage.setItem(STORAGE_KEY, runnerId);
     } else {
       localStorage.removeItem(STORAGE_KEY);
     }
@@ -146,9 +148,9 @@ export function useActiveRunner() {
 // ============================================================================
 
 function resolveActiveRunner(
-  runners: RunnerConnection[],
-  selectedId: number | null
-): RunnerConnection | null {
+  runners: Runner[],
+  selectedId: string | null
+): Runner | null {
   if (runners.length === 0) return null;
 
   // If a runner is explicitly selected and still connected, use it

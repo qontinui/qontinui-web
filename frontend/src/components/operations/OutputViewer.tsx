@@ -3,16 +3,17 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2 } from "lucide-react";
-import { DASHBOARD_API, POLL_INTERVAL_MS } from "./utils";
+import { OPERATIONS_API, POLL_INTERVAL_MS } from "./utils";
 
 interface OutputViewerProps {
+  /** Runner UUID — keys the backend's `/operations/fleet/runners/{id}/output` proxy. */
   runnerId: string;
   taskRunId: string;
 }
 
 /**
- * Live output viewer that fetches AI output from a runner via the backend proxy.
- * Polls every 5 seconds and auto-scrolls to the bottom.
+ * Live output viewer that fetches AI output from a runner via the backend
+ * proxy. Polls every 5 seconds and auto-scrolls to the bottom.
  */
 export function OutputViewer({ runnerId, taskRunId }: OutputViewerProps) {
   const [output, setOutput] = useState<string>("");
@@ -23,7 +24,7 @@ export function OutputViewer({ runnerId, taskRunId }: OutputViewerProps) {
 
   const fetchOutput = useCallback(async () => {
     try {
-      const url = `${DASHBOARD_API}/fleet/runners/${encodeURIComponent(runnerId)}/output?task_run_id=${encodeURIComponent(taskRunId)}&tail_chars=8000`;
+      const url = `${OPERATIONS_API}/fleet/runners/${encodeURIComponent(runnerId)}/output?task_run_id=${encodeURIComponent(taskRunId)}&tail_chars=8000`;
       const res = await fetch(url);
 
       if (!res.ok) {

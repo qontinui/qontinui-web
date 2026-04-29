@@ -115,7 +115,7 @@ class TestOrchestrator:
             # Create test run record
             test_run = SoftwareTestRun(
                 project_id=session_data.project_id,
-                runner_connection_id=self.connection_record_id,
+                runner_session_id=self.connection_record_id,
                 workflow_id=session_data.workflow_id,
                 status=TestRunStatus.RUNNING,
                 started_at=utc_now(),

@@ -41,7 +41,7 @@ function HealthDot({
   heartbeat,
 }: {
   healthy: boolean;
-  heartbeat: string;
+  heartbeat: string | null;
 }) {
   const color = healthy ? "text-green-500" : "text-red-500";
   const label = healthy
@@ -64,14 +64,15 @@ function HealthDot({
 export function MachineCard({ machine }: MachineCardProps) {
   const { hostname, runners, claudeSessions } = machine;
 
-  // Determine overall machine health
-  const allHealthy = runners.every((r) => r.is_healthy);
-  const someHealthy = runners.some((r) => r.is_healthy);
-  const totalTasks = runners.reduce((sum, r) => sum + r.running_task_count, 0);
+  // Determine overall machine health from derivedStatus
+  const healthyRunners = runners.filter((r) => r.derivedStatus === "healthy");
+  const allHealthy =
+    runners.length > 0 && healthyRunners.length === runners.length;
+  const someHealthy = healthyRunners.length > 0;
 
   // Pick OS from first runner
   const os = runners[0]?.os ?? "unknown";
-  const osVersion = runners[0]?.os_version ?? null;
+  const osVersion = runners[0]?.osVersion ?? null;
 
   return (
     <Card className="gap-3 py-4">
@@ -105,38 +106,39 @@ export function MachineCard({ machine }: MachineCardProps) {
             Runners ({runners.length})
           </h4>
           <div className="space-y-1.5">
-            {runners.map((runner) => (
-              <div
-                key={runner.id}
-                className="flex items-center justify-between text-sm px-2 py-1.5 rounded-md bg-muted/40"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <HealthDot
-                    healthy={runner.is_healthy}
-                    heartbeat={runner.last_heartbeat}
-                  />
-                  <span className="font-mono text-xs">:{runner.port}</span>
-                  {runner.instance_name && (
+            {runners.map((runner) => {
+              const isHealthy = runner.derivedStatus === "healthy";
+              return (
+                <div
+                  key={runner.id}
+                  className="flex items-center justify-between text-sm px-2 py-1.5 rounded-md bg-muted/40"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <HealthDot
+                      healthy={isHealthy}
+                      heartbeat={runner.lastHeartbeat ?? null}
+                    />
+                    {runner.port ? (
+                      <span className="font-mono text-xs">:{runner.port}</span>
+                    ) : null}
                     <span className="text-muted-foreground text-xs truncate">
-                      ({runner.instance_name})
+                      {runner.name}
                     </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {runner.running_task_count > 0 && (
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
                     <Badge
-                      variant="success"
+                      variant="outline"
                       className="text-[10px] px-1.5 py-0"
                     >
-                      {runner.running_task_count} running
+                      {runner.derivedStatus}
                     </Badge>
-                  )}
-                  <span className="text-[10px] text-muted-foreground">
-                    {relativeTime(runner.last_heartbeat)}
-                  </span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {relativeTime(runner.lastHeartbeat ?? null)}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -174,7 +176,7 @@ export function MachineCard({ machine }: MachineCardProps) {
         {/* Summary footer */}
         <div className="flex items-center gap-3 pt-1 border-t border-border text-xs text-muted-foreground">
           <span>
-            {totalTasks} active task{totalTasks !== 1 ? "s" : ""}
+            {healthyRunners.length} of {runners.length} healthy
           </span>
           <span>
             {claudeSessions.length} CC session

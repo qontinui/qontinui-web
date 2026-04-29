@@ -8,7 +8,7 @@ const log = createLogger("useChatWebSocket");
 export type { AiSessionState, AiMessage };
 
 interface ChatWebSocketOptions {
-  connectionId: number | null;
+  runnerId: string | null;
   onSessionCreated?: (id: string, taskName: string) => void;
   onWorkflowGenerated?: (data: {
     taskRunId: string;
@@ -44,7 +44,7 @@ interface ChatWebSocketReturn {
  * message flow between the frontend and the runner's Claude session.
  */
 export function useChatWebSocket({
-  connectionId,
+  runnerId,
   onSessionCreated,
   onWorkflowGenerated,
 }: ChatWebSocketOptions): ChatWebSocketReturn {
@@ -65,7 +65,7 @@ export function useChatWebSocket({
 
   // Build WebSocket URL for the chat endpoint
   const connectWebSocket = useCallback(async () => {
-    if (!connectionId) return;
+    if (!runnerId) return;
 
     let token: string | null = null;
     try {
@@ -89,7 +89,7 @@ export function useChatWebSocket({
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
     const wsProtocol = apiUrl.startsWith("https") ? "wss" : "ws";
     const apiHost = apiUrl.replace(/^https?:\/\//, "");
-    const wsUrl = `${wsProtocol}://${apiHost}/api/v1/automation/ws/runner/chat/${connectionId}?token=${encodeURIComponent(token)}`;
+    const wsUrl = `${wsProtocol}://${apiHost}/api/v1/runners/${runnerId}/chat?token=${encodeURIComponent(token)}`;
 
     try {
       const ws = new WebSocket(wsUrl);
@@ -111,7 +111,7 @@ export function useChatWebSocket({
 
       ws.onclose = () => {
         // Guard: ignore close events from stale WebSockets (e.g., after
-        // React StrictMode double-mount or connectionId change)
+        // React StrictMode double-mount or runnerId change)
         if (wsRef.current !== ws) return;
         setIsConnected(false);
         wsRef.current = null;
@@ -165,7 +165,7 @@ export function useChatWebSocket({
       setSessionState("disconnected");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionId]);
+  }, [runnerId]);
 
   const handleMessage = useCallback(
     (msg: Record<string, unknown>) => {
@@ -432,7 +432,7 @@ export function useChatWebSocket({
 
   // Connect on mount
   useEffect(() => {
-    if (connectionId) {
+    if (runnerId) {
       connectWebSocket();
     }
 
@@ -448,7 +448,7 @@ export function useChatWebSocket({
         clearInterval(pingIntervalRef.current);
       }
     };
-  }, [connectWebSocket, connectionId]);
+  }, [connectWebSocket, runnerId]);
 
   return {
     isConnected,

@@ -180,7 +180,7 @@ class TestRunService:
 
         test_run = SoftwareTestRun(
             project_id=run_in.project_id,
-            runner_connection_id=None,
+            runner_session_id=None,
             workflow_id=run_in.workflow_metadata.get("workflow_id"),
             status=TestRunStatus.RUNNING,
             started_at=utc_now(),

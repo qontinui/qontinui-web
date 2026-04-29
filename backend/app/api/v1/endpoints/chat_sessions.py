@@ -1,7 +1,9 @@
 """
 REST endpoints for chat session management.
 
-Provides session listing and management by proxying to connected runners.
+Provides session listing by proxying to a connected runner. Picks the
+user's first WS-connected runner; returns an empty session list with
+``runner_connected=False`` if none.
 """
 
 import structlog
@@ -11,9 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_active_user, get_db
 from app.config.redis_config import get_redis
-from app.models.runner_connection import RunnerConnection
+from app.models.runner import Runner
 from app.models.user import User
-from app.services.runner_connection_manager import get_runner_connection_manager
+from app.services.runner_websocket_manager import get_runner_websocket_manager
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -24,44 +26,25 @@ async def list_chat_sessions(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(current_active_user),
 ):
-    """
-    List chat sessions from connected runners.
-
-    Finds the user's active runner connection and queries it for
-    task runs with workflow_type='chat'.
-    """
-    # Find user's active runner connection
-    query = select(RunnerConnection).where(
-        RunnerConnection.user_id == current_user.id,
-        RunnerConnection.disconnected_at.is_(None),
+    """List chat sessions from connected runners."""
+    # Pick the first WS-connected runner owned by this user.
+    query = select(Runner).where(
+        Runner.user_id == current_user.id,
+        Runner.ws_session_id.is_not(None),
     )
     result = await db.execute(query)
-    connection = result.scalar_one_or_none()
+    runner = result.scalars().first()
 
-    if not connection:
+    if not runner:
         return {"sessions": [], "runner_connected": False}
 
-    # Get runner connection manager and query for chat sessions
     redis_client = await get_redis()
-    manager = await get_runner_connection_manager(redis_client)
+    manager = await get_runner_websocket_manager(redis_client)
 
-    if not manager.is_runner_connected(connection.id):
+    if not manager.is_connected(runner.id):
         return {"sessions": [], "runner_connected": False}
 
-    # Send request to runner and get response
-    import asyncio
-
-    response_future = asyncio.get_event_loop().create_future()
-
-    async def capture_response(msg):
-        if msg.get("type") == "chat_running_tasks" and not response_future.done():
-            response_future.set_result(msg)
-
-    # Register temporary listener
-    sent = await manager.send_chat_to_runner(
-        connection.id, {"type": "chat_list_running"}
-    )
-
+    sent = await manager.send_chat(runner.id, {"type": "chat_list_running"})
     if not sent:
         return {
             "sessions": [],
@@ -69,8 +52,6 @@ async def list_chat_sessions(
             "error": "Failed to query runner",
         }
 
-    # For now, return runner_connected status - the actual sessions
-    # will come through the WebSocket as chat_running_tasks
     return {
         "sessions": [],
         "runner_connected": True,

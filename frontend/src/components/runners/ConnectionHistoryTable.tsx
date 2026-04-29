@@ -23,13 +23,17 @@ import {
   WifiOff,
   RefreshCw,
 } from "lucide-react";
-import { useConnectionHistory } from "@/hooks/useRunners";
+import { useRunnerSessions } from "@/hooks/useRunners";
 import { formatDuration, formatRelativeTime } from "@/utils/formatDuration";
-import { exportConnectionHistoryCSV } from "@/utils/exportCSV";
-import type { ConnectionHistoryParams } from "@/types/runner";
+import { exportRunnerSessionsCSV } from "@/utils/exportCSV";
+import type { RunnerSessionFilters } from "@/types/runner";
 
+/**
+ * Session History table — replaces the legacy "Connection History" view.
+ * Reads from `GET /api/v1/runners/sessions` (Phase 2 unified endpoint).
+ */
 export function ConnectionHistoryTable() {
-  const [params, setParams] = useState<ConnectionHistoryParams>({
+  const [filters, setFilters] = useState<RunnerSessionFilters>({
     limit: 25,
     offset: 0,
     search: "",
@@ -39,10 +43,10 @@ export function ConnectionHistoryTable() {
   const [pageSize, setPageSize] = useState(25);
 
   const { data, isLoading, error, refetch, isRefetching } =
-    useConnectionHistory(params);
+    useRunnerSessions(filters);
 
   const handleSearch = () => {
-    setParams({ ...params, search: searchInput, offset: 0 });
+    setFilters({ ...filters, search: searchInput, offset: 0 });
   };
 
   const handleSearchKeyPress = (e: React.KeyboardEvent) => {
@@ -53,36 +57,36 @@ export function ConnectionHistoryTable() {
 
   const handlePageSizeChange = (newSize: number) => {
     setPageSize(newSize);
-    setParams({ ...params, limit: newSize, offset: 0 });
+    setFilters({ ...filters, limit: newSize, offset: 0 });
   };
 
   const handleNextPage = () => {
-    const limit = params.limit ?? 25;
-    const offset = params.offset ?? 0;
+    const limit = filters.limit ?? 25;
+    const offset = filters.offset ?? 0;
     if (data && offset + limit < data.total) {
-      setParams({ ...params, offset: offset + limit });
+      setFilters({ ...filters, offset: offset + limit });
     }
   };
 
   const handlePrevPage = () => {
-    const limit = params.limit ?? 25;
-    const offset = params.offset ?? 0;
+    const limit = filters.limit ?? 25;
+    const offset = filters.offset ?? 0;
     if (offset > 0) {
-      setParams({
-        ...params,
+      setFilters({
+        ...filters,
         offset: Math.max(0, offset - limit),
       });
     }
   };
 
   const handleExport = () => {
-    if (data && data.connections) {
-      exportConnectionHistoryCSV(data.connections, "connection-history.csv");
+    if (data && data.sessions) {
+      exportRunnerSessionsCSV(data.sessions, "runner-sessions.csv");
     }
   };
 
-  const limit = params.limit ?? 25;
-  const offset = params.offset ?? 0;
+  const limit = filters.limit ?? 25;
+  const offset = filters.offset ?? 0;
   const currentPage = Math.floor(offset / limit) + 1;
   const totalPages = data ? Math.ceil(data.total / limit) : 0;
 
@@ -104,7 +108,7 @@ export function ConnectionHistoryTable() {
             {isConnectionError
               ? "The backend server appears to be offline or unreachable. Please ensure the server is running and try again."
               : error.message ||
-                "An unexpected error occurred while loading connection history."}
+                "An unexpected error occurred while loading session history."}
           </p>
           <Button
             onClick={() => refetch()}
@@ -158,7 +162,7 @@ export function ConnectionHistoryTable() {
             onClick={handleExport}
             variant="outline"
             className="border-border-default"
-            disabled={!data || data.connections.length === 0}
+            disabled={!data || data.sessions.length === 0}
           >
             <Download className="w-4 h-4 mr-2" />
             Export CSV
@@ -177,28 +181,25 @@ export function ConnectionHistoryTable() {
                 <TableHead className="text-text-muted">Disconnected</TableHead>
                 <TableHead className="text-text-muted">Duration</TableHead>
                 <TableHead className="text-text-muted">IP Address</TableHead>
-                <TableHead className="text-text-muted">Project</TableHead>
                 <TableHead className="text-text-muted">Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-12">
+                  <TableCell colSpan={6} className="text-center py-12">
                     <Loader2 className="w-6 h-6 animate-spin mx-auto text-brand-primary" />
                     <p className="text-text-muted mt-2">
-                      Loading connection history...
+                      Loading session history...
                     </p>
                   </TableCell>
                 </TableRow>
-              ) : !data || data.connections.length === 0 ? (
+              ) : !data || data.sessions.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-12">
+                  <TableCell colSpan={6} className="text-center py-12">
                     <Calendar className="w-12 h-12 mx-auto text-text-muted mb-3" />
-                    <p className="text-text-muted">
-                      No connection history found
-                    </p>
-                    {params.search && (
+                    <p className="text-text-muted">No session history found</p>
+                    {filters.search && (
                       <p className="text-sm text-text-muted mt-1">
                         Try adjusting your search criteria
                       </p>
@@ -206,38 +207,35 @@ export function ConnectionHistoryTable() {
                   </TableCell>
                 </TableRow>
               ) : (
-                data.connections.map((connection) => {
-                  const isActive = !connection.disconnected_at;
-                  const duration = connection.duration_seconds
-                    ? formatDuration(connection.duration_seconds)
+                data.sessions.map((session) => {
+                  const isActive = !session.disconnected_at;
+                  const duration = session.duration_seconds
+                    ? formatDuration(session.duration_seconds)
                     : isActive
                       ? "Active"
                       : "Unknown";
 
                   return (
                     <TableRow
-                      key={connection.id}
+                      key={session.id}
                       className="border-border-subtle hover:bg-surface-canvas"
                     >
                       <TableCell className="font-medium text-white">
-                        {connection.runner_name || "Unknown"}
+                        {session.runner_name || "Unknown"}
                       </TableCell>
                       <TableCell className="text-text-muted">
-                        {formatRelativeTime(connection.connected_at)}
+                        {formatRelativeTime(session.connected_at)}
                       </TableCell>
                       <TableCell className="text-text-muted">
-                        {connection.disconnected_at
-                          ? formatRelativeTime(connection.disconnected_at)
-                          : "-"}
+                        {session.disconnected_at
+                          ? formatRelativeTime(session.disconnected_at)
+                          : "—"}
                       </TableCell>
                       <TableCell className="text-text-muted">
                         {duration}
                       </TableCell>
                       <TableCell className="text-text-muted font-mono text-xs">
-                        {connection.ip_address || "Unknown"}
-                      </TableCell>
-                      <TableCell className="text-text-muted">
-                        {connection.project_name || "-"}
+                        {session.ip_address || "Unknown"}
                       </TableCell>
                       <TableCell>
                         {isActive ? (
@@ -265,7 +263,7 @@ export function ConnectionHistoryTable() {
         </div>
 
         {/* Pagination */}
-        {data && data.connections.length > 0 && (
+        {data && data.sessions.length > 0 && (
           <div className="border-t border-border-subtle p-4 flex items-center justify-between">
             <div className="flex items-center gap-4">
               <span className="text-sm text-text-muted">

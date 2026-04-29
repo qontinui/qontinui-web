@@ -16,9 +16,9 @@ export default function ChatSessionPage() {
   const router = useRouter();
   const taskRunId = params.id as string;
 
-  const { connections } = useRealtimeConnections();
-  const activeConnection = connections[0] || null;
-  const isRunnerConnected = !!activeConnection;
+  const { runners } = useRealtimeConnections();
+  const activeRunner = runners[0] || null;
+  const isRunnerConnected = !!activeRunner;
 
   const [sessionName, setSessionName] = useState("New Chat");
   const [showWorkflowPanel, setShowWorkflowPanel] = useState(false);
@@ -65,18 +65,18 @@ export default function ChatSessionPage() {
     loadSession,
     isGeneratingWorkflow,
   } = useChatWebSocket({
-    connectionId: activeConnection?.id ?? null,
+    runnerId: activeRunner?.id ?? null,
     onSessionCreated: handleSessionCreated,
     onWorkflowGenerated: handleWorkflowGenerated,
   });
 
   // Load session on mount (for existing sessions)
   useEffect(() => {
-    if (taskRunId && activeConnection) {
+    if (taskRunId && activeRunner) {
       loadSession(taskRunId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [taskRunId, activeConnection?.id]);
+  }, [taskRunId, activeRunner?.id]);
 
   const handleSendMessage = useCallback(
     (content: string) => {

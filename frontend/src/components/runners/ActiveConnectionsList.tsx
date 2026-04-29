@@ -18,7 +18,6 @@ import {
   XCircle,
   Loader2,
   Monitor,
-  Clock,
   MapPin,
   RefreshCw,
   WifiOff,
@@ -29,29 +28,29 @@ import {
   Info,
 } from "lucide-react";
 import Link from "next/link";
-import { useDisconnectRunner } from "@/hooks/useRunners";
+import { useDeleteRunner } from "@/hooks/useRunners";
 import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
 import { formatRelativeTime } from "@/utils/formatDuration";
-import { StatusIndicator } from "./StatusIndicator";
+import { RunnerStatusBadge } from "@/components/server-runners/RunnerStatusBadge";
 
 export function ActiveConnectionsList() {
   const {
-    connections,
+    runners,
     isLoading,
     isConnected: _isConnected,
     refetch,
   } = useRealtimeConnections();
-  const disconnectMutation = useDisconnectRunner();
-  const [disconnectingId, setDisconnectingId] = useState<number | null>(null);
+  const deleteMutation = useDeleteRunner();
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<Error | null>(null);
 
-  const handleDisconnect = async (connectionId: number) => {
+  const handleDeregister = async (runnerId: string) => {
     try {
-      await disconnectMutation.mutateAsync(connectionId);
-      setDisconnectingId(null);
-    } catch (error) {
-      console.error("Failed to disconnect runner:", error);
-      setDisconnectingId(null);
+      await deleteMutation.mutateAsync(runnerId);
+      setDeletingId(null);
+    } catch (err) {
+      console.error("Failed to deregister runner:", err);
+      setDeletingId(null);
     }
   };
 
@@ -59,9 +58,7 @@ export function ActiveConnectionsList() {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="w-8 h-8 animate-spin text-brand-primary" />
-        <span className="ml-3 text-text-muted">
-          Loading active connections...
-        </span>
+        <span className="ml-3 text-text-muted">Loading online runners...</span>
       </div>
     );
   }
@@ -78,13 +75,13 @@ export function ActiveConnectionsList() {
           <h3 className="text-xl font-semibold text-text-muted mb-2">
             {isConnectionError
               ? "Unable to Connect to Server"
-              : "Failed to Load Connections"}
+              : "Failed to Load Runners"}
           </h3>
           <p className="text-text-muted mb-6 max-w-md mx-auto">
             {isConnectionError
               ? "The backend server appears to be offline or unreachable. Please ensure the server is running and try again."
               : error.message ||
-                "An unexpected error occurred while loading active connections."}
+                "An unexpected error occurred while loading online runners."}
           </p>
           <Button
             onClick={() => {
@@ -101,15 +98,15 @@ export function ActiveConnectionsList() {
     );
   }
 
-  if (!connections || connections.length === 0) {
+  if (!runners || runners.length === 0) {
     return (
       <div className="text-center py-12">
         <Monitor className="w-16 h-16 mx-auto text-text-muted mb-4" />
         <h3 className="text-xl font-semibold text-text-muted mb-2">
-          No Active Connections
+          No Online Runners
         </h3>
         <p className="text-text-muted mb-8">
-          No runners are currently connected to your account
+          No runners are currently online for your account
         </p>
 
         <div className="max-w-lg mx-auto space-y-4 text-left mb-8">
@@ -127,9 +124,9 @@ export function ActiveConnectionsList() {
             },
             {
               icon: Settings,
-              label: "Settings → Web Integration",
+              label: "Settings → Backend Connection",
               description:
-                "In the runner, find the Web Integration section in Settings",
+                "In the runner, find Backend Connection and connect it to this account",
             },
             {
               icon: ShieldCheck,
@@ -174,15 +171,15 @@ export function ActiveConnectionsList() {
           </span>{" "}
           Open it on the new machine, then go to{" "}
           <span className="text-white">
-            Settings → Web Integration → Authorize
+            Settings → Backend Connection → Authorize
           </span>
           . It will show up here once it heartbeats.
         </div>
       </Card>
       <div className="grid gap-4">
-        {connections.map((connection) => (
+        {runners.map((runner) => (
           <Card
-            key={connection.id}
+            key={runner.id}
             className="bg-surface-raised border-border-subtle p-6"
           >
             <div className="flex items-start justify-between">
@@ -191,89 +188,99 @@ export function ActiveConnectionsList() {
                 <div className="flex items-center gap-3 mb-4">
                   <Monitor className="w-5 h-5 text-brand-primary" />
                   <h3 className="text-lg font-semibold text-white">
-                    {connection.runner_name || "Unknown Runner"}
+                    {runner.name || "Unknown Runner"}
                   </h3>
-                  <StatusIndicator status="active" showLabel={false} />
-                  <Badge
-                    variant="outline"
-                    className="border-brand-success/50 text-brand-success"
-                  >
-                    Connected
-                  </Badge>
+                  <RunnerStatusBadge derivedStatus={runner.derivedStatus} />
+                  {runner.wsConnected ? (
+                    <Badge
+                      variant="outline"
+                      className="border-brand-success/50 text-brand-success"
+                    >
+                      WS Connected
+                    </Badge>
+                  ) : null}
                 </div>
 
-                {/* Connection Details */}
+                {/* Runner Details */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {/* Connected Since */}
+                  {/* Hostname / Port */}
                   <div className="flex items-start gap-3">
-                    <Clock className="w-4 h-4 text-text-muted mt-1" />
+                    <Monitor className="w-4 h-4 text-text-muted mt-1" />
                     <div>
-                      <p className="text-sm text-text-muted">Connected</p>
-                      <p className="text-white font-medium">
-                        {formatRelativeTime(connection.connected_at)}
+                      <p className="text-sm text-text-muted">Host</p>
+                      <p className="text-white font-medium font-mono text-sm">
+                        {runner.hostname || "—"}
+                        {runner.port ? `:${runner.port}` : ""}
                       </p>
                     </div>
                   </div>
 
                   {/* IP Address */}
-                  {connection.ip_address && (
+                  {runner.ipAddress && (
                     <div className="flex items-start gap-3">
                       <MapPin className="w-4 h-4 text-text-muted mt-1" />
                       <div>
                         <p className="text-sm text-text-muted">IP Address</p>
                         <p className="text-white font-medium font-mono text-sm">
-                          {connection.ip_address}
+                          {runner.ipAddress}
                         </p>
                       </div>
                     </div>
                   )}
 
-                  {/* Project */}
-                  {connection.project_name && (
+                  {/* OS */}
+                  {runner.os && (
                     <div className="flex items-start gap-3">
                       <div className="w-4 h-4 bg-brand-primary rounded mt-1" />
                       <div>
-                        <p className="text-sm text-text-muted">Project</p>
+                        <p className="text-sm text-text-muted">OS</p>
                         <p className="text-white font-medium">
-                          {connection.project_name}
+                          {runner.os}
+                          {runner.osVersion ? ` ${runner.osVersion}` : ""}
                         </p>
                       </div>
                     </div>
                   )}
                 </div>
 
-                {/* Session ID */}
+                {/* Last heartbeat + ID */}
                 <div className="mt-4 text-xs text-text-muted">
-                  Session ID: {connection.id}
+                  Last heartbeat:{" "}
+                  {runner.lastHeartbeat
+                    ? formatRelativeTime(runner.lastHeartbeat)
+                    : "never"}
+                  {" · "}
+                  Runner ID:{" "}
+                  <span className="font-mono">{runner.id.slice(0, 8)}</span>
                 </div>
               </div>
 
-              {/* Disconnect Button */}
+              {/* Deregister Button */}
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setDisconnectingId(connection.id)}
+                onClick={() => setDeletingId(runner.id)}
                 className="border-red-500/50 text-red-500 hover:bg-red-500/10"
               >
                 <XCircle className="w-4 h-4 mr-2" />
-                Disconnect
+                Deregister
               </Button>
             </div>
           </Card>
         ))}
       </div>
 
-      {/* Disconnect Confirmation Dialog */}
+      {/* Deregister Confirmation Dialog */}
       <AlertDialog
-        open={disconnectingId !== null}
-        onOpenChange={(open) => !open && setDisconnectingId(null)}
+        open={deletingId !== null}
+        onOpenChange={(open) => !open && setDeletingId(null)}
       >
         <AlertDialogContent className="bg-surface-raised border-border-subtle">
           <AlertDialogHeader>
-            <AlertDialogTitle>Disconnect Runner?</AlertDialogTitle>
+            <AlertDialogTitle>Deregister Runner?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will immediately terminate the connection to this runner. The
-              runner can reconnect by logging in again.
+              This will close the runner&apos;s WebSocket and remove it from
+              your fleet. The runner can re-register itself by reconnecting.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -281,13 +288,11 @@ export function ActiveConnectionsList() {
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
-              onClick={() =>
-                disconnectingId && handleDisconnect(disconnectingId)
-              }
+              onClick={() => deletingId && handleDeregister(deletingId)}
               className="bg-red-500 hover:bg-red-600 text-white"
-              disabled={disconnectMutation.isPending}
+              disabled={deleteMutation.isPending}
             >
-              {disconnectMutation.isPending ? "Disconnecting..." : "Disconnect"}
+              {deleteMutation.isPending ? "Deregistering..." : "Deregister"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

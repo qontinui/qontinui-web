@@ -47,9 +47,9 @@ export default function ScheduledRunsPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => router.push("/runners/fleet")}
+            onClick={() => router.push("/runners")}
           >
-            Manage fleet
+            Manage runners
           </Button>
         </div>
       </header>

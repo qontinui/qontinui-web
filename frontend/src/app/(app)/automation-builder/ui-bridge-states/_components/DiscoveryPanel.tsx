@@ -40,7 +40,8 @@ import { SdkRecordingPanel } from "@/components/ui-bridge/SdkRecordingPanel";
 import { useUIBridgeRecording } from "@/hooks/useUIBridgeRecording";
 
 const LOCAL_RUNNER_URL = "http://localhost:9876";
-const DIRECT_CONNECTION_ID = -1;
+/** Sentinel ID for the local-runner option (used when no backend runners are registered). */
+const LOCAL_RUNNER_SENTINEL = "__local__";
 
 interface DiscoveryPanelProps {
   discovery: ReturnType<typeof useStateMachineDiscovery>;
@@ -52,14 +53,11 @@ export function DiscoveryPanel({
   onConfigCreated,
 }: DiscoveryPanelProps) {
   const [collectTab, setCollectTab] = useState<"explore" | "record">("explore");
-  const [selectedConnectionId, setSelectedConnectionId] = useState<
-    number | null
-  >(null);
+  const [selectedRunnerId, setSelectedRunnerId] = useState<string | null>(null);
   // Hooks
   const exploration = useUIBridgeExploration();
   const sdkRecording = useUIBridgeRecording();
-  const { connections, isLoading: connectionsLoading } =
-    useRealtimeConnections();
+  const { runners, isLoading: runnersLoading } = useRealtimeConnections();
 
   // Check if local runner is available directly (fallback when backend WS registration fails)
   const { data: localRunnerAvailable = false, isLoading: checkingLocalRunner } =
@@ -73,37 +71,39 @@ export function DiscoveryPanel({
       staleTime: 30000,
     });
 
-  // Auto-select local runner when no backend connections but local runner is available
+  // Auto-select local runner when no backend runners but local runner is available
   useEffect(() => {
     if (
-      !connectionsLoading &&
+      !runnersLoading &&
       !checkingLocalRunner &&
-      connections.length === 0 &&
+      runners.length === 0 &&
       localRunnerAvailable &&
-      selectedConnectionId === null
+      selectedRunnerId === null
     ) {
-      setSelectedConnectionId(DIRECT_CONNECTION_ID);
+      setSelectedRunnerId(LOCAL_RUNNER_SENTINEL);
     }
   }, [
-    connectionsLoading,
+    runnersLoading,
     checkingLocalRunner,
-    connections.length,
+    runners.length,
     localRunnerAvailable,
-    selectedConnectionId,
+    selectedRunnerId,
   ]);
 
-  // Derive runner URL from selected connection
-  const selectedConnection = useMemo(
-    () => connections.find((c) => c.id === selectedConnectionId) ?? null,
-    [connections, selectedConnectionId]
+  // Derive runner URL from selected runner
+  const selectedRunner = useMemo(
+    () => runners.find((r) => r.id === selectedRunnerId) ?? null,
+    [runners, selectedRunnerId]
   );
 
   const runnerUrl = useMemo(() => {
-    if (selectedConnectionId === DIRECT_CONNECTION_ID) return LOCAL_RUNNER_URL;
-    if (!selectedConnection) return null;
-    const ip = selectedConnection.ip_address || "localhost";
-    return `http://${ip}:9876`;
-  }, [selectedConnectionId, selectedConnection]);
+    if (selectedRunnerId === LOCAL_RUNNER_SENTINEL) return LOCAL_RUNNER_URL;
+    if (!selectedRunner) return null;
+    const host =
+      selectedRunner.ipAddress || selectedRunner.hostname || "localhost";
+    const port = selectedRunner.port ?? 9876;
+    return `http://${host}:${port}`;
+  }, [selectedRunnerId, selectedRunner]);
 
   // SDK app discovery and connection
   const sdk = useSDKApps(runnerUrl);
@@ -260,15 +260,13 @@ export function DiscoveryPanel({
               <div className="flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <Select
-                    value={selectedConnectionId?.toString() ?? ""}
-                    onValueChange={(v) =>
-                      setSelectedConnectionId(v ? Number(v) : null)
-                    }
+                    value={selectedRunnerId ?? ""}
+                    onValueChange={(v) => setSelectedRunnerId(v || null)}
                   >
                     <SelectTrigger className="h-8 text-sm">
                       <SelectValue
                         placeholder={
-                          connectionsLoading && checkingLocalRunner
+                          runnersLoading && checkingLocalRunner
                             ? "Loading..."
                             : "Select a runner..."
                         }
@@ -276,16 +274,17 @@ export function DiscoveryPanel({
                     </SelectTrigger>
                     <SelectContent>
                       {localRunnerAvailable && (
-                        <SelectItem value={DIRECT_CONNECTION_ID.toString()}>
+                        <SelectItem value={LOCAL_RUNNER_SENTINEL}>
                           <span className="flex items-center gap-1.5">
                             <MonitorSmartphone className="size-3.5 text-green-500" />
                             Local Runner (localhost:9876)
                           </span>
                         </SelectItem>
                       )}
-                      {connections.map((c) => (
-                        <SelectItem key={c.id} value={c.id.toString()}>
-                          {c.runner_name} ({c.ip_address ?? "localhost"})
+                      {runners.map((runner) => (
+                        <SelectItem key={runner.id} value={runner.id}>
+                          {runner.name} (
+                          {runner.hostname ?? runner.ipAddress ?? "localhost"})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -310,9 +309,9 @@ export function DiscoveryPanel({
 
               <p
                 className={`text-xs text-text-muted ${
-                  !connectionsLoading &&
+                  !runnersLoading &&
                   !checkingLocalRunner &&
-                  connections.length === 0 &&
+                  runners.length === 0 &&
                   !localRunnerAvailable
                     ? ""
                     : "hidden"
@@ -445,10 +444,10 @@ export function DiscoveryPanel({
                 isRunning={exploration.isRunning}
                 onStart={handleStartExploration}
                 onStop={handleStopExploration}
-                connections={connections}
-                connectionsLoading={connectionsLoading}
-                selectedConnectionId={selectedConnectionId}
-                onConnectionChange={setSelectedConnectionId}
+                runners={runners}
+                runnersLoading={runnersLoading}
+                selectedRunnerId={selectedRunnerId}
+                onRunnerChange={setSelectedRunnerId}
                 hideRunnerSection
               />
             </div>

@@ -1,38 +1,54 @@
 """
-Runner connection model for tracking WebSocket connections.
+Runner session model — audit log of WebSocket sessions.
 
-This model logs each connection session from desktop runners,
-providing an audit trail and connection history.
+Each row represents one open-to-close WebSocket connection between a
+runner and the backend. The authoritative "is this runner online right
+now" signal lives on :class:`~app.models.runner.Runner.ws_session_id`,
+which points at the currently-open session row (or ``NULL`` when no
+session is open). The session-history table is for connection history
+and analytics — never query it for liveness.
 """
 
 from datetime import datetime
 from uuid import UUID
 
 from qontinui_schemas.common import to_utc, utc_now
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
 
-class RunnerConnection(Base):
+class RunnerSession(Base):
     """
-    Runner connection model for tracking desktop runner WebSocket sessions.
+    Audit-log row for one runner WebSocket session.
 
-    Each record represents a single WebSocket connection session,
-    from connect to disconnect. Provides complete audit trail of
-    runner activity.
+    Created when the runner's WS connects, closed when it disconnects.
+    The owning :class:`~app.models.runner.Runner` row's
+    ``ws_session_id`` points at the currently-open session for that
+    runner.
     """
 
-    __tablename__ = "runner_connections"
+    __tablename__ = "runner_sessions"
 
     # Primary key (auto-incrementing integer for simplicity)
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    # FK to the canonical runners row this session belongs to.
+    runner_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("runners.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="Owning runner row (one runner has many sessions over its lifetime).",
+    )
 
     # Foreign key to user
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("runner.users.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
 
     # Connection timestamps (always timezone-aware UTC)
@@ -63,24 +79,6 @@ class RunnerConnection(Base):
         comment="IP address of the connection",
     )
 
-    user_agent: Mapped[str | None] = mapped_column(
-        String(500), nullable=True, comment="User agent string from the client"
-    )
-
-    # Custom runner name (user-defined in the runner app)
-    runner_name: Mapped[str | None] = mapped_column(
-        String(255),
-        nullable=True,
-        comment="Custom user-defined name for this runner (e.g., 'My Laptop')",
-    )
-
-    # HTTP API port the runner is listening on
-    runner_port: Mapped[int | None] = mapped_column(
-        Integer,
-        nullable=True,
-        comment="HTTP API port the runner is listening on",
-    )
-
     # Session metadata
     project_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
@@ -95,9 +93,10 @@ class RunnerConnection(Base):
     )
 
     # Relationships
-    user = relationship("User", back_populates="runner_connections")
+    runner = relationship("Runner", back_populates="sessions")
+    user = relationship("User", back_populates="runner_sessions")
     software_test_runs = relationship(
-        "SoftwareTestRun", back_populates="runner_connection"
+        "SoftwareTestRun", back_populates="runner_session"
     )
 
     def calculate_duration(self) -> None:
@@ -108,15 +107,15 @@ class RunnerConnection(Base):
         datetimes" errors.
         """
         if self.connected_at and self.disconnected_at:
-            # Ensure both datetimes are timezone-aware UTC
             connected_utc = to_utc(self.connected_at)
             disconnected_utc = to_utc(self.disconnected_at)
             delta = disconnected_utc - connected_utc
             self.duration_seconds = int(delta.total_seconds())
 
     def __repr__(self) -> str:
-        """Return string representation of the runner connection."""
+        """Return string representation of the runner session."""
         status = "active" if self.disconnected_at is None else "closed"
         return (
-            f"<RunnerConnection(id={self.id}, user_id={self.user_id}, status={status})>"
+            f"<RunnerSession(id={self.id}, runner_id={self.runner_id}, "
+            f"status={status})>"
         )

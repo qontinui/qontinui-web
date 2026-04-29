@@ -1,21 +1,13 @@
 // ============================================================================
-// Dev Dashboard Types
-// Mirrors the backend FleetStatus / AggregatedTaskRuns API shapes.
+// Operations Page Types
+//
+// Mirrors the backend `/api/v1/operations/fleet` and
+// `/api/v1/operations/fleet/tasks` endpoints. The runner shape is the
+// canonical {@link Runner} from `@qontinui/shared-types`; per-machine
+// aggregation (`MachineGroup`) is presentation logic that lives here.
 // ============================================================================
 
-export interface RegisteredRunner {
-  id: string; // "hostname:port"
-  hostname: string;
-  ip: string;
-  port: number;
-  instance_name: string | null;
-  os: string; // "windows" | "macos" | "linux"
-  os_version: string | null;
-  running_task_count: number;
-  running_task_ids: string[];
-  last_heartbeat: string; // ISO datetime
-  is_healthy: boolean;
-}
+import type { Runner } from "@qontinui/shared-types";
 
 export interface ClaudeSessionInfo {
   pid: number;
@@ -23,8 +15,12 @@ export interface ClaudeSessionInfo {
   started_at: string | null;
 }
 
+/**
+ * Fleet status payload — directly serializes from the unified Runner
+ * entity plus a hostname → Claude-session map.
+ */
 export interface FleetStatus {
-  runners: RegisteredRunner[];
+  runners: Runner[];
   claude_sessions: Record<string, ClaudeSessionInfo[]>; // hostname -> sessions
   total_runners: number;
   total_healthy: number;
@@ -35,8 +31,8 @@ export interface FleetStatus {
 export interface RunnerTaskRun {
   id: string;
   runner_id: string;
-  runner_hostname: string;
-  runner_port: number;
+  runner_hostname: string | null;
+  runner_port: number | null;
   status: string;
   prompt: string | null;
   started_at: string | null;
@@ -48,9 +44,13 @@ export interface AggregatedTaskRuns {
   total: number;
 }
 
-/** Group runners by hostname for the machine-card grid. */
+/**
+ * Group runners by hostname for the machine-card grid. Hostname-less
+ * runners are bucketed under `"unknown"` so they still surface in the
+ * grid.
+ */
 export interface MachineGroup {
   hostname: string;
-  runners: RegisteredRunner[];
+  runners: Runner[];
   claudeSessions: ClaudeSessionInfo[];
 }

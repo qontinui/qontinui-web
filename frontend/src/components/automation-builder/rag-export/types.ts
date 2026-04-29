@@ -3,7 +3,7 @@ import type {
   RAGExportStatus,
   EmbeddingProgress,
 } from "@/services/rag-export-service";
-import type { RunnerConnection } from "@/types/runner";
+import type { Runner } from "@qontinui/shared-types";
 
 export interface ExportResult {
   success: boolean;
@@ -25,5 +25,5 @@ export interface UseRagExportReturn {
   selectedRunnerId: string | null;
   setSelectedRunnerId: (id: string | null) => void;
   handleDownloadExport: () => Promise<void>;
-  handleTransferToRunner: (connections: RunnerConnection[]) => Promise<void>;
+  handleTransferToRunner: (runners: Runner[]) => Promise<void>;
 }

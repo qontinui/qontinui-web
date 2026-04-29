@@ -115,8 +115,7 @@ from app.models.render_log import (
     RenderLogTrigger,
 )
 from app.models.runner import Runner
-from app.models.runner_connection import RunnerConnection
-from app.models.runner_device import RunnerDevice
+from app.models.runner_session import RunnerSession
 from app.models.runner_token import RunnerToken
 from app.models.scheduled_workflow_run import ScheduledWorkflowRun
 from app.models.screenshot_input_association import ScreenshotInputAssociation
@@ -315,9 +314,8 @@ __all__ = [
     "SnapshotAction",
     "SnapshotPattern",
     "SnapshotMatch",
-    # Runner Connections
-    "RunnerConnection",
-    "RunnerDevice",
+    # Runner Sessions (audit log of WS connections)
+    "RunnerSession",
     # Runner Fleet Registry
     "Runner",
     "RunnerToken",

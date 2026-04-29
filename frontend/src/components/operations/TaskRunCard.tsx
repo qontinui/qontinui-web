@@ -32,7 +32,10 @@ function statusVariant(
 export function TaskRunCard({ task }: TaskRunCardProps) {
   const [expanded, setExpanded] = useState(false);
 
-  const runnerId = `${task.runner_hostname}:${task.runner_port}`;
+  const hostLabel =
+    task.runner_hostname && task.runner_port
+      ? `${task.runner_hostname}:${task.runner_port}`
+      : (task.runner_hostname ?? `runner ${task.runner_id.slice(0, 8)}`);
 
   return (
     <Collapsible open={expanded} onOpenChange={setExpanded}>
@@ -71,7 +74,7 @@ export function TaskRunCard({ task }: TaskRunCardProps) {
               <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0 ml-4">
                 <span className="flex items-center gap-1">
                   <Server className="h-3 w-3" />
-                  {task.runner_hostname}:{task.runner_port}
+                  {hostLabel}
                 </span>
                 {task.started_at && (
                   <span title={task.started_at}>
@@ -91,7 +94,7 @@ export function TaskRunCard({ task }: TaskRunCardProps) {
 
         <CollapsibleContent>
           <CardContent className="pt-0 pb-4">
-            <OutputViewer runnerId={runnerId} taskRunId={task.id} />
+            <OutputViewer runnerId={task.runner_id} taskRunId={task.id} />
           </CardContent>
         </CollapsibleContent>
       </Card>

@@ -25,7 +25,6 @@ from app.api.v1.endpoints import (
     conflicts,
     constraints,
     custom_functions,
-    dev_dashboard,
     device_bridge_ws,
     discoveries,
     element_annotations,
@@ -48,6 +47,7 @@ from app.api.v1.endpoints import (
     known_issues,
     library,
     notifications,
+    operations,
     organizations,
     phase_results,
     project_files,
@@ -66,13 +66,12 @@ from app.api.v1.endpoints import (
     runner_chat,
     runner_chat_ws,
     runner_command_ws,
-    runner_devices,
     runner_logs,
     runner_status_ws,
     runner_terminal_ws,
     runner_wake,
     runners,
-    runners_fleet,
+    runners_ws,
     scheduled_runs,
     screenshots,
     security_endpoints,
@@ -163,19 +162,14 @@ api_router.include_router(
 )
 api_router.include_router(videos.router, prefix="/videos", tags=["videos"])
 api_router.include_router(runners.router, prefix="/runners", tags=["runners"])
+# Unified runner-side WebSocket (Phase 2B) — runner-token bearer auth.
+api_router.include_router(
+    runners_ws.router, prefix="/runners", tags=["runners-websocket"]
+)
 # Wake an offline runner from the web (Phase F.2 of scheduler reliability plan)
 api_router.include_router(runner_wake.router, prefix="/runner", tags=["runner-wake"])
-# Runner fleet — token management + server-mode runner registration/heartbeat
-api_router.include_router(
-    runners_fleet.router, prefix="/runners", tags=["runners-fleet"]
-)
-# Dev dashboard — fleet registry and aggregation (unauthenticated, dev-only)
-api_router.include_router(
-    dev_dashboard.router, prefix="/dev-dashboard", tags=["dev-dashboard"]
-)
-api_router.include_router(
-    runner_devices.router, prefix="/runner-devices", tags=["runner-devices"]
-)
+# Operations — fleet aggregation + cross-machine Claude session monitoring.
+api_router.include_router(operations.router, prefix="/operations", tags=["operations"])
 # Runner process logs proxy — read persisted process logs from runner's PG DB
 api_router.include_router(
     runner_logs.router, prefix="/runner-logs", tags=["runner-logs"]
@@ -210,14 +204,14 @@ api_router.include_router(
 )
 api_router.include_router(extraction.router, tags=["extraction"])
 api_router.include_router(
-    runner_command_ws.router, prefix="/automation", tags=["runner-command-websockets"]
+    runner_command_ws.router, prefix="/runners", tags=["runner-command-websockets"]
 )
 api_router.include_router(
-    runner_chat_ws.router, prefix="/automation", tags=["runner-chat-websockets"]
+    runner_chat_ws.router, prefix="/runners", tags=["runner-chat-websockets"]
 )
 api_router.include_router(
     runner_terminal_ws.router,
-    prefix="/automation",
+    prefix="/runners",
     tags=["runner-terminal-websockets"],
 )
 api_router.include_router(runner_chat.router, prefix="/runners", tags=["runner-chat"])

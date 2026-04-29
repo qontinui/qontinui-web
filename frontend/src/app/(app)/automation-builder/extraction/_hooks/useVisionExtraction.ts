@@ -37,7 +37,7 @@ interface UseVisionExtractionArgs {
       maxCandidates: number;
     };
   };
-  getRunnerUrl: (connectionId: number | null) => string | null;
+  getRunnerUrl: (runnerId: string | null) => string | null;
 }
 
 export function useVisionExtraction({
@@ -48,7 +48,7 @@ export function useVisionExtraction({
   const annotationStore = useExtractionAnnotationStore();
 
   const startVisionExtraction = useCallback(async () => {
-    const runnerUrl = getRunnerUrl(state.selectedConnectionId);
+    const runnerUrl = getRunnerUrl(state.selectedRunnerId);
     if (!runnerUrl) {
       toast.error("Please select a connected runner");
       return;
@@ -160,7 +160,7 @@ export function useVisionExtraction({
       throw new Error(data.error || "Vision extraction failed");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setters are stable
-  }, [getRunnerUrl, state.selectedConnectionId, visionConfig, annotationStore]);
+  }, [getRunnerUrl, state.selectedRunnerId, visionConfig, annotationStore]);
 
   return {
     startVisionExtraction,

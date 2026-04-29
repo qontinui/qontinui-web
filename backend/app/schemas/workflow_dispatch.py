@@ -1,11 +1,10 @@
 """
 Pydantic schemas for the user-triggered workflow dispatch API.
 
-``POST /api/v1/workflows/{workflow_id}/dispatch`` accepts a
-:class:`WorkflowDispatchRequest`, routes the workflow to a server-mode runner
-the authenticated user owns, and returns a :class:`WorkflowDispatchResponse`
-describing where it was dispatched. The per-runner ``dispatch_secret`` is
-never included in the response — leak-risk scoping.
+``POST /api/v1/runners/{runner_id}/dispatch`` accepts a
+:class:`WorkflowDispatchRequest`, sends a typed ``dispatch`` message
+over the runner's WebSocket, and returns a
+:class:`WorkflowDispatchResponse` describing where it was dispatched.
 """
 
 from typing import Literal
@@ -17,11 +16,11 @@ from app.schemas.base import BaseSchema, IsoDatetime
 
 
 class WorkflowDispatchRequest(BaseSchema):
-    """Request body for ``POST /api/v1/workflows/{workflow_id}/dispatch``.
+    """Request body for ``POST /api/v1/runners/{runner_id}/dispatch``.
 
     ``target`` is either the literal string ``"auto"`` (pick the healthiest
-    server-mode runner owned by the current user) or the UUID of a specific
-    runner the user owns.
+    runner owned by the current user) or the UUID of a specific runner the
+    user owns.
     """
 
     target: Literal["auto"] | UUID = Field(
@@ -41,11 +40,7 @@ class WorkflowDispatchRequest(BaseSchema):
 
 
 class WorkflowDispatchResponse(BaseSchema):
-    """Response to a successful workflow dispatch.
-
-    Does NOT include ``dispatch_secret`` — the secret is internal to the
-    web ↔ runner link and must not be surfaced to the end user.
-    """
+    """Response to a successful workflow dispatch."""
 
     execution_id: str
     runner_id: UUID

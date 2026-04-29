@@ -67,9 +67,18 @@ export function CreateScheduledRunDialog({
   const createMutation = useCreateScheduledRun();
   const updateMutation = useUpdateScheduledRun();
 
-  const healthyRunners = useMemo(() => {
+  // Schedule targets are runners that the backend can dispatch to. The
+  // unified Runner shape doesn't track a server_mode flag — any runner
+  // owned by the user is a valid scheduling target. Order healthy first
+  // so the picker leads with usable rows.
+  const targetRunners = useMemo(() => {
     if (!runners) return [];
-    return runners.filter((r) => r.server_mode);
+    return [...runners].sort((a, b) => {
+      const aHealthy = a.derivedStatus === "healthy" ? 0 : 1;
+      const bHealthy = b.derivedStatus === "healthy" ? 0 : 1;
+      if (aHealthy !== bHealthy) return aHealthy - bHealthy;
+      return a.name.localeCompare(b.name);
+    });
   }, [runners]);
 
   // Reset / hydrate when dialog opens.
@@ -215,12 +224,15 @@ export function CreateScheduledRunDialog({
                     Auto (any healthy runner)
                   </span>
                 </SelectItem>
-                {healthyRunners.map((runner) => (
+                {targetRunners.map((runner) => (
                   <SelectItem key={runner.id} value={runner.id}>
                     {runner.name}{" "}
-                    <span className="text-text-muted">
-                      ({runner.hostname}:{runner.port})
-                    </span>
+                    {runner.hostname ? (
+                      <span className="text-text-muted">
+                        ({runner.hostname}
+                        {runner.port ? `:${runner.port}` : ""})
+                      </span>
+                    ) : null}
                   </SelectItem>
                 ))}
               </SelectContent>

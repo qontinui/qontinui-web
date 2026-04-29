@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.crud.project import get_project
-from app.crud.runner import get_active_connection_for_project
+from app.crud.runner_session import get_active_session_for_project
 from app.middleware.error_handler import not_found_error
 from app.models.organization import PermissionLevel
 from app.models.user import User
@@ -434,9 +434,9 @@ async def generate_description(
     await check_project_access(db, project_id, current_user, PermissionLevel.EDIT)
 
     if request.use_runner:
-        runner_connection = await get_active_connection_for_project(db, project_id)
+        runner_session = await get_active_session_for_project(db, project_id)
 
-        if not runner_connection:
+        if not runner_session:
             return {
                 "success": False,
                 "message": "No active runner connected for this project.",
@@ -445,10 +445,13 @@ async def generate_description(
 
         return {
             "success": False,
-            "message": f"Runner '{runner_connection.runner_name or 'Unnamed'}' is connected, but vision API forwarding is not yet implemented.",
+            "message": (
+                "A runner is connected, but vision API forwarding is not yet"
+                " implemented."
+            ),
             "description": None,
             "runner_connected": True,
-            "runner_name": runner_connection.runner_name,
+            "runner_id": str(runner_session.runner_id),
         }
 
     return {
