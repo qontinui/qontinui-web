@@ -46,7 +46,12 @@ RUN poetry config virtualenvs.create false
 # Install dependencies (--no-dev skips dev group; the optional ml group
 # stays disabled, so qontinui-train (which doesn't exist as a public repo)
 # is not needed).
-RUN poetry install --no-dev --no-interaction --no-ansi
+# `--only main` is the poetry 2.x replacement for 1.x's `--no-dev` AND
+# explicitly excludes the optional `ml` group. We need the latter
+# because poetry 2.x validates path-deps in optional groups even when
+# not installing them — and qontinui-train doesn't exist as a public
+# repo (it's local-dev-only).
+RUN poetry install --only main --no-interaction --no-ansi
 
 # Copy application code
 COPY . .
