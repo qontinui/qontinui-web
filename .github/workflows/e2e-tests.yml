@@ -20,6 +20,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # backend/pyproject.toml has path deps on ../../qontinui-schemas
+      # and ../../qontinui; without these clones, `pip install -e .`
+      # fails with ENOENT.
+      - name: Clone backend Python sibling deps
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          for spec in \
+            "qontinui/qontinui-schemas" \
+            "qontinui/qontinui" \
+          ; do
+            repo_name="${spec#*/}"
+            git clone --depth 1 \
+              "https://x-access-token:${GH_TOKEN}@github.com/${spec}.git" \
+              "../${repo_name}"
+          done
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
@@ -77,7 +95,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:15
+        image: pgvector/pgvector:pg15
         env:
           POSTGRES_USER: test_user
           POSTGRES_PASSWORD: test_password
@@ -97,6 +115,31 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # Both backend pyproject.toml and frontend package.json have path
+      # deps on these five sibling repos. Without this clone, `pip
+      # install -e .` and `npm ci` fail with ENOENT.
+      - name: Clone sibling dependencies
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          for spec in \
+            "qontinui/qontinui-schemas" \
+            "qontinui/qontinui" \
+            "qontinui/ui-bridge" \
+            "qontinui/qontinui-workflow-ui" \
+            "qontinui/qontinui-workflow-utils" \
+            "qontinui/qontinui-navigation" \
+          ; do
+            repo_name="${spec#*/}"
+            target="../${repo_name}"
+            echo "::group::Cloning ${spec} → ${target}"
+            git clone --depth 1 \
+              "https://x-access-token:${GH_TOKEN}@github.com/${spec}.git" \
+              "${target}"
+            echo "::endgroup::"
+          done
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -125,6 +168,18 @@ jobs:
       - name: Install Playwright browsers
         working-directory: ./frontend
         run: npx playwright install --with-deps chromium
+
+      # Some alembic migrations (unify_runner_concepts onward) reference
+      # the `runner` schema, which is created by
+      # qontinui-web/init-scripts/01-create-runner-schema.sql in dev's
+      # docker-entrypoint-initdb.d. CI service containers don't run
+      # those init scripts, so create the schema explicitly.
+      - name: Create runner schema
+        env:
+          PGPASSWORD: test_password
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          psql -h localhost -U test_user -d test_db -c "CREATE SCHEMA IF NOT EXISTS runner;"
 
       - name: Run database migrations
         working-directory: ./backend
@@ -179,7 +234,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:15
+        image: pgvector/pgvector:pg15
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
@@ -205,6 +260,30 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # Same sibling deps as the frontend-tests job — both backend and
+      # frontend installs need them.
+      - name: Clone sibling dependencies
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          for spec in \
+            "qontinui/qontinui-schemas" \
+            "qontinui/qontinui" \
+            "qontinui/ui-bridge" \
+            "qontinui/qontinui-workflow-ui" \
+            "qontinui/qontinui-workflow-utils" \
+            "qontinui/qontinui-navigation" \
+          ; do
+            repo_name="${spec#*/}"
+            target="../${repo_name}"
+            echo "::group::Cloning ${spec} → ${target}"
+            git clone --depth 1 \
+              "https://x-access-token:${GH_TOKEN}@github.com/${spec}.git" \
+              "${target}"
+            echo "::endgroup::"
+          done
 
       - name: Set up Python
         uses: actions/setup-python@v5
