@@ -20,15 +20,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # backend/pyproject.toml has a path dep on ../../qontinui-schemas;
-      # without this clone, `pip install -e .` fails with ENOENT.
-      - name: Clone qontinui-schemas
+      # backend/pyproject.toml has path deps on ../../qontinui-schemas
+      # and ../../qontinui; without these clones, `pip install -e .`
+      # fails with ENOENT.
+      - name: Clone backend Python sibling deps
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git clone --depth 1 \
-            "https://x-access-token:${GH_TOKEN}@github.com/qontinui/qontinui-schemas.git" \
-            ../qontinui-schemas
+          set -euo pipefail
+          for spec in \
+            "qontinui/qontinui-schemas" \
+            "qontinui/qontinui" \
+          ; do
+            repo_name="${spec#*/}"
+            git clone --depth 1 \
+              "https://x-access-token:${GH_TOKEN}@github.com/${spec}.git" \
+              "../${repo_name}"
+          done
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -118,6 +126,7 @@ jobs:
           set -euo pipefail
           for spec in \
             "qontinui/qontinui-schemas" \
+            "qontinui/qontinui" \
             "qontinui/ui-bridge" \
             "qontinui/qontinui-workflow-ui" \
             "qontinui/qontinui-workflow-utils" \
@@ -249,6 +258,7 @@ jobs:
           set -euo pipefail
           for spec in \
             "qontinui/qontinui-schemas" \
+            "qontinui/qontinui" \
             "qontinui/ui-bridge" \
             "qontinui/qontinui-workflow-ui" \
             "qontinui/qontinui-workflow-utils" \
