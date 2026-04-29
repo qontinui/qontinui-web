@@ -5,13 +5,15 @@ Walks alembic revision files (``backend/alembic/versions/*.py`` and
 DDL ``op.<func>(...)`` call carries an explicit ``schema=`` keyword
 argument with one of the canonical schemas:
 
-    project, coord, agent, auth, public, runner
+    project, coord, agent, auth, cloud, public, runner
 
 The ``runner`` value is grandfathered for pre-consolidation revisions
-and should be removed from this allow-list once the migration
-consolidation chain is transplanted and the ``runner`` schema is
-dropped. The plan reference is
-``D:/qontinui-root/tmp_migration_consolidation_plan.md`` Phase 6.
+and should be removed from this allow-list once Phase 4 of the
+consolidation plan deletes the runner-native MIGRATIONS array and
+drops the ``runner`` schema. The ``cloud`` schema was added per the
+cloud-control carve-out (tmp_cloud_control_carve_out.md §5).
+Plan reference: ``D:/qontinui-root/tmp_migration_consolidation_plan.md``
+Phase 6.
 
 Why this gate exists:
 Without an explicit ``schema=``, alembic ops default to whatever
@@ -53,7 +55,7 @@ GATED_OPS = {
     "batch_alter_table",
 }
 
-ALLOWED_SCHEMAS = {"project", "coord", "agent", "auth", "public", "runner"}
+ALLOWED_SCHEMAS = {"project", "coord", "agent", "auth", "cloud", "public", "runner"}
 
 
 def _is_op_call(call: ast.Call) -> str | None:
@@ -121,22 +123,19 @@ def check_file(path: Path) -> list[str]:
 
 
 SCOPED_DIRS = (
-    Path("backend/alembic/_staged_consolidation"),
-    # TODO(consolidation-transplant): after `_staged_consolidation/*.py` is
-    # transplanted into `versions/`, expand this tuple to also include
-    # `Path("backend/alembic/versions")`. Pre-consolidation revisions in
-    # `versions/` use public schema (search-path-based) and would all
-    # trigger this gate. Adding them post-transplant is the right time —
-    # by then every alembic revision uses one of the canonical schemas.
+    # Post-transplant scope: every alembic revision lives in versions/
+    # now. Pre-consolidation revisions still use unqualified table
+    # names that resolve to `public` via search_path; the gate accepts
+    # `public` (in ALLOWED_SCHEMAS) so existing files don't false-
+    # positive. New PRs that add canonical-schema ops must pass the
+    # gate. The previous `_staged_consolidation/`-only scope predated
+    # the transplant; that directory no longer exists post-transplant.
+    Path("backend/alembic/versions"),
 )
 
 
 def _is_in_scope(path: Path) -> bool:
-    """Return True if ``path`` is under one of the gated alembic dirs.
-
-    Scoped narrowly today; will expand after the consolidation
-    transplant. See TODO above.
-    """
+    """Return True if ``path`` is under one of the gated alembic dirs."""
     try:
         resolved = path.resolve()
     except OSError:
