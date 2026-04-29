@@ -22,40 +22,31 @@ jobs:
       - name: Checkout qontinui-web
         uses: actions/checkout@v4
 
-      - name: Checkout qontinui-schemas
-        uses: actions/checkout@v4
-        with:
-          repository: jspinak/qontinui-schemas
-          path: ../qontinui-schemas
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Checkout ui-bridge
-        uses: actions/checkout@v4
-        with:
-          repository: qontinui/ui-bridge
-          path: ../ui-bridge
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Checkout qontinui-workflow-ui
-        uses: actions/checkout@v4
-        with:
-          repository: qontinui/qontinui-workflow-ui
-          path: ../qontinui-workflow-ui
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Checkout qontinui-workflow-utils
-        uses: actions/checkout@v4
-        with:
-          repository: qontinui/qontinui-workflow-utils
-          path: ../qontinui-workflow-utils
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Checkout qontinui-navigation
-        uses: actions/checkout@v4
-        with:
-          repository: qontinui/qontinui-navigation
-          path: ../qontinui-navigation
-          token: ${{ secrets.GITHUB_TOKEN }}
+      # actions/checkout@v4 refuses to place repositories outside the
+      # GITHUB_WORKSPACE root (the `path: ../<repo>` constraint that
+      # historically worked started producing "Repository path … is not
+      # under …" errors). Frontend tooling expects the sibling layout, so
+      # we clone the dependent repos with plain git instead.
+      - name: Clone sibling dependencies
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          for spec in \
+            "jspinak/qontinui-schemas" \
+            "qontinui/ui-bridge" \
+            "qontinui/qontinui-workflow-ui" \
+            "qontinui/qontinui-workflow-utils" \
+            "qontinui/qontinui-navigation" \
+          ; do
+            repo_name="${spec#*/}"
+            target="../${repo_name}"
+            echo "::group::Cloning ${spec} → ${target}"
+            git clone --depth 1 \
+              "https://x-access-token:${GH_TOKEN}@github.com/${spec}.git" \
+              "${target}"
+            echo "::endgroup::"
+          done
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
