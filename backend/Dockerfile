@@ -60,7 +60,7 @@ RUN poetry config virtualenvs.create false
 # because poetry 2.x validates path-deps in optional groups even when
 # not installing them — and qontinui-train doesn't exist as a public
 # repo (it's local-dev-only).
-RUN poetry install --only main --no-interaction --no-ansi
+RUN poetry install --only main --no-root --no-interaction --no-ansi
 
 # Copy application code
 COPY . .
