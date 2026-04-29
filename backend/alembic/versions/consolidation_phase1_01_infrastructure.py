@@ -48,6 +48,17 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # Widen alembic's version_num column. The consolidation chain uses
+    # descriptive revision IDs (e.g.
+    # ``consolidation_phase2_v_33_deferred_questions_types`` — 49 chars)
+    # that exceed alembic's default VARCHAR(32). Done first so subsequent
+    # alembic UPDATEs against alembic_version don't truncate. Idempotent:
+    # widening a VARCHAR is a no-op when the column is already that wide.
+    op.execute(
+        "ALTER TABLE alembic_version "
+        "ALTER COLUMN version_num TYPE VARCHAR(128)"
+    )
+
     op.execute("CREATE SCHEMA IF NOT EXISTS project")
     op.execute("CREATE SCHEMA IF NOT EXISTS coord")
     op.execute("CREATE SCHEMA IF NOT EXISTS agent")
