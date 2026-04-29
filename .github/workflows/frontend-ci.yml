@@ -33,7 +33,7 @@ jobs:
         run: |
           set -euo pipefail
           for spec in \
-            "jspinak/qontinui-schemas" \
+            "qontinui/qontinui-schemas" \
             "qontinui/ui-bridge" \
             "qontinui/qontinui-workflow-ui" \
             "qontinui/qontinui-workflow-utils" \
