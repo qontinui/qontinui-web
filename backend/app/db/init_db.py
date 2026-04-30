@@ -29,7 +29,6 @@ from app.db.base_class import (  # noqa: F401
     SharedFile,
     SnapshotAction,
     StorageUsage,
-    Subscription,
     TaskRun,
     UIBridgeTransition,
     UsageMetric,

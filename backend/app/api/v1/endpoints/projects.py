@@ -203,10 +203,14 @@ async def create_new_project(
         organization_id=organization_id,
     )
 
-    # Send admin notification for new project creation
-    from app.services.admin_notification_service import admin_notification_service
-
+    # Send admin notification for new project creation. Cloud-control-only;
+    # OSS-only deployments don't ship the admin_notification_service module,
+    # so the local import is wrapped together with the call.
     try:
+        from app.services.admin_notification_service import (
+            admin_notification_service,
+        )
+
         await admin_notification_service.notify_project_created(
             db=db,
             project_name=str(project.name),

@@ -15,6 +15,18 @@ import { BUILD_ID } from "@/generated/build-id";
 import "./globals.css";
 import "@/styles/tutorial.css";
 
+// Cloud-control side-effect import. The package isn't part of the OSS
+// dependency graph — it's only present when a sibling install of
+// `@qontinui/cloud-control` is linked into node_modules (the composed
+// deployment shape). The string-literal-via-variable trick keeps webpack
+// from statically resolving the module and emitting a build-time error;
+// `.catch()` then silently no-ops the runtime ImportError on OSS-only
+// installs.
+const CLOUD_CONTROL_PKG = "@qontinui/cloud-control";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore  -- intentional dynamic-import; module may or may not exist
+import(/* webpackIgnore: true */ CLOUD_CONTROL_PKG).catch(() => {});
+
 export const dynamic = "force-dynamic";
 export const dynamicParams = true;
 export const revalidate = 0;

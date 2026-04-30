@@ -9,7 +9,6 @@ from app.models.action_execution import (
     ActionExecutionStatus,
     ActionExecutionType,
 )
-from app.models.admin_notification_settings import AdminNotificationSettings
 from app.models.ai_prompt import AIPromptTemplate, PromptSequence
 from app.models.analytics_event import AnalyticsEvent
 from app.models.annotation import Annotation, AnnotationSet
@@ -134,7 +133,6 @@ from app.models.state_discovery_result import DiscoverySourceType, StateDiscover
 from app.models.state_machine_config import StateMachineConfig
 from app.models.state_transition import StateTransition
 from app.models.storage_usage import StorageUsage
-from app.models.subscription import Subscription, SubscriptionStatus, SubscriptionTier
 from app.models.sync_lock import SyncLock
 from app.models.task_run import (  # New unified names; Backward compatibility aliases
     AITask,
@@ -265,18 +263,12 @@ __all__ = [
     "Notification",
     "NotificationPreferences",
     "NotificationType",
-    # Admin Notifications
-    "AdminNotificationSettings",
     # Annotations
     "Annotation",
     "AnnotationSet",
     # Web Extraction
     "ExtractionSession",
     "ExtractionAnnotation",
-    # Subscriptions
-    "Subscription",
-    "SubscriptionStatus",
-    "SubscriptionTier",
     # Usage and Storage
     "UsageMetric",
     "StorageUsage",
@@ -499,3 +491,18 @@ __all__ = [
     "WrapperComment",
     "WrapperInstallEvent",
 ]
+
+# Cloud-control extension hook — no-op when no cloud-control package has
+# registered any model imports. Cloud-control's
+# qontinui_cloud_control/__init__.py registers its model modules via
+# add_model_registrar(); this call fires the registrars (which import the
+# modules, side-effect-registering them on Base.metadata).
+#
+# In the M1 scaffolding state of the cloud-control carve-out (post-3a,
+# mid-3b), cloud-only model classes (Subscription, AdminNotificationSettings)
+# are still imported directly above. M2 of 3b moves those imports out and
+# they go away from this file. The hook call below is already in place so
+# the move is a delete-only diff in OSS.
+from app.extensions import register_cloud_models
+
+register_cloud_models()

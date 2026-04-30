@@ -9,9 +9,7 @@ from functools import lru_cache
 
 from app.repositories.action_execution import ActionExecutionRepository
 from app.repositories.admin_project import AdminProjectRepository
-from app.repositories.admin_user import AdminUserRepository
 from app.repositories.automation_session import AutomationSessionRepository
-from app.repositories.download_analytics import DownloadAnalyticsRepository
 from app.repositories.evaluation import EvaluationRepository
 from app.repositories.execution_issue import ExecutionIssueRepository
 from app.repositories.execution_run import ExecutionRunRepository
@@ -111,17 +109,6 @@ def get_execution_tree_event_repository() -> ExecutionTreeEventRepository:
 
 
 @lru_cache
-def get_admin_user_repository() -> AdminUserRepository:
-    """
-    Get the AdminUserRepository singleton instance.
-
-    Returns:
-        AdminUserRepository instance
-    """
-    return AdminUserRepository()
-
-
-@lru_cache
 def get_admin_project_repository() -> AdminProjectRepository:
     """
     Get the AdminProjectRepository singleton instance.
@@ -152,17 +139,6 @@ def get_feedback_score_repository() -> FeedbackScoreRepository:
         FeedbackScoreRepository instance
     """
     return FeedbackScoreRepository()
-
-
-@lru_cache
-def get_download_analytics_repository() -> DownloadAnalyticsRepository:
-    """
-    Get the DownloadAnalyticsRepository singleton instance.
-
-    Returns:
-        DownloadAnalyticsRepository instance
-    """
-    return DownloadAnalyticsRepository()
 
 
 @lru_cache

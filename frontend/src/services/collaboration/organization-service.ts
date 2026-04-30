@@ -1,372 +1,85 @@
 /**
- * Organization Service
+ * OSS-side stub for OrganizationService.
  *
- * Handles organization management including:
- * - Creating and managing organizations
- * - Team member management
- * - Invitations and access control
- * - Organization switching
+ * The full multi-org-aware service lives in
+ * `@qontinui/cloud-control/services/collaboration/organization-service`.
+ * OSS self-host installs run with one auto-created default-org per user
+ * (per `tmp_cloud_control_carve_out.md` §1 verdict #1), so there's no
+ * multi-org list/switch/create surface to drive. The stub satisfies the
+ * `ServiceFactory` wiring and the type contract that the OSS hooks
+ * (`useOrganization`, `useProjectSharing`, etc.) currently call into.
+ * Every method throws on use; nothing in OSS-only mode actually invokes
+ * them because the cloud-control routes that drive these calls aren't
+ * mounted.
+ *
+ * M2.5 follow-up will replace the hardcoded `OrganizationService`
+ * reference in `service-factory.ts` with the slot pattern
+ * (`getService("organizationService")`) so OSS doesn't even instantiate
+ * this stub. Until then, this exists to keep `tsc --noEmit` green.
  */
+import type { HttpClient } from "../http-client";
 
-import { HttpClient } from "../http-client";
-import { ApiConfig } from "../api-config";
-import type {
-  Organization,
-  OrganizationCreate,
-  OrganizationUpdate,
-  OrganizationStatistics,
-  TeamMember,
-  Invitation,
-  InvitationCreate,
-  MemberRole,
-} from "@/types/collaboration";
+const NOT_AVAILABLE_ERROR =
+  "OrganizationService is only available in the cloud-control deployment";
+
+function notAvailable(): never {
+  throw new Error(NOT_AVAILABLE_ERROR);
+}
 
 export class OrganizationService {
-  private httpClient: HttpClient;
-  private apiUrl: string;
-  private currentOrganization: Organization | null = null;
+  constructor(_http: HttpClient) {}
 
-  constructor(httpClient: HttpClient) {
-    this.httpClient = httpClient;
-    this.apiUrl = ApiConfig.API_BASE_URL;
+  // The OSS callers (useOrganization, useProjectSharing, the hooks under
+  // contexts/collaboration/) expect a broad surface. Every method here
+  // throws synchronously when called; arguments are accepted but ignored.
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  async getOrganizations(..._args: unknown[]): Promise<any> {
+    return notAvailable();
   }
-
-  // ============================================================================
-  // Organization Management
-  // ============================================================================
-
-  /**
-   * Create a new organization
-   */
-  async createOrganization(
-    name: string,
-    description?: string
-  ): Promise<Organization> {
-    const data: OrganizationCreate = { name, description };
-
-    const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/organizations`,
-      {
-        method: "POST",
-        body: JSON.stringify(data),
-      }
-    );
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || "Failed to create organization");
-    }
-
-    const organization = await response.json();
-    this.currentOrganization = organization;
-    this.storeCurrentOrganization(organization);
-    return organization;
+  async getOrganization(..._args: unknown[]): Promise<any> {
+    return notAvailable();
   }
-
-  /**
-   * Get all organizations the user belongs to
-   */
-  async getOrganizations(): Promise<Organization[]> {
-    const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/organizations`
-    );
-
-    // 404 means no organizations exist for this user - return empty array
-    if (response.status === 404) {
-      return [];
-    }
-
-    if (!response.ok) {
-      // Only throw for actual errors, not empty results
-      const errorText = await response.text().catch(() => "");
-      // Check if this is just an "empty" response vs a real error
-      if (
-        response.status >= 500 ||
-        (response.status >= 400 && response.status !== 404)
-      ) {
-        throw new Error(errorText || "Failed to fetch organizations");
-      }
-      return [];
-    }
-
-    const data = await response.json();
-    // Handle case where API returns null or undefined
-    return Array.isArray(data) ? data : [];
+  async listOrganizations(..._args: unknown[]): Promise<any> {
+    return notAvailable();
   }
-
-  /**
-   * Get a specific organization by ID
-   */
-  async getOrganization(id: string): Promise<Organization> {
-    const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/organizations/${id}`
-    );
-
-    if (!response.ok) {
-      throw new Error("Failed to fetch organization");
-    }
-
-    return response.json();
+  async createOrganization(..._args: unknown[]): Promise<any> {
+    return notAvailable();
   }
-
-  /**
-   * Get organization statistics
-   */
-  async getStatistics(id: string): Promise<OrganizationStatistics> {
-    const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/organizations/${id}/statistics`
-    );
-
-    if (!response.ok) {
-      throw new Error("Failed to fetch organization statistics");
-    }
-
-    return response.json();
+  async updateOrganization(..._args: unknown[]): Promise<any> {
+    return notAvailable();
   }
-
-  /**
-   * Update an organization
-   */
-  async updateOrganization(
-    id: string,
-    updates: OrganizationUpdate
-  ): Promise<Organization> {
-    const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/organizations/${id}`,
-      {
-        method: "PUT",
-        body: JSON.stringify(updates),
-      }
-    );
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || "Failed to update organization");
-    }
-
-    const organization = await response.json();
-
-    // Update current organization if it's the one being updated
-    if (this.currentOrganization?.id === id) {
-      this.currentOrganization = organization;
-      this.storeCurrentOrganization(organization);
-    }
-
-    return organization;
+  async deleteOrganization(..._args: unknown[]): Promise<any> {
+    return notAvailable();
   }
-
-  /**
-   * Delete an organization
-   */
-  async deleteOrganization(id: string): Promise<void> {
-    const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/organizations/${id}`,
-      {
-        method: "DELETE",
-      }
-    );
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || "Failed to delete organization");
-    }
-
-    // Clear current organization if it's the one being deleted
-    if (this.currentOrganization?.id === id) {
-      this.currentOrganization = null;
-      this.clearCurrentOrganization();
-    }
+  async getMembers(..._args: unknown[]): Promise<any> {
+    return notAvailable();
   }
-
-  // ============================================================================
-  // Member Management
-  // ============================================================================
-
-  /**
-   * Invite a member to an organization
-   */
-  async inviteMember(
-    orgId: string,
-    email: string,
-    role: MemberRole
-  ): Promise<Invitation> {
-    const data: InvitationCreate = { email, role };
-
-    const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/organizations/${orgId}/invitations`,
-      {
-        method: "POST",
-        body: JSON.stringify(data),
-      }
-    );
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || "Failed to send invitation");
-    }
-
-    return response.json();
+  async listMembers(..._args: unknown[]): Promise<any> {
+    return notAvailable();
   }
-
-  /**
-   * Get all members of an organization
-   */
-  async getMembers(orgId: string): Promise<TeamMember[]> {
-    const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/organizations/${orgId}/members`
-    );
-
-    if (!response.ok) {
-      throw new Error("Failed to fetch members");
-    }
-
-    return response.json();
+  async addMember(..._args: unknown[]): Promise<any> {
+    return notAvailable();
   }
-
-  /**
-   * Update a member's role
-   */
-  async updateMemberRole(
-    orgId: string,
-    userId: string,
-    role: MemberRole
-  ): Promise<TeamMember> {
-    const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/organizations/${orgId}/members/${userId}`,
-      {
-        method: "PUT",
-        body: JSON.stringify({ role }),
-      }
-    );
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || "Failed to update member role");
-    }
-
-    return response.json();
+  async inviteMember(..._args: unknown[]): Promise<any> {
+    return notAvailable();
   }
-
-  /**
-   * Remove a member from an organization
-   */
-  async removeMember(orgId: string, userId: string): Promise<void> {
-    const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/organizations/${orgId}/members/${userId}`,
-      {
-        method: "DELETE",
-      }
-    );
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || "Failed to remove member");
-    }
+  async removeMember(..._args: unknown[]): Promise<any> {
+    return notAvailable();
   }
-
-  /**
-   * Get pending invitations for an organization
-   */
-  async getInvitations(orgId: string): Promise<Invitation[]> {
-    const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/organizations/${orgId}/invitations`
-    );
-
-    if (!response.ok) {
-      throw new Error("Failed to fetch invitations");
-    }
-
-    return response.json();
+  async updateMemberRole(..._args: unknown[]): Promise<any> {
+    return notAvailable();
   }
-
-  /**
-   * Revoke an invitation
-   */
-  async revokeInvitation(orgId: string, invitationId: string): Promise<void> {
-    const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/organizations/${orgId}/invitations/${invitationId}`,
-      {
-        method: "DELETE",
-      }
-    );
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || "Failed to revoke invitation");
-    }
+  async transferOwnership(..._args: unknown[]): Promise<any> {
+    return notAvailable();
   }
-
-  /**
-   * Accept an invitation using a token
-   */
-  async acceptInvitation(token: string): Promise<void> {
-    const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/invitations/${token}/accept`,
-      {
-        method: "POST",
-      }
-    );
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || "Failed to accept invitation");
-    }
+  async listInvitations(..._args: unknown[]): Promise<any> {
+    return notAvailable();
   }
-
-  // ============================================================================
-  // Current Organization Management
-  // ============================================================================
-
-  /**
-   * Get the current organization
-   */
-  getCurrentOrganization(): Organization | null {
-    if (!this.currentOrganization && typeof window !== "undefined") {
-      const stored = localStorage.getItem("current_organization");
-      if (stored) {
-        try {
-          this.currentOrganization = JSON.parse(stored);
-        } catch (error) {
-          console.error("Failed to parse stored organization:", error);
-          localStorage.removeItem("current_organization");
-        }
-      }
-    }
-    return this.currentOrganization;
+  async acceptInvitation(..._args: unknown[]): Promise<any> {
+    return notAvailable();
   }
-
-  /**
-   * Switch to a different organization
-   */
-  async switchOrganization(orgId: string): Promise<void> {
-    const organization = await this.getOrganization(orgId);
-    this.currentOrganization = organization;
-    this.storeCurrentOrganization(organization);
+  async cancelInvitation(..._args: unknown[]): Promise<any> {
+    return notAvailable();
   }
-
-  /**
-   * Clear the current organization
-   */
-  clearCurrentOrganization(): void {
-    this.currentOrganization = null;
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("current_organization");
-    }
-  }
-
-  // ============================================================================
-  // Private Helper Methods
-  // ============================================================================
-
-  /**
-   * Store current organization in localStorage
-   */
-  private storeCurrentOrganization(organization: Organization): void {
-    if (typeof window !== "undefined") {
-      localStorage.setItem(
-        "current_organization",
-        JSON.stringify(organization)
-      );
-    }
-  }
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 }

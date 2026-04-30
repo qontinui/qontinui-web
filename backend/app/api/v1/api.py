@@ -1,20 +1,34 @@
-"""API v1 router configuration."""
+"""API v1 router configuration.
+
+This file mounts every router that ships with the OSS qontinui-web. The
+qontinui.cloud deployment additionally attaches its proprietary cloud-only
+routers (billing, cloud-admin, organizations multi-tenant, fleet-health,
+beta-signup, cross-tenant audit-logs) by registering them with the
+extension hook ``register_cloud_extensions(api_router)`` called at the
+bottom of this module.
+
+In the M1 scaffolding state of the cloud-control carve-out (post-3a,
+mid-3b), some cloud-only routers are still imported directly here as well
+— that is the carve-target. M2 of 3b moves those imports into
+qontinui-cloud-control and they go away from this file. The hook call at
+the bottom is already in place so the move is a delete-only diff in OSS.
+
+See: D:/qontinui-root/qontinui-cloud-control/  (private repo)
+     D:/qontinui-root/tmp_cloud_control_carve_out.md  §3 (register-hook
+     surface) and §2 (file-by-file split).
+"""
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import admin as admin_pkg
 from app.api.v1.endpoints import (
-    admin_ws,
     ai_prompts,
     analytics,
     annotations,
     annotations_ws,
-    audit_logs,
     automation,
     automation_ws,
     background_removal,
     batch_import,
-    billing,
     capture,
     chat_sessions,
     clipboard,
@@ -48,7 +62,6 @@ from app.api.v1.endpoints import (
     library,
     notifications,
     operations,
-    organizations,
     phase_results,
     project_files,
     project_images,
@@ -99,6 +112,7 @@ from app.api.v1.endpoints import (
 )
 from app.api.v1.endpoints import auth as auth_pkg
 from app.api.v1.endpoints import testing as testing_pkg
+from app.extensions import register_cloud_extensions
 
 api_router = APIRouter()
 
@@ -128,12 +142,6 @@ api_router.include_router(snapshots.router, prefix="/snapshots", tags=["snapshot
 api_router.include_router(background_removal.router, tags=["background-removal"])
 api_router.include_router(analytics.router, tags=["analytics"])
 api_router.include_router(settings.router, prefix="/settings", tags=["settings"])
-api_router.include_router(billing.router, prefix="/billing", tags=["billing"])
-api_router.include_router(admin_pkg.router, prefix="/admin", tags=["admin"])
-api_router.include_router(admin_ws.router, prefix="/admin", tags=["admin-websockets"])
-api_router.include_router(
-    audit_logs.router, prefix="/admin/audit-logs", tags=["audit-logs"]
-)
 api_router.include_router(automation.router, prefix="/automation", tags=["automation"])
 api_router.include_router(
     automation_ws.router, prefix="/automation", tags=["automation-websockets"]
@@ -146,9 +154,6 @@ api_router.include_router(
 )
 api_router.include_router(annotations_ws.router, tags=["annotations-websockets"])
 api_router.include_router(feedback.router, tags=["feedback"])
-api_router.include_router(
-    organizations.router, prefix="/organizations", tags=["organizations"]
-)
 api_router.include_router(
     collaboration.router, prefix="/projects", tags=["collaboration"]
 )
@@ -331,3 +336,9 @@ api_router.include_router(files_sharing.router, prefix="/files", tags=["files-sh
 api_router.include_router(
     device_bridge_ws.router, prefix="/device-bridge", tags=["device-bridge"]
 )
+
+# Cloud-control extension hook — no-op when no cloud-control package has
+# registered any route extensions. Cloud-control's
+# qontinui_cloud_control/__init__.py registers its routers via
+# add_route_registrar(); this call fires those registrars onto api_router.
+register_cloud_extensions(api_router)

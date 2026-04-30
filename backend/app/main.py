@@ -9,6 +9,16 @@ from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+# Cloud-control side-effect import — must run before api_router is built so
+# cloud-control's add_route_registrar / add_model_registrar / etc. are
+# registered before api.py and models/__init__.py fire their hooks.
+# OSS-only deployments have no cloud-control package installed; the
+# ImportError is silently swallowed and the OSS app boots normally.
+try:
+    import qontinui_cloud_control  # noqa: F401  -- side-effect: registers extension hooks
+except ImportError:
+    pass
+
 from app.api.v1.api import api_router
 from app.config.logging_config import configure_logging, get_logger
 from app.core.config import settings
