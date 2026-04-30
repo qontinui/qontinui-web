@@ -27,7 +27,6 @@ function notAvailable(): never {
 }
 
 export class OrganizationService {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   constructor(_http: HttpClient) {}
 
   // The OSS callers (useOrganization, useProjectSharing, the hooks under

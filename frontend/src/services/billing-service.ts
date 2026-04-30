@@ -15,7 +15,6 @@
 import type { HttpClient } from "./http-client";
 
 export class BillingService {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   constructor(_http: HttpClient) {}
 
   private notAvailable(): never {
