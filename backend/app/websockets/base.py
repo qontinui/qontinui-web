@@ -403,7 +403,7 @@ class BaseWebSocketHandler(ABC):
                 }
             )
         except Exception:
-            pass
+            logger.debug("websocket_error_send_failed", message=message)
 
     def validate_message(
         self,
