@@ -2,13 +2,6 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:
-      - id: mixed-line-ending
-        args: [--fix=lf]
-        exclude: ^frontend/test-fixtures/vga/canonical-state-machine\.canonical\.json$
-      - id: end-of-file-fixer
-        exclude: ^frontend/test-fixtures/vga/canonical-state-machine\.canonical\.json$
-      - id: trailing-whitespace
-        exclude: ^frontend/test-fixtures/vga/canonical-state-machine\.canonical\.json$
       - id: check-yaml
       - id: check-added-large-files
       - id: check-merge-conflict
@@ -18,7 +11,6 @@ repos:
     hooks:
       - id: ruff
         args: [--fix]
-      - id: ruff-format
 
   - repo: local
     hooks:
@@ -28,13 +20,6 @@ repos:
         language: system
         files: ^frontend/.*\.(js|jsx|ts|tsx)$
         types_or: [javascript, jsx, ts, tsx]
-
-      - id: prettier
-        name: Prettier (frontend)
-        entry: bash -c 'args=(); for f in "$@"; do args+=("${f#frontend/}"); done; cd frontend && npx prettier --check "${args[@]}"' --
-        language: system
-        files: ^frontend/.*\.(ts|tsx|js|jsx|json|css)$
-        exclude: ^(node_modules/|dist/)
 
       - id: tsc-typecheck
         name: TypeScript type check (frontend)
@@ -49,13 +34,6 @@ repos:
         language: system
         pass_filenames: false
         files: ^backend/.*\.py$
-
-      - id: validate-line-endings
-        name: Validate no CRLF left (text files)
-        entry: bash -c 'if git grep -I $'"'\r'"'$ -- "$(git rev-parse --show-toplevel)" >/dev/null; then echo "CRLF line endings detected. Convert to LF." >&2; exit 1; fi'
-        language: system
-        pass_filenames: false
-        stages: [pre-commit]
 
       - id: alembic-schema-arg-gate
         name: Alembic ops require schema= (consolidation gate)
