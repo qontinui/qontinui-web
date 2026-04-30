@@ -499,3 +499,18 @@ __all__ = [
     "WrapperComment",
     "WrapperInstallEvent",
 ]
+
+# Cloud-control extension hook — no-op when no cloud-control package has
+# registered any model imports. Cloud-control's
+# qontinui_cloud_control/__init__.py registers its model modules via
+# add_model_registrar(); this call fires the registrars (which import the
+# modules, side-effect-registering them on Base.metadata).
+#
+# In the M1 scaffolding state of the cloud-control carve-out (post-3a,
+# mid-3b), cloud-only model classes (Subscription, AdminNotificationSettings)
+# are still imported directly above. M2 of 3b moves those imports out and
+# they go away from this file. The hook call below is already in place so
+# the move is a delete-only diff in OSS.
+from app.extensions import register_cloud_models
+
+register_cloud_models()
