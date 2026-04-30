@@ -15,6 +15,11 @@ import { BUILD_ID } from "@/generated/build-id";
 import "./globals.css";
 import "@/styles/tutorial.css";
 
+// Cloud-control side-effect import. Dynamic; webpack treeshakes it out
+// when @qontinui/cloud-control isn't linked. The .catch() swallows the
+// module-not-found that fires on OSS-only deployments.
+import("@qontinui/cloud-control").catch(() => {});
+
 export const dynamic = "force-dynamic";
 export const dynamicParams = true;
 export const revalidate = 0;

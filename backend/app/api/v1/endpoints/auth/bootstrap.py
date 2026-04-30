@@ -4,10 +4,11 @@ from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db
-from app.repositories.admin_user import admin_user_repository
+from app.models.user import User
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -20,7 +21,10 @@ async def bootstrap_first_admin(
 ) -> Any:
     """One-time endpoint to create the first admin. Remove after use!"""
     # Check if any admin exists
-    existing_admin = await admin_user_repository.check_admin_exists(db)
+    existing_admin_result = await db.execute(
+        select(User).where(User.is_superuser == True)  # type: ignore[arg-type] # noqa: E712
+    )
+    existing_admin = existing_admin_result.scalar_one_or_none()
     if existing_admin:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -28,7 +32,8 @@ async def bootstrap_first_admin(
         )
 
     # Find user by email
-    user = await admin_user_repository.get_user_by_email(db, email)
+    user_result = await db.execute(select(User).where(User.email == email))  # type: ignore[arg-type]
+    user = user_result.scalar_one_or_none()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -36,7 +41,9 @@ async def bootstrap_first_admin(
         )
 
     # Make them admin
-    await admin_user_repository.make_user_admin(db, user)
+    user.is_superuser = True
+    await db.commit()
+    await db.refresh(user)
 
     logger.info("bootstrap_first_admin_success", user_email=user.email)
 

@@ -6,13 +6,13 @@ Provides authentication endpoints including:
 - Device management
 - Device verification
 - Password management
-- Beta signup
+- Bootstrap-first-admin (one-shot endpoint to promote initial superuser)
 """
 
 # Import sub-routers
 from fastapi import APIRouter
 
-from app.api.v1.endpoints.auth.beta_signup import router as beta_signup_router
+from app.api.v1.endpoints.auth.bootstrap import router as bootstrap_router
 from app.api.v1.endpoints.auth.devices import router as devices_router
 from app.api.v1.endpoints.auth.jwt import router as jwt_router
 from app.api.v1.endpoints.auth.password import router as password_router
@@ -57,4 +57,4 @@ router.include_router(jwt_router, tags=["auth"])
 router.include_router(devices_router, tags=["auth"])
 router.include_router(verification_router, tags=["auth"])
 router.include_router(password_router, tags=["auth"])
-router.include_router(beta_signup_router, tags=["auth"])
+router.include_router(bootstrap_router, tags=["auth-bootstrap"])

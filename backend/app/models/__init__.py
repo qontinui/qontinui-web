@@ -9,7 +9,6 @@ from app.models.action_execution import (
     ActionExecutionStatus,
     ActionExecutionType,
 )
-from app.models.admin_notification_settings import AdminNotificationSettings
 from app.models.ai_prompt import AIPromptTemplate, PromptSequence
 from app.models.analytics_event import AnalyticsEvent
 from app.models.annotation import Annotation, AnnotationSet
@@ -134,7 +133,6 @@ from app.models.state_discovery_result import DiscoverySourceType, StateDiscover
 from app.models.state_machine_config import StateMachineConfig
 from app.models.state_transition import StateTransition
 from app.models.storage_usage import StorageUsage
-from app.models.subscription import Subscription, SubscriptionStatus, SubscriptionTier
 from app.models.sync_lock import SyncLock
 from app.models.task_run import (  # New unified names; Backward compatibility aliases
     AITask,
@@ -265,18 +263,12 @@ __all__ = [
     "Notification",
     "NotificationPreferences",
     "NotificationType",
-    # Admin Notifications
-    "AdminNotificationSettings",
     # Annotations
     "Annotation",
     "AnnotationSet",
     # Web Extraction
     "ExtractionSession",
     "ExtractionAnnotation",
-    # Subscriptions
-    "Subscription",
-    "SubscriptionStatus",
-    "SubscriptionTier",
     # Usage and Storage
     "UsageMetric",
     "StorageUsage",

@@ -20,19 +20,15 @@ See: D:/qontinui-root/qontinui-cloud-control/  (private repo)
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import admin as admin_pkg
 from app.api.v1.endpoints import (
-    admin_ws,
     ai_prompts,
     analytics,
     annotations,
     annotations_ws,
-    audit_logs,
     automation,
     automation_ws,
     background_removal,
     batch_import,
-    billing,
     capture,
     chat_sessions,
     clipboard,
@@ -66,7 +62,6 @@ from app.api.v1.endpoints import (
     library,
     notifications,
     operations,
-    organizations,
     phase_results,
     project_files,
     project_images,
@@ -147,12 +142,6 @@ api_router.include_router(snapshots.router, prefix="/snapshots", tags=["snapshot
 api_router.include_router(background_removal.router, tags=["background-removal"])
 api_router.include_router(analytics.router, tags=["analytics"])
 api_router.include_router(settings.router, prefix="/settings", tags=["settings"])
-api_router.include_router(billing.router, prefix="/billing", tags=["billing"])
-api_router.include_router(admin_pkg.router, prefix="/admin", tags=["admin"])
-api_router.include_router(admin_ws.router, prefix="/admin", tags=["admin-websockets"])
-api_router.include_router(
-    audit_logs.router, prefix="/admin/audit-logs", tags=["audit-logs"]
-)
 api_router.include_router(automation.router, prefix="/automation", tags=["automation"])
 api_router.include_router(
     automation_ws.router, prefix="/automation", tags=["automation-websockets"]
@@ -165,9 +154,6 @@ api_router.include_router(
 )
 api_router.include_router(annotations_ws.router, tags=["annotations-websockets"])
 api_router.include_router(feedback.router, tags=["feedback"])
-api_router.include_router(
-    organizations.router, prefix="/organizations", tags=["organizations"]
-)
 api_router.include_router(
     collaboration.router, prefix="/projects", tags=["collaboration"]
 )
