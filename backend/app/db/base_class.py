@@ -19,7 +19,6 @@ from app.models.session_activity import SessionActivity  # noqa
 from app.models.shared_file import SharedFile  # noqa
 from app.models.snapshot import SnapshotAction  # noqa
 from app.models.storage_usage import StorageUsage  # noqa
-from app.models.subscription import Subscription  # noqa
 from app.models.task_run import TaskRun  # noqa
 
 # Import all models here for Alembic to detect them

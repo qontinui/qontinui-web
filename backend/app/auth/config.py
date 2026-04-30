@@ -191,10 +191,14 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         else:
             logger.error("verification_email_enqueue_failed", email=user.email)
 
-        # Send admin notification for new user signup
-        from app.services.admin_notification_service import admin_notification_service
-
+        # Send admin notification for new user signup. Cloud-control-only;
+        # OSS-only deployments don't ship the admin_notification_service
+        # module, so the local import is wrapped together with the call.
         try:
+            from app.services.admin_notification_service import (
+                admin_notification_service,
+            )
+
             await admin_notification_service.notify_user_signup(
                 db=user_db.session,
                 user_email=user.email,
