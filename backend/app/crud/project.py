@@ -1,14 +1,12 @@
 from uuid import UUID
 
 import structlog
-from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project import Project
 from app.schemas.project import ProjectCreate, ProjectUpdate
 from app.services.project_directory import ProjectDirectoryManager
-from app.services.stripe_service import StripeService
 
 logger = structlog.get_logger(__name__)
 
@@ -31,26 +29,8 @@ async def create_project(
     db: AsyncSession,
     project: ProjectCreate,
     owner_id: UUID,
-    subscription_tier: str,
     organization_id: UUID | None = None,
 ) -> Project:
-    # Check if user has reached config limit
-    count_result = await db.execute(
-        select(func.count(Project.id)).filter(Project.owner_id == owner_id)
-    )
-    config_count = count_result.scalar()
-
-    # Get tier limits
-    limits = StripeService.get_tier_limits(subscription_tier)
-    max_configs = limits["max_configs"]
-
-    # Check limit (-1 = unlimited)
-    if max_configs != -1 and config_count >= max_configs:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Configuration limit reached. Your {subscription_tier} tier allows {max_configs} configurations. Upgrade to create more.",
-        )
-
     db_project = Project(
         name=project.name,
         description=project.description,

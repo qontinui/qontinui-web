@@ -18,7 +18,7 @@ from app.middleware.error_handler import validation_error
 from app.models.project_assets import ProjectImage
 from app.schemas.project_assets import ProjectImageResponse
 from app.services.object_storage import object_storage
-from app.services.storage_service import StorageQuotaExceeded, StorageService
+from app.services.storage_service import StorageService
 
 logger = structlog.get_logger(__name__)
 
@@ -158,35 +158,6 @@ class ProjectImageService:
         # Reset file pointer for later use
         await file.seek(0)
         return file_size
-
-    async def check_storage_quota(
-        self,
-        db: AsyncSession,
-        user_id: UUID,
-        subscription_tier: str,
-        file_size: int,
-    ) -> None:
-        """
-        Check if user has sufficient storage quota.
-
-        Args:
-            db: Database session
-            user_id: User UUID
-            subscription_tier: User's subscription tier
-            file_size: Size of file to upload
-
-        Raises:
-            StorageQuotaExceeded: If quota would be exceeded
-        """
-        try:
-            await StorageService.check_quota(db, user_id, subscription_tier, file_size)
-        except StorageQuotaExceeded:
-            logger.warning(
-                "storage_quota_exceeded",
-                user_id=str(user_id),
-                file_size=file_size,
-            )
-            raise
 
     def generate_thumbnail(self, image: Image.Image) -> tuple[bytes, int, int]:
         """

@@ -27,10 +27,9 @@ from app.middleware.error_handler import (
 from app.models.organization import PermissionLevel
 from app.models.storage_usage import StorageUsage
 from app.models.user import User
-from app.services.limit_checker import LimitChecker
 from app.services.object_storage import object_storage
 from app.services.permission_service import permission_service
-from app.services.storage_service import StorageQuotaExceeded, StorageService
+from app.services.storage_service import StorageService
 from app.worker.arq_pool import enqueue_task
 
 logger = structlog.get_logger(__name__)
@@ -226,42 +225,17 @@ async def upload_image(
             ErrorCode.INSUFFICIENT_PERMISSIONS,
         )
 
-    # Step 2: Check if user is in read-only mode
-    is_read_only, reason = await LimitChecker.is_read_only(
-        db, current_user.id, current_user.subscription_tier
-    )
-    if is_read_only:
-        raise forbidden_error(
-            f"Account is in read-only mode. {reason}. Upgrade your plan to continue uploading.",
-            ErrorCode.ACCOUNT_READ_ONLY,
-        )
-
-    # Step 3: Validate MIME type
+    # Step 2: Validate MIME type
     content_type = validate_image_mime_type(file.content_type)
 
-    # Step 4: Validate file size
+    # Step 3: Validate file size
     file_size = await validate_file_size(file)
 
     # Read file contents for validation and upload
     file_contents = await file.read()
 
-    # Step 5: Validate magic bytes
+    # Step 4: Validate magic bytes
     validate_image_magic_bytes(file_contents, content_type)
-
-    # Step 6: Check storage quota (estimate total size with thumbnails)
-    # Original + thumbnails (estimate ~30% of original for all thumbnails)
-    estimated_total_size = int(file_size * 1.3)
-    try:
-        await StorageService.check_quota(
-            db, current_user.id, current_user.subscription_tier, estimated_total_size
-        )
-    except StorageQuotaExceeded as e:
-        logger.warning(
-            "storage_quota_exceeded",
-            user_id=str(current_user.id),
-            file_size=estimated_total_size,
-        )
-        raise e
 
     # Step 7: Generate unique image ID and determine extension
     image_id = str(uuid.uuid4())

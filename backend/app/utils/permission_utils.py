@@ -13,7 +13,6 @@ from app.core.error_codes import ErrorCode
 from app.crud.project import get_project
 from app.middleware.error_handler import forbidden_error, not_found_error
 from app.models.organization import PermissionLevel
-from app.services.limit_checker import LimitChecker
 from app.services.permission_service import permission_service
 
 
@@ -51,32 +50,4 @@ async def check_project_permission(
         raise forbidden_error(
             f"{required_level.value} permission required for this operation",
             ErrorCode.INSUFFICIENT_PERMISSIONS,
-        )
-
-
-async def check_read_only_mode(
-    db: AsyncSession,
-    user_id: UUID,
-    subscription_tier: str,
-) -> None:
-    """
-    Check if user is in read-only mode and raise error if so.
-
-    Users are in read-only mode when they exceed their plan limits.
-
-    Args:
-        db: Async database session
-        user_id: UUID of the user
-        subscription_tier: User's subscription tier
-
-    Raises:
-        HTTPException: 403 if account is in read-only mode
-    """
-    is_read_only, reason = await LimitChecker.is_read_only(
-        db, user_id, subscription_tier
-    )
-    if is_read_only:
-        raise forbidden_error(
-            f"Account is in read-only mode. {reason}. Upgrade your plan to continue.",
-            ErrorCode.ACCOUNT_READ_ONLY,
         )

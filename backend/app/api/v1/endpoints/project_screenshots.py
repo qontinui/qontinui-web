@@ -26,7 +26,7 @@ from app.schemas.project_assets import (
     ProjectScreenshotUpdate,
 )
 from app.services.project_screenshot_service import project_screenshot_service
-from app.utils.permission_utils import check_project_permission, check_read_only_mode
+from app.utils.permission_utils import check_project_permission
 
 logger = structlog.get_logger(__name__)
 
@@ -62,15 +62,10 @@ async def upload_screenshot(
     await check_project_permission(
         db, UUID(project_id), current_user.id, PermissionLevel.EDIT
     )
-    await check_read_only_mode(db, current_user.id, current_user.subscription_tier)
 
     content_type = project_screenshot_service.validate_mime_type(file.content_type)
     file_contents, file_size = await project_screenshot_service.validate_file_size(file)
     width, height = project_screenshot_service.get_image_dimensions(file_contents)
-
-    await project_screenshot_service.check_storage_quota(
-        db, current_user.id, current_user.subscription_tier, file_size
-    )
 
     screenshot_id = str(uuid.uuid4())
     extension = project_screenshot_service.get_extension_from_filename(
