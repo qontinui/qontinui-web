@@ -65,11 +65,27 @@ def upgrade() -> None:
     op.execute("CREATE SCHEMA IF NOT EXISTS auth")
     op.execute("CREATE SCHEMA IF NOT EXISTS cloud")
 
-    op.execute("GRANT ALL ON SCHEMA project TO qontinui_user")
-    op.execute("GRANT ALL ON SCHEMA coord TO qontinui_user")
-    op.execute("GRANT ALL ON SCHEMA agent TO qontinui_user")
-    op.execute("GRANT ALL ON SCHEMA auth TO qontinui_user")
-    op.execute("GRANT ALL ON SCHEMA cloud TO qontinui_user")
+    # GRANTs are gated on the role existing — production deployments
+    # provision qontinui_user via docker init / Terraform / etc.;
+    # ephemeral CI test DBs may not have it. Skip silently rather than
+    # require the migration to know about every deployment shape, and
+    # don't create the role here (that would produce a degenerate
+    # "exists but can't log in" role).
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'qontinui_user') THEN
+                EXECUTE 'GRANT ALL ON SCHEMA project TO qontinui_user';
+                EXECUTE 'GRANT ALL ON SCHEMA coord   TO qontinui_user';
+                EXECUTE 'GRANT ALL ON SCHEMA agent   TO qontinui_user';
+                EXECUTE 'GRANT ALL ON SCHEMA auth    TO qontinui_user';
+                EXECUTE 'GRANT ALL ON SCHEMA cloud   TO qontinui_user';
+            END IF;
+        END
+        $$;
+        """
+    )
 
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
