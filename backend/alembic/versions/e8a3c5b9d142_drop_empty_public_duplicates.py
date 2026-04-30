@@ -130,9 +130,21 @@ BEGIN
     -- dropped, but the FK migration d7e2f1a8b3c4 already moved all FKs
     -- to runner.users, and we're dropping the public child tables here).
     -- The d7e2f1a8b3c4 audit confirmed 0 FKs target public.users.
+    --
+    -- Post-consolidation amendment: only drop public.users if runner.users
+    -- exists. On a fresh canonical DB (consolidation transplant scenario)
+    -- there is no runner-native MIGRATIONS array running, so runner.users
+    -- never gets created, and the d7e2f1a8b3c4 FK-repoint was a no-op
+    -- (left FKs targeting public.users). Dropping public.users in that
+    -- world would CASCADE-drop every FK consumer. The consolidation
+    -- chain's final cleanup revision (zz_final_runner_cleanup) handles
+    -- the public.users -> auth.users move on fresh canonical DBs.
     IF EXISTS (
         SELECT 1 FROM information_schema.tables
         WHERE table_schema = 'public' AND table_name = 'users'
+    ) AND EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'runner' AND table_name = 'users'
     ) THEN
         IF (SELECT COUNT(*) FROM public.users) = 0 THEN
             DROP TABLE public.users CASCADE;
@@ -140,6 +152,9 @@ BEGIN
         ELSE
             RAISE NOTICE 'Skipped public.users - not empty';
         END IF;
+    ELSE
+        RAISE NOTICE 'Skipped public.users - runner.users does not exist '
+                     '(fresh canonical DB; cleanup revision will move public.users to auth)';
     END IF;
 END $$;
 """

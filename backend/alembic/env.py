@@ -39,27 +39,32 @@ from app.db.base_class import *  # Import all models
 target_metadata = Base.metadata
 
 
-def include_object(object, name, type_, reflected, compare_to):
-    """Filter what alembic compares during autogenerate.
-
-    The DB is shared with qontinui-runner, which manages its own tables
-    in the ``runner`` schema via native (non-alembic) migrations. With
-    ``include_schemas=True`` set below, alembic would otherwise see
-    those runner-managed tables and propose dropping them. This filter
-    limits cross-schema reflection to runner.* tables that web alembic
-    actually owns (i.e., tables a SQLAlchemy model declares with
-    ``__table_args__ = {"schema": "runner"}``). Currently that's just
-    ``runner.users`` (see ``app/models/user.py``).
-    """
-    if type_ == "table" and reflected and getattr(object, "schema", None) == "runner":
-        return f"runner.{name}" in target_metadata.tables
-    return True
-
-
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
-# my_important_option = config.get_main_option("my_important_option")
-# ... etc.
+# NOTE on cross-schema autogenerate (post-consolidation):
+#
+# Earlier this file carried an ``include_object`` filter that
+# block-listed ``runner.*`` tables not declared as SQLAlchemy models.
+# Its purpose was to prevent autogenerate from proposing
+# ``op.drop_table`` on tables the runner-native migration system owned
+# (qontinui-runner managed its own ``runner`` schema independently of
+# alembic).
+#
+# That filter is deleted here as part of the migration consolidation
+# (see ``D:/qontinui-root/tmp_migration_consolidation_plan.md``).
+# Post-consolidation, alembic owns every table across all four canonical
+# schemas (``project``, ``coord``, ``agent``, ``auth``), so autogenerate
+# should see all of them — which is what removing the filter
+# accomplishes (``include_schemas=True`` below makes alembic reflect
+# all non-system schemas; with no filter, every table is a candidate).
+#
+# Transitional hazard: if someone runs ``alembic revision
+# --autogenerate`` on a DB that still has the old runner-native
+# ``runner.*`` tables (i.e., before the consolidation chain in
+# ``backend/alembic/_staged_consolidation/`` is transplanted into
+# ``versions/`` and applied), autogenerate will propose
+# ``op.drop_table(..., schema="runner")`` for every runner-managed
+# table — destructive if accepted. Until the consolidation lands,
+# review autogenerate output carefully and discard any drop_table
+# proposals targeting the ``runner`` schema.
 
 
 def run_migrations_offline() -> None:
@@ -81,7 +86,6 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         include_schemas=True,
-        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -106,7 +110,6 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             include_schemas=True,
-            include_object=include_object,
         )
 
         with context.begin_transaction():

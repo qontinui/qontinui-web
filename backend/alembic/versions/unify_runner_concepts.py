@@ -215,75 +215,34 @@ END $$;
 
 
 def upgrade() -> None:
-    # 1. Add liveness / OS columns to runner.runners.
-    op.add_column(
-        "runners",
-        sa.Column("ws_session_id", sa.BigInteger(), nullable=True),
-        schema="runner",
-    )
-    op.add_column(
-        "runners",
-        sa.Column("ws_connected_at", sa.DateTime(timezone=True), nullable=True),
-        schema="runner",
-    )
-    op.add_column(
-        "runners",
-        sa.Column("os", sa.Text(), nullable=True),
-        schema="runner",
-    )
-    op.add_column(
-        "runners",
-        sa.Column("os_version", sa.Text(), nullable=True),
-        schema="runner",
-    )
-
-    # 2. Backfill ws_session_id from any open runner_connections rows.
-    op.execute(_BACKFILL_FROM_CONNECTIONS)
-
-    # 3. Rename runner_connections -> runner_sessions, then reshape.
-    op.rename_table(
-        "runner_connections",
-        "runner_sessions",
-        schema="runner",
-    )
-    # Add nullable runner_id; backfill; drop orphans; then promote NOT NULL.
-    op.add_column(
-        "runner_sessions",
-        sa.Column("runner_id", postgresql.UUID(as_uuid=True), nullable=True),
-        schema="runner",
-    )
-    op.execute(_BACKFILL_RUNNER_ID)
-    op.alter_column(
-        "runner_sessions",
-        "runner_id",
-        existing_type=postgresql.UUID(as_uuid=True),
-        nullable=False,
-        schema="runner",
-    )
-    op.create_foreign_key(
-        "runner_sessions_runner_id_fkey",
-        "runner_sessions",
-        "runners",
-        ["runner_id"],
-        ["id"],
-        source_schema="runner",
-        referent_schema="runner",
-        ondelete="CASCADE",
-    )
-    op.create_index(
-        "ix_runner_sessions_runner_id",
-        "runner_sessions",
-        ["runner_id"],
-        schema="runner",
-    )
-
-    # Drop the now-redundant columns now carried on runners.
-    op.drop_column("runner_sessions", "runner_name", schema="runner")
-    op.drop_column("runner_sessions", "runner_port", schema="runner")
-    op.drop_column("runner_sessions", "user_agent", schema="runner")
-
-    # 4. Drop runner_devices entirely.
-    op.execute(_DROP_RUNNER_DEVICES)
+    # NO-OP POST-CONSOLIDATION TRANSPLANT.
+    #
+    # The original implementation added columns to ``runner.runners``,
+    # renamed ``runner.runner_connections`` -> ``runner.runner_sessions``,
+    # backfilled ``runner_id``, and dropped redundant columns. It assumed
+    # the runner-native MIGRATIONS array (qontinui-runner mod.rs) had
+    # already created ``runner.runners`` and ``runner.runner_connections``.
+    #
+    # Post-consolidation (see ``tmp_migration_consolidation_plan.md``):
+    # 1. The runner-native MIGRATIONS array is being deleted (Phase 4),
+    #    so ``runner.runners`` / ``runner.runner_connections`` are never
+    #    created by anyone except this revision.
+    # 2. The end-state tables (auth.runners, auth.runner_sessions) are
+    #    created fresh by the consolidation chain in
+    #    ``versions/consolidation_phase1_*`` and
+    #    ``versions/consolidation_phase2_zz_final_runner_cleanup`` — with
+    #    the columns this revision tried to add baked in from the start.
+    #
+    # On existing DBs that already applied this revision under the
+    # runner-native regime, alembic_version remembers it as applied and
+    # never re-runs upgrade(). Replacing the body with a pass is therefore
+    # harmless to those DBs.
+    #
+    # On a fresh canonical DB (no runner-native MIGRATIONS), upgrade()
+    # would have failed with "schema runner does not exist" — which is
+    # the bug this no-op fixes. The desired end-state still arrives via
+    # the consolidation chain.
+    pass
 
 
 def downgrade() -> None:

@@ -57,6 +57,15 @@ repos:
         pass_filenames: false
         stages: [pre-commit]
 
+      - id: alembic-schema-arg-gate
+        name: Alembic ops require schema= (consolidation gate)
+        entry: python .pre-commit-hooks/check_alembic_schema_args.py
+        language: system
+        files: ^backend/alembic/(_staged_consolidation|versions)/.*\.py$
+        # Scope is currently narrowed to _staged_consolidation/ inside
+        # the script itself. Expand to versions/ after the consolidation
+        # transplant lands (see TODO in the script).
+
   - repo: local
     hooks:
       - id: block-claude-attribution
