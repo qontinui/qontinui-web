@@ -191,7 +191,6 @@ async def upload_screenshot(
         user_id=current_user.id,
         sequence_number=sequence_number,
         file=file,
-        subscription_tier=current_user.subscription_tier,
         extra_metadata=metadata,
     )
     return capture_response_builder.build_screenshot_response(

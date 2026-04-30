@@ -31,7 +31,7 @@ from app.schemas.project_assets import (
     ProjectImageUpdate,
 )
 from app.services.project_image_service import project_image_service
-from app.utils.permission_utils import check_project_permission, check_read_only_mode
+from app.utils.permission_utils import check_project_permission
 
 logger = structlog.get_logger(__name__)
 
@@ -67,16 +67,11 @@ async def upload_image(
     await check_project_permission(
         db, UUID(project_id), current_user.id, PermissionLevel.EDIT
     )
-    await check_read_only_mode(db, current_user.id, current_user.subscription_tier)
 
     content_type = project_image_service.validate_mime_type(file.content_type)
     file_size = await project_image_service.validate_file_size(file)
     file_contents = await file.read()
     project_image_service.validate_magic_bytes(file_contents, content_type)
-
-    await project_image_service.check_storage_quota(
-        db, current_user.id, current_user.subscription_tier, file_size
-    )
 
     image_id = uuid.uuid4()
     extension = project_image_service.get_extension_from_filename(
@@ -169,7 +164,6 @@ async def extract_image_from_screenshot(
     await check_project_permission(
         db, UUID(project_id), current_user.id, PermissionLevel.EDIT
     )
-    await check_read_only_mode(db, current_user.id, current_user.subscription_tier)
 
     screenshot = await project_screenshot_repository.get_by_project(
         db, extract_data.screenshot_id, UUID(project_id)
@@ -223,10 +217,6 @@ async def extract_image_from_screenshot(
     except Exception:
         thumbnail_s3_key = None
     cropped_img.close()
-
-    await project_image_service.check_storage_quota(
-        db, current_user.id, current_user.subscription_tier, cropped_size
-    )
 
     # Upload cropped image
     image_id = uuid.uuid4()

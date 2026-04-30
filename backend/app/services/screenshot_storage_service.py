@@ -34,7 +34,6 @@ class ScreenshotStorageService:
         user_id: UUID,
         sequence_number: int,
         file: UploadFile,
-        subscription_tier: str,
         extra_metadata: dict | None = None,
     ) -> CaptureScreenshot:
         """
@@ -46,14 +45,13 @@ class ScreenshotStorageService:
             user_id: ID of the user
             sequence_number: Order within session
             file: Uploaded image file
-            subscription_tier: User's subscription tier (for quota check)
             extra_metadata: Optional metadata
 
         Returns:
             The created CaptureScreenshot
 
         Raises:
-            HTTPException: If upload fails or quota exceeded
+            HTTPException: If upload fails
         """
         # Verify session exists and user has access
         session = await SessionRepository.get_by_id(db, session_id, user_id)
@@ -61,11 +59,6 @@ class ScreenshotStorageService:
         # Read file
         file_content = await file.read()
         file_size = len(file_content)
-
-        # Check storage quota
-        await StorageService.check_quota(
-            db, user_id, subscription_tier, additional_bytes=file_size
-        )
 
         # Open image to get dimensions
         try:

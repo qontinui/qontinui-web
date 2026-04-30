@@ -309,13 +309,18 @@ async def get_user_storage(
         - percentage_used: Percentage of quota used
         - files_count: Total number of files stored
     """
-    storage_info = await StorageService.check_quota(
+    storage_info = await StorageService.get_user_storage(
         db=db,
         user_id=current_user.id,
-        subscription_tier=current_user.subscription_tier,
-        additional_bytes=0,
     )
-    return storage_info
+    # Self-host: unlimited. quota_bytes=-1 is the "unlimited" sentinel; the
+    # frontend's storage-usage-card renders that as "X used" (no progress bar).
+    return {
+        "used_bytes": storage_info["used_bytes"],
+        "quota_bytes": -1,
+        "percentage_used": 0.0,
+        "files_count": storage_info["files_count"],
+    }
 
 
 # Profile management endpoints
@@ -407,9 +412,7 @@ async def upload_avatar(
         )
 
     # Save new avatar with storage tracking
-    avatar_url = await avatar_service.save_avatar(
-        file, current_user.id, db=db, subscription_tier=current_user.subscription_tier
-    )
+    avatar_url = await avatar_service.save_avatar(file, current_user.id, db=db)
 
     # Update user avatar URL
     user = await update_user_avatar(db, current_user, avatar_url)
@@ -530,12 +533,9 @@ async def toggle_automation_streaming(
 
         current_user.automation_sessions_reset_at = next_month
 
-        # Set limits based on subscription tier
-        if current_user.subscription_tier == "free":
-            current_user.automation_sessions_limit = 5
-        else:
-            # Paid users get unlimited sessions
-            current_user.automation_sessions_limit = None
+        # Self-host: unlimited automation sessions. Cloud-control re-introduces
+        # per-tier caps via its own middleware.
+        current_user.automation_sessions_limit = None
 
     db.add(current_user)
     await db.commit()

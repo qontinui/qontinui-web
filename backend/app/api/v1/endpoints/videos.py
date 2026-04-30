@@ -17,9 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.models.automation_video import AutomationVideo
 from app.models.user import User
-from app.services.limit_checker import LimitChecker
 from app.services.object_storage import object_storage
-from app.services.storage_service import StorageQuotaExceeded, StorageService
+from app.services.storage_service import StorageService
 
 logger = structlog.get_logger(__name__)
 
@@ -91,31 +90,6 @@ async def validate_video_file_size(file: UploadFile) -> int:
     return file_size
 
 
-async def check_video_storage_quota(
-    db: AsyncSession, user: User, file_size: int
-) -> None:
-    """
-    Check if user has sufficient storage quota for video upload.
-
-    Args:
-        db: Database session
-        user: Current user
-        file_size: Size of video file in bytes
-
-    Raises:
-        HTTPException: If storage quota would be exceeded
-    """
-    try:
-        await StorageService.check_quota(db, user.id, user.subscription_tier, file_size)
-    except StorageQuotaExceeded as e:
-        logger.warning(
-            "video_storage_quota_exceeded",
-            user_id=str(user.id),
-            file_size=file_size,
-        )
-        raise e
-
-
 @router.post("/sessions/{session_id}/upload-video")
 async def upload_session_video(
     *,
@@ -176,26 +150,13 @@ async def upload_session_video(
         content_type=file.content_type,
     )
 
-    # Step 1: Check if user is in read-only mode
-    is_read_only, reason = await LimitChecker.is_read_only(
-        db, current_user.id, current_user.subscription_tier
-    )
-    if is_read_only:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Account is in read-only mode. {reason}. Upgrade your plan to continue uploading.",
-        )
-
-    # Step 2: Validate MIME type
+    # Validate MIME type
     content_type = validate_video_mime_type(file.content_type)
 
-    # Step 3: Validate file size
+    # Validate file size
     file_size = await validate_video_file_size(file)
 
-    # Step 4: Check storage quota
-    await check_video_storage_quota(db, current_user, file_size)
-
-    # Step 5: Check if video already exists for this session
+    # Check if video already exists for this session
     result = await db.execute(
         select(AutomationVideo).filter(AutomationVideo.session_id == session_id)
     )
@@ -207,7 +168,7 @@ async def upload_session_video(
             detail=f"Video already exists for session {session_id}",
         )
 
-    # Step 6: Generate S3 key and upload
+    # Generate S3 key and upload
     # Extract file extension from original filename
     extension = ""
     if file.filename and "." in file.filename:

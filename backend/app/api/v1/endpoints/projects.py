@@ -18,7 +18,6 @@ from app.middleware.error_handler import forbidden_error, not_found_error
 from app.models.organization import PermissionLevel
 from app.models.user import User
 from app.schemas.project import Project, ProjectCreate, ProjectUpdate
-from app.services.limit_checker import LimitChecker
 from app.services.object_storage import object_storage
 from app.services.permission_service import permission_service
 from app.services.storage_service import StorageService
@@ -194,7 +193,6 @@ async def create_new_project(
         db,
         project_in,
         owner_id=current_user.id,
-        subscription_tier=current_user.subscription_tier,
         organization_id=organization_id,
     )
 
@@ -350,17 +348,6 @@ async def update_existing_project(
     )
 
     try:
-        # Check if user is in read-only mode
-        logger.debug("update_project_checking_read_only")
-        is_read_only, reason = await LimitChecker.is_read_only(
-            db, current_user.id, current_user.subscription_tier
-        )
-        if is_read_only:
-            raise forbidden_error(
-                f"Account is in read-only mode. {reason}. Upgrade your plan to continue editing.",
-                ErrorCode.ACCOUNT_READ_ONLY,
-            )
-
         logger.debug("update_project_getting_project")
         project = await get_project(db, project_id=project_id)
         if not project:
@@ -496,14 +483,6 @@ async def delete_existing_project(
 
     Requires admin permission on the project (typically only owner has this).
     """
-    # Check if user is in read-only mode
-    is_read_only, reason = await LimitChecker.is_read_only(
-        db, current_user.id, current_user.subscription_tier
-    )
-    if is_read_only:
-        # Allow deletion even in read-only mode (helps users get back under limits)
-        pass
-
     project = await get_project(db, project_id=project_id)
     if not project:
         raise not_found_error("Project", "project")

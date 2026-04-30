@@ -101,7 +101,6 @@ class AvatarService:
         file: UploadFile,
         user_id: UUID,
         db: AsyncSession | None = None,
-        subscription_tier: str = "free",
     ) -> str:
         """
         Save and process avatar image
@@ -110,7 +109,6 @@ class AvatarService:
             file: Uploaded file from FastAPI
             user_id: ID of the user uploading the avatar
             db: Database session for storage tracking (optional)
-            subscription_tier: User's subscription tier for quota checking
 
         Returns:
             URL path to the saved avatar
@@ -122,23 +120,8 @@ class AvatarService:
         self._validate_file_extension(file.filename or "")
         self._validate_content_type(file.content_type or "")
 
-        # Read file content
-        content = await file.read()
-        await file.seek(0)
-
         # Validate size
         self._validate_file_size(file.file)
-
-        # Check storage quota if db session provided
-        if db:
-            # Get approximate final file size (after JPEG compression, usually smaller)
-            estimated_size = len(content) // 2  # Rough estimate
-            await StorageService.check_quota(
-                db=db,
-                user_id=user_id,
-                subscription_tier=subscription_tier,
-                additional_bytes=estimated_size,
-            )
 
         # Process image
         try:

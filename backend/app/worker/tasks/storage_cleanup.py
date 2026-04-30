@@ -24,13 +24,14 @@ from app.worker.tasks.cleanup_utils import (
 async def cleanup_old_screenshots(ctx: dict[str, Any]) -> CleanupResult:
     """Clean up old automation screenshots based on retention policy.
 
-    Deletes screenshots older than configured retention period (default 30 days
-    for free-tier users, configurable via environment variable). Performs S3
+    Deletes screenshots older than the configured retention period. Performs S3
     deletion first, then database cleanup.
 
-    Retention policy:
-    - Free tier: 30 days (configurable via SCREENSHOT_RETENTION_DAYS_FREE)
-    - Paid tiers: Unlimited retention (or configurable via SCREENSHOT_RETENTION_DAYS_PAID)
+    Self-host: retention applies uniformly to all users; default 30 days,
+    configurable via SCREENSHOT_RETENTION_DAYS environment variable. Operators
+    who want no auto-deletion simply don't schedule this task.
+
+    Cloud-control overrides this task with its own per-tier retention policy.
 
     Process:
     1. Query screenshots older than retention period
@@ -48,44 +49,28 @@ async def cleanup_old_screenshots(ctx: dict[str, Any]) -> CleanupResult:
 
     with TaskTimer() as timer:
         try:
-            from sqlalchemy import and_, select
-            from sqlalchemy.orm import selectinload
+            from sqlalchemy import select
 
             from app.db.session import AsyncSessionLocal
             from app.models.automation_screenshot import AutomationScreenshot
-            from app.models.automation_session import AutomationSession
-            from app.models.user import User
             from app.services.object_storage import object_storage
 
-            # Get retention period from settings (default 30 days for free tier)
-            retention_days_free = (
+            # Get retention period from settings (default 30 days)
+            retention_days = (
                 settings.SCREENSHOT_RETENTION_DAYS_FREE
                 if hasattr(settings, "SCREENSHOT_RETENTION_DAYS_FREE")
                 else 30
             )
-            cutoff_date = utc_now() - timedelta(days=retention_days_free)
+            cutoff_date = utc_now() - timedelta(days=retention_days)
 
             deleted_count = 0
             s3_delete_errors = 0
             db_delete_errors = 0
 
             async with AsyncSessionLocal() as db:
-                # Query old screenshots for free-tier users
-                # We need to join through AutomationSession to get to User
-                query = (
-                    select(AutomationScreenshot)
-                    .join(
-                        AutomationSession,
-                        AutomationScreenshot.session_id == AutomationSession.id,
-                    )
-                    .join(User, AutomationSession.user_id == User.id)
-                    .where(
-                        and_(
-                            AutomationScreenshot.created_at < cutoff_date,
-                            User.subscription_tier == "free",
-                        )
-                    )
-                    .options(selectinload(AutomationScreenshot.session))
+                # Query screenshots older than retention period (all users)
+                query = select(AutomationScreenshot).where(
+                    AutomationScreenshot.created_at < cutoff_date
                 )
 
                 result = await db.execute(query)
@@ -95,7 +80,7 @@ async def cleanup_old_screenshots(ctx: dict[str, Any]) -> CleanupResult:
                     logger.info(
                         "no_old_screenshots_to_delete",
                         cutoff_date=cutoff_date.isoformat(),
-                        retention_days=retention_days_free,
+                        retention_days=retention_days,
                         execution_time_seconds=round(timer.elapsed, 2),
                     )
                     return create_success_result(
@@ -104,14 +89,14 @@ async def cleanup_old_screenshots(ctx: dict[str, Any]) -> CleanupResult:
                         deleted_count=0,
                         s3_errors=0,
                         db_errors=0,
-                        retention_days=retention_days_free,
+                        retention_days=retention_days,
                     )
 
                 logger.info(
                     "found_old_screenshots",
                     count=len(old_screenshots),
                     cutoff_date=cutoff_date.isoformat(),
-                    retention_days=retention_days_free,
+                    retention_days=retention_days,
                 )
 
                 # Delete screenshots one by one
@@ -166,7 +151,7 @@ async def cleanup_old_screenshots(ctx: dict[str, Any]) -> CleanupResult:
                 deleted_count=deleted_count,
                 s3_errors=s3_delete_errors,
                 db_errors=db_delete_errors,
-                retention_days=retention_days_free,
+                retention_days=retention_days,
                 execution_time_seconds=round(timer.elapsed, 2),
             )
 
@@ -177,7 +162,7 @@ async def cleanup_old_screenshots(ctx: dict[str, Any]) -> CleanupResult:
                     deleted_count=deleted_count,
                     s3_errors=s3_delete_errors,
                     db_errors=db_delete_errors,
-                    retention_days=retention_days_free,
+                    retention_days=retention_days,
                     cutoff_date=cutoff_date.isoformat(),
                 )
             else:
@@ -187,7 +172,7 @@ async def cleanup_old_screenshots(ctx: dict[str, Any]) -> CleanupResult:
                     deleted_count=deleted_count,
                     s3_errors=s3_delete_errors,
                     db_errors=db_delete_errors,
-                    retention_days=retention_days_free,
+                    retention_days=retention_days,
                     cutoff_date=cutoff_date.isoformat(),
                 )
 

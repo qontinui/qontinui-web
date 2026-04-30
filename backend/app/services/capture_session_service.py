@@ -86,7 +86,6 @@ class CaptureSessionService:
         user_id: UUID,
         sequence_number: int,
         file: UploadFile,
-        subscription_tier: str,
         extra_metadata: dict | None = None,
     ) -> CaptureScreenshot:
         """Upload a screenshot to a capture session."""
@@ -96,7 +95,6 @@ class CaptureSessionService:
             user_id,
             sequence_number,
             file,
-            subscription_tier,
             extra_metadata,
         )
 
