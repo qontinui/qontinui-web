@@ -1,36 +1,13 @@
-services:
-  # PostgreSQL Database with pgvector extension
-  postgres:
-    image: pgvector/pgvector:pg16
-    container_name: qontinui-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: qontinui_user
-      POSTGRES_PASSWORD: qontinui_dev_password
-      POSTGRES_DB: qontinui_db
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./init-scripts:/docker-entrypoint-initdb.d
-    # Harden against orphan-backend accumulation when dev runners crash or
-    # are force-killed. With the defaults (tcp_keepalives_idle=7200,
-    # idle_in_transaction_session_timeout=0), a dead TCP client leaves its
-    # server backend alive for ~2 hours; an abandoned transaction holds
-    # row locks forever. A single dev session can easily produce 10+
-    # orphans that survive until a container restart.
-    command: >
-      postgres
-      -c idle_in_transaction_session_timeout=300000
-      -c tcp_keepalives_idle=60
-      -c tcp_keepalives_interval=10
-      -c tcp_keepalives_count=6
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U qontinui_user -d qontinui_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+# NOTE (2026-05-01): Postgres service removed. Canonical PG runs from
+# qontinui-stack at port 5433; this repo's containers no longer ship
+# their own. Run `docker compose -f D:/qontinui-root/qontinui-stack/docker-compose.yml up -d`
+# to start canonical PG/Redis/MinIO. See topology plan §3 for context.
+#
+# Redis and MinIO are kept here because the FastAPI backend currently uses
+# them on the legacy ports (6379, 9000) for sessions and blob storage.
+# Migration to canonical Redis/MinIO is a follow-up if needed.
 
+services:
   # Redis Cache & Queue
   redis:
     image: redis:7-alpine
@@ -80,8 +57,6 @@ services:
       "
 
 volumes:
-  postgres_data:
-    driver: local
   redis_data:
     driver: local
   minio_data:

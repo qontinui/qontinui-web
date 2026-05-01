@@ -1,21 +1,12 @@
-services:
-  postgres:
-    image: postgres:15-alpine
-    container_name: qontinui-postgres-dev
-    environment:
-      POSTGRES_USER: qontinui_user
-      POSTGRES_PASSWORD: qontinui_dev_password
-      POSTGRES_DB: qontinui_db
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U qontinui_user -d qontinui_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+# NOTE (2026-05-01): Postgres service removed. Canonical PG runs from
+# qontinui-stack at port 5433. Run from D:/qontinui-root/qontinui-stack:
+#     docker compose up -d
+# Topology plan §3 covers the single-canonical-PG design.
+#
+# Redis kept for the legacy backend session store. Canonical Redis (6380)
+# is separate; migration is a follow-up if needed.
 
+services:
   redis:
     image: redis:7-alpine
     container_name: qontinui-redis-dev
@@ -26,6 +17,3 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
-volumes:
-  postgres_data:

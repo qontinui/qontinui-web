@@ -45,7 +45,7 @@ const INFRA_SERVICES: ServiceEntry[] = [
   {
     icon: <Database className="w-4 h-4" />,
     label: "PostgreSQL",
-    port: "localhost:5432",
+    port: "localhost:5433",
   },
   {
     icon: <Database className="w-4 h-4" />,

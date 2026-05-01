@@ -19,7 +19,7 @@
 import { Pool, type PoolClient, type PoolConfig } from "pg";
 
 const DEFAULT_DSN =
-  "postgresql://qontinui_user:qontinui_dev_password@localhost:5432/qontinui_db";
+  "postgresql://qontinui_user:qontinui_dev_password@localhost:5433/qontinui_db";
 
 let pool: Pool | null = null;
 

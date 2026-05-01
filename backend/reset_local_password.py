@@ -31,9 +31,9 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # Hash the standard password
 hashed_password = pwd_context.hash(STANDARD_DEV_PASSWORD)
 
-# Local database connection
+# Local database connection (canonical PG :5433 from qontinui-stack — legacy :5432 retired 2026-05-01)
 DATABASE_URL = (
-    "postgresql://qontinui_user:qontinui_dev_password@localhost:5432/qontinui_db"
+    "postgresql://qontinui_user:qontinui_dev_password@localhost:5433/qontinui_db"
 )
 engine = create_engine(DATABASE_URL, connect_args={"connect_timeout": 10})
 
