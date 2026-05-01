@@ -188,6 +188,14 @@ from app.api.v1.endpoints.wrappers import router as wrappers_router  # noqa: E40
 
 app.include_router(wrappers_router, prefix="/api/wrappers", tags=["wrappers"])
 
+# Mount Spec API at /spec (NOT /api/v1/spec — matches the runner's flat
+# surface so consumers see a consistent path across both apps). See
+# `app/api/spec_api.py` for the full surface and `QONTINUI_SPECS_ROOT`
+# env var.
+from app.api.spec_api import router as spec_api_router  # noqa: E402
+
+app.include_router(spec_api_router, prefix="/spec", tags=["spec-api"])
+
 # Mount static files for avatars
 uploads_dir = Path("uploads")
 uploads_dir.mkdir(exist_ok=True)
