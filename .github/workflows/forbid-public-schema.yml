@@ -1,0 +1,69 @@
+name: forbid public.* schema regressions
+
+# Phase 7 deliverable of the migration consolidation
+# (D:/qontinui-root/tmp_consolidation_phase7_public_drift.md §5.6).
+#
+# Fails if any source file (re-)introduces a `public.<table>` schema
+# reference. Post-Phase-7 the `public` schema contains only
+# `alembic_version` (alembic's own bookkeeping); domain tables live in
+# project / coord / agent / auth / cloud.
+#
+# Exclusions (legitimate public.* references that must not trigger):
+# - All Markdown documentation (historical context, plan archaeology).
+# - alembic/versions/ — Phase 7 ALTER TABLE strings + pre-consolidation
+#   chain history both legitimately reference public.<X> in op.execute()
+#   strings. Already-applied; not subject to regression gating.
+# - alembic/_staged_phase7/ — staging copies of Phase 7 revisions.
+# - public.alembic_version — alembic's own bookkeeping; the legitimate
+#   single survivor of Phase 7. Filtered after the grep pass.
+# - This workflow file (self-reference).
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+jobs:
+  forbid-public-schema:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan for forbidden public.* references
+        run: |
+          set -e
+          # Pattern matches conventional SQL/Python references to public.<X>:
+          # - FROM/JOIN/INTO/UPDATE/DELETE FROM public.<table>
+          # - ForeignKey("public.<table>...
+          # - schema="public"  /  schema='public'
+          # - secondary="public.<table>...
+          PATTERN='FROM public\.|JOIN public\.|INTO public\.|UPDATE public\.|DELETE FROM public\.|ForeignKey\([^)]*public\.|secondary\s*=\s*["'\'']public\.|schema\s*=\s*["'\'']public["'\'']'
+
+          EXCLUDES=(
+            ':!*.md'
+            ':!backend/alembic/versions/*'
+            ':!backend/alembic/_staged_phase7/*'
+            ':!backend/alembic/_staged_consolidation/*'
+            # Pre-Phase-7 helper script that introspects information_schema.
+            # Not consumer code; never targets a real public.<X> domain table.
+            ':!backend/migrate_to_uuid.py'
+            # Self-reference: this workflow file contains the pattern
+            # strings as part of its definition.
+            ':!.github/workflows/forbid-public-schema.yml'
+          )
+
+          # Run grep, then filter out lines that reference public.alembic_version
+          # (the one legitimate post-Phase-7 public.* survivor).
+          matches=$(git grep -nE "$PATTERN" -- "${EXCLUDES[@]}" || true)
+          forbidden=$(echo "$matches" | grep -v 'public\.alembic_version' | grep -v '^$' || true)
+
+          if [ -n "$forbidden" ]; then
+            echo "::error::public.* schema reference detected in source. Post-Phase-7, the public schema contains only alembic_version; domain tables live in project / coord / agent / auth / cloud."
+            echo "$forbidden"
+            echo "::error::If this is a legitimate historical reference (docs, alembic chain history), add the file pattern to the exclude list in .github/workflows/forbid-public-schema.yml."
+            echo "::error::If the reference is to public.alembic_version, the filter should already exclude it — surface to the gate maintainer if it is failing on that pattern."
+            exit 1
+          fi
+          echo "No forbidden public.* references found."
