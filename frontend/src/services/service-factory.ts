@@ -8,9 +8,9 @@ import { ProjectService } from "./project-service";
 import { FileUploadService } from "./file-upload-service";
 import { ProfileService } from "./profile-service";
 import { AnalyticsService } from "./analytics-service";
-import { BillingService } from "./billing-service";
+import type { BillingService } from "./billing-service";
 import { RunnerService } from "./runner-service";
-import { OrganizationService } from "./collaboration/organization-service";
+import type { OrganizationService } from "./collaboration/organization-service";
 import { ProjectCollaborationService } from "./collaboration/project-collaboration-service";
 import { LockService } from "./collaboration/lock-service";
 import { CommentService } from "./collaboration/comment-service";
@@ -28,6 +28,32 @@ import { TaskRunsService } from "./task-runs-service";
 import { TemplateCaptureService } from "./template-capture-service";
 import { StateMachineConfigService } from "./state-machine-config-service";
 import { SkillSharingService } from "./skill-sharing-service";
+import { getService } from "@/lib/extension-slots";
+
+/**
+ * Build a Proxy that forwards method access to whatever cloud-control has
+ * registered into `getService(slotName)`. Resolved on each property access,
+ * so cloud-control's `registerCloudExtensions` call can land after this
+ * Proxy was constructed (no module-load-order coupling). When no service
+ * is registered (OSS-only build), method calls throw with a clear message;
+ * routes that drive these calls aren't mounted in OSS-only mode anyway.
+ */
+function cloudOnlySlot<T extends object>(slotName: string): T {
+  return new Proxy({} as T, {
+    get(_target, prop, receiver) {
+      const svc = getService<T>(slotName);
+      if (svc === undefined) {
+        return () => {
+          throw new Error(
+            `${slotName} is only available in the cloud-control deployment ` +
+              `(slot '${slotName}' has no registered service)`,
+          );
+        };
+      }
+      return Reflect.get(svc as object, prop, receiver);
+    },
+  });
+}
 
 /**
  * ServiceFactory - Single Responsibility: Create and wire up services
@@ -87,11 +113,17 @@ export class ServiceFactory {
     this.fileUploadService = new FileUploadService(this.tokenManager);
     this.profileService = new ProfileService(this.httpClient);
     this.analyticsService = new AnalyticsService(this.httpClient);
-    this.billingService = new BillingService(this.httpClient);
+    // billingService / organizationService are slot-backed Proxies — OSS
+    // does not instantiate stubs. Cloud-control's `registerCloudExtensions`
+    // attaches the real implementations; the Proxy resolves on every method
+    // access, so registration order is irrelevant.
+    this.billingService = cloudOnlySlot<BillingService>("billingService");
     this.runnerService = new RunnerService(this.httpClient);
 
     // Initialize collaboration services
-    this.organizationService = new OrganizationService(this.httpClient);
+    this.organizationService = cloudOnlySlot<OrganizationService>(
+      "organizationService"
+    );
     this.projectCollaborationService = new ProjectCollaborationService(
       this.httpClient
     );

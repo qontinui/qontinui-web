@@ -4,7 +4,7 @@
  * Central export for all collaboration-related services
  */
 
-export { OrganizationService } from "./organization-service";
+export type { OrganizationService } from "./organization-service";
 export { ProjectCollaborationService } from "./project-collaboration-service";
 export { LockService } from "./lock-service";
 export { CommentService } from "./comment-service";
