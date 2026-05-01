@@ -26,7 +26,7 @@ class TestNotificationPreferences(Base):
     """
 
     __tablename__ = "test_notification_preferences"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     # Primary key
     id: Mapped[UUID] = mapped_column(

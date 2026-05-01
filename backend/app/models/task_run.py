@@ -66,7 +66,7 @@ class TaskRun(Base):
     """
 
     __tablename__ = "task_runs"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     # Primary key - use runner's UUID to allow direct mapping
     id: Mapped[UUID] = mapped_column(
@@ -325,7 +325,7 @@ class TaskRunSession(Base):
     """Individual Claude session within a Task Run."""
 
     __tablename__ = "task_run_sessions"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -385,7 +385,7 @@ class TaskRunFinding(Base):
     """Finding detected during a task run."""
 
     __tablename__ = "task_run_findings"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -571,7 +571,7 @@ class DeferredQuestion(Base):
     """
 
     __tablename__ = "deferred_questions"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -689,7 +689,7 @@ class TaskRunAutomation(Base):
     """
 
     __tablename__ = "task_run_automations"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),

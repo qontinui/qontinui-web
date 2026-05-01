@@ -30,7 +30,7 @@ class UnifiedWorkflow(Base):
     """
 
     __tablename__ = "unified_workflows"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),

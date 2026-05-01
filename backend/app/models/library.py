@@ -21,7 +21,7 @@ class Check(Base):
     """Quality check definition."""
 
     __tablename__ = "library_checks"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -86,7 +86,7 @@ class CheckGroup(Base):
     """Group of checks that run together."""
 
     __tablename__ = "library_check_groups"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -149,7 +149,7 @@ class ShellCommand(Base):
     """Saved shell command for reuse."""
 
     __tablename__ = "library_shell_commands"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -207,7 +207,7 @@ class SavedApiRequest(Base):
     """Saved HTTP API request for reuse."""
 
     __tablename__ = "library_saved_api_requests"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -268,7 +268,7 @@ class Context(Base):
     """AI context for prompt injection."""
 
     __tablename__ = "library_contexts"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -330,7 +330,7 @@ class Macro(Base):
     """Automation macro with ordered steps."""
 
     __tablename__ = "library_macros"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -388,7 +388,7 @@ class PromptSnippet(Base):
     """Code snippet for automation."""
 
     __tablename__ = "library_prompt_snippets"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),

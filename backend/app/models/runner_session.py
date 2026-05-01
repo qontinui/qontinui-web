@@ -31,7 +31,7 @@ class RunnerSession(Base):
     """
 
     __tablename__ = "runner_sessions"
-    __table_args__ = {'schema': "auth"}
+    __table_args__ = {"schema": "auth"}
 
     # Primary key (auto-incrementing integer for simplicity)
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)

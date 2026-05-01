@@ -33,7 +33,7 @@ class VisualBaseline(Base):
     """
 
     __tablename__ = "visual_baselines"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     # Primary key
     id: Mapped[UUID] = mapped_column(

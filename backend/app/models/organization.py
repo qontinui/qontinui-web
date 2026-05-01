@@ -124,9 +124,7 @@ class TeamMember(Base):
     )
     role = Column(String, default=TeamRole.MEMBER.value, nullable=False)
     permissions = Column(JSON, default={}, nullable=False)
-    invited_by = Column(
-        UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=True
-    )
+    invited_by = Column(UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=True)
     joined_at = Column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
@@ -297,9 +295,9 @@ class ProjectAccessControl(Base):
     # Constraints and Indexes
     __table_args__ = (
         CheckConstraint(
-        "(user_id IS NOT NULL AND organization_id IS NULL) OR "
-        "(user_id IS NULL AND organization_id IS NOT NULL)",
-        name="chk_user_or_org",
+            "(user_id IS NOT NULL AND organization_id IS NULL) OR "
+            "(user_id IS NULL AND organization_id IS NOT NULL)",
+            name="chk_user_or_org",
         ),
         Index("idx_project_access_project", "project_id"),
         Index("idx_project_access_user", "user_id"),

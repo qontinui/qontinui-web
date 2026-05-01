@@ -50,7 +50,7 @@ class ExecutionRun(Base):
     """
 
     __tablename__ = "execution_runs"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     # Primary key
     id: Mapped[UUID] = mapped_column(

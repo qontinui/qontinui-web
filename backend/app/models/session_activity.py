@@ -28,7 +28,7 @@ class SessionActivity(Base):
     """
 
     __tablename__ = "session_activities"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         primary_key=True, server_default=text("gen_random_uuid()")

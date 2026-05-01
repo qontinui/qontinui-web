@@ -37,7 +37,7 @@ class SoftwareTestRun(Base):
     """
 
     __tablename__ = "software_test_runs"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     # Primary key
     id: Mapped[UUID] = mapped_column(

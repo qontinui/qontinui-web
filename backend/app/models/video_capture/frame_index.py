@@ -70,18 +70,18 @@ class FrameIndex(Base):
 
     __table_args__ = (
         Index(
-        "idx_frame_index_session_timestamp",
-        "video_capture_session_id",
-        "timestamp_ms",
+            "idx_frame_index_session_timestamp",
+            "video_capture_session_id",
+            "timestamp_ms",
         ),
         Index(
-        "idx_frame_index_session_frame", "video_capture_session_id", "frame_number"
+            "idx_frame_index_session_frame", "video_capture_session_id", "frame_number"
         ),
         Index("idx_frame_index_keyframes", "video_capture_session_id", "is_keyframe"),
         UniqueConstraint(
-        "video_capture_session_id",
-        "frame_number",
-        name="uq_frame_index_session_frame",
+            "video_capture_session_id",
+            "frame_number",
+            name="uq_frame_index_session_frame",
         ),
         {"schema": "project"},
     )

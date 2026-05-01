@@ -38,7 +38,7 @@ class WorkflowTestAssociation(Base):
     """
 
     __tablename__ = "workflow_test_associations"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     # Primary key
     id: Mapped[UUID] = mapped_column(

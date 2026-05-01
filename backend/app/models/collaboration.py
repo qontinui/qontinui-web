@@ -65,7 +65,7 @@ class ProjectLock(Base):
     """
 
     __tablename__ = "project_locks"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id = Column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
@@ -135,7 +135,7 @@ class ProjectComment(Base):
     """
 
     __tablename__ = "project_comments"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id = Column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
@@ -223,7 +223,7 @@ class ActivityLog(Base):
     """
 
     __tablename__ = "activity_logs"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id = Column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
@@ -341,7 +341,7 @@ class ConflictLog(Base):
     """
 
     __tablename__ = "conflict_logs"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id = Column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")

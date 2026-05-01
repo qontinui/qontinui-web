@@ -26,7 +26,7 @@ class TransitionReliability(Base):
     """
 
     __tablename__ = "transition_reliability"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     # Primary key
     id: Mapped[UUID] = mapped_column(

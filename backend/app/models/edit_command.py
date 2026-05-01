@@ -61,7 +61,7 @@ class EditCommand(Base):
 
     __table_args__ = (
         UniqueConstraint(
-        "project_id", "sequence_number", name="uq_project_command_seq"
+            "project_id", "sequence_number", name="uq_project_command_seq"
         ),
         {"schema": "project"},
     )

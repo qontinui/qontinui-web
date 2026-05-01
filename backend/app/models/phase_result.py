@@ -119,14 +119,14 @@ class PhaseResult(Base):
 
     __table_args__ = (
         Index(
-        "ix_phase_results_execution_id_created_at",
-        "execution_id",
-        "created_at",
+            "ix_phase_results_execution_id_created_at",
+            "execution_id",
+            "created_at",
         ),
         Index(
-        "ix_phase_results_runner_id_created_at",
-        "runner_id",
-        "created_at",
+            "ix_phase_results_runner_id_created_at",
+            "runner_id",
+            "created_at",
         ),
         {"schema": "project"},
     )

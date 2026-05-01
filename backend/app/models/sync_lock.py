@@ -69,10 +69,10 @@ class SyncLock(Base):
 
     __table_args__ = (
         Index(
-        "ix_sync_locks_project_active",
-        "project_id",
-        unique=True,
-        postgresql_where=text("released_at IS NULL"),
+            "ix_sync_locks_project_active",
+            "project_id",
+            unique=True,
+            postgresql_where=text("released_at IS NULL"),
         ),
         {"schema": "project"},
     )

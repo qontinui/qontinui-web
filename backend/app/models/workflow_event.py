@@ -37,7 +37,7 @@ class WorkflowEvent(Base):
     """
 
     __tablename__ = "workflow_events"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id = Column(
         UUID(as_uuid=True),

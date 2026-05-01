@@ -22,7 +22,7 @@ class Project(Base):
     """Project model representing a user project."""
 
     __tablename__ = "projects"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id = Column(
         UUID(as_uuid=True),

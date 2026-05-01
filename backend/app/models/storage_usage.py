@@ -9,7 +9,7 @@ from app.db.base import Base
 
 class StorageUsage(Base):
     __tablename__ = "storage_usage"
-    __table_args__ = {'schema': "auth"}
+    __table_args__ = {"schema": "auth"}
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(
@@ -22,7 +22,9 @@ class StorageUsage(Base):
     file_size = Column(BigInteger, nullable=False)
     file_path = Column(String, nullable=False)
     project_id = Column(
-        UUID(as_uuid=True), ForeignKey("project.projects.id", ondelete="CASCADE"), nullable=True
+        UUID(as_uuid=True),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
+        nullable=True,
     )
     file_metadata = Column(JSONB, nullable=True, default=dict)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))

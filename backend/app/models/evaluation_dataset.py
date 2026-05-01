@@ -26,7 +26,7 @@ class EvaluationDataset(Base):
     """
 
     __tablename__ = "evaluation_datasets"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     # Primary key
     id: Mapped[UUID] = mapped_column(

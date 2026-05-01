@@ -39,7 +39,9 @@ class ScreenshotInputAssociation(Base):
         index=True,
     )
     log_id: Mapped[UUID] = mapped_column(
-        ForeignKey("project.automation_logs.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("project.automation_logs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
 
     # Input metadata

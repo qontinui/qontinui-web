@@ -117,7 +117,7 @@ class AutomationInputEvent(Base):
 
     __table_args__ = (
         Index(
-        "ix_automation_input_events_session_timestamp", "session_id", "timestamp"
+            "ix_automation_input_events_session_timestamp", "session_id", "timestamp"
         ),
         Index("ix_automation_input_events_event_type", "event_type"),
         {"schema": "project"},

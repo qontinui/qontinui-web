@@ -219,8 +219,8 @@ class PackageVersion(Base):
         Index("idx_version_created", "created_at"),
         Index("idx_version_security", "security_scan_status"),
         CheckConstraint(
-        "security_scan_status IN ('pending', 'scanning', 'passed', 'failed', 'skipped')",
-        name="chk_security_scan_status",
+            "security_scan_status IN ('pending', 'scanning', 'passed', 'failed', 'skipped')",
+            name="chk_security_scan_status",
         ),
         {"schema": "project"},
     )
@@ -290,7 +290,7 @@ class PackageInstallation(Base):
         Index("idx_installation_user", "user_id"),
         Index("idx_installation_status", "status"),
         CheckConstraint(
-        "status IN ('active', 'disabled')", name="chk_installation_status"
+            "status IN ('active', 'disabled')", name="chk_installation_status"
         ),
         {"schema": "project"},
     )

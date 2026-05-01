@@ -26,7 +26,7 @@ class ScreenshotStateMatch(Base):
     """
 
     __tablename__ = "screenshot_state_matches"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

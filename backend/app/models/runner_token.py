@@ -27,7 +27,7 @@ class RunnerToken(Base):
     """
 
     __tablename__ = "runner_tokens"
-    __table_args__ = {'schema': "auth"}
+    __table_args__ = {"schema": "auth"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),

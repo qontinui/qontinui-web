@@ -28,7 +28,7 @@ class CaptureSession(Base):
     """
 
     __tablename__ = "capture_sessions"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

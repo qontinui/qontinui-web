@@ -129,7 +129,9 @@ class RenderImage(Base):
 
     # Parent render log
     render_log_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("project.render_logs.id", ondelete="CASCADE"), nullable=False
+        Integer,
+        ForeignKey("project.render_logs.id", ondelete="CASCADE"),
+        nullable=False,
     )
 
     # Image metadata

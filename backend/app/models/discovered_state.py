@@ -195,9 +195,9 @@ class DiscoveredState(Base):
     # Table constraints
     __table_args__ = (
         CheckConstraint(
-        "(automation_session_id IS NOT NULL AND recording_id IS NULL AND source_type = 'automation_session') OR "
-        "(automation_session_id IS NULL AND recording_id IS NOT NULL AND source_type = 'recording')",
-        name="check_single_source",
+            "(automation_session_id IS NOT NULL AND recording_id IS NULL AND source_type = 'automation_session') OR "
+            "(automation_session_id IS NULL AND recording_id IS NOT NULL AND source_type = 'recording')",
+            name="check_single_source",
         ),
         {"schema": "project"},
     )

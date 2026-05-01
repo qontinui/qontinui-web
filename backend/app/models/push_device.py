@@ -19,7 +19,7 @@ class PushDevice(Base):
     """
 
     __tablename__ = "push_devices"
-    __table_args__ = {'schema': "auth"}
+    __table_args__ = {"schema": "auth"}
 
     id = Column(
         UUID(as_uuid=True),

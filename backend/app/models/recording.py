@@ -362,9 +362,9 @@ class RecordingInteraction(Base):
 
     __table_args__ = (
         Index(
-        "ix_recording_interactions_recording_time",
-        "recording_id",
-        "relative_time_ms",
+            "ix_recording_interactions_recording_time",
+            "recording_id",
+            "relative_time_ms",
         ),
         Index("ix_recording_interactions_type", "recording_id", "interaction_type"),
         {"schema": "project"},
@@ -438,7 +438,7 @@ class RecordingContext(Base):
 
     __table_args__ = (
         Index(
-        "ix_recording_contexts_recording_time", "recording_id", "relative_time_ms"
+            "ix_recording_contexts_recording_time", "recording_id", "relative_time_ms"
         ),
         Index("ix_recording_contexts_type", "recording_id", "event_type"),
         {"schema": "project"},
@@ -473,7 +473,9 @@ class DiscoveredTransition(Base):
 
     # Trigger information
     trigger_interaction_id = Column(
-        UUID(as_uuid=True), ForeignKey("project.recording_interactions.id"), nullable=True
+        UUID(as_uuid=True),
+        ForeignKey("project.recording_interactions.id"),
+        nullable=True,
     )
     trigger_type = Column(String)  # click, key, auto, etc.
     trigger_description = Column(Text)

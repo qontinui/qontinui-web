@@ -17,7 +17,7 @@ class AnnotationSet(Base):
     """A set of annotations for a screenshot or multiple screenshots"""
 
     __tablename__ = "annotation_sets"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     screenshot_name = Column(String, nullable=False, index=True)

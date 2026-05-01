@@ -94,9 +94,9 @@ class InputEvent(Base):
 
     __table_args__ = (
         Index(
-        "idx_input_events_session_timestamp",
-        "video_capture_session_id",
-        "timestamp_ms",
+            "idx_input_events_session_timestamp",
+            "video_capture_session_id",
+            "timestamp_ms",
         ),
         Index("idx_input_events_type", "event_type"),
         {"schema": "project"},

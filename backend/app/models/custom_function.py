@@ -38,7 +38,10 @@ class CustomFunction(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     project_id = Column(
-        UUID(as_uuid=True), ForeignKey("project.projects.id"), nullable=False, index=True
+        UUID(as_uuid=True),
+        ForeignKey("project.projects.id"),
+        nullable=False,
+        index=True,
     )
     file_path = Column(String, nullable=False, index=True)  # Relative path in project
 
@@ -87,10 +90,10 @@ class CustomFunction(Base):
     # Ensure unique function per file in project
     __table_args__ = (
         UniqueConstraint(
-        "project_id",
-        "file_path",
-        "function_name",
-        name="uq_project_file_function",
+            "project_id",
+            "file_path",
+            "function_name",
+            name="uq_project_file_function",
         ),
         {"schema": "project"},
     )

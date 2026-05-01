@@ -30,7 +30,7 @@ class AutomationSession(Base):
     """
 
     __tablename__ = "automation_sessions"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         primary_key=True, server_default=text("gen_random_uuid()")

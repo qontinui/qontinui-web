@@ -33,7 +33,7 @@ class RecordingSession(Base):
     """
 
     __tablename__ = "recording_sessions"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")

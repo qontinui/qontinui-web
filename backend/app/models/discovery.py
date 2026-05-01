@@ -46,7 +46,9 @@ class Discovery(Base):
         ForeignKey("auth.users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     project_id: Mapped[UUID] = mapped_column(
-        ForeignKey("project.projects.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
 
     # Runner info

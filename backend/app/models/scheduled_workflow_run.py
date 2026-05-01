@@ -125,13 +125,13 @@ class ScheduledWorkflowRun(Base):
 
     __table_args__ = (
         Index(
-        "ix_scheduled_workflow_runs_workflow_id",
-        "workflow_id",
+            "ix_scheduled_workflow_runs_workflow_id",
+            "workflow_id",
         ),
         Index(
-        "ix_scheduled_workflow_runs_user_workflow",
-        "user_id",
-        "workflow_id",
+            "ix_scheduled_workflow_runs_user_workflow",
+            "user_id",
+            "workflow_id",
         ),
         {"schema": "project"},
     )

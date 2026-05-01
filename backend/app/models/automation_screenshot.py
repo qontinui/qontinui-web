@@ -29,7 +29,7 @@ class AutomationScreenshot(Base):
     """
 
     __tablename__ = "automation_screenshots"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         primary_key=True, server_default=text("gen_random_uuid()")

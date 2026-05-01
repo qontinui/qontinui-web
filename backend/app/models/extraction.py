@@ -14,7 +14,7 @@ class ExtractionSession(Base):
     """A web extraction session."""
 
     __tablename__ = "extraction_sessions"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     project_id = Column(
@@ -64,7 +64,7 @@ class ExtractionAnnotation(Base):
     """Annotations for a single screenshot in an extraction."""
 
     __tablename__ = "extraction_annotations"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     session_id = Column(

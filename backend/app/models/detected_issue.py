@@ -102,10 +102,10 @@ class DetectedIssue(Base):
         Index("ix_detected_issues_session", "session_id"),
         Index("ix_detected_issues_user_severity", "user_id", "severity"),
         Index(
-        "ix_detected_issues_source",
-        "source",
-        postgresql_using="gin",
-        postgresql_ops={"source": "jsonb_path_ops"},
+            "ix_detected_issues_source",
+            "source",
+            postgresql_using="gin",
+            postgresql_ops={"source": "jsonb_path_ops"},
         ),
         {"schema": "project"},
     )

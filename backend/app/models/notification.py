@@ -49,7 +49,7 @@ class Notification(Base):
     """
 
     __tablename__ = "notifications"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id = Column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
@@ -120,7 +120,7 @@ class NotificationPreferences(Base):
     """
 
     __tablename__ = "notification_preferences"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id = Column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")

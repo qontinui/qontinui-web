@@ -48,7 +48,10 @@ class WorkflowVariable(Base):
 
     id = Column(String, primary_key=True)
     project_id = Column(
-        UUID(as_uuid=True), ForeignKey("project.projects.id"), nullable=False, index=True
+        UUID(as_uuid=True),
+        ForeignKey("project.projects.id"),
+        nullable=False,
+        index=True,
     )
     workflow_id = Column(
         String, nullable=True, index=True
@@ -81,7 +84,7 @@ class WorkflowVariable(Base):
     # Ensure unique variable names per project/workflow combination
     __table_args__ = (
         UniqueConstraint(
-        "project_id", "workflow_id", "name", name="uq_project_workflow_var"
+            "project_id", "workflow_id", "name", name="uq_project_workflow_var"
         ),
         {"schema": "project"},
     )
@@ -99,7 +102,7 @@ class VariableHistory(Base):
     """
 
     __tablename__ = "variable_history"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     variable_id = Column(

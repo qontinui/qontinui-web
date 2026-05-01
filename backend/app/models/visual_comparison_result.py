@@ -52,7 +52,7 @@ class VisualComparisonResult(Base):
     """
 
     __tablename__ = "visual_comparison_results"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     # Primary key
     id: Mapped[UUID] = mapped_column(

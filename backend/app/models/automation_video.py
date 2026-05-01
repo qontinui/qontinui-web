@@ -15,7 +15,7 @@ class AutomationVideo(Base):
     """
 
     __tablename__ = "automation_videos"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(String, nullable=False, index=True, unique=True)

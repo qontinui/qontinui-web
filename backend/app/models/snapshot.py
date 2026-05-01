@@ -45,7 +45,7 @@ class SnapshotRun(Base):
     """
 
     __tablename__ = "snapshot_runs"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     run_id: Mapped[str] = mapped_column(
@@ -126,13 +126,15 @@ class Screenshot(Base):
     """
 
     __tablename__ = "screenshots"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
 
     # Foreign key to snapshot run
     snapshot_run_id: Mapped[int] = mapped_column(
-        ForeignKey("project.snapshot_runs.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("project.snapshot_runs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
 
     # Screenshot data
@@ -169,13 +171,15 @@ class Pattern(Base):
     """
 
     __tablename__ = "patterns"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
 
     # Foreign key to snapshot run
     snapshot_run_id: Mapped[int] = mapped_column(
-        ForeignKey("project.snapshot_runs.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("project.snapshot_runs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
 
     # Pattern identification
@@ -273,7 +277,7 @@ class SnapshotAction(Base):
     # Indexes
     __table_args__ = (
         Index(
-        "idx_snapshot_actions_run_sequence", "snapshot_run_id", "sequence_number"
+            "idx_snapshot_actions_run_sequence", "snapshot_run_id", "sequence_number"
         ),
         Index("idx_snapshot_actions_timestamp", "timestamp"),
         Index("idx_snapshot_actions_pattern_id", "pattern_id"),

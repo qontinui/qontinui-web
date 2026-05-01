@@ -41,7 +41,7 @@ class ErrorMonitorEntry(Base):
     """An error entry tracked by the error monitor."""
 
     __tablename__ = "error_monitor_entries"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),

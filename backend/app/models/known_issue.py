@@ -21,7 +21,7 @@ class KnownIssue(Base):
     """A known issue tracked across workflow executions."""
 
     __tablename__ = "known_issues"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),

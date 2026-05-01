@@ -22,7 +22,7 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     """
 
     __tablename__ = "users"
-    __table_args__ = {'schema': "auth"}
+    __table_args__ = {"schema": "auth"}
 
     # Custom fields
     username: Mapped[str] = mapped_column(

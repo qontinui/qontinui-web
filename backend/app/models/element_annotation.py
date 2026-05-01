@@ -72,14 +72,14 @@ class ElementAnnotationSet(Base):
 
     __table_args__ = (
         Index(
-        "ix_element_annotation_sets_project_current",
-        "project_id",
-        "is_current",
+            "ix_element_annotation_sets_project_current",
+            "project_id",
+            "is_current",
         ),
         Index(
-        "ix_element_annotation_sets_project_version",
-        "project_id",
-        "version_number",
+            "ix_element_annotation_sets_project_version",
+            "project_id",
+            "version_number",
         ),
         {"schema": "project"},
     )

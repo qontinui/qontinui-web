@@ -21,7 +21,7 @@ class DeviceSession(Base):
     """
 
     __tablename__ = "device_sessions"
-    __table_args__ = {'schema': "auth"}
+    __table_args__ = {"schema": "auth"}
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
     user_id: Mapped[UUID] = mapped_column(

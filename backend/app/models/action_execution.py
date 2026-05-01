@@ -58,7 +58,7 @@ class ActionExecution(Base):
     """
 
     __tablename__ = "action_executions"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     # Primary key
     id: Mapped[UUID] = mapped_column(

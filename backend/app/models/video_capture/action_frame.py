@@ -76,10 +76,10 @@ class ActionFrame(Base):
         Index("idx_action_frames_action", "snapshot_action_id"),
         Index("idx_action_frames_type", "frame_type"),
         UniqueConstraint(
-        "video_capture_session_id",
-        "snapshot_action_id",
-        "frame_type",
-        name="uq_action_frames_session_action_type",
+            "video_capture_session_id",
+            "snapshot_action_id",
+            "frame_type",
+            name="uq_action_frames_session_action_type",
         ),
         {"schema": "project"},
     )

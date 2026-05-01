@@ -34,7 +34,7 @@ class TrainingJob(Base):
     """A training job for ML model training."""
 
     __tablename__ = "training_jobs"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
 

@@ -40,7 +40,7 @@ class UIBridgeExplorationSession(Base):
     """
 
     __tablename__ = "ui_bridge_exploration_sessions"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
@@ -134,7 +134,7 @@ class UIBridgeStateConfig(Base):
     """
 
     __tablename__ = "ui_bridge_state_configs"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
@@ -208,7 +208,7 @@ class UIBridgeState(Base):
     """
 
     __tablename__ = "ui_bridge_states"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
@@ -289,7 +289,7 @@ class DomainKnowledge(Base):
     """
 
     __tablename__ = "domain_knowledge"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
@@ -351,7 +351,7 @@ class UIBridgeStateDomainKnowledge(Base):
     """Association table linking states to domain knowledge."""
 
     __tablename__ = "ui_bridge_state_domain_knowledge"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")

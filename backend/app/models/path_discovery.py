@@ -25,7 +25,7 @@ class PathDiscovery(Base):
     """
 
     __tablename__ = "path_discoveries"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     # Primary key
     id: Mapped[UUID] = mapped_column(

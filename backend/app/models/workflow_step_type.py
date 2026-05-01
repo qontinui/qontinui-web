@@ -77,7 +77,7 @@ class StepTypeConfig(Base):
 
     __table_args__ = (
         UniqueConstraint(
-        "user_id", "step_type", "phase", name="uq_step_type_user_type_phase"
+            "user_id", "step_type", "phase", name="uq_step_type_user_type_phase"
         ),
         {"schema": "project"},
     )

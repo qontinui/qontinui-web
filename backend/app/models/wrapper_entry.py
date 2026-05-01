@@ -40,7 +40,7 @@ class WrapperEntry(Base):
     """One installable wrapper, mirrored from registry.json."""
 
     __tablename__ = "wrapper_entries"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[str] = mapped_column(
         Text,
@@ -131,13 +131,13 @@ class WrapperRating(Base):
     __tablename__ = "wrapper_ratings"
     __table_args__ = (
         CheckConstraint(
-        "stars BETWEEN 1 AND 5",
-        name="wrapper_ratings_stars_check",
+            "stars BETWEEN 1 AND 5",
+            name="wrapper_ratings_stars_check",
         ),
         UniqueConstraint(
-        "wrapper_id",
-        "user_id",
-        name="wrapper_ratings_wrapper_id_user_id_key",
+            "wrapper_id",
+            "user_id",
+            name="wrapper_ratings_wrapper_id_user_id_key",
         ),
         {"schema": "project"},
     )
@@ -180,7 +180,7 @@ class WrapperComment(Base):
     """Threaded comment on a wrapper marketplace entry."""
 
     __tablename__ = "wrapper_comments"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[int] = mapped_column(
         BigInteger,
@@ -233,7 +233,7 @@ class WrapperInstallEvent(Base):
     """Anonymous install ping from a runner. Runner id is sha256-hashed."""
 
     __tablename__ = "wrapper_install_events"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[int] = mapped_column(
         BigInteger,

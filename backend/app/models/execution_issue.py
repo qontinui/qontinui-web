@@ -72,7 +72,7 @@ class ExecutionIssue(Base):
     """
 
     __tablename__ = "execution_issues"
-    __table_args__ = {'schema': "project"}
+    __table_args__ = {"schema": "project"}
 
     # Primary key
     id: Mapped[UUID] = mapped_column(

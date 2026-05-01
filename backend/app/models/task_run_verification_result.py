@@ -129,7 +129,7 @@ class TaskRunVerificationResult(Base):
     # Constraints
     __table_args__ = (
         UniqueConstraint(
-        "task_run_id", "iteration", name="uq_task_run_verification_iteration"
+            "task_run_id", "iteration", name="uq_task_run_verification_iteration"
         ),
         {"schema": "project"},
     )
