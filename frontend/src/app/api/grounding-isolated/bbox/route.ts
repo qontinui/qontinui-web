@@ -33,11 +33,12 @@ interface StoredBbox {
 const MAX_ENTRIES = 256;
 // Module-level ring buffer — persists across requests for the life of the
 // Next.js process (or until HMR reloads this module).
-const store: Map<number, StoredBbox> = (
-  globalThis as unknown as { __groundingBboxStore?: Map<number, StoredBbox> }
-).__groundingBboxStore ??
-(((globalThis as unknown as { __groundingBboxStore?: Map<number, StoredBbox> }).__groundingBboxStore =
-  new Map<number, StoredBbox>()));
+const store: Map<number, StoredBbox> =
+  (globalThis as unknown as { __groundingBboxStore?: Map<number, StoredBbox> })
+    .__groundingBboxStore ??
+  ((
+    globalThis as unknown as { __groundingBboxStore?: Map<number, StoredBbox> }
+  ).__groundingBboxStore = new Map<number, StoredBbox>());
 
 function evictOldest(): void {
   while (store.size > MAX_ENTRIES) {
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: (err as Error).message ?? "invalid body" },
-      { status: 400 },
+      { status: 400 }
     );
   }
 }
@@ -89,7 +90,7 @@ export async function GET(request: NextRequest) {
   if (!Number.isFinite(sampleIndex)) {
     return NextResponse.json(
       { ok: false, error: "invalid sampleIndex" },
-      { status: 400 },
+      { status: 400 }
     );
   }
   const bbox = store.get(sampleIndex);

@@ -45,8 +45,10 @@ function StateNode({ data }: { data: StateNodeData }) {
   const getColor = () => {
     if (data.isBlocking) return "bg-amber-100 border-amber-400 text-amber-900";
     if (data.isGlobal) return "bg-slate-100 border-slate-400 text-slate-700";
-    if (data.confidence >= 0.8) return "bg-green-100 border-green-400 text-green-900";
-    if (data.confidence >= 0.5) return "bg-blue-100 border-blue-400 text-blue-900";
+    if (data.confidence >= 0.8)
+      return "bg-green-100 border-green-400 text-green-900";
+    if (data.confidence >= 0.5)
+      return "bg-blue-100 border-blue-400 text-blue-900";
     return "bg-gray-100 border-gray-400 text-gray-900";
   };
 
@@ -56,8 +58,7 @@ function StateNode({ data }: { data: StateNodeData }) {
     >
       <div className="font-medium text-xs leading-tight">{data.label}</div>
       <div className="text-[10px] mt-0.5 opacity-70">
-        {Math.round(data.confidence * 100)}%
-        {data.isBlocking ? " · modal" : ""}
+        {Math.round(data.confidence * 100)}%{data.isBlocking ? " · modal" : ""}
         {data.isGlobal ? " · global" : ""}
       </div>
     </div>
@@ -73,7 +74,7 @@ const nodeTypes = { stateNode: StateNode };
 function getLayoutedElements(
   nodes: Node[],
   edges: Edge[],
-  direction = "TB",
+  direction = "TB"
 ): { nodes: Node[]; edges: Edge[] } {
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
@@ -139,7 +140,11 @@ export function RecordingStateGraph({
               source: from,
               target: to,
               label: `${Math.round(t.confidence * 100)}%`,
-              markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
+              markerEnd: {
+                type: MarkerType.ArrowClosed,
+                width: 16,
+                height: 16,
+              },
               style: {
                 strokeWidth: Math.max(1, t.confidence * 3),
                 opacity: Math.max(0.3, t.confidence),
@@ -162,8 +167,12 @@ export function RecordingStateGraph({
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges ?? []);
 
   // Update when result changes (useNodesState only uses initial value once)
-  useEffect(() => { setNodes(initialNodes ?? []); }, [initialNodes, setNodes]);
-  useEffect(() => { setEdges(initialEdges ?? []); }, [initialEdges, setEdges]);
+  useEffect(() => {
+    setNodes(initialNodes ?? []);
+  }, [initialNodes, setNodes]);
+  useEffect(() => {
+    setEdges(initialEdges ?? []);
+  }, [initialEdges, setEdges]);
 
   const onInit = useCallback(() => {
     // Auto-fit on init handled by ReactFlow

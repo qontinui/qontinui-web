@@ -347,7 +347,12 @@ export function SmartSnapshotSelector({
                             }
                           `}
                           onClick={() => handleToggle(snapshot)}
-                          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleToggle(snapshot); } }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              handleToggle(snapshot);
+                            }
+                          }}
                         >
                           <div className="flex items-start gap-3">
                             <Checkbox

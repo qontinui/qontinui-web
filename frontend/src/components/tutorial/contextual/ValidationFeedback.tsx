@@ -212,7 +212,11 @@ export const ValidationFeedback: React.FC<ValidationFeedbackProps> = ({
     );
   }
 
-  return <LazyMotion features={domAnimation}><AnimatePresence>{isVisible && content}</AnimatePresence></LazyMotion>;
+  return (
+    <LazyMotion features={domAnimation}>
+      <AnimatePresence>{isVisible && content}</AnimatePresence>
+    </LazyMotion>
+  );
 };
 
 export default ValidationFeedback;

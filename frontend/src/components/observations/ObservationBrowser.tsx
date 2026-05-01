@@ -79,7 +79,10 @@ function TemporalBadge({ obs }: { obs: ObservationSearchResult }) {
     );
   }
   return (
-    <Badge variant="outline" className="text-xs text-green-400 border-green-400/30">
+    <Badge
+      variant="outline"
+      className="text-xs text-green-400 border-green-400/30"
+    >
       current
     </Badge>
   );
@@ -95,7 +98,10 @@ function TypeBadge({ type }: { type: string }) {
     discovery: "text-cyan-400 border-cyan-400/30",
   };
   return (
-    <Badge variant="outline" className={`text-xs ${colors[type] ?? "text-text-muted"}`}>
+    <Badge
+      variant="outline"
+      className={`text-xs ${colors[type] ?? "text-text-muted"}`}
+    >
       {type}
     </Badge>
   );
@@ -132,13 +138,17 @@ function ObservationRow({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-1">
-            <span className={`text-sm font-medium truncate ${isSuperseded ? "line-through" : ""}`}>
+            <span
+              className={`text-sm font-medium truncate ${isSuperseded ? "line-through" : ""}`}
+            >
               {obs.title}
             </span>
             <TypeBadge type={obs.observationType} />
             <TemporalBadge obs={obs} />
           </div>
-          <p className="text-xs text-text-muted line-clamp-2">{obs.contentPreview}</p>
+          <p className="text-xs text-text-muted line-clamp-2">
+            {obs.contentPreview}
+          </p>
         </div>
         <div className="text-xs text-text-muted whitespace-nowrap flex flex-col items-end gap-1">
           <span>Valid from {validFrom}</span>
@@ -165,7 +175,9 @@ function HistoryTimeline({ observationId }: { observationId: number }) {
 
   if (!history || history.length === 0) {
     return (
-      <p className="text-xs text-text-muted py-2">No revision history (original version).</p>
+      <p className="text-xs text-text-muted py-2">
+        No revision history (original version).
+      </p>
     );
   }
 
@@ -181,13 +193,15 @@ function HistoryTimeline({ observationId }: { observationId: number }) {
               Rev {entry.revisionNumber}
             </span>
             <span className="text-text-muted">
-              {new Date(entry.validFrom).toLocaleDateString()} {" "}
+              {new Date(entry.validFrom).toLocaleDateString()}{" "}
               <ArrowRight className="inline size-3" />{" "}
               {new Date(entry.validUntil).toLocaleDateString()}
             </span>
           </div>
           <p className="text-text-muted">{entry.title}</p>
-          <p className="text-text-muted/70 line-clamp-2">{entry.contentPreview}</p>
+          <p className="text-text-muted/70 line-clamp-2">
+            {entry.contentPreview}
+          </p>
         </div>
       ))}
     </div>
@@ -216,7 +230,9 @@ function TrendChart({ weeks }: { weeks: number }) {
 
   return (
     <div className="space-y-1">
-      <h4 className="text-xs font-medium text-text-muted mb-2">Weekly Trends</h4>
+      <h4 className="text-xs font-medium text-text-muted mb-2">
+        Weekly Trends
+      </h4>
       {Array.from(weekMap.entries()).map(([week, types]) => (
         <div key={week} className="flex items-center gap-2 text-xs">
           <span className="w-16 text-text-muted text-right">{week}</span>
@@ -225,7 +241,10 @@ function TrendChart({ weeks }: { weeks: number }) {
               <div
                 key={type}
                 className="h-4 rounded-sm bg-blue-500/40"
-                style={{ width: `${(count / maxCount) * 100}%`, minWidth: "4px" }}
+                style={{
+                  width: `${(count / maxCount) * 100}%`,
+                  minWidth: "4px",
+                }}
                 title={`${type}: ${count}`}
               />
             ))}
@@ -276,7 +295,11 @@ export function ObservationBrowser() {
   const asOfIso = asOfDate ? new Date(asOfDate).toISOString() : null;
 
   // Use snapshot mode when as-of is set, otherwise use temporal search
-  const { data: searchResults, isLoading: searchLoading, error: searchError } = useObservationTemporalSearch({
+  const {
+    data: searchResults,
+    isLoading: searchLoading,
+    error: searchError,
+  } = useObservationTemporalSearch({
     q: debouncedQuery || undefined,
     from: temporalFrom,
     to: temporalTo,
@@ -284,10 +307,11 @@ export function ObservationBrowser() {
     enabled: !asOfDate,
   });
 
-  const { data: snapshotResults, isLoading: snapshotLoading, error: snapshotError } = useObservationSnapshot(
-    asOfIso,
-    100
-  );
+  const {
+    data: snapshotResults,
+    isLoading: snapshotLoading,
+    error: snapshotError,
+  } = useObservationSnapshot(asOfIso, 100);
 
   // Merge: snapshot mode overrides search
   const results = asOfDate
@@ -359,7 +383,11 @@ export function ObservationBrowser() {
           className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-primary transition-colors"
           title={showSuperseded ? "Hide superseded" : "Show superseded"}
         >
-          {showSuperseded ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+          {showSuperseded ? (
+            <Eye className="size-3.5" />
+          ) : (
+            <EyeOff className="size-3.5" />
+          )}
           Superseded
         </button>
         <button
@@ -401,7 +429,9 @@ export function ObservationBrowser() {
             </div>
           )}
           {error && (
-            <div className="text-center py-12 text-red-400 text-sm">{error}</div>
+            <div className="text-center py-12 text-red-400 text-sm">
+              {error}
+            </div>
           )}
           {!isLoading && !error && filteredResults.length === 0 && (
             <div className="text-center py-12 text-text-muted">
@@ -428,11 +458,15 @@ export function ObservationBrowser() {
           <div className="w-[380px] border-l border-border-subtle/50 overflow-y-auto bg-surface-raised/10">
             <div className="p-4 space-y-4">
               <div>
-                <h3 className="text-sm font-semibold mb-1">{selectedObs.title}</h3>
+                <h3 className="text-sm font-semibold mb-1">
+                  {selectedObs.title}
+                </h3>
                 <div className="flex items-center gap-2 mb-2">
                   <TypeBadge type={selectedObs.observationType} />
                   <TemporalBadge obs={selectedObs} />
-                  <span className="text-xs text-text-muted">{selectedObs.scope}</span>
+                  <span className="text-xs text-text-muted">
+                    {selectedObs.scope}
+                  </span>
                 </div>
                 {selectedObs.topicKey && (
                   <p className="text-xs text-text-muted font-mono mb-2">
@@ -455,18 +489,24 @@ export function ObservationBrowser() {
                 <CardContent className="px-3 pb-3 text-xs space-y-1">
                   <div className="flex justify-between">
                     <span className="text-text-muted">Valid from</span>
-                    <span>{new Date(selectedObs.validFrom).toLocaleString()}</span>
+                    <span>
+                      {new Date(selectedObs.validFrom).toLocaleString()}
+                    </span>
                   </div>
                   {selectedObs.validUntil && (
                     <div className="flex justify-between">
                       <span className="text-text-muted">Valid until</span>
-                      <span>{new Date(selectedObs.validUntil).toLocaleString()}</span>
+                      <span>
+                        {new Date(selectedObs.validUntil).toLocaleString()}
+                      </span>
                     </div>
                   )}
                   {selectedObs.supersededBy && (
                     <div className="flex justify-between">
                       <span className="text-text-muted">Superseded by</span>
-                      <span className="text-blue-400">#{selectedObs.supersededBy}</span>
+                      <span className="text-blue-400">
+                        #{selectedObs.supersededBy}
+                      </span>
                     </div>
                   )}
                   <div className="flex justify-between">
@@ -491,7 +531,9 @@ export function ObservationBrowser() {
                     <History className="size-3" />
                     Revision History
                   </button>
-                  {showHistory && <HistoryTimeline observationId={selectedObs.id} />}
+                  {showHistory && (
+                    <HistoryTimeline observationId={selectedObs.id} />
+                  )}
                 </div>
               )}
             </div>

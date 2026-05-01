@@ -154,7 +154,12 @@ export function AssignChecksDialog({
                     localSelected.has(check.id) ? "bg-blue-500/10" : ""
                   }`}
                   onClick={() => toggleCheck(check.id)}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleCheck(check.id); } }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      toggleCheck(check.id);
+                    }
+                  }}
                 >
                   <Checkbox
                     checked={localSelected.has(check.id)}

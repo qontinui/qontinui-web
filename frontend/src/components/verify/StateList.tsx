@@ -68,7 +68,12 @@ function StateItem({ state, isSelected, onSelectState }: StateItemProps) {
         }
       `}
       onClick={() => onSelectState(state.id)}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectState(state.id); } }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelectState(state.id);
+        }
+      }}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">

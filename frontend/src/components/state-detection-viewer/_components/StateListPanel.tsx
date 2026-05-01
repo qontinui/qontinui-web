@@ -88,7 +88,12 @@ export function StateListPanel({
                 tabIndex={0}
                 aria-selected={selectedState?.state_id === state.state_id}
                 onClick={() => onSelectState(state)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectState(state); } }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onSelectState(state);
+                  }
+                }}
                 className={cn(
                   "p-3 rounded-lg cursor-pointer transition-colors border",
                   selectedState?.state_id === state.state_id

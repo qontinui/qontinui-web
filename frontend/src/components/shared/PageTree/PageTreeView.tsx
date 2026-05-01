@@ -93,7 +93,18 @@ function TreeNodeView({
         style={{ paddingLeft: `${depth * 14 + 6}px` }}
       >
         {hasChildren ? (
-          <span role="button" tabIndex={0} onClick={handleChevronClick} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleChevronClick(e as unknown as React.MouseEvent); } }} className="flex-shrink-0">
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={handleChevronClick}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                handleChevronClick(e as unknown as React.MouseEvent);
+              }
+            }}
+            className="flex-shrink-0"
+          >
             {expanded ? (
               <ChevronDown className="w-3 h-3 text-text-muted" />
             ) : (

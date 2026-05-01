@@ -236,7 +236,12 @@ export function MissingMonitorsDialog({
                   tabIndex={0}
                   className="flex items-start gap-3 p-3 rounded-lg hover:bg-surface-canvas cursor-pointer transition-colors"
                   onClick={() => handleToggleError(error)}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleToggleError(error); } }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handleToggleError(error);
+                    }
+                  }}
                 >
                   <Checkbox
                     checked={isSelected}

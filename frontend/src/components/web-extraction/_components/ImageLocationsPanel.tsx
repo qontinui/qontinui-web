@@ -84,7 +84,12 @@ export function ImageLocationsPanel({
       <div
         role="button"
         tabIndex={0}
-        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            (e.currentTarget as HTMLElement).click();
+          }
+        }}
         ref={containerRef}
         className="flex-1 min-h-0 h-0 overflow-auto p-4 bg-surface-canvas/30 flex flex-col items-center"
         onMouseDown={onMouseDown}

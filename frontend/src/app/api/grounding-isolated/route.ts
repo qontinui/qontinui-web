@@ -52,27 +52,22 @@ const BG_MAP: Record<string, string> = {
   "solid-lime": "#84cc16",
   "solid-amber": "#f59e0b",
   "solid-sky": "#0ea5e9",
-  "gradient-purple-blue":
-    "linear-gradient(135deg, #a855f7 0%, #3b82f6 100%)",
-  "gradient-red-orange":
-    "linear-gradient(135deg, #ef4444 0%, #f97316 100%)",
-  "gradient-green-teal":
-    "linear-gradient(135deg, #22c55e 0%, #14b8a6 100%)",
-  "gradient-pink-purple":
-    "linear-gradient(135deg, #ec4899 0%, #a855f7 100%)",
-  "gradient-blue-cyan":
-    "linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%)",
-  "gradient-dark":
-    "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
+  "gradient-purple-blue": "linear-gradient(135deg, #a855f7 0%, #3b82f6 100%)",
+  "gradient-red-orange": "linear-gradient(135deg, #ef4444 0%, #f97316 100%)",
+  "gradient-green-teal": "linear-gradient(135deg, #22c55e 0%, #14b8a6 100%)",
+  "gradient-pink-purple": "linear-gradient(135deg, #ec4899 0%, #a855f7 100%)",
+  "gradient-blue-cyan": "linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%)",
+  "gradient-dark": "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
 };
 
 function resolveBg(bg: string): string {
   if (bg === "noise") {
-    return 'background-color:#1e293b;background-image:url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'200\' height=\'200\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.65\' numOctaves=\'3\' stitchTiles=\'stitch\'/%3E%3CfeColorMatrix type=\'saturate\' values=\'0\'/%3E%3C/filter%3E%3Crect width=\'200\' height=\'200\' filter=\'url(%23n)\' opacity=\'0.4\'/%3E%3C/svg%3E");background-repeat:repeat';
+    return "background-color:#1e293b;background-image:url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E\");background-repeat:repeat";
   }
   const resolved = BG_MAP[bg];
   if (!resolved) return "background-color:#f1f5f9";
-  if (resolved.startsWith("linear-gradient")) return `background-image:${resolved}`;
+  if (resolved.startsWith("linear-gradient"))
+    return `background-image:${resolved}`;
   return `background-color:${resolved}`;
 }
 
@@ -84,10 +79,11 @@ function componentHtml(
   component: string,
   variant: string,
   state: string,
-  size: string,
+  size: string
 ): string {
   const disabled = state === "disabled" ? " disabled" : "";
-  const disabledClass = state === "disabled" ? " opacity-50 pointer-events-none" : "";
+  const disabledClass =
+    state === "disabled" ? " opacity-50 pointer-events-none" : "";
   const label = variant.charAt(0).toUpperCase() + variant.slice(1);
 
   switch (component) {

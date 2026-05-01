@@ -23,7 +23,12 @@ export function Header() {
             role="link"
             tabIndex={0}
             onClick={() => router.push("/")}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push("/"); } }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                router.push("/");
+              }
+            }}
           >
             <Image
               src="/q-logo.png"

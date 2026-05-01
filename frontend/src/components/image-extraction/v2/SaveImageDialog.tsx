@@ -158,8 +158,13 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
               Save As
             </p>
             <div className="space-y-2">
-              <label aria-label="Create StateImage" htmlFor="type--radio-2" className="flex items-start p-3 bg-surface-canvas border border-border-default rounded-md cursor-pointer hover:border-border-default transition-colors">
-                <input id="type--radio-2"
+              <label
+                aria-label="Create StateImage"
+                htmlFor="type--radio-2"
+                className="flex items-start p-3 bg-surface-canvas border border-border-default rounded-md cursor-pointer hover:border-border-default transition-colors"
+              >
+                <input
+                  id="type--radio-2"
                   type="radio"
                   checked={saveDialog.mode === "createStateImage"}
                   onChange={() => onUpdateDialog({ mode: "createStateImage" })}
@@ -178,8 +183,13 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
                 </div>
               </label>
 
-              <label aria-label="Add Pattern to StateImage" htmlFor="type--radio-1" className="flex items-start p-3 bg-surface-canvas border border-border-default rounded-md cursor-pointer hover:border-border-default transition-colors">
-                <input id="type--radio-1"
+              <label
+                aria-label="Add Pattern to StateImage"
+                htmlFor="type--radio-1"
+                className="flex items-start p-3 bg-surface-canvas border border-border-default rounded-md cursor-pointer hover:border-border-default transition-colors"
+              >
+                <input
+                  id="type--radio-1"
                   type="radio"
                   checked={saveDialog.mode === "addPattern"}
                   onChange={() => onUpdateDialog({ mode: "addPattern" })}
@@ -198,8 +208,13 @@ export const SaveImageDialog: React.FC<SaveImageDialogProps> = ({
                 </div>
               </label>
 
-              <label aria-label="Save to library only" htmlFor="type--radio-0" className="flex items-start p-3 bg-surface-canvas border border-border-default rounded-md cursor-pointer hover:border-border-default transition-colors">
-                <input id="type--radio-0"
+              <label
+                aria-label="Save to library only"
+                htmlFor="type--radio-0"
+                className="flex items-start p-3 bg-surface-canvas border border-border-default rounded-md cursor-pointer hover:border-border-default transition-colors"
+              >
+                <input
+                  id="type--radio-0"
                   type="radio"
                   checked={saveDialog.mode === "libraryOnly"}
                   onChange={() => onUpdateDialog({ mode: "libraryOnly" })}

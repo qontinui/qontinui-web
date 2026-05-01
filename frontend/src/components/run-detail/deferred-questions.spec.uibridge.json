@@ -86,7 +86,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "textContains": "No deferred questions for this run" },
+            "criteria": {
+              "textContains": "No deferred questions for this run"
+            },
             "label": "Empty state heading"
           },
           "assertionType": "exists",
@@ -102,7 +104,9 @@
           "severity": "info",
           "target": {
             "type": "search",
-            "criteria": { "textContains": "autonomous decisions with low confidence" },
+            "criteria": {
+              "textContains": "autonomous decisions with low confidence"
+            },
             "label": "Empty state description"
           },
           "assertionType": "exists",
@@ -711,7 +715,9 @@
           "severity": "warning",
           "target": {
             "type": "search",
-            "criteria": { "dataAttributes": { "content-label": "active-run-name" } },
+            "criteria": {
+              "dataAttributes": { "content-label": "active-run-name" }
+            },
             "label": "Active run card"
           },
           "assertionType": "semantic",
@@ -743,7 +749,9 @@
           "severity": "info",
           "target": {
             "type": "search",
-            "criteria": { "dataAttributes": { "content-label": "active-run-name" } },
+            "criteria": {
+              "dataAttributes": { "content-label": "active-run-name" }
+            },
             "label": "Active run card"
           },
           "assertionType": "behavior",

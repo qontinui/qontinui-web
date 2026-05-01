@@ -226,7 +226,12 @@ const EventItem: React.FC<EventItemProps> = ({ event, isActive, onClick }) => {
         config.borderColor
       } ${isActive ? `${config.bgColor} ring-2 ring-blue-500 ring-opacity-50` : "bg-white hover:bg-surface-raised/80"} hover:shadow-md`}
       onClick={onClick}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick?.(); } }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick?.();
+        }
+      }}
     >
       {/* Event Header */}
       <div className="flex items-start justify-between mb-2">

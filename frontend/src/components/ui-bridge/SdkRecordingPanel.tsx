@@ -48,7 +48,9 @@ interface SdkRecordingPanelProps {
   /** Application URL (for playbook triggers) */
   appUrl?: string;
   /** Start SDK recording */
-  onStartRecording: (wsUrl: string) => Promise<{ success: boolean; error?: string }>;
+  onStartRecording: (
+    wsUrl: string
+  ) => Promise<{ success: boolean; error?: string }>;
   /** Stop SDK recording */
   onStopRecording: (wsUrl: string) => Promise<{
     success: boolean;
@@ -63,7 +65,11 @@ interface SdkRecordingPanelProps {
       appName?: string;
       appUrl?: string;
     }
-  ) => Promise<{ success: boolean; result?: PipelineDiscoveryResult; error?: string }>;
+  ) => Promise<{
+    success: boolean;
+    result?: PipelineDiscoveryResult;
+    error?: string;
+  }>;
   /** Whether currently recording */
   isRecording: boolean;
   /** Whether starting */
@@ -204,37 +210,44 @@ export function SdkRecordingPanel({
           )}
 
           {isRecording && (
-            <Badge variant="outline" className="text-red-500 border-red-300 animate-pulse">
+            <Badge
+              variant="outline"
+              className="text-red-500 border-red-300 animate-pulse"
+            >
               Recording...
             </Badge>
           )}
         </div>
 
         {/* Past Experiences */}
-        {pastSessions.length > 0 && !isRecording && !sdkResult && !pipelineResult && (
-          <div className="space-y-1.5">
-            <div className="text-xs font-medium flex items-center gap-1 text-muted-foreground">
-              <History className="w-3 h-3" />
-              Past recordings for this app
-            </div>
-            {pastSessions.map((s) => (
-              <div
-                key={s.session_id}
-                className="text-xs flex items-center justify-between px-2 py-1.5 rounded bg-muted/50"
-              >
-                <span>
-                  {s.state_count} states, {s.transition_count} transitions
-                </span>
-                <span className="text-muted-foreground">
-                  {Math.round(s.avg_confidence * 100)}% conf
-                </span>
+        {pastSessions.length > 0 &&
+          !isRecording &&
+          !sdkResult &&
+          !pipelineResult && (
+            <div className="space-y-1.5">
+              <div className="text-xs font-medium flex items-center gap-1 text-muted-foreground">
+                <History className="w-3 h-3" />
+                Past recordings for this app
               </div>
-            ))}
-            <p className="text-[10px] text-muted-foreground">
-              New recordings will merge with discovered states via incremental merge
-            </p>
-          </div>
-        )}
+              {pastSessions.map((s) => (
+                <div
+                  key={s.session_id}
+                  className="text-xs flex items-center justify-between px-2 py-1.5 rounded bg-muted/50"
+                >
+                  <span>
+                    {s.state_count} states, {s.transition_count} transitions
+                  </span>
+                  <span className="text-muted-foreground">
+                    {Math.round(s.avg_confidence * 100)}% conf
+                  </span>
+                </div>
+              ))}
+              <p className="text-[10px] text-muted-foreground">
+                New recordings will merge with discovered states via incremental
+                merge
+              </p>
+            </div>
+          )}
 
         {/* Error */}
         {error && (
@@ -252,15 +265,21 @@ export function SdkRecordingPanel({
               <div className="text-xs font-medium">Recording Captured</div>
               <div className="grid grid-cols-3 gap-2 text-xs">
                 <div className="text-center">
-                  <div className="font-mono text-sm">{sdkResult.interactionCount}</div>
+                  <div className="font-mono text-sm">
+                    {sdkResult.interactionCount}
+                  </div>
                   <div className="text-muted-foreground">Interactions</div>
                 </div>
                 <div className="text-center">
-                  <div className="font-mono text-sm">{sdkResult.captureCount}</div>
+                  <div className="font-mono text-sm">
+                    {sdkResult.captureCount}
+                  </div>
                   <div className="text-muted-foreground">Captures</div>
                 </div>
                 <div className="text-center">
-                  <div className="font-mono text-sm">{sdkResult.variables.length}</div>
+                  <div className="font-mono text-sm">
+                    {sdkResult.variables.length}
+                  </div>
                   <div className="text-muted-foreground">Variables</div>
                 </div>
               </div>
@@ -273,7 +292,10 @@ export function SdkRecordingPanel({
                 <div className="space-y-1">
                   <div className="text-xs font-medium">Extracted Variables</div>
                   {sdkResult.variables.map((v) => (
-                    <div key={v.fingerprint} className="text-xs flex items-center gap-2 pl-2">
+                    <div
+                      key={v.fingerprint}
+                      className="text-xs flex items-center gap-2 pl-2"
+                    >
                       <Badge variant="secondary" className="text-[10px] px-1">
                         {v.inputType}
                       </Badge>
@@ -325,7 +347,8 @@ export function SdkRecordingPanel({
                   states
                   {pipelineResult.modalStateCount > 0 && (
                     <span className="text-muted-foreground">
-                      {" "}({pipelineResult.modalStateCount} modal)
+                      {" "}
+                      ({pipelineResult.modalStateCount} modal)
                     </span>
                   )}
                 </div>
@@ -340,8 +363,8 @@ export function SdkRecordingPanel({
               {/* State Machine Graph */}
               {pipelineResult.states.filter((s) => !s.isGlobal).length > 0 &&
                 pipelineResult.transitions.length > 0 && (
-                <RecordingStateGraph result={pipelineResult} height={220} />
-              )}
+                  <RecordingStateGraph result={pipelineResult} height={220} />
+                )}
 
               {/* States List */}
               <ScrollArea className="max-h-32">
@@ -356,7 +379,10 @@ export function SdkRecordingPanel({
                         <span className="truncate">
                           {state.name}
                           {state.isBlocking && (
-                            <Badge variant="outline" className="ml-1 text-[10px] px-1">
+                            <Badge
+                              variant="outline"
+                              className="ml-1 text-[10px] px-1"
+                            >
                               modal
                             </Badge>
                           )}

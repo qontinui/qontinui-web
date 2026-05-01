@@ -33,7 +33,12 @@ export function ObjectListPanel({
             role="button"
             tabIndex={0}
             onClick={() => onObjectSelect(obj)}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onObjectSelect(obj); } }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onObjectSelect(obj);
+              }
+            }}
             onMouseEnter={() => onObjectHover(obj.id)}
             onMouseLeave={() => onObjectHover(null)}
             className={cn(

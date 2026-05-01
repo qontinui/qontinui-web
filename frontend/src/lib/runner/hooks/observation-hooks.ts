@@ -81,7 +81,8 @@ export function useObservationTemporalSearch(params: {
   if (params.from) searchParams.set("from", params.from);
   if (params.to) searchParams.set("to", params.to);
   if (params.asOf) searchParams.set("as_of", params.asOf);
-  if (params.maxResults != null) searchParams.set("max_results", String(params.maxResults));
+  if (params.maxResults != null)
+    searchParams.set("max_results", String(params.maxResults));
 
   const qs = searchParams.toString();
   const path = `/observations/temporal-search${qs ? `?${qs}` : ""}`;
@@ -120,14 +121,17 @@ export function useObservationHistory(id: number | null) {
 
 /** Get weekly observation trends. */
 export function useObservationTrends(weeks = 8) {
-  return useRunnerQuery<WeeklyTrend[]>(
-    `/observations/trends?weeks=${weeks}`,
-    { pollInterval: 60000 }
-  );
+  return useRunnerQuery<WeeklyTrend[]>(`/observations/trends?weeks=${weeks}`, {
+    pollInterval: 60000,
+  });
 }
 
 /** Get most revised topics in a date range. */
-export function useMostRevisedTopics(from: string, to: string, maxResults = 20) {
+export function useMostRevisedTopics(
+  from: string,
+  to: string,
+  maxResults = 20
+) {
   return useRunnerQuery<TopicRevisionCount[]>(
     `/observations/most-revised?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&max_results=${maxResults}`
   );

@@ -245,7 +245,9 @@ export function FlowControlPanel({
                 {flowControl.concurrency != null && (
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
-                      <Label className="text-xs text-zinc-400">Max concurrent</Label>
+                      <Label className="text-xs text-zinc-400">
+                        Max concurrent
+                      </Label>
                       <Input
                         type="number"
                         min={1}
@@ -253,14 +255,19 @@ export function FlowControlPanel({
                         value={flowControl.concurrency.limit}
                         onChange={(e) =>
                           updateConcurrency({
-                            limit: Math.max(1, Math.min(20, parseInt(e.target.value) || 1)),
+                            limit: Math.max(
+                              1,
+                              Math.min(20, parseInt(e.target.value) || 1)
+                            ),
                           })
                         }
                         className="h-8 bg-zinc-800 border-zinc-700 text-zinc-200 text-sm"
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs text-zinc-400">Scope key (optional)</Label>
+                      <Label className="text-xs text-zinc-400">
+                        Scope key (optional)
+                      </Label>
                       <Input
                         type="text"
                         placeholder="e.g. repo_path"

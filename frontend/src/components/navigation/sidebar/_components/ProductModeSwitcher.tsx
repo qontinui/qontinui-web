@@ -1,7 +1,10 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { useProductMode, type ProductMode } from "@/contexts/product-mode-context";
+import {
+  useProductMode,
+  type ProductMode,
+} from "@/contexts/product-mode-context";
 import { Bot, Eye } from "lucide-react";
 
 interface ProductModeSwitcherProps {
@@ -16,7 +19,11 @@ export function ProductModeSwitcher({ isCollapsed }: ProductModeSwitcherProps) {
       <button
         onClick={() => setMode(mode === "ai" ? "visual" : "ai")}
         className="flex items-center justify-center w-8 h-8 rounded-md hover:bg-surface-raised transition-colors"
-        title={mode === "ai" ? "Switch to Visual Automation" : "Switch to AI Development"}
+        title={
+          mode === "ai"
+            ? "Switch to Visual Automation"
+            : "Switch to AI Development"
+        }
       >
         {mode === "ai" ? (
           <Bot className="size-4 text-brand-primary" />

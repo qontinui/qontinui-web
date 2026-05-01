@@ -139,7 +139,12 @@ export function SelectionPhase({
                   selectedIds.has(req.id) && "bg-purple-500/5"
                 )}
                 onClick={() => onToggle(req.id)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(req.id); } }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onToggle(req.id);
+                  }
+                }}
               >
                 <Checkbox
                   checked={selectedIds.has(req.id)}

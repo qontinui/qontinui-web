@@ -71,7 +71,11 @@ function getPlatformName(platform: Platform): string {
 const emptySubscribe = () => () => {};
 
 export default function DownloadPage() {
-  const platform = useSyncExternalStore(emptySubscribe, detectPlatform, () => "unknown" as Platform);
+  const platform = useSyncExternalStore(
+    emptySubscribe,
+    detectPlatform,
+    () => "unknown" as Platform
+  );
   const [downloading, setDownloading] = useState<string | null>(null);
 
   const handleDownload = async (

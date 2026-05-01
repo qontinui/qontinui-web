@@ -200,7 +200,9 @@ export default function LogSourcesPage() {
                     },
                   ] as const
                 ).map((mode) => (
-                  <label aria-label="Log source mode" htmlFor="key--mode-value-0"
+                  <label
+                    aria-label="Log source mode"
+                    htmlFor="key--mode-value-0"
                     key={mode.value}
                     className={`flex items-center gap-3 p-2 rounded-md cursor-pointer transition-colors ${
                       current.ai_selection_mode === mode.value
@@ -208,7 +210,8 @@ export default function LogSourcesPage() {
                         : "hover:bg-muted border border-transparent"
                     }`}
                   >
-                    <input id="key--mode-value-0"
+                    <input
+                      id="key--mode-value-0"
                       type="radio"
                       name="ai_mode"
                       checked={current.ai_selection_mode === mode.value}

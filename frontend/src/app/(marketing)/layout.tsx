@@ -50,10 +50,7 @@ export default function MarketingLayout({
 
   return (
     <div className="min-h-screen flex flex-col">
-      <script
-        type="application/ld+json"
-        suppressHydrationWarning
-      >
+      <script type="application/ld+json" suppressHydrationWarning>
         {JSON.stringify(jsonLd)}
       </script>
       <Header />

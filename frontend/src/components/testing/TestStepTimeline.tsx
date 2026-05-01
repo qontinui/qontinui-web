@@ -285,7 +285,15 @@ export function TestStepTimeline({
                                     step,
                                   })
                                 }
-                                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedScreenshot({ url: step.screenshotUrl!, step }); } }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" || e.key === " ") {
+                                    e.preventDefault();
+                                    setSelectedScreenshot({
+                                      url: step.screenshotUrl!,
+                                      step,
+                                    });
+                                  }
+                                }}
                               />
                             </div>
                           </div>

@@ -21,10 +21,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import dagre from "dagre";
-import type {
-  DiscoveredState,
-  StateTransition,
-} from "@/types/state-machine";
+import type { DiscoveredState, StateTransition } from "@/types/state-machine";
 
 interface StateMachineGraphProps {
   states: DiscoveredState[];
@@ -46,8 +43,10 @@ interface StateNodeData {
 
 function StateNode({ data }: { data: StateNodeData }) {
   const getColor = () => {
-    if (data.confidence >= 0.8) return "bg-green-100 border-green-400 text-green-900";
-    if (data.confidence >= 0.5) return "bg-blue-100 border-blue-400 text-blue-900";
+    if (data.confidence >= 0.8)
+      return "bg-green-100 border-green-400 text-green-900";
+    if (data.confidence >= 0.5)
+      return "bg-blue-100 border-blue-400 text-blue-900";
     return "bg-gray-100 border-gray-400 text-gray-900";
   };
 
@@ -57,7 +56,8 @@ function StateNode({ data }: { data: StateNodeData }) {
     >
       <div className="font-medium text-xs leading-tight">{data.label}</div>
       <div className="text-[10px] mt-0.5 opacity-70">
-        {data.elementCount} elements &middot; {Math.round(data.confidence * 100)}%
+        {data.elementCount} elements &middot;{" "}
+        {Math.round(data.confidence * 100)}%
       </div>
     </div>
   );
@@ -72,7 +72,7 @@ const nodeTypes = { stateNode: StateNode };
 function getLayoutedElements(
   nodes: Node[],
   edges: Edge[],
-  direction = "TB",
+  direction = "TB"
 ): { nodes: Node[]; edges: Edge[] } {
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
@@ -142,14 +142,18 @@ export function StateMachineGraph({
   const [nodes, setNodes, onNodesChange] = useNodesState(layoutedNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(layoutedEdges);
 
-  useEffect(() => { setNodes(layoutedNodes); }, [layoutedNodes, setNodes]);
-  useEffect(() => { setEdges(layoutedEdges); }, [layoutedEdges, setEdges]);
+  useEffect(() => {
+    setNodes(layoutedNodes);
+  }, [layoutedNodes, setNodes]);
+  useEffect(() => {
+    setEdges(layoutedEdges);
+  }, [layoutedEdges, setEdges]);
 
   const handleNodeClick = useCallback(
     (_: unknown, node: Node) => {
       onStateClick?.(node.id);
     },
-    [onStateClick],
+    [onStateClick]
   );
 
   if (states.length === 0) {

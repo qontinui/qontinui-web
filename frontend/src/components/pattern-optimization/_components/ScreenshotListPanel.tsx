@@ -84,7 +84,12 @@ export const ScreenshotListPanel: React.FC<ScreenshotListPanelProps> = ({
                   onClick={() => {
                     onSelectScreenshot(screenshot.id);
                   }}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectScreenshot(screenshot.id); } }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onSelectScreenshot(screenshot.id);
+                    }
+                  }}
                 >
                   <div className="font-medium text-sm text-white truncate">
                     {screenshot.name}

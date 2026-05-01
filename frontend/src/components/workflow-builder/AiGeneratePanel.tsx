@@ -70,13 +70,13 @@ export function AiGeneratePanel({
 
   // UI Bridge: Component-level actions for AI control
   useUIComponent({
-    id: 'ai-generate-panel',
-    name: 'AI Generate Panel',
-    description: 'Panel for AI-powered workflow generation',
+    id: "ai-generate-panel",
+    name: "AI Generate Panel",
+    description: "Panel for AI-powered workflow generation",
     actions: [
       {
-        id: 'generate',
-        label: 'Generate',
+        id: "generate",
+        label: "Generate",
         handler: async () => {
           if (canGenerate) {
             await handleGenerate();
@@ -84,8 +84,8 @@ export function AiGeneratePanel({
         },
       },
       {
-        id: 'generate-and-run',
-        label: 'Generate and Run',
+        id: "generate-and-run",
+        label: "Generate and Run",
         handler: async () => {
           if (canGenerate) {
             await handleGenerateAndRun();

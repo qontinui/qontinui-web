@@ -30,14 +30,17 @@ interface StoredPage {
 
 const MAX_ENTRIES = 64;
 
-const store: Map<string, StoredPage> = (
-  globalThis as unknown as {
-    __groundingPageCaptureStore?: Map<string, StoredPage>;
-  }
-).__groundingPageCaptureStore ??
-(((globalThis as unknown as {
-  __groundingPageCaptureStore?: Map<string, StoredPage>;
-}).__groundingPageCaptureStore = new Map<string, StoredPage>()));
+const store: Map<string, StoredPage> =
+  (
+    globalThis as unknown as {
+      __groundingPageCaptureStore?: Map<string, StoredPage>;
+    }
+  ).__groundingPageCaptureStore ??
+  ((
+    globalThis as unknown as {
+      __groundingPageCaptureStore?: Map<string, StoredPage>;
+    }
+  ).__groundingPageCaptureStore = new Map<string, StoredPage>());
 
 function evictOldest(): void {
   while (store.size > MAX_ENTRIES) {
@@ -60,7 +63,7 @@ export async function POST(request: NextRequest) {
     if (!match) {
       return NextResponse.json(
         { ok: false, error: "dataUrl missing or invalid" },
-        { status: 400 },
+        { status: 400 }
       );
     }
     const png = Buffer.from(match[1]!, "base64");
@@ -76,7 +79,9 @@ export async function POST(request: NextRequest) {
         tag: String(e.tag ?? ""),
         role: String(e.role ?? e.tag ?? ""),
         text: String(e.text ?? "").slice(0, 80),
-        bbox: Array.isArray(e.bbox) ? e.bbox.slice(0, 4).map(Number) : [0, 0, 0, 0],
+        bbox: Array.isArray(e.bbox)
+          ? e.bbox.slice(0, 4).map(Number)
+          : [0, 0, 0, 0],
       })) as PageElement[],
       receivedAt: Date.now(),
     });
@@ -90,7 +95,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: (err as Error).message ?? "invalid payload" },
-      { status: 400 },
+      { status: 400 }
     );
   }
 }

@@ -48,7 +48,12 @@ export function HealthIssuesList({ issues }: HealthIssuesListProps) {
             className="p-3 rounded-lg border border-border-subtle/50 hover:border-border-default transition-all cursor-pointer"
             style={{ backgroundColor: `${color}08` }}
             onClick={() => router.push(issue.link)}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(issue.link); } }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                router.push(issue.link);
+              }
+            }}
           >
             <div className="flex items-start gap-3">
               <Icon

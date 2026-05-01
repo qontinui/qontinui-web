@@ -318,7 +318,12 @@ export function ImageEnlargeModal({
         <div
           role="button"
           tabIndex={0}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              (e.currentTarget as HTMLElement).click();
+            }
+          }}
           ref={containerRef}
           className="p-4 pt-0 flex items-start justify-center overflow-auto"
           onWheel={handleWheel}

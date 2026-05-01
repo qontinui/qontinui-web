@@ -241,114 +241,114 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
 
   return (
     <LazyMotion features={domAnimation}>
-    <AnimatePresence>
-      <m.div
-        ref={tooltipRef}
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        transition={{ duration: 0.2 }}
-        className={`
+      <AnimatePresence>
+        <m.div
+          ref={tooltipRef}
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          transition={{ duration: 0.2 }}
+          className={`
           fixed z-[10002] bg-white dark:bg-surface-raised rounded-lg shadow-2xl
           border border-border-subtle dark:border-border-default max-w-md
           ${className}
         `}
-        style={{
-          top: tooltipRect.top,
-          left: tooltipRect.left,
-        }}
-        role="dialog"
-        aria-labelledby="tooltip-title"
-        aria-describedby="tooltip-content"
-      >
-        {/* Arrow */}
-        <div
-          className={`absolute w-0 h-0 border-8 ${arrowClasses[tooltipRect.arrowPosition]}`}
           style={{
-            [tooltipRect.arrowPosition === "top" ||
-            tooltipRect.arrowPosition === "bottom"
-              ? "left"
-              : "top"]: `${tooltipRect.arrowOffset}px`,
-            transform:
-              tooltipRect.arrowPosition === "top" ||
-              tooltipRect.arrowPosition === "bottom"
-                ? "translateX(-50%)"
-                : "translateY(-50%)",
+            top: tooltipRect.top,
+            left: tooltipRect.left,
           }}
-        />
+          role="dialog"
+          aria-labelledby="tooltip-title"
+          aria-describedby="tooltip-content"
+        >
+          {/* Arrow */}
+          <div
+            className={`absolute w-0 h-0 border-8 ${arrowClasses[tooltipRect.arrowPosition]}`}
+            style={{
+              [tooltipRect.arrowPosition === "top" ||
+              tooltipRect.arrowPosition === "bottom"
+                ? "left"
+                : "top"]: `${tooltipRect.arrowOffset}px`,
+              transform:
+                tooltipRect.arrowPosition === "top" ||
+                tooltipRect.arrowPosition === "bottom"
+                  ? "translateX(-50%)"
+                  : "translateY(-50%)",
+            }}
+          />
 
-        {/* Header */}
-        <div className="flex items-start justify-between p-4 border-b border-border-subtle dark:border-border-default">
-          <div className="flex-1 pr-2">
-            <h3
-              id="tooltip-title"
-              className="text-lg font-semibold text-text-primary dark:text-white"
-            >
-              {title}
-            </h3>
-            {currentStep !== undefined && totalSteps !== undefined && (
-              <p className="text-xs text-text-muted dark:text-text-muted mt-0.5">
-                Step {currentStep} of {totalSteps}
-              </p>
-            )}
-          </div>
-          {showClose && (
-            <button
-              onClick={onClose}
-              className="flex-shrink-0 text-text-muted hover:text-text-muted dark:hover:text-text-secondary transition-colors"
-              aria-label="Close tutorial"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          )}
-        </div>
-
-        {/* Content */}
-        <div id="tooltip-content" className="p-4">
-          <p className="text-sm text-text-secondary dark:text-text-secondary whitespace-pre-wrap">
-            {content}
-          </p>
-        </div>
-
-        {/* Footer with navigation buttons */}
-        <div className="flex items-center justify-between p-4 border-t border-border-subtle dark:border-border-default gap-2">
-          <div className="flex gap-2">
-            {showPrevious && !isFirstStep && (
-              <button
-                onClick={onPrevious}
-                className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-text-secondary dark:text-text-secondary hover:bg-surface-raised dark:hover:bg-surface-raised rounded transition-colors"
-                aria-label="Previous step"
+          {/* Header */}
+          <div className="flex items-start justify-between p-4 border-b border-border-subtle dark:border-border-default">
+            <div className="flex-1 pr-2">
+              <h3
+                id="tooltip-title"
+                className="text-lg font-semibold text-text-primary dark:text-white"
               >
-                <ArrowLeft className="w-4 h-4" />
-                <span>Previous</span>
+                {title}
+              </h3>
+              {currentStep !== undefined && totalSteps !== undefined && (
+                <p className="text-xs text-text-muted dark:text-text-muted mt-0.5">
+                  Step {currentStep} of {totalSteps}
+                </p>
+              )}
+            </div>
+            {showClose && (
+              <button
+                onClick={onClose}
+                className="flex-shrink-0 text-text-muted hover:text-text-muted dark:hover:text-text-secondary transition-colors"
+                aria-label="Close tutorial"
+              >
+                <X className="w-5 h-5" />
               </button>
             )}
           </div>
 
-          <div className="flex gap-2">
-            {showSkip && !isLastStep && (
-              <button
-                onClick={onSkip}
-                className="px-3 py-1.5 text-sm font-medium text-text-muted dark:text-text-muted hover:text-text-primary dark:hover:text-text-secondary transition-colors"
-                aria-label="Skip tutorial"
-              >
-                Skip
-              </button>
-            )}
-            {showNext && (
-              <button
-                onClick={onNext}
-                className="inline-flex items-center gap-1 px-4 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 rounded transition-colors"
-                aria-label={isLastStep ? "Finish tutorial" : "Next step"}
-              >
-                <span>{isLastStep ? "Finish" : "Next"}</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            )}
+          {/* Content */}
+          <div id="tooltip-content" className="p-4">
+            <p className="text-sm text-text-secondary dark:text-text-secondary whitespace-pre-wrap">
+              {content}
+            </p>
           </div>
-        </div>
-      </m.div>
-    </AnimatePresence>
+
+          {/* Footer with navigation buttons */}
+          <div className="flex items-center justify-between p-4 border-t border-border-subtle dark:border-border-default gap-2">
+            <div className="flex gap-2">
+              {showPrevious && !isFirstStep && (
+                <button
+                  onClick={onPrevious}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-text-secondary dark:text-text-secondary hover:bg-surface-raised dark:hover:bg-surface-raised rounded transition-colors"
+                  aria-label="Previous step"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Previous</span>
+                </button>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              {showSkip && !isLastStep && (
+                <button
+                  onClick={onSkip}
+                  className="px-3 py-1.5 text-sm font-medium text-text-muted dark:text-text-muted hover:text-text-primary dark:hover:text-text-secondary transition-colors"
+                  aria-label="Skip tutorial"
+                >
+                  Skip
+                </button>
+              )}
+              {showNext && (
+                <button
+                  onClick={onNext}
+                  className="inline-flex items-center gap-1 px-4 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 rounded transition-colors"
+                  aria-label={isLastStep ? "Finish tutorial" : "Next step"}
+                >
+                  <span>{isLastStep ? "Finish" : "Next"}</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+        </m.div>
+      </AnimatePresence>
     </LazyMotion>
   );
 };

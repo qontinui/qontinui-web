@@ -380,7 +380,12 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({
                       : "border-border-subtle hover:bg-surface-raised/80"
                   }`}
                   onClick={() => handleTogglePattern(pattern.suggested_name)}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleTogglePattern(pattern.suggested_name); } }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handleTogglePattern(pattern.suggested_name);
+                    }
+                  }}
                 >
                   <div className="aspect-square bg-surface-raised rounded mb-2 overflow-hidden flex items-center justify-center">
                     {pattern.image_data ? (

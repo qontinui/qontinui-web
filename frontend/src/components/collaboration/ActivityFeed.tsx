@@ -392,7 +392,12 @@ export function ActivityFeed({
                           onActivityClick && "cursor-pointer"
                         )}
                         onClick={() => onActivityClick?.(activity)}
-                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            (e.currentTarget as HTMLElement).click();
+                          }
+                        }}
                       >
                         <Avatar
                           src={activity.user_avatar}

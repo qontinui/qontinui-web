@@ -159,7 +159,12 @@ const ActionItem: React.FC<ActionItemProps> = ({
         isCurrent ? "ring-2 ring-blue-500 ring-opacity-50" : ""
       } hover:shadow-md`}
       onClick={onClick}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick?.(); } }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick?.();
+        }
+      }}
     >
       {/* Breakpoint indicator */}
       {hasBreakpoint && (

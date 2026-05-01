@@ -309,7 +309,12 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
         <div
           role="button"
           tabIndex={0}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              (e.currentTarget as HTMLElement).click();
+            }
+          }}
           className={`absolute top-0 left-0 right-0 h-1 cursor-ns-resize hover:bg-blue-500 ${
             isResizing ? "bg-blue-500" : ""
           }`}

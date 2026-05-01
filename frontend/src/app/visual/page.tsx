@@ -55,7 +55,12 @@ function VisualLandingContent() {
             tabIndex={0}
             className="flex items-center gap-1 cursor-pointer"
             onClick={() => router.push("/")}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push("/"); } }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                router.push("/");
+              }
+            }}
           >
             <Image
               src="/q-logo.png"
@@ -342,8 +347,8 @@ function VisualLandingContent() {
               </h3>
               <p className="text-muted-foreground mb-6">
                 All core libraries are open source. The qontinui Python library,
-                multistate framework, runner, and API bridge are freely available
-                on GitHub.
+                multistate framework, runner, and API bridge are freely
+                available on GitHub.
               </p>
               <div className="space-y-2">
                 <a

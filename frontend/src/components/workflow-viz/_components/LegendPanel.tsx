@@ -118,7 +118,12 @@ function LegendHeader({
         <div
           role="button"
           tabIndex={0}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              (e.currentTarget as HTMLElement).click();
+            }
+          }}
           className="cursor-grab active:cursor-grabbing p-0.5 -ml-1 hover:bg-muted rounded"
           onMouseDown={handleLegendDragStart}
         >

@@ -2881,7 +2881,10 @@
           "severity": "critical",
           "target": {
             "type": "search",
-            "criteria": { "role": "button", "textContains": "Discover State Machine" },
+            "criteria": {
+              "role": "button",
+              "textContains": "Discover State Machine"
+            },
             "label": "Discover State Machine button"
           },
           "assertionType": "behavior",

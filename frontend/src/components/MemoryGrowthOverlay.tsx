@@ -260,11 +260,7 @@ function Sparkline({ snapshots }: { snapshots: readonly MemorySnapshot[] }) {
   );
 }
 
-function DOMSparkline({
-  snapshots,
-}: {
-  snapshots: readonly MemorySnapshot[];
-}) {
+function DOMSparkline({ snapshots }: { snapshots: readonly MemorySnapshot[] }) {
   const values = snapshots.map((s) => s.domNodeCount);
   const min = Math.min(...values);
   const max = Math.max(...values);

@@ -127,7 +127,12 @@ export function SpecGroupList({
                         data-ui-label={`${pageUrl}: ${(group.description || group.name).slice(0, 60)}`}
                         className="flex items-start gap-2 p-1 rounded hover:bg-zinc-700/30 cursor-pointer"
                         onClick={() => onToggleGroup(group.id)}
-                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            (e.currentTarget as HTMLElement).click();
+                          }
+                        }}
                       >
                         <Checkbox
                           checked={selectedGroupIds.has(group.id)}

@@ -74,7 +74,12 @@ export function TemplateCandidateCard({
           : "border-border hover:border-primary/50"
       )}
       onClick={onSelect}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(); } }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect?.();
+        }
+      }}
     >
       {/* Status Badge */}
       <Badge

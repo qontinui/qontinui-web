@@ -136,114 +136,114 @@ export const SpotlightOverlay: React.FC<SpotlightOverlayProps> = ({
 
   return (
     <LazyMotion features={domAnimation}>
-    <AnimatePresence>
-      <m.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.3 }}
-        className={`fixed inset-0 z-[10000] ${className}`}
-        style={{ pointerEvents: allowInteraction ? "none" : "auto" }}
-        onClick={onClick}
-        role="presentation"
-        aria-hidden="true"
-      >
-        <svg
-          width="100%"
-          height="100%"
-          className="absolute inset-0"
-          style={{ pointerEvents: "none" }}
+      <AnimatePresence>
+        <m.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.3 }}
+          className={`fixed inset-0 z-[10000] ${className}`}
+          style={{ pointerEvents: allowInteraction ? "none" : "auto" }}
+          onClick={onClick}
+          role="presentation"
+          aria-hidden="true"
         >
-          <defs>
-            <mask id={maskId}>
-              {/* White background - everything is covered */}
-              <rect x="0" y="0" width="100%" height="100%" fill="white" />
-
-              {/* Black cutout - this area is transparent (spotlight) */}
-              {spotlightRect && (
-                <m.rect
-                  initial={{
-                    x: spotlightRect.x,
-                    y: spotlightRect.y,
-                    width: spotlightRect.width,
-                    height: spotlightRect.height,
-                  }}
-                  animate={{
-                    x: spotlightRect.x,
-                    y: spotlightRect.y,
-                    width: spotlightRect.width,
-                    height: spotlightRect.height,
-                  }}
-                  transition={{ duration: 0.3, ease: "easeInOut" }}
-                  rx={borderRadius}
-                  ry={borderRadius}
-                  fill="black"
-                />
-              )}
-            </mask>
-          </defs>
-
-          {/* Dark overlay with mask applied */}
-          <rect
-            x="0"
-            y="0"
+          <svg
             width="100%"
             height="100%"
-            fill="black"
-            opacity={overlayOpacity}
-            mask={`url(#${maskId})`}
-          />
+            className="absolute inset-0"
+            style={{ pointerEvents: "none" }}
+          >
+            <defs>
+              <mask id={maskId}>
+                {/* White background - everything is covered */}
+                <rect x="0" y="0" width="100%" height="100%" fill="white" />
 
-          {/* Highlight border around spotlight */}
+                {/* Black cutout - this area is transparent (spotlight) */}
+                {spotlightRect && (
+                  <m.rect
+                    initial={{
+                      x: spotlightRect.x,
+                      y: spotlightRect.y,
+                      width: spotlightRect.width,
+                      height: spotlightRect.height,
+                    }}
+                    animate={{
+                      x: spotlightRect.x,
+                      y: spotlightRect.y,
+                      width: spotlightRect.width,
+                      height: spotlightRect.height,
+                    }}
+                    transition={{ duration: 0.3, ease: "easeInOut" }}
+                    rx={borderRadius}
+                    ry={borderRadius}
+                    fill="black"
+                  />
+                )}
+              </mask>
+            </defs>
+
+            {/* Dark overlay with mask applied */}
+            <rect
+              x="0"
+              y="0"
+              width="100%"
+              height="100%"
+              fill="black"
+              opacity={overlayOpacity}
+              mask={`url(#${maskId})`}
+            />
+
+            {/* Highlight border around spotlight */}
+            {spotlightRect && (
+              <m.rect
+                initial={{
+                  x: spotlightRect.x,
+                  y: spotlightRect.y,
+                  width: spotlightRect.width,
+                  height: spotlightRect.height,
+                }}
+                animate={{
+                  x: spotlightRect.x,
+                  y: spotlightRect.y,
+                  width: spotlightRect.width,
+                  height: spotlightRect.height,
+                }}
+                transition={{ duration: 0.3, ease: "easeInOut" }}
+                rx={borderRadius}
+                ry={borderRadius}
+                fill="none"
+                stroke="#3B82F6"
+                strokeWidth="2"
+                className="drop-shadow-lg"
+              />
+            )}
+          </svg>
+
+          {/* Pulse animation around spotlight for extra attention */}
           {spotlightRect && (
-            <m.rect
-              initial={{
-                x: spotlightRect.x,
-                y: spotlightRect.y,
+            <m.div
+              className="absolute border-2 border-blue-400 rounded-lg pointer-events-none"
+              style={{
+                left: spotlightRect.x,
+                top: spotlightRect.y,
                 width: spotlightRect.width,
                 height: spotlightRect.height,
+                borderRadius: borderRadius,
               }}
               animate={{
-                x: spotlightRect.x,
-                y: spotlightRect.y,
-                width: spotlightRect.width,
-                height: spotlightRect.height,
+                opacity: [0.5, 0, 0.5],
+                scale: [1, 1.05, 1],
               }}
-              transition={{ duration: 0.3, ease: "easeInOut" }}
-              rx={borderRadius}
-              ry={borderRadius}
-              fill="none"
-              stroke="#3B82F6"
-              strokeWidth="2"
-              className="drop-shadow-lg"
+              transition={{
+                duration: 2,
+                repeat: Infinity,
+                ease: "easeInOut",
+              }}
             />
           )}
-        </svg>
-
-        {/* Pulse animation around spotlight for extra attention */}
-        {spotlightRect && (
-          <m.div
-            className="absolute border-2 border-blue-400 rounded-lg pointer-events-none"
-            style={{
-              left: spotlightRect.x,
-              top: spotlightRect.y,
-              width: spotlightRect.width,
-              height: spotlightRect.height,
-              borderRadius: borderRadius,
-            }}
-            animate={{
-              opacity: [0.5, 0, 0.5],
-              scale: [1, 1.05, 1],
-            }}
-            transition={{
-              duration: 2,
-              repeat: Infinity,
-              ease: "easeInOut",
-            }}
-          />
-        )}
-      </m.div>
-    </AnimatePresence>
+        </m.div>
+      </AnimatePresence>
     </LazyMotion>
   );
 };

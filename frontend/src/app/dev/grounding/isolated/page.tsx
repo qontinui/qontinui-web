@@ -145,7 +145,10 @@ interface RenderParams {
   size: string;
 }
 
-function renderComponent(name: ComponentName, params: RenderParams): React.ReactNode {
+function renderComponent(
+  name: ComponentName,
+  params: RenderParams
+): React.ReactNode {
   const disabled = params.state === "disabled";
   const checked = params.state === "checked";
   const pressed = params.state === "pressed";
@@ -168,14 +171,29 @@ function renderComponent(name: ComponentName, params: RenderParams): React.React
         | "warning"
         | "info";
       type ButtonSize = "default" | "sm" | "lg" | "icon";
-      const btnVariant: ButtonVariant =
-        (["default","secondary","destructive","outline","ghost","link","brand-primary","brand-secondary","brand-success","success","warning","info"] as const).includes(variant as ButtonVariant)
-          ? (variant as ButtonVariant)
-          : "default";
-      const btnSize: ButtonSize =
-        (["default","sm","lg","icon"] as const).includes(size as ButtonSize)
-          ? (size as ButtonSize)
-          : "default";
+      const btnVariant: ButtonVariant = (
+        [
+          "default",
+          "secondary",
+          "destructive",
+          "outline",
+          "ghost",
+          "link",
+          "brand-primary",
+          "brand-secondary",
+          "brand-success",
+          "success",
+          "warning",
+          "info",
+        ] as const
+      ).includes(variant as ButtonVariant)
+        ? (variant as ButtonVariant)
+        : "default";
+      const btnSize: ButtonSize = (
+        ["default", "sm", "lg", "icon"] as const
+      ).includes(size as ButtonSize)
+        ? (size as ButtonSize)
+        : "default";
       return (
         <Button variant={btnVariant} size={btnSize} disabled={disabled}>
           {variant.charAt(0).toUpperCase() + variant.slice(1)} Button
@@ -195,11 +213,27 @@ function renderComponent(name: ComponentName, params: RenderParams): React.React
         | "brand-primary"
         | "brand-secondary"
         | "brand-success";
-      const badgeVariant: BadgeVariant =
-        (["default","secondary","destructive","outline","success","warning","info","brand-primary","brand-secondary","brand-success"] as const).includes(variant as BadgeVariant)
-          ? (variant as BadgeVariant)
-          : "default";
-      return <Badge variant={badgeVariant}>{variant.charAt(0).toUpperCase() + variant.slice(1)}</Badge>;
+      const badgeVariant: BadgeVariant = (
+        [
+          "default",
+          "secondary",
+          "destructive",
+          "outline",
+          "success",
+          "warning",
+          "info",
+          "brand-primary",
+          "brand-secondary",
+          "brand-success",
+        ] as const
+      ).includes(variant as BadgeVariant)
+        ? (variant as BadgeVariant)
+        : "default";
+      return (
+        <Badge variant={badgeVariant}>
+          {variant.charAt(0).toUpperCase() + variant.slice(1)}
+        </Badge>
+      );
     }
 
     case "Input":
@@ -258,9 +292,7 @@ function renderComponent(name: ComponentName, params: RenderParams): React.React
             defaultChecked={checked}
             disabled={disabled}
           />
-          <Label htmlFor="grounding-switch">
-            {checked ? "On" : "Off"}
-          </Label>
+          <Label htmlFor="grounding-switch">{checked ? "On" : "Off"}</Label>
         </div>
       );
 
@@ -327,7 +359,9 @@ function renderComponent(name: ComponentName, params: RenderParams): React.React
             <p className="text-sm">Card body content.</p>
           </CardContent>
           <CardFooter className="flex justify-end gap-2">
-            <Button variant="outline" size="sm">Cancel</Button>
+            <Button variant="outline" size="sm">
+              Cancel
+            </Button>
             <Button size="sm">Save</Button>
           </CardFooter>
         </Card>
@@ -364,8 +398,20 @@ function renderComponent(name: ComponentName, params: RenderParams): React.React
 // ---------------------------------------------------------------------------
 
 const VALID_COMPONENTS: ComponentName[] = [
-  "Button","Badge","Input","Textarea","Select","Checkbox",
-  "Switch","Toggle","Slider","Progress","Tabs","Card","Separator","Label",
+  "Button",
+  "Badge",
+  "Input",
+  "Textarea",
+  "Select",
+  "Checkbox",
+  "Switch",
+  "Toggle",
+  "Slider",
+  "Progress",
+  "Tabs",
+  "Card",
+  "Separator",
+  "Label",
 ];
 
 function IsolatedPageInner() {
@@ -380,7 +426,9 @@ function IsolatedPageInner() {
   const left = parseFloat(params.get("left") ?? "50");
   const top = parseFloat(params.get("top") ?? "50");
 
-  const componentName: ComponentName = VALID_COMPONENTS.includes(componentParam as ComponentName)
+  const componentName: ComponentName = VALID_COMPONENTS.includes(
+    componentParam as ComponentName
+  )
     ? (componentParam as ComponentName)
     : "Button";
 

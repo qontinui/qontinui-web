@@ -457,7 +457,10 @@ export function useUIBridgeRecording() {
                 config,
               })
             );
-            setTimeout(() => reject(new Error("Start recording timeout")), 10000);
+            setTimeout(
+              () => reject(new Error("Start recording timeout")),
+              10000
+            );
           }
         );
 
@@ -481,7 +484,9 @@ export function useUIBridgeRecording() {
         return { success: true };
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : "Failed to start SDK recording";
+          error instanceof Error
+            ? error.message
+            : "Failed to start SDK recording";
         setSession((prev) => ({ ...prev, error: message }));
         return { success: false, error: message };
       } finally {
@@ -600,7 +605,8 @@ export function useUIBridgeRecording() {
         if (!response.ok) {
           const error = await response.json().catch(() => ({}));
           throw new Error(
-            (error as { detail?: string }).detail || "Pipeline processing failed"
+            (error as { detail?: string }).detail ||
+              "Pipeline processing failed"
           );
         }
 

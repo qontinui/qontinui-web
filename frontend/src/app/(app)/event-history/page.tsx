@@ -44,15 +44,19 @@ interface DurableQueueStatus {
 function formatTimestamp(iso: string): string {
   try {
     const d = new Date(iso);
-    return d.toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    }) + " " + d.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    });
+    return (
+      d.toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      }) +
+      " " +
+      d.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      })
+    );
   } catch {
     return iso;
   }
@@ -77,7 +81,7 @@ function formatTimestampFull(iso: string): string {
 }
 
 function truncateJson(value: unknown, maxLen = 120): string {
-  const s = typeof value === "string" ? value : JSON.stringify(value) ?? "";
+  const s = typeof value === "string" ? value : (JSON.stringify(value) ?? "");
   return s.length > maxLen ? s.slice(0, maxLen) + "\u2026" : s;
 }
 
@@ -98,7 +102,8 @@ function sourceLabel(source: EventSource): string {
 
 /** Colored dot class based on event name pattern. */
 function eventDotColor(name: string): string {
-  if (name.includes("completed") || name.includes("success")) return "bg-green-500";
+  if (name.includes("completed") || name.includes("success"))
+    return "bg-green-500";
   if (name.includes("failed") || name.includes("error")) return "bg-red-500";
   if (name.includes("started")) return "bg-blue-500";
   if (name.startsWith("step.")) return "bg-yellow-500";
@@ -108,7 +113,8 @@ function eventDotColor(name: string): string {
 /** Text color class for event name. */
 function eventTextColor(name: string): string {
   if (name.includes("failed") || name.includes("error")) return "text-red-400";
-  if (name.includes("completed") || name.includes("success")) return "text-green-400";
+  if (name.includes("completed") || name.includes("success"))
+    return "text-green-400";
   return "text-foreground";
 }
 
@@ -138,7 +144,9 @@ function QueueStatusWidget() {
           className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-border bg-muted text-sm"
         >
           <span className="text-muted-foreground">{s.label}</span>
-          <span className="font-semibold text-foreground tabular-nums">{s.value}</span>
+          <span className="font-semibold text-foreground tabular-nums">
+            {s.value}
+          </span>
         </div>
       ))}
       <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border bg-muted text-sm">
@@ -165,19 +173,25 @@ interface CircuitBreakerStatus {
 }
 
 function CircuitBreakerWidget() {
-  const { data: cb } = useRunnerQuery<CircuitBreakerStatus>("/inngest/circuit-breaker", {
-    pollInterval: 5000,
-  });
+  const { data: cb } = useRunnerQuery<CircuitBreakerStatus>(
+    "/inngest/circuit-breaker",
+    {
+      pollInterval: 5000,
+    }
+  );
 
   if (!cb) return null;
 
   const stateConfig: Record<string, { dot: string; label: string }> = {
-    closed:    { dot: "bg-green-500",  label: "Closed" },
-    open:      { dot: "bg-red-500",    label: "Open" },
+    closed: { dot: "bg-green-500", label: "Closed" },
+    open: { dot: "bg-red-500", label: "Open" },
     half_open: { dot: "bg-yellow-500", label: "Half-Open" },
   };
 
-  const { dot, label } = stateConfig[cb.state] ?? { dot: "bg-zinc-500", label: cb.state };
+  const { dot, label } = stateConfig[cb.state] ?? {
+    dot: "bg-zinc-500",
+    label: cb.state,
+  };
   const cooldownSec = Math.round(cb.cooldown_ms / 1000);
 
   return (
@@ -195,7 +209,9 @@ function CircuitBreakerWidget() {
       </div>
       <div className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-border bg-muted text-sm">
         <span className="text-muted-foreground">Cooldown</span>
-        <span className="font-semibold text-foreground tabular-nums">{cooldownSec}s</span>
+        <span className="font-semibold text-foreground tabular-nums">
+          {cooldownSec}s
+        </span>
       </div>
     </div>
   );
@@ -213,24 +229,40 @@ function EventDetailPanel({ evt }: { evt: WorkflowEvent }) {
           {/* Left column: metadata */}
           <div className="space-y-2">
             <div>
-              <span className="text-muted-foreground text-xs uppercase tracking-wide">Event Name</span>
-              <p className={`font-mono text-sm ${eventTextColor(evt.name)}`}>{evt.name}</p>
+              <span className="text-muted-foreground text-xs uppercase tracking-wide">
+                Event Name
+              </span>
+              <p className={`font-mono text-sm ${eventTextColor(evt.name)}`}>
+                {evt.name}
+              </p>
             </div>
             <div>
-              <span className="text-muted-foreground text-xs uppercase tracking-wide">Timestamp</span>
-              <p className="font-mono text-sm text-foreground">{formatTimestampFull(evt.timestamp)}</p>
+              <span className="text-muted-foreground text-xs uppercase tracking-wide">
+                Timestamp
+              </span>
+              <p className="font-mono text-sm text-foreground">
+                {formatTimestampFull(evt.timestamp)}
+              </p>
             </div>
             {evt.idempotency_key && (
               <div>
-                <span className="text-muted-foreground text-xs uppercase tracking-wide">Idempotency Key</span>
-                <p className="font-mono text-xs text-foreground break-all">{evt.idempotency_key}</p>
+                <span className="text-muted-foreground text-xs uppercase tracking-wide">
+                  Idempotency Key
+                </span>
+                <p className="font-mono text-xs text-foreground break-all">
+                  {evt.idempotency_key}
+                </p>
               </div>
             )}
             <div>
-              <span className="text-muted-foreground text-xs uppercase tracking-wide">Source</span>
+              <span className="text-muted-foreground text-xs uppercase tracking-wide">
+                Source
+              </span>
               <div className="space-y-0.5 mt-0.5">
                 {evt.source.workflow_name && (
-                  <p className="text-sm text-foreground">{evt.source.workflow_name}</p>
+                  <p className="text-sm text-foreground">
+                    {evt.source.workflow_name}
+                  </p>
                 )}
                 {evt.source.workflow_id && (
                   <p className="font-mono text-xs text-muted-foreground">
@@ -242,16 +274,20 @@ function EventDetailPanel({ evt }: { evt: WorkflowEvent }) {
                     task_run_id: {evt.source.task_run_id}
                   </p>
                 )}
-                {!evt.source.workflow_name && !evt.source.workflow_id && !evt.source.task_run_id && (
-                  <p className="text-muted-foreground">&mdash;</p>
-                )}
+                {!evt.source.workflow_name &&
+                  !evt.source.workflow_id &&
+                  !evt.source.task_run_id && (
+                    <p className="text-muted-foreground">&mdash;</p>
+                  )}
               </div>
             </div>
           </div>
 
           {/* Right column: JSON data */}
           <div>
-            <span className="text-muted-foreground text-xs uppercase tracking-wide">Data</span>
+            <span className="text-muted-foreground text-xs uppercase tracking-wide">
+              Data
+            </span>
             <pre className="mt-1 p-3 rounded-md bg-background border border-border font-mono text-xs text-foreground overflow-auto max-h-64 whitespace-pre-wrap break-all">
               {formatJson(evt.data)}
             </pre>
@@ -319,11 +355,14 @@ export default function EventHistoryPage() {
           {subscriptions && (
             <span className="flex items-center gap-1.5">
               <Filter className="w-3.5 h-3.5" />
-              {subscriptions.length} subscription{subscriptions.length !== 1 ? "s" : ""}
+              {subscriptions.length} subscription
+              {subscriptions.length !== 1 ? "s" : ""}
             </span>
           )}
           {events && (
-            <span>{events.length} event{events.length !== 1 ? "s" : ""}</span>
+            <span>
+              {events.length} event{events.length !== 1 ? "s" : ""}
+            </span>
           )}
         </div>
       </header>
@@ -342,7 +381,10 @@ export default function EventHistoryPage() {
             type="text"
             placeholder="Filter by event name or source..."
             value={filter}
-            onChange={(e) => { setFilter(e.target.value); setSelectedIdx(null); }}
+            onChange={(e) => {
+              setFilter(e.target.value);
+              setSelectedIdx(null);
+            }}
             className="w-full pl-9 pr-3 py-1.5 text-sm rounded-md border border-border bg-muted text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           />
         </div>
@@ -372,7 +414,9 @@ export default function EventHistoryPage() {
           <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
             <Radio className="w-12 h-12 mb-3 opacity-40" />
             <p className="text-sm">
-              {filter ? "No events match the filter." : "No events recorded yet."}
+              {filter
+                ? "No events match the filter."
+                : "No events recorded yet."}
             </p>
           </div>
         )}
@@ -392,7 +436,9 @@ export default function EventHistoryPage() {
                 {filtered.map((evt, idx) => {
                   const isExpanded = selectedIdx === idx;
                   return (
-                    <Fragment key={evt.idempotency_key ?? `${evt.timestamp}-${idx}`}>
+                    <Fragment
+                      key={evt.idempotency_key ?? `${evt.timestamp}-${idx}`}
+                    >
                       <tr
                         onClick={() => handleRowClick(idx)}
                         className={`cursor-pointer transition-colors ${
@@ -401,16 +447,19 @@ export default function EventHistoryPage() {
                       >
                         <td className="px-6 py-2 text-muted-foreground whitespace-nowrap font-mono text-xs">
                           <span className="inline-flex items-center gap-1.5">
-                            {isExpanded
-                              ? <ChevronDown className="w-3 h-3 text-muted-foreground shrink-0" />
-                              : <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
-                            }
+                            {isExpanded ? (
+                              <ChevronDown className="w-3 h-3 text-muted-foreground shrink-0" />
+                            ) : (
+                              <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                            )}
                             {formatTimestamp(evt.timestamp)}
                           </span>
                         </td>
                         <td className="px-6 py-2 font-medium text-foreground">
                           <span className="inline-flex items-center gap-1.5">
-                            <span className={`w-2 h-2 rounded-full shrink-0 ${eventDotColor(evt.name)}`} />
+                            <span
+                              className={`w-2 h-2 rounded-full shrink-0 ${eventDotColor(evt.name)}`}
+                            />
                             <span className={eventTextColor(evt.name)}>
                               {evt.name}
                             </span>
@@ -449,7 +498,9 @@ export default function EventHistoryPage() {
                     {sub.event_pattern}
                   </span>
                   {sub.once && (
-                    <span className="ml-auto text-xs text-muted-foreground">once</span>
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      once
+                    </span>
                   )}
                 </div>
               ))}

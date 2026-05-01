@@ -308,7 +308,12 @@ export function EdgeDetectionView({
                         : "hover:bg-accent"
                     }`}
                     onClick={() => setSelectedId(isSelected ? null : result.id)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId(isSelected ? null : result.id); } }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setSelectedId(isSelected ? null : result.id);
+                      }
+                    }}
                   >
                     <div className="flex items-center justify-between mb-1">
                       <Badge

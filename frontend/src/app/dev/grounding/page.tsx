@@ -103,11 +103,7 @@ export default function GroundingGalleryPage() {
           <Input placeholder="Default input" className="w-64" />
           <Input placeholder="Disabled" disabled className="w-64" />
           <Input type="password" placeholder="Password" className="w-64" />
-          <Input
-            placeholder="Invalid"
-            aria-invalid="true"
-            className="w-64"
-          />
+          <Input placeholder="Invalid" aria-invalid="true" className="w-64" />
         </Section>
 
         {/* Textarea */}

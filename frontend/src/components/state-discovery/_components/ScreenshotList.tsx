@@ -34,7 +34,12 @@ const ScreenshotList: React.FC<ScreenshotListProps> = ({
                 : "border-border-subtle hover:border-border-default"
             )}
             onClick={() => onSelectScreenshot(index)}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectScreenshot(index); } }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelectScreenshot(index);
+              }
+            }}
           >
             {/* Thumbnail */}
             <div className="aspect-video bg-surface-raised flex items-center justify-center overflow-hidden">

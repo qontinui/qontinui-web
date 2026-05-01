@@ -383,7 +383,12 @@ export function StateList({
                                 : "hover:bg-muted"
                           }`}
                           onClick={() => handleSelectState(state.id)}
-                          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleSelectState(state.id); } }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              handleSelectState(state.id);
+                            }
+                          }}
                         >
                           <Checkbox
                             checked={isChecked}

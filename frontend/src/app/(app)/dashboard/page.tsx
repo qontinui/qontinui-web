@@ -9,7 +9,9 @@ export default function DashboardRedirect() {
 
   useEffect(() => {
     const mode = getStoredProductMode();
-    router.replace(mode === "visual" ? "/tools/visual-automation" : "/build/workflows");
+    router.replace(
+      mode === "visual" ? "/tools/visual-automation" : "/build/workflows"
+    );
   }, [router]);
 
   return null;

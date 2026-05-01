@@ -122,7 +122,7 @@ export const recordingStateMachineTutorial: Tutorial = {
         "Here's what happens when you click **Record** in the State Machine Recording panel:\n\n" +
         "1. **Start** — SDK takes an initial fingerprint snapshot of all registered elements\n" +
         "2. **Interact** — You click, type, and navigate normally. The SDK's `InteractionInterceptor` captures each action on registered elements\n" +
-        "3. **Capture** — For each interaction: a \"before\" snapshot is taken, the DOM settles, then an \"after\" snapshot captures what changed\n" +
+        '3. **Capture** — For each interaction: a "before" snapshot is taken, the DOM settles, then an "after" snapshot captures what changed\n' +
         "4. **Diff** — The system computes which fingerprints appeared and disappeared\n" +
         "5. **Stop** — All snapshots, transitions, and extracted variables are bundled into a `CooccurrenceExport`",
       targetElement: {
@@ -262,7 +262,7 @@ export const recordingStateMachineTutorial: Tutorial = {
         "Every completed recording session is stored as **experience memory** in PostgreSQL, indexed by app domain.\n\n" +
         "When you connect to an app with past sessions, the UI shows:\n\n" +
         "- **Past recordings for this app** — state count, transition count, confidence\n" +
-        "- A hint: *\"New recordings will merge with discovered states via incremental merge\"*\n\n" +
+        '- A hint: *"New recordings will merge with discovered states via incremental merge"*\n\n' +
         "This means the system **learns your application over time** — each recording session adds to the collective understanding, just like the Agent-S experience memory pattern identified in the scout.",
       estimatedDuration: 0.5,
     },

@@ -39,9 +39,8 @@ function CompactRunCard({
   >("deferred-question-created", `/task-runs/${run.id}/deferred-questions`, {
     fallbackPollMs: 30000,
   });
-  const pendingCount = deferredQuestions?.filter(
-    (q) => q.status === "pending"
-  ).length ?? 0;
+  const pendingCount =
+    deferredQuestions?.filter((q) => q.status === "pending").length ?? 0;
 
   return (
     <button

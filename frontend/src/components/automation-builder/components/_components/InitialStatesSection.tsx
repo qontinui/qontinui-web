@@ -85,7 +85,12 @@ export function InitialStatesSection({
                       key={state.id}
                       className="flex items-center gap-2 p-2 rounded hover:bg-surface-raised/50 cursor-pointer transition-colors"
                       onClick={() => onToggle(state.id, !isSelected)}
-                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          (e.currentTarget as HTMLElement).click();
+                        }
+                      }}
                     >
                       <Checkbox
                         checked={isSelected}

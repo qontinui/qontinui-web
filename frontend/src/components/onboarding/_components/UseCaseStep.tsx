@@ -65,7 +65,8 @@ export function UseCaseStep({ wizardState, updateState }: UseCaseStepProps) {
           const isSelected = wizardState.useCase === option.value;
 
           return (
-            <label htmlFor={`usecase-${option.value}`}
+            <label
+              htmlFor={`usecase-${option.value}`}
               key={option.value}
               className={cn(
                 "flex items-start gap-4 p-4 rounded-lg border-2 cursor-pointer transition-all duration-300",
@@ -74,7 +75,11 @@ export function UseCaseStep({ wizardState, updateState }: UseCaseStepProps) {
                   : "bg-surface-raised/50 border-border-subtle hover:border-border-default"
               )}
             >
-              <RadioGroupItem id={`usecase-${option.value}`} value={option.value} className="mt-1" />
+              <RadioGroupItem
+                id={`usecase-${option.value}`}
+                value={option.value}
+                className="mt-1"
+              />
               <div className="flex items-start gap-3 flex-1">
                 <div
                   className={cn(

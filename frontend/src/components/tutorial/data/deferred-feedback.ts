@@ -151,7 +151,7 @@ export const deferredFeedbackTutorial: Tutorial = {
       id: "rejecting-rework",
       title: "Rejecting a Decision: Targeted Rework",
       content:
-        "Click **Reject** and you'll be prompted for feedback: *\"Why was this decision wrong?\"*\n\n" +
+        'Click **Reject** and you\'ll be prompted for feedback: *"Why was this decision wrong?"*\n\n' +
         "This triggers **targeted rework**:\n\n" +
         "1. The codebase is **rolled back** to the git checkpoint before the rejected decision\n" +
         "2. A new **rework task run** is spawned as a child of the original\n" +

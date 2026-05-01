@@ -91,7 +91,10 @@ function renderContentLine(line: string, idx: number): React.ReactNode {
         parts.push(<strong key={partKey++}>{match[2]}</strong>);
       } else if (match[3]) {
         parts.push(
-          <code key={partKey++} className="bg-muted px-1.5 py-0.5 rounded text-sm">
+          <code
+            key={partKey++}
+            className="bg-muted px-1.5 py-0.5 rounded text-sm"
+          >
             {match[3]}
           </code>
         );
@@ -113,7 +116,9 @@ function renderContentLine(line: string, idx: number): React.ReactNode {
 }
 
 function ContentRenderer({ content }: { content: string }) {
-  return <>{content.split("\n").map((line, idx) => renderContentLine(line, idx))}</>;
+  return (
+    <>{content.split("\n").map((line, idx) => renderContentLine(line, idx))}</>
+  );
 }
 
 export function ViewerContent({

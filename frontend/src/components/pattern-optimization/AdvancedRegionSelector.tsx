@@ -59,7 +59,6 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
     return () => {
       log.debug("UNMOUNTED");
     };
-     
   }, []);
 
   return (

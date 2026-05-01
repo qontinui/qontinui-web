@@ -111,11 +111,14 @@ const StateAssociationPanel: React.FC<StateAssociationPanelProps> = ({
         <div className="max-h-48 overflow-y-auto space-y-1">
           {filteredStates.length > 0 ? (
             filteredStates.map((state) => (
-              <label aria-label="State selection" htmlFor="key--state-id-0"
+              <label
+                aria-label="State selection"
+                htmlFor="key--state-id-0"
                 key={state.id}
                 className="flex items-center gap-2 p-2 hover:bg-surface-canvas rounded cursor-pointer"
               >
-                <input id="key--state-id-0"
+                <input
+                  id="key--state-id-0"
                   type="checkbox"
                   checked={screenshot.associatedStates.includes(state.id)}
                   onChange={() => handleToggleState(state.id)}

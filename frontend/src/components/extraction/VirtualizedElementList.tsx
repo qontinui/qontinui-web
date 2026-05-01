@@ -114,7 +114,10 @@ const ElementRow = memo(function ElementRow({
   onSelect,
   onHover,
 }: ElementRowProps) {
-  const style = useMemo<React.CSSProperties>(() => ({ top, height }), [top, height]);
+  const style = useMemo<React.CSSProperties>(
+    () => ({ top, height }),
+    [top, height]
+  );
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
       onSelect(element.id, e.shiftKey);
@@ -145,7 +148,12 @@ const ElementRow = memo(function ElementRow({
         isHovered && !isSelected && "bg-surface-raised/30"
       )}
       onClick={handleClick}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          (e.currentTarget as HTMLElement).click();
+        }
+      }}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       role="option"

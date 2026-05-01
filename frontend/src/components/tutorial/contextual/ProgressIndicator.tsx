@@ -60,58 +60,58 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
 
     return (
       <LazyMotion features={domAnimation}>
-      <div className={`inline-flex items-center justify-center ${className}`}>
-        <div
-          className="relative"
-          style={{ width: circleSize, height: circleSize }}
-        >
-          <svg
-            width={circleSize}
-            height={circleSize}
-            className="transform -rotate-90"
+        <div className={`inline-flex items-center justify-center ${className}`}>
+          <div
+            className="relative"
+            style={{ width: circleSize, height: circleSize }}
           >
-            {/* Background circle */}
-            <circle
-              cx={circleSize / 2}
-              cy={circleSize / 2}
-              r={radius}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={strokeWidth}
-              className="text-border-subtle dark:text-surface-raised"
-            />
-            {/* Progress circle */}
-            <m.circle
-              cx={circleSize / 2}
-              cy={circleSize / 2}
-              r={radius}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={strokeWidth}
-              strokeDasharray={circumference}
-              strokeDashoffset={offset}
-              strokeLinecap="round"
-              className="text-blue-600 dark:text-blue-400"
-              initial={{ strokeDashoffset: circumference }}
-              animate={{ strokeDashoffset: offset }}
-              transition={{ duration: 0.5, ease: "easeInOut" }}
-            />
-          </svg>
-          {/* Center text */}
-          <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span
-              className={`font-semibold text-text-primary dark:text-text-primary ${textSizeClasses[size]}`}
+            <svg
+              width={circleSize}
+              height={circleSize}
+              className="transform -rotate-90"
             >
-              {currentStep}/{totalSteps}
-            </span>
-            {showPercentage && (
-              <span className="text-xs text-text-muted dark:text-text-muted">
-                {percentage}%
+              {/* Background circle */}
+              <circle
+                cx={circleSize / 2}
+                cy={circleSize / 2}
+                r={radius}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={strokeWidth}
+                className="text-border-subtle dark:text-surface-raised"
+              />
+              {/* Progress circle */}
+              <m.circle
+                cx={circleSize / 2}
+                cy={circleSize / 2}
+                r={radius}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={strokeWidth}
+                strokeDasharray={circumference}
+                strokeDashoffset={offset}
+                strokeLinecap="round"
+                className="text-blue-600 dark:text-blue-400"
+                initial={{ strokeDashoffset: circumference }}
+                animate={{ strokeDashoffset: offset }}
+                transition={{ duration: 0.5, ease: "easeInOut" }}
+              />
+            </svg>
+            {/* Center text */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <span
+                className={`font-semibold text-text-primary dark:text-text-primary ${textSizeClasses[size]}`}
+              >
+                {currentStep}/{totalSteps}
               </span>
-            )}
+              {showPercentage && (
+                <span className="text-xs text-text-muted dark:text-text-muted">
+                  {percentage}%
+                </span>
+              )}
+            </div>
           </div>
         </div>
-      </div>
       </LazyMotion>
     );
   }
@@ -119,37 +119,37 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
   // Linear variant
   return (
     <LazyMotion features={domAnimation}>
-    <div className={`w-full ${className}`}>
-      <div className="flex items-center justify-between mb-1">
-        <span
-          className={`font-medium text-text-secondary dark:text-text-secondary ${textSizeClasses[size]}`}
-        >
-          Step {currentStep} of {totalSteps}
-        </span>
-        {showPercentage && (
+      <div className={`w-full ${className}`}>
+        <div className="flex items-center justify-between mb-1">
           <span
-            className={`font-semibold text-blue-600 dark:text-blue-400 ${textSizeClasses[size]}`}
+            className={`font-medium text-text-secondary dark:text-text-secondary ${textSizeClasses[size]}`}
           >
-            {percentage}%
+            Step {currentStep} of {totalSteps}
           </span>
-        )}
+          {showPercentage && (
+            <span
+              className={`font-semibold text-blue-600 dark:text-blue-400 ${textSizeClasses[size]}`}
+            >
+              {percentage}%
+            </span>
+          )}
+        </div>
+        <div
+          className={`w-full bg-surface-raised dark:bg-surface-raised rounded-full overflow-hidden ${sizeClasses[size]}`}
+          role="progressbar"
+          aria-valuenow={percentage}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={`Tutorial progress: ${percentage}% complete`}
+        >
+          <m.div
+            className="h-full bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-400 dark:to-blue-500"
+            initial={{ width: 0 }}
+            animate={{ width: `${percentage}%` }}
+            transition={{ duration: 0.5, ease: "easeInOut" }}
+          />
+        </div>
       </div>
-      <div
-        className={`w-full bg-surface-raised dark:bg-surface-raised rounded-full overflow-hidden ${sizeClasses[size]}`}
-        role="progressbar"
-        aria-valuenow={percentage}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-label={`Tutorial progress: ${percentage}% complete`}
-      >
-        <m.div
-          className="h-full bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-400 dark:to-blue-500"
-          initial={{ width: 0 }}
-          animate={{ width: `${percentage}%` }}
-          transition={{ duration: 0.5, ease: "easeInOut" }}
-        />
-      </div>
-    </div>
     </LazyMotion>
   );
 };

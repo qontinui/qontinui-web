@@ -68,7 +68,12 @@ export function SortableStepItem({
           : "hover:bg-zinc-800/60"
       )}
       onClick={onSelect}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(); } }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect?.();
+        }
+      }}
     >
       {/* Drag handle */}
       <button

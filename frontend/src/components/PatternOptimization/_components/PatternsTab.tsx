@@ -85,7 +85,18 @@ export function PatternsTab({
                         }
                         setSelectedPatterns(newSelection);
                       }}
-                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); const ns = new Set(selectedPatterns); if (isSelected) { ns.delete(pattern.id); } else { ns.add(pattern.id); } setSelectedPatterns(ns); } }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          const ns = new Set(selectedPatterns);
+                          if (isSelected) {
+                            ns.delete(pattern.id);
+                          } else {
+                            ns.add(pattern.id);
+                          }
+                          setSelectedPatterns(ns);
+                        }
+                      }}
                     >
                       <div className="aspect-video bg-surface-raised rounded mb-2 flex items-center justify-center overflow-hidden">
                         {pattern.imageUrl ? (

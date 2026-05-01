@@ -12,7 +12,11 @@ export type { TutorialStep } from "./types";
 const emptySubscribe = () => () => {};
 
 export function TutorialOverlay() {
-  const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
+  const mounted = useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false
+  );
   const overlayRef = useRef<HTMLDivElement>(null);
 
   const {

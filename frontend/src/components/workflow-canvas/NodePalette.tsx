@@ -430,7 +430,12 @@ export const FloatingPalette: React.FC<FloatingPaletteProps> = ({
     <div
       role="button"
       tabIndex={0}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          (e.currentTarget as HTMLElement).click();
+        }
+      }}
       className={cn(
         "node-palette--floating",
         isDragging && "node-palette--dragging-window"

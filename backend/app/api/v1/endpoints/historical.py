@@ -219,8 +219,8 @@ async def get_random_historical_result(
         logger.debug("no_historical_results_found", criteria=request.model_dump())
         return None
 
-    # Random offset for selection
-    offset = random.randint(0, total - 1)  # noqa: S311 - non-cryptographic sampling
+    # Random offset for display sampling — not security-sensitive, no auth/token use
+    offset = random.randint(0, total - 1)  # noqa: S311 - intentional non-cryptographic sampling
     query = query.offset(offset).limit(1)
 
     result = await db.execute(query)

@@ -65,7 +65,9 @@ export const ScreenshotSidebar: React.FC<ScreenshotSidebarProps> = ({
                 role="group"
                 className="mt-2 flex items-center gap-1"
                 onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") e.stopPropagation(); }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+                }}
               >
                 <QontinuiInput
                   value={editingName}

@@ -80,7 +80,13 @@ export function StateMachineSidebar({
                     onSelectState(state.id);
                     onDeselectEdge();
                   }}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectState(state.id); onDeselectEdge(); } }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onSelectState(state.id);
+                      onDeselectEdge();
+                    }
+                  }}
                 >
                   <span className="text-sm flex-1 truncate">{state.name}</span>
                   <Button

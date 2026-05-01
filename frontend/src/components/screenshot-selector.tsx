@@ -218,10 +218,19 @@ export function ScreenshotSelector({
                   <div
                     key={screenshot.id}
                     role="option"
-                    aria-selected={multiSelect ? tempSelectedScreenshots.includes(screenshot.id) : selectedScreenshots.includes(screenshot.id)}
+                    aria-selected={
+                      multiSelect
+                        ? tempSelectedScreenshots.includes(screenshot.id)
+                        : selectedScreenshots.includes(screenshot.id)
+                    }
                     tabIndex={0}
                     onClick={() => handleSelectScreenshot(screenshot.id)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleSelectScreenshot(screenshot.id); } }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        handleSelectScreenshot(screenshot.id);
+                      }
+                    }}
                     className={cn(
                       "group relative cursor-pointer rounded-lg overflow-hidden border-2 transition-all hover:scale-105",
                       multiSelect

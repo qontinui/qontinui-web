@@ -11,7 +11,10 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { AnimatePresence } from "framer-motion";
 import { useTutorialStore } from "../../../stores/tutorial-store";
-import { executeTutorialAction, evaluateTutorialCondition } from "../../../lib/safe-eval";
+import {
+  executeTutorialAction,
+  evaluateTutorialCondition,
+} from "../../../lib/safe-eval";
 import type { Tutorial } from "../../../types/tutorial";
 import { SpotlightOverlay } from "./SpotlightOverlay";
 import { TutorialTooltip } from "./TutorialTooltip";

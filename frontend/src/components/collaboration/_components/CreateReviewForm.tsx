@@ -71,7 +71,12 @@ export function CreateReviewForm({
                       : "hover:bg-muted border border-transparent"
                   )}
                   onClick={() => onToggleReviewer(reviewer.id)}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggleReviewer(reviewer.id); } }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onToggleReviewer(reviewer.id);
+                    }
+                  }}
                 >
                   <Avatar
                     src={reviewer.avatar_url}

@@ -56,7 +56,12 @@ export function SearchResultGroups({
                       resultRefs.current[globalIndex] = el;
                     }}
                     onClick={() => onResultClick(result)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onResultClick(result); } }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onResultClick(result);
+                      }
+                    }}
                     onMouseEnter={() => onResultHover(globalIndex)}
                     className={cn(
                       "px-3 py-2.5 rounded-md cursor-pointer transition-colors",

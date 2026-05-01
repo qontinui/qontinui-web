@@ -92,7 +92,12 @@ export const WorkflowSelector: React.FC<WorkflowSelectorProps> = ({
                       : "bg-white border-border-subtle"
                   } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
                   onClick={() => handleToggleWorkflow(workflow.id)}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleToggleWorkflow(workflow.id); } }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handleToggleWorkflow(workflow.id);
+                    }
+                  }}
                 >
                   <Checkbox
                     checked={isSelected}

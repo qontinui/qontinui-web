@@ -84,7 +84,12 @@ export function SnapshotListCard({
                 }
               `}
               onClick={() => onSelect?.(snapshot)}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(snapshot); } }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onSelect?.(snapshot);
+                }
+              }}
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1">

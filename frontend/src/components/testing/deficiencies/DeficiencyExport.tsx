@@ -129,7 +129,12 @@ export function DeficiencyExport({
                         : "border-border hover:border-primary/50"
                     )}
                     onClick={() => setFormat(formatOption)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setFormat(formatOption); } }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setFormat(formatOption);
+                      }
+                    }}
                   >
                     <RadioGroupItem
                       value={formatOption}
