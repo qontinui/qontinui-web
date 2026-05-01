@@ -51,6 +51,23 @@ os.environ["BACKEND_CORS_ORIGINS"] = '["http://localhost:3000"]'
 os.environ["STORAGE_BACKEND"] = "local"
 os.environ["REDIS_ENABLED"] = "false"  # Disable Redis for tests
 
+# Cloud-control side-effect import — must run before any `app.models` import
+# so cloud-control's add_model_registrar() hook is in place by the time
+# `app/models/__init__.py:506-508`'s `register_cloud_models()` fires. Without
+# this, the registrar list is empty, the private cloud model modules
+# (Subscription, AdminNotificationSettings) never get imported,
+# `Base.metadata` is missing those classes, and `configure_mappers()` blows
+# up with `InvalidRequestError: ... expression 'Subscription' failed to
+# locate a name`. The production app does this at `app/main.py:18`; the test
+# harness imports `app.models` directly (e.g. via `from app.models.user import
+# User` in fixtures), bypassing main.py, so we need to mirror it here.
+# OSS-only setups have no cloud-control package; ImportError is silently
+# swallowed and the OSS test suite collects normally.
+try:
+    import qontinui_cloud_control  # noqa: F401  -- side-effect: registers extension hooks
+except ImportError:
+    pass
+
 
 @pytest.fixture(scope="session")
 def test_client() -> Generator[TestClient, None, None]:
