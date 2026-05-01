@@ -1,6 +1,7 @@
 import { dirname } from "path";
 import { fileURLToPath } from "url";
 import { FlatCompat } from "@eslint/eslintrc";
+import uiBridgePlugin from "@qontinui/ui-bridge-eslint-plugin";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -33,6 +34,12 @@ const eslintConfig = [
       ],
       // Prefer structured logger over console.* — use createLogger() from @/lib/logger
       "no-console": ["warn", { allow: ["warn", "error"] }],
+    },
+  },
+  {
+    plugins: { "@qontinui/ui-bridge": uiBridgePlugin },
+    rules: {
+      "@qontinui/ui-bridge/require-state-annotation": "warn",
     },
   },
 ];

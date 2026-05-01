@@ -102,6 +102,7 @@
     "@eslint/eslintrc": "^3",
     "@next/bundle-analyzer": "^15.5.12",
     "@playwright/test": "^1.48.0",
+    "@qontinui/ui-bridge-eslint-plugin": "file:../../ui-bridge/packages/ui-bridge-eslint-plugin",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
