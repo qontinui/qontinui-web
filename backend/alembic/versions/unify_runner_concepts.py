@@ -58,11 +58,6 @@ transaction — partial-apply leaves the DB unchanged.
 
 from collections.abc import Sequence
 
-import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
-
-from alembic import op
-
 # revision identifiers, used by Alembic.
 revision: str = "unify_runner_concepts"
 down_revision: str = "e8a3c5b9d142"
@@ -246,102 +241,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Best-effort downgrade.
-
-    Restores the renamed table to ``runner_connections``, re-adds the
-    dropped columns as NULL, and recreates an empty ``runner_devices``
-    shell. Backfilled ``runner.runners`` rows are intentionally NOT
-    removed — they're harmless extra fleet entries and there's no clean
-    way to distinguish migration-created rows from legitimate ones.
-    Cannot restore ``runner_devices`` row contents.
-    """
-    # Re-add dropped columns on runner_sessions before dropping the FK.
-    op.add_column(
-        "runner_sessions",
-        sa.Column("runner_name", sa.String(length=255), nullable=True),
-        schema="runner",
-    )
-    op.add_column(
-        "runner_sessions",
-        sa.Column("runner_port", sa.Integer(), nullable=True),
-        schema="runner",
-    )
-    op.add_column(
-        "runner_sessions",
-        sa.Column("user_agent", sa.String(length=500), nullable=True),
-        schema="runner",
-    )
-
-    # Repopulate runner_name from the parent runner row before losing the FK.
-    op.execute(
-        """
-        UPDATE runner.runner_sessions s
-        SET runner_name = r.name
-        FROM runner.runners r
-        WHERE s.runner_id = r.id
-        """
-    )
-
-    # Drop FK + index + runner_id column.
-    op.drop_index(
-        "ix_runner_sessions_runner_id",
-        table_name="runner_sessions",
-        schema="runner",
-    )
-    op.drop_constraint(
-        "runner_sessions_runner_id_fkey",
-        "runner_sessions",
-        schema="runner",
-        type_="foreignkey",
-    )
-    op.drop_column("runner_sessions", "runner_id", schema="runner")
-
-    # Rename back.
-    op.rename_table(
-        "runner_sessions",
-        "runner_connections",
-        schema="runner",
-    )
-
-    # Drop the new columns from runners.
-    op.drop_column("runners", "os_version", schema="runner")
-    op.drop_column("runners", "os", schema="runner")
-    op.drop_column("runners", "ws_connected_at", schema="runner")
-    op.drop_column("runners", "ws_session_id", schema="runner")
-
-    # Recreate an empty runner_devices shell — best effort.
-    op.create_table(
-        "runner_devices",
-        sa.Column(
-            "id",
-            postgresql.UUID(as_uuid=True),
-            server_default=sa.text("gen_random_uuid()"),
-            nullable=False,
-        ),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("device_id", sa.String(length=255), nullable=False),
-        sa.Column("device_name", sa.String(length=255), nullable=False),
-        sa.Column("platform", sa.String(length=50), nullable=False),
-        sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            nullable=False,
-            server_default=sa.text("now()"),
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            nullable=False,
-            server_default=sa.text("now()"),
-        ),
-        sa.Column(
-            "is_active",
-            sa.Boolean(),
-            nullable=False,
-            server_default=sa.text("true"),
-        ),
-        sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("device_id"),
-        schema="runner",
-    )
+    # no-op'd post-consolidation; revision is in applied history, no DB will re-run it
+    pass
