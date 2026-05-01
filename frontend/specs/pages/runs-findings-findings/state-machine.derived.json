@@ -1,0 +1,89 @@
+{
+  "version": "1.0",
+  "id": "runs-findings-findings",
+  "name": "Findings",
+  "states": [
+    {
+      "id": "findings-page-structure",
+      "name": "Page Structure",
+      "requiredElements": [
+        {
+          "role": "heading",
+          "text": "Findings"
+        },
+        {
+          "text": "Critical"
+        },
+        {
+          "text": "High"
+        },
+        {
+          "text": "Medium"
+        },
+        {
+          "text": "Low"
+        }
+      ],
+      "description": "Core structural elements of the Findings page including heading and severity summary cards with counts.",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "findings-filter-state",
+      "name": "Filter State",
+      "requiredElements": [
+        {
+          "role": "button",
+          "text": "Critical"
+        },
+        {
+          "role": "button",
+          "text": "High"
+        },
+        {
+          "role": "button",
+          "text": "Fix All"
+        }
+      ],
+      "description": "Interactive state of the severity filter and Fix All action button.",
+      "precondition": "No fixable findings are present in the findings list",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "findings-page-purpose",
+      "name": "Page Purpose",
+      "requiredElements": [
+        {
+          "text": "Findings"
+        },
+        {
+          "text": "Critical"
+        },
+        {
+          "text": "Fix All"
+        }
+      ],
+      "description": "The Findings page aggregates issues discovered across task runs, organized by severity (critical, high, medium, low) and category. Users can search and filter findings, expand them to see full details including file paths and stack traces, resolve individual findings, or trigger auto-fix workflows to remediate issues automatically.",
+      "provenance": {
+        "source": "migrated"
+      }
+    }
+  ],
+  "transitions": [],
+  "provenance": {
+    "source": "migrated"
+  },
+  "description": "Findings page — aggregate and prioritize issues discovered across task runs",
+  "metadata": {
+    "tags": [
+      "findings",
+      "triage",
+      "issues",
+      "auto-fix",
+      "tier-1"
+    ]
+  }
+}

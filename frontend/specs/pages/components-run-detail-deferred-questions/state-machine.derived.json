@@ -1,0 +1,293 @@
+{
+  "version": "1.0",
+  "id": "components-run-detail-deferred-questions",
+  "name": "DeferredQuestionsTab",
+  "states": [
+    {
+      "id": "decisions-tab-registration",
+      "name": "Tab Registration & Navigation",
+      "requiredElements": [
+        {
+          "role": "tab",
+          "textContains": "Decisions"
+        },
+        {
+          "role": "tab",
+          "textContains": "Decisions"
+        },
+        {
+          "textContains": "Loading..."
+        }
+      ],
+      "description": "The Decisions tab appears in the RunDetailContent tab bar and is accessible via the ?tab=decisions URL parameter.",
+      "precondition": "Decisions tab is selected and component is still loading",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "decisions-empty-state",
+      "name": "Empty State — No Deferred Questions",
+      "requiredElements": [
+        {
+          "tagName": "svg"
+        },
+        {
+          "textContains": "No deferred questions for this run"
+        },
+        {
+          "textContains": "autonomous decisions with low confidence"
+        }
+      ],
+      "description": "When a workflow run has no deferred questions (either because blocking_approval was true, or confidence was always high enough to auto-approve silently), an empty state is displayed.",
+      "precondition": "No deferred questions exist for this run",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "decisions-header-stats",
+      "name": "Header — Stats Badges & Bulk Actions",
+      "requiredElements": [
+        {
+          "textContains": "Deferred Questions"
+        },
+        {
+          "textContains": "pending"
+        },
+        {
+          "textContains": "approved"
+        },
+        {
+          "textContains": "rejected"
+        },
+        {
+          "role": "button",
+          "textContains": "Approve all"
+        }
+      ],
+      "description": "When questions exist, a header shows the title, status count badges, and a bulk approve button.",
+      "precondition": "At least one deferred question exists",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "decisions-question-card-display",
+      "name": "Question Card — Data Display",
+      "requiredElements": [
+        {
+          "textContains": "Iteration"
+        },
+        {
+          "textContains": "risk"
+        },
+        {
+          "textContains": "% confidence"
+        },
+        {
+          "textContains": "completed iteration"
+        }
+      ],
+      "description": "Each deferred question is rendered as a bordered card showing iteration number, risk level badge, confidence percentage, and the question text.",
+      "precondition": "At least one deferred question exists",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "decisions-question-actions",
+      "name": "Question Card — Approve & Reject Actions",
+      "requiredElements": [
+        {
+          "role": "button",
+          "text": "Approve"
+        },
+        {
+          "role": "button",
+          "text": "Reject"
+        },
+        {
+          "textContains": "approved"
+        }
+      ],
+      "description": "Pending questions show Approve and Reject buttons. Approved/rejected questions show a status badge instead.",
+      "precondition": "A pending deferred question exists",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "decisions-expanded-details",
+      "name": "Question Card — Expanded Details",
+      "requiredElements": [
+        {
+          "tagName": "button"
+        },
+        {
+          "textContains": "Auto-decision:"
+        },
+        {
+          "textContains": "Files modified:"
+        },
+        {
+          "textContains": "Git checkpoint:"
+        },
+        {
+          "textContains": "Created:"
+        }
+      ],
+      "description": "Clicking the chevron expands a question card to show auto-decision details, summary, files modified, review comment, git checkpoint, and timestamps.",
+      "precondition": "At least one deferred question exists",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "decisions-question-grouping",
+      "name": "Question Grouping — Status Sections",
+      "requiredElements": [
+        {
+          "textContains": "Pending Review"
+        },
+        {
+          "textContains": "Rejected"
+        },
+        {
+          "textContains": "Approved"
+        },
+        {
+          "tagName": "div"
+        }
+      ],
+      "description": "Questions are displayed in three sections: Pending Review (with MessageSquareWarning icon), Rejected (with XCircle icon), and Approved (with CheckCircle2 icon). Each section only renders when it has questions.",
+      "precondition": "At least one pending question exists",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "decisions-design",
+      "name": "Visual Design & Styling",
+      "requiredElements": [
+        {
+          "textContains": "Iteration"
+        },
+        {
+          "textContains": "Pending Review"
+        },
+        {
+          "tagName": "span"
+        }
+      ],
+      "description": "Design tokens, colors, and typography for the deferred questions UI.",
+      "precondition": "At least one deferred question exists",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "floating-panel-visibility",
+      "name": "Floating Panel — Active Dashboard",
+      "requiredElements": [
+        {
+          "textContains": "pending decision"
+        },
+        {
+          "textContains": "pending decision"
+        },
+        {
+          "tagName": "button"
+        },
+        {
+          "textContains": "pending decision"
+        },
+        {
+          "role": "button",
+          "text": "Approve"
+        }
+      ],
+      "description": "During active workflow execution, a floating panel appears in the bottom-right corner showing pending deferred questions. Only visible when pending questions exist and not dismissed.",
+      "precondition": "Active dashboard is showing a running workflow with pending deferred questions",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "floating-panel-realtime",
+      "name": "Floating Panel — Real-Time Events & Toasts",
+      "requiredElements": [
+        {
+          "textContains": "Decision needed"
+        },
+        {
+          "textContains": "pending decision"
+        },
+        {
+          "textContains": "pending decision"
+        }
+      ],
+      "description": "The floating panel subscribes to WebSocket events for live updates and shows toast notifications when new questions arrive.",
+      "precondition": "Active dashboard is showing a running workflow",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "active-runs-badge",
+      "name": "Active Runs Bar — Pending Decisions Badge",
+      "requiredElements": [
+        {
+          "attributes": {
+            "content-label": "active-run-name"
+          }
+        },
+        {
+          "textContains": "pending decision"
+        },
+        {
+          "attributes": {
+            "content-label": "active-run-name"
+          }
+        }
+      ],
+      "description": "The CompactRunCard in the ActiveRunsBar shows an amber badge with the count of pending deferred questions, fetched via useEventTriggeredFetch.",
+      "precondition": "Multiple active runs exist, at least one has pending deferred questions",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "decisions-data-flow",
+      "name": "Data Flow — Dual Source & Sync",
+      "requiredElements": [
+        {
+          "textContains": "Deferred Questions"
+        },
+        {
+          "textContains": "Deferred Questions"
+        }
+      ],
+      "description": "The Decisions tab fetches data from the runner (live) with fallback to the backend (synced). This ensures deferred questions are viewable even when the runner is offline.",
+      "precondition": "Runner is connected and tab is active",
+      "provenance": {
+        "source": "migrated"
+      }
+    }
+  ],
+  "transitions": [],
+  "provenance": {
+    "source": "migrated"
+  },
+  "description": "Deferred Questions (Decisions tab) — displays non-blocking human-in-the-loop questions that were deferred during autonomous workflow execution. Users can review the AI's auto-decisions, approve them, or reject them (triggering targeted rework). Also covers the floating panel on the Active Dashboard and the badge counter on active run cards.",
+  "metadata": {
+    "tags": [
+      "deferred-feedback",
+      "human-in-the-loop",
+      "approval",
+      "review-queue",
+      "autonomous-execution",
+      "active-dashboard"
+    ]
+  }
+}

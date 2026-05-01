@@ -1,0 +1,305 @@
+{
+  "description": "Findings page — aggregate and prioritize issues discovered across task runs",
+  "groups": [
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Page Structure",
+          "enabled": true,
+          "id": "findings-page-structure-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "heading",
+              "textContent": "Findings"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Page Structure",
+          "enabled": true,
+          "id": "findings-page-structure-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Critical"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Page Structure",
+          "enabled": true,
+          "id": "findings-page-structure-elem-2",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "High"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state Page Structure",
+          "enabled": true,
+          "id": "findings-page-structure-elem-3",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Medium"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 4 for state Page Structure",
+          "enabled": true,
+          "id": "findings-page-structure-elem-4",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Low"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Core structural elements of the Findings page including heading and severity summary cards with counts.",
+      "id": "findings-page-structure",
+      "name": "Page Structure",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Filter State",
+          "enabled": true,
+          "id": "findings-filter-state-elem-0",
+          "precondition": "No fixable findings are present in the findings list",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Critical"
+            },
+            "label": "Required element for Filter State",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Filter State",
+          "enabled": true,
+          "id": "findings-filter-state-elem-1",
+          "precondition": "No fixable findings are present in the findings list",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "High"
+            },
+            "label": "Required element for Filter State",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Filter State",
+          "enabled": true,
+          "id": "findings-filter-state-elem-2",
+          "precondition": "No fixable findings are present in the findings list",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Fix All"
+            },
+            "label": "Required element for Filter State",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Interactive state of the severity filter and Fix All action button.",
+      "id": "findings-filter-state",
+      "name": "Filter State",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Page Purpose",
+          "enabled": true,
+          "id": "findings-page-purpose-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Findings"
+            },
+            "label": "Required element for Page Purpose",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Page Purpose",
+          "enabled": true,
+          "id": "findings-page-purpose-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Critical"
+            },
+            "label": "Required element for Page Purpose",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Page Purpose",
+          "enabled": true,
+          "id": "findings-page-purpose-elem-2",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Fix All"
+            },
+            "label": "Required element for Page Purpose",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "The Findings page aggregates issues discovered across task runs, organized by severity (critical, high, medium, low) and category. Users can search and filter findings, expand them to see full details including file paths and stack traces, resolve individual findings, or trigger auto-fix workflows to remediate issues automatically.",
+      "id": "findings-page-purpose",
+      "name": "Page Purpose",
+      "source": "migrated"
+    }
+  ],
+  "metadata": {
+    "component": "runs-findings-findings",
+    "tags": [
+      "findings",
+      "triage",
+      "issues",
+      "auto-fix",
+      "tier-1"
+    ]
+  },
+  "stateMachine": {
+    "states": [
+      {
+        "description": "Core structural elements of the Findings page including heading and severity summary cards with counts.",
+        "elements": [
+          {
+            "role": "heading",
+            "textContent": "Findings"
+          },
+          {
+            "textContent": "Critical"
+          },
+          {
+            "textContent": "High"
+          },
+          {
+            "textContent": "Medium"
+          },
+          {
+            "textContent": "Low"
+          }
+        ],
+        "id": "findings-page-structure",
+        "isInitial": false,
+        "name": "Page Structure",
+        "transitions": []
+      },
+      {
+        "description": "Interactive state of the severity filter and Fix All action button.",
+        "elements": [
+          {
+            "role": "button",
+            "textContent": "Critical"
+          },
+          {
+            "role": "button",
+            "textContent": "High"
+          },
+          {
+            "role": "button",
+            "textContent": "Fix All"
+          }
+        ],
+        "id": "findings-filter-state",
+        "isInitial": false,
+        "name": "Filter State",
+        "transitions": []
+      },
+      {
+        "description": "The Findings page aggregates issues discovered across task runs, organized by severity (critical, high, medium, low) and category. Users can search and filter findings, expand them to see full details including file paths and stack traces, resolve individual findings, or trigger auto-fix workflows to remediate issues automatically.",
+        "elements": [
+          {
+            "textContent": "Findings"
+          },
+          {
+            "textContent": "Critical"
+          },
+          {
+            "textContent": "Fix All"
+          }
+        ],
+        "id": "findings-page-purpose",
+        "isInitial": false,
+        "name": "Page Purpose",
+        "transitions": []
+      }
+    ]
+  },
+  "version": "1.0.0"
+}
