@@ -29,6 +29,7 @@ class AutomationScreenshot(Base):
     """
 
     __tablename__ = "automation_screenshots"
+    __table_args__ = {'schema': "project"}
 
     id: Mapped[UUID] = mapped_column(
         primary_key=True, server_default=text("gen_random_uuid()")
@@ -36,7 +37,7 @@ class AutomationScreenshot(Base):
 
     # Foreign key to automation session
     session_id: Mapped[UUID] = mapped_column(
-        ForeignKey("automation_sessions.id", ondelete="CASCADE"),
+        ForeignKey("project.automation_sessions.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -44,7 +45,7 @@ class AutomationScreenshot(Base):
     # Optional foreign key to project (for cross-referencing with project data)
     project_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="SET NULL"),
+        ForeignKey("project.projects.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )

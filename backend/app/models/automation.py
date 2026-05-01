@@ -54,7 +54,7 @@ class AutomationInputEvent(Base):
     id = Column(BigInteger, primary_key=True, index=True)
     session_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("automation_sessions.id", ondelete="CASCADE"),
+        ForeignKey("project.automation_sessions.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -86,12 +86,12 @@ class AutomationInputEvent(Base):
     # Screenshot references (nullable - may not have screenshots for all events)
     screenshot_before_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("automation_screenshots.id", ondelete="SET NULL"),
+        ForeignKey("project.automation_screenshots.id", ondelete="SET NULL"),
         nullable=True,
     )
     screenshot_after_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("automation_screenshots.id", ondelete="SET NULL"),
+        ForeignKey("project.automation_screenshots.id", ondelete="SET NULL"),
         nullable=True,
     )
 
@@ -117,7 +117,8 @@ class AutomationInputEvent(Base):
 
     __table_args__ = (
         Index(
-            "ix_automation_input_events_session_timestamp", "session_id", "timestamp"
+        "ix_automation_input_events_session_timestamp", "session_id", "timestamp"
         ),
         Index("ix_automation_input_events_event_type", "event_type"),
+        {"schema": "project"},
     )

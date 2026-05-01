@@ -72,6 +72,7 @@ class TestDeficiency(Base):
     """
 
     __tablename__ = "test_deficiencies"
+    __table_args__ = {'schema': "project"}
 
     # Primary key
     id: Mapped[UUID] = mapped_column(
@@ -84,21 +85,21 @@ class TestDeficiency(Base):
     # Foreign keys
     test_run_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("software_test_runs.id", ondelete="CASCADE"),
+        ForeignKey("project.software_test_runs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
 
     transition_execution_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("transition_executions.id", ondelete="SET NULL"),
+        ForeignKey("project.transition_executions.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
 
     assigned_to_user_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="SET NULL"),
+        ForeignKey("auth.users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )

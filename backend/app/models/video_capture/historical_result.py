@@ -49,19 +49,19 @@ class HistoricalResult(Base):
     # Source references - can come from snapshot runs OR live test runs
     snapshot_run_id: Mapped[int | None] = mapped_column(
         Integer,
-        ForeignKey("snapshot_runs.id", ondelete="CASCADE"),
+        ForeignKey("project.snapshot_runs.id", ondelete="CASCADE"),
         nullable=True,  # Made nullable to support live test runs
         index=True,
     )
     snapshot_action_id: Mapped[int | None] = mapped_column(
         Integer,
-        ForeignKey("snapshot_actions.id", ondelete="CASCADE"),
+        ForeignKey("project.snapshot_actions.id", ondelete="CASCADE"),
         nullable=True,  # Made nullable to support live test runs
         index=True,
     )
     video_capture_session_id: Mapped[int | None] = mapped_column(
         Integer,
-        ForeignKey("video_capture_sessions.id", ondelete="SET NULL"),
+        ForeignKey("project.video_capture_sessions.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -69,7 +69,7 @@ class HistoricalResult(Base):
     # Link to live test run (for integration testing / workflow visualization)
     test_run_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("software_test_runs.id", ondelete="CASCADE"),
+        ForeignKey("project.software_test_runs.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
@@ -114,7 +114,7 @@ class HistoricalResult(Base):
     workflow_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     project_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="SET NULL"),
+        ForeignKey("project.projects.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -128,22 +128,20 @@ class HistoricalResult(Base):
     )
 
     __table_args__ = (
-        # Composite indexes for common query patterns
         Index("idx_historical_pattern_states", "pattern_id", "active_states"),
         Index("idx_historical_action_type_success", "action_type", "success"),
         Index("idx_historical_workflow_pattern", "workflow_id", "pattern_id"),
         Index("idx_historical_project_pattern", "project_id", "pattern_id"),
-        # For random selection within a context
         Index(
-            "idx_historical_selection",
-            "pattern_id",
-            "action_type",
-            "success",
-            "recorded_at",
+        "idx_historical_selection",
+        "pattern_id",
+        "action_type",
+        "success",
+        "recorded_at",
         ),
-        # For test run playback (workflow visualization)
         Index("idx_historical_test_run_seq", "test_run_id", "sequence_number"),
         Index("idx_historical_test_run_pattern", "test_run_id", "pattern_id"),
+        {"schema": "project"},
     )
 
     def __repr__(self) -> str:

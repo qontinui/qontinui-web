@@ -76,7 +76,10 @@ class PackageCategory(Base):
     )
 
     # Indexes
-    __table_args__ = (Index("idx_category_slug", "slug"),)
+    __table_args__ = (
+        Index("idx_category_slug", "slug"),
+        {"schema": "project"},
+    )
 
     def __repr__(self):
         return f"<PackageCategory(id={self.id}, name={self.name}, slug={self.slug})>"
@@ -99,12 +102,12 @@ class CodePackage(Base):
     long_description = Column(Text, nullable=True)
     author_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
     )
     category_id = Column(
         Integer,
-        ForeignKey("package_categories.id", ondelete="SET NULL"),
+        ForeignKey("project.package_categories.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -151,6 +154,7 @@ class CodePackage(Base):
         Index("idx_package_category", "category_id"),
         Index("idx_package_verified", "is_verified"),
         Index("idx_package_created", "created_at"),
+        {"schema": "project"},
     )
 
     def __repr__(self):
@@ -172,7 +176,7 @@ class PackageVersion(Base):
     id = Column(Integer, primary_key=True, index=True)
     package_id = Column(
         Integer,
-        ForeignKey("code_packages.id", ondelete="CASCADE"),
+        ForeignKey("project.code_packages.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -215,9 +219,10 @@ class PackageVersion(Base):
         Index("idx_version_created", "created_at"),
         Index("idx_version_security", "security_scan_status"),
         CheckConstraint(
-            "security_scan_status IN ('pending', 'scanning', 'passed', 'failed', 'skipped')",
-            name="chk_security_scan_status",
+        "security_scan_status IN ('pending', 'scanning', 'passed', 'failed', 'skipped')",
+        name="chk_security_scan_status",
         ),
+        {"schema": "project"},
     )
 
     def __repr__(self):
@@ -237,24 +242,24 @@ class PackageInstallation(Base):
     id = Column(Integer, primary_key=True, index=True)
     package_id = Column(
         Integer,
-        ForeignKey("code_packages.id", ondelete="CASCADE"),
+        ForeignKey("project.code_packages.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     version_id = Column(
         Integer,
-        ForeignKey("package_versions.id", ondelete="CASCADE"),
+        ForeignKey("project.package_versions.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     project_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=False,
     )
     user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
     )
     status = Column(
@@ -285,8 +290,9 @@ class PackageInstallation(Base):
         Index("idx_installation_user", "user_id"),
         Index("idx_installation_status", "status"),
         CheckConstraint(
-            "status IN ('active', 'disabled')", name="chk_installation_status"
+        "status IN ('active', 'disabled')", name="chk_installation_status"
         ),
+        {"schema": "project"},
     )
 
     def __repr__(self):
@@ -306,13 +312,13 @@ class PackageRating(Base):
     id = Column(Integer, primary_key=True, index=True)
     package_id = Column(
         Integer,
-        ForeignKey("code_packages.id", ondelete="CASCADE"),
+        ForeignKey("project.code_packages.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
     )
     rating = Column(
@@ -343,6 +349,7 @@ class PackageRating(Base):
         Index("idx_rating_user", "user_id"),
         Index("idx_rating_created", "created_at"),
         CheckConstraint("rating >= 1 AND rating <= 5", name="chk_rating_range"),
+        {"schema": "project"},
     )
 
     def __repr__(self):

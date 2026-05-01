@@ -50,7 +50,7 @@ class PhaseResult(Base):
 
     runner_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("runners.id", ondelete="SET NULL"),
+        ForeignKey("auth.runners.id", ondelete="SET NULL"),
         nullable=True,
         comment="Runner fleet id that produced this phase result (nullable so "
         "history is preserved after a runner is deregistered).",
@@ -119,15 +119,16 @@ class PhaseResult(Base):
 
     __table_args__ = (
         Index(
-            "ix_phase_results_execution_id_created_at",
-            "execution_id",
-            "created_at",
+        "ix_phase_results_execution_id_created_at",
+        "execution_id",
+        "created_at",
         ),
         Index(
-            "ix_phase_results_runner_id_created_at",
-            "runner_id",
-            "created_at",
+        "ix_phase_results_runner_id_created_at",
+        "runner_id",
+        "created_at",
         ),
+        {"schema": "project"},
     )
 
     def __repr__(self) -> str:  # pragma: no cover - debug repr only

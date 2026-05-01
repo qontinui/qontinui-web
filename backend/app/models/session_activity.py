@@ -28,12 +28,13 @@ class SessionActivity(Base):
     """
 
     __tablename__ = "session_activities"
+    __table_args__ = {'schema': "project"}
 
     id: Mapped[UUID] = mapped_column(
         primary_key=True, server_default=text("gen_random_uuid()")
     )
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("runner.users.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("auth.users.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     # JWT ID from the refresh token - used to invalidate specific sessions

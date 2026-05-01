@@ -33,6 +33,7 @@ class RecordingSession(Base):
     """
 
     __tablename__ = "recording_sessions"
+    __table_args__ = {'schema': "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
@@ -41,7 +42,7 @@ class RecordingSession(Base):
     # Link to project
     project_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -100,7 +101,7 @@ class RecordingSession(Base):
     # Link to persisted state config (if saved)
     state_config_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("ui_bridge_state_configs.id", ondelete="SET NULL"),
+        ForeignKey("project.ui_bridge_state_configs.id", ondelete="SET NULL"),
         nullable=True,
     )
 

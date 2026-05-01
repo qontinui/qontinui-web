@@ -41,6 +41,7 @@ class ErrorMonitorEntry(Base):
     """An error entry tracked by the error monitor."""
 
     __tablename__ = "error_monitor_entries"
+    __table_args__ = {'schema': "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -51,21 +52,21 @@ class ErrorMonitorEntry(Base):
 
     created_by_user_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
 
     project_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="SET NULL"),
+        ForeignKey("project.projects.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
 
     task_run_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("task_runs.id", ondelete="SET NULL"),
+        ForeignKey("project.task_runs.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )

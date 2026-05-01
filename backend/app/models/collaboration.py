@@ -65,19 +65,20 @@ class ProjectLock(Base):
     """
 
     __tablename__ = "project_locks"
+    __table_args__ = {'schema': "project"}
 
     id = Column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     project_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -134,13 +135,14 @@ class ProjectComment(Base):
     """
 
     __tablename__ = "project_comments"
+    __table_args__ = {'schema': "project"}
 
     id = Column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     project_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -152,7 +154,7 @@ class ProjectComment(Base):
     )  # Optional: specific action/state
     author_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -166,7 +168,7 @@ class ProjectComment(Base):
     resolved: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     resolved_by: Mapped[PyUUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="SET NULL"),
+        ForeignKey("auth.users.id", ondelete="SET NULL"),
         nullable=True,
     )
     resolved_at: Mapped[datetime | None] = mapped_column(
@@ -174,7 +176,7 @@ class ProjectComment(Base):
     )
     parent_comment_id: Mapped[PyUUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("project_comments.id", ondelete="CASCADE"),
+        ForeignKey("project.project_comments.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
@@ -221,19 +223,20 @@ class ActivityLog(Base):
     """
 
     __tablename__ = "activity_logs"
+    __table_args__ = {'schema': "project"}
 
     id = Column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     project_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -338,6 +341,7 @@ class ConflictLog(Base):
     """
 
     __tablename__ = "conflict_logs"
+    __table_args__ = {'schema': "project"}
 
     id = Column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
@@ -348,13 +352,13 @@ class ConflictLog(Base):
     remote_version: Mapped[int] = mapped_column(Integer, nullable=False)
     local_user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     remote_user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

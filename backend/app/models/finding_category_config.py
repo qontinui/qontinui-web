@@ -38,7 +38,7 @@ class FindingCategoryConfig(Base):
         primary_key=True, server_default=text("gen_random_uuid()")
     )
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -67,6 +67,7 @@ class FindingCategoryConfig(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "slug", name="uq_finding_category_user_slug"),
+        {"schema": "project"},
     )
 
     def __repr__(self) -> str:

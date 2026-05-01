@@ -37,6 +37,7 @@ class PromptTemplateVersion(Base):
     __tablename__ = "prompt_template_versions"
     __table_args__ = (
         UniqueConstraint("template_id", "version_number", name="uq_template_version"),
+        {"schema": "project"},
     )
 
     # Primary key
@@ -50,7 +51,7 @@ class PromptTemplateVersion(Base):
     # Foreign key to parent template
     template_id: Mapped[str] = mapped_column(
         String,
-        ForeignKey("ai_prompt_templates.id", ondelete="CASCADE"),
+        ForeignKey("project.ai_prompt_templates.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

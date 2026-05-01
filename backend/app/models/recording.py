@@ -60,12 +60,12 @@ class Recording(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     created_by_id = Column(
-        UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=False
     )
 
     # Recording metadata
@@ -178,6 +178,7 @@ class Recording(Base):
     __table_args__ = (
         Index("ix_recordings_project_status", "project_id", "status"),
         Index("ix_recordings_created_at", "created_at"),
+        {"schema": "project"},
     )
 
     @property
@@ -211,7 +212,7 @@ class RecordingFrame(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     recording_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("recordings.id", ondelete="CASCADE"),
+        ForeignKey("project.recordings.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -241,7 +242,7 @@ class RecordingFrame(Base):
     # Cluster assignment
     cluster_id = Column(Integer)  # Which cluster this frame belongs to
     state_id = Column(
-        UUID(as_uuid=True), ForeignKey("discovered_states.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("project.discovered_states.id"), nullable=True
     )
 
     # Quality metrics
@@ -270,6 +271,7 @@ class RecordingFrame(Base):
         Index("ix_recording_frames_recording_frame", "recording_id", "frame_number"),
         Index("ix_recording_frames_recording_time", "recording_id", "relative_time_ms"),
         Index("ix_recording_frames_cluster", "recording_id", "cluster_id"),
+        {"schema": "project"},
     )
 
 
@@ -281,7 +283,7 @@ class RecordingInteraction(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     recording_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("recordings.id", ondelete="CASCADE"),
+        ForeignKey("project.recordings.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -338,7 +340,7 @@ class RecordingInteraction(Base):
     # Processing results
     causes_state_change = Column(Boolean)  # Determined during processing
     target_state_id = Column(
-        UUID(as_uuid=True), ForeignKey("discovered_states.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("project.discovered_states.id"), nullable=True
     )
     transition_id = Column(
         UUID(as_uuid=True),
@@ -346,7 +348,7 @@ class RecordingInteraction(Base):
         # form a mutual FK cycle. use_alter defers this constraint so metadata
         # create_all / drop_all order the two tables cleanly.
         ForeignKey(
-            "discovered_transitions.id",
+            "project.discovered_transitions.id",
             use_alter=True,
             name="fk_recording_interactions_transition_id",
         ),
@@ -360,11 +362,12 @@ class RecordingInteraction(Base):
 
     __table_args__ = (
         Index(
-            "ix_recording_interactions_recording_time",
-            "recording_id",
-            "relative_time_ms",
+        "ix_recording_interactions_recording_time",
+        "recording_id",
+        "relative_time_ms",
         ),
         Index("ix_recording_interactions_type", "recording_id", "interaction_type"),
+        {"schema": "project"},
     )
 
 
@@ -376,7 +379,7 @@ class RecordingContext(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     recording_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("recordings.id", ondelete="CASCADE"),
+        ForeignKey("project.recordings.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -435,9 +438,10 @@ class RecordingContext(Base):
 
     __table_args__ = (
         Index(
-            "ix_recording_contexts_recording_time", "recording_id", "relative_time_ms"
+        "ix_recording_contexts_recording_time", "recording_id", "relative_time_ms"
         ),
         Index("ix_recording_contexts_type", "recording_id", "event_type"),
+        {"schema": "project"},
     )
 
 
@@ -449,17 +453,17 @@ class DiscoveredTransition(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     recording_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("recordings.id", ondelete="CASCADE"),
+        ForeignKey("project.recordings.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
 
     # Transition definition
     from_state_id = Column(
-        UUID(as_uuid=True), ForeignKey("discovered_states.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("project.discovered_states.id"), nullable=False
     )
     to_state_id = Column(
-        UUID(as_uuid=True), ForeignKey("discovered_states.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("project.discovered_states.id"), nullable=True
     )
 
     # Multi-state support
@@ -469,7 +473,7 @@ class DiscoveredTransition(Base):
 
     # Trigger information
     trigger_interaction_id = Column(
-        UUID(as_uuid=True), ForeignKey("recording_interactions.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("project.recording_interactions.id"), nullable=True
     )
     trigger_type = Column(String)  # click, key, auto, etc.
     trigger_description = Column(Text)
@@ -519,6 +523,7 @@ class DiscoveredTransition(Base):
         Index("ix_discovered_transitions_recording", "recording_id"),
         Index("ix_discovered_transitions_from_state", "from_state_id"),
         Index("ix_discovered_transitions_to_state", "to_state_id"),
+        {"schema": "project"},
     )
 
 
@@ -530,7 +535,7 @@ class ProcessingLog(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     recording_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("recordings.id", ondelete="CASCADE"),
+        ForeignKey("project.recordings.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -555,4 +560,5 @@ class ProcessingLog(Base):
     __table_args__ = (
         Index("ix_processing_logs_recording_time", "recording_id", "timestamp"),
         Index("ix_processing_logs_phase", "recording_id", "phase"),
+        {"schema": "project"},
     )

@@ -41,6 +41,7 @@ class TestResult(Base):
     """
 
     __tablename__ = "test_results"
+    __table_args__ = {'schema': "project"}
 
     # Primary key
     id: Mapped[UUID] = mapped_column(
@@ -53,7 +54,7 @@ class TestResult(Base):
     # Foreign keys
     test_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("verification_tests.id", ondelete="CASCADE"),
+        ForeignKey("project.verification_tests.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
         comment="Reference to the verification test definition",
@@ -61,7 +62,7 @@ class TestResult(Base):
 
     task_run_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("task_runs.id", ondelete="CASCADE"),
+        ForeignKey("project.task_runs.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
         comment="Optional reference to AI task run context",
@@ -69,7 +70,7 @@ class TestResult(Base):
 
     execution_run_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("execution_runs.id", ondelete="CASCADE"),
+        ForeignKey("project.execution_runs.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
         comment="Optional reference to execution run context",

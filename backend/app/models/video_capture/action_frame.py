@@ -40,13 +40,13 @@ class ActionFrame(Base):
     # Foreign keys
     video_capture_session_id: Mapped[int] = mapped_column(
         Integer,
-        ForeignKey("video_capture_sessions.id", ondelete="CASCADE"),
+        ForeignKey("project.video_capture_sessions.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     snapshot_action_id: Mapped[int] = mapped_column(
         Integer,
-        ForeignKey("snapshot_actions.id", ondelete="CASCADE"),
+        ForeignKey("project.snapshot_actions.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -76,11 +76,12 @@ class ActionFrame(Base):
         Index("idx_action_frames_action", "snapshot_action_id"),
         Index("idx_action_frames_type", "frame_type"),
         UniqueConstraint(
-            "video_capture_session_id",
-            "snapshot_action_id",
-            "frame_type",
-            name="uq_action_frames_session_action_type",
+        "video_capture_session_id",
+        "snapshot_action_id",
+        "frame_type",
+        name="uq_action_frames_session_action_type",
         ),
+        {"schema": "project"},
     )
 
     def __repr__(self) -> str:

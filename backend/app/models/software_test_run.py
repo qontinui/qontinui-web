@@ -37,6 +37,7 @@ class SoftwareTestRun(Base):
     """
 
     __tablename__ = "software_test_runs"
+    __table_args__ = {'schema': "project"}
 
     # Primary key
     id: Mapped[UUID] = mapped_column(
@@ -49,7 +50,7 @@ class SoftwareTestRun(Base):
     # Foreign keys
     project_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -62,7 +63,7 @@ class SoftwareTestRun(Base):
     runner_session_id: Mapped[int | None] = mapped_column(
         "runner_connection_id",
         Integer,
-        ForeignKey("runner_sessions.id", ondelete="SET NULL"),
+        ForeignKey("auth.runner_sessions.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )

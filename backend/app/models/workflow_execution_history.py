@@ -32,6 +32,7 @@ class WorkflowExecutionHistory(Base):
     """
 
     __tablename__ = "workflow_execution_history"
+    __table_args__ = {'schema': "project"}
 
     id: Mapped[UUID] = mapped_column(
         primary_key=True, server_default=text("gen_random_uuid()")
@@ -39,7 +40,7 @@ class WorkflowExecutionHistory(Base):
 
     # Link to automation session (one-to-one)
     session_id: Mapped[UUID] = mapped_column(
-        ForeignKey("automation_sessions.id", ondelete="CASCADE"),
+        ForeignKey("project.automation_sessions.id", ondelete="CASCADE"),
         nullable=False,
         unique=True,
         index=True,

@@ -37,7 +37,7 @@ class FeedbackScore(Base):
     # Foreign keys (nullable — exactly one should be set based on target_type)
     run_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("execution_runs.id", ondelete="CASCADE"),
+        ForeignKey("project.execution_runs.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
         comment="FK to execution_runs.id when target_type is 'run'",
@@ -45,7 +45,7 @@ class FeedbackScore(Base):
 
     action_execution_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("action_executions.id", ondelete="CASCADE"),
+        ForeignKey("project.action_executions.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
         comment="FK to action_executions.id when target_type is 'action'",
@@ -105,7 +105,10 @@ class FeedbackScore(Base):
     )
 
     # Composite index for common query: scores by name and source
-    __table_args__ = (Index("ix_feedback_scores_name_source", "name", "source"),)
+    __table_args__ = (
+        Index("ix_feedback_scores_name_source", "name", "source"),
+        {"schema": "project"},
+    )
 
     # Relationships
     run = relationship("ExecutionRun", back_populates="feedback_scores")

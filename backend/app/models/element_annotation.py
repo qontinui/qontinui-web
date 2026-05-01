@@ -31,7 +31,7 @@ class ElementAnnotationSet(Base):
     )
     project_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -57,7 +57,7 @@ class ElementAnnotationSet(Base):
         nullable=False,
     )
     created_by_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=False
     )
 
     # Relationships
@@ -72,15 +72,16 @@ class ElementAnnotationSet(Base):
 
     __table_args__ = (
         Index(
-            "ix_element_annotation_sets_project_current",
-            "project_id",
-            "is_current",
+        "ix_element_annotation_sets_project_current",
+        "project_id",
+        "is_current",
         ),
         Index(
-            "ix_element_annotation_sets_project_version",
-            "project_id",
-            "version_number",
+        "ix_element_annotation_sets_project_version",
+        "project_id",
+        "version_number",
         ),
+        {"schema": "project"},
     )
 
     @property
@@ -104,7 +105,7 @@ class ElementAnnotation(Base):
     )
     annotation_set_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("element_annotation_sets.id", ondelete="CASCADE"),
+        ForeignKey("project.element_annotation_sets.id", ondelete="CASCADE"),
         nullable=False,
     )
 
@@ -139,4 +140,5 @@ class ElementAnnotation(Base):
     __table_args__ = (
         Index("ix_element_annotations_set_id", "annotation_set_id"),
         Index("ix_element_annotations_set_order", "annotation_set_id", "order"),
+        {"schema": "project"},
     )

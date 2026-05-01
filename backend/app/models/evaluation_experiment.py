@@ -24,6 +24,7 @@ class EvaluationExperiment(Base):
     """
 
     __tablename__ = "evaluation_experiments"
+    __table_args__ = {'schema': "project"}
 
     # Primary key
     id: Mapped[UUID] = mapped_column(
@@ -42,7 +43,7 @@ class EvaluationExperiment(Base):
 
     dataset_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("evaluation_datasets.id", ondelete="CASCADE"),
+        ForeignKey("project.evaluation_datasets.id", ondelete="CASCADE"),
         nullable=False,
         comment="FK to evaluation_datasets.id",
     )
@@ -132,14 +133,14 @@ class ExperimentResult(Base):
     # Foreign keys
     experiment_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("evaluation_experiments.id", ondelete="CASCADE"),
+        ForeignKey("project.evaluation_experiments.id", ondelete="CASCADE"),
         nullable=False,
         comment="FK to evaluation_experiments.id",
     )
 
     dataset_item_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("dataset_items.id", ondelete="CASCADE"),
+        ForeignKey("project.dataset_items.id", ondelete="CASCADE"),
         nullable=False,
         comment="FK to dataset_items.id",
     )
@@ -186,6 +187,7 @@ class ExperimentResult(Base):
     __table_args__ = (
         Index("ix_experiment_results_experiment_id", "experiment_id"),
         Index("ix_experiment_results_dataset_item_id", "dataset_item_id"),
+        {"schema": "project"},
     )
 
     # Relationships

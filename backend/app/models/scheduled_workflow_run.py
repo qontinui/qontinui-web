@@ -44,14 +44,14 @@ class ScheduledWorkflowRun(Base):
 
     user_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
 
     workflow_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("unified_workflows.id", ondelete="CASCADE"),
+        ForeignKey("project.unified_workflows.id", ondelete="CASCADE"),
         nullable=False,
     )
 
@@ -125,14 +125,15 @@ class ScheduledWorkflowRun(Base):
 
     __table_args__ = (
         Index(
-            "ix_scheduled_workflow_runs_workflow_id",
-            "workflow_id",
+        "ix_scheduled_workflow_runs_workflow_id",
+        "workflow_id",
         ),
         Index(
-            "ix_scheduled_workflow_runs_user_workflow",
-            "user_id",
-            "workflow_id",
+        "ix_scheduled_workflow_runs_user_workflow",
+        "user_id",
+        "workflow_id",
         ),
+        {"schema": "project"},
     )
 
     def __repr__(self) -> str:  # pragma: no cover - debug repr only

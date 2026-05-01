@@ -34,7 +34,7 @@ class ProjectAnnotationState(Base):
     # Link to project
     project_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=False,
         unique=True,
         index=True,
@@ -86,7 +86,7 @@ class ProjectAnnotationState(Base):
     )
     updated_by_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id"),
+        ForeignKey("auth.users.id"),
         nullable=True,
         comment="User who last updated the annotations",
     )
@@ -95,4 +95,7 @@ class ProjectAnnotationState(Base):
     project = relationship("Project", backref="annotation_state", uselist=False)
     updated_by = relationship("User")
 
-    __table_args__ = (Index("ix_project_annotation_state_updated", "updated_at"),)
+    __table_args__ = (
+        Index("ix_project_annotation_state_updated", "updated_at"),
+        {"schema": "project"},
+    )

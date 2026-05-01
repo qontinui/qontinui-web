@@ -40,6 +40,7 @@ class WrapperEntry(Base):
     """One installable wrapper, mirrored from registry.json."""
 
     __tablename__ = "wrapper_entries"
+    __table_args__ = {'schema': "project"}
 
     id: Mapped[str] = mapped_column(
         Text,
@@ -130,14 +131,15 @@ class WrapperRating(Base):
     __tablename__ = "wrapper_ratings"
     __table_args__ = (
         CheckConstraint(
-            "stars BETWEEN 1 AND 5",
-            name="wrapper_ratings_stars_check",
+        "stars BETWEEN 1 AND 5",
+        name="wrapper_ratings_stars_check",
         ),
         UniqueConstraint(
-            "wrapper_id",
-            "user_id",
-            name="wrapper_ratings_wrapper_id_user_id_key",
+        "wrapper_id",
+        "user_id",
+        name="wrapper_ratings_wrapper_id_user_id_key",
         ),
+        {"schema": "project"},
     )
 
     id: Mapped[int] = mapped_column(
@@ -148,14 +150,14 @@ class WrapperRating(Base):
 
     wrapper_id: Mapped[str] = mapped_column(
         Text,
-        ForeignKey("wrapper_entries.id", ondelete="CASCADE"),
+        ForeignKey("project.wrapper_entries.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
 
     user_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
     )
 
@@ -178,6 +180,7 @@ class WrapperComment(Base):
     """Threaded comment on a wrapper marketplace entry."""
 
     __tablename__ = "wrapper_comments"
+    __table_args__ = {'schema': "project"}
 
     id: Mapped[int] = mapped_column(
         BigInteger,
@@ -187,19 +190,19 @@ class WrapperComment(Base):
 
     wrapper_id: Mapped[str] = mapped_column(
         Text,
-        ForeignKey("wrapper_entries.id", ondelete="CASCADE"),
+        ForeignKey("project.wrapper_entries.id", ondelete="CASCADE"),
         nullable=False,
     )
 
     user_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
     )
 
     parent_id: Mapped[int | None] = mapped_column(
         BigInteger,
-        ForeignKey("wrapper_comments.id", ondelete="CASCADE"),
+        ForeignKey("project.wrapper_comments.id", ondelete="CASCADE"),
         nullable=True,
     )
 
@@ -230,6 +233,7 @@ class WrapperInstallEvent(Base):
     """Anonymous install ping from a runner. Runner id is sha256-hashed."""
 
     __tablename__ = "wrapper_install_events"
+    __table_args__ = {'schema': "project"}
 
     id: Mapped[int] = mapped_column(
         BigInteger,
@@ -239,7 +243,7 @@ class WrapperInstallEvent(Base):
 
     wrapper_id: Mapped[str] = mapped_column(
         Text,
-        ForeignKey("wrapper_entries.id", ondelete="CASCADE"),
+        ForeignKey("project.wrapper_entries.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

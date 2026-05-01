@@ -35,7 +35,7 @@ class AutomationLog(Base):
 
     # Foreign key to automation session
     session_id: Mapped[UUID] = mapped_column(
-        ForeignKey("automation_sessions.id", ondelete="CASCADE"),
+        ForeignKey("project.automation_sessions.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -73,11 +73,12 @@ class AutomationLog(Base):
     __table_args__ = (
         Index("ix_automation_logs_session_sequence", "session_id", "sequence_number"),
         Index(
-            "ix_automation_logs_event_type",
-            "log_data",
-            postgresql_using="gin",
-            postgresql_ops={"log_data": "jsonb_path_ops"},
+        "ix_automation_logs_event_type",
+        "log_data",
+        postgresql_using="gin",
+        postgresql_ops={"log_data": "jsonb_path_ops"},
         ),
+        {"schema": "project"},
     )
 
     def __repr__(self) -> str:

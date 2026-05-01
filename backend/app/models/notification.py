@@ -49,13 +49,14 @@ class Notification(Base):
     """
 
     __tablename__ = "notifications"
+    __table_args__ = {'schema': "project"}
 
     id = Column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -66,7 +67,7 @@ class Notification(Base):
     message = Column(Text, nullable=False)
     project_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
@@ -74,7 +75,7 @@ class Notification(Base):
     resource_id = Column(String, nullable=True)  # ID of the specific resource
     actor_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="SET NULL"),
+        ForeignKey("auth.users.id", ondelete="SET NULL"),
         nullable=True,
     )  # Who triggered the notification
     read: Mapped[bool] = mapped_column(
@@ -119,13 +120,14 @@ class NotificationPreferences(Base):
     """
 
     __tablename__ = "notification_preferences"
+    __table_args__ = {'schema': "project"}
 
     id = Column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         unique=True,
         nullable=False,
     )

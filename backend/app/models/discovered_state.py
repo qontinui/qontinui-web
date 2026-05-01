@@ -56,13 +56,13 @@ class DiscoveredState(Base):
     # Foreign keys for BOTH sources (only one should be set)
     automation_session_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("automation_sessions.id", ondelete="CASCADE"),
+        ForeignKey("project.automation_sessions.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
     recording_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("recordings.id", ondelete="CASCADE"),
+        ForeignKey("project.recordings.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
@@ -195,10 +195,11 @@ class DiscoveredState(Base):
     # Table constraints
     __table_args__ = (
         CheckConstraint(
-            "(automation_session_id IS NOT NULL AND recording_id IS NULL AND source_type = 'automation_session') OR "
-            "(automation_session_id IS NULL AND recording_id IS NOT NULL AND source_type = 'recording')",
-            name="check_single_source",
+        "(automation_session_id IS NOT NULL AND recording_id IS NULL AND source_type = 'automation_session') OR "
+        "(automation_session_id IS NULL AND recording_id IS NOT NULL AND source_type = 'recording')",
+        name="check_single_source",
         ),
+        {"schema": "project"},
     )
 
     def __repr__(self) -> str:

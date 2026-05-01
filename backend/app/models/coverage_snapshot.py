@@ -26,6 +26,7 @@ class CoverageSnapshot(Base):
     """
 
     __tablename__ = "coverage_snapshots"
+    __table_args__ = {'schema': "project"}
 
     # Primary key
     id: Mapped[UUID] = mapped_column(
@@ -38,14 +39,14 @@ class CoverageSnapshot(Base):
     # Foreign keys
     test_run_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("software_test_runs.id", ondelete="CASCADE"),
+        ForeignKey("project.software_test_runs.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
 
     project_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

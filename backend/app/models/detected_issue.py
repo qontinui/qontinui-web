@@ -39,12 +39,12 @@ class DetectedIssue(Base):
     # Session and project linkage
     session_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     project_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("projects.id", ondelete="SET NULL"),
+        ForeignKey("project.projects.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -102,11 +102,12 @@ class DetectedIssue(Base):
         Index("ix_detected_issues_session", "session_id"),
         Index("ix_detected_issues_user_severity", "user_id", "severity"),
         Index(
-            "ix_detected_issues_source",
-            "source",
-            postgresql_using="gin",
-            postgresql_ops={"source": "jsonb_path_ops"},
+        "ix_detected_issues_source",
+        "source",
+        postgresql_using="gin",
+        postgresql_ops={"source": "jsonb_path_ops"},
         ),
+        {"schema": "project"},
     )
 
     def __repr__(self) -> str:

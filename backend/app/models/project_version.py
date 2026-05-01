@@ -31,7 +31,7 @@ class ProjectVersion(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     project_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -41,7 +41,7 @@ class ProjectVersion(Base):
     )  # Full project state including configuration
     created_by = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="SET NULL"),
+        ForeignKey("auth.users.id", ondelete="SET NULL"),
         nullable=True,
     )
     created_at = Column(
@@ -56,4 +56,5 @@ class ProjectVersion(Base):
     __table_args__ = (
         UniqueConstraint("project_id", "version_number", name="uq_project_version"),
         Index("ix_project_versions_project_created", "project_id", "created_at"),
+        {"schema": "project"},
     )

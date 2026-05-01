@@ -34,12 +34,12 @@ class ScreenshotInputAssociation(Base):
 
     # Foreign keys
     screenshot_id: Mapped[UUID] = mapped_column(
-        ForeignKey("automation_screenshots.id", ondelete="CASCADE"),
+        ForeignKey("project.automation_screenshots.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     log_id: Mapped[UUID] = mapped_column(
-        ForeignKey("automation_logs.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("project.automation_logs.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     # Input metadata
@@ -70,6 +70,7 @@ class ScreenshotInputAssociation(Base):
     __table_args__ = (
         Index("ix_screenshot_input_assoc_screenshot", "screenshot_id"),
         Index("ix_screenshot_input_assoc_log", "log_id"),
+        {"schema": "project"},
     )
 
     def __repr__(self) -> str:

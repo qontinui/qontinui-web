@@ -37,6 +37,7 @@ class WorkflowEvent(Base):
     """
 
     __tablename__ = "workflow_events"
+    __table_args__ = {'schema': "project"}
 
     id = Column(
         UUID(as_uuid=True),
@@ -47,7 +48,7 @@ class WorkflowEvent(Base):
     )
     user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

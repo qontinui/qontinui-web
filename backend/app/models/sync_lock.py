@@ -31,13 +31,13 @@ class SyncLock(Base):
     )
     project_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
     )
     operation = Column(
@@ -68,16 +68,13 @@ class SyncLock(Base):
     )
 
     __table_args__ = (
-        # Ensure only one unreleased lock per project. Postgres rejects index
-        # predicates that reference non-IMMUTABLE functions, so we can't filter
-        # by `expires_at > now()` here — expired-but-not-released locks should
-        # be cleaned by a background sweep before they block a new acquire.
         Index(
-            "ix_sync_locks_project_active",
-            "project_id",
-            unique=True,
-            postgresql_where=text("released_at IS NULL"),
+        "ix_sync_locks_project_active",
+        "project_id",
+        unique=True,
+        postgresql_where=text("released_at IS NULL"),
         ),
+        {"schema": "project"},
     )
 
     @property

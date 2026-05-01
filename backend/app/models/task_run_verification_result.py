@@ -49,7 +49,7 @@ class TaskRunVerificationResult(Base):
     # Foreign key to task_runs
     task_run_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("task_runs.id", ondelete="CASCADE"),
+        ForeignKey("project.task_runs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -129,8 +129,9 @@ class TaskRunVerificationResult(Base):
     # Constraints
     __table_args__ = (
         UniqueConstraint(
-            "task_run_id", "iteration", name="uq_task_run_verification_iteration"
+        "task_run_id", "iteration", name="uq_task_run_verification_iteration"
         ),
+        {"schema": "project"},
     )
 
     def __repr__(self) -> str:

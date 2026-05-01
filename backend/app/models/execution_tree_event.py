@@ -81,7 +81,7 @@ class ExecutionTreeEvent(Base):
     # Foreign key to execution run
     run_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("execution_runs.id", ondelete="CASCADE"),
+        ForeignKey("project.execution_runs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -217,6 +217,7 @@ class ExecutionTreeEvent(Base):
         Index("ix_tree_events_run_node_type", "run_id", "node_type"),
         Index("ix_tree_events_run_event_type", "run_id", "event_type"),
         Index("ix_tree_events_run_node_id", "run_id", "node_id"),
+        {"schema": "project"},
     )
 
     def __repr__(self) -> str:

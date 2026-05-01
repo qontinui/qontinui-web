@@ -66,6 +66,7 @@ class TaskRun(Base):
     """
 
     __tablename__ = "task_runs"
+    __table_args__ = {'schema': "project"}
 
     # Primary key - use runner's UUID to allow direct mapping
     id: Mapped[UUID] = mapped_column(
@@ -78,7 +79,7 @@ class TaskRun(Base):
     # Optional project association (nullable for local-only development)
     project_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="SET NULL"),
+        ForeignKey("project.projects.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -86,7 +87,7 @@ class TaskRun(Base):
     # User who created the task
     created_by_user_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="SET NULL"),
+        ForeignKey("auth.users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -324,6 +325,7 @@ class TaskRunSession(Base):
     """Individual Claude session within a Task Run."""
 
     __tablename__ = "task_run_sessions"
+    __table_args__ = {'schema': "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -334,7 +336,7 @@ class TaskRunSession(Base):
 
     task_run_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("task_runs.id", ondelete="CASCADE"),
+        ForeignKey("project.task_runs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -383,6 +385,7 @@ class TaskRunFinding(Base):
     """Finding detected during a task run."""
 
     __tablename__ = "task_run_findings"
+    __table_args__ = {'schema': "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -393,7 +396,7 @@ class TaskRunFinding(Base):
 
     task_run_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("task_runs.id", ondelete="CASCADE"),
+        ForeignKey("project.task_runs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -568,6 +571,7 @@ class DeferredQuestion(Base):
     """
 
     __tablename__ = "deferred_questions"
+    __table_args__ = {'schema': "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -578,7 +582,7 @@ class DeferredQuestion(Base):
 
     task_run_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("task_runs.id", ondelete="CASCADE"),
+        ForeignKey("project.task_runs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -685,6 +689,7 @@ class TaskRunAutomation(Base):
     """
 
     __tablename__ = "task_run_automations"
+    __table_args__ = {'schema': "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -695,7 +700,7 @@ class TaskRunAutomation(Base):
 
     task_run_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("task_runs.id", ondelete="CASCADE"),
+        ForeignKey("project.task_runs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

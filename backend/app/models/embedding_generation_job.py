@@ -29,6 +29,7 @@ class EmbeddingGenerationJob(Base):
     """
 
     __tablename__ = "embedding_generation_jobs"
+    __table_args__ = {'schema': "project"}
 
     id: Mapped[UUID] = mapped_column(
         primary_key=True, server_default=text("gen_random_uuid()")
@@ -36,12 +37,12 @@ class EmbeddingGenerationJob(Base):
 
     # Project association
     project_id: Mapped[UUID] = mapped_column(
-        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("project.projects.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     # User who triggered the job
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("runner.users.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("auth.users.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     # Job status

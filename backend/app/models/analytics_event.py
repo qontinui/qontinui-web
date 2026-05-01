@@ -36,7 +36,7 @@ class AnalyticsEvent(Base):
 
     # User association (nullable for system-wide events)
     user_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("runner.users.id", ondelete="CASCADE"), nullable=True, index=True
+        ForeignKey("auth.users.id", ondelete="CASCADE"), nullable=True, index=True
     )
 
     # Event properties (flexible JSON storage)
@@ -60,12 +60,10 @@ class AnalyticsEvent(Base):
 
     # Composite indexes for efficient queries
     __table_args__ = (
-        # Index for querying events by name and time range
         Index("ix_analytics_events_name_timestamp", "event_name", "timestamp"),
-        # Index for querying user events by name
         Index("ix_analytics_events_user_name", "user_id", "event_name"),
-        # Index for time-based queries
         Index("ix_analytics_events_timestamp_desc", timestamp.desc()),
+        {"schema": "auth"},
     )
 
     def __repr__(self) -> str:

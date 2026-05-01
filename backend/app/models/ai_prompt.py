@@ -28,13 +28,14 @@ class AIPromptTemplate(Base):
     """
 
     __tablename__ = "ai_prompt_templates"
+    __table_args__ = {'schema': "project"}
 
     id = Column(String, primary_key=True, index=True)  # User-defined ID
     project_id = Column(
-        UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False, index=True
+        UUID(as_uuid=True), ForeignKey("project.projects.id"), nullable=False, index=True
     )
     created_by = Column(
-        UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=False, index=True
+        UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=False, index=True
     )
 
     # Display metadata
@@ -118,13 +119,14 @@ class PromptSequence(Base):
     """
 
     __tablename__ = "prompt_sequences"
+    __table_args__ = {'schema': "project"}
 
     id = Column(String, primary_key=True, index=True)  # User-defined ID
     project_id = Column(
-        UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False, index=True
+        UUID(as_uuid=True), ForeignKey("project.projects.id"), nullable=False, index=True
     )
     created_by = Column(
-        UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=False, index=True
+        UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=False, index=True
     )
 
     # Display metadata

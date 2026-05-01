@@ -37,6 +37,7 @@ class ExecutionScreenshot(Base):
     """
 
     __tablename__ = "execution_screenshots"
+    __table_args__ = {'schema': "project"}
 
     # Primary key
     id: Mapped[UUID] = mapped_column(
@@ -49,14 +50,14 @@ class ExecutionScreenshot(Base):
     # Foreign keys
     run_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("execution_runs.id", ondelete="CASCADE"),
+        ForeignKey("project.execution_runs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
 
     action_execution_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("action_executions.id", ondelete="SET NULL"),
+        ForeignKey("project.action_executions.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )

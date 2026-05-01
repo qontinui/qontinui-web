@@ -34,25 +34,26 @@ class TrainingJob(Base):
     """A training job for ML model training."""
 
     __tablename__ = "training_jobs"
+    __table_args__ = {'schema': "project"}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
 
     # Foreign keys
     project_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="SET NULL"),
+        ForeignKey("auth.users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
     annotation_set_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("annotation_sets.id", ondelete="SET NULL"),
+        ForeignKey("project.annotation_sets.id", ondelete="SET NULL"),
         nullable=True,
     )
 

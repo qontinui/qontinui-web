@@ -33,6 +33,7 @@ class VisualBaseline(Base):
     """
 
     __tablename__ = "visual_baselines"
+    __table_args__ = {'schema': "project"}
 
     # Primary key
     id: Mapped[UUID] = mapped_column(
@@ -45,7 +46,7 @@ class VisualBaseline(Base):
     # Project association
     project_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -125,7 +126,7 @@ class VisualBaseline(Base):
     # Approval information
     approved_by_user_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="SET NULL"),
+        ForeignKey("auth.users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -158,14 +159,14 @@ class VisualBaseline(Base):
     # Source tracking (where this baseline came from)
     source_test_run_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("software_test_runs.id", ondelete="SET NULL"),
+        ForeignKey("project.software_test_runs.id", ondelete="SET NULL"),
         nullable=True,
         comment="Test run this baseline was created from (if auto-created)",
     )
 
     source_screenshot_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("test_screenshots.id", ondelete="SET NULL"),
+        ForeignKey("project.test_screenshots.id", ondelete="SET NULL"),
         nullable=True,
         comment="Screenshot this baseline was created from",
     )
