@@ -5,6 +5,28 @@
  * - Background sync for screenshot uploads
  * - Offline caching of static assets
  * - Push notifications (future)
+ *
+ * ## Why hand-rolled, not Workbox
+ *
+ * This worker is intentionally hand-written rather than generated via
+ * Workbox / `next-pwa` / similar. The trade-off was deliberate:
+ *
+ *   - The SW already does what we need: cache-first for static, network for
+ *     /api/*, background-sync for screenshot uploads, BUILD_ID_CHANGED for
+ *     coordinated cache invalidation. Workbox's batteries (precache
+ *     manifests, runtime route strategies) are overkill for that scope.
+ *   - `next-pwa` lags Next.js majors (we're on Next 15 App Router). Tying
+ *     SW correctness to a third-party plugin's release cadence is the kind
+ *     of yak-shave we wanted to avoid.
+ *   - Workbox would be ~40 KB minified inside the SW bundle. The SW runs
+ *     before any page paints and we'd rather keep it small.
+ *
+ * Re-evaluate the call if this file grows past ~300 LOC, or if we need
+ * advanced strategies (e.g. NetworkFirst-with-timeout per route, or a
+ * precache manifest that survives version bumps without re-downloading
+ * unchanged assets). Until then, build-id-keyed cache names + the
+ * BUILD_ID_CHANGED message handler give us coordinated invalidation
+ * without the dependency.
  */
 
 // CACHE_VERSION is replaced at build time by scripts/inject-build-id.mjs
