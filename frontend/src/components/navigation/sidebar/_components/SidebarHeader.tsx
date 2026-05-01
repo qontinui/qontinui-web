@@ -1,15 +1,13 @@
 import Image from "next/image";
 import { cn } from "@/lib/utils";
-import { OrganizationSwitcher } from "@/components/collaboration/OrganizationSwitcher";
+import { getComponent } from "@/lib/extension-slots";
+import type {
+  OrganizationSwitcherProps,
+  SwitcherOrganization,
+} from "@/lib/cloud-component-slots";
 import { ProductModeSwitcher } from "./ProductModeSwitcher";
 
-interface SwitcherOrg {
-  id: string;
-  name: string;
-  avatar_url: undefined;
-  member_count: number;
-  role: "owner" | "admin" | "member" | "viewer";
-}
+type SwitcherOrg = SwitcherOrganization;
 
 interface SidebarHeaderProps {
   isCollapsed: boolean;
@@ -30,6 +28,12 @@ export function SidebarHeader({
   onOrganizationChange,
   onCreateOrganization,
 }: SidebarHeaderProps) {
+  // Resolves to cloud-control's real switcher in composed deploys, or
+  // `undefined` in OSS-only — in which case the entire wrapper section
+  // below is skipped (no empty bordered container).
+  const OrganizationSwitcher =
+    getComponent<OrganizationSwitcherProps>("organizationSwitcher");
+
   return (
     <>
       <div
@@ -71,7 +75,7 @@ export function SidebarHeader({
         <ProductModeSwitcher isCollapsed={isCollapsed} />
       </div>
 
-      {!isCollapsed && (
+      {!isCollapsed && OrganizationSwitcher && (
         <div className="px-2 py-1.5 border-b border-border-subtle">
           {mounted ? (
             <OrganizationSwitcher

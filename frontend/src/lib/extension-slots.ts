@@ -51,6 +51,19 @@ export interface ExtensionSlots {
    * `undefined` when no override is registered.
    */
   services: Map<string, unknown>;
+  /**
+   * Inline component overrides keyed by name (e.g. "organizationSwitcher",
+   * "createOrganizationDialog"). OSS calls `getComponent<P>(name)`;
+   * returns `undefined` when no override is registered, in which case
+   * the OSS shell is expected to render nothing in that slot. Cloud-
+   * control's `registerCloudExtensions({ components: { ... } })`
+   * attaches the real React components.
+   *
+   * Distinct from `services` because components are React-renderable
+   * factories with a props contract — consumers JSX-render
+   * `<Slot {...props} />` rather than calling methods.
+   */
+  components: Map<string, ComponentType<unknown>>;
 }
 
 const slots: ExtensionSlots = {
@@ -59,6 +72,7 @@ const slots: ExtensionSlots = {
   navItems: [],
   profilePanels: [],
   services: new Map(),
+  components: new Map(),
 };
 
 /**
@@ -82,6 +96,7 @@ export function registerCloudExtensions(
     navItems: NavItem[];
     profilePanels: ProfilePanel[];
     services: Record<string, unknown>;
+    components: Record<string, ComponentType<unknown>>;
   }>
 ): void {
   if (partial.appRoutes) slots.appRoutes.push(...partial.appRoutes);
@@ -92,6 +107,11 @@ export function registerCloudExtensions(
   if (partial.services) {
     for (const [k, v] of Object.entries(partial.services)) {
       slots.services.set(k, v);
+    }
+  }
+  if (partial.components) {
+    for (const [k, v] of Object.entries(partial.components)) {
+      slots.components.set(k, v);
     }
   }
 }
@@ -110,4 +130,26 @@ export function getSlots(): Readonly<ExtensionSlots> {
  */
 export function getService<T>(name: string): T | undefined {
   return slots.services.get(name) as T | undefined;
+}
+
+/**
+ * Look up a component slot by name. Returns `undefined` when no
+ * cloud-control override has been registered (the OSS-only case).
+ *
+ * Callers JSX-render the result conditionally:
+ *
+ * ```tsx
+ * const Switcher = getComponent<SwitcherProps>("organizationSwitcher");
+ * return Switcher ? <Switcher {...props} /> : null;
+ * ```
+ *
+ * The generic parameter `P` carries the props contract; the slot's
+ * stored component is typed `ComponentType<unknown>` (registered by
+ * cloud-control without OSS knowing the exact shape) and is cast on
+ * read. If cloud-control's actual component shape diverges from the
+ * caller's expectation, the runtime will surface a React prop
+ * warning — same as any other component-prop mismatch.
+ */
+export function getComponent<P>(name: string): ComponentType<P> | undefined {
+  return slots.components.get(name) as ComponentType<P> | undefined;
 }

@@ -2,6 +2,22 @@
 
 Comprehensive collaboration components for qontinui-web, including real-time presence, permissions, commenting, and review workflows.
 
+> **Cloud-only components (slot-registered):** the four org/team
+> components — `OrganizationSwitcher`, `CreateOrganizationDialog`,
+> `TeamMemberList`, `InviteMemberDialog` — are no longer importable
+> from `@/components/collaboration` or have OSS-side stub files. They
+> are React components registered by `@qontinui/cloud-control` into
+> the `getComponent(name)` slot via
+> `registerCloudExtensions({ components: { ... } })`. OSS consumers
+> retrieve them with `getComponent<P>(slotName)` and render
+> conditionally — `undefined` means single-tenant deploy with nothing
+> to render. Prop contracts live in
+> `frontend/src/lib/cloud-component-slots.ts`. See `orgs/index.ts` for
+> the type re-exports. The "Usage" snippets below for those four
+> components show the legacy direct-import shape and are kept for
+> historical reference only — actual integration goes through
+> `getComponent`.
+
 ## Components Overview
 
 ### 1. OrganizationSwitcher
