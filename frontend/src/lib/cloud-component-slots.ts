@@ -57,7 +57,6 @@ export interface CreateOrganizationDialogProps {
   onCreated?: (orgId: string) => void;
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 export interface TeamMemberListProps {
   members?: Array<{
     id: string;
@@ -83,4 +82,3 @@ export interface InviteMemberDialogProps {
   onOpenChange?: (open: boolean) => void;
   onInvited?: (invitation: PendingInvitation) => void;
 }
-/* eslint-enable @typescript-eslint/no-explicit-any */
