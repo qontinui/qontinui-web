@@ -75,7 +75,11 @@ export function MachineCard({ machine }: MachineCardProps) {
   const osVersion = runners[0]?.osVersion ?? null;
 
   return (
-    <Card className="gap-3 py-4">
+    <Card
+      className="gap-3 py-4 transition-shadow"
+      data-operations-machine-card
+      data-hostname={hostname}
+    >
       <CardHeader className="pb-0 py-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">

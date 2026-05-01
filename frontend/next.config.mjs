@@ -13,6 +13,12 @@ const withBundleAnalyzer = bundleAnalyzer({
 // Backend URL: Use environment variable in production, localhost in development
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+// qontinui-coord URL — separate axum service (default port 9870). The
+// browser proxies REST through Next.js to avoid CORS; WebSocket
+// connections still go direct via NEXT_PUBLIC_COORD_WS_URL since
+// rewrites don't proxy ws:// upgrades.
+const COORD_URL = process.env.COORD_URL || 'http://localhost:9870';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
@@ -159,6 +165,14 @@ const nextConfig = {
       // afterFiles rewrites are checked after pages/public files
       // but before dynamic routes - this is the default behavior
       afterFiles: [
+        // qontinui-coord proxy. Browser hits /coord-api/<path>, Next.js
+        // forwards server-side to ${COORD_URL}/coord/<path>. Avoids
+        // browser CORS without requiring CORS headers on the coord
+        // service.
+        {
+          source: '/coord-api/:path*',
+          destination: `${COORD_URL}/coord/:path*`,
+        },
         // Exclude paths that have custom API route handlers
         // These routes read cookies and forward to backend with Bearer token
         {

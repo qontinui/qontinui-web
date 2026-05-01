@@ -13,6 +13,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { MachineCard } from "./MachineCard";
+import { MachineStatusTile } from "./MachineStatusTile";
 import { TaskRunCard } from "./TaskRunCard";
 import { OPERATIONS_API, POLL_INTERVAL_MS, relativeTime } from "./utils";
 import type {
@@ -270,6 +271,9 @@ export function FleetOverview() {
             </div>
           </div>
         )}
+
+        {/* Machine status broadcast (qontinui-coord Phase 6 Item 3) */}
+        <MachineStatusTile />
 
         {/* Active workflows */}
         {runningTasks.length > 0 && (
