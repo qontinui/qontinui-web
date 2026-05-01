@@ -11,6 +11,8 @@ import { useSidebar } from "@/contexts/sidebar-context";
 import { useProductMode } from "@/contexts/product-mode-context";
 import { STORAGE_KEYS } from "qontinui-navigation";
 import { toast } from "sonner";
+import { getComponent } from "@/lib/extension-slots";
+import type { CreateOrganizationDialogProps } from "@/lib/cloud-component-slots";
 import { useSidebarNavigation } from "./_hooks/use-sidebar-navigation";
 import { useSidebarProjects } from "./_hooks/use-sidebar-projects";
 import { useSidebarOrganizations } from "./_hooks/use-sidebar-organizations";
@@ -20,14 +22,6 @@ import { SidebarHeader } from "./_components/SidebarHeader";
 import { SidebarNav } from "./_components/SidebarNav";
 import { SidebarFooter } from "./_components/SidebarFooter";
 import { ProjectSwitcher } from "./ProjectSwitcher";
-
-const CreateOrganizationDialog = nextDynamic(
-  () =>
-    import("@/components/collaboration/CreateOrganizationDialog").then((m) => ({
-      default: m.CreateOrganizationDialog,
-    })),
-  { ssr: false }
-);
 
 const ProjectExportDialog = nextDynamic(
   () =>
@@ -175,7 +169,7 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
         />
       </aside>
 
-      <CreateOrganizationDialog
+      <CreateOrganizationDialogSlot
         open={showCreateOrgDialog}
         onOpenChange={setShowCreateOrgDialog}
       />
@@ -186,3 +180,16 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
     </TooltipProvider>
   );
 };
+
+/**
+ * Renders cloud-control's `CreateOrganizationDialog` if registered, or
+ * nothing in OSS-only mode. Resolved via the slot registry on every
+ * render so cloud-control's `registerCloudExtensions` call can land
+ * after the OSS app shell mounts (no module-load-order coupling).
+ */
+function CreateOrganizationDialogSlot(props: CreateOrganizationDialogProps) {
+  const Slot = getComponent<CreateOrganizationDialogProps>(
+    "createOrganizationDialog",
+  );
+  return Slot ? <Slot {...props} /> : null;
+}
