@@ -1,45 +1,30 @@
 /**
- * OSS-side stub for BillingService.
+ * OSS-side type contract for `BillingService`.
  *
- * The full Stripe-backed BillingService lives in
- * `@qontinui/cloud-control/services/billing-service`. OSS self-host
- * installs don't expose Stripe billing — there's nothing to bill for
- * because self-host = unlimited. The stub satisfies the
- * `ServiceFactory` constructor wiring; its methods throw on use, which
- * is fine because the OSS pricing/billing routes are also absent.
+ * No runtime class — OSS doesn't instantiate a billing service. The real
+ * Stripe-backed implementation lives in
+ * `@qontinui/cloud-control/services/billing-service` and is registered into
+ * the `getService("billingService")` slot by cloud-control's `index.ts` via
+ * `registerCloudExtensions`. The exported `billingService` symbol from
+ * `services/service-factory.ts` is a Proxy that forwards method calls to
+ * that slot at access time; in OSS-only builds the Proxy throws on use.
  *
- * M2.5 follow-up will replace the hardcoded `BillingService` import in
- * service-factory.ts with the slot pattern (`getService("billingService")`)
- * so OSS doesn't even instantiate the stub.
+ * Methods listed here are the union of what cloud-control's class exposes
+ * and what consumers (in OSS or cloud-control) actually call. Loose
+ * `Promise<any>` return types match the historical OSS stub so callers
+ * compile without mass adoption changes.
  */
-import type { HttpClient } from "./http-client";
 
-export class BillingService {
-  constructor(_http: HttpClient) {}
-
-  private notAvailable(): never {
-    throw new Error(
-      "BillingService is only available in the cloud-control deployment"
-    );
-  }
-
-  async getSubscription(): Promise<never> {
-    return this.notAvailable();
-  }
-
-  async createCheckoutSession(): Promise<never> {
-    return this.notAvailable();
-  }
-
-  async createPortalSession(): Promise<never> {
-    return this.notAvailable();
-  }
-
-  async getUsage(): Promise<never> {
-    return this.notAvailable();
-  }
-
-  async getReadOnlyMode(): Promise<never> {
-    return this.notAvailable();
-  }
+/* eslint-disable @typescript-eslint/no-explicit-any */
+export interface BillingService {
+  getSubscription(): Promise<any>;
+  createCheckoutSession(...args: any[]): Promise<any>;
+  createPortalSession(): Promise<any>;
+  createBillingPortal(): Promise<any>;
+  getUsage(): Promise<any>;
+  getReadOnlyMode(): Promise<any>;
+  getTierLimits(): Promise<any>;
+  redirectToCheckout(...args: any[]): Promise<any>;
+  redirectToBillingPortal(): Promise<any>;
 }
+/* eslint-enable @typescript-eslint/no-explicit-any */

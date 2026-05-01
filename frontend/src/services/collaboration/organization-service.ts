@@ -1,85 +1,44 @@
 /**
- * OSS-side stub for OrganizationService.
+ * OSS-side type contract for `OrganizationService`.
  *
- * The full multi-org-aware service lives in
- * `@qontinui/cloud-control/services/collaboration/organization-service`.
- * OSS self-host installs run with one auto-created default-org per user
- * (per `tmp_cloud_control_carve_out.md` §1 verdict #1), so there's no
- * multi-org list/switch/create surface to drive. The stub satisfies the
- * `ServiceFactory` wiring and the type contract that the OSS hooks
- * (`useOrganization`, `useProjectSharing`, etc.) currently call into.
- * Every method throws on use; nothing in OSS-only mode actually invokes
- * them because the cloud-control routes that drive these calls aren't
- * mounted.
+ * No runtime class — OSS doesn't instantiate an organization service. The
+ * real multi-org-aware implementation lives in
+ * `@qontinui/cloud-control/services/collaboration/organization-service` and
+ * is registered into the `getService("organizationService")` slot by
+ * cloud-control's `index.ts` via `registerCloudExtensions`. The exported
+ * `organizationService` symbol from `services/service-factory.ts` is a
+ * Proxy that forwards method calls to that slot at access time; in
+ * OSS-only builds the Proxy throws on use, which is fine because OSS-only
+ * routes that drive these calls aren't mounted (the per-user default-org
+ * bypass keeps OSS multi-org-free).
  *
- * M2.5 follow-up will replace the hardcoded `OrganizationService`
- * reference in `service-factory.ts` with the slot pattern
- * (`getService("organizationService")`) so OSS doesn't even instantiate
- * this stub. Until then, this exists to keep `tsc --noEmit` green.
+ * Methods listed here are the union of what cloud-control's class exposes
+ * and what OSS callers (`useOrganization`, `useProjectSharing`, the
+ * collaboration contexts, the org-members hook) currently invoke. Loose
+ * `Promise<any>` return types match the historical OSS stub so callers
+ * compile without mass adaptation.
  */
-import type { HttpClient } from "../http-client";
 
-const NOT_AVAILABLE_ERROR =
-  "OrganizationService is only available in the cloud-control deployment";
-
-function notAvailable(): never {
-  throw new Error(NOT_AVAILABLE_ERROR);
+/* eslint-disable @typescript-eslint/no-explicit-any */
+export interface OrganizationService {
+  getOrganizations(...args: unknown[]): Promise<any>;
+  getOrganization(...args: unknown[]): Promise<any>;
+  listOrganizations(...args: unknown[]): Promise<any>;
+  createOrganization(...args: unknown[]): Promise<any>;
+  updateOrganization(...args: unknown[]): Promise<any>;
+  deleteOrganization(...args: unknown[]): Promise<any>;
+  getStatistics(...args: unknown[]): Promise<any>;
+  getMembers(...args: unknown[]): Promise<any>;
+  listMembers(...args: unknown[]): Promise<any>;
+  addMember(...args: unknown[]): Promise<any>;
+  inviteMember(...args: unknown[]): Promise<any>;
+  removeMember(...args: unknown[]): Promise<any>;
+  updateMemberRole(...args: unknown[]): Promise<any>;
+  transferOwnership(...args: unknown[]): Promise<any>;
+  listInvitations(...args: unknown[]): Promise<any>;
+  acceptInvitation(...args: unknown[]): Promise<any>;
+  cancelInvitation(...args: unknown[]): Promise<any>;
+  switchOrganization(...args: unknown[]): Promise<any>;
+  getCurrentOrganization(...args: unknown[]): unknown;
 }
-
-export class OrganizationService {
-  constructor(_http: HttpClient) {}
-
-  // The OSS callers (useOrganization, useProjectSharing, the hooks under
-  // contexts/collaboration/) expect a broad surface. Every method here
-  // throws synchronously when called; arguments are accepted but ignored.
-  /* eslint-disable @typescript-eslint/no-explicit-any */
-  async getOrganizations(..._args: unknown[]): Promise<any> {
-    return notAvailable();
-  }
-  async getOrganization(..._args: unknown[]): Promise<any> {
-    return notAvailable();
-  }
-  async listOrganizations(..._args: unknown[]): Promise<any> {
-    return notAvailable();
-  }
-  async createOrganization(..._args: unknown[]): Promise<any> {
-    return notAvailable();
-  }
-  async updateOrganization(..._args: unknown[]): Promise<any> {
-    return notAvailable();
-  }
-  async deleteOrganization(..._args: unknown[]): Promise<any> {
-    return notAvailable();
-  }
-  async getMembers(..._args: unknown[]): Promise<any> {
-    return notAvailable();
-  }
-  async listMembers(..._args: unknown[]): Promise<any> {
-    return notAvailable();
-  }
-  async addMember(..._args: unknown[]): Promise<any> {
-    return notAvailable();
-  }
-  async inviteMember(..._args: unknown[]): Promise<any> {
-    return notAvailable();
-  }
-  async removeMember(..._args: unknown[]): Promise<any> {
-    return notAvailable();
-  }
-  async updateMemberRole(..._args: unknown[]): Promise<any> {
-    return notAvailable();
-  }
-  async transferOwnership(..._args: unknown[]): Promise<any> {
-    return notAvailable();
-  }
-  async listInvitations(..._args: unknown[]): Promise<any> {
-    return notAvailable();
-  }
-  async acceptInvitation(..._args: unknown[]): Promise<any> {
-    return notAvailable();
-  }
-  async cancelInvitation(..._args: unknown[]): Promise<any> {
-    return notAvailable();
-  }
-  /* eslint-enable @typescript-eslint/no-explicit-any */
-}
+/* eslint-enable @typescript-eslint/no-explicit-any */
