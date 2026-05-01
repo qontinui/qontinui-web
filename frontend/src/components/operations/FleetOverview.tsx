@@ -182,18 +182,26 @@ export function FleetOverview() {
   }
 
   // ---- Error / empty state ----
+  // Fleet API (FastAPI :8000) is unreachable, but MachineStatusTile reads from
+  // qontinui-coord (:9870) — separate service, separate concern. Render the tile
+  // alongside the fleet-error notice rather than short-circuiting it out.
   if (error && !fleet) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-4 text-muted-foreground">
-        <WifiOff className="h-12 w-12 opacity-40" />
-        <p className="text-lg font-medium">Backend Unreachable</p>
-        <p className="text-sm max-w-md text-center">{error}</p>
-        <p className="text-xs">
-          Make sure the backend is running at{" "}
-          <code className="bg-muted px-1 rounded">localhost:8000</code> and the
-          operations endpoints are deployed.
-        </p>
-      </div>
+      <TooltipProvider delayDuration={200}>
+        <div className="space-y-6">
+          <div className="flex flex-col items-center justify-center gap-4 py-12 text-muted-foreground">
+            <WifiOff className="h-12 w-12 opacity-40" />
+            <p className="text-lg font-medium">Backend Unreachable</p>
+            <p className="text-sm max-w-md text-center">{error}</p>
+            <p className="text-xs">
+              Make sure the backend is running at{" "}
+              <code className="bg-muted px-1 rounded">localhost:8000</code> and
+              the operations endpoints are deployed.
+            </p>
+          </div>
+          <MachineStatusTile />
+        </div>
+      </TooltipProvider>
     );
   }
 
