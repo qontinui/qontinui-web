@@ -36,8 +36,6 @@ existence checks so re-applying after a partial fail is a no-op.
 
 from collections.abc import Sequence
 
-import sqlalchemy as sa
-
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -118,30 +116,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Re-add dispatch_secret. Existing rows get fresh secrets via
-    # server_default; downstream services must re-register runners to
-    # capture the new values.
-    op.add_column(
-        "runners",
-        sa.Column(
-            "dispatch_secret",
-            sa.String(length=128),
-            nullable=False,
-            server_default=sa.text("encode(gen_random_bytes(32), 'hex')"),
-        ),
-        schema="runner",
-    )
-
-    # Re-add server_mode with the historical default of true.
-    op.add_column(
-        "runners",
-        sa.Column(
-            "server_mode",
-            sa.Boolean(),
-            nullable=False,
-            server_default=sa.text("true"),
-        ),
-        schema="runner",
-    )
-
-    op.execute(_REVERSE_RENAME_SEQUENCE)
+    # no-op'd post-consolidation; revision is in applied history, no DB will re-run it
+    pass

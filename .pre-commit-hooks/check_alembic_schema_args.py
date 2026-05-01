@@ -5,13 +5,10 @@ Walks alembic revision files (``backend/alembic/versions/*.py`` and
 DDL ``op.<func>(...)`` call carries an explicit ``schema=`` keyword
 argument with one of the canonical schemas:
 
-    project, coord, agent, auth, cloud, public, runner
+    project, coord, agent, auth, cloud, public
 
-The ``runner`` value is grandfathered for pre-consolidation revisions
-and should be removed from this allow-list once Phase 4 of the
-consolidation plan deletes the runner-native MIGRATIONS array and
-drops the ``runner`` schema. The ``cloud`` schema was added per the
-cloud-control carve-out (tmp_cloud_control_carve_out.md §5).
+The ``cloud`` schema was added per the cloud-control carve-out
+(tmp_cloud_control_carve_out.md §5).
 Plan reference: ``D:/qontinui-root/tmp_migration_consolidation_plan.md``
 Phase 6.
 
@@ -55,7 +52,7 @@ GATED_OPS = {
     "batch_alter_table",
 }
 
-ALLOWED_SCHEMAS = {"project", "coord", "agent", "auth", "cloud", "public", "runner"}
+ALLOWED_SCHEMAS = {"project", "coord", "agent", "auth", "cloud", "public"}
 
 
 def _is_op_call(call: ast.Call) -> str | None:
