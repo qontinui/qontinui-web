@@ -58,6 +58,7 @@ class ActionExecution(Base):
     """
 
     __tablename__ = "action_executions"
+    __table_args__ = {"schema": "project"}
 
     # Primary key
     id: Mapped[UUID] = mapped_column(
@@ -70,7 +71,7 @@ class ActionExecution(Base):
     # Foreign keys
     run_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("execution_runs.id", ondelete="CASCADE"),
+        ForeignKey("project.execution_runs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -81,7 +82,7 @@ class ActionExecution(Base):
         # form a mutual FK cycle. use_alter defers this constraint so metadata
         # create_all / drop_all order the two tables cleanly.
         ForeignKey(
-            "execution_screenshots.id",
+            "project.execution_screenshots.id",
             ondelete="SET NULL",
             use_alter=True,
             name="fk_action_executions_screenshot_id",
@@ -93,7 +94,7 @@ class ActionExecution(Base):
     # Span nesting (Opik integration)
     parent_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("action_executions.id", ondelete="CASCADE"),
+        ForeignKey("project.action_executions.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
         comment="Parent action execution for span nesting",

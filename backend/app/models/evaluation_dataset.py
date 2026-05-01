@@ -26,6 +26,7 @@ class EvaluationDataset(Base):
     """
 
     __tablename__ = "evaluation_datasets"
+    __table_args__ = {"schema": "project"}
 
     # Primary key
     id: Mapped[UUID] = mapped_column(
@@ -112,7 +113,7 @@ class DatasetItem(Base):
     # Foreign key to parent dataset
     dataset_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("evaluation_datasets.id", ondelete="CASCADE"),
+        ForeignKey("project.evaluation_datasets.id", ondelete="CASCADE"),
         nullable=False,
         comment="FK to evaluation_datasets.id",
     )
@@ -151,7 +152,10 @@ class DatasetItem(Base):
     )
 
     # Index on dataset_id is declared via index=True on the column above
-    __table_args__ = (Index("ix_dataset_items_dataset_id", "dataset_id"),)
+    __table_args__ = (
+        Index("ix_dataset_items_dataset_id", "dataset_id"),
+        {"schema": "project"},
+    )
 
     # Relationships
     dataset = relationship("EvaluationDataset", back_populates="items")

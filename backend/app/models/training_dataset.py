@@ -123,7 +123,7 @@ class TrainingDataset(Base):
         nullable=False,
     )
     created_by_id = Column(
-        UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=False
     )
 
     # Relationships
@@ -144,7 +144,10 @@ class TrainingDataset(Base):
     )
     created_by = relationship("User")
 
-    __table_args__ = (Index("ix_training_datasets_created_by", "created_by_id"),)
+    __table_args__ = (
+        Index("ix_training_datasets_created_by", "created_by_id"),
+        {"schema": "project"},
+    )
 
 
 class TrainingDatasetImage(Base):
@@ -155,7 +158,7 @@ class TrainingDatasetImage(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     dataset_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("training_datasets.id", ondelete="CASCADE"),
+        ForeignKey("project.training_datasets.id", ondelete="CASCADE"),
         nullable=False,
     )
 
@@ -179,7 +182,7 @@ class TrainingDatasetImage(Base):
     # Review status
     reviewed = Column(Boolean, nullable=False, default=False)
     reviewed_by_id = Column(
-        UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=True
     )
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
     reviewer_notes = Column(Text, nullable=True)
@@ -201,6 +204,7 @@ class TrainingDatasetImage(Base):
     __table_args__ = (
         Index("ix_training_dataset_images_dataset_hash", "dataset_id", "image_hash"),
         Index("ix_training_dataset_images_reviewed", "dataset_id", "reviewed"),
+        {"schema": "project"},
     )
 
 
@@ -212,12 +216,12 @@ class TrainingDatasetAnnotation(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     dataset_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("training_datasets.id", ondelete="CASCADE"),
+        ForeignKey("project.training_datasets.id", ondelete="CASCADE"),
         nullable=False,
     )
     image_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("training_dataset_images.id", ondelete="CASCADE"),
+        ForeignKey("project.training_dataset_images.id", ondelete="CASCADE"),
         nullable=False,
     )
 
@@ -255,7 +259,7 @@ class TrainingDatasetAnnotation(Base):
     )
     reviewer_notes = Column(Text, nullable=True)
     reviewed_by_id = Column(
-        UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=True
     )
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
 
@@ -281,6 +285,7 @@ class TrainingDatasetAnnotation(Base):
         Index("ix_training_dataset_annotations_review", "dataset_id", "review_status"),
         Index("ix_training_dataset_annotations_confidence", "dataset_id", "confidence"),
         Index("ix_training_dataset_annotations_source", "dataset_id", "source"),
+        {"schema": "project"},
     )
 
 
@@ -292,7 +297,7 @@ class TrainingDatasetExportJob(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     dataset_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("training_datasets.id", ondelete="CASCADE"),
+        ForeignKey("project.training_datasets.id", ondelete="CASCADE"),
         nullable=False,
     )
 
@@ -331,7 +336,7 @@ class TrainingDatasetExportJob(Base):
     )
     completed_at = Column(DateTime(timezone=True), nullable=True)
     created_by_id = Column(
-        UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=False
     )
 
     # Relationships
@@ -341,4 +346,5 @@ class TrainingDatasetExportJob(Base):
     __table_args__ = (
         Index("ix_training_dataset_export_jobs_dataset", "dataset_id"),
         Index("ix_training_dataset_export_jobs_status", "status"),
+        {"schema": "project"},
     )

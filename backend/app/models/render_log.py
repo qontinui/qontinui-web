@@ -94,7 +94,7 @@ class RenderLog(Base):
     # User context (optional)
     user_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="SET NULL"),
+        ForeignKey("auth.users.id", ondelete="SET NULL"),
         nullable=True,
     )
 
@@ -108,6 +108,7 @@ class RenderLog(Base):
     __table_args__ = (
         Index("ix_render_logs_session_timestamp", "session_id", "timestamp"),
         Index("ix_render_logs_page_url", "page_url"),
+        {"schema": "project"},
     )
 
     def __repr__(self) -> str:
@@ -128,7 +129,9 @@ class RenderImage(Base):
 
     # Parent render log
     render_log_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("render_logs.id", ondelete="CASCADE"), nullable=False
+        Integer,
+        ForeignKey("project.render_logs.id", ondelete="CASCADE"),
+        nullable=False,
     )
 
     # Image metadata
@@ -156,7 +159,10 @@ class RenderImage(Base):
     render_log: Mapped["RenderLog"] = relationship("RenderLog", back_populates="images")
 
     # Index for finding images by render log
-    __table_args__ = (Index("ix_render_images_render_log_id", "render_log_id"),)
+    __table_args__ = (
+        Index("ix_render_images_render_log_id", "render_log_id"),
+        {"schema": "project"},
+    )
 
     def __repr__(self) -> str:
         return f"<RenderImage(id={self.id}, render_log_id={self.render_log_id}, image_type={self.image_type})>"

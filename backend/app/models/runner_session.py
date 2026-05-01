@@ -31,6 +31,7 @@ class RunnerSession(Base):
     """
 
     __tablename__ = "runner_sessions"
+    __table_args__ = {"schema": "auth"}
 
     # Primary key (auto-incrementing integer for simplicity)
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -38,7 +39,7 @@ class RunnerSession(Base):
     # FK to the canonical runners row this session belongs to.
     runner_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("runners.id", ondelete="CASCADE"),
+        ForeignKey("auth.runners.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
         comment="Owning runner row (one runner has many sessions over its lifetime).",
@@ -46,7 +47,7 @@ class RunnerSession(Base):
 
     # Foreign key to user
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

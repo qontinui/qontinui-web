@@ -1,11 +1,10 @@
 """Pre-commit / CI gate: alembic ops must specify ``schema=``.
 
-Walks alembic revision files (``backend/alembic/versions/*.py`` and
-``backend/alembic/_staged_consolidation/*.py``) and verifies every
-DDL ``op.<func>(...)`` call carries an explicit ``schema=`` keyword
-argument with one of the canonical schemas:
+Walks alembic revision files (``backend/alembic/versions/*.py``) and
+verifies every DDL ``op.<func>(...)`` call carries an explicit ``schema=``
+keyword argument with one of the canonical schemas:
 
-    project, coord, agent, auth, cloud, public
+    project, coord, agent, auth, cloud
 
 The ``cloud`` schema was added per the cloud-control carve-out
 (tmp_cloud_control_carve_out.md §5).
@@ -15,9 +14,16 @@ Phase 6.
 Why this gate exists:
 Without an explicit ``schema=``, alembic ops default to whatever
 ``search_path`` happens to be set to at apply time — usually
-``public``. Post-consolidation, every table belongs in one of the four
-canonical schemas, never in ``public``. A missing ``schema=`` argument
-is almost always a bug, not a deliberate ``public`` placement.
+``public``. Post-Phase-7, ``public`` contains only ``alembic_version``
+(alembic's own bookkeeping) and every domain table belongs in one of
+the canonical schemas above. A missing ``schema=`` argument is almost
+always a bug, not a deliberate ``public`` placement.
+
+The previous ALLOWED_SCHEMAS set included ``"public"`` because Phase 7
+hadn't run yet (and pre-Phase-7 revisions still referenced ``public.*``
+implicitly via the search_path default). With Phase 7 complete and
+``public`` drained to a single bookkeeping table, ``public`` is no
+longer a legitimate target schema for new ops — drop it.
 
 Gated ops: create_table, add_column, alter_column, drop_column,
 drop_table, create_index, drop_index, create_foreign_key,
@@ -25,7 +31,9 @@ drop_constraint, create_unique_constraint, create_check_constraint,
 rename_table, batch_alter_table.
 
 Not gated: execute (raw SQL — out of scope; use search_path prefix or
-schema-qualified table names directly).
+schema-qualified table names directly). The Phase 7 revisions
+themselves are exclusively ``op.execute()``-driven for the same reason
+this gate intentionally skips them.
 
 Exit code: 0 = all clean; 1 = at least one violation.
 """
@@ -52,7 +60,7 @@ GATED_OPS = {
     "batch_alter_table",
 }
 
-ALLOWED_SCHEMAS = {"project", "coord", "agent", "auth", "cloud", "public"}
+ALLOWED_SCHEMAS = {"project", "coord", "agent", "auth", "cloud"}
 
 
 def _is_op_call(call: ast.Call) -> str | None:

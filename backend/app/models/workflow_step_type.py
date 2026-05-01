@@ -42,7 +42,7 @@ class StepTypeConfig(Base):
         primary_key=True, server_default=text("gen_random_uuid()")
     )
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -79,6 +79,7 @@ class StepTypeConfig(Base):
         UniqueConstraint(
             "user_id", "step_type", "phase", name="uq_step_type_user_type_phase"
         ),
+        {"schema": "project"},
     )
 
     def __repr__(self) -> str:
@@ -100,7 +101,7 @@ class GuiActionTypeConfig(Base):
         primary_key=True, server_default=text("gen_random_uuid()")
     )
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -126,6 +127,7 @@ class GuiActionTypeConfig(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "action_type", name="uq_gui_action_type_user_type"),
+        {"schema": "project"},
     )
 
     def __repr__(self) -> str:
@@ -146,7 +148,7 @@ class WorkflowPhaseConfig(Base):
         primary_key=True, server_default=text("gen_random_uuid()")
     )
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -172,6 +174,7 @@ class WorkflowPhaseConfig(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "phase", name="uq_workflow_phase_user_phase"),
+        {"schema": "project"},
     )
 
     def __repr__(self) -> str:

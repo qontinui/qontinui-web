@@ -21,6 +21,7 @@ class SharedFile(Base):
     """
 
     __tablename__ = "shared_files"
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -28,7 +29,7 @@ class SharedFile(Base):
         server_default=text("gen_random_uuid()"),
     )
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("runner.users.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("auth.users.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     # Source device info

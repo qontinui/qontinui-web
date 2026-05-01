@@ -15,14 +15,15 @@ class AutomationVideo(Base):
     """
 
     __tablename__ = "automation_videos"
+    __table_args__ = {"schema": "project"}
 
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(String, nullable=False, index=True, unique=True)
     user_id = Column(
-        UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=False, index=True
+        UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=False, index=True
     )
     project_id = Column(
-        UUID(as_uuid=True), ForeignKey("projects.id"), nullable=True, index=True
+        UUID(as_uuid=True), ForeignKey("project.projects.id"), nullable=True, index=True
     )
 
     # S3 storage

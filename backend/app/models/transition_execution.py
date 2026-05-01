@@ -36,6 +36,7 @@ class TransitionExecution(Base):
     """
 
     __tablename__ = "transition_executions"
+    __table_args__ = {"schema": "project"}
 
     # Primary key
     id: Mapped[UUID] = mapped_column(
@@ -48,7 +49,7 @@ class TransitionExecution(Base):
     # Foreign key
     test_run_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("software_test_runs.id", ondelete="CASCADE"),
+        ForeignKey("project.software_test_runs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

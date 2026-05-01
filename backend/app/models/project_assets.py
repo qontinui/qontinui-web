@@ -38,15 +38,16 @@ class ProjectScreenshot(Base):
     """
 
     __tablename__ = "project_screenshots"
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE")
+        UUID(as_uuid=True), ForeignKey("project.projects.id", ondelete="CASCADE")
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("runner.users.id", ondelete="CASCADE")
+        ForeignKey("auth.users.id", ondelete="CASCADE")
     )
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -66,7 +67,7 @@ class ProjectScreenshot(Base):
 
     # Optional link to capture session (if from workflow learning)
     capture_session_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("capture_sessions.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("project.capture_sessions.id", ondelete="SET NULL"), nullable=True
     )
 
     # Monitor index (for runner captures, which monitor was captured)
@@ -124,15 +125,16 @@ class ProjectImage(Base):
     """
 
     __tablename__ = "project_images"
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE")
+        UUID(as_uuid=True), ForeignKey("project.projects.id", ondelete="CASCADE")
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("runner.users.id", ondelete="CASCADE")
+        ForeignKey("auth.users.id", ondelete="CASCADE")
     )
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -158,7 +160,7 @@ class ProjectImage(Base):
 
     # Optional link to source screenshot (if extracted from a screenshot)
     source_screenshot_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("project_screenshots.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("project.project_screenshots.id", ondelete="SET NULL"), nullable=True
     )
 
     # Source region (if extracted from screenshot): {x, y, width, height}

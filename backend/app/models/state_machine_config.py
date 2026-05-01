@@ -24,13 +24,17 @@ class StateMachineConfig(Base):
     """
 
     __tablename__ = "state_machine_configs"
+    __table_args__ = {"schema": "project"}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     project_id = Column(
-        UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False, index=True
+        UUID(as_uuid=True),
+        ForeignKey("project.projects.id"),
+        nullable=False,
+        index=True,
     )
     created_by = Column(
-        UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=False, index=True
+        UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=False, index=True
     )
 
     name = Column(String, nullable=False, index=True)

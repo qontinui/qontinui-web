@@ -36,7 +36,9 @@ class ProjectEmbedding(Base):
 
     # Project association
     project_id: Mapped[UUID] = mapped_column(
-        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
 
     # Pattern identification
@@ -96,15 +98,8 @@ class ProjectEmbedding(Base):
 
     # Composite indexes for efficient lookups
     __table_args__ = (
-        # Composite index for project + pattern lookups
         Index("ix_project_embeddings_project_pattern", "project_id", "pattern_id"),
-        # Vector similarity search index will be created via migration
-        # IVFFlat (faster build, good for < 1M vectors):
-        #   CREATE INDEX idx_project_embeddings_vector_ivfflat ON project_embeddings
-        #   USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
-        # HNSW (slower build, better for > 1M vectors, faster queries):
-        #   CREATE INDEX idx_project_embeddings_vector_hnsw ON project_embeddings
-        #   USING hnsw (embedding vector_cosine_ops);
+        {"schema": "project"},
     )
 
     def __repr__(self) -> str:

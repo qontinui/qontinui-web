@@ -27,6 +27,7 @@ class RunnerToken(Base):
     """
 
     __tablename__ = "runner_tokens"
+    __table_args__ = {"schema": "auth"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -37,7 +38,7 @@ class RunnerToken(Base):
 
     user_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

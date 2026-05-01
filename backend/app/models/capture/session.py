@@ -28,15 +28,16 @@ class CaptureSession(Base):
     """
 
     __tablename__ = "capture_sessions"
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE")
+        UUID(as_uuid=True), ForeignKey("project.projects.id", ondelete="CASCADE")
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("runner.users.id", ondelete="CASCADE")
+        ForeignKey("auth.users.id", ondelete="CASCADE")
     )
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)

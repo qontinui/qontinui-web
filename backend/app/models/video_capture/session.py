@@ -97,7 +97,7 @@ class VideoCaptureSession(Base):
     # Association with snapshot run (automation results)
     snapshot_run_id: Mapped[int | None] = mapped_column(
         Integer,
-        ForeignKey("snapshot_runs.id", ondelete="SET NULL"),
+        ForeignKey("project.snapshot_runs.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -108,7 +108,7 @@ class VideoCaptureSession(Base):
     # Association with project
     project_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="SET NULL"),
+        ForeignKey("project.projects.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -116,7 +116,7 @@ class VideoCaptureSession(Base):
     # User who created the session
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="SET NULL"),
+        ForeignKey("auth.users.id", ondelete="SET NULL"),
         nullable=True,
     )
 
@@ -163,6 +163,7 @@ class VideoCaptureSession(Base):
         Index("idx_video_capture_sessions_workflow_id", "workflow_id"),
         Index("idx_video_capture_sessions_project_id", "project_id"),
         Index("idx_video_capture_sessions_snapshot_run_id", "snapshot_run_id"),
+        {"schema": "project"},
     )
 
     def __repr__(self) -> str:

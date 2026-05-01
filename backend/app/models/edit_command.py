@@ -32,13 +32,13 @@ class EditCommand(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     project_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="SET NULL"),
+        ForeignKey("auth.users.id", ondelete="SET NULL"),
         nullable=True,
     )
     command_type = Column(String, nullable=False)  # 'update', 'create', 'delete'
@@ -63,4 +63,5 @@ class EditCommand(Base):
         UniqueConstraint(
             "project_id", "sequence_number", name="uq_project_command_seq"
         ),
+        {"schema": "project"},
     )

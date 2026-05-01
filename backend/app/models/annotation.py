@@ -17,6 +17,7 @@ class AnnotationSet(Base):
     """A set of annotations for a screenshot or multiple screenshots"""
 
     __tablename__ = "annotation_sets"
+    __table_args__ = {"schema": "project"}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     screenshot_name = Column(String, nullable=False, index=True)
@@ -42,7 +43,7 @@ class AnnotationSet(Base):
         nullable=False,
     )
     created_by_id = Column(
-        UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=False
     )
 
     # Notes about this annotation set
@@ -91,7 +92,7 @@ class Annotation(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     annotation_set_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("annotation_sets.id", ondelete="CASCADE"),
+        ForeignKey("project.annotation_sets.id", ondelete="CASCADE"),
         nullable=False,
     )
 
@@ -121,4 +122,5 @@ class Annotation(Base):
 
     __table_args__ = (
         Index("ix_annotations_set_screenshot", "annotation_set_id", "screenshot_index"),
+        {"schema": "project"},
     )

@@ -19,6 +19,7 @@ class PushDevice(Base):
     """
 
     __tablename__ = "push_devices"
+    __table_args__ = {"schema": "auth"}
 
     id = Column(
         UUID(as_uuid=True),
@@ -29,7 +30,7 @@ class PushDevice(Base):
     )
     user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

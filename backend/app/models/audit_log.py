@@ -13,7 +13,7 @@ class AuditLog(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="SET NULL"),
+        ForeignKey("auth.users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -41,7 +41,7 @@ class AuditLog(Base):
     )
     target_user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="SET NULL"),
+        ForeignKey("auth.users.id", ondelete="SET NULL"),
         nullable=True,
         comment="User being affected by the action (for permission/membership changes)",
     )
@@ -61,4 +61,5 @@ class AuditLog(Base):
         Index("ix_audit_logs_category_created", "event_category", "created_at"),
         Index("ix_audit_logs_resource", "resource_type", "resource_id", "created_at"),
         Index("ix_audit_logs_target_user", "target_user_id", "created_at"),
+        {"schema": "auth"},
     )

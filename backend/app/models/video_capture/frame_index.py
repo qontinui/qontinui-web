@@ -39,7 +39,7 @@ class FrameIndex(Base):
     # Foreign key to video capture session
     video_capture_session_id: Mapped[int] = mapped_column(
         Integer,
-        ForeignKey("video_capture_sessions.id", ondelete="CASCADE"),
+        ForeignKey("project.video_capture_sessions.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -83,6 +83,7 @@ class FrameIndex(Base):
             "frame_number",
             name="uq_frame_index_session_frame",
         ),
+        {"schema": "project"},
     )
 
     def __repr__(self) -> str:

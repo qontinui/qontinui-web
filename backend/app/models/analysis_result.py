@@ -32,7 +32,7 @@ class AnalysisJob(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     annotation_set_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("annotation_sets.id", ondelete="CASCADE"),
+        ForeignKey("project.annotation_sets.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -60,7 +60,7 @@ class AnalysisJob(Base):
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
     created_by_id = Column(
-        UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=False
     )
 
     # Relationships

@@ -72,6 +72,7 @@ class ExecutionIssue(Base):
     """
 
     __tablename__ = "execution_issues"
+    __table_args__ = {"schema": "project"}
 
     # Primary key
     id: Mapped[UUID] = mapped_column(
@@ -84,21 +85,21 @@ class ExecutionIssue(Base):
     # Foreign keys
     run_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("execution_runs.id", ondelete="CASCADE"),
+        ForeignKey("project.execution_runs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
 
     action_execution_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("action_executions.id", ondelete="SET NULL"),
+        ForeignKey("project.action_executions.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
 
     assigned_to_user_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="SET NULL"),
+        ForeignKey("auth.users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )

@@ -55,7 +55,7 @@ class Organization(Base):
     name = Column(String, nullable=False, index=True)
     slug = Column(String, unique=True, nullable=False, index=True)
     description = Column(Text, nullable=True)
-    owner_id = Column(UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=False)
+    owner_id = Column(UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=False)
     avatar_url = Column(String, nullable=True)
     settings = Column(JSON, default={}, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
@@ -79,7 +79,7 @@ class Organization(Base):
     )
     projects = relationship(
         "Project",
-        secondary="project_access_control",
+        secondary="project.project_access_control",
         viewonly=True,
     )
     invitations = relationship(
@@ -89,7 +89,10 @@ class Organization(Base):
     )
 
     # Indexes
-    __table_args__ = (Index("idx_org_slug", "slug"),)
+    __table_args__ = (
+        Index("idx_org_slug", "slug"),
+        {"schema": "auth"},
+    )
 
     def __repr__(self):
         """Return string representation of Organization."""
@@ -111,19 +114,17 @@ class TeamMember(Base):
     )
     organization_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("organizations.id", ondelete="CASCADE"),
+        ForeignKey("auth.organizations.id", ondelete="CASCADE"),
         nullable=False,
     )
     user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
     )
     role = Column(String, default=TeamRole.MEMBER.value, nullable=False)
     permissions = Column(JSON, default={}, nullable=False)
-    invited_by = Column(
-        UUID(as_uuid=True), ForeignKey("runner.users.id"), nullable=True
-    )
+    invited_by = Column(UUID(as_uuid=True), ForeignKey("auth.users.id"), nullable=True)
     joined_at = Column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
@@ -150,6 +151,7 @@ class TeamMember(Base):
         Index("idx_org_user", "organization_id", "user_id"),
         Index("idx_team_member_user", "user_id"),
         Index("idx_team_member_org", "organization_id"),
+        {"schema": "auth"},
     )
 
     def __repr__(self):
@@ -172,14 +174,14 @@ class OrganizationInvitation(Base):
     )
     organization_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("organizations.id", ondelete="CASCADE"),
+        ForeignKey("auth.organizations.id", ondelete="CASCADE"),
         nullable=False,
     )
     email = Column(String, nullable=False)
     role = Column(String, default=TeamRole.MEMBER.value, nullable=False)
     invited_by = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="SET NULL"),
+        ForeignKey("auth.users.id", ondelete="SET NULL"),
         nullable=True,
     )
     token = Column(String, unique=True, nullable=False, index=True)
@@ -204,6 +206,7 @@ class OrganizationInvitation(Base):
         Index("idx_invitation_email", "email"),
         Index("idx_invitation_org", "organization_id"),
         Index("idx_invitation_token", "token"),
+        {"schema": "auth"},
     )
 
     def __repr__(self):
@@ -249,17 +252,17 @@ class ProjectAccessControl(Base):
     )
     project_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=False,
     )
     user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=True,
     )
     organization_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("organizations.id", ondelete="CASCADE"),
+        ForeignKey("auth.organizations.id", ondelete="CASCADE"),
         nullable=True,
     )
     permission_level = Column(
@@ -267,7 +270,7 @@ class ProjectAccessControl(Base):
     )
     created_by = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="SET NULL"),
+        ForeignKey("auth.users.id", ondelete="SET NULL"),
         nullable=True,
     )
     expires_at = Column(DateTime(timezone=True), nullable=True)
@@ -300,6 +303,7 @@ class ProjectAccessControl(Base):
         Index("idx_project_access_user", "user_id"),
         Index("idx_project_access_org", "organization_id"),
         Index("idx_project_access_expires_at", "expires_at"),
+        {"schema": "project"},
     )
 
     def __repr__(self):

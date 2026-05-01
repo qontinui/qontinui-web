@@ -50,6 +50,7 @@ class ExecutionRun(Base):
     """
 
     __tablename__ = "execution_runs"
+    __table_args__ = {"schema": "project"}
 
     # Primary key
     id: Mapped[UUID] = mapped_column(
@@ -62,14 +63,14 @@ class ExecutionRun(Base):
     # Foreign keys
     project_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
 
     created_by_user_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="SET NULL"),
+        ForeignKey("auth.users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )

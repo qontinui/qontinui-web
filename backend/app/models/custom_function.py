@@ -38,7 +38,10 @@ class CustomFunction(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     project_id = Column(
-        UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False, index=True
+        UUID(as_uuid=True),
+        ForeignKey("project.projects.id"),
+        nullable=False,
+        index=True,
     )
     file_path = Column(String, nullable=False, index=True)  # Relative path in project
 
@@ -92,6 +95,7 @@ class CustomFunction(Base):
             "function_name",
             name="uq_project_file_function",
         ),
+        {"schema": "project"},
     )
 
     def to_dict(self):

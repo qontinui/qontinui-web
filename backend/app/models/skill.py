@@ -21,6 +21,7 @@ class Skill(Base):
     """User-created skill definition."""
 
     __tablename__ = "skills"
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -41,7 +42,7 @@ class Skill(Base):
         # alembic revision p2q3r4s5t6u7. Declared here so Base.metadata
         # reflects reality — otherwise drop_all orders skills after
         # organizations and PostgreSQL rejects the organizations drop.
-        ForeignKey("organizations.id", ondelete="SET NULL"),
+        ForeignKey("auth.organizations.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )

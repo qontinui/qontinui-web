@@ -9,11 +9,12 @@ from app.db.base import Base
 
 class UsageMetric(Base):
     __tablename__ = "usage_metrics"
+    __table_args__ = {"schema": "auth"}
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="CASCADE"),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
     )
     metric_type = Column(String, nullable=False)

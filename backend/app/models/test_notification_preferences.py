@@ -26,6 +26,7 @@ class TestNotificationPreferences(Base):
     """
 
     __tablename__ = "test_notification_preferences"
+    __table_args__ = {"schema": "project"}
 
     # Primary key
     id: Mapped[UUID] = mapped_column(
@@ -38,7 +39,7 @@ class TestNotificationPreferences(Base):
     # Foreign key
     project_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=False,
         unique=True,
         index=True,

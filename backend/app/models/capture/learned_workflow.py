@@ -26,15 +26,16 @@ class LearnedWorkflow(Base):
     """
 
     __tablename__ = "learned_workflows"
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     session_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("capture_sessions.id", ondelete="CASCADE")
+        ForeignKey("project.capture_sessions.id", ondelete="CASCADE")
     )
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE")
+        UUID(as_uuid=True), ForeignKey("project.projects.id", ondelete="CASCADE")
     )
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -73,7 +74,7 @@ class LearnedWorkflow(Base):
         DateTime(timezone=True), nullable=True
     )
     reviewer_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("runner.users.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("auth.users.id", ondelete="SET NULL"), nullable=True
     )
 
     # If published, metadata about the workflow integration

@@ -38,6 +38,7 @@ class WorkflowTestAssociation(Base):
     """
 
     __tablename__ = "workflow_test_associations"
+    __table_args__ = {"schema": "project"}
 
     # Primary key
     id: Mapped[UUID] = mapped_column(
@@ -50,14 +51,14 @@ class WorkflowTestAssociation(Base):
     # Foreign keys
     project_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
 
     test_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("verification_tests.id", ondelete="CASCADE"),
+        ForeignKey("project.verification_tests.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

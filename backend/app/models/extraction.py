@@ -14,11 +14,12 @@ class ExtractionSession(Base):
     """A web extraction session."""
 
     __tablename__ = "extraction_sessions"
+    __table_args__ = {"schema": "project"}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     project_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=False,
     )
 
@@ -49,7 +50,7 @@ class ExtractionSession(Base):
     # User who created
     created_by = Column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="SET NULL"),
+        ForeignKey("auth.users.id", ondelete="SET NULL"),
         nullable=True,
     )
 
@@ -63,11 +64,12 @@ class ExtractionAnnotation(Base):
     """Annotations for a single screenshot in an extraction."""
 
     __tablename__ = "extraction_annotations"
+    __table_args__ = {"schema": "project"}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     session_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("extraction_sessions.id", ondelete="CASCADE"),
+        ForeignKey("project.extraction_sessions.id", ondelete="CASCADE"),
         nullable=False,
     )
 

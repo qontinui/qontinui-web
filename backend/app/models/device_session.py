@@ -21,10 +21,11 @@ class DeviceSession(Base):
     """
 
     __tablename__ = "device_sessions"
+    __table_args__ = {"schema": "auth"}
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("runner.users.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("auth.users.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     # Device fingerprint (hash of device characteristics)

@@ -25,6 +25,7 @@ class TemplateCandidate(Base):
     """
 
     __tablename__ = "template_candidates"
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -32,7 +33,7 @@ class TemplateCandidate(Base):
     session_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     project_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
@@ -67,7 +68,7 @@ class TemplateCandidate(Base):
     )
     reviewed_by_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("runner.users.id", ondelete="SET NULL"),
+        ForeignKey("auth.users.id", ondelete="SET NULL"),
         nullable=True,
     )
     reviewed_at: Mapped[datetime | None] = mapped_column(

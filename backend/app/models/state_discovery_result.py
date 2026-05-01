@@ -48,6 +48,7 @@ class StateDiscoveryResult(Base):
     """
 
     __tablename__ = "state_discovery_results"
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
@@ -56,7 +57,7 @@ class StateDiscoveryResult(Base):
     # Link to project
     project_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

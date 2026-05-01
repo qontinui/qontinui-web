@@ -40,6 +40,7 @@ class UIBridgeExplorationSession(Base):
     """
 
     __tablename__ = "ui_bridge_exploration_sessions"
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
@@ -48,7 +49,7 @@ class UIBridgeExplorationSession(Base):
     # Link to project
     project_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -89,7 +90,7 @@ class UIBridgeExplorationSession(Base):
     # Link to saved config if discovery results were saved
     saved_config_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("ui_bridge_state_configs.id", ondelete="SET NULL"),
+        ForeignKey("project.ui_bridge_state_configs.id", ondelete="SET NULL"),
         nullable=True,
     )
 
@@ -133,6 +134,7 @@ class UIBridgeStateConfig(Base):
     """
 
     __tablename__ = "ui_bridge_state_configs"
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
@@ -141,7 +143,7 @@ class UIBridgeStateConfig(Base):
     # Link to project
     project_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -206,6 +208,7 @@ class UIBridgeState(Base):
     """
 
     __tablename__ = "ui_bridge_states"
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
@@ -214,7 +217,7 @@ class UIBridgeState(Base):
     # Link to config
     config_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("ui_bridge_state_configs.id", ondelete="CASCADE"),
+        ForeignKey("project.ui_bridge_state_configs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -286,6 +289,7 @@ class DomainKnowledge(Base):
     """
 
     __tablename__ = "domain_knowledge"
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
@@ -294,7 +298,7 @@ class DomainKnowledge(Base):
     # Link to project (or null for global knowledge)
     project_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("project.projects.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
@@ -347,6 +351,7 @@ class UIBridgeStateDomainKnowledge(Base):
     """Association table linking states to domain knowledge."""
 
     __tablename__ = "ui_bridge_state_domain_knowledge"
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
@@ -354,14 +359,14 @@ class UIBridgeStateDomainKnowledge(Base):
 
     state_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("ui_bridge_states.id", ondelete="CASCADE"),
+        ForeignKey("project.ui_bridge_states.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
 
     knowledge_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("domain_knowledge.id", ondelete="CASCADE"),
+        ForeignKey("project.domain_knowledge.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

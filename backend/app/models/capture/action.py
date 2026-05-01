@@ -23,12 +23,13 @@ class CaptureAction(Base):
     """
 
     __tablename__ = "capture_actions"
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     screenshot_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("capture_screenshots.id", ondelete="CASCADE")
+        ForeignKey("project.capture_screenshots.id", ondelete="CASCADE")
     )
 
     # Order within the screenshot (0-indexed)

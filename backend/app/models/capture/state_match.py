@@ -26,12 +26,13 @@ class ScreenshotStateMatch(Base):
     """
 
     __tablename__ = "screenshot_state_matches"
+    __table_args__ = {"schema": "project"}
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     screenshot_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("capture_screenshots.id", ondelete="CASCADE")
+        ForeignKey("project.capture_screenshots.id", ondelete="CASCADE")
     )
 
     # State identifier (name or ID from project configuration)
