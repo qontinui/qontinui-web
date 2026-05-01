@@ -80,10 +80,15 @@ jobs:
     services:
       postgres:
         image: postgres:16
+        # Credentials must match backend/tests/conftest.py, which hardcodes
+        # postgresql://qontinui_user:qontinui_dev_password@localhost:5432/qontinui_test
+        # for both DATABASE_URL and TEST_DATABASE_URL. Mismatched values
+        # produce: asyncpg.exceptions.InvalidPasswordError: password
+        # authentication failed for user "qontinui_user".
         env:
-          POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_password
-          POSTGRES_DB: test_db
+          POSTGRES_USER: qontinui_user
+          POSTGRES_PASSWORD: qontinui_dev_password
+          POSTGRES_DB: qontinui_test
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -143,7 +148,9 @@ jobs:
 
       - name: Run tests with coverage
         env:
-          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+          # conftest.py overrides this anyway, but keep aligned with the
+          # postgres service creds for clarity.
+          DATABASE_URL: postgresql://qontinui_user:qontinui_dev_password@localhost:5432/qontinui_test
           REDIS_HOST: localhost
           REDIS_PORT: 6379
           REDIS_ENABLED: true
