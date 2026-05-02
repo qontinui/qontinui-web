@@ -1,11 +1,66 @@
 """Background task definitions for ARQ worker."""
 
+import asyncio
+import re
+import tempfile
+import time
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 import structlog
 
 logger = structlog.get_logger(__name__)
+
+
+# ----------------------------------------------------------------------
+# Training task — module-level constants
+# ----------------------------------------------------------------------
+#
+# The training/finetune repos live as siblings of ``qontinui-web``. From
+# this file the layout is::
+#
+#     qontinui_parent/                       <- 5 parents up
+#       qontinui-web/
+#         backend/
+#           app/
+#             worker/
+#               tasks.py                     <- __file__
+#       qontinui-train/                      <- TRAINING_REPO
+#       qontinui-finetune/                   <- FINETUNE_REPO
+#
+# Paths are resolved at import time so an unset / moved repo fails fast
+# rather than at the end of an export.
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+TRAINING_REPO = _REPO_ROOT / "qontinui-train"
+FINETUNE_REPO = _REPO_ROOT / "qontinui-finetune"
+
+# Training subprocess output handling.
+#
+# - ``MAX_LOGS_BYTES``: cap stored stdout at 1 MiB. Beyond this the tail
+#   is kept (most recent output is what's useful for debugging) and the
+#   prefix is dropped — written into a single ``logs`` text column.
+# - ``LOG_FLUSH_LINES`` / ``LOG_FLUSH_SECONDS``: throttle DB commits so a
+#   chatty trainer (yolo prints per-step) doesn't hammer the worker
+#   connection. Whichever threshold trips first triggers a flush.
+# - ``CANCEL_POLL_SECONDS``: how often to re-read ``status`` from the
+#   DB to detect external cancellation. Cheap (single-row PK lookup) so
+#   3 s is well within budget; the subprocess sees SIGTERM within that
+#   window.
+# - ``ERROR_TAIL_BYTES``: when the trainer fails, store this much of
+#   the tail of stdout in ``error`` so the UI shows the actual stack
+#   trace without dragging in megabytes.
+MAX_LOGS_BYTES = 1024 * 1024  # 1 MiB
+LOG_FLUSH_LINES = 10
+LOG_FLUSH_SECONDS = 5.0
+CANCEL_POLL_SECONDS = 3.0
+ERROR_TAIL_BYTES = 4 * 1024  # 4 KiB
+
+# Regex used to scrape epoch progress from trainer stdout. Both YOLO
+# (ultralytics) and the qontinui-train scripts emit lines like
+# ``Epoch 12/100`` somewhere in the output. We intentionally don't
+# anchor — the line typically has a leading "[INFO]" or progress bar.
+_EPOCH_RE = re.compile(r"Epoch\s+(\d+)\s*/\s*(\d+)")
 
 
 async def send_email_task(
@@ -353,6 +408,592 @@ async def process_uploaded_image(
         }
 
 
+async def run_training_job_task(
+    ctx: dict[str, Any],
+    job_id: str,
+) -> dict[str, Any]:
+    """Run a TrainingJob end-to-end on the ARQ worker.
+
+    Pipeline:
+
+    1. Look up the TrainingJob row. If it's already cancelled (the API
+       lets a user cancel before the worker picks it up), exit cleanly.
+    2. Mark the job ``running`` and stamp ``started_at`` if missing.
+    3. Export the associated TrainingDataset to a temp directory in YOLO
+       format. The ``dataset_id`` is read from ``config["dataset_id"]``
+       — TrainingJob doesn't have a dedicated FK column for it because
+       the same job can be reused with different dataset snapshots in
+       theory, and stuffing it in ``config`` matches how other tunable
+       fields are passed.
+    4. Build the trainer command. YOLO-family models (``base_model``
+       starts with ``yolo`` or ``model_type == "classification"``) run
+       under ``qontinui-finetune/scripts/train.py`` with the YAML config
+       the exporter wrote. Detection / segmentation with non-YOLO bases
+       run under ``qontinui-train/training/train.py`` directly against
+       the dataset directory.
+    5. Spawn the trainer as an async subprocess (stdout merged with
+       stderr so a single stream covers both). Stream line-by-line:
+       append to ``logs`` (truncating to keep the tail of
+       ``MAX_LOGS_BYTES``), parse epoch progress, and flush to the DB
+       every ``LOG_FLUSH_LINES`` lines or ``LOG_FLUSH_SECONDS``
+       seconds.
+    6. Periodically (``CANCEL_POLL_SECONDS``) re-read ``status`` from
+       the DB. If a separate request set it to ``cancelled`` while the
+       subprocess is running, ``terminate()`` the process and exit.
+    7. On exit-code 0: locate the produced model artifact (search
+       common ultralytics output paths under the dataset dir), upload
+       it to object storage at ``models/{project_id}/{job_id}/...``,
+       generate a 24-hour presigned URL, and mark the job
+       ``completed``.
+    8. On non-zero exit: store the tail of stdout in ``error`` and mark
+       the job ``failed``.
+
+    Returns ``{"status": <terminal-status>, "job_id": job_id}``.
+
+    The worker isolates failures with a top-level try/except — anything
+    unexpected (DB outage, exporter raising on a missing dataset) marks
+    the job ``failed`` with the exception message rather than letting
+    ARQ silently retry an unbounded number of times.
+    """
+    from datetime import UTC, datetime
+
+    from sqlalchemy import select
+
+    from app.db.session import AsyncSessionLocal
+    from app.models.training_job import TrainingJob, TrainingJobStatus
+    from app.services.storage import object_storage
+    from app.services.training_dataset_export import TrainingDatasetExporter
+
+    logger.info("training_job_task_started", job_id=job_id)
+
+    try:
+        job_uuid = UUID(job_id)
+    except ValueError:
+        logger.error("training_job_invalid_id", job_id=job_id)
+        return {"status": "error", "error": "invalid job_id", "job_id": job_id}
+
+    # ------------------------------------------------------------------
+    # Step 1: Initial status check + transition to running.
+    # We use a fresh session for each DB touch so a long-running
+    # subprocess doesn't pin a connection from the pool.
+    # ------------------------------------------------------------------
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(TrainingJob).where(TrainingJob.id == job_uuid))
+        job = result.scalar_one_or_none()
+        if job is None:
+            logger.error("training_job_not_found", job_id=job_id)
+            return {"status": "error", "error": "job not found", "job_id": job_id}
+
+        if job.status == TrainingJobStatus.CANCELLED.value:
+            # User cancelled before the worker picked it up — nothing to do.
+            logger.info("training_job_cancelled_before_start", job_id=job_id)
+            return {"status": "cancelled", "job_id": job_id}
+
+        config = dict(job.config or {})
+        project_id = str(job.project_id)
+        model_type = str(job.model_type or "detection")
+        # ``base_model`` lives in config (yolov8n, resnet50, ...).
+        base_model = str(config.get("base_model", "yolov8n"))
+        # ``dataset_id`` is required — the API stamps it onto config
+        # when the job is created. Bail out early if missing.
+        dataset_id_raw = config.get("dataset_id") or config.get("training_dataset_id")
+        if not dataset_id_raw:
+            error_msg = "config.dataset_id is required to run training"
+            job.status = TrainingJobStatus.FAILED.value  # type: ignore[assignment]
+            job.error = error_msg  # type: ignore[assignment]
+            job.completed_at = datetime.now(UTC)  # type: ignore[assignment]
+            await db.commit()
+            logger.error("training_job_missing_dataset_id", job_id=job_id)
+            return {"status": "failed", "error": error_msg, "job_id": job_id}
+
+        try:
+            dataset_uuid = UUID(str(dataset_id_raw))
+        except ValueError:
+            error_msg = f"config.dataset_id is not a valid UUID: {dataset_id_raw!r}"
+            job.status = TrainingJobStatus.FAILED.value  # type: ignore[assignment]
+            job.error = error_msg  # type: ignore[assignment]
+            job.completed_at = datetime.now(UTC)  # type: ignore[assignment]
+            await db.commit()
+            logger.error("training_job_bad_dataset_id", job_id=job_id)
+            return {"status": "failed", "error": error_msg, "job_id": job_id}
+
+        # Mark running. ``started_at`` may already be set by the API's
+        # ``start_training_job`` endpoint — only stamp if missing so we
+        # preserve the queued-at timestamp for analytics.
+        job.status = TrainingJobStatus.RUNNING.value  # type: ignore[assignment]
+        if job.started_at is None:
+            job.started_at = datetime.now(UTC)  # type: ignore[assignment]
+        # Reset progress so a retried job doesn't show stale values.
+        job.progress = 0  # type: ignore[assignment]
+        job.current_epoch = None  # type: ignore[assignment]
+        # ``total_epochs`` is set at create-time but re-stamp from
+        # config so a manual UPDATE isn't required to change it.
+        if "epochs" in config:
+            job.total_epochs = int(config["epochs"])  # type: ignore[assignment]
+        await db.commit()
+
+    epochs = int(config.get("epochs", 50))
+    batch_size = int(config.get("batch_size", 16))
+    learning_rate = float(config.get("learning_rate", 0.001))
+
+    # ------------------------------------------------------------------
+    # Step 2: Export dataset + run trainer + stream logs.
+    # The temp dir is scoped to this ``with`` so cleanup is automatic
+    # whether we succeed, fail, or get cancelled.
+    # ------------------------------------------------------------------
+    final_status = TrainingJobStatus.FAILED.value
+    final_error: str | None = None
+    final_logs_tail = ""
+    output_storage_key: str | None = None
+    output_presigned_url: str | None = None
+
+    try:
+        with tempfile.TemporaryDirectory(prefix=f"qontinui-train-{job_id}-") as tmp:
+            dest_dir = Path(tmp) / "dataset"
+            dest_dir.mkdir(parents=True, exist_ok=True)
+
+            # Export under its own session — the export issues several
+            # SELECTs and we don't want the long-running training
+            # subprocess holding a DB connection while it works.
+            async with AsyncSessionLocal() as db:
+                exporter = TrainingDatasetExporter(db, object_storage)
+                await exporter.export_yolo(dataset_uuid, dest_dir)
+
+            cmd, cwd = _build_training_command(
+                model_type=model_type,
+                base_model=base_model,
+                dest_dir=dest_dir,
+                epochs=epochs,
+                batch_size=batch_size,
+                learning_rate=learning_rate,
+            )
+            logger.info(
+                "training_job_subprocess_starting",
+                job_id=job_id,
+                cwd=str(cwd),
+                cmd=cmd,
+            )
+
+            # ``stderr=STDOUT`` collapses both streams onto one pipe so
+            # we can show the full picture in ``logs`` without
+            # interleaving complications.
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                cwd=str(cwd),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+
+            # Stream + flush loop. ``logs_buffer`` accumulates the full
+            # stdout (capped to ``MAX_LOGS_BYTES``); ``pending_lines``
+            # tracks how many lines have come in since the last flush.
+            logs_buffer = ""
+            pending_lines = 0
+            last_flush = time.monotonic()
+            last_cancel_check = time.monotonic()
+            current_epoch = 0
+            total_epochs = epochs
+            cancelled = False
+
+            assert process.stdout is not None  # noqa: S101 — set via PIPE above
+            # Read with a timeout so cancellation fires even when the
+            # trainer is silent (frozen, waiting on GPU, mid-evaluation).
+            # An empty bytes return signals EOF.
+            while True:
+                try:
+                    raw = await asyncio.wait_for(
+                        process.stdout.readline(),
+                        timeout=CANCEL_POLL_SECONDS,
+                    )
+                except TimeoutError:
+                    raw = b""  # no line; fall through to cancel-check
+
+                if raw:
+                    line = raw.decode("utf-8", errors="replace")
+                    logs_buffer = _append_logs(logs_buffer, line)
+                    pending_lines += 1
+
+                    # Parse epoch progress. Last match on a line wins
+                    # (some progress bars print ``Epoch 1/100  Epoch
+                    # 2/100`` as the bar redraws).
+                    m = _EPOCH_RE.search(line)
+                    if m:
+                        current_epoch = int(m.group(1))
+                        total_epochs = int(m.group(2))
+                elif process.returncode is not None:
+                    # EOF + process has exited.
+                    break
+
+                now = time.monotonic()
+                # Flush logs/progress to DB on either threshold.
+                if pending_lines and (
+                    pending_lines >= LOG_FLUSH_LINES
+                    or now - last_flush >= LOG_FLUSH_SECONDS
+                ):
+                    await _flush_progress(
+                        job_uuid,
+                        logs=logs_buffer,
+                        current_epoch=current_epoch,
+                        total_epochs=total_epochs,
+                    )
+                    pending_lines = 0
+                    last_flush = now
+
+                # Cancellation check (cheap PK lookup).
+                if now - last_cancel_check >= CANCEL_POLL_SECONDS:
+                    last_cancel_check = now
+                    if await _check_cancelled(job_uuid):
+                        logger.info(
+                            "training_job_cancellation_detected", job_id=job_id
+                        )
+                        cancelled = True
+                        try:
+                            process.terminate()
+                        except ProcessLookupError:
+                            # Already exited between the check and the
+                            # signal — harmless race.
+                            pass
+                        break
+
+            # Wait for exit, escalating to kill() if the trainer ignores
+            # SIGTERM (e.g. ultralytics workers on Windows that survive
+            # TerminateProcess on the parent python.exe).
+            try:
+                await asyncio.wait_for(process.wait(), timeout=30)
+            except TimeoutError:
+                logger.warning(
+                    "training_job_terminate_timeout_killing",
+                    job_id=job_id,
+                )
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
+                await process.wait()
+
+            # Final flush of any unflushed lines + the now-known exit
+            # code. We compute the artifact AFTER this so a cancelled
+            # job doesn't try to upload a half-written model.
+            await _flush_progress(
+                job_uuid,
+                logs=logs_buffer,
+                current_epoch=current_epoch,
+                total_epochs=total_epochs,
+            )
+
+            final_logs_tail = logs_buffer[-ERROR_TAIL_BYTES:]
+
+            if cancelled:
+                final_status = TrainingJobStatus.CANCELLED.value
+            elif process.returncode == 0:
+                # ------------------------------------------------------
+                # Success: locate + upload artifact.
+                # ------------------------------------------------------
+                artifact = _find_model_artifact(dest_dir)
+                if artifact is None:
+                    final_status = TrainingJobStatus.FAILED.value
+                    final_error = (
+                        "trainer exited 0 but no model artifact was found "
+                        f"under {dest_dir}"
+                    )
+                    logger.warning(
+                        "training_job_artifact_not_found",
+                        job_id=job_id,
+                        dest_dir=str(dest_dir),
+                    )
+                else:
+                    storage_key = (
+                        f"models/{project_id}/{job_id}/{artifact.name}"
+                    )
+                    def _upload_artifact() -> None:
+                        with artifact.open("rb") as fh:
+                            object_storage.backend.upload_file(
+                                fh,
+                                storage_key,
+                                "application/octet-stream",
+                                {
+                                    "job_id": job_id,
+                                    "project_id": project_id,
+                                    "dataset_id": str(dataset_uuid),
+                                },
+                            )
+
+                    try:
+                        # Run blocking S3 upload in a thread so the
+                        # event loop stays responsive. The closure owns
+                        # the file handle so it's closed even on error.
+                        await asyncio.to_thread(_upload_artifact)
+                        # 24 h presigned URL — long enough for a user
+                        # to click through from the UI without making
+                        # the link permanent.
+                        output_presigned_url = await asyncio.to_thread(
+                            object_storage.generate_presigned_url,
+                            storage_key,
+                            24 * 3600,
+                        )
+                        output_storage_key = storage_key
+                        final_status = TrainingJobStatus.COMPLETED.value
+                        logger.info(
+                            "training_job_artifact_uploaded",
+                            job_id=job_id,
+                            key=storage_key,
+                            artifact_size=artifact.stat().st_size,
+                        )
+                    except Exception as upload_exc:
+                        final_status = TrainingJobStatus.FAILED.value
+                        final_error = (
+                            f"model artifact upload failed: {upload_exc}"
+                        )
+                        logger.exception(
+                            "training_job_upload_failed",
+                            job_id=job_id,
+                            error=str(upload_exc),
+                        )
+            else:
+                final_status = TrainingJobStatus.FAILED.value
+                final_error = (
+                    f"trainer exited {process.returncode}\n"
+                    f"--- last {len(final_logs_tail)} bytes of output ---\n"
+                    f"{final_logs_tail}"
+                )
+
+    except Exception as exc:
+        # Catch-all for export errors, exporter ValueError on empty
+        # datasets, subprocess spawn failures (e.g. Python missing
+        # from the trainer repo), etc. Surface as job failure rather
+        # than letting ARQ retry blindly.
+        logger.exception("training_job_task_failed", job_id=job_id, error=str(exc))
+        final_status = TrainingJobStatus.FAILED.value
+        final_error = f"{type(exc).__name__}: {exc}"
+
+    # ------------------------------------------------------------------
+    # Step 3: Final DB write — terminal status + outputs.
+    # ------------------------------------------------------------------
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(TrainingJob).where(TrainingJob.id == job_uuid))
+        job = result.scalar_one_or_none()
+        if job is not None:
+            job.status = final_status  # type: ignore[assignment]
+            job.completed_at = datetime.now(UTC)  # type: ignore[assignment]
+            if final_status == TrainingJobStatus.COMPLETED.value:
+                job.progress = 100  # type: ignore[assignment]
+                if output_storage_key:
+                    job.output_path = output_storage_key  # type: ignore[assignment]
+                if output_presigned_url:
+                    job.model_url = output_presigned_url  # type: ignore[assignment]
+                # ``metrics`` is left as-is for now; parsing
+                # trainer-specific metric blobs (mAP, val_loss, ...)
+                # belongs in a follow-up that knows the trainer's
+                # output format.
+                if job.metrics is None:
+                    job.metrics = {}  # type: ignore[assignment]
+            elif final_status == TrainingJobStatus.FAILED.value and final_error:
+                job.error = final_error  # type: ignore[assignment]
+            await db.commit()
+
+    logger.info(
+        "training_job_task_finished",
+        job_id=job_id,
+        status=final_status,
+    )
+    return {"status": final_status, "job_id": job_id}
+
+
+def _build_training_command(
+    *,
+    model_type: str,
+    base_model: str,
+    dest_dir: Path,
+    epochs: int,
+    batch_size: int,
+    learning_rate: float,
+) -> tuple[list[str], Path]:
+    """Pick the trainer entrypoint + arguments for this job.
+
+    YOLO-family detection / classification dispatches to the
+    fine-tuning repo (``qontinui-finetune/scripts/train.py``) which
+    consumes a YOLO ``data.yaml``. Everything else (custom detection
+    backbones, segmentation) goes to the from-scratch trainer in
+    ``qontinui-train/training/train.py`` which reads the YOLO directory
+    layout but doesn't require a YAML config.
+
+    Returns a ``(cmd, cwd)`` pair. ``cwd`` matters because both
+    repos resolve relative imports / data paths from their own root.
+    """
+    base_model_lc = base_model.lower()
+    is_yolo = base_model_lc.startswith("yolo")
+    is_classification = model_type == "classification"
+
+    if is_yolo or is_classification:
+        cmd = [
+            "python",
+            "scripts/train.py",
+            "--data",
+            str(dest_dir / "data.yaml"),
+            "--model",
+            base_model,
+            "--epochs",
+            str(epochs),
+            "--batch",
+            str(batch_size),
+            "--lr",
+            str(learning_rate),
+            "--project",
+            str(dest_dir / "runs"),
+        ]
+        return cmd, FINETUNE_REPO
+
+    cmd = [
+        "python",
+        "training/train.py",
+        "--data",
+        str(dest_dir),
+        "--model",
+        base_model,
+        "--epochs",
+        str(epochs),
+        "--batch",
+        str(batch_size),
+        "--lr",
+        str(learning_rate),
+        "--out",
+        str(dest_dir / "runs"),
+    ]
+    return cmd, TRAINING_REPO
+
+
+def _append_logs(buffer: str, line: str) -> str:
+    """Append ``line`` to ``buffer`` and trim to the tail of MAX_LOGS_BYTES.
+
+    We keep the tail (most recent output) rather than the head because
+    that's what's useful for diagnosing failure or reading the latest
+    progress bar frame.
+    """
+    new_buffer = buffer + line
+    if len(new_buffer) > MAX_LOGS_BYTES:
+        # Trim from the front. UTF-8 boundaries don't matter here
+        # because we already decoded with ``errors="replace"`` upstream.
+        new_buffer = new_buffer[-MAX_LOGS_BYTES:]
+    return new_buffer
+
+
+async def _flush_progress(
+    job_uuid: UUID,
+    *,
+    logs: str,
+    current_epoch: int,
+    total_epochs: int,
+) -> None:
+    """Persist current logs + progress to the TrainingJob row.
+
+    Each call opens a fresh session — this is run periodically while
+    the trainer subprocess is alive, and we don't want a single long
+    transaction holding pool connections for the duration of training.
+    """
+    from sqlalchemy import select
+
+    from app.db.session import AsyncSessionLocal
+    from app.models.training_job import TrainingJob
+
+    progress = 0
+    if total_epochs > 0:
+        progress = max(0, min(100, int(100 * current_epoch / total_epochs)))
+
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(TrainingJob).where(TrainingJob.id == job_uuid)
+            )
+            job = result.scalar_one_or_none()
+            if job is None:
+                return
+            job.logs = logs  # type: ignore[assignment]
+            job.current_epoch = current_epoch  # type: ignore[assignment]
+            job.total_epochs = total_epochs  # type: ignore[assignment]
+            job.progress = progress  # type: ignore[assignment]
+            await db.commit()
+    except Exception as exc:
+        # Don't let a transient DB hiccup tank the trainer subprocess —
+        # log and move on. The next flush will retry.
+        logger.warning(
+            "training_job_progress_flush_failed",
+            job_id=str(job_uuid),
+            error=str(exc),
+        )
+
+
+async def _check_cancelled(job_uuid: UUID) -> bool:
+    """Return True if the job's status has been externally set to ``cancelled``.
+
+    Errors are swallowed (logged only) so a transient DB issue can't
+    spuriously kill a running trainer; we'll get another shot on the
+    next poll.
+    """
+    from sqlalchemy import select
+
+    from app.db.session import AsyncSessionLocal
+    from app.models.training_job import TrainingJob, TrainingJobStatus
+
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(TrainingJob.status).where(TrainingJob.id == job_uuid)
+            )
+            status_value = result.scalar_one_or_none()
+            return status_value == TrainingJobStatus.CANCELLED.value
+    except Exception as exc:
+        logger.warning(
+            "training_job_cancel_check_failed",
+            job_id=str(job_uuid),
+            error=str(exc),
+        )
+        return False
+
+
+def _find_model_artifact(dest_dir: Path) -> Path | None:
+    """Locate the trained model artifact under ``dest_dir``.
+
+    Searches the conventional ultralytics paths first (``runs/train/...``,
+    ``runs/detect/...`` with ``weights/best.pt``) then falls back to a
+    recursive glob for any ``best.pt`` / ``last.pt`` / ``*.pt`` /
+    ``*.onnx``. Returns ``None`` if nothing is found — the caller treats
+    that as a failure rather than guessing at outputs.
+    """
+    # Most-specific first.
+    candidates = [
+        "runs/train/weights/best.pt",
+        "runs/detect/weights/best.pt",
+        "runs/segment/weights/best.pt",
+        "runs/classify/weights/best.pt",
+        "runs/train/weights/last.pt",
+        "runs/detect/weights/last.pt",
+    ]
+    for rel in candidates:
+        path = dest_dir / rel
+        if path.is_file():
+            return path
+
+    # Generic fallback — pick the most-recently-modified .pt under runs/.
+    runs_dir = dest_dir / "runs"
+    if runs_dir.is_dir():
+        pt_files = sorted(
+            runs_dir.rglob("*.pt"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if pt_files:
+            return pt_files[0]
+        onnx_files = sorted(
+            runs_dir.rglob("*.onnx"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if onnx_files:
+            return onnx_files[0]
+
+    return None
+
+
 async def cleanup_old_data_task(
     ctx: dict[str, Any], days_to_keep: int = 90
 ) -> dict[str, Any]:
@@ -607,6 +1248,7 @@ __all__ = [
     "send_verification_email_task",
     "send_password_reset_email_task",
     "process_uploaded_image",
+    "run_training_job_task",
     "cleanup_old_data_task",
     "send_analytics_report_task",
 ]
