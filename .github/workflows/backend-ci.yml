@@ -68,7 +68,9 @@ jobs:
         run: poetry install --no-interaction --no-root
 
       - name: Install qontinui-cloud-control into poetry venv
-        run: poetry run pip install -e ../qontinui-cloud-control
+        # Path is ../../qontinui-cloud-control because working-directory is
+        # ./backend (one level deeper than the repo root the clone sits beside).
+        run: poetry run pip install -e ../../qontinui-cloud-control
 
       - name: Run ruff (linting)
         run: poetry run ruff check .
@@ -162,7 +164,9 @@ jobs:
         run: poetry install --no-interaction --no-root
 
       - name: Install qontinui-cloud-control into poetry venv
-        run: poetry run pip install -e ../qontinui-cloud-control
+        # Path is ../../qontinui-cloud-control because working-directory is
+        # ./backend (one level deeper than the repo root the clone sits beside).
+        run: poetry run pip install -e ../../qontinui-cloud-control
 
       - name: Run tests with coverage
         env:
@@ -257,7 +261,9 @@ jobs:
         run: poetry install --no-interaction --no-root
 
       - name: Install qontinui-cloud-control into poetry venv
-        run: poetry run pip install -e ../qontinui-cloud-control
+        # Path is ../../qontinui-cloud-control because working-directory is
+        # ./backend (one level deeper than the repo root the clone sits beside).
+        run: poetry run pip install -e ../../qontinui-cloud-control
 
       - name: Run safety check (dependency vulnerabilities)
         run: |
