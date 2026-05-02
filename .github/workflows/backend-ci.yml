@@ -41,11 +41,17 @@ jobs:
       # Backend's pyproject.toml has path-deps on sibling repos
       # (qontinui-schemas, qontinui). actions/checkout@v4 refuses
       # `path:` outside the workspace, so clone them via git directly.
-      - name: Checkout sibling repos (qontinui-schemas, qontinui)
+      # qontinui-cloud-control is private — clone with auth so the test
+      # harness can side-effect-import it (see backend/tests/conftest.py).
+      - name: Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd "$GITHUB_WORKSPACE/.."
           git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
           git clone --depth 1 https://github.com/jspinak/qontinui.git
+          git clone --depth 1 \
+            "https://x-access-token:${GH_TOKEN}@github.com/jspinak/qontinui-cloud-control.git"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -60,6 +66,9 @@ jobs:
 
       - name: Install dependencies
         run: poetry install --no-interaction --no-root
+
+      - name: Install qontinui-cloud-control into poetry venv
+        run: poetry run pip install -e ../qontinui-cloud-control
 
       - name: Run ruff (linting)
         run: poetry run ruff check .
@@ -121,11 +130,17 @@ jobs:
       # Backend's pyproject.toml has path-deps on sibling repos
       # (qontinui-schemas, qontinui). actions/checkout@v4 refuses
       # `path:` outside the workspace, so clone them via git directly.
-      - name: Checkout sibling repos (qontinui-schemas, qontinui)
+      # qontinui-cloud-control is private — clone with auth so the test
+      # harness can side-effect-import it (see backend/tests/conftest.py).
+      - name: Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd "$GITHUB_WORKSPACE/.."
           git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
           git clone --depth 1 https://github.com/jspinak/qontinui.git
+          git clone --depth 1 \
+            "https://x-access-token:${GH_TOKEN}@github.com/jspinak/qontinui-cloud-control.git"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -140,6 +155,9 @@ jobs:
 
       - name: Install dependencies
         run: poetry install --no-interaction --no-root
+
+      - name: Install qontinui-cloud-control into poetry venv
+        run: poetry run pip install -e ../qontinui-cloud-control
 
       - name: Run tests with coverage
         env:
@@ -226,6 +244,9 @@ jobs:
 
       - name: Install dependencies
         run: poetry install --no-interaction --no-root
+
+      - name: Install qontinui-cloud-control into poetry venv
+        run: poetry run pip install -e ../qontinui-cloud-control
 
       - name: Run safety check (dependency vulnerabilities)
         run: |

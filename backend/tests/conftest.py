@@ -53,20 +53,19 @@ os.environ["REDIS_ENABLED"] = "false"  # Disable Redis for tests
 
 # Cloud-control side-effect import — must run before any `app.models` import
 # so cloud-control's add_model_registrar() hook is in place by the time
-# `app/models/__init__.py:506-508`'s `register_cloud_models()` fires. Without
-# this, the registrar list is empty, the private cloud model modules
-# (Subscription, AdminNotificationSettings) never get imported,
-# `Base.metadata` is missing those classes, and `configure_mappers()` blows
-# up with `InvalidRequestError: ... expression 'Subscription' failed to
-# locate a name`. The production app does this at `app/main.py:18`; the test
-# harness imports `app.models` directly (e.g. via `from app.models.user import
-# User` in fixtures), bypassing main.py, so we need to mirror it here.
-# OSS-only setups have no cloud-control package; ImportError is silently
-# swallowed and the OSS test suite collects normally.
+# `app/models/__init__.py:506-508`'s `register_cloud_models()` fires.
+# Without this, Subscription/AdminNotificationSettings never register on
+# Base.metadata and `configure_mappers()` blows up resolving
+# `User.subscription`. The production app does this at `app/main.py:18`.
+#
+# OSS-only setups have no cloud-control package — that's fine, the OSS test
+# suite collects normally. But on CI we install cloud-control as a sibling,
+# so a missing import there is a real workflow bug — fail loud, not silent.
 try:
-    import qontinui_cloud_control  # noqa: F401  -- side-effect: registers extension hooks
+    import qontinui_cloud_control  # noqa: F401  -- side-effect: registers hooks
 except ImportError:
-    pass
+    if os.environ.get("CI") == "true" or os.environ.get("REQUIRE_CLOUD_CONTROL") == "1":
+        raise
 
 
 @pytest.fixture(scope="session")
