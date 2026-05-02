@@ -1,0 +1,103 @@
+#!/bin/sh
+# qontinui-web/scripts/git-hooks/post-merge
+#
+# Auto-apply pending alembic migrations to the canonical PG after a `git pull`
+# (or any `git merge`) brings new files into backend/alembic/versions/.
+#
+# Why post-merge: the canonical DB lives on one machine (spaceship). The other
+# machines connect to it over LAN. After a migration lands on origin/main,
+# *some* machine has to bring the canonical DB to head. This hook does that
+# automatically the moment any developer's `git pull` brings the new revision
+# down — no manual `docker compose up migrator` step.
+#
+# The hook differentiates two cases via git config:
+#
+# 1. This machine *is* the canonical-DB host (qontinui.is-canonical-db-host = true):
+#    runs `docker compose up --build migrator` against the local
+#    qontinui-stack compose. Migrator is idempotent — re-runs are no-ops if
+#    already at head.
+#
+# 2. This machine is *not* the canonical-DB host but knows one
+#    (qontinui.canonical-db-host = <ssh-target>): SSHes that host and triggers
+#    its migrator. Uses the same docker compose command on the remote side.
+#
+# 3. Neither config set: prints a one-time reminder and exits 0. Pull
+#    completes; the operator is expected to trigger the migrator manually
+#    or pull on the canonical-DB host.
+#
+# Per-machine setup (run once after cloning qontinui-web):
+#
+#   git config core.hooksPath scripts/git-hooks
+#
+# Then ONE of the following:
+#
+#   # On the canonical-DB host (spaceship):
+#   git config qontinui.is-canonical-db-host true
+#
+#   # On other machines, to forward over SSH:
+#   git config qontinui.canonical-db-host <ssh-target>     # e.g. "spaceship"
+#   git config qontinui.canonical-db-host-stack-dir <path> # e.g. "/d/qontinui-root/qontinui-stack"
+#
+# The remote stack-dir defaults to /d/qontinui-root/qontinui-stack if unset.
+#
+# Failure behavior: the hook never blocks the merge (it has already succeeded
+# by the time we run). Failures (docker not running, SSH unreachable, build
+# error) print to stderr and exit non-zero, which surfaces in the user's
+# terminal but doesn't undo the pull.
+
+set -e
+
+# Bail unless the merge brought new alembic migrations. `HEAD@{1}` is the
+# pre-merge ref via the reflog. `git diff-tree -r --name-only` lists files
+# that changed between the two refs.
+if ! git diff-tree -r --name-only HEAD@{1} HEAD 2>/dev/null \
+        | grep -q '^backend/alembic/versions/'; then
+    exit 0
+fi
+
+is_canonical=$(git config --bool qontinui.is-canonical-db-host 2>/dev/null || echo false)
+remote_host=$(git config qontinui.canonical-db-host 2>/dev/null || true)
+remote_stack_dir=$(git config qontinui.canonical-db-host-stack-dir 2>/dev/null \
+                   || echo "/d/qontinui-root/qontinui-stack")
+
+if [ "$is_canonical" = "true" ]; then
+    # Local invocation. Resolve the stack dir relative to the qontinui-web
+    # checkout — assumes sibling layout (qontinui-web and qontinui-stack
+    # under a common parent).
+    repo_root=$(git rev-parse --show-toplevel)
+    parent=$(dirname "$repo_root")
+    stack_dir="$parent/qontinui-stack"
+
+    if [ ! -d "$stack_dir" ]; then
+        echo "[qontinui-post-merge] WARN: qontinui-stack not found at $stack_dir" >&2
+        echo "[qontinui-post-merge] Skipping migrator. Pull alembic changes manually:" >&2
+        echo "[qontinui-post-merge]   cd <qontinui-stack> && docker compose up --build migrator" >&2
+        exit 0
+    fi
+
+    echo "[qontinui-post-merge] new alembic versions detected; running migrator locally"
+    cd "$stack_dir"
+    exec docker compose up --build migrator
+
+elif [ -n "$remote_host" ]; then
+    echo "[qontinui-post-merge] new alembic versions detected; triggering migrator on $remote_host"
+    # Quote $remote_stack_dir on the remote side; it's a fixed value from
+    # git config so injection isn't a concern, but quote anyway for clarity.
+    exec ssh "$remote_host" "cd '$remote_stack_dir' && docker compose up --build migrator"
+
+else
+    cat <<EOF >&2
+[qontinui-post-merge] New alembic migrations were pulled, but this machine
+is not configured to run or forward to the migrator. To enable:
+
+  # If THIS is the canonical-DB host:
+  git config qontinui.is-canonical-db-host true
+
+  # Otherwise, point at the host that runs the canonical DB:
+  git config qontinui.canonical-db-host <ssh-target>     # e.g. "spaceship"
+
+Until then, run the migrator manually on the canonical-DB host:
+  cd qontinui-stack && docker compose up --build migrator
+EOF
+    exit 0
+fi
