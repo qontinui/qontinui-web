@@ -23,22 +23,27 @@ jobs:
       # backend/pyproject.toml has path deps on ../../qontinui-schemas
       # and ../../qontinui; without these clones, `pip install -e .`
       # fails with ENOENT. qontinui-cloud-control is needed for the test
-      # harness's side-effect import (see backend/tests/conftest.py).
+      # harness's side-effect import (see backend/tests/conftest.py); it
+      # lives under jspinak/ and is private, so default GITHUB_TOKEN
+      # (scoped to qontinui-web) can't read it — use a dedicated PAT.
       - name: Clone backend Python sibling deps
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CC_TOKEN: ${{ secrets.web_ci_cloud_control_read }}
         run: |
           set -euo pipefail
           for spec in \
             "qontinui/qontinui-schemas" \
             "qontinui/qontinui" \
-            "jspinak/qontinui-cloud-control" \
           ; do
             repo_name="${spec#*/}"
             git clone --depth 1 \
               "https://x-access-token:${GH_TOKEN}@github.com/${spec}.git" \
               "../${repo_name}"
           done
+          git clone --depth 1 \
+            "https://x-access-token:${CC_TOKEN}@github.com/jspinak/qontinui-cloud-control.git" \
+            "../qontinui-cloud-control"
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -125,6 +130,7 @@ jobs:
       - name: Clone sibling dependencies
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CC_TOKEN: ${{ secrets.web_ci_cloud_control_read }}
         run: |
           set -euo pipefail
           for spec in \
@@ -134,7 +140,6 @@ jobs:
             "qontinui/qontinui-workflow-ui" \
             "qontinui/qontinui-workflow-utils" \
             "qontinui/qontinui-navigation" \
-            "jspinak/qontinui-cloud-control" \
           ; do
             repo_name="${spec#*/}"
             target="../${repo_name}"
@@ -144,6 +149,12 @@ jobs:
               "${target}"
             echo "::endgroup::"
           done
+          # cloud-control lives under jspinak/ and is private — needs PAT
+          echo "::group::Cloning jspinak/qontinui-cloud-control → ../qontinui-cloud-control"
+          git clone --depth 1 \
+            "https://x-access-token:${CC_TOKEN}@github.com/jspinak/qontinui-cloud-control.git" \
+            "../qontinui-cloud-control"
+          echo "::endgroup::"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -271,6 +282,7 @@ jobs:
       - name: Clone sibling dependencies
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CC_TOKEN: ${{ secrets.web_ci_cloud_control_read }}
         run: |
           set -euo pipefail
           for spec in \
@@ -280,7 +292,6 @@ jobs:
             "qontinui/qontinui-workflow-ui" \
             "qontinui/qontinui-workflow-utils" \
             "qontinui/qontinui-navigation" \
-            "jspinak/qontinui-cloud-control" \
           ; do
             repo_name="${spec#*/}"
             target="../${repo_name}"
@@ -290,6 +301,12 @@ jobs:
               "${target}"
             echo "::endgroup::"
           done
+          # cloud-control lives under jspinak/ and is private — needs PAT
+          echo "::group::Cloning jspinak/qontinui-cloud-control → ../qontinui-cloud-control"
+          git clone --depth 1 \
+            "https://x-access-token:${CC_TOKEN}@github.com/jspinak/qontinui-cloud-control.git" \
+            "../qontinui-cloud-control"
+          echo "::endgroup::"
 
       - name: Set up Python
         uses: actions/setup-python@v5
