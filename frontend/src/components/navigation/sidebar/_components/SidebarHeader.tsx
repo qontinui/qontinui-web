@@ -49,6 +49,7 @@ export function SidebarHeader({
             width={32}
             height={32}
             className="h-8 w-auto"
+            style={{ width: "auto" }}
           />
         ) : (
           <div className="flex items-center gap-1">
@@ -58,6 +59,7 @@ export function SidebarHeader({
               width={28}
               height={28}
               className="h-7 w-auto"
+              style={{ width: "auto" }}
             />
             <span className="text-xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent">
               ontinui

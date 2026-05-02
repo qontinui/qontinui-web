@@ -45,7 +45,7 @@ class DatasetService {
   // ============================================================================
 
   async listDatasets(): Promise<Dataset[]> {
-    const response = await httpClient.fetch(`${API_BASE}/api/v1/datasets/`);
+    const response = await httpClient.fetch(`${API_BASE}/api/v1/datasets`);
     return this.handleResponse<Dataset[]>(response);
   }
 
@@ -60,7 +60,7 @@ class DatasetService {
     name: string;
     description?: string;
   }): Promise<Dataset> {
-    const response = await httpClient.fetch(`${API_BASE}/api/v1/datasets/`, {
+    const response = await httpClient.fetch(`${API_BASE}/api/v1/datasets`, {
       method: "POST",
       body: JSON.stringify(data),
     });

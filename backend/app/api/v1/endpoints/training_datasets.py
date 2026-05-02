@@ -58,7 +58,7 @@ router = APIRouter()
 # ============================================================================
 
 
-@router.get("/", response_model=list[DatasetResponse])
+@router.get("", response_model=list[DatasetResponse])
 async def list_datasets(
     skip: int = 0,
     limit: int = 100,
@@ -70,7 +70,7 @@ async def list_datasets(
     return [DatasetResponse.model_validate(d) for d in datasets]
 
 
-@router.post("/", response_model=DatasetResponse)
+@router.post("", response_model=DatasetResponse)
 async def create_dataset(
     dataset_in: DatasetCreate,
     db: AsyncSession = Depends(deps.get_async_db),

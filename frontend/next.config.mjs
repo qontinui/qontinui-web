@@ -87,6 +87,11 @@ const nextConfig = {
         destination: '/operations',
         permanent: true,
       },
+      {
+        source: '/admin',
+        destination: '/admin/architecture',
+        permanent: false,
+      },
     ]
   },
   eslint: {

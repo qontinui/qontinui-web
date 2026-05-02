@@ -139,7 +139,7 @@ export default function DatasetsPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => router.push("/admin")}
+            onClick={() => router.push("/admin/architecture")}
           >
             Admin
           </Button>
