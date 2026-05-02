@@ -51,6 +51,22 @@ os.environ["BACKEND_CORS_ORIGINS"] = '["http://localhost:3000"]'
 os.environ["STORAGE_BACKEND"] = "local"
 os.environ["REDIS_ENABLED"] = "false"  # Disable Redis for tests
 
+# Cloud-control side-effect import — must run before any `app.models` import
+# so cloud-control's add_model_registrar() hook is in place by the time
+# `app/models/__init__.py:506-508`'s `register_cloud_models()` fires.
+# Without this, Subscription/AdminNotificationSettings never register on
+# Base.metadata and `configure_mappers()` blows up resolving
+# `User.subscription`. The production app does this at `app/main.py:18`.
+#
+# OSS-only setups have no cloud-control package — that's fine, the OSS test
+# suite collects normally. But on CI we install cloud-control as a sibling,
+# so a missing import there is a real workflow bug — fail loud, not silent.
+try:
+    import qontinui_cloud_control  # noqa: F401  -- side-effect: registers hooks
+except ImportError:
+    if os.environ.get("CI") == "true" or os.environ.get("REQUIRE_CLOUD_CONTROL") == "1":
+        raise
+
 
 @pytest.fixture(scope="session")
 def test_client() -> Generator[TestClient, None, None]:

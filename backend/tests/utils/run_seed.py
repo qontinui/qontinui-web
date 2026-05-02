@@ -4,6 +4,15 @@ This is called from the Playwright global-setup.
 """
 
 import asyncio
+import os
+
+# Cloud-control side-effect import — see backend/tests/conftest.py for the
+# full rationale. OSS soft-skip; CI hard-fail.
+try:
+    import qontinui_cloud_control  # noqa: F401  -- side-effect: registers hooks
+except ImportError:
+    if os.environ.get("CI") == "true" or os.environ.get("REQUIRE_CLOUD_CONTROL") == "1":
+        raise
 
 # Import all models first to ensure they're registered with SQLAlchemy
 from app.db.base_class import Base  # noqa

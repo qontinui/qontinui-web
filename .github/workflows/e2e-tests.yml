@@ -22,7 +22,8 @@ jobs:
 
       # backend/pyproject.toml has path deps on ../../qontinui-schemas
       # and ../../qontinui; without these clones, `pip install -e .`
-      # fails with ENOENT.
+      # fails with ENOENT. qontinui-cloud-control is needed for the test
+      # harness's side-effect import (see backend/tests/conftest.py).
       - name: Clone backend Python sibling deps
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -31,6 +32,7 @@ jobs:
           for spec in \
             "qontinui/qontinui-schemas" \
             "qontinui/qontinui" \
+            "jspinak/qontinui-cloud-control" \
           ; do
             repo_name="${spec#*/}"
             git clone --depth 1 \
@@ -58,6 +60,7 @@ jobs:
           pip install pytest pytest-cov pytest-asyncio
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           if [ -f pyproject.toml ]; then pip install -e .; fi
+          pip install -e ../../qontinui-cloud-control
 
       - name: Run backend E2E tests
         working-directory: ./backend
@@ -131,6 +134,7 @@ jobs:
             "qontinui/qontinui-workflow-ui" \
             "qontinui/qontinui-workflow-utils" \
             "qontinui/qontinui-navigation" \
+            "jspinak/qontinui-cloud-control" \
           ; do
             repo_name="${spec#*/}"
             target="../${repo_name}"
@@ -160,6 +164,7 @@ jobs:
           pip install pytest pytest-cov pytest-asyncio
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           if [ -f pyproject.toml ]; then pip install -e .; fi
+          pip install -e ../../qontinui-cloud-control
 
       - name: Install frontend dependencies
         working-directory: ./frontend
@@ -275,6 +280,7 @@ jobs:
             "qontinui/qontinui-workflow-ui" \
             "qontinui/qontinui-workflow-utils" \
             "qontinui/qontinui-navigation" \
+            "jspinak/qontinui-cloud-control" \
           ; do
             repo_name="${spec#*/}"
             target="../${repo_name}"
@@ -304,6 +310,7 @@ jobs:
           pip install pytest pytest-cov pytest-asyncio
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           if [ -f pyproject.toml ]; then pip install -e .; fi
+          pip install -e ../../qontinui-cloud-control
 
       - name: Install frontend dependencies
         working-directory: ./frontend
