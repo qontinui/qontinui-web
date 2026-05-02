@@ -28,6 +28,35 @@ logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 
+async def _abort_arq_job(arq_job_id: str) -> None:
+    """Best-effort abort of an ARQ job by ID.
+
+    ARQ exposes ``Job.abort()`` which sets an abort flag the worker
+    checks at task-pickup time and returns ``True`` once the job is
+    actually aborted. We pass a small timeout so this doesn't block the
+    HTTP request — actual cancellation of an in-flight training run is
+    driven by the status flag the caller set in the DB.
+
+    Errors are swallowed (logged only) so a Redis hiccup can't prevent
+    the user from cancelling/deleting a job they have a status-row for.
+    """
+    try:
+        from arq.jobs import Job
+
+        from app.worker.arq_pool import get_arq_pool
+
+        pool = await get_arq_pool()
+        job = Job(job_id=arq_job_id, redis=pool)
+        await job.abort(timeout=5)
+    except Exception as exc:
+        logger.warning(
+            "training_job_arq_abort_failed",
+            arq_job_id=arq_job_id,
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+
+
 @router.post(
     "/jobs", response_model=TrainingJobResponse, status_code=status.HTTP_201_CREATED
 )
@@ -258,6 +287,26 @@ async def start_training_job(
             detail=f"Cannot start job with status '{job.status}'. Only pending jobs can be started.",
         )
 
+    # Ensure config has a dataset_id — the ARQ worker requires it. As a
+    # convenience, fall back to annotation_set_id if the caller didn't
+    # explicitly set config.dataset_id (older clients). The worker also
+    # accepts the legacy "training_dataset_id" alias.
+    config_dict = dict(job.config or {})
+    if not config_dict.get("dataset_id") and not config_dict.get(
+        "training_dataset_id"
+    ):
+        if job.annotation_set_id is not None:
+            config_dict["dataset_id"] = str(job.annotation_set_id)
+            job.config = config_dict  # type: ignore[assignment]
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "config.dataset_id is required to start a training job. "
+                    "Set it on the job's config or attach an annotation_set_id."
+                ),
+            )
+
     # Update status to queued
     job.status = TrainingJobStatus.QUEUED.value  # type: ignore[assignment]
     job.started_at = datetime.now(UTC)  # type: ignore[assignment]
@@ -271,11 +320,34 @@ async def start_training_job(
         user_id=str(current_user.id),
     )
 
-    # TODO: In a real implementation, trigger the actual training pipeline here
-    # This could be:
-    # - Sending a message to a job queue (Redis, RabbitMQ, etc.)
-    # - Calling an external ML service API
-    # - Spawning a background task
+    # Enqueue the ARQ task. The task name matches the function's __name__
+    # registered on WorkerSettings.functions.
+    from app.worker.arq_pool import enqueue_task
+
+    arq_job_id = await enqueue_task("run_training_job_task", job_id=str(job.id))
+    if arq_job_id:
+        job.arq_job_id = arq_job_id  # type: ignore[assignment]
+        await db.commit()
+        await db.refresh(job)
+        logger.info(
+            "training_job_enqueued",
+            job_id=str(job.id),
+            arq_job_id=arq_job_id,
+        )
+    else:
+        # ARQ unavailable — roll the status back so the user can retry
+        # without ending up with a "queued" job that never runs.
+        logger.warning(
+            "training_job_enqueue_failed",
+            job_id=str(job.id),
+        )
+        job.status = TrainingJobStatus.PENDING.value  # type: ignore[assignment]
+        job.started_at = None  # type: ignore[assignment]
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Training queue unavailable, try again shortly",
+        )
 
     return job
 
@@ -370,7 +442,19 @@ async def delete_training_job(
             detail="Not enough permissions",
         )
 
-    # TODO: If job is running, cancel it in the training pipeline first
+    # If the job is queued/running, signal cancellation before deleting.
+    # We set the status flag (so a running worker exits its trainer) and
+    # best-effort abort the ARQ job (so a queued one is dropped).
+    if job.status in (
+        TrainingJobStatus.QUEUED.value,
+        TrainingJobStatus.RUNNING.value,
+    ):
+        arq_job_id = job.arq_job_id
+        job.status = TrainingJobStatus.CANCELLED.value  # type: ignore[assignment]
+        job.completed_at = datetime.now(UTC)  # type: ignore[assignment]
+        await db.commit()
+        if arq_job_id:
+            await _abort_arq_job(str(arq_job_id))
 
     await db.delete(job)
     await db.commit()
@@ -425,9 +509,12 @@ async def cancel_training_job(
             detail=f"Cannot cancel job with status '{job.status}'",
         )
 
-    # Update status
+    # Order matters: set status FIRST so the running ARQ task observes
+    # cancellation on its next poll (every CANCEL_POLL_SECONDS) and
+    # terminates its trainer subprocess cleanly.
     job.status = TrainingJobStatus.CANCELLED.value  # type: ignore[assignment]
     job.completed_at = datetime.now(UTC)  # type: ignore[assignment]
+    arq_job_id = job.arq_job_id
 
     await db.commit()
     await db.refresh(job)
@@ -438,7 +525,12 @@ async def cancel_training_job(
         user_id=str(current_user.id),
     )
 
-    # TODO: If job is running in the pipeline, send cancellation signal
+    # Best-effort: also abort the ARQ job if it's still queued or in
+    # flight. If the job is already running, the status flag set above
+    # is the authoritative cancellation signal — abort just stops a
+    # not-yet-started job from being picked up.
+    if arq_job_id:
+        await _abort_arq_job(str(arq_job_id))
 
     return job
 

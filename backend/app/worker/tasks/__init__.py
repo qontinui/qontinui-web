@@ -39,6 +39,7 @@ send_verification_email_task = _tasks_module.send_verification_email_task
 send_password_reset_email_task = _tasks_module.send_password_reset_email_task
 send_analytics_report_task = _tasks_module.send_analytics_report_task
 process_uploaded_image = _tasks_module.process_uploaded_image
+run_training_job_task = _tasks_module.run_training_job_task
 
 __all__ = [
     # Email tasks
@@ -48,6 +49,8 @@ __all__ = [
     "send_analytics_report_task",
     # Image processing tasks
     "process_uploaded_image",
+    # Training tasks
+    "run_training_job_task",
     # Database cleanup tasks
     "cleanup_expired_sessions",
     "cleanup_expired_device_sessions",
