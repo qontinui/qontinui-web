@@ -1,3 +1,4 @@
+import functools
 import time
 
 from fastapi import Request, Response
@@ -100,16 +101,54 @@ api_limiter = Limiter(
 )
 
 
+# Loopback hosts treated as "the dev fleet" — exempt from auth rate limits
+# in development. The primary runner, every spawned test runner, and the
+# supervisor all phone home over 127.0.0.1 on a dev box, so without an
+# exemption they share a single 5/min bucket and concurrent test spawns
+# starve each other (and the primary). Production traffic is unaffected:
+# this only fires when ENVIRONMENT == "development".
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def _is_loopback_dev(request: Request) -> bool:
+    if settings.ENVIRONMENT != "development":
+        return False
+    client = getattr(request, "client", None)
+    host = getattr(client, "host", None) if client else None
+    return host in _LOOPBACK_HOSTS
+
+
 def auth_rate_limit(limit_string: str):
     """
     Conditional rate limit decorator for auth endpoints.
     When RATE_LIMIT_ENABLED is False, returns a no-op decorator.
+    In development, loopback callers bypass the limiter entirely so a fleet
+    of dev runners on the same machine doesn't share a single bucket.
     """
-    if settings.RATE_LIMIT_ENABLED:
-        return auth_limiter.limit(limit_string)
-    else:
+    if not settings.RATE_LIMIT_ENABLED:
         # Return a no-op decorator
         def no_op_decorator(func):
             return func
 
         return no_op_decorator
+
+    base_decorator = auth_limiter.limit(limit_string)
+
+    def conditional_decorator(func):
+        limited = base_decorator(func)
+
+        @functools.wraps(limited)
+        async def wrapper(*args, **kwargs):
+            request = kwargs.get("request")
+            if request is None:
+                for arg in args:
+                    if isinstance(arg, Request):
+                        request = arg
+                        break
+            if request is not None and _is_loopback_dev(request):
+                return await func(*args, **kwargs)
+            return await limited(*args, **kwargs)
+
+        return wrapper
+
+    return conditional_decorator
