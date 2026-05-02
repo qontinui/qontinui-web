@@ -44,13 +44,14 @@ jobs:
 
       # ui-bridge-eslint-plugin's dist/ is committed upstream
       # (qontinui/ui-bridge#2), so the cloned sibling has the built
-      # artifacts ready to use. No build step needed.
-      # qontinui-schemas's dist/ is also committed, so shared-types
-      # resolves the same way.
-
+      # artifacts ready to use. qontinui-schemas's dist/ is also committed.
+      #
+      # --install-links copies the file: dep into node_modules instead of
+      # symlinking, so the plugin's transitive deps resolve through the
+      # consumer's node_modules tree.
       - name: Install dependencies
         working-directory: ./frontend
-        run: npm ci
+        run: npm ci --install-links
 
       - name: Lint
         working-directory: ./frontend
