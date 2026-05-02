@@ -45,12 +45,13 @@ jobs:
       # ui-bridge-eslint-plugin's dist/ is gitignored upstream — every
       # consumer must build it after cloning before lint can resolve it.
       # qontinui-schemas's dist/ IS committed, so shared-types resolves
-      # without a build step.
+      # without a build step. Workspace-scoped install (-w) avoids npm
+      # walking up to the ui-bridge root and hitting a peer-dep conflict.
       - name: Build ui-bridge-eslint-plugin
-        working-directory: ${{ github.workspace }}/../ui-bridge/packages/ui-bridge-eslint-plugin
+        working-directory: ${{ github.workspace }}/../ui-bridge
         run: |
-          npm install --no-audit --no-fund
-          npm run build
+          npm install -w @qontinui/ui-bridge-eslint-plugin --no-audit --no-fund --legacy-peer-deps
+          npm run build -w @qontinui/ui-bridge-eslint-plugin
 
       - name: Install dependencies
         working-directory: ./frontend
