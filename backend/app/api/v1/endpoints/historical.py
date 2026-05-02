@@ -11,22 +11,55 @@ allowing the qontinui library to fetch historical execution data
 for mock-based testing.
 """
 
+import base64
 import random
+from collections import defaultdict
 from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db
 from app.models.snapshot import SnapshotAction, SnapshotRun
-from app.models.video_capture import HistoricalResult
+from app.models.video_capture import (
+    ActionFrame,
+    HistoricalResult,
+    VideoCaptureSession,
+)
+from app.services.frame_extraction import (
+    FrameExtractionError,
+    FrameExtractionService,
+)
+from app.services.video_file_reader import (
+    VideoFileNotFoundError,
+    VideoFileReader,
+    video_file_reader,
+)
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
+
+
+# ============================================================================
+# Dependency providers
+# ============================================================================
+
+
+def get_video_file_reader() -> VideoFileReader:
+    """Provide the singleton VideoFileReader."""
+    return video_file_reader
+
+
+def get_frame_extraction_service(
+    db: AsyncSession = Depends(get_async_db),
+    reader: VideoFileReader = Depends(get_video_file_reader),
+) -> FrameExtractionService:
+    """Provide a per-request FrameExtractionService bound to the session."""
+    return FrameExtractionService(db=db, reader=reader)
 
 
 # ============================================================================
@@ -325,11 +358,12 @@ async def get_historical_results_for_pattern(
 async def get_frame_for_result(
     *,
     db: AsyncSession = Depends(get_async_db),
+    extractor: FrameExtractionService = Depends(get_frame_extraction_service),
     historical_result_id: int,
     frame_type: str = Query(
         "action", description="Frame type: before, action, after, result"
     ),
-) -> Any:
+) -> Response:
     """
     Get the frame image for a historical result.
 
@@ -365,18 +399,86 @@ async def get_frame_for_result(
             detail="No video capture session associated with this result",
         )
 
-    # For now, return 404 if no frame available
-    # TODO: Implement actual frame extraction from video capture session
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail="Frame extraction not yet implemented. Use screenshot-based approach.",
+    # Load the video session
+    session_result = await db.execute(
+        select(VideoCaptureSession).filter(
+            VideoCaptureSession.id == historical_result.video_capture_session_id
+        )
     )
+    session = session_result.scalar_one_or_none()
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Video capture session not found",
+        )
+
+    # Find an associated ActionFrame matching the frame_type, if a snapshot
+    # action is linked. ActionFrame is keyed by (session_id, snapshot_action_id,
+    # frame_type) so this is a unique lookup.
+    action_frame: ActionFrame | None = None
+    if historical_result.snapshot_action_id is not None:
+        af_result = await db.execute(
+            select(ActionFrame).filter(
+                ActionFrame.video_capture_session_id == session.id,
+                ActionFrame.snapshot_action_id
+                == historical_result.snapshot_action_id,
+                ActionFrame.frame_type == frame_type,
+            )
+        )
+        action_frame = af_result.scalar_one_or_none()
+
+    # Choose target timestamp: prefer the ActionFrame's own timestamp (more
+    # accurate for the requested frame_type), fall back to the historical
+    # result's frame_timestamp_ms, finally to 0.
+    if action_frame is not None:
+        target_ms = action_frame.timestamp_ms
+    elif historical_result.frame_timestamp_ms is not None:
+        target_ms = historical_result.frame_timestamp_ms
+    else:
+        target_ms = 0
+
+    try:
+        jpeg_bytes = await extractor.extract_frame(
+            session,
+            target_ms,
+            use_cache=True,
+            action_frame=action_frame,
+        )
+    except VideoFileNotFoundError as exc:
+        logger.warning(
+            "frame_extraction_video_missing",
+            historical_result_id=historical_result_id,
+            session_id=session.id,
+            error=str(exc),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Video file unavailable: {exc}",
+        ) from exc
+    except FrameExtractionError as exc:
+        logger.warning(
+            "frame_extraction_failed",
+            historical_result_id=historical_result_id,
+            session_id=session.id,
+            error=str(exc),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Frame extraction failed: {exc}",
+        ) from exc
+
+    # Persist any cache_path update made by extract_frame on the ActionFrame
+    if action_frame is not None:
+        await db.commit()
+
+    return Response(content=jpeg_bytes, media_type="image/jpeg")
 
 
 @router.post("/playback", response_model=list[FrameResponse])
 async def get_playback_frames(
     *,
     db: AsyncSession = Depends(get_async_db),
+    extractor: FrameExtractionService = Depends(get_frame_extraction_service),
     request: IntegrationTestPlaybackRequest,
 ) -> Any:
     """
@@ -394,32 +496,91 @@ async def get_playback_frames(
         result_count=len(request.historical_result_ids),
     )
 
-    frames = []
+    if not request.historical_result_ids:
+        return []
 
-    for result_id in request.historical_result_ids:
-        result = await db.execute(
-            select(HistoricalResult).filter(HistoricalResult.id == result_id)
+    # Load all requested HistoricalResults in a single query, indexed by id
+    rows_result = await db.execute(
+        select(HistoricalResult).filter(
+            HistoricalResult.id.in_(request.historical_result_ids)
         )
-        historical_result = result.scalar_one_or_none()
+    )
+    by_id: dict[int, HistoricalResult] = {
+        row.id: row for row in rows_result.scalars().all()
+    }
 
-        if not historical_result:
+    # Group result_ids by their video_capture_session_id (skip None) so we
+    # can extract all frames for one video in a single open/close cycle.
+    grouped: dict[int, list[int]] = defaultdict(list)
+    for result_id in request.historical_result_ids:
+        hr = by_id.get(result_id)
+        if hr is None or hr.video_capture_session_id is None:
+            continue
+        grouped[hr.video_capture_session_id].append(result_id)
+
+    # Decoded JPEGs keyed by historical_result_id
+    jpegs_by_result_id: dict[int, bytes | None] = {}
+
+    for session_id, ids_in_group in grouped.items():
+        # Load the session
+        session_result = await db.execute(
+            select(VideoCaptureSession).filter(
+                VideoCaptureSession.id == session_id
+            )
+        )
+        session = session_result.scalar_one_or_none()
+        if session is None:
+            logger.warning(
+                "playback_session_missing",
+                video_capture_session_id=session_id,
+            )
+            for rid in ids_in_group:
+                jpegs_by_result_id[rid] = None
             continue
 
-        # TODO: Extract actual frame data from video capture session
+        timestamps = [
+            (by_id[rid].frame_timestamp_ms or 0) for rid in ids_in_group
+        ]
+
+        try:
+            extracted = await extractor.extract_batch(session, timestamps)
+        except VideoFileNotFoundError as exc:
+            logger.warning(
+                "playback_video_unavailable",
+                session_id=session_id,
+                error=str(exc),
+            )
+            extracted = [None] * len(timestamps)
+
+        for rid, jpeg in zip(ids_in_group, extracted, strict=True):
+            jpegs_by_result_id[rid] = jpeg
+
+    # Build the response in the original request order
+    frames: list[FrameResponse] = []
+    for result_id in request.historical_result_ids:
+        hr = by_id.get(result_id)
+        if hr is None:
+            continue
+
+        jpeg = jpegs_by_result_id.get(result_id)
+        frame_b64: str | None = None
+        if jpeg is not None:
+            frame_b64 = base64.b64encode(jpeg).decode("ascii")
+
         frames.append(
             FrameResponse(
                 historical_result_id=result_id,
-                action_type=historical_result.action_type,
-                pattern_id=historical_result.pattern_id,
-                pattern_name=historical_result.pattern_name,
-                success=historical_result.success,
-                match_x=historical_result.match_x,
-                match_y=historical_result.match_y,
-                match_width=historical_result.match_width,
-                match_height=historical_result.match_height,
-                timestamp_ms=historical_result.frame_timestamp_ms,
-                frame_base64=None,  # Frame extraction not implemented
-                has_frame=historical_result.video_capture_session_id is not None,
+                action_type=hr.action_type,
+                pattern_id=hr.pattern_id,
+                pattern_name=hr.pattern_name,
+                success=hr.success,
+                match_x=hr.match_x,
+                match_y=hr.match_y,
+                match_width=hr.match_width,
+                match_height=hr.match_height,
+                timestamp_ms=hr.frame_timestamp_ms,
+                frame_base64=frame_b64,
+                has_frame=jpeg is not None,
             )
         )
 
