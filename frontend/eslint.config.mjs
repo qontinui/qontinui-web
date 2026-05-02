@@ -39,7 +39,12 @@ const eslintConfig = [
   {
     plugins: { "@qontinui/ui-bridge": uiBridgePlugin },
     rules: {
-      "@qontinui/ui-bridge/require-state-annotation": "warn",
+      // UI Bridge Section 3 / Phase B5d: plugin is wired but the rule is
+      // intentionally OFF until the codebase is progressively annotated with
+      // <State> wrappers. `next lint --max-warnings 0` would otherwise turn
+      // 2191 unannotated sites into CI failures. Flip to 'warn' once the
+      // per-page annotation pass lands.
+      "@qontinui/ui-bridge/require-state-annotation": "off",
     },
   },
 ];
