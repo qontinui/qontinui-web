@@ -12,6 +12,7 @@ from app.worker.tasks import (
     cleanup_old_automation_data,
     cleanup_token_blacklist,
     process_uploaded_image,
+    run_training_job_task,
     send_analytics_report_task,
     send_email_task,
     send_password_reset_email_task,
@@ -59,6 +60,8 @@ class WorkerSettings:
         send_analytics_report_task,
         # Image processing tasks
         process_uploaded_image,
+        # Training tasks
+        run_training_job_task,
         # Cleanup tasks
         cleanup_expired_sessions,
         cleanup_expired_device_sessions,

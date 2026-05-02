@@ -100,6 +100,13 @@ class TrainingJob(Base):
     output_path = Column(String(500), nullable=True)  # Path to trained model artifacts
     model_url = Column(String(500), nullable=True)  # URL for model download
 
+    # ARQ background job correlation
+    # Set when the training job is enqueued onto the ARQ worker queue;
+    # lets us look up the underlying ARQ job (status, abort, logs) from
+    # the TrainingJob row and vice versa. Indexed because the worker
+    # callback path queries by arq_job_id to update progress.
+    arq_job_id = Column(String(255), nullable=True, index=True)
+
     # Timestamps
     created_at = Column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)

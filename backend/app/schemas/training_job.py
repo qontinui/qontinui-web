@@ -57,6 +57,14 @@ class TrainingConfig(BaseModel):
         default="yolov8n",
         description="Base model architecture",
     )
+    dataset_id: str | None = Field(
+        default=None,
+        description=(
+            "TrainingDataset ID to export and train on. Required at "
+            "/start time — the ARQ worker reads this from config to "
+            "locate the dataset."
+        ),
+    )
     augmentation: bool = Field(
         default=True,
         description="Enable data augmentation",
