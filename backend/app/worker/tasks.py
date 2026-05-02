@@ -596,22 +596,37 @@ async def run_training_job_task(
             cancelled = False
 
             assert process.stdout is not None  # noqa: S101 — set via PIPE above
-            async for raw in process.stdout:
-                line = raw.decode("utf-8", errors="replace")
-                logs_buffer = _append_logs(logs_buffer, line)
-                pending_lines += 1
+            # Read with a timeout so cancellation fires even when the
+            # trainer is silent (frozen, waiting on GPU, mid-evaluation).
+            # An empty bytes return signals EOF.
+            while True:
+                try:
+                    raw = await asyncio.wait_for(
+                        process.stdout.readline(),
+                        timeout=CANCEL_POLL_SECONDS,
+                    )
+                except TimeoutError:
+                    raw = b""  # no line; fall through to cancel-check
 
-                # Parse epoch progress. Last match on a line wins (some
-                # progress bars print ``Epoch 1/100   Epoch 2/100`` as
-                # the bar redraws).
-                m = _EPOCH_RE.search(line)
-                if m:
-                    current_epoch = int(m.group(1))
-                    total_epochs = int(m.group(2))
+                if raw:
+                    line = raw.decode("utf-8", errors="replace")
+                    logs_buffer = _append_logs(logs_buffer, line)
+                    pending_lines += 1
+
+                    # Parse epoch progress. Last match on a line wins
+                    # (some progress bars print ``Epoch 1/100  Epoch
+                    # 2/100`` as the bar redraws).
+                    m = _EPOCH_RE.search(line)
+                    if m:
+                        current_epoch = int(m.group(1))
+                        total_epochs = int(m.group(2))
+                elif process.returncode is not None:
+                    # EOF + process has exited.
+                    break
 
                 now = time.monotonic()
                 # Flush logs/progress to DB on either threshold.
-                if (
+                if pending_lines and (
                     pending_lines >= LOG_FLUSH_LINES
                     or now - last_flush >= LOG_FLUSH_SECONDS
                 ):
@@ -640,8 +655,21 @@ async def run_training_job_task(
                             pass
                         break
 
-            # Drain anything still in the pipe and wait for exit.
-            await process.wait()
+            # Wait for exit, escalating to kill() if the trainer ignores
+            # SIGTERM (e.g. ultralytics workers on Windows that survive
+            # TerminateProcess on the parent python.exe).
+            try:
+                await asyncio.wait_for(process.wait(), timeout=30)
+            except TimeoutError:
+                logger.warning(
+                    "training_job_terminate_timeout_killing",
+                    job_id=job_id,
+                )
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
+                await process.wait()
 
             # Final flush of any unflushed lines + the now-known exit
             # code. We compute the artifact AFTER this so a cancelled
@@ -677,20 +705,24 @@ async def run_training_job_task(
                     storage_key = (
                         f"models/{project_id}/{job_id}/{artifact.name}"
                     )
+                    def _upload_artifact() -> None:
+                        with artifact.open("rb") as fh:
+                            object_storage.backend.upload_file(
+                                fh,
+                                storage_key,
+                                "application/octet-stream",
+                                {
+                                    "job_id": job_id,
+                                    "project_id": project_id,
+                                    "dataset_id": str(dataset_uuid),
+                                },
+                            )
+
                     try:
                         # Run blocking S3 upload in a thread so the
-                        # event loop stays responsive.
-                        await asyncio.to_thread(
-                            object_storage.backend.upload_file,
-                            artifact.open("rb"),
-                            storage_key,
-                            "application/octet-stream",
-                            {
-                                "job_id": job_id,
-                                "project_id": project_id,
-                                "dataset_id": str(dataset_uuid),
-                            },
-                        )
+                        # event loop stays responsive. The closure owns
+                        # the file handle so it's closed even on error.
+                        await asyncio.to_thread(_upload_artifact)
                         # 24 h presigned URL — long enough for a user
                         # to click through from the UI without making
                         # the link permanent.

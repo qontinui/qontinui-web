@@ -28,7 +28,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "add_arq_job_id_to_training_jobs"
-down_revision: str = "coordinator_phase_6_agent_coordination_hardening"
+down_revision: str = "section_5b_01_ui_bridge_causal_columns"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
