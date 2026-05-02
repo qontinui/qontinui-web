@@ -49,6 +49,7 @@ pyarrow = "^17.0.0"
 radon = "^6.0.1"
 qontinui-schemas = {path = "../../qontinui-schemas", develop = true}
 qontinui = {path = "../../qontinui", develop = true, extras = ["embeddings"]}
+opencv-python-headless = "^4.8"
 pgvector = "^0.4.2"
 geoip2 = "^5.2.0"
 celery-redbeat = "^2.2"
