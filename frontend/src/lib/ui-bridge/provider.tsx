@@ -34,7 +34,7 @@ import type {
 import { CommandRelayListener } from "@qontinui/ui-bridge/react";
 import { getGlobalSpecStore } from "@qontinui/ui-bridge/specs";
 import { RouteAwarenessProvider } from "./RouteAwarenessProvider";
-import { getAllSpecs } from "../spec-registry";
+import { useDiscoveredSpecs } from "./use-discovered-specs";
 
 const isDev = process.env.NODE_ENV === "development";
 
@@ -91,9 +91,10 @@ const browserCaptureConfig: BrowserCaptureConfig = {
  * returned by the /control/specs relay command.
  */
 function BundledSpecsLoader() {
+  const { specs } = useDiscoveredSpecs();
   React.useEffect(() => {
+    if (specs.length === 0) return;
     const store = getGlobalSpecStore();
-    const specs = getAllSpecs();
     for (const spec of specs) {
       // Cast config to satisfy SpecConfig's literal version type
       store.load(spec.specId, spec.config as Parameters<typeof store.load>[1]);
@@ -103,7 +104,7 @@ function BundledSpecsLoader() {
         store.unload(spec.specId);
       }
     };
-  }, []);
+  }, [specs]);
   return null;
 }
 

@@ -7,7 +7,7 @@ import {
   unwrapSpecResponse,
 } from "@/lib/ui-bridge/spec-parser";
 import { useAppBrowser } from "@/hooks/useAppBrowser";
-import { getAllSpecs } from "@/lib/spec-registry";
+import { useDiscoveredSpecs } from "@/lib/ui-bridge/use-discovered-specs";
 import type {
   DiscoveredPage,
   SpecSourceState,
@@ -25,6 +25,7 @@ export function useSpecSourceState(
   const [isOpen, setIsOpen] = useState(false);
 
   const browser = useAppBrowser();
+  const { specs: bundled } = useDiscoveredSpecs();
 
   const [discoveredSpecs, setDiscoveredSpecs] = useState<DiscoveredSpec[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(
@@ -61,9 +62,9 @@ export function useSpecSourceState(
     []
   );
 
-  // Load bundled semantic specs on mount, overlay persisted selection state
+  // Load bundled semantic specs on mount, overlay persisted selection state.
+  // Re-runs when `bundled` populates from the runtime spec loader.
   useEffect(() => {
-    const bundled = getAllSpecs();
     const specMap = new Map(bundled.map((s) => [s.specId, s]));
 
     let persistedSelectedIds: string[] | null = null;
@@ -135,7 +136,7 @@ export function useSpecSourceState(
     onSpecsChangedRef.current(
       buildState(allSpecs, selectedIds, pages, pageUrls)
     );
-  }, [buildState]);
+  }, [buildState, bundled]);
 
   // Persist state changes
   useEffect(() => {
