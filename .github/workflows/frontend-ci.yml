@@ -22,19 +22,6 @@ jobs:
       - name: Checkout qontinui-web
         uses: actions/checkout@v4
 
-      # actions/checkout@v4 refuses `path:` outside the workspace, so
-      # clone the sibling repos via git directly. All repos here are
-      # public, so no auth needed. (Previous config tried `jspinak/qontinui-schemas`
-      # which doesn't exist — the actual repo is `qontinui/qontinui-schemas`.)
-      - name: Checkout sibling repos
-        run: |
-          cd "$GITHUB_WORKSPACE/.."
-          git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
-          git clone --depth 1 https://github.com/qontinui/ui-bridge.git
-          git clone --depth 1 https://github.com/qontinui/qontinui-workflow-ui.git
-          git clone --depth 1 https://github.com/qontinui/qontinui-workflow-utils.git
-          git clone --depth 1 https://github.com/qontinui/qontinui-navigation.git
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
