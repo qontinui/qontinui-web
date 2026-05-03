@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePageSpecs } from "@/hooks/usePageSpecs";
+import { useDiscoveredSpec } from "@/lib/ui-bridge/use-discovered-specs";
 import type { SpecConfig } from "@qontinui/ui-bridge/specs";
-import pageSpecJson from "./runners.spec.uibridge.json";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -15,10 +15,11 @@ import { ConnectionHistoryTable } from "@/components/runners/ConnectionHistoryTa
 import { RunnerTokenList } from "@/components/server-runners/RunnerTokenList";
 import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
 
-const pageSpec = pageSpecJson as unknown as SpecConfig;
-
 export default function RunnersPage() {
-  usePageSpecs({ runners: pageSpec });
+  const discoveredSpec = useDiscoveredSpec("runners");
+  usePageSpecs(
+    discoveredSpec ? { runners: discoveredSpec.config as SpecConfig } : {}
+  );
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("online");

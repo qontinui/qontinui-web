@@ -1,8 +1,8 @@
 "use client";
 
 import { usePageSpecs } from "@/hooks/usePageSpecs";
+import { useDiscoveredSpec } from "@/lib/ui-bridge/use-discovered-specs";
 import type { SpecConfig } from "@qontinui/ui-bridge/specs";
-import pageSpecJson from "./findings.spec.uibridge.json";
 import { useFindingsSummary } from "@/hooks/useTaskRunData";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,10 +16,11 @@ import { CategoryBreakdown } from "./_components/CategoryBreakdown";
 import { FindingsFilters } from "./_components/FindingsFilters";
 import { FindingsList } from "./_components/FindingsList";
 
-const pageSpec = pageSpecJson as unknown as SpecConfig;
-
 export default function FindingsPage() {
-  usePageSpecs({ findings: pageSpec });
+  const discoveredSpec = useDiscoveredSpec("findings");
+  usePageSpecs(
+    discoveredSpec ? { findings: discoveredSpec.config as SpecConfig } : {}
+  );
   const { data, isLoading, error, isRunnerOffline, refetch } =
     useFindingsSummary();
 

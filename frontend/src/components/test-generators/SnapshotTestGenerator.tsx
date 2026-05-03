@@ -1,6 +1,7 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { usePageSpecs } from "@/hooks/usePageSpecs";
+import { useDiscoveredSpec } from "@/lib/ui-bridge/use-discovered-specs";
 import type { SpecConfig } from "@qontinui/ui-bridge/specs";
 import type { AnnotationData } from "./snapshot/AnnotationEditor";
 import type { SnapshotElement } from "./shared/spec-generators";
@@ -14,8 +15,6 @@ import { useSnapshotCapture } from "./_hooks/useSnapshotCapture";
 import { useSnapshotAnnotations } from "./_hooks/useSnapshotAnnotations";
 import { useSnapshotSpecs } from "./_hooks/useSnapshotSpecs";
 import { useSnapshotDerivedData } from "./_hooks/useSnapshotDerivedData";
-import pageSpec from "./snapshot-test-generator.spec.uibridge.json";
-import postCaptureSpec from "./snapshot-post-capture.spec.uibridge.json";
 
 export type { BrowserTab } from "./_hooks/useExtensionConnection";
 
@@ -26,10 +25,18 @@ interface SnapshotTestGeneratorProps {
 export function SnapshotTestGenerator({
   runnerUrl = "http://localhost:9876",
 }: SnapshotTestGeneratorProps) {
-  usePageSpecs({
-    "snapshot-test-generator": pageSpec as unknown as SpecConfig,
-    "snapshot-post-capture": postCaptureSpec as unknown as SpecConfig,
-  });
+  const pageSpec = useDiscoveredSpec("snapshot-test-generator");
+  const postCaptureSpec = useDiscoveredSpec("snapshot-post-capture");
+  const specsToLoad = useMemo<Record<string, SpecConfig>>(() => {
+    if (!pageSpec || !postCaptureSpec) {
+      return {} as Record<string, SpecConfig>;
+    }
+    return {
+      "snapshot-test-generator": pageSpec.config as SpecConfig,
+      "snapshot-post-capture": postCaptureSpec.config as SpecConfig,
+    };
+  }, [pageSpec, postCaptureSpec]);
+  usePageSpecs(specsToLoad);
 
   const [activeTab, setActiveTab] = useLocalStorage<Tab>(
     "stg:activeTab",

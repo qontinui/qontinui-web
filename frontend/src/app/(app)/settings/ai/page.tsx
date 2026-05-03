@@ -1,8 +1,8 @@
 "use client";
 
 import { usePageSpecs } from "@/hooks/usePageSpecs";
+import { useDiscoveredSpec } from "@/lib/ui-bridge/use-discovered-specs";
 import type { SpecConfig } from "@qontinui/ui-bridge/specs";
-import pageSpecJson from "./ai-settings.spec.uibridge.json";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
@@ -16,10 +16,13 @@ import { GeneralAiSettings } from "./_components/GeneralAiSettings";
 import { TestConnection } from "./_components/TestConnection";
 import { ProviderHealthStatus } from "./_components/ProviderHealthStatus";
 
-const pageSpec = pageSpecJson as unknown as SpecConfig;
-
 export default function AiSettingsPage() {
-  usePageSpecs({ "ai-settings": pageSpec });
+  const discoveredSpec = useDiscoveredSpec("ai-settings");
+  usePageSpecs(
+    discoveredSpec
+      ? { "ai-settings": discoveredSpec.config as SpecConfig }
+      : {}
+  );
 
   const {
     healthLoading,

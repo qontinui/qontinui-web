@@ -2,10 +2,8 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { usePageSpecs } from "@/hooks/usePageSpecs";
+import { useDiscoveredSpec } from "@/lib/ui-bridge/use-discovered-specs";
 import type { SpecConfig } from "@qontinui/ui-bridge/specs";
-import pageSpecJson from "./workflows.spec.uibridge.json";
-
-const pageSpec = pageSpecJson as unknown as SpecConfig;
 import { useUnifiedWorkflows } from "@/lib/api/unified-workflows";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
 import { WorkflowBuilderProvider } from "@/components/workflow-builder/WorkflowBuilderContext";
@@ -19,7 +17,10 @@ import { useWorkflowPageActions } from "./_hooks/useWorkflowPageActions";
 import { Workflow, Loader2 } from "lucide-react";
 
 function BuildWorkflowsPageContent() {
-  usePageSpecs({ workflows: pageSpec });
+  const discoveredSpec = useDiscoveredSpec("workflows");
+  usePageSpecs(
+    discoveredSpec ? { workflows: discoveredSpec.config as SpecConfig } : {}
+  );
   const { isOffline } = useUnifiedWorkflows();
   const [selectedWorkflow, setSelectedWorkflow] =
     useState<UnifiedWorkflow | null>(null);

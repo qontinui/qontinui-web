@@ -35,9 +35,7 @@ import {
   Accessibility,
 } from "lucide-react";
 import type { SpecConfig as SpecConfigType } from "@qontinui/ui-bridge/specs";
-import pageSpecJson from "./inspector.spec.uibridge.json";
-
-const pageSpec = pageSpecJson as unknown as SpecConfigType;
+import { useDiscoveredSpec } from "@/lib/ui-bridge/use-discovered-specs";
 
 type InspectorTab =
   | "elements"
@@ -62,7 +60,12 @@ const TAB_CONFIG: Array<{
 
 export default function InspectorPage() {
   const { isOffline, isLoading: healthLoading } = useRunnerHealth();
-  usePageSpecs({ inspector: pageSpec });
+  const discoveredSpec = useDiscoveredSpec("inspector");
+  usePageSpecs(
+    discoveredSpec
+      ? { inspector: discoveredSpec.config as SpecConfigType }
+      : {}
+  );
 
   const inspector = useInspector();
   const {
