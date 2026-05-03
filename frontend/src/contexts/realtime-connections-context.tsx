@@ -38,12 +38,59 @@ const RealtimeConnectionsContext = createContext<
 // ============================================================================
 // WebSocket message shapes
 // ============================================================================
+//
+// Wire shapes are produced by qontinui-web/backend/app/services/runner/
+// event_publisher.py (RunnerEventPublisher). They do NOT match the canonical
+// `Runner` schema directly — `runner_connected` ships a partial
+// `connection_data` payload (id, runner_name, connected_at, ip_address,
+// ws_connected, …) that's missing required Runner fields like
+// `derivedStatus`, `capabilities`, `createdAt`. So we treat the WS event as
+// a refresh trigger and refetch the canonical Runner row from REST instead
+// of trying to splice the partial wire payload into the runners list.
+//
+// `runner_name_updated` and `runner_port_updated` carry just the changed
+// field; we re-fetch on those too for the same reason.
+//
+// `runner_updated` is NOT published by the backend — keeping it out of the
+// union prevents the frontend from depending on a non-existent wire shape.
+
+interface RunnerConnectedConnection {
+  id: string;
+  runner_name?: string | null;
+  connected_at?: string | null;
+  ip_address?: string | null;
+  runner_port?: number | null;
+  ws_connected?: boolean;
+}
 
 type WsMessage =
   | { type: "initial_state"; runners: Runner[] }
-  | { type: "runner_connected"; runner: Runner }
-  | { type: "runner_disconnected"; runner_id: string }
-  | { type: "runner_updated"; runner: Runner }
+  | {
+      type: "runner_connected";
+      connection: RunnerConnectedConnection;
+      timestamp: string;
+    }
+  | { type: "runner_disconnected"; runner_id: string; timestamp: string }
+  | {
+      type: "runner_name_updated";
+      runner_id: string;
+      runner_name: string;
+      timestamp: string;
+    }
+  | {
+      type: "runner_port_updated";
+      runner_id: string;
+      runner_port: number;
+      timestamp: string;
+    }
+  | {
+      type: "runner.woke";
+      runner_id: string;
+      intent_id: string | null;
+      task_id: string | null;
+      reason: string | null;
+      timestamp: string;
+    }
   | { type: "error"; error: string };
 
 // ============================================================================
@@ -215,26 +262,27 @@ export function RealtimeConnectionsProvider({
             setRunners(message.runners);
             setIsLoading(false);
           } else if (message.type === "runner_connected") {
-            setRunners((prev) => {
-              const exists = prev.some((r) => r.id === message.runner.id);
-              if (exists) {
-                // Replace with the latest snapshot.
-                return prev.map((r) =>
-                  r.id === message.runner.id ? message.runner : r
-                );
-              }
-              return [...prev, message.runner];
-            });
+            // Wire payload is a partial `connection_data` shape (id +
+            // snake_case fields), not a full `Runner`. Refetch the
+            // canonical Runner row instead of trying to splice it in.
+            void fetchRunners();
           } else if (message.type === "runner_disconnected") {
             setRunners((prev) =>
               prev.filter((r) => r.id !== message.runner_id)
             );
-          } else if (message.type === "runner_updated") {
-            setRunners((prev) =>
-              prev.map((r) =>
-                r.id === message.runner.id ? { ...r, ...message.runner } : r
-              )
-            );
+          } else if (
+            message.type === "runner_name_updated" ||
+            message.type === "runner_port_updated"
+          ) {
+            // Single-field updates: refetch so the in-memory Runner row
+            // picks up the change without us having to merge snake_case
+            // wire fields into the camelCase Runner shape.
+            void fetchRunners();
+          } else if (message.type === "runner.woke") {
+            // Handled by WakeRunnerModal's own WS listener. The realtime
+            // context still refetches so the runners list reflects the
+            // newly-online runner without waiting for the next poll tick.
+            void fetchRunners();
           } else if (message.type === "error") {
             console.error("[RealtimeConnections] Server error:", message.error);
           }
