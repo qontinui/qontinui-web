@@ -2,6 +2,20 @@
 Runner Event Publisher for status broadcasting.
 
 Publishes runner status events via Redis pub/sub for real-time notifications.
+
+## Wire-format contract
+
+The JSON shape of each ``publish_*`` message is mirrored in Rust at
+``qontinui-runner/src-tauri/src/relay_envelopes.rs::RunnerStatusEvent`` so
+TypeScript consumers (qontinui-web, qontinui-mobile) can import a typed
+discriminated union via ``@qontinui/shared-types/tauri-events``. The Rust
+struct is the source of TS bindings; the Python emitter here is the source
+of the bytes that hit the wire. **If you change one, change the other.**
+
+There is no automated drift guard between this file and the Rust mirror
+yet — adding a pytest that loads the JSON Schema from the
+qontinui_schemas package and validates each emitted dict is a follow-up.
+For now, hand-review both sides on any change.
 """
 
 import json

@@ -10,6 +10,7 @@ import React, {
   type ReactNode,
 } from "react";
 import type { Runner } from "@qontinui/shared-types";
+import type { RunnerStatusEvent } from "@qontinui/shared-types/tauri-events";
 import { runnerService } from "@/services/service-factory";
 import { createLogger } from "@/lib/logger";
 
@@ -39,59 +40,32 @@ const RealtimeConnectionsContext = createContext<
 // WebSocket message shapes
 // ============================================================================
 //
-// Wire shapes are produced by qontinui-web/backend/app/services/runner/
-// event_publisher.py (RunnerEventPublisher). They do NOT match the canonical
-// `Runner` schema directly — `runner_connected` ships a partial
-// `connection_data` payload (id, runner_name, connected_at, ip_address,
-// ws_connected, …) that's missing required Runner fields like
-// `derivedStatus`, `capabilities`, `createdAt`. So we treat the WS event as
-// a refresh trigger and refetch the canonical Runner row from REST instead
-// of trying to splice the partial wire payload into the runners list.
+// Wire shapes are the canonical `RunnerStatusEvent` discriminated union from
+// `@qontinui/shared-types/tauri-events`. The Rust source of truth is
+// `qontinui-runner/src-tauri/src/relay_envelopes.rs::RunnerStatusEvent`,
+// mirrored by the Python emitter
+// `qontinui-web/backend/app/services/runner/event_publisher.py` (which
+// references the Rust type by name in its docstring as the wire contract).
 //
-// `runner_name_updated` and `runner_port_updated` carry just the changed
-// field; we re-fetch on those too for the same reason.
+// Reading notes:
 //
-// `runner_updated` is NOT published by the backend — keeping it out of the
-// union prevents the frontend from depending on a non-existent wire shape.
-
-interface RunnerConnectedConnection {
-  id: string;
-  runner_name?: string | null;
-  connected_at?: string | null;
-  ip_address?: string | null;
-  runner_port?: number | null;
-  ws_connected?: boolean;
-}
-
-type WsMessage =
-  | { type: "initial_state"; runners: Runner[] }
-  | {
-      type: "runner_connected";
-      connection: RunnerConnectedConnection;
-      timestamp: string;
-    }
-  | { type: "runner_disconnected"; runner_id: string; timestamp: string }
-  | {
-      type: "runner_name_updated";
-      runner_id: string;
-      runner_name: string;
-      timestamp: string;
-    }
-  | {
-      type: "runner_port_updated";
-      runner_id: string;
-      runner_port: number;
-      timestamp: string;
-    }
-  | {
-      type: "runner.woke";
-      runner_id: string;
-      intent_id: string | null;
-      task_id: string | null;
-      reason: string | null;
-      timestamp: string;
-    }
-  | { type: "error"; error: string };
+// - `runner_connected.connection` is a PARTIAL Runner payload — `connection`
+//   contains only the connection-level fields (id, runner_name, ip_address,
+//   ws_connected, …). It's NOT a full `Runner` (derivedStatus, capabilities,
+//   createdAt etc. are missing). Treat the event as a refresh trigger and
+//   refetch the canonical Runner row from REST.
+//
+// - `runner_name_updated` / `runner_port_updated` carry just the changed
+//   field; refetch for the same reason.
+//
+// - `initial_state.runners[]` items are typed `unknown` in the schema (Rust
+//   carries them as `Value` to avoid a circular dep on the canonical Runner
+//   type). Cast to `Runner[]` below — the Python serializer uses the same
+//   `qontinui_schemas.runner.Runner` Pydantic model that backs the TS type.
+//
+// - `runner_updated` is NOT published by the backend — keeping it out of
+//   the union prevents the frontend from depending on a non-existent wire
+//   shape.
 
 // ============================================================================
 // Provider
@@ -256,10 +230,15 @@ export function RealtimeConnectionsProvider({
 
       ws.onmessage = (event) => {
         try {
-          const message = JSON.parse(event.data) as WsMessage;
+          const message = JSON.parse(event.data) as RunnerStatusEvent;
 
           if (message.type === "initial_state") {
-            setRunners(message.runners);
+            // `runners` is `unknown[]` on the wire (Rust carries them as
+            // `Value` to avoid the circular dep on the canonical Runner
+            // type). The Python emitter serializes via the matching
+            // `qontinui_schemas.runner.Runner` Pydantic model, so the
+            // cast is safe at runtime.
+            setRunners(message.runners as Runner[]);
             setIsLoading(false);
           } else if (message.type === "runner_connected") {
             // Wire payload is a partial `connection_data` shape (id +
