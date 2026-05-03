@@ -1,19 +1,21 @@
 #!/usr/bin/env node
 /**
  * Verifies that the browser-safe subpaths of @qontinui/ui-bridge-auto
- * (`./types` and `./drift`) do not contain Node-only `require()` calls
- * for `fs`, `path`, `jsdom`, or `canvas` in their built CJS or ESM
- * bundles.
+ * (`./types` and `./drift`) do not contain Node-only references for
+ * `fs`, `path`, `jsdom`, `canvas`, or `child_process` in their built CJS
+ * or ESM bundles.
  *
  * Notes:
- * - The check is conservative: only `require("X")` / `require('X')` /
- *   `require(\`X\`)` patterns are flagged. Lazy `await import("X")` is
- *   permitted because tree-shaking ESM consumers (Webpack 5, Next.js,
- *   esbuild) drop unreferenced dynamic imports along with their
- *   declaring functions when those functions are never called from the
- *   reachable surface.
- * - We walk only `./drift/` and `./types/` — those are the subpaths
- *   advertised as browser-safe in ui-bridge-auto's package.json.
+ * - Flags both static `require("X")` AND dynamic `await import("X")` /
+ *   `import("X")`. The dynamic-import escape hatch was removed when
+ *   `defaultRunGit` moved to the dedicated `./drift/node` subpath, so
+ *   the browser-safe `./drift` subpath should now have zero Node-only
+ *   references of either kind. (Before the split, the check tolerated
+ *   dynamic imports because tree-shaking dropped them; now we get the
+ *   strong static guarantee.)
+ * - We walk `./drift/` and `./types/` recursively but skip the
+ *   `./drift/node.*` files: that subpath is explicitly Node-only and
+ *   advertised as such in ui-bridge-auto's package.json (`./drift/node`).
  *
  * Exits non-zero on the first violation.
  */
@@ -25,9 +27,20 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 
-const FORBIDDEN_MODULES = ["fs", "path", "jsdom", "canvas"];
+const FORBIDDEN_MODULES = ["fs", "path", "jsdom", "canvas", "child_process"];
 const SUBPATHS = ["types", "drift"];
 const FILE_EXTS = [".js", ".mjs"];
+
+/**
+ * Files inside a SUBPATH that are explicitly Node-only and not part of the
+ * browser-safe contract. These are advertised as their own non-browser
+ * subpath in ui-bridge-auto's package.json (e.g. `./drift/node`).
+ */
+const EXPLICIT_NODE_FILES = new Set([
+  // dist/drift/node.{js,mjs} — the Node-only `defaultRunGit` subpath.
+  "drift/node.js",
+  "drift/node.mjs",
+]);
 
 const pkgRoot = path.join(
   repoRoot,
@@ -49,15 +62,16 @@ function* walk(dir) {
 }
 
 function buildForbiddenRegex() {
-  // Match `require("MOD")`, `require('MOD')`, `require(\`MOD\`)` for any
-  // MOD in FORBIDDEN_MODULES. The bundler emits these as static strings
-  // for CJS callsites, so a literal regex is enough.
+  // Match `require("MOD")` AND `import("MOD")` — both static and dynamic
+  // forms — for any MOD in FORBIDDEN_MODULES. The bundler emits these as
+  // string-literal callsites, so a literal regex is enough. We catch the
+  // `node:` URL prefix too since Node 16+ emits both forms.
   const escaped = FORBIDDEN_MODULES.map((m) =>
     m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
   );
   const alternation = escaped.join("|");
   return new RegExp(
-    `require\\(\\s*['"\`](?:node:)?(${alternation})['"\`]\\s*\\)`,
+    `(?:require|import)\\(\\s*['"\`](?:node:)?(${alternation})['"\`]\\s*\\)`,
     "g",
   );
 }
@@ -74,6 +88,12 @@ for (const subpath of SUBPATHS) {
     process.exit(2);
   }
   for (const file of walk(dir)) {
+    const relFromDist = path
+      .relative(pkgRoot, file)
+      .replaceAll(path.sep, "/");
+    if (EXPLICIT_NODE_FILES.has(relFromDist)) {
+      continue;
+    }
     const contents = fs.readFileSync(file, "utf8");
     forbiddenRegex.lastIndex = 0;
     let match;
@@ -101,5 +121,5 @@ if (violations.length > 0) {
 }
 
 console.log(
-  `[check-browser-safe-imports] OK — scanned ${SUBPATHS.map((s) => `dist/${s}/`).join(", ")} for require() of ${FORBIDDEN_MODULES.join(", ")}.`,
+  `[check-browser-safe-imports] OK — scanned ${SUBPATHS.map((s) => `dist/${s}/`).join(", ")} for require()/import() of ${FORBIDDEN_MODULES.join(", ")} (skipped explicit Node files: ${[...EXPLICIT_NODE_FILES].join(", ")}).`,
 );
