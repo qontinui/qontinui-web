@@ -2,10 +2,8 @@
 
 import { useState } from "react";
 import { usePageSpecs } from "@/hooks/usePageSpecs";
+import { useDiscoveredSpec } from "@/lib/ui-bridge/use-discovered-specs";
 import type { SpecConfig } from "@qontinui/ui-bridge/specs";
-import pageSpecJson from "./contexts.spec.uibridge.json";
-
-const pageSpec = pageSpecJson as unknown as SpecConfig;
 import { BookOpen, Settings, Tags, Workflow, Zap, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AddToWorkflowDialog } from "@/components/builders/AddToWorkflowDialog";
@@ -116,7 +114,10 @@ function toPayload(form: ContextForm): ContextCreate {
 // =============================================================================
 
 export default function ContextsPage() {
-  usePageSpecs({ contexts: pageSpec });
+  const discoveredSpec = useDiscoveredSpec("contexts");
+  usePageSpecs(
+    discoveredSpec ? { contexts: discoveredSpec.config as SpecConfig } : {}
+  );
   const listQuery = useContextsList();
   const createMutation = useCreateContext();
   const updateMutation = useUpdateContext();

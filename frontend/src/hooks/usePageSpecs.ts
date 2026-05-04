@@ -9,26 +9,37 @@
  * avoiding module singleton duplication issues in bundled apps.
  *
  * Usage:
- *   import pageSpec from './my-page.spec.uibridge.json';
- *   usePageSpecs({ 'my-page': pageSpec });
+ *   const discoveredSpec = useDiscoveredSpec('my-page');
+ *   usePageSpecs(discoveredSpec ? { 'my-page': discoveredSpec.config } : {});
  */
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { getGlobalSpecStore, type SpecConfig } from "@qontinui/ui-bridge/specs";
 
 /**
  * Load one or more SpecConfig objects into the global SpecStore.
- * Unloads them when the component unmounts.
+ * Unloads them when the component unmounts or when the spec set changes.
+ *
+ * The effect re-fires when the set of spec ids changes — this matters now
+ * that callers feed runtime-fetched specs (Section 13.5): on first render
+ * the runtime cache may be empty (`specs = {}`), then resolves on a later
+ * render. The original `[]` deps caused those late arrivals to be dropped.
  *
  * @param specs - Map of specId → SpecConfig
  */
 export function usePageSpecs(specs: Record<string, SpecConfig>): void {
+  // Stable key over the SET of spec ids. Re-firing on identity alone would
+  // thrash on every render; configs for a given id are stable post-resolution
+  // so id-set is sufficient.
+  const specsKey = useMemo(() => Object.keys(specs).sort().join("|"), [specs]);
+
   useEffect(() => {
     // Specs are a dev-only feature — skip registration in production
     if (process.env.NODE_ENV !== "development") return;
 
     const store = getGlobalSpecStore();
     const ids = Object.keys(specs);
+    if (ids.length === 0) return;
 
     for (const [id, config] of Object.entries(specs)) {
       store.load(id, config);
@@ -56,7 +67,6 @@ export function usePageSpecs(specs: Record<string, SpecConfig>): void {
         store.unload(id);
       }
     };
-    // Only run on mount/unmount — specs object identity is stable (module-level import)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [specsKey]);
 }

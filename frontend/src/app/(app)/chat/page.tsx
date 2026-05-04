@@ -8,13 +8,14 @@ import { Button } from "@/components/ui/button";
 import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
 import { useChatWebSocket } from "@/hooks/useChatWebSocket";
 import { usePageSpecs } from "@/hooks/usePageSpecs";
+import { useDiscoveredSpec } from "@/lib/ui-bridge/use-discovered-specs";
 import type { SpecConfig } from "@qontinui/ui-bridge/specs";
-import pageSpecJson from "./chat.spec.uibridge.json";
-
-const pageSpec = pageSpecJson as unknown as SpecConfig;
 
 export default function ChatPage() {
-  usePageSpecs({ chat: pageSpec });
+  const discoveredSpec = useDiscoveredSpec("chat");
+  usePageSpecs(
+    discoveredSpec ? { chat: discoveredSpec.config as SpecConfig } : {}
+  );
   const router = useRouter();
   const { runners } = useRealtimeConnections();
   const [isCreating, setIsCreating] = useState(false);

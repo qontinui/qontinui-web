@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { usePageSpecs } from "@/hooks/usePageSpecs";
+import { useDiscoveredSpec } from "@/lib/ui-bridge/use-discovered-specs";
 import type { SpecConfig } from "@qontinui/ui-bridge/specs";
-import pageSpecJson from "./statistics.spec.uibridge.json";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,10 +15,11 @@ import { DurationExtremes } from "./_components/DurationExtremes";
 import { RecentRunsTable } from "./_components/RecentRunsTable";
 import { PerformanceView } from "./_components/PerformanceView";
 
-const pageSpec = pageSpecJson as unknown as SpecConfig;
-
 export default function StatisticsPage() {
-  usePageSpecs({ statistics: pageSpec });
+  const discoveredSpec = useDiscoveredSpec("statistics");
+  usePageSpecs(
+    discoveredSpec ? { statistics: discoveredSpec.config as SpecConfig } : {}
+  );
   const { runs, stats, isLoading, error, isRunnerOffline, refetch } =
     useStatistics();
 

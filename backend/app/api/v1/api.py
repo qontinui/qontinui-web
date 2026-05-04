@@ -85,6 +85,7 @@ from app.api.v1.endpoints import (
     runner_wake,
     runners,
     runners_ws,
+    runs_drift,
     scheduled_runs,
     screenshots,
     security_endpoints,
@@ -231,6 +232,9 @@ api_router.include_router(
     historical.router, prefix="/testing/historical", tags=["historical-data"]
 )
 api_router.include_router(execution.router, prefix="/execution", tags=["execution"])
+# Drift report endpoints — placeholder routes until the runner proxy lands.
+# See: app/api/v1/endpoints/runs_drift.py
+api_router.include_router(runs_drift.router, prefix="/runs", tags=["runs-drift"])
 api_router.include_router(
     discoveries.router, prefix="/discoveries", tags=["discoveries"]
 )

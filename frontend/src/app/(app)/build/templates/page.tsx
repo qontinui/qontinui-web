@@ -2,10 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { usePageSpecs } from "@/hooks/usePageSpecs";
+import { useDiscoveredSpec } from "@/lib/ui-bridge/use-discovered-specs";
 import type { SpecConfig } from "@qontinui/ui-bridge/specs";
-import pageSpecJson from "./templates.spec.uibridge.json";
-
-const pageSpec = pageSpecJson as unknown as SpecConfig;
 import {
   Layers,
   TestTube2,
@@ -173,7 +171,10 @@ function BuilderCardItem({
 // =============================================================================
 
 export default function TemplatesPage() {
-  usePageSpecs({ templates: pageSpec });
+  const discoveredSpec = useDiscoveredSpec("templates");
+  usePageSpecs(
+    discoveredSpec ? { templates: discoveredSpec.config as SpecConfig } : {}
+  );
   const router = useRouter();
   const isDev = process.env.NODE_ENV === "development";
 

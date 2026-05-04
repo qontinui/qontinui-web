@@ -2,8 +2,8 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { usePageSpecs } from "@/hooks/usePageSpecs";
+import { useDiscoveredSpec } from "@/lib/ui-bridge/use-discovered-specs";
 import type { SpecConfig } from "@qontinui/ui-bridge/specs";
-import pageSpecJson from "./error-monitor.spec.uibridge.json";
 import {
   useRunnerHealth,
   useErrorMonitorEntries,
@@ -33,8 +33,6 @@ import {
   X,
 } from "lucide-react";
 
-const pageSpec = pageSpecJson as unknown as SpecConfig;
-
 // ============================================================================
 // Types & Constants
 // ============================================================================
@@ -63,7 +61,12 @@ const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
 // ============================================================================
 
 export default function ErrorMonitorPage() {
-  usePageSpecs({ "error-monitor": pageSpec });
+  const discoveredSpec = useDiscoveredSpec("error-monitor");
+  usePageSpecs(
+    discoveredSpec
+      ? { "error-monitor": discoveredSpec.config as SpecConfig }
+      : {}
+  );
   const { isOffline, isLoading: healthLoading } = useRunnerHealth();
   const {
     data: entries,
