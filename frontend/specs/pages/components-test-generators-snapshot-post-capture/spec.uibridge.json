@@ -1,0 +1,602 @@
+{
+  "description": "Snapshot Test Generator AFTER a successful snapshot capture — verifies that captured data populates correctly, tabs work, and generation flow completes",
+  "groups": [
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Post-Capture: Elements Tab",
+          "enabled": true,
+          "id": "stg-post-capture-elements-tab-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "textbox"
+            },
+            "label": "Required element for Post-Capture: Elements Tab",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Post-Capture: Elements Tab",
+          "enabled": true,
+          "id": "stg-post-capture-elements-tab-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "buttons|inputs|links|selects|textareas|others"
+            },
+            "label": "Required element for Post-Capture: Elements Tab",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Post-Capture: Elements Tab",
+          "enabled": true,
+          "id": "stg-post-capture-elements-tab-elem-2",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Type|Role|Visible|Enabled"
+            },
+            "label": "Required element for Post-Capture: Elements Tab",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "After capturing a snapshot, the Elements tab should show captured elements in a browsable tree",
+      "id": "stg-post-capture-elements-tab",
+      "name": "Post-Capture: Elements Tab",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Post-Capture: Connected State",
+          "enabled": true,
+          "id": "stg-post-capture-connected-state-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Connected"
+            },
+            "label": "Required element for Post-Capture: Connected State",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Post-Capture: Connected State",
+          "enabled": true,
+          "id": "stg-post-capture-connected-state-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Capture Snapshot"
+            },
+            "label": "Required element for Post-Capture: Connected State",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Post-Capture: Connected State",
+          "enabled": true,
+          "id": "stg-post-capture-connected-state-elem-2",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Tab:"
+            },
+            "label": "Required element for Post-Capture: Connected State",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state Post-Capture: Connected State",
+          "enabled": true,
+          "id": "stg-post-capture-connected-state-elem-3",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button"
+            },
+            "label": "Required element for Post-Capture: Connected State",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "After capturing, the connection status should show 'Connected' and the capture button should be enabled",
+      "id": "stg-post-capture-connected-state",
+      "name": "Post-Capture: Connected State",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Test Specs Tab",
+          "enabled": true,
+          "id": "stg-test-specs-tab-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Generate Specs"
+            },
+            "label": "Required element for Test Specs Tab",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Test Specs Tab",
+          "enabled": true,
+          "id": "stg-test-specs-tab-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Filter"
+            },
+            "label": "Required element for Test Specs Tab",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Test Specs Tab",
+          "enabled": true,
+          "id": "stg-test-specs-tab-elem-2",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Enable All"
+            },
+            "label": "Required element for Test Specs Tab",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state Test Specs Tab",
+          "enabled": true,
+          "id": "stg-test-specs-tab-elem-3",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Disable All"
+            },
+            "label": "Required element for Test Specs Tab",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 4 for state Test Specs Tab",
+          "enabled": true,
+          "id": "stg-test-specs-tab-elem-4",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "No test specifications yet"
+            },
+            "label": "Required element for Test Specs Tab",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Verify the Test Specs tab UI structure and generate button",
+      "id": "stg-test-specs-tab",
+      "name": "Test Specs Tab",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Post-Generate: Spec Groups",
+          "enabled": true,
+          "id": "stg-post-generate-specs-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Element Presence"
+            },
+            "label": "Required element for Post-Generate: Spec Groups",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Post-Generate: Spec Groups",
+          "enabled": true,
+          "id": "stg-post-generate-specs-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "State Consistency"
+            },
+            "label": "Required element for Post-Generate: Spec Groups",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Post-Generate: Spec Groups",
+          "enabled": true,
+          "id": "stg-post-generate-specs-elem-2",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "specs.*assertions enabled"
+            },
+            "label": "Required element for Post-Generate: Spec Groups",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "After clicking Generate Specs, verify spec groups are created with proper structure",
+      "id": "stg-post-generate-specs",
+      "name": "Post-Generate: Spec Groups",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Output Tab",
+          "enabled": true,
+          "id": "stg-output-tab-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Export JSON"
+            },
+            "label": "Required element for Output Tab",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Output Tab",
+          "enabled": true,
+          "id": "stg-output-tab-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Copy"
+            },
+            "label": "Required element for Output Tab",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Output Tab",
+          "enabled": true,
+          "id": "stg-output-tab-elem-2",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Generate test specifications to see output"
+            },
+            "label": "Required element for Output Tab",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state Output Tab",
+          "enabled": true,
+          "id": "stg-output-tab-elem-3",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "\"version\": \"1.0.0\""
+            },
+            "label": "Required element for Output Tab",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 4 for state Output Tab",
+          "enabled": true,
+          "id": "stg-output-tab-elem-4",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "groups.*assertions"
+            },
+            "label": "Required element for Output Tab",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Verify the Output tab shows export and copy functionality",
+      "id": "stg-output-tab",
+      "name": "Output Tab",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Snapshot Comparison",
+          "enabled": true,
+          "id": "stg-snapshot-comparison-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Compare to Previous"
+            },
+            "label": "Required element for Snapshot Comparison",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Verify the Compare to Previous feature works after a second snapshot capture",
+      "id": "stg-snapshot-comparison",
+      "name": "Snapshot Comparison",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Annotation Editor",
+          "enabled": true,
+          "id": "stg-annotation-editor-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "% annotated"
+            },
+            "label": "Required element for Annotation Editor",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Verify the Annotations tab shows coverage dashboard and editing UI",
+      "id": "stg-annotation-editor",
+      "name": "Annotation Editor",
+      "source": "migrated"
+    }
+  ],
+  "metadata": {
+    "component": "components-test-generators-snapshot-post-capture",
+    "tags": [
+      "test-generator",
+      "snapshot",
+      "tier-1",
+      "post-capture",
+      "generation-flow"
+    ]
+  },
+  "stateMachine": {
+    "states": [
+      {
+        "description": "After capturing a snapshot, the Elements tab should show captured elements in a browsable tree",
+        "elements": [
+          {
+            "role": "textbox"
+          },
+          {
+            "textContent": "buttons|inputs|links|selects|textareas|others"
+          },
+          {
+            "textContent": "Type|Role|Visible|Enabled"
+          }
+        ],
+        "id": "stg-post-capture-elements-tab",
+        "isInitial": false,
+        "name": "Post-Capture: Elements Tab",
+        "transitions": []
+      },
+      {
+        "description": "After capturing, the connection status should show 'Connected' and the capture button should be enabled",
+        "elements": [
+          {
+            "textContent": "Connected"
+          },
+          {
+            "role": "button",
+            "textContent": "Capture Snapshot"
+          },
+          {
+            "textContent": "Tab:"
+          },
+          {
+            "role": "button"
+          }
+        ],
+        "id": "stg-post-capture-connected-state",
+        "isInitial": false,
+        "name": "Post-Capture: Connected State",
+        "transitions": []
+      },
+      {
+        "description": "Verify the Test Specs tab UI structure and generate button",
+        "elements": [
+          {
+            "role": "button",
+            "textContent": "Generate Specs"
+          },
+          {
+            "role": "button",
+            "textContent": "Filter"
+          },
+          {
+            "role": "button",
+            "textContent": "Enable All"
+          },
+          {
+            "role": "button",
+            "textContent": "Disable All"
+          },
+          {
+            "textContent": "No test specifications yet"
+          }
+        ],
+        "id": "stg-test-specs-tab",
+        "isInitial": false,
+        "name": "Test Specs Tab",
+        "transitions": []
+      },
+      {
+        "description": "After clicking Generate Specs, verify spec groups are created with proper structure",
+        "elements": [
+          {
+            "textContent": "Element Presence"
+          },
+          {
+            "textContent": "State Consistency"
+          },
+          {
+            "textContent": "specs.*assertions enabled"
+          }
+        ],
+        "id": "stg-post-generate-specs",
+        "isInitial": false,
+        "name": "Post-Generate: Spec Groups",
+        "transitions": []
+      },
+      {
+        "description": "Verify the Output tab shows export and copy functionality",
+        "elements": [
+          {
+            "role": "button",
+            "textContent": "Export JSON"
+          },
+          {
+            "role": "button",
+            "textContent": "Copy"
+          },
+          {
+            "textContent": "Generate test specifications to see output"
+          },
+          {
+            "textContent": "\"version\": \"1.0.0\""
+          },
+          {
+            "textContent": "groups.*assertions"
+          }
+        ],
+        "id": "stg-output-tab",
+        "isInitial": false,
+        "name": "Output Tab",
+        "transitions": []
+      },
+      {
+        "description": "Verify the Compare to Previous feature works after a second snapshot capture",
+        "elements": [
+          {
+            "role": "button",
+            "textContent": "Compare to Previous"
+          }
+        ],
+        "id": "stg-snapshot-comparison",
+        "isInitial": false,
+        "name": "Snapshot Comparison",
+        "transitions": []
+      },
+      {
+        "description": "Verify the Annotations tab shows coverage dashboard and editing UI",
+        "elements": [
+          {
+            "textContent": "% annotated"
+          }
+        ],
+        "id": "stg-annotation-editor",
+        "isInitial": false,
+        "name": "Annotation Editor",
+        "transitions": []
+      }
+    ]
+  },
+  "version": "1.0.0"
+}

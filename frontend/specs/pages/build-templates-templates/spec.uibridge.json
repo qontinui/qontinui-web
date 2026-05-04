@@ -1,0 +1,201 @@
+{
+  "description": "Step Builders page — navigation hub for specialized workflow step editors",
+  "groups": [
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Page Structure",
+          "enabled": true,
+          "id": "tmpl-page-structure-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "heading",
+              "textContent": "Step Builders"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Page Structure",
+          "enabled": true,
+          "id": "tmpl-page-structure-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "link",
+              "textContent": "Tests"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Core structural elements that must be present on the Step Builders page for it to be functional.",
+      "id": "tmpl-page-structure",
+      "name": "Page Structure",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Card State",
+          "enabled": true,
+          "id": "tmpl-card-state-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "link",
+              "textContent": "Tests"
+            },
+            "label": "Required element for Card State",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Card State",
+          "enabled": true,
+          "id": "tmpl-card-state-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "link",
+              "textContent": "Checks"
+            },
+            "label": "Required element for Card State",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Builder cards should be interactive links with descriptive content so users know what each builder does.",
+      "id": "tmpl-card-state",
+      "name": "Card State",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Page Purpose",
+          "enabled": true,
+          "id": "tmpl-page-purpose-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Step Builders"
+            },
+            "label": "Required element for Page Purpose",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Page Purpose",
+          "enabled": true,
+          "id": "tmpl-page-purpose-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Tests"
+            },
+            "label": "Required element for Page Purpose",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "The Step Builders page is a navigation hub that provides quick access to specialized editors for building individual workflow steps. Each builder card represents a different step type (Tests, Checks, Playwright Tests, Shell Commands, Contexts, Tasks) and links to its dedicated editor.",
+      "id": "tmpl-page-purpose",
+      "name": "Page Purpose",
+      "source": "migrated"
+    }
+  ],
+  "metadata": {
+    "component": "build-templates-templates",
+    "tags": [
+      "step-builders",
+      "navigation",
+      "hub",
+      "tier-2"
+    ]
+  },
+  "stateMachine": {
+    "states": [
+      {
+        "description": "Core structural elements that must be present on the Step Builders page for it to be functional.",
+        "elements": [
+          {
+            "role": "heading",
+            "textContent": "Step Builders"
+          },
+          {
+            "role": "link",
+            "textContent": "Tests"
+          }
+        ],
+        "id": "tmpl-page-structure",
+        "isInitial": false,
+        "name": "Page Structure",
+        "transitions": []
+      },
+      {
+        "description": "Builder cards should be interactive links with descriptive content so users know what each builder does.",
+        "elements": [
+          {
+            "role": "link",
+            "textContent": "Tests"
+          },
+          {
+            "role": "link",
+            "textContent": "Checks"
+          }
+        ],
+        "id": "tmpl-card-state",
+        "isInitial": false,
+        "name": "Card State",
+        "transitions": []
+      },
+      {
+        "description": "The Step Builders page is a navigation hub that provides quick access to specialized editors for building individual workflow steps. Each builder card represents a different step type (Tests, Checks, Playwright Tests, Shell Commands, Contexts, Tasks) and links to its dedicated editor.",
+        "elements": [
+          {
+            "textContent": "Step Builders"
+          },
+          {
+            "textContent": "Tests"
+          }
+        ],
+        "id": "tmpl-page-purpose",
+        "isInitial": false,
+        "name": "Page Purpose",
+        "transitions": []
+      }
+    ]
+  },
+  "version": "1.0.0"
+}

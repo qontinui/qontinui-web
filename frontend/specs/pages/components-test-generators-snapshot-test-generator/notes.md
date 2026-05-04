@@ -1,0 +1,3 @@
+# SnapshotTestGenerator
+
+_(notes)_

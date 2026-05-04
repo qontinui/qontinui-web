@@ -1,0 +1,77 @@
+{
+  "version": "1.0",
+  "id": "runners-runners",
+  "name": "Runners",
+  "states": [
+    {
+      "id": "runners-page-structure",
+      "name": "Page Structure",
+      "requiredElements": [
+        {
+          "role": "heading",
+          "text": "Runners"
+        },
+        {
+          "role": "tab",
+          "text": "Active Connections"
+        },
+        {
+          "role": "tab",
+          "text": "Connection History"
+        }
+      ],
+      "description": "Core structural elements required for the Runners page: heading and tab navigation for Active Connections and Connection History.",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "runners-tab-state",
+      "name": "Tab State",
+      "requiredElements": [
+        {
+          "role": "tab",
+          "text": "Active Connections"
+        },
+        {
+          "role": "tab",
+          "text": "Connection History"
+        }
+      ],
+      "description": "The tab navigation should default to showing Active Connections as the primary view on page load.",
+      "precondition": "Page has just loaded with no tab query parameter",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "runners-page-purpose",
+      "name": "Page Purpose",
+      "requiredElements": [
+        {
+          "text": "Active Connections"
+        },
+        {
+          "text": "Connection History"
+        }
+      ],
+      "description": "The Runners page lets users monitor desktop runner connections and view connection history. It shows which runners are currently active with real-time status indicators, and provides a searchable history of all past connections.",
+      "provenance": {
+        "source": "migrated"
+      }
+    }
+  ],
+  "transitions": [],
+  "provenance": {
+    "source": "migrated"
+  },
+  "description": "Runners page — desktop runner connection management and monitoring",
+  "metadata": {
+    "tags": [
+      "runners",
+      "connection-management",
+      "monitoring",
+      "tier-2"
+    ]
+  }
+}

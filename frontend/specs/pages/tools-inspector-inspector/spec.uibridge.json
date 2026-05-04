@@ -1,0 +1,596 @@
+{
+  "description": "Inspector page — verifies page structure, SDK connection panel, inspector tabs, element discovery, and semantic page overview for inspecting connected applications",
+  "groups": [
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Page Structure",
+          "enabled": true,
+          "id": "insp-page-structure-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "heading",
+              "textContent": "Inspector"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Page Structure",
+          "enabled": true,
+          "id": "insp-page-structure-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Runner Connected"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Verify the Inspector page renders its core layout elements",
+      "id": "insp-page-structure",
+      "name": "Page Structure",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state SDK Connection Panel",
+          "enabled": true,
+          "id": "insp-connection-panel-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "combobox"
+            },
+            "label": "Required element for SDK Connection Panel",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state SDK Connection Panel",
+          "enabled": true,
+          "id": "insp-connection-panel-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Disconnect"
+            },
+            "label": "Required element for SDK Connection Panel",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state SDK Connection Panel",
+          "enabled": true,
+          "id": "insp-connection-panel-elem-2",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Connect New App"
+            },
+            "label": "Required element for SDK Connection Panel",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state SDK Connection Panel",
+          "enabled": true,
+          "id": "insp-connection-panel-elem-3",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Discover Elements"
+            },
+            "label": "Required element for SDK Connection Panel",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Verify the unified SDK connection panel with app selector, connect/disconnect, and element discovery",
+      "id": "insp-connection-panel",
+      "name": "SDK Connection Panel",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Inspector Tabs",
+          "enabled": true,
+          "id": "insp-inspector-tabs-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Elements"
+            },
+            "label": "Required element for Inspector Tabs",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Inspector Tabs",
+          "enabled": true,
+          "id": "insp-inspector-tabs-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Actions"
+            },
+            "label": "Required element for Inspector Tabs",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Inspector Tabs",
+          "enabled": true,
+          "id": "insp-inspector-tabs-elem-2",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Accessibility"
+            },
+            "label": "Required element for Inspector Tabs",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state Inspector Tabs",
+          "enabled": true,
+          "id": "insp-inspector-tabs-elem-3",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Search"
+            },
+            "label": "Required element for Inspector Tabs",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 4 for state Inspector Tabs",
+          "enabled": true,
+          "id": "insp-inspector-tabs-elem-4",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Specs"
+            },
+            "label": "Required element for Inspector Tabs",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 5 for state Inspector Tabs",
+          "enabled": true,
+          "id": "insp-inspector-tabs-elem-5",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "API"
+            },
+            "label": "Required element for Inspector Tabs",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Verify all six inspector tab buttons are present for navigating between inspection modes",
+      "id": "insp-inspector-tabs",
+      "name": "Inspector Tabs",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Page Purpose",
+          "enabled": true,
+          "id": "insp-page-purpose-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Connected Apps"
+            },
+            "label": "Required element for Page Purpose",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Page Purpose",
+          "enabled": true,
+          "id": "insp-page-purpose-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Discover Elements"
+            },
+            "label": "Required element for Page Purpose",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Page Purpose",
+          "enabled": true,
+          "id": "insp-page-purpose-elem-2",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Element Details"
+            },
+            "label": "Required element for Page Purpose",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state Page Purpose",
+          "enabled": true,
+          "id": "insp-page-purpose-elem-3",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Page Specs"
+            },
+            "label": "Required element for Page Purpose",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "The Inspector page allows developers to connect to any UI Bridge SDK-enabled application, discover its UI elements, inspect their properties, execute actions, view accessibility info, and discover page-level semantic specs. It serves as a universal debugging and testing tool for the qontinui platform.",
+      "id": "insp-page-purpose",
+      "name": "Page Purpose",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Element Details",
+          "enabled": true,
+          "id": "insp-element-details-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "heading",
+              "textContent": "Element Details"
+            },
+            "label": "Required element for Element Details",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Element Details",
+          "enabled": true,
+          "id": "insp-element-details-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Click on an element to view its details"
+            },
+            "label": "Required element for Element Details",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Verify the element detail panel displays correctly when elements are discovered",
+      "id": "insp-element-details",
+      "name": "Element Details",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Empty States",
+          "enabled": true,
+          "id": "insp-empty-states-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "No Elements Loaded"
+            },
+            "label": "Required element for Empty States",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Verify empty state before element discovery",
+      "id": "insp-empty-states",
+      "name": "Empty States",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Accessibility",
+          "enabled": true,
+          "id": "insp-accessibility-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Discover Elements"
+            },
+            "label": "Required element for Accessibility",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Accessibility",
+          "enabled": true,
+          "id": "insp-accessibility-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Disconnect"
+            },
+            "label": "Required element for Accessibility",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Verify ARIA and keyboard accessibility of key interactive elements",
+      "id": "insp-accessibility",
+      "name": "Accessibility",
+      "source": "migrated"
+    }
+  ],
+  "metadata": {
+    "component": "tools-inspector-inspector",
+    "tags": [
+      "inspector",
+      "ui-bridge",
+      "sdk",
+      "accessibility",
+      "element-discovery",
+      "page-specs",
+      "tier-1"
+    ]
+  },
+  "stateMachine": {
+    "states": [
+      {
+        "description": "Verify the Inspector page renders its core layout elements",
+        "elements": [
+          {
+            "role": "heading",
+            "textContent": "Inspector"
+          },
+          {
+            "textContent": "Runner Connected"
+          }
+        ],
+        "id": "insp-page-structure",
+        "isInitial": false,
+        "name": "Page Structure",
+        "transitions": []
+      },
+      {
+        "description": "Verify the unified SDK connection panel with app selector, connect/disconnect, and element discovery",
+        "elements": [
+          {
+            "role": "combobox"
+          },
+          {
+            "role": "button",
+            "textContent": "Disconnect"
+          },
+          {
+            "role": "button",
+            "textContent": "Connect New App"
+          },
+          {
+            "role": "button",
+            "textContent": "Discover Elements"
+          }
+        ],
+        "id": "insp-connection-panel",
+        "isInitial": false,
+        "name": "SDK Connection Panel",
+        "transitions": []
+      },
+      {
+        "description": "Verify all six inspector tab buttons are present for navigating between inspection modes",
+        "elements": [
+          {
+            "role": "button",
+            "textContent": "Elements"
+          },
+          {
+            "role": "button",
+            "textContent": "Actions"
+          },
+          {
+            "role": "button",
+            "textContent": "Accessibility"
+          },
+          {
+            "role": "button",
+            "textContent": "Search"
+          },
+          {
+            "role": "button",
+            "textContent": "Specs"
+          },
+          {
+            "role": "button",
+            "textContent": "API"
+          }
+        ],
+        "id": "insp-inspector-tabs",
+        "isInitial": false,
+        "name": "Inspector Tabs",
+        "transitions": []
+      },
+      {
+        "description": "The Inspector page allows developers to connect to any UI Bridge SDK-enabled application, discover its UI elements, inspect their properties, execute actions, view accessibility info, and discover page-level semantic specs. It serves as a universal debugging and testing tool for the qontinui platform.",
+        "elements": [
+          {
+            "textContent": "Connected Apps"
+          },
+          {
+            "role": "button",
+            "textContent": "Discover Elements"
+          },
+          {
+            "textContent": "Element Details"
+          },
+          {
+            "textContent": "Page Specs"
+          }
+        ],
+        "id": "insp-page-purpose",
+        "isInitial": false,
+        "name": "Page Purpose",
+        "transitions": []
+      },
+      {
+        "description": "Verify the element detail panel displays correctly when elements are discovered",
+        "elements": [
+          {
+            "role": "heading",
+            "textContent": "Element Details"
+          },
+          {
+            "textContent": "Click on an element to view its details"
+          }
+        ],
+        "id": "insp-element-details",
+        "isInitial": false,
+        "name": "Element Details",
+        "transitions": []
+      },
+      {
+        "description": "Verify empty state before element discovery",
+        "elements": [
+          {
+            "textContent": "No Elements Loaded"
+          }
+        ],
+        "id": "insp-empty-states",
+        "isInitial": false,
+        "name": "Empty States",
+        "transitions": []
+      },
+      {
+        "description": "Verify ARIA and keyboard accessibility of key interactive elements",
+        "elements": [
+          {
+            "role": "button",
+            "textContent": "Discover Elements"
+          },
+          {
+            "role": "button",
+            "textContent": "Disconnect"
+          }
+        ],
+        "id": "insp-accessibility",
+        "isInitial": false,
+        "name": "Accessibility",
+        "transitions": []
+      }
+    ]
+  },
+  "version": "1.0.0"
+}

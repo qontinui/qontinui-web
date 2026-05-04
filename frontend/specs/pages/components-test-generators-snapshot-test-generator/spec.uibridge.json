@@ -1,0 +1,406 @@
+{
+  "description": "Snapshot Test Generator page — verifies the page structure, connection flow, and post-capture state",
+  "groups": [
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Page Structure",
+          "enabled": true,
+          "id": "stg-page-structure-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "heading",
+              "textContent": "Snapshot Test Generator"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Page Structure",
+          "enabled": true,
+          "id": "stg-page-structure-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "beta"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Page Structure",
+          "enabled": true,
+          "id": "stg-page-structure-elem-2",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Elements"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state Page Structure",
+          "enabled": true,
+          "id": "stg-page-structure-elem-3",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Annotations"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 4 for state Page Structure",
+          "enabled": true,
+          "id": "stg-page-structure-elem-4",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Test Specs"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 5 for state Page Structure",
+          "enabled": true,
+          "id": "stg-page-structure-elem-5",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Output"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Verify the Snapshot Test Generator page renders its core layout elements",
+      "id": "stg-page-structure",
+      "name": "Page Structure",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Capture Panel",
+          "enabled": true,
+          "id": "stg-capture-panel-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Connected|Disconnected"
+            },
+            "label": "Required element for Capture Panel",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Capture Panel",
+          "enabled": true,
+          "id": "stg-capture-panel-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Capture Snapshot"
+            },
+            "label": "Required element for Capture Panel",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Capture Panel",
+          "enabled": true,
+          "id": "stg-capture-panel-elem-2",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "localhost:9876"
+            },
+            "label": "Required element for Capture Panel",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Verify the capture panel shows connection status and the capture button",
+      "id": "stg-capture-panel",
+      "name": "Capture Panel",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Capture Button State",
+          "enabled": true,
+          "id": "stg-capture-button-state-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Capture Snapshot"
+            },
+            "label": "Required element for Capture Button State",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Verify the Capture Snapshot button is disabled when not connected",
+      "id": "stg-capture-button-state",
+      "name": "Capture Button State",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Accessibility",
+          "enabled": true,
+          "id": "stg-accessibility-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Elements"
+            },
+            "label": "Required element for Accessibility",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Accessibility",
+          "enabled": true,
+          "id": "stg-accessibility-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Capture Snapshot"
+            },
+            "label": "Required element for Accessibility",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Verify ARIA and keyboard accessibility for the Snapshot Test Generator",
+      "id": "stg-accessibility",
+      "name": "Accessibility",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Empty State",
+          "enabled": true,
+          "id": "stg-empty-state-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "No elements captured yet"
+            },
+            "label": "Required element for Empty State",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Empty State",
+          "enabled": true,
+          "id": "stg-empty-state-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Select an element to view details"
+            },
+            "label": "Required element for Empty State",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Verify the page shows appropriate empty state messages before a snapshot is captured",
+      "id": "stg-empty-state",
+      "name": "Empty State",
+      "source": "migrated"
+    }
+  ],
+  "metadata": {
+    "component": "components-test-generators-snapshot-test-generator",
+    "tags": [
+      "test-generator",
+      "snapshot",
+      "tier-1"
+    ]
+  },
+  "stateMachine": {
+    "states": [
+      {
+        "description": "Verify the Snapshot Test Generator page renders its core layout elements",
+        "elements": [
+          {
+            "role": "heading",
+            "textContent": "Snapshot Test Generator"
+          },
+          {
+            "textContent": "beta"
+          },
+          {
+            "role": "button",
+            "textContent": "Elements"
+          },
+          {
+            "role": "button",
+            "textContent": "Annotations"
+          },
+          {
+            "role": "button",
+            "textContent": "Test Specs"
+          },
+          {
+            "role": "button",
+            "textContent": "Output"
+          }
+        ],
+        "id": "stg-page-structure",
+        "isInitial": false,
+        "name": "Page Structure",
+        "transitions": []
+      },
+      {
+        "description": "Verify the capture panel shows connection status and the capture button",
+        "elements": [
+          {
+            "textContent": "Connected|Disconnected"
+          },
+          {
+            "role": "button",
+            "textContent": "Capture Snapshot"
+          },
+          {
+            "textContent": "localhost:9876"
+          }
+        ],
+        "id": "stg-capture-panel",
+        "isInitial": false,
+        "name": "Capture Panel",
+        "transitions": []
+      },
+      {
+        "description": "Verify the Capture Snapshot button is disabled when not connected",
+        "elements": [
+          {
+            "role": "button",
+            "textContent": "Capture Snapshot"
+          }
+        ],
+        "id": "stg-capture-button-state",
+        "isInitial": false,
+        "name": "Capture Button State",
+        "transitions": []
+      },
+      {
+        "description": "Verify ARIA and keyboard accessibility for the Snapshot Test Generator",
+        "elements": [
+          {
+            "role": "button",
+            "textContent": "Elements"
+          },
+          {
+            "role": "button",
+            "textContent": "Capture Snapshot"
+          }
+        ],
+        "id": "stg-accessibility",
+        "isInitial": false,
+        "name": "Accessibility",
+        "transitions": []
+      },
+      {
+        "description": "Verify the page shows appropriate empty state messages before a snapshot is captured",
+        "elements": [
+          {
+            "textContent": "No elements captured yet"
+          },
+          {
+            "textContent": "Select an element to view details"
+          }
+        ],
+        "id": "stg-empty-state",
+        "isInitial": false,
+        "name": "Empty State",
+        "transitions": []
+      }
+    ]
+  },
+  "version": "1.0.0"
+}

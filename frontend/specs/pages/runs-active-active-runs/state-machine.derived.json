@@ -1,0 +1,311 @@
+{
+  "version": "1.0",
+  "id": "runs-active-active-runs",
+  "name": "ActiveRuns",
+  "states": [
+    {
+      "id": "active-page-structure",
+      "name": "Page Structure",
+      "requiredElements": [
+        {
+          "role": "heading",
+          "text": "Active"
+        },
+        {
+          "role": "button",
+          "text": "Refresh"
+        },
+        {
+          "role": "button",
+          "text": "Dashboard"
+        }
+      ],
+      "description": "Core structural elements required for the Active Runs page: heading, control bar, tab bar, and content area.",
+      "precondition": "At least one workflow is currently running",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "active-tab-navigation",
+      "name": "Tab Navigation",
+      "requiredElements": [
+        {
+          "role": "button",
+          "text": "Dashboard"
+        },
+        {
+          "role": "button",
+          "text": "Timeline"
+        },
+        {
+          "role": "button",
+          "text": "AI Conversation"
+        },
+        {
+          "role": "button",
+          "text": "Commands"
+        },
+        {
+          "role": "button",
+          "text": "UI Bridge"
+        },
+        {
+          "role": "button",
+          "text": "Verification"
+        },
+        {
+          "role": "button",
+          "text": "Findings"
+        },
+        {
+          "role": "button",
+          "text": "Flow"
+        },
+        {
+          "role": "button",
+          "text": "Status"
+        }
+      ],
+      "description": "The tab bar provides navigation between 9 views: Dashboard, Timeline, AI Conversation, Commands, UI Bridge, Verification, Findings, Flow, and Status.",
+      "precondition": "At least one workflow is currently running",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "active-empty-state",
+      "name": "Empty State",
+      "requiredElements": [
+        {
+          "text": "No active"
+        },
+        {
+          "role": "button",
+          "text": "Refresh"
+        },
+        {
+          "role": "button",
+          "text": "Dashboard"
+        }
+      ],
+      "description": "When no workflows are currently running, the page should display an informative empty state message and the refresh button should remain functional.",
+      "precondition": "No workflows are currently running on any connected runner",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "active-dashboard-layout",
+      "name": "Dashboard Layout",
+      "requiredElements": [
+        {
+          "text": "Timeline"
+        },
+        {}
+      ],
+      "description": "When the Dashboard tab is active, the page shows a split layout with a primary widget on the left and summary cards on the right sidebar.",
+      "precondition": "At least one workflow is currently running and Dashboard tab is active",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "active-summary-cards",
+      "name": "Summary Cards",
+      "requiredElements": [
+        {},
+        {}
+      ],
+      "description": "The right sidebar displays clickable summary cards for detected execution widgets, each showing abbreviated status data.",
+      "precondition": "At least one workflow is currently running and Dashboard tab is active",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "active-timeline-widget",
+      "name": "Timeline Widget",
+      "requiredElements": [
+        {
+          "text": "steps"
+        },
+        {
+          "text": "Waiting for steps"
+        }
+      ],
+      "description": "The Timeline widget shows step execution progress with step counts, progress bar, stage information, and current running step.",
+      "precondition": "At least one workflow is currently running with steps",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "active-ai-conversation-widget",
+      "name": "AI Conversation Widget",
+      "requiredElements": [
+        {
+          "text": "session"
+        },
+        {
+          "text": "msg"
+        },
+        {
+          "text": "No AI messages yet"
+        }
+      ],
+      "description": "The AI Conversation widget displays session count, message count, user message count, a 'thinking' indicator, and a last-line preview of AI output.",
+      "precondition": "At least one workflow is running with AI conversation active",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "active-verification-widget",
+      "name": "Verification Widget",
+      "requiredElements": [
+        {
+          "text": "passed"
+        },
+        {
+          "text": "No verification results yet"
+        }
+      ],
+      "description": "The Verification widget shows passed/failed verification counts and a progress bar indicating the pass rate.",
+      "precondition": "A workflow has completed at least one verification phase",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "active-findings-widget",
+      "name": "Findings Widget",
+      "requiredElements": [
+        {},
+        {
+          "text": "No issues found"
+        }
+      ],
+      "description": "The Findings widget shows total findings count, severity breakdown (critical, high), and uses data-content-label='findings-count' for the count metric.",
+      "precondition": "A workflow has detected at least one finding",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "active-command-widget",
+      "name": "Command Widget",
+      "requiredElements": [
+        {
+          "text": "command"
+        },
+        {
+          "text": "No commands yet"
+        }
+      ],
+      "description": "The Command widget shows total commands executed, failure count, and type breakdown (SH for shell, CHK for checks, TST for tests).",
+      "precondition": "A workflow has executed at least one command step",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "active-ui-bridge-widget",
+      "name": "UI Bridge Widget",
+      "requiredElements": [
+        {
+          "text": "action"
+        },
+        {
+          "text": "No UI Bridge actions yet"
+        }
+      ],
+      "description": "The UI Bridge widget shows total UI Bridge actions, assertion pass counts, and the latest action name.",
+      "precondition": "A workflow has executed at least one UI Bridge action",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "active-run-progress",
+      "name": "Run Progress Indicators",
+      "requiredElements": [
+        {
+          "text": "running"
+        },
+        {}
+      ],
+      "description": "When a workflow is running, the page displays status badges, phase information, and iteration count to indicate execution progress.",
+      "precondition": "At least one workflow is currently running",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "active-multi-run-selector",
+      "name": "Multi-Run Selector",
+      "requiredElements": [
+        {},
+        {
+          "role": "button",
+          "text": "Dashboard"
+        }
+      ],
+      "description": "When multiple workflows are running simultaneously, a horizontal run selector bar appears allowing users to switch between runs with clicks or keyboard shortcuts.",
+      "precondition": "Two or more workflows are running simultaneously",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "active-real-time-updates",
+      "name": "Real-Time Updates",
+      "requiredElements": [
+        {
+          "text": "Active"
+        },
+        {
+          "text": "Active"
+        }
+      ],
+      "description": "The page uses event-driven updates via RunnerEventContext and fallback polling. Widgets update on events like task-run-update, orchestrator-state-change, ai-output, step-progress, finding_detected, and finding_resolved.",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "active-page-purpose",
+      "name": "Page Purpose",
+      "requiredElements": [
+        {
+          "text": "Active"
+        },
+        {
+          "text": "Active"
+        },
+        {
+          "text": "Active"
+        }
+      ],
+      "description": "The Active Runs page is the real-time monitoring hub for running workflows. It provides a unified dashboard with tabbed widget views, multi-run support, keyboard navigation, and event-driven updates to track AI conversations, verification results, command execution, findings, and execution timeline.",
+      "provenance": {
+        "source": "migrated"
+      }
+    }
+  ],
+  "transitions": [],
+  "provenance": {
+    "source": "migrated"
+  },
+  "description": "Active Runs page — real-time monitoring dashboard for currently executing workflows with multi-run support, tabbed widget views, and event-driven updates",
+  "metadata": {
+    "tags": [
+      "active-runs",
+      "monitoring",
+      "real-time",
+      "dashboard",
+      "multi-run",
+      "tier-1"
+    ]
+  }
+}

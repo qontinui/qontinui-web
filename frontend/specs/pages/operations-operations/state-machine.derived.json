@@ -1,0 +1,30 @@
+{
+  "version": "1.0",
+  "id": "operations-operations",
+  "name": "operations-operations",
+  "states": [
+    {
+      "id": "operations-machine-status-tile",
+      "name": "Machine status tile",
+      "requiredElements": [
+        {},
+        {
+          "role": "heading",
+          "text": "Machine status"
+        },
+        {},
+        {},
+        {}
+      ],
+      "description": "Voluntary 'what is each machine doing right now' broadcast surfaced from GET /coord/status (proxied via /coord-api/status) and live-updated through coord's WebSocket on the events.coord.machine_status_updated channel. The tile self-contains its WS subscription, debounced refetch, and 30s polling fallback — it does not depend on the parent FleetOverview's polling loop.",
+      "provenance": {
+        "source": "migrated"
+      }
+    }
+  ],
+  "transitions": [],
+  "provenance": {
+    "source": "migrated"
+  },
+  "description": "Operations page — cross-machine fleet view. Currently scoped to the Machine status tile (qontinui-coord Phase 6 Item 3 surface). The fleet/runners panels above predate spec coverage and are not asserted here."
+}
