@@ -9,13 +9,6 @@ name: alembic graph check
 # the time it runs, the merge has already happened. Its purpose is to
 # turn "silent fork lying around in the chain for weeks" into
 # "loud notification right at merge time."
-#
-# A separate gate (run on pull_request, blocking) lives next to this
-# in alembic-claim-check.yml — that one rejects PRs whose new revision's
-# down_revision doesn't match what the contributor claimed via the
-# coord service. Together they defend the alembic graph against
-# accidental forks (this workflow) and intentional but uncoordinated
-# forks (the claim-check workflow).
 
 on:
   push:
