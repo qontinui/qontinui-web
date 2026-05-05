@@ -111,6 +111,11 @@ async function globalSetup(_config: FullConfig) {
       stdio: "pipe",
       env: {
         ...process.env,
+        // run_seed.py imports from `tests.utils.*`. `app.*` resolves
+        // because Poetry installs the `app` package, but `tests` is not
+        // a package — set PYTHONPATH so the script's directory layout
+        // resolves at module level.
+        PYTHONPATH: backendDir,
         TESTING: "1",
         ENVIRONMENT: "development",
         DATABASE_URL:
