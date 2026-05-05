@@ -171,10 +171,12 @@ jobs:
       # backend/tests/conftest.py uses Base.metadata.create_all (NOT
       # alembic) to bootstrap the test DB, so SQLAlchemy will try to
       # create tables in named schemas without first ensuring the
-      # schemas exist. Models reference `project` and `auth` schemas;
-      # the postgres:16 service container doesn't run our
-      # init-scripts/, so create them explicitly here. Without this,
-      # create_all fails with:
+      # schemas exist. Models reference `project`, `auth`, and `cloud`
+      # schemas (the last via the qontinui-cloud-control sibling repo
+      # whose models are side-effect-imported in conftest.py); the
+      # postgres:16 service container doesn't run our init-scripts/,
+      # so create them explicitly here. Without this, create_all fails
+      # with:
       #   asyncpg.exceptions.InvalidSchemaNameError: schema "project"
       #   does not exist
       - name: Create test schemas
@@ -184,7 +186,8 @@ jobs:
           sudo apt-get update && sudo apt-get install -y postgresql-client
           psql -h localhost -U qontinui_user -d qontinui_test \
             -c "CREATE SCHEMA IF NOT EXISTS project;" \
-            -c "CREATE SCHEMA IF NOT EXISTS auth;"
+            -c "CREATE SCHEMA IF NOT EXISTS auth;" \
+            -c "CREATE SCHEMA IF NOT EXISTS cloud;"
 
       - name: Run tests with coverage
         env:
