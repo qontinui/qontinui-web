@@ -234,25 +234,19 @@ class FrameExtractionService:
                 frame_number=row.frame_number, timestamp_ms=row.timestamp_ms
             )
 
-        raise FrameExtractionError(
-            f"No FrameIndex entries for session {session_id}"
-        )
+        raise FrameExtractionError(f"No FrameIndex entries for session {session_id}")
 
     # ------------------------------------------------------------------
     # cv2 blocking primitives (run via run_in_executor)
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _extract_one_blocking(
-        video_path: Path, frame_number: int
-    ) -> bytes | None:
+    def _extract_one_blocking(video_path: Path, frame_number: int) -> bytes | None:
         """Open + seek + read + encode a single frame. Blocking."""
         cap = cv2.VideoCapture(str(video_path))
         try:
             if not cap.isOpened():
-                logger.error(
-                    "video_capture_open_failed", path=str(video_path)
-                )
+                logger.error("video_capture_open_failed", path=str(video_path))
                 return None
             return _seek_decode_encode(cap, frame_number)
         finally:
@@ -271,9 +265,7 @@ class FrameExtractionService:
         results: list[bytes | None] = []
         try:
             if not cap.isOpened():
-                logger.error(
-                    "video_capture_open_failed", path=str(video_path)
-                )
+                logger.error("video_capture_open_failed", path=str(video_path))
                 return [None] * len(frame_numbers)
 
             for frame_number in frame_numbers:

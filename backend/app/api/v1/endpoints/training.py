@@ -292,9 +292,7 @@ async def start_training_job(
     # explicitly set config.dataset_id (older clients). The worker also
     # accepts the legacy "training_dataset_id" alias.
     config_dict = dict(job.config or {})
-    if not config_dict.get("dataset_id") and not config_dict.get(
-        "training_dataset_id"
-    ):
+    if not config_dict.get("dataset_id") and not config_dict.get("training_dataset_id"):
         if job.annotation_set_id is not None:
             config_dict["dataset_id"] = str(job.annotation_set_id)
             job.config = config_dict  # type: ignore[assignment]

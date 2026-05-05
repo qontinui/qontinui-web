@@ -66,18 +66,14 @@ class VideoFileReader:
         if backend == "local":
             path = Path(key)
             if not path.exists():
-                raise VideoFileNotFoundError(
-                    f"Local video file not found: {path}"
-                )
+                raise VideoFileNotFoundError(f"Local video file not found: {path}")
             return path
 
         # S3 / object storage — download to tempfile
         return await self._download_to_temp(key)
 
     @asynccontextmanager
-    async def open(
-        self, session: VideoCaptureSession
-    ) -> AsyncIterator[Path]:
+    async def open(self, session: VideoCaptureSession) -> AsyncIterator[Path]:
         """Yield a local Path for the session's video, cleaning up if needed.
 
         Local sessions yield the original file (no cleanup).
@@ -151,9 +147,7 @@ class VideoFileReader:
         suffix = Path(key).suffix or ".mp4"
 
         loop = asyncio.get_event_loop()
-        data: bytes = await loop.run_in_executor(
-            None, self._storage.download_file, key
-        )
+        data: bytes = await loop.run_in_executor(None, self._storage.download_file, key)
 
         # delete=False so the file persists after close(); caller (or the
         # `open` context manager) is responsible for unlinking.
