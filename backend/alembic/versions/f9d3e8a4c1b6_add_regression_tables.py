@@ -19,7 +19,7 @@ Indexes mirror the runner's bootstrap. The migration uses
 `IF NOT EXISTS` semantics (via `CREATE TABLE` checks before each table)
 because the runner may have already created them on a shared dev DB.
 
-Revision ID: a3b4c5d6e7f8
+Revision ID: f9d3e8a4c1b6
 Revises: z2a3b4c5d6e7
 Create Date: 2026-05-03
 
@@ -30,7 +30,7 @@ from collections.abc import Sequence
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "a3b4c5d6e7f8"
+revision: str = "f9d3e8a4c1b6"
 down_revision: str | None = "z2a3b4c5d6e7"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
