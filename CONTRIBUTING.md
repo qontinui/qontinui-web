@@ -43,7 +43,7 @@ When you submit code changes, your submissions are understood to be under the sa
 
 ## Report Bugs Using GitHub's Issues
 
-We use GitHub issues to track public bugs. Report a bug by [opening a new issue](https://github.com/jspinak/qontinui-web/issues).
+We use GitHub issues to track public bugs. Report a bug by [opening a new issue](https://github.com/qontinui/qontinui-web/issues).
 
 ## Write Bug Reports with Detail, Background, and Sample Code
 

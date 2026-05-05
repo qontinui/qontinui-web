@@ -5,11 +5,9 @@ import os
 
 from sqlalchemy import create_engine, text
 
-# Get DB URL from environment or use default
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://qontinui_admin:YOUR_DB_PASSWORD@qontinui-db.c16uiu02ugak.eu-central-1.rds.amazonaws.com:5432/postgres?sslmode=require",
-)
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise SystemExit("Set DATABASE_URL before running this script.")
 
 print("Connecting to database...")
 engine = create_engine(DATABASE_URL, connect_args={"connect_timeout": 10})

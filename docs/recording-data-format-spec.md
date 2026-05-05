@@ -783,5 +783,5 @@ Content-Type: multipart/form-data
 ## 12. Contact & Support
 
 For questions about this specification or recording format issues:
-- GitHub Issues: [qontinui-web/issues](https://github.com/jspinak/qontinui-web/issues)
-- Documentation: [qontinui-web/docs](https://github.com/jspinak/qontinui-web/tree/main/docs)
+- GitHub Issues: [qontinui-web/issues](https://github.com/qontinui/qontinui-web/issues)
+- Documentation: [qontinui-web/docs](https://github.com/qontinui/qontinui-web/tree/main/docs)

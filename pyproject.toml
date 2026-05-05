@@ -3,6 +3,7 @@ name = "qontinui-web"
 version = "0.1.0"
 description = "Web interface for Qontinui GUI automation platform"
 authors = ["Joshua Spinak <jspinak@hotmail.com>"]
+license = "AGPL-3.0-or-later"
 readme = "README.md"
 package-mode = false
 

@@ -12,6 +12,10 @@ venv/
 .env.staging
 *.sqlite3
 *.db
+
+# pg_dump output — never commit; rotate any leaked content via filter-repo
+database_backup.sql
+*.dump
 .coverage
 htmlcov/
 .pytest_cache/

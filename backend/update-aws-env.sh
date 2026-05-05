@@ -10,6 +10,11 @@ REGION="eu-central-1"
 echo "Updating Elastic Beanstalk environment: $ENVIRONMENT_NAME"
 echo ""
 
+if [ -z "${DATABASE_URL:-}" ]; then
+    echo "ERROR: Set DATABASE_URL before running (e.g. export DATABASE_URL='postgresql://...')." >&2
+    exit 1
+fi
+
 # Get the Vercel frontend URL
 read -p "Enter your Vercel frontend URL (default: https://qontinui.io): " VERCEL_URL
 VERCEL_URL=${VERCEL_URL:-https://qontinui.io}
@@ -31,7 +36,7 @@ aws elasticbeanstalk update-environment \
     --environment-name "$ENVIRONMENT_NAME" \
     --region "$REGION" \
     --option-settings \
-      Namespace=aws:elasticbeanstalk:application:environment,OptionName=DATABASE_URL,Value="postgresql://qontinui_admin:YOUR_DB_PASSWORD@qontinui-db.c16uiu02ugak.eu-central-1.rds.amazonaws.com:5432/postgres?sslmode=require" \
+      Namespace=aws:elasticbeanstalk:application:environment,OptionName=DATABASE_URL,Value="$DATABASE_URL" \
       Namespace=aws:elasticbeanstalk:application:environment,OptionName=SECRET_KEY,Value="YOUR_SECRET_KEY_HERE" \
       Namespace=aws:elasticbeanstalk:application:environment,OptionName=ACCESS_SECRET_KEY,Value="$ACCESS_SECRET" \
       Namespace=aws:elasticbeanstalk:application:environment,OptionName=REFRESH_SECRET_KEY,Value="$REFRESH_SECRET" \

@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Script to make a user an admin."""
 
+import os
 import sys
 
 from sqlalchemy import create_engine, text
 
-DATABASE_URL = "postgresql://qontinui_admin:YOUR_DB_PASSWORD@qontinui-db.c16uiu02ugak.eu-central-1.rds.amazonaws.com:5432/postgres?sslmode=require"
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise SystemExit("Set DATABASE_URL before running this script.")
 
 
 def main():

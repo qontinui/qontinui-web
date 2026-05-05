@@ -10,10 +10,13 @@ This script:
 6. Creates missing tables with UUID foreign keys
 """
 
+import os
+
 from sqlalchemy import create_engine, text
 
-# Production database URL
-DATABASE_URL = "postgresql://qontinui_admin:SimplePass12345@qontinui-db.c16uiu02ugak.eu-central-1.rds.amazonaws.com:5432/postgres?sslmode=require"
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise SystemExit("Set DATABASE_URL before running this migration script.")
 
 engine = create_engine(DATABASE_URL)
 

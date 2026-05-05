@@ -46,7 +46,7 @@ This document provides step-by-step procedures for managing PostgreSQL table par
 psql $DATABASE_URL
 
 # Or via SSH tunnel
-ssh -L 5433:qontinui-db.c16uiu02ugak.eu-central-1.rds.amazonaws.com:5432 ec2-user@<bastion-host>
+ssh -L 5433:<rds-endpoint>:5432 ec2-user@<bastion-host>
 psql -h localhost -p 5433 -U qontinui_admin -d qontinui_prod
 ```
 
