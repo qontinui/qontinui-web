@@ -1,12 +1,7 @@
 name: Deploy Backend to Production
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'backend/**'
-      - '.github/workflows/backend-deploy-production.yml'
-  workflow_dispatch:  # Manual trigger
+  workflow_dispatch:  # Manual trigger only — prod deploys are deliberate, not push-driven
 
 env:
   AWS_REGION: eu-central-1
@@ -25,6 +20,20 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      # backend/pyproject.toml declares path-deps on sibling repos:
+      #   qontinui-schemas = {path = "../../qontinui-schemas", develop = true}
+      #   qontinui         = {path = "../../qontinui",         develop = true, extras = ["embeddings"]}
+      # With working-directory: ./backend, those resolve to $GITHUB_WORKSPACE/..
+      # i.e. one level above the qontinui-web checkout. Same shape used by
+      # qontinui-runner/.github/workflows/ci.yml. Both repos are public, so
+      # no token is required.
+      - name: Checkout sibling repos
+        working-directory: ${{ github.workspace }}/..
+        run: |
+          git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
+          git clone --depth 1 https://github.com/qontinui/qontinui.git
+        shell: bash
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
