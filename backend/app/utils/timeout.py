@@ -1,12 +1,11 @@
 """
 Timeout utilities for code execution.
 
-Provides cross-platform timeout handling for sandboxed execution.
-Extracted from code_execution_service.py for SRP compliance.
+Provides cross-platform, cross-thread timeout handling for sandboxed
+execution. Extracted from code_execution_service.py for SRP compliance.
 """
 
-import signal
-import sys
+import ctypes
 import threading
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -15,10 +14,38 @@ from contextlib import contextmanager
 class ExecutionTimeoutError(Exception):
     """Raised when code execution exceeds timeout."""
 
-    def __init__(self, seconds: int, message: str | None = None):
+    def __init__(self, seconds: int = 0, message: str | None = None):
         self.seconds = seconds
         self.message = message or f"Code execution exceeded {seconds} second timeout"
         super().__init__(self.message)
+
+
+def _async_raise_in_thread(thread_id: int, exc_type: type[BaseException]) -> None:
+    """Inject an exception into a target thread via the CPython C API.
+
+    Used so we can interrupt code running in any thread — including
+    Starlette's ``run_in_threadpool`` (where ``signal.SIGALRM`` raises
+    ``ValueError: signal only works in main thread of the main interpreter``).
+
+    Caveats:
+    - The exception fires at the next Python bytecode boundary, so pure
+      Python loops are interrupted promptly.
+    - Standard-library blocking calls that release the GIL (``time.sleep``,
+      socket I/O, etc.) check for pending async exceptions on return, so
+      they are interruptible.
+    - C extensions that hold the GIL persistently won't be interrupted
+      until they yield control. In practice the sandboxed user code can't
+      reach such extensions: ``CodeValidator`` enforces an import whitelist
+      and ``safe_globals`` strips ``__builtins__`` to a vetted subset.
+    """
+    res = ctypes.pythonapi.PyThreadState_SetAsyncExc(
+        ctypes.c_ulong(thread_id),
+        ctypes.py_object(exc_type),
+    )
+    if res > 1:
+        ctypes.pythonapi.PyThreadState_SetAsyncExc(
+            ctypes.c_ulong(thread_id), ctypes.c_long(0)
+        )
 
 
 @contextmanager
@@ -26,8 +53,11 @@ def time_limit(seconds: int) -> Generator[None, None, None]:
     """
     Context manager to enforce execution timeout.
 
-    Uses signal.alarm on Unix-like systems for reliable interruption.
-    Uses threading.Timer on Windows as a fallback (less reliable).
+    Uses ``threading.Timer`` + ``PyThreadState_SetAsyncExc`` so the
+    timeout works in any thread, including the threadpool that
+    Starlette/FastAPI uses for sync handlers under ``TestClient``. The
+    previous ``signal.SIGALRM`` implementation only worked on the main
+    thread and raised ``ValueError`` everywhere else.
 
     Args:
         seconds: Maximum execution time in seconds
@@ -39,55 +69,35 @@ def time_limit(seconds: int) -> Generator[None, None, None]:
         with time_limit(10):
             long_running_operation()
     """
-    if sys.platform != "win32":
-        # Unix: Use signal.alarm for reliable timeout
-        yield from _unix_time_limit(seconds)
-    else:
-        # Windows: Use threading-based timeout (less reliable but works)
-        yield from _windows_time_limit(seconds)
+    target_thread_id = threading.get_ident()
+    state_lock = threading.Lock()
+    finished = False
 
+    def fire() -> None:
+        # Hold the lock while injecting so we don't race with the
+        # ``finally`` block clearing ``finished``: either the body
+        # finished first (and we no-op) or the timer wins (and the
+        # async exception fires at the next bytecode in the body).
+        with state_lock:
+            if finished:
+                return
+            _async_raise_in_thread(target_thread_id, ExecutionTimeoutError)
 
-def _unix_time_limit(seconds: int) -> Generator[None, None, None]:
-    """Unix implementation using signal.alarm."""
-
-    def signal_handler(signum: int, frame) -> None:
-        raise ExecutionTimeoutError(seconds)
-
-    # Set the signal handler (Unix only - not available on Windows)
-    old_handler = signal.signal(signal.SIGALRM, signal_handler)  # type: ignore[attr-defined]
-    signal.alarm(seconds)  # type: ignore[attr-defined]
-
-    try:
-        yield
-    finally:
-        # Restore previous handler and cancel alarm
-        signal.alarm(0)  # type: ignore[attr-defined]
-        signal.signal(signal.SIGALRM, old_handler)  # type: ignore[attr-defined]
-
-
-def _windows_time_limit(seconds: int) -> Generator[None, None, None]:
-    """
-    Windows implementation using threading.Timer.
-
-    Note: This is less reliable than signal.alarm because Python cannot
-    interrupt a running thread. The timeout is checked after the yield.
-    """
-    timed_out = threading.Event()
-
-    def set_timeout():
-        timed_out.set()
-
-    timer = threading.Timer(seconds, set_timeout)
+    timer = threading.Timer(seconds, fire)
     timer.daemon = True
     timer.start()
 
     try:
-        yield
-        # Check if we timed out during execution
-        if timed_out.is_set():
-            raise ExecutionTimeoutError(seconds)
+        try:
+            yield
+        except ExecutionTimeoutError:
+            # The async-raised exception arrives without our `seconds`
+            # argument; rebuild it with the right message.
+            raise ExecutionTimeoutError(seconds) from None
     finally:
-        timer.cancel()
+        with state_lock:
+            finished = True
+            timer.cancel()
 
 
 class TimeoutContext:
