@@ -20,14 +20,6 @@ Adds two columns and one partial index to ``project.ui_bridge_events``:
 Backs ADR-005 (causal tracing & replay) — see
 ``qontinui-dev-notes/ui-bridge-redesign/section-5-causal/ADR-005-causal-tracing-replay.md``,
 decision #3.
-
-DRIFT FLAGS (preserved per fidelity policy):
-- The Alembic branch currently has a second, orthogonal head
-  ``add_arq_job_id_to_training_jobs`` (training-jobs lineage). This
-  migration intentionally does NOT merge the two heads; a future merge
-  migration will reconcile them. ``down_revision`` points only at the
-  consolidation chain (``consolidation_phase8_01_unify_runner_concepts_redo``)
-  on which the UI Bridge tables live.
 """
 
 from collections.abc import Sequence
