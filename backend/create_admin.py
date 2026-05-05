@@ -12,13 +12,25 @@ sys.path.insert(0, str(backend_dir))
 from passlib.context import CryptContext  # noqa: E402
 
 import app.core.passlib_bcrypt5_compat  # noqa: F401, E402  # bcrypt 5 compat patch
+
+# Cloud-control side-effect import — registers cloud-only models
+# (Subscription, AdminNotificationSettings, etc.) via add_model_registrar.
+# `User` declares `relationship("Subscription", ...)`, so SQLAlchemy needs
+# the cloud-control hook to have fired before any `db.query(User)` triggers
+# mapper configuration; otherwise it raises `KeyError: 'Subscription'`.
+# Mirrors the pattern in `app/main.py` and `tests/utils/run_seed.py` —
+# OSS soft-skip, CI hard-fail.
+try:
+    import qontinui_cloud_control  # noqa: F401, E402
+except ImportError:
+    if os.environ.get("CI") == "true" or os.environ.get("REQUIRE_CLOUD_CONTROL") == "1":
+        raise
+
 from app.core.test_credentials import get_admin_credentials  # noqa: E402
 from app.db.session import SessionLocal  # noqa: E402
-# Bulk-imports every model in the codebase. Required before db.query(User)
-# so SQLAlchemy can resolve string-based relationships (e.g. User has a
-# `relationship("Subscription", ...)`); without this the query raises
-# `KeyError: 'Subscription'` because `app.models.subscription` was never
-# imported and the class registry doesn't see it.
+# Bulk-imports every in-tree model so SQLAlchemy's class registry has them
+# all before `db.query(User)` triggers configure_mappers. Cloud-only models
+# come in via the cloud-control import above.
 from app.db.base_class import Base  # noqa: F401, E402
 from app.models.user import User  # noqa: E402
 
