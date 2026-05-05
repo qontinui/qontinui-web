@@ -643,9 +643,7 @@ async def run_training_job_task(
                 if now - last_cancel_check >= CANCEL_POLL_SECONDS:
                     last_cancel_check = now
                     if await _check_cancelled(job_uuid):
-                        logger.info(
-                            "training_job_cancellation_detected", job_id=job_id
-                        )
+                        logger.info("training_job_cancellation_detected", job_id=job_id)
                         cancelled = True
                         try:
                             process.terminate()
@@ -702,9 +700,8 @@ async def run_training_job_task(
                         dest_dir=str(dest_dir),
                     )
                 else:
-                    storage_key = (
-                        f"models/{project_id}/{job_id}/{artifact.name}"
-                    )
+                    storage_key = f"models/{project_id}/{job_id}/{artifact.name}"
+
                     def _upload_artifact() -> None:
                         with artifact.open("rb") as fh:
                             object_storage.backend.upload_file(
@@ -741,9 +738,7 @@ async def run_training_job_task(
                         )
                     except Exception as upload_exc:
                         final_status = TrainingJobStatus.FAILED.value
-                        final_error = (
-                            f"model artifact upload failed: {upload_exc}"
-                        )
+                        final_error = f"model artifact upload failed: {upload_exc}"
                         logger.exception(
                             "training_job_upload_failed",
                             job_id=job_id,

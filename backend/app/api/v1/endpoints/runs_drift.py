@@ -33,7 +33,9 @@ async def _proxy_get(path: str) -> dict[str, Any]:
         try:
             resp = await client.get(url)
         except httpx.ConnectError as exc:
-            logger.warning("runner connect error in drift proxy", path=path, error=str(exc))
+            logger.warning(
+                "runner connect error in drift proxy", path=path, error=str(exc)
+            )
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=(

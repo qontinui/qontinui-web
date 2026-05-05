@@ -103,7 +103,9 @@ class TrainingDatasetExporter:
         # Skip images with no annotations rather than emit them as YOLO
         # background samples — simpler, and the annotation set is the point
         # of the dataset.
-        labeled_images = [img for img in images if annotations_by_image.get(str(img.id))]
+        labeled_images = [
+            img for img in images if annotations_by_image.get(str(img.id))
+        ]
         if not labeled_images:
             raise ValueError(
                 f"dataset {dataset_id} has images but none have annotations"
@@ -188,7 +190,9 @@ class TrainingDatasetExporter:
         """
         dataset, images, annotations_by_image = await self._load_dataset(dataset_id)
 
-        labeled_images = [img for img in images if annotations_by_image.get(str(img.id))]
+        labeled_images = [
+            img for img in images if annotations_by_image.get(str(img.id))
+        ]
         if not labeled_images:
             raise ValueError(
                 f"dataset {dataset_id} has images but none have annotations"
@@ -438,9 +442,7 @@ class TrainingDatasetExporter:
             cy = (float(ann.y) + float(ann.height) / 2.0) / img_h
             w = float(ann.width) / img_w
             h = float(ann.height) / img_h
-            lines.append(
-                f"{class_id} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}"
-            )
+            lines.append(f"{class_id} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}")
 
         target = dest_dir / f"{img.id}.txt"
         target.write_text("\n".join(lines) + "\n", encoding="utf-8")

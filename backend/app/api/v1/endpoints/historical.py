@@ -420,8 +420,7 @@ async def get_frame_for_result(
         af_result = await db.execute(
             select(ActionFrame).filter(
                 ActionFrame.video_capture_session_id == session.id,
-                ActionFrame.snapshot_action_id
-                == historical_result.snapshot_action_id,
+                ActionFrame.snapshot_action_id == historical_result.snapshot_action_id,
                 ActionFrame.frame_type == frame_type,
             )
         )
@@ -524,9 +523,7 @@ async def get_playback_frames(
     for session_id, ids_in_group in grouped.items():
         # Load the session
         session_result = await db.execute(
-            select(VideoCaptureSession).filter(
-                VideoCaptureSession.id == session_id
-            )
+            select(VideoCaptureSession).filter(VideoCaptureSession.id == session_id)
         )
         session = session_result.scalar_one_or_none()
         if session is None:
@@ -538,9 +535,7 @@ async def get_playback_frames(
                 jpegs_by_result_id[rid] = None
             continue
 
-        timestamps = [
-            (by_id[rid].frame_timestamp_ms or 0) for rid in ids_in_group
-        ]
+        timestamps = [(by_id[rid].frame_timestamp_ms or 0) for rid in ids_in_group]
 
         try:
             extracted = await extractor.extract_batch(session, timestamps)
