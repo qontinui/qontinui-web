@@ -90,7 +90,16 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        # pgvector/pgvector:pg16 is the official pgvector-bundled image
+        # (Docker Hub). It's a drop-in replacement for postgres:16 — same
+        # POSTGRES_* env vars, same pg_isready healthcheck — and ships the
+        # `vector` extension so the `CREATE EXTENSION` step below succeeds.
+        # Stock postgres:16 doesn't, which makes conftest's
+        # Base.metadata.create_all fail with:
+        #   asyncpg.exceptions.UndefinedObjectError: type "vector" does not exist
+        # for any model that has a pgvector.sqlalchemy.Vector column (see
+        # alembic/versions/05a366f58455_initial_schema_squashed.py:13,26).
+        image: pgvector/pgvector:pg16
         # Credentials must match backend/tests/conftest.py, which hardcodes
         # postgresql://qontinui_user:qontinui_dev_password@localhost:5432/qontinui_test
         # for both DATABASE_URL and TEST_DATABASE_URL. Mismatched values
@@ -174,12 +183,15 @@ jobs:
       # schemas exist. Models reference `project`, `auth`, and `cloud`
       # schemas (the last via the qontinui-cloud-control sibling repo
       # whose models are side-effect-imported in conftest.py); the
-      # postgres:16 service container doesn't run our init-scripts/,
-      # so create them explicitly here. Without this, create_all fails
-      # with:
+      # postgres service container doesn't run our init-scripts/, so
+      # create them explicitly here. We also `CREATE EXTENSION vector`
+      # — alembic does this in 05a366f58455 but conftest skips alembic,
+      # so create_all hits `UndefinedObjectError: type "vector" does
+      # not exist` whenever a Vector column is materialized. Without
+      # the schema lines, create_all fails with:
       #   asyncpg.exceptions.InvalidSchemaNameError: schema "project"
       #   does not exist
-      - name: Create test schemas
+      - name: Create test schemas and extensions
         env:
           PGPASSWORD: qontinui_dev_password
         run: |
@@ -187,7 +199,8 @@ jobs:
           psql -h localhost -U qontinui_user -d qontinui_test \
             -c "CREATE SCHEMA IF NOT EXISTS project;" \
             -c "CREATE SCHEMA IF NOT EXISTS auth;" \
-            -c "CREATE SCHEMA IF NOT EXISTS cloud;"
+            -c "CREATE SCHEMA IF NOT EXISTS cloud;" \
+            -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
       - name: Run tests with coverage
         env:
