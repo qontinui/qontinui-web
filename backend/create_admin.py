@@ -14,6 +14,12 @@ from passlib.context import CryptContext  # noqa: E402
 import app.core.passlib_bcrypt5_compat  # noqa: F401, E402  # bcrypt 5 compat patch
 from app.core.test_credentials import get_admin_credentials  # noqa: E402
 from app.db.session import SessionLocal  # noqa: E402
+# Bulk-imports every model in the codebase. Required before db.query(User)
+# so SQLAlchemy can resolve string-based relationships (e.g. User has a
+# `relationship("Subscription", ...)`); without this the query raises
+# `KeyError: 'Subscription'` because `app.models.subscription` was never
+# imported and the class registry doesn't see it.
+from app.db.base_class import Base  # noqa: F401, E402
 from app.models.user import User  # noqa: E402
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -67,5 +73,9 @@ except Exception as e:
 
     traceback.print_exc()
     db.rollback()
+    # Re-raise so callers (CI in particular) get a non-zero exit code.
+    # Previously this except clause swallowed the failure and exited 0,
+    # which made downstream auth-dependent tests fail mysteriously.
+    raise
 finally:
     db.close()
