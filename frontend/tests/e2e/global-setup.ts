@@ -72,8 +72,14 @@ async function globalSetup(_config: FullConfig) {
         VERIFICATION_SECRET_KEY:
           "test-verification-secret-key-min-32-chars-required",
         ALGORITHM: "HS256",
-        FRONTEND_URL: "http://localhost:3000",
-        BACKEND_CORS_ORIGINS: '["http://localhost:3000"]',
+        // The Playwright webServer runs `npm run dev` which binds the
+        // frontend to :3001 (see playwright.config.ts `webServer.url` and
+        // PLAYWRIGHT_BASE_URL). Backend CORS must allow that exact origin
+        // — with `credentials: "include"` the browser refuses to read the
+        // response unless `Access-Control-Allow-Origin` matches the
+        // requesting origin character-for-character.
+        FRONTEND_URL: "http://localhost:3001",
+        BACKEND_CORS_ORIGINS: '["http://localhost:3001"]',
         STORAGE_BACKEND: "local",
         REDIS_ENABLED: "false",
       },
