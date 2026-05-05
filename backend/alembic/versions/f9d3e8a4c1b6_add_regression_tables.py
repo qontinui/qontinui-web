@@ -20,7 +20,7 @@ Indexes mirror the runner's bootstrap. The migration uses
 because the runner may have already created them on a shared dev DB.
 
 Revision ID: f9d3e8a4c1b6
-Revises: z2a3b4c5d6e7
+Revises: add_arq_job_id_to_training_jobs
 Create Date: 2026-05-03
 
 """
@@ -31,7 +31,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "f9d3e8a4c1b6"
-down_revision: str | None = "z2a3b4c5d6e7"
+down_revision: str | None = "add_arq_job_id_to_training_jobs"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
