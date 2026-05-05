@@ -13,6 +13,13 @@ import type {
   SpecAssertion,
   SpecConfig,
 } from "@/lib/spec-prompt-builder";
+import type {
+  SpecCategory,
+  SpecSource,
+  SpecTarget,
+  AssertionCondition,
+  AssertionType,
+} from "@qontinui/ui-bridge/specs";
 
 // =============================================================================
 // Individual parsers
@@ -27,7 +34,10 @@ export function parseAssertion(
   return {
     id: raw.id,
     description: raw.description,
-    category: typeof raw.category === "string" ? raw.category : "unknown",
+    category:
+      typeof raw.category === "string"
+        ? (raw.category as SpecCategory)
+        : ("custom" as SpecCategory),
     severity:
       raw.severity === "critical" ||
       raw.severity === "warning" ||
@@ -35,10 +45,20 @@ export function parseAssertion(
         ? raw.severity
         : "info",
     enabled: raw.enabled !== false,
-    target: raw.target as Record<string, unknown> | undefined,
+    target: (raw.target as SpecTarget | undefined) ?? ({
+      type: "search",
+      criteria: {},
+    } as SpecTarget),
     assertionType:
-      typeof raw.assertionType === "string" ? raw.assertionType : undefined,
-    condition: raw.condition as Record<string, unknown> | undefined,
+      typeof raw.assertionType === "string"
+        ? (raw.assertionType as AssertionType)
+        : ("exists" as AssertionType),
+    source:
+      typeof raw.source === "string"
+        ? (raw.source as SpecSource)
+        : ("manual" as SpecSource),
+    reviewed: raw.reviewed === true,
+    condition: raw.condition as AssertionCondition | undefined,
   };
 }
 
@@ -53,9 +73,15 @@ export function parseGroup(raw: Record<string, unknown>): SpecGroup | null {
     id: raw.id,
     name: raw.name,
     description: typeof raw.description === "string" ? raw.description : "",
-    category: typeof raw.category === "string" ? raw.category : "unknown",
+    category:
+      typeof raw.category === "string"
+        ? (raw.category as SpecCategory)
+        : ("custom" as SpecCategory),
     assertions,
-    source: typeof raw.source === "string" ? raw.source : undefined,
+    source:
+      typeof raw.source === "string"
+        ? (raw.source as SpecSource)
+        : ("manual" as SpecSource),
   };
 }
 
@@ -74,8 +100,7 @@ export function parseDiscoveredSpecs(rawSpecs: unknown): DiscoveredSpec[] {
       .map((g: unknown) => parseGroup(g as Record<string, unknown>))
       .filter((g): g is SpecGroup => g !== null);
     const config: SpecConfig = {
-      version:
-        typeof rawConfig.version === "string" ? rawConfig.version : "1.0.0",
+      version: "1.0.0",
       description:
         typeof rawConfig.description === "string" ? rawConfig.description : "",
       groups,

@@ -1,6 +1,7 @@
 "use client";
 
 import type { DiscoveredSpec } from "@/hooks/use-inspector";
+import type { SpecConfig, SpecGroup } from "@qontinui/ui-bridge/specs";
 import {
   Card,
   CardContent,
@@ -19,31 +20,6 @@ import {
   Download,
   ChevronDown,
 } from "lucide-react";
-
-interface SpecGroup {
-  id: string;
-  name: string;
-  description?: string;
-  category?: string;
-  assertions: Array<{
-    id: string;
-    description: string;
-    severity: string;
-    enabled: boolean;
-    assertionType?: string;
-    target?: {
-      label?: string;
-      criteria?: Record<string, unknown>;
-    };
-  }>;
-}
-
-interface SpecConfig {
-  version?: string;
-  description?: string;
-  groups?: SpecGroup[];
-  metadata?: Record<string, unknown>;
-}
 
 interface SpecsPanelProps {
   discoveredSpecs: DiscoveredSpec[];
