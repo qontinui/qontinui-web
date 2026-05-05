@@ -102,7 +102,7 @@ This repo has six workflows. They split into tiers by trigger type and load-bear
 1. Pull up the latest run of the same workflow on `main`:
 
    ```bash
-   gh run list --repo jspinak/qontinui-web --branch main --workflow=<name> --limit 5
+   gh run list --repo qontinui/qontinui-web --branch main --workflow=<name> --limit 5
    gh run view <run-id> --log-failed
    ```
 
@@ -153,7 +153,7 @@ If `alembic heads` prints more than one line, the chain is forked and `e2e-tests
 CI is a shared surface. Before opening a PR that touches `.github/workflows/` or anything CI-adjacent, check what's already in flight:
 
 ```bash
-gh pr list --repo jspinak/qontinui-web --state open
+gh pr list --repo qontinui/qontinui-web --state open
 ```
 
 If you find a related open PR, coordinate (or rebase onto it) rather than opening a parallel attempt.
