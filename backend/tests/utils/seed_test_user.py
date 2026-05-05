@@ -12,12 +12,23 @@ runs. Idempotent — skips creation if a user with the matching email
 already exists.
 """
 
+from fastapi_users.password import PasswordHelper
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import test_credentials
-from app.core.security import get_password_hash
 from app.models.user import User
+
+# Use fastapi-users' own PasswordHelper to hash the seeded password.
+# The auth manager (`app/auth/config.py:284`) verifies via
+# `self.password_helper.verify_and_update(...)`, which is the same
+# helper. Passing a hash from `app.core.security.get_password_hash`
+# (passlib's CryptContext with schemes=["argon2", "bcrypt"]) is
+# subtly incompatible — fastapi-users' default helper uses pwdlib
+# under the hood, and even when both produce argon2 hashes the
+# parameter sets differ enough that `verify_and_update` returns False.
+# Going through the same helper guarantees verifier compatibility.
+_password_helper = PasswordHelper()
 
 
 async def create_test_user(db: AsyncSession) -> User:
@@ -32,7 +43,7 @@ async def create_test_user(db: AsyncSession) -> User:
     user = User(
         email=test_credentials.DEV_USER_EMAIL,
         username=test_credentials.DEV_USER_USERNAME,
-        hashed_password=get_password_hash(test_credentials.DEV_USER_PASSWORD),
+        hashed_password=_password_helper.hash(test_credentials.DEV_USER_PASSWORD),
         full_name="Dev User",
         is_active=True,
         is_superuser=test_credentials.DEV_USER_IS_SUPERUSER,
