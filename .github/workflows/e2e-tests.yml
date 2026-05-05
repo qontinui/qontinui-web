@@ -209,6 +209,23 @@ jobs:
         run: |
           alembic upgrade heads
 
+      # The auth.setup.ts Playwright fixture logs in as the canonical dev
+      # user (josh@qontinui.io / dev123 — see frontend/tests/e2e/test-credentials.ts).
+      # Migrations only create empty tables; nothing else seeds users in CI.
+      # create_admin.py is idempotent and pulls credentials from the same
+      # source of truth (app.core.test_credentials.get_admin_credentials).
+      - name: Create dev user for E2E auth setup
+        working-directory: ./backend
+        env:
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+          TESTING: '1'
+          ENVIRONMENT: development
+          SECRET_KEY: test-secret-key-for-testing-only-minimum-32-chars-required
+          STORAGE_BACKEND: local
+          REDIS_ENABLED: 'false'
+        run: |
+          python create_admin.py
+
       - name: Run frontend E2E tests
         working-directory: ./frontend
         env:
