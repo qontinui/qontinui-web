@@ -10,7 +10,7 @@
  */
 
 import { CommandRelay, createRelayHandlers } from "@qontinui/ui-bridge/server";
-import { loadDiscoveredSpecs } from "./use-discovered-specs";
+import { loadDiscoveredSpecs } from "./discovered-specs";
 
 /** Runner screenshot endpoint — used as fallback when the browser relay is unresponsive */
 const RUNNER_SCREENSHOT_URL = "http://localhost:9876/ui-bridge/sdk/screenshot";
