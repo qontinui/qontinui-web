@@ -120,8 +120,6 @@ async function fetchSpecs(): Promise<DiscoveredSpec[]> {
 }
 
 export async function loadDiscoveredSpecs(): Promise<DiscoveredSpec[]> {
-  initSseOnce();
-
   if (cachedSpecs !== null) {
     return cachedSpecs;
   }
@@ -134,6 +132,13 @@ export async function loadDiscoveredSpecs(): Promise<DiscoveredSpec[]> {
       cachedSpecs = specs;
       lastError = null;
       inFlight = null;
+      // Only open the SSE subscription once the runner has answered at
+      // least one /spec/list request. Opening it eagerly (before the
+      // fetch) keeps a perpetually-pending HTTP connection alive when
+      // the runner is offline — browsers auto-reconnect EventSource on
+      // error, so Playwright's `networkidle` never settles. The whole
+      // E2E suite hits this on every page.goto + waitForLoadState pair.
+      initSseOnce();
       notifySubscribers();
       return specs;
     })
