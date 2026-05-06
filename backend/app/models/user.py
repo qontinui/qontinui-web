@@ -102,12 +102,6 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         foreign_keys="AuditLog.user_id",
         cascade="all, delete-orphan",
     )
-    subscription = relationship(
-        "Subscription",
-        back_populates="user",
-        uselist=False,
-        cascade="all, delete-orphan",
-    )
     device_sessions = relationship(
         "DeviceSession", back_populates="user", cascade="all, delete-orphan"
     )
