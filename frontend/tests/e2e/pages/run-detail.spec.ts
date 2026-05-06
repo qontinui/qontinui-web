@@ -14,7 +14,7 @@ test.describe("Run Detail - /runs/[id]", () => {
   test("should handle non-existent run ID gracefully", async ({ page }) => {
     // Navigate to a run with an ID that almost certainly does not exist
     await page.goto("/runs/999999999");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-run-detail-not-found.png",
@@ -54,7 +54,7 @@ test.describe("Run Detail - /runs/[id]", () => {
     page,
   }) => {
     await page.goto("/runs/999999999");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(5000);
 
     // The "Back to Runs" or "Back" button should be available for navigation
@@ -73,7 +73,7 @@ test.describe("Run Detail - /runs/[id]", () => {
   }) => {
     // First navigate to /runs to see if there are any runs available
     await page.goto("/runs");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Check if any run rows exist in the table
@@ -83,7 +83,7 @@ test.describe("Run Detail - /runs/[id]", () => {
     if (rowCount > 0) {
       // Click on the first run row to navigate to detail
       await runRows.first().click();
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(3000);
 
       await page.screenshot({
@@ -132,7 +132,7 @@ test.describe("Run Detail - /runs/[id]", () => {
   }) => {
     // Navigate to runs list first
     await page.goto("/runs");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     const runRows = page.locator("tbody tr");
@@ -141,7 +141,7 @@ test.describe("Run Detail - /runs/[id]", () => {
     if (rowCount > 0) {
       // Click first run to navigate to detail
       await runRows.first().click();
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(3000);
 
       // Overview tab should be active and show run details
@@ -161,7 +161,7 @@ test.describe("Run Detail - /runs/[id]", () => {
   test("should navigate between tabs when a run exists", async ({ page }) => {
     // Navigate to runs list first
     await page.goto("/runs");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     const runRows = page.locator("tbody tr");
@@ -170,7 +170,7 @@ test.describe("Run Detail - /runs/[id]", () => {
     if (rowCount > 0) {
       // Click first run to navigate to detail
       await runRows.first().click();
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(3000);
 
       // Click on each tab and verify it becomes active

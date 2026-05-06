@@ -36,7 +36,7 @@ test.describe("Software Testing System E2E", () => {
       await page.selectOption('select[name="status"]', "completed");
 
       // Verify filtered results
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       const rows = page.locator("tbody tr");
       await expect(rows.first()).toBeVisible();
     });
@@ -48,7 +48,7 @@ test.describe("Software Testing System E2E", () => {
       await page.fill('input[placeholder="Search test runs..."]', "nightly");
 
       // Verify search results
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await expect(page.locator("tbody tr")).toBeVisible();
     });
 
@@ -129,7 +129,7 @@ test.describe("Software Testing System E2E", () => {
       await page.selectOption('select[name="severity"]', "critical");
 
       // Verify filtered results
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       const criticalDeficiencies = page.locator(
         '[data-testid="severity-badge"]:has-text("critical")'
       );
@@ -307,7 +307,7 @@ test.describe("Software Testing System E2E", () => {
       await page.click('button:has-text("Apply")');
 
       // Verify chart updates
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await expect(
         page.locator('[data-testid="coverage-trend-chart"]')
       ).toBeVisible();

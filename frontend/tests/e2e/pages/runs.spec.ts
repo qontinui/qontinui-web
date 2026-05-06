@@ -17,7 +17,7 @@ test.describe("Run History - /runs", () => {
     page,
   }) => {
     await page.goto("/runs");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-runs.png",
@@ -37,7 +37,7 @@ test.describe("Run History - /runs", () => {
 
   test("should display search input for filtering runs", async ({ page }) => {
     await page.goto("/runs");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Verify search input
     const searchInput = page.getByPlaceholder(
@@ -48,7 +48,7 @@ test.describe("Run History - /runs", () => {
 
   test("should display status filter dropdown", async ({ page }) => {
     await page.goto("/runs");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Verify status filter dropdown trigger is present
     const statusFilter = page.locator("text=All Status").first();
@@ -57,7 +57,7 @@ test.describe("Run History - /runs", () => {
 
   test("should display runs table or empty state", async ({ page }) => {
     await page.goto("/runs");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Wait for loading to finish
     await page.waitForTimeout(3000);
@@ -83,7 +83,7 @@ test.describe("Active Runs - /runs/active", () => {
     page,
   }) => {
     await page.goto("/runs/active");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-runs-active.png",
@@ -103,7 +103,7 @@ test.describe("Active Runs - /runs/active", () => {
     page,
   }) => {
     await page.goto("/runs/active");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Either active run cards, empty state "No Active Runs", loading, or runner offline
@@ -125,7 +125,7 @@ test.describe("Active Runs - /runs/active", () => {
     page,
   }) => {
     await page.goto("/runs/active");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Executor Status card should be visible if runner is connected
@@ -145,7 +145,7 @@ test.describe("Findings - /runs/findings", () => {
     page,
   }) => {
     await page.goto("/runs/findings");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-runs-findings.png",
@@ -165,7 +165,7 @@ test.describe("Findings - /runs/findings", () => {
     page,
   }) => {
     await page.goto("/runs/findings");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Check for severity levels (Critical/High/Medium/Low), empty state, or runner offline
@@ -196,7 +196,7 @@ test.describe("Findings - /runs/findings", () => {
     page,
   }) => {
     await page.goto("/runs/findings");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // If findings exist, severity and category filter dropdowns should be visible
@@ -224,7 +224,7 @@ test.describe("Learning Insights - /runs/learning", () => {
     page,
   }) => {
     await page.goto("/runs/learning");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-runs-learning.png",
@@ -244,7 +244,7 @@ test.describe("Learning Insights - /runs/learning", () => {
     page,
   }) => {
     await page.goto("/runs/learning");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Check for insight sections or empty/offline state
@@ -281,7 +281,7 @@ test.describe("Statistics - /runs/statistics", () => {
     page,
   }) => {
     await page.goto("/runs/statistics");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-runs-statistics.png",
@@ -299,7 +299,7 @@ test.describe("Statistics - /runs/statistics", () => {
 
   test("should display key metrics or empty state", async ({ page }) => {
     await page.goto("/runs/statistics");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Check for key metrics cards or empty/offline state
@@ -326,7 +326,7 @@ test.describe("Statistics - /runs/statistics", () => {
 
   test("should display status breakdown when data exists", async ({ page }) => {
     await page.goto("/runs/statistics");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Check for status breakdown section
@@ -351,7 +351,7 @@ test.describe("Statistics - /runs/statistics", () => {
     page,
   }) => {
     await page.goto("/runs/statistics");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Check for longest/shortest run cards
@@ -376,7 +376,7 @@ test.describe("Checkpoints - /runs/checkpoints", () => {
     page,
   }) => {
     await page.goto("/runs/checkpoints");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-runs-checkpoints.png",
@@ -396,7 +396,7 @@ test.describe("Checkpoints - /runs/checkpoints", () => {
     page,
   }) => {
     await page.goto("/runs/checkpoints");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Check for runs list panel, empty state, or runner offline

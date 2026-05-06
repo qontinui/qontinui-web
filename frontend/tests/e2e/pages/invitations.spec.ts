@@ -11,7 +11,7 @@ import { test, expect } from "../fixtures";
 test.describe("Accept Invitation Page - No Token", () => {
   test("loads without errors and shows error state", async ({ page }) => {
     await page.goto("/invitations/accept");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-invitation-no-token.png",
@@ -32,7 +32,7 @@ test.describe("Accept Invitation Page - No Token", () => {
     page,
   }) => {
     await page.goto("/invitations/accept");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The error alert should contain the specific message
     await expect(page.getByText("No invitation token provided")).toBeVisible({
@@ -44,7 +44,7 @@ test.describe("Accept Invitation Page - No Token", () => {
     page,
   }) => {
     await page.goto("/invitations/accept");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByText("This invitation link is not valid")
@@ -53,7 +53,7 @@ test.describe("Accept Invitation Page - No Token", () => {
 
   test("shows Go to Dashboard button", async ({ page }) => {
     await page.goto("/invitations/accept");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Go to Dashboard button should be visible
     await expect(page.getByText("Go to Dashboard")).toBeVisible({
@@ -63,7 +63,7 @@ test.describe("Accept Invitation Page - No Token", () => {
 
   test("Go to Dashboard button navigates correctly", async ({ page }) => {
     await page.goto("/invitations/accept");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Click Go to Dashboard
     await page.getByText("Go to Dashboard").click();
@@ -77,7 +77,7 @@ test.describe("Accept Invitation Page - No Token", () => {
 test.describe("Accept Invitation Page - Invalid Token", () => {
   test("loads without errors for a fake token", async ({ page }) => {
     await page.goto("/invitations/accept?token=invalid-fake-token-12345");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-invitation-invalid-token.png",
@@ -126,7 +126,7 @@ test.describe("Accept Invitation Page - Invalid Token", () => {
 
   test("shows error alert for invalid token", async ({ page }) => {
     await page.goto("/invitations/accept?token=invalid-fake-token-12345");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Wait for API call to fail
     await page.waitForTimeout(5000);

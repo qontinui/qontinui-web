@@ -21,7 +21,7 @@ test.describe("Extraction (Unified)", () => {
     page,
   }) => {
     await page.goto("/automation-builder/extraction");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/extraction-unified.png",
@@ -34,7 +34,7 @@ test.describe("Extraction (Unified)", () => {
 
   test("should display the method selector", async ({ page }) => {
     await page.goto("/automation-builder/extraction");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The ExtractionMethodSelector renders card-based options for methods
     // Verify at least some of the method labels are visible
@@ -45,7 +45,7 @@ test.describe("Extraction (Unified)", () => {
 
   test("should display config panel area", async ({ page }) => {
     await page.goto("/automation-builder/extraction");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The page should have a configuration area with method-specific panels
     // Verify the page has rendered meaningful content (not just a spinner)
@@ -70,7 +70,7 @@ test.describe("Extraction (Unified)", () => {
 
   test("should support multiple extraction methods", async ({ page }) => {
     await page.goto("/automation-builder/extraction");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Wait for the method selector to render
     const webMethod = page.getByText("Web Extraction");
@@ -100,7 +100,7 @@ test.describe("Template Capture", () => {
     page,
   }) => {
     await page.goto("/automation-builder/template-capture");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/template-capture.png",
@@ -115,7 +115,7 @@ test.describe("Template Capture", () => {
     page,
   }) => {
     await page.goto("/automation-builder/template-capture");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The page uses RequireProject with pageName="Template Capture"
     // If project is selected, tabs should be visible
@@ -145,7 +145,7 @@ test.describe("Image Extraction", () => {
     page,
   }) => {
     await page.goto("/automation-builder/image-extraction");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/image-extraction.png",
@@ -158,7 +158,7 @@ test.describe("Image Extraction", () => {
 
   test("should display the extraction interface", async ({ page }) => {
     await page.goto("/automation-builder/image-extraction");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The page uses RequireProject with pageName="Extract Images"
     // When loaded, the ImageExtractionPage component renders with an h1
@@ -180,7 +180,7 @@ test.describe("Image Extraction", () => {
 test.describe("Web Extraction (Legacy Redirect)", () => {
   test("should redirect to the unified extraction page", async ({ page }) => {
     await page.goto("/automation-builder/web-extraction");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/web-extraction-redirect.png",
@@ -204,7 +204,7 @@ test.describe("Background Removal", () => {
     page,
   }) => {
     await page.goto("/automation-builder/background-removal");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/background-removal.png",
@@ -219,7 +219,7 @@ test.describe("Background Removal", () => {
     page,
   }) => {
     await page.goto("/automation-builder/background-removal");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The page uses RequireProject with pageName="Remove Background"
     // The BackgroundRemovalTab renders with an h1 "Background Removal"
@@ -243,7 +243,7 @@ test.describe("Pattern Optimization", () => {
     page,
   }) => {
     await page.goto("/automation-builder/pattern-optimization");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pattern-optimization.png",
@@ -256,7 +256,7 @@ test.describe("Pattern Optimization", () => {
 
   test("should display the pattern extraction interface", async ({ page }) => {
     await page.goto("/automation-builder/pattern-optimization");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The page uses RequireProject with pageName="Pattern Extraction"
     // The PatternOptimizationSimplified renders with an h1 "Pattern Extraction"
@@ -280,7 +280,7 @@ test.describe("UI Bridge States (Legacy Redirect)", () => {
     page,
   }) => {
     await page.goto("/automation-builder/ui-bridge-states");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/ui-bridge-states-redirect.png",

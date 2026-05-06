@@ -10,7 +10,7 @@ import { test, expect } from "../fixtures";
 test.describe("Connect Runner Page", () => {
   test("loads without errors and shows heading", async ({ page }) => {
     await page.goto("/connect-runner");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-connect-runner.png",
@@ -29,7 +29,7 @@ test.describe("Connect Runner Page", () => {
 
   test("shows step-by-step connection guide", async ({ page }) => {
     await page.goto("/connect-runner");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Verify "How to Connect" section
     await expect(page.getByText("How to Connect")).toBeVisible({
@@ -49,7 +49,7 @@ test.describe("Connect Runner Page", () => {
 
   test("shows connection status indicator", async ({ page }) => {
     await page.goto("/connect-runner");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Connection status should show either "Runner Connected" or "No Runner Connected"
     const statusText = page.getByText(/(Runner Connected|No Runner Connected)/);
@@ -58,7 +58,7 @@ test.describe("Connect Runner Page", () => {
 
   test("has Download Runner button", async ({ page }) => {
     await page.goto("/connect-runner");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Download Runner button should be visible
     await expect(page.getByText("Download Runner").first()).toBeVisible({
@@ -68,7 +68,7 @@ test.describe("Connect Runner Page", () => {
 
   test("has Manage Runners link", async ({ page }) => {
     await page.goto("/connect-runner");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Manage Runners button/link should be visible
     await expect(page.getByText("Manage Runners")).toBeVisible({
@@ -80,7 +80,7 @@ test.describe("Connect Runner Page", () => {
 test.describe("Download Page", () => {
   test("loads without errors and shows heading", async ({ page }) => {
     await page.goto("/download");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-download.png",
@@ -99,7 +99,7 @@ test.describe("Download Page", () => {
 
   test("shows platform-specific download buttons", async ({ page }) => {
     await page.goto("/download");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Verify platform selector buttons are present
     await expect(page.getByText("Windows")).toBeVisible({ timeout: 15000 });
@@ -109,7 +109,7 @@ test.describe("Download Page", () => {
 
   test("detects current platform", async ({ page }) => {
     await page.goto("/download");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Should show "Detected" badge on one platform
     await expect(page.getByText("Detected")).toBeVisible({ timeout: 15000 });
@@ -117,7 +117,7 @@ test.describe("Download Page", () => {
 
   test("shows download files for selected platform", async ({ page }) => {
     await page.goto("/download");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Should show at least one Download button for files
     const downloadButtons = page.getByRole("button", { name: /Download/i });
@@ -132,7 +132,7 @@ test.describe("Download Page", () => {
 
   test("shows installation instructions", async ({ page }) => {
     await page.goto("/download");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Installation Instructions section should be visible
     await expect(page.getByText("Installation Instructions")).toBeVisible({
@@ -142,7 +142,7 @@ test.describe("Download Page", () => {
 
   test("shows system requirements", async ({ page }) => {
     await page.goto("/download");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // System Requirements section should be visible
     await expect(page.getByText("System Requirements")).toBeVisible({
@@ -154,7 +154,7 @@ test.describe("Download Page", () => {
 test.describe("Runners Management Page", () => {
   test("loads without errors and shows heading", async ({ page }) => {
     await page.goto("/runners");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-runners.png",
@@ -173,7 +173,7 @@ test.describe("Runners Management Page", () => {
 
   test("shows active connections and history tabs", async ({ page }) => {
     await page.goto("/runners");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Active Connections tab should be visible
     await expect(page.getByText("Active Connections").first()).toBeVisible({
@@ -186,7 +186,7 @@ test.describe("Runners Management Page", () => {
 
   test("shows active connections list or empty state", async ({ page }) => {
     await page.goto("/runners");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Wait for tab content to load
     await page.waitForTimeout(2000);
@@ -203,7 +203,7 @@ test.describe("Runners Management Page", () => {
 
   test("has back to dashboard button", async ({ page }) => {
     await page.goto("/runners");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Back to Dashboard")).toBeVisible({
       timeout: 15000,

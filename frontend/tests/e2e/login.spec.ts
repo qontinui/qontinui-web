@@ -23,7 +23,7 @@ test.describe("Login Flow", () => {
     });
     // Reload to ensure clean state without auto-login
     await page.reload();
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
   });
 
   test("homepage shows Sign In button when not authenticated", async ({
@@ -233,7 +233,7 @@ test.describe("Authenticated Session", () => {
   // Helper function to login
   async function loginUser(page: import("@playwright/test").Page) {
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Open login dialog
     const signInButton = page.getByRole("button", { name: /sign in/i });
@@ -305,7 +305,7 @@ test.describe("Authenticated Session", () => {
 
     // Navigate to homepage to check for admin button
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Verify Go to Admin button is visible for superuser
     if (TEST_USER.isSuperuser) {

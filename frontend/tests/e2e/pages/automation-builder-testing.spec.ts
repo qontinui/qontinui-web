@@ -19,7 +19,7 @@ test.describe.configure({ mode: "serial" });
 test.describe("Workflow Testing", () => {
   test("should load the testing page without errors", async ({ page }) => {
     await page.goto("/automation-builder/testing");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/workflow-testing.png",
@@ -32,7 +32,7 @@ test.describe("Workflow Testing", () => {
 
   test("should display the Workflow Testing heading", async ({ page }) => {
     await page.goto("/automation-builder/testing");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The page renders an h1 with "Workflow Testing"
     const heading = page.getByRole("heading", { name: /Workflow Testing/i });
@@ -53,7 +53,7 @@ test.describe("Workflow Testing", () => {
     page,
   }) => {
     await page.goto("/automation-builder/testing");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The page has a three-column layout:
     // Left: Test Navigator (20%), Center: Test Details (50%), Right: Test Results (30%)
@@ -79,7 +79,7 @@ test.describe("Workflow Testing", () => {
     page,
   }) => {
     await page.goto("/automation-builder/testing");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The Test Navigator has TabsList with three triggers
     const suitesTab = page.getByRole("tab", { name: /Suites/i });
@@ -104,7 +104,7 @@ test.describe("Pattern Tests", () => {
     page,
   }) => {
     await page.goto("/automation-builder/pattern-tests");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pattern-tests.png",
@@ -119,7 +119,7 @@ test.describe("Pattern Tests", () => {
     page,
   }) => {
     await page.goto("/automation-builder/pattern-tests");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The page uses RequireProject with pageName="Pattern Tests"
     // The PatternMatchingTest component renders an h2 "Pattern Matching Test"
@@ -145,7 +145,7 @@ test.describe("Navigation Tests", () => {
     page,
   }) => {
     await page.goto("/automation-builder/navigation-tests");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/navigation-tests.png",
@@ -160,7 +160,7 @@ test.describe("Navigation Tests", () => {
     page,
   }) => {
     await page.goto("/automation-builder/navigation-tests");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The page uses RequireProject with pageName="Navigation Test Generator"
     // The NavigationTestGenerator renders an h2 "Navigation Test Generator"
@@ -186,7 +186,7 @@ test.describe("Snapshot Tests", () => {
     page,
   }) => {
     await page.goto("/automation-builder/snapshot-tests");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/snapshot-tests.png",
@@ -201,7 +201,7 @@ test.describe("Snapshot Tests", () => {
     page,
   }) => {
     await page.goto("/automation-builder/snapshot-tests");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The page uses RequireProject with pageName="Snapshot Test Generator"
     // The SnapshotTestGenerator renders an h2 with role="heading"
@@ -228,7 +228,7 @@ test.describe("State Discovery", () => {
     page,
   }) => {
     await page.goto("/automation-builder/state-discovery");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/state-discovery.png",
@@ -241,7 +241,7 @@ test.describe("State Discovery", () => {
 
   test("should display the state discovery interface", async ({ page }) => {
     await page.goto("/automation-builder/state-discovery");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The page uses RequireProject with pageName="State Discovery"
     // The StateDiscoveryTab renders an h2 "State Discovery"
@@ -265,7 +265,7 @@ test.describe("Semantic Analysis", () => {
     page,
   }) => {
     await page.goto("/automation-builder/semantic-analysis");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/semantic-analysis.png",
@@ -278,7 +278,7 @@ test.describe("Semantic Analysis", () => {
 
   test("should display the semantic analysis interface", async ({ page }) => {
     await page.goto("/automation-builder/semantic-analysis");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The page uses RequireProject with pageName="Semantic Analysis"
     // The SemanticAnalysisTab renders card-based controls including
@@ -304,7 +304,7 @@ test.describe("Semantic Analysis", () => {
 test.describe("RAG Testing", () => {
   test("should load the RAG testing page without errors", async ({ page }) => {
     await page.goto("/automation-builder/rag-testing");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/rag-testing.png",
@@ -317,7 +317,7 @@ test.describe("RAG Testing", () => {
 
   test("should display the RAG testing interface", async ({ page }) => {
     await page.goto("/automation-builder/rag-testing");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The page uses RequireProject with pageName="RAG Testing"
     // The RAGTestingTab renders a card-based layout with controls

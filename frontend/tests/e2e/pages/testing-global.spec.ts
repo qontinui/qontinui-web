@@ -13,7 +13,7 @@ import { test, expect } from "../fixtures";
 test.describe("Testing Dashboard - Main Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
     await page.goto("/testing");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-testing-global.png",
@@ -28,7 +28,7 @@ test.describe("Testing Dashboard - Main Page", () => {
 
   test("should display view selector with 3 tabs", async ({ page }) => {
     await page.goto("/testing");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The view selector has 3 buttons: Test Runs, Coverage Trends, Reliability
     const viewSelector = page.locator(
@@ -49,7 +49,7 @@ test.describe("Testing Dashboard - Main Page", () => {
 
   test("should have navigation buttons to sub-pages", async ({ page }) => {
     await page.goto("/testing");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // All Runs button
     await expect(
@@ -64,7 +64,7 @@ test.describe("Testing Dashboard - Main Page", () => {
 
   test("should display welcome section content", async ({ page }) => {
     await page.goto("/testing");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Test Results Overview").first()).toBeVisible();
     await expect(
@@ -74,7 +74,7 @@ test.describe("Testing Dashboard - Main Page", () => {
 
   test("should switch views when clicking selector tabs", async ({ page }) => {
     await page.goto("/testing");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Click Coverage Trends tab - without project, shows message
     await page.locator('[data-testid="testing-page-trends-tab"]').click();
@@ -99,7 +99,7 @@ test.describe("Testing Dashboard - Main Page", () => {
 test.describe("Testing - Runs Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
     await page.goto("/testing/runs");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-testing-global-runs.png",
@@ -114,7 +114,7 @@ test.describe("Testing - Runs Page", () => {
 
   test("should display back button and description", async ({ page }) => {
     await page.goto("/testing/runs");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const backBtn = page.locator('[data-testid="testing-page-runs-back-btn"]');
     await expect(backBtn).toBeVisible();
@@ -130,7 +130,7 @@ test.describe("Testing - Run Detail Page", () => {
     page,
   }) => {
     await page.goto("/testing/runs/non-existent-run-id-99999");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-testing-global-run-detail-missing.png",
@@ -146,7 +146,7 @@ test.describe("Testing - Run Detail Page", () => {
 
   test("should display heading and back button", async ({ page }) => {
     await page.goto("/testing/runs/non-existent-run-id-99999");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.locator("h1")).toContainText("Test Run Details");
 
@@ -160,7 +160,7 @@ test.describe("Testing - Run Detail Page", () => {
 test.describe("Testing - Deficiencies Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
     await page.goto("/testing/deficiencies");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-testing-global-deficiencies.png",
@@ -175,7 +175,7 @@ test.describe("Testing - Deficiencies Page", () => {
 
   test("should display deficiency list section", async ({ page }) => {
     await page.goto("/testing/deficiencies");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: "Deficiencies" })
@@ -189,7 +189,7 @@ test.describe("Testing - Deficiencies Page", () => {
 
   test("should display back button to testing dashboard", async ({ page }) => {
     await page.goto("/testing/deficiencies");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const backBtn = page.locator(
       '[data-testid="testing-page-deficiencies-back-btn"]'

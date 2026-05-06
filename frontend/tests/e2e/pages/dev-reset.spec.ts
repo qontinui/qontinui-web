@@ -13,7 +13,7 @@ import { test, expect } from "@playwright/test";
 test.describe("Dev Reset Page (/dev/reset)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/dev/reset");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -26,7 +26,7 @@ test.describe("Dev Reset Page (/dev/reset)", () => {
 
   test("displays Dev Reset heading", async ({ page }) => {
     await page.goto("/dev/reset");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", { name: /dev reset/i });
     await expect(heading).toBeVisible({ timeout: 10000 });
@@ -34,7 +34,7 @@ test.describe("Dev Reset Page (/dev/reset)", () => {
 
   test("shows clearing state or success message", async ({ page }) => {
     await page.goto("/dev/reset");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Wait for clearing to complete
     await page.waitForTimeout(3000);
@@ -48,7 +48,7 @@ test.describe("Dev Reset Page (/dev/reset)", () => {
 
   test("shows Go to Login button after clearing", async ({ page }) => {
     await page.goto("/dev/reset");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     const loginButton = page.getByRole("button", { name: /go to login/i });
@@ -57,7 +57,7 @@ test.describe("Dev Reset Page (/dev/reset)", () => {
 
   test("shows Go to Dashboard button after clearing", async ({ page }) => {
     await page.goto("/dev/reset");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     const dashboardButton = page.getByRole("button", {
@@ -70,7 +70,7 @@ test.describe("Dev Reset Page (/dev/reset)", () => {
     page,
   }) => {
     await page.goto("/dev/reset");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     await expect(page.getByText("Actions Taken:")).toBeVisible({
@@ -82,7 +82,7 @@ test.describe("Dev Reset Page (/dev/reset)", () => {
 
   test("displays debug info sections for storage", async ({ page }) => {
     await page.goto("/dev/reset");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Should show localStorage section (with item count)
@@ -103,7 +103,7 @@ test.describe("Dev Reset Page (/dev/reset)", () => {
 
   test("shows timestamp of when state was cleared", async ({ page }) => {
     await page.goto("/dev/reset");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Should display "Cleared at:" with a timestamp
@@ -114,7 +114,7 @@ test.describe("Dev Reset Page (/dev/reset)", () => {
 
   test("shows description text about debugging", async ({ page }) => {
     await page.goto("/dev/reset");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByText(/browser state cleared for debugging/i)

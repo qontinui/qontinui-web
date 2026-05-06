@@ -17,7 +17,7 @@ import { test, expect } from "../fixtures";
 test.describe("Build - API Requests", () => {
   test("should load API requests page without errors", async ({ page }) => {
     await page.goto("/build/api-requests");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/build-api-requests.png",
@@ -32,7 +32,7 @@ test.describe("Build - API Requests", () => {
     page,
   }) => {
     await page.goto("/build/api-requests");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // When runner is online: shows "API Requests" heading, search input, "New Request" button
     // When runner is offline: shows RunnerOfflineState
@@ -47,7 +47,7 @@ test.describe("Build - API Requests", () => {
     page,
   }) => {
     await page.goto("/build/api-requests");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // When online: two-panel layout with search input and "New Request" button
     const hasSearchInput =
@@ -64,7 +64,7 @@ test.describe("Build - API Requests", () => {
 
   test("should gracefully handle runner offline state", async ({ page }) => {
     await page.goto("/build/api-requests");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The page should render without crashing regardless of runner status
     const hasContent = (await page.locator("text=API Requests").count()) > 0;
@@ -81,7 +81,7 @@ test.describe("Build - API Requests", () => {
 test.describe("Build - Checks", () => {
   test("should load checks page without errors", async ({ page }) => {
     await page.goto("/build/checks");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/build-checks.png",
@@ -96,7 +96,7 @@ test.describe("Build - Checks", () => {
     page,
   }) => {
     await page.goto("/build/checks");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasHeading =
       (await page.locator("text=Verification Checks").count()) > 0;
@@ -110,7 +110,7 @@ test.describe("Build - Checks", () => {
     page,
   }) => {
     await page.goto("/build/checks");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasSearchInput =
       (await page.locator('input[placeholder="Search checks..."]').count()) > 0;
@@ -124,7 +124,7 @@ test.describe("Build - Checks", () => {
 
   test("should gracefully handle runner offline state", async ({ page }) => {
     await page.goto("/build/checks");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasContent =
       (await page.locator("text=Verification Checks").count()) > 0;
@@ -138,7 +138,7 @@ test.describe("Build - Checks", () => {
 test.describe("Build - Contexts", () => {
   test("should load contexts page without errors", async ({ page }) => {
     await page.goto("/build/contexts");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/build-contexts.png",
@@ -153,7 +153,7 @@ test.describe("Build - Contexts", () => {
     page,
   }) => {
     await page.goto("/build/contexts");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasHeading = (await page.locator("text=AI Contexts").count()) > 0;
     const hasOfflineState =
@@ -166,7 +166,7 @@ test.describe("Build - Contexts", () => {
     page,
   }) => {
     await page.goto("/build/contexts");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasSearchInput =
       (await page.locator('input[placeholder="Search contexts..."]').count()) >
@@ -181,7 +181,7 @@ test.describe("Build - Contexts", () => {
 
   test("should gracefully handle runner offline state", async ({ page }) => {
     await page.goto("/build/contexts");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasContent = (await page.locator("text=AI Contexts").count()) > 0;
     const hasOfflineState =
@@ -194,7 +194,7 @@ test.describe("Build - Contexts", () => {
 test.describe("Build - Playwright Tests", () => {
   test("should load playwright tests page without errors", async ({ page }) => {
     await page.goto("/build/playwright-tests");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/build-playwright-tests.png",
@@ -209,7 +209,7 @@ test.describe("Build - Playwright Tests", () => {
     page,
   }) => {
     await page.goto("/build/playwright-tests");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasHeading =
       (await page.locator("text=Playwright Tests").count()) > 0;
@@ -223,7 +223,7 @@ test.describe("Build - Playwright Tests", () => {
     page,
   }) => {
     await page.goto("/build/playwright-tests");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasSearchInput =
       (await page
@@ -239,7 +239,7 @@ test.describe("Build - Playwright Tests", () => {
 
   test("should gracefully handle runner offline state", async ({ page }) => {
     await page.goto("/build/playwright-tests");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasContent =
       (await page.locator("text=Playwright Tests").count()) > 0;
@@ -253,7 +253,7 @@ test.describe("Build - Playwright Tests", () => {
 test.describe("Build - Shell Commands", () => {
   test("should load shell commands page without errors", async ({ page }) => {
     await page.goto("/build/shell-commands");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/build-shell-commands.png",
@@ -268,7 +268,7 @@ test.describe("Build - Shell Commands", () => {
     page,
   }) => {
     await page.goto("/build/shell-commands");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasHeading = (await page.locator("text=Shell Commands").count()) > 0;
     const hasOfflineState =
@@ -281,7 +281,7 @@ test.describe("Build - Shell Commands", () => {
     page,
   }) => {
     await page.goto("/build/shell-commands");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasSearchInput =
       (await page
@@ -297,7 +297,7 @@ test.describe("Build - Shell Commands", () => {
 
   test("should gracefully handle runner offline state", async ({ page }) => {
     await page.goto("/build/shell-commands");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasContent = (await page.locator("text=Shell Commands").count()) > 0;
     const hasOfflineState =
@@ -310,7 +310,7 @@ test.describe("Build - Shell Commands", () => {
 test.describe("Build - Library", () => {
   test("should load library page without errors", async ({ page }) => {
     await page.goto("/build/library");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/build-library.png",
@@ -325,7 +325,7 @@ test.describe("Build - Library", () => {
     page,
   }) => {
     await page.goto("/build/library");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasHeading = (await page.locator("text=Asset Library").count()) > 0;
     const hasOfflineState =
@@ -338,7 +338,7 @@ test.describe("Build - Library", () => {
     page,
   }) => {
     await page.goto("/build/library");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasSearchInput =
       (await page
@@ -354,7 +354,7 @@ test.describe("Build - Library", () => {
     page,
   }) => {
     await page.goto("/build/library");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The library page has an "All" filter button plus up to 9 type-specific filters
     // (Workflow, Test, API Request, Check, Context, Playwright Test, Shell Command, Prompt, Prompt Snippet)
@@ -370,7 +370,7 @@ test.describe("Build - Library", () => {
     page,
   }) => {
     await page.goto("/build/library");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // When online and loaded: shows either a grid of asset cards or an empty state
     // The grid uses "grid-cols-1 md:grid-cols-2 lg:grid-cols-3" classes
@@ -388,7 +388,7 @@ test.describe("Build - Library", () => {
 
   test("should gracefully handle runner offline state", async ({ page }) => {
     await page.goto("/build/library");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasContent = (await page.locator("text=Asset Library").count()) > 0;
     const hasOfflineState =

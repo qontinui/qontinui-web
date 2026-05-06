@@ -5,7 +5,7 @@ test("screenshot-zoom", async ({ page }) => {
   await page.goto("http://localhost:3001/dashboard");
 
   // Wait for the dashboard to load
-  await page.waitForLoadState("networkidle");
+  await page.waitForLoadState("domcontentloaded");
 
   // Select "civ6" project from the project dropdown in the sidebar
   // The project switcher is a combobox button in the sidebar
@@ -36,7 +36,7 @@ test("screenshot-zoom", async ({ page }) => {
 
   // Wait for the Image Extraction page to load
   await page.waitForURL(/.*image-extraction.*/);
-  await page.waitForLoadState("networkidle");
+  await page.waitForLoadState("domcontentloaded");
 
   // Click "Capture Screen" button to open the monitor selection menu
   const captureButton = page

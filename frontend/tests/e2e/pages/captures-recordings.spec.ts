@@ -14,7 +14,7 @@ import { test, expect } from "../fixtures";
 test.describe("Captures - List Page", () => {
   test("should load captures page without errors", async ({ page }) => {
     await page.goto("/captures");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/captures-list.png",
@@ -29,7 +29,7 @@ test.describe("Captures - List Page", () => {
     page,
   }) => {
     await page.goto("/captures");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     // The page uses RequireProject, so may show project selection prompt
@@ -50,7 +50,7 @@ test.describe("Captures - Viewer (non-existent session)", () => {
     page,
   }) => {
     await page.goto("/captures/non-existent-session-12345");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     await page.screenshot({
@@ -75,7 +75,7 @@ test.describe("Captures - Viewer (non-existent session)", () => {
 
   test("should show video player area when session loads", async ({ page }) => {
     await page.goto("/captures/non-existent-session-12345");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // For a non-existent session, we should see the not-found state
@@ -99,7 +99,7 @@ test.describe("Captures - Viewer (non-existent session)", () => {
 test.describe("Recordings - List Page", () => {
   test("should load recordings page without errors", async ({ page }) => {
     await page.goto("/recordings");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/recordings-list.png",
@@ -114,7 +114,7 @@ test.describe("Recordings - List Page", () => {
     page,
   }) => {
     await page.goto("/recordings");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     // The page uses RequireProject
@@ -135,7 +135,7 @@ test.describe("Recordings - Detail (non-existent)", () => {
     page,
   }) => {
     await page.goto("/recordings/non-existent-recording-12345");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     await page.screenshot({
@@ -160,7 +160,7 @@ test.describe("Recordings - Detail (non-existent)", () => {
     page,
   }) => {
     await page.goto("/recordings/non-existent-recording-12345");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // If a recording loads, it should have the three tabs
@@ -181,7 +181,7 @@ test.describe("Recordings - Detail (non-existent)", () => {
     page,
   }) => {
     await page.goto("/recordings/non-existent-recording-12345");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // If recording loaded, check for overview stats
@@ -204,7 +204,7 @@ test.describe("Recordings - Detail (non-existent)", () => {
 test.describe("Recordings - Upload", () => {
   test("should load upload page without errors", async ({ page }) => {
     await page.goto("/recordings/upload");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/recordings-upload.png",
@@ -217,7 +217,7 @@ test.describe("Recordings - Upload", () => {
 
   test("should display upload form or content", async ({ page }) => {
     await page.goto("/recordings/upload");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     // The upload page should have some form of upload interface

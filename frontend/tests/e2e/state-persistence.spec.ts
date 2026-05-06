@@ -22,7 +22,7 @@ test.describe("State Persistence", () => {
   test("states persist when navigating between pages", async ({ page }) => {
     // Navigate to dashboard
     await page.goto("/dashboard");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     // Take screenshot of initial dashboard
@@ -59,7 +59,7 @@ test.describe("State Persistence", () => {
     const statesLink = page.getByRole("button", { name: /states/i });
     if (await statesLink.isVisible()) {
       await statesLink.click();
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       // Take screenshot of states page before creating a new state
@@ -79,7 +79,7 @@ test.describe("State Persistence", () => {
       });
       if (await imageExtractionLink.isVisible()) {
         await imageExtractionLink.click();
-        await page.waitForLoadState("networkidle");
+        await page.waitForLoadState("domcontentloaded");
         await page.waitForTimeout(2000);
 
         await page.screenshot({
@@ -96,7 +96,7 @@ test.describe("State Persistence", () => {
       const workflowsLink = page.getByRole("button", { name: /workflows/i });
       if (await workflowsLink.isVisible()) {
         await workflowsLink.click();
-        await page.waitForLoadState("networkidle");
+        await page.waitForLoadState("domcontentloaded");
         await page.waitForTimeout(2000);
 
         await page.screenshot({
@@ -109,7 +109,7 @@ test.describe("State Persistence", () => {
       const statesLinkAgain = page.getByRole("button", { name: /states/i });
       if (await statesLinkAgain.isVisible()) {
         await statesLinkAgain.click();
-        await page.waitForLoadState("networkidle");
+        await page.waitForLoadState("domcontentloaded");
         await page.waitForTimeout(2000);
 
         await page.screenshot({
@@ -136,7 +136,7 @@ test.describe("State Persistence", () => {
 
     // Navigate to dashboard
     await page.goto("/dashboard");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     // Select a project
@@ -170,7 +170,7 @@ test.describe("State Persistence", () => {
     const workflowsLink = page.getByRole("button", { name: /workflows/i });
     if (await workflowsLink.isVisible()) {
       await workflowsLink.click();
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       // Take screenshot
@@ -189,7 +189,7 @@ test.describe("State Persistence", () => {
       const statesLink = page.getByRole("button", { name: /states/i });
       if (await statesLink.isVisible()) {
         await statesLink.click();
-        await page.waitForLoadState("networkidle");
+        await page.waitForLoadState("domcontentloaded");
         await page.waitForTimeout(2000);
 
         await page.screenshot({
@@ -203,7 +203,7 @@ test.describe("State Persistence", () => {
         });
         if (await workflowsLinkAgain.isVisible()) {
           await workflowsLinkAgain.click();
-          await page.waitForLoadState("networkidle");
+          await page.waitForLoadState("domcontentloaded");
           await page.waitForTimeout(2000);
 
           await page.screenshot({

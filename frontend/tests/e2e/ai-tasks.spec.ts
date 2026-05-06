@@ -11,7 +11,7 @@ test.describe("AI Tasks Page", () => {
   ): Promise<string | null> {
     // Navigate to dashboard first
     await page.goto("/dashboard");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     // Find and click the project switcher in the sidebar
@@ -58,7 +58,7 @@ test.describe("AI Tasks Page", () => {
     await page.goto(url);
 
     // Wait for page to load
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Take a screenshot
     await page.screenshot({
@@ -83,14 +83,14 @@ test.describe("AI Tasks Page", () => {
   }) => {
     // First select a project via dashboard
     await page.goto("/dashboard");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     // Click on AI Tasks in sidebar
     const aiTasksMenu = page.locator("text=AI Tasks").first();
     if (await aiTasksMenu.isVisible()) {
       await aiTasksMenu.click();
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
     }
 

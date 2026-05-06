@@ -13,7 +13,7 @@ import { test, expect } from "@playwright/test";
 test.describe("Demo List Page (/demo)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/demo");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -26,7 +26,7 @@ test.describe("Demo List Page (/demo)", () => {
 
   test("displays hero section with heading", async ({ page }) => {
     await page.goto("/demo");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
       name: /explore qontinui automations/i,
@@ -36,7 +36,7 @@ test.describe("Demo List Page (/demo)", () => {
 
   test("shows Public Demo Projects badge", async ({ page }) => {
     await page.goto("/demo");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Public Demo Projects")).toBeVisible({
       timeout: 10000,
@@ -45,7 +45,7 @@ test.describe("Demo List Page (/demo)", () => {
 
   test("shows description text", async ({ page }) => {
     await page.goto("/demo");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByText(/browse and view public automation projects/i)
@@ -54,7 +54,7 @@ test.describe("Demo List Page (/demo)", () => {
 
   test("has Create Your Own Project CTA button", async ({ page }) => {
     await page.goto("/demo");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const createButton = page
       .getByRole("button", { name: /create your own project/i })
@@ -64,7 +64,7 @@ test.describe("Demo List Page (/demo)", () => {
 
   test("has Sign In button", async ({ page }) => {
     await page.goto("/demo");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const signInButton = page.getByRole("button", { name: /sign in/i }).first();
     await expect(signInButton).toBeVisible({ timeout: 10000 });
@@ -72,7 +72,7 @@ test.describe("Demo List Page (/demo)", () => {
 
   test("shows projects or empty state after loading", async ({ page }) => {
     await page.goto("/demo");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Wait for loading to complete
     await page.waitForTimeout(3000);
@@ -109,7 +109,7 @@ test.describe("Demo List Page (/demo)", () => {
 
     // This might pass or miss depending on timing - that's OK
     // We just verify the page doesn't crash during loading
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -117,7 +117,7 @@ test.describe("Demo List Page (/demo)", () => {
 
   test("has bottom CTA section", async ({ page }) => {
     await page.goto("/demo");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByText("Ready to Build Your Own Automation?")
@@ -133,7 +133,7 @@ test.describe("Demo List Page (/demo)", () => {
 test.describe("Demo Detail Page (/demo/[id])", () => {
   test("shows Project Not Found for invalid ID", async ({ page }) => {
     await page.goto("/demo/nonexistent-project-id-12345");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Wait for the API call to complete
     await page.waitForTimeout(3000);
@@ -151,7 +151,7 @@ test.describe("Demo Detail Page (/demo/[id])", () => {
 
   test("shows error message for invalid ID", async ({ page }) => {
     await page.goto("/demo/invalid-uuid-format");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Should show an error message explaining the project doesn't exist or isn't public
@@ -163,7 +163,7 @@ test.describe("Demo Detail Page (/demo/[id])", () => {
 
   test("has Back to Demo Projects button for invalid ID", async ({ page }) => {
     await page.goto("/demo/nonexistent-id");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     const backButton = page.getByRole("button", {
@@ -174,7 +174,7 @@ test.describe("Demo Detail Page (/demo/[id])", () => {
 
   test("loads without 500 error for invalid ID", async ({ page }) => {
     await page.goto("/demo/00000000-0000-0000-0000-000000000000");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -197,7 +197,7 @@ test.describe("Demo Detail Page (/demo/[id])", () => {
     // Wait for either loading text or the error state
     await Promise.race([
       loadingText.waitFor({ timeout: 5000 }).catch(() => {}),
-      page.waitForLoadState("networkidle"),
+      page.waitForLoadState("domcontentloaded"),
     ]);
 
     // After loading, it should show not-found since this is a fake ID
@@ -208,7 +208,7 @@ test.describe("Demo Detail Page (/demo/[id])", () => {
 
   test("Back to Demo Projects button navigates correctly", async ({ page }) => {
     await page.goto("/demo/nonexistent-id");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     const backButton = page.getByRole("button", {
@@ -217,7 +217,7 @@ test.describe("Demo Detail Page (/demo/[id])", () => {
 
     if (await backButton.isVisible().catch(() => false)) {
       await backButton.click();
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
       // Should navigate back to demo list
       expect(page.url()).toContain("/demo");

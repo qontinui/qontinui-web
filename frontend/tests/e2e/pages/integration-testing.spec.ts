@@ -12,7 +12,7 @@ import { test, expect } from "../fixtures";
 test.describe("Integration Testing Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
     await page.goto("/integration-testing");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-integration-testing.png",
@@ -27,14 +27,14 @@ test.describe("Integration Testing Page", () => {
 
   test("should display Mock Mode badge", async ({ page }) => {
     await page.goto("/integration-testing");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Mock Mode").first()).toBeVisible();
   });
 
   test("should display API health monitoring badge", async ({ page }) => {
     await page.goto("/integration-testing");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The API health badge shows one of: "Checking API...", "API Connected", "API Offline"
     const healthBadge = page
@@ -47,7 +47,7 @@ test.describe("Integration Testing Page", () => {
     page,
   }) => {
     await page.goto("/integration-testing");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The page uses a grid layout: control panel on left, runs list on right
     // The right column has the "Test Run History" heading
@@ -65,14 +65,14 @@ test.describe("Integration Testing Page", () => {
 
   test("should display Refresh button in list mode", async ({ page }) => {
     await page.goto("/integration-testing");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByRole("button", { name: /Refresh/i })).toBeVisible();
   });
 
   test("should show empty state or runs list", async ({ page }) => {
     await page.goto("/integration-testing");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Either shows run cards or empty state message
     const emptyState = page.getByText("No Integration Tests Yet");
@@ -152,7 +152,7 @@ test.describe("Integration Testing Page", () => {
     });
 
     await page.goto("/integration-testing");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-integration-testing-with-runs.png",

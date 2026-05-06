@@ -22,7 +22,7 @@ const EXTRACTION_PAGE_URL = `/automation-builder/extraction?project=${PROJECT_ID
  */
 async function navigateToExtractionPage(page: Page): Promise<void> {
   await page.goto(EXTRACTION_PAGE_URL);
-  await page.waitForLoadState("networkidle");
+  await page.waitForLoadState("domcontentloaded");
 
   // Wait for the page title or a key element to ensure page is loaded
   await page.waitForSelector("text=/discovery|extraction/i", {
@@ -479,7 +479,7 @@ test.describe("Annotation Editor - Integration Tests", () => {
   test("should load the extraction page successfully", async ({ page }) => {
     // This test verifies the basic page load works
     await page.goto(EXTRACTION_PAGE_URL);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Should be on the extraction page
     await expect(page).toHaveURL(/extraction/);
@@ -493,7 +493,7 @@ test.describe("Annotation Editor - Integration Tests", () => {
 
   test("should display annotation components", async ({ page }) => {
     await page.goto(EXTRACTION_PAGE_URL);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Check for key annotation UI components
     // These may be conditionally rendered based on state
@@ -512,7 +512,7 @@ test.describe("Annotation Editor - Integration Tests", () => {
 
   test("should handle state persistence", async ({ page }) => {
     await page.goto(EXTRACTION_PAGE_URL);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Check if localStorage has annotation store data
     const _storeData = await page.evaluate(() => {

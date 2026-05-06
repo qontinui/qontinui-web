@@ -10,7 +10,7 @@ import { test, expect } from "../fixtures";
 test.describe("Profile Page", () => {
   test("loads without errors and shows heading", async ({ page }) => {
     await page.goto("/profile");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-profile.png",
@@ -29,7 +29,7 @@ test.describe("Profile Page", () => {
 
   test("shows profile form area with user info", async ({ page }) => {
     await page.goto("/profile");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Wait for profile data to load
     await page.waitForTimeout(3000);
@@ -49,7 +49,7 @@ test.describe("Profile Page", () => {
 
   test("shows storage usage section", async ({ page }) => {
     await page.goto("/profile");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Wait for profile data to load (storage section loads async)
     await page.waitForTimeout(3000);
@@ -67,7 +67,7 @@ test.describe("Profile Page", () => {
 
   test("has back to dashboard and connect runner buttons", async ({ page }) => {
     await page.goto("/profile");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Back to Dashboard button
     const backBtn = page.locator('[data-testid="profile-back-btn"]');
@@ -84,7 +84,7 @@ test.describe("Profile Page", () => {
 test.describe("Pricing Page", () => {
   test("loads without errors and shows heading", async ({ page }) => {
     await page.goto("/pricing");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-pricing.png",
@@ -103,7 +103,7 @@ test.describe("Pricing Page", () => {
 
   test("displays all three subscription tiers", async ({ page }) => {
     await page.goto("/pricing");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Verify the pricing tiers grid is present
     const tiersGrid = page.locator('[data-testid="pricing-tiers-grid"]');
@@ -132,7 +132,7 @@ test.describe("Pricing Page", () => {
 
   test("shows Popular badge on Hobby tier", async ({ page }) => {
     await page.goto("/pricing");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Hobby tier should have "Popular" badge
     await expect(page.getByText("Popular")).toBeVisible({ timeout: 15000 });
@@ -140,7 +140,7 @@ test.describe("Pricing Page", () => {
 
   test("shows feature lists for each tier", async ({ page }) => {
     await page.goto("/pricing");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Verify some feature texts are visible
     await expect(page.getByText("5 configurations")).toBeVisible({
@@ -154,7 +154,7 @@ test.describe("Pricing Page", () => {
 test.describe("Billing Success Page", () => {
   test("loads and shows success message", async ({ page }) => {
     await page.goto("/billing/success");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-billing-success.png",
@@ -178,7 +178,7 @@ test.describe("Billing Success Page", () => {
 
   test("shows redirect countdown and dashboard button", async ({ page }) => {
     await page.goto("/billing/success");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Verify redirect countdown text is present
     await expect(
@@ -193,7 +193,7 @@ test.describe("Billing Success Page", () => {
 test.describe("Billing Canceled Page", () => {
   test("loads and shows cancellation message", async ({ page }) => {
     await page.goto("/billing/canceled");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-billing-canceled.png",
@@ -217,7 +217,7 @@ test.describe("Billing Canceled Page", () => {
 
   test("shows navigation buttons", async ({ page }) => {
     await page.goto("/billing/canceled");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Verify View Plans Again button
     await expect(page.getByText("View Plans Again")).toBeVisible({
@@ -230,7 +230,7 @@ test.describe("Billing Canceled Page", () => {
 
   test("confirms no charges message", async ({ page }) => {
     await page.goto("/billing/canceled");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Verify no charges message
     await expect(

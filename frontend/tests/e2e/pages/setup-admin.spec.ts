@@ -10,7 +10,7 @@ import { test, expect } from "../fixtures";
 test.describe("Setup Admin Page (/setup-admin)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/setup-admin");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -23,7 +23,7 @@ test.describe("Setup Admin Page (/setup-admin)", () => {
 
   test("displays Claim Admin Access heading", async ({ page }) => {
     await page.goto("/setup-admin");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
       name: /claim admin access/i,
@@ -33,7 +33,7 @@ test.describe("Setup Admin Page (/setup-admin)", () => {
 
   test("shows description text", async ({ page }) => {
     await page.goto("/setup-admin");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText(/log in first/i)).toBeVisible({
       timeout: 10000,
@@ -46,7 +46,7 @@ test.describe("Setup Admin Page (/setup-admin)", () => {
 
   test("shows Claim Admin button", async ({ page }) => {
     await page.goto("/setup-admin");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const claimButton = page.getByRole("button", {
       name: /claim admin/i,
@@ -57,7 +57,7 @@ test.describe("Setup Admin Page (/setup-admin)", () => {
 
   test("page is rendered within a card component", async ({ page }) => {
     await page.goto("/setup-admin");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The page uses a Card component with specific structure
     // The heading should be inside a card
@@ -78,7 +78,7 @@ test.describe("Setup Admin Page (/setup-admin)", () => {
 
   test("clicking Claim Admin shows loading state", async ({ page }) => {
     await page.goto("/setup-admin");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const claimButton = page.getByRole("button", {
       name: /claim admin/i,
@@ -112,7 +112,7 @@ test.describe("Setup Admin Page (/setup-admin)", () => {
 
   test("shows result message after claiming admin", async ({ page }) => {
     await page.goto("/setup-admin");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const claimButton = page.getByRole("button", {
       name: /claim admin/i,
