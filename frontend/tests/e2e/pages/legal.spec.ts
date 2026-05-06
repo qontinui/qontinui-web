@@ -16,7 +16,7 @@ import { test, expect } from "@playwright/test";
 test.describe("Privacy Policy (/privacy)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/privacy");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -29,7 +29,7 @@ test.describe("Privacy Policy (/privacy)", () => {
 
   test("displays correct heading", async ({ page }) => {
     await page.goto("/privacy");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", { name: "Privacy Policy" });
     await expect(heading).toBeVisible({ timeout: 10000 });
@@ -37,7 +37,7 @@ test.describe("Privacy Policy (/privacy)", () => {
 
   test("shows last updated date", async ({ page }) => {
     await page.goto("/privacy");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText(/last updated/i)).toBeVisible({
       timeout: 10000,
@@ -46,7 +46,7 @@ test.describe("Privacy Policy (/privacy)", () => {
 
   test("contains key sections", async ({ page }) => {
     await page.goto("/privacy");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Verify key section headings
     await expect(page.getByText("1. Introduction")).toBeVisible({
@@ -64,7 +64,7 @@ test.describe("Privacy Policy (/privacy)", () => {
 
   test("contains GDPR reference", async ({ page }) => {
     await page.goto("/privacy");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).toContain("GDPR");
@@ -75,7 +75,7 @@ test.describe("Privacy Policy (/privacy)", () => {
 test.describe("Extension Privacy Policy (/privacy-extension)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/privacy-extension");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -88,7 +88,7 @@ test.describe("Extension Privacy Policy (/privacy-extension)", () => {
 
   test("displays correct heading", async ({ page }) => {
     await page.goto("/privacy-extension");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
       name: /privacy policy for qontinui capture browser extension/i,
@@ -98,7 +98,7 @@ test.describe("Extension Privacy Policy (/privacy-extension)", () => {
 
   test("contains key sections", async ({ page }) => {
     await page.goto("/privacy-extension");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Overview")).toBeVisible({ timeout: 10000 });
     await expect(page.getByText("Data Collection")).toBeVisible();
@@ -109,7 +109,7 @@ test.describe("Extension Privacy Policy (/privacy-extension)", () => {
 
   test("emphasizes data never leaves the machine", async ({ page }) => {
     await page.goto("/privacy-extension");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Data never leaves your machine.")).toBeVisible(
       { timeout: 10000 }
@@ -118,7 +118,7 @@ test.describe("Extension Privacy Policy (/privacy-extension)", () => {
 
   test("lists what is NOT collected", async ({ page }) => {
     await page.goto("/privacy-extension");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByText("We do not collect personal information")
@@ -133,7 +133,7 @@ test.describe("Extension Privacy Policy (/privacy-extension)", () => {
 
   test("has Open Source section with GitHub link", async ({ page }) => {
     await page.goto("/privacy-extension");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: "Open Source" })
@@ -149,7 +149,7 @@ test.describe("Extension Privacy Policy (/privacy-extension)", () => {
 test.describe("Terms of Service (/terms)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/terms");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -162,7 +162,7 @@ test.describe("Terms of Service (/terms)", () => {
 
   test("displays correct heading", async ({ page }) => {
     await page.goto("/terms");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", { name: "Terms of Service" });
     await expect(heading).toBeVisible({ timeout: 10000 });
@@ -170,7 +170,7 @@ test.describe("Terms of Service (/terms)", () => {
 
   test("shows last updated date", async ({ page }) => {
     await page.goto("/terms");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText(/last updated/i)).toBeVisible({
       timeout: 10000,
@@ -179,7 +179,7 @@ test.describe("Terms of Service (/terms)", () => {
 
   test("contains key sections", async ({ page }) => {
     await page.goto("/terms");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("1. Agreement to Terms")).toBeVisible({
       timeout: 10000,
@@ -195,7 +195,7 @@ test.describe("Terms of Service (/terms)", () => {
 
   test("has link to acceptable use policy", async ({ page }) => {
     await page.goto("/terms");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const aupLink = page.getByRole("link", {
       name: /acceptable use policy/i,
@@ -206,7 +206,7 @@ test.describe("Terms of Service (/terms)", () => {
 
   test("contains Important Reminders section", async ({ page }) => {
     await page.goto("/terms");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Important Reminders")).toBeVisible({
       timeout: 10000,
@@ -217,7 +217,7 @@ test.describe("Terms of Service (/terms)", () => {
 test.describe("Acceptable Use Policy (/acceptable-use)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/acceptable-use");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -230,7 +230,7 @@ test.describe("Acceptable Use Policy (/acceptable-use)", () => {
 
   test("displays correct heading", async ({ page }) => {
     await page.goto("/acceptable-use");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
       name: "Acceptable Use Policy",
@@ -240,7 +240,7 @@ test.describe("Acceptable Use Policy (/acceptable-use)", () => {
 
   test("shows last updated date", async ({ page }) => {
     await page.goto("/acceptable-use");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText(/last updated/i)).toBeVisible({
       timeout: 10000,
@@ -249,7 +249,7 @@ test.describe("Acceptable Use Policy (/acceptable-use)", () => {
 
   test("contains Prohibited Uses section", async ({ page }) => {
     await page.goto("/acceptable-use");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("3. Prohibited Uses")).toBeVisible({
       timeout: 10000,
@@ -264,7 +264,7 @@ test.describe("Acceptable Use Policy (/acceptable-use)", () => {
 
   test("contains Acceptable and Recommended Uses section", async ({ page }) => {
     await page.goto("/acceptable-use");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByText("4. Acceptable and Recommended Uses")
@@ -279,7 +279,7 @@ test.describe("Acceptable Use Policy (/acceptable-use)", () => {
 
   test("contains Gray Areas warning section", async ({ page }) => {
     await page.goto("/acceptable-use");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByText("5. Gray Areas - Use with Extreme Caution")
@@ -288,7 +288,7 @@ test.describe("Acceptable Use Policy (/acceptable-use)", () => {
 
   test("contains Key Takeaways section", async ({ page }) => {
     await page.goto("/acceptable-use");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Key Takeaways")).toBeVisible({
       timeout: 10000,
@@ -297,7 +297,7 @@ test.describe("Acceptable Use Policy (/acceptable-use)", () => {
 
   test("contains Enforcement section", async ({ page }) => {
     await page.goto("/acceptable-use");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("7. Enforcement and Violations")).toBeVisible({
       timeout: 10000,
@@ -308,7 +308,7 @@ test.describe("Acceptable Use Policy (/acceptable-use)", () => {
 test.describe("Responsible Use FAQ (/responsible-use)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/responsible-use");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -321,7 +321,7 @@ test.describe("Responsible Use FAQ (/responsible-use)", () => {
 
   test("displays correct heading", async ({ page }) => {
     await page.goto("/responsible-use");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
       name: "Responsible Use FAQ",
@@ -331,7 +331,7 @@ test.describe("Responsible Use FAQ (/responsible-use)", () => {
 
   test("shows last updated date", async ({ page }) => {
     await page.goto("/responsible-use");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText(/last updated/i)).toBeVisible({
       timeout: 10000,
@@ -340,7 +340,7 @@ test.describe("Responsible Use FAQ (/responsible-use)", () => {
 
   test("shows Welcome to Qontinui introduction", async ({ page }) => {
     await page.goto("/responsible-use");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Welcome to Qontinui")).toBeVisible({
       timeout: 10000,
@@ -351,7 +351,7 @@ test.describe("Responsible Use FAQ (/responsible-use)", () => {
     page,
   }) => {
     await page.goto("/responsible-use");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByText("Quick Reference: Safe vs. Risky Use")
@@ -365,7 +365,7 @@ test.describe("Responsible Use FAQ (/responsible-use)", () => {
 
   test("contains major FAQ sections", async ({ page }) => {
     await page.goto("/responsible-use");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Major section headings
     await expect(page.getByText("Getting Started")).toBeVisible({
@@ -380,7 +380,7 @@ test.describe("Responsible Use FAQ (/responsible-use)", () => {
 
   test("contains Important Disclaimers section", async ({ page }) => {
     await page.goto("/responsible-use");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Important Disclaimers")).toBeVisible({
       timeout: 10000,
@@ -391,7 +391,7 @@ test.describe("Responsible Use FAQ (/responsible-use)", () => {
     page,
   }) => {
     await page.goto("/responsible-use");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const termsLink = page
       .getByRole("link", { name: /terms of service/i })

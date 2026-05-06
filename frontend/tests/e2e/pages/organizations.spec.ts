@@ -11,7 +11,7 @@ import { test, expect } from "../fixtures";
 test.describe("Organizations List Page", () => {
   test("loads without errors and shows heading", async ({ page }) => {
     await page.goto("/organizations");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-organizations-list.png",
@@ -30,7 +30,7 @@ test.describe("Organizations List Page", () => {
 
   test("shows Create Organization button", async ({ page }) => {
     await page.goto("/organizations");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Create Organization button should be visible
     await expect(page.getByText("Create Organization").first()).toBeVisible({
@@ -40,7 +40,7 @@ test.describe("Organizations List Page", () => {
 
   test("shows organization cards or empty state", async ({ page }) => {
     await page.goto("/organizations");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Wait for data to load
     await page.waitForTimeout(3000);
@@ -69,7 +69,7 @@ test.describe("Organizations List Page", () => {
 
   test("shows stats summary cards", async ({ page }) => {
     await page.goto("/organizations");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Verify stats cards are present
     await expect(page.getByText("Total Organizations")).toBeVisible({
@@ -83,7 +83,7 @@ test.describe("Organizations List Page", () => {
 test.describe("New Organization Page", () => {
   test("loads without errors and shows creation form", async ({ page }) => {
     await page.goto("/organizations/new");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-organizations-new.png",
@@ -102,7 +102,7 @@ test.describe("New Organization Page", () => {
 
   test("shows name input and description fields", async ({ page }) => {
     await page.goto("/organizations/new");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Organization Name input should be visible
     const nameInput = page.locator("#name");
@@ -119,7 +119,7 @@ test.describe("New Organization Page", () => {
 
   test("shows create and cancel buttons", async ({ page }) => {
     await page.goto("/organizations/new");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Create Organization button (in the actions area)
     const createButtons = page.getByText("Create Organization");
@@ -132,7 +132,7 @@ test.describe("New Organization Page", () => {
 
   test("auto-generates slug from name", async ({ page }) => {
     await page.goto("/organizations/new");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Type a name
     const nameInput = page.locator("#name");
@@ -150,7 +150,7 @@ test.describe("New Organization Page", () => {
 
   test("shows preview when name is entered", async ({ page }) => {
     await page.goto("/organizations/new");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Type a name to trigger preview
     const nameInput = page.locator("#name");
@@ -167,7 +167,7 @@ test.describe("New Organization Page", () => {
 
   test("shows back to organizations link", async ({ page }) => {
     await page.goto("/organizations/new");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Back to Organizations")).toBeVisible({
       timeout: 15000,
@@ -181,7 +181,7 @@ test.describe("Organization Detail Page", () => {
 
   test("loads without 500 error for invalid org", async ({ page }) => {
     await page.goto(`/organizations/${fakeOrgId}`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-organization-detail.png",
@@ -221,7 +221,7 @@ test.describe("Organization Members Page", () => {
 
   test("loads without 500 error for invalid org", async ({ page }) => {
     await page.goto(`/organizations/${fakeOrgId}/members`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-organization-members.png",
@@ -239,7 +239,7 @@ test.describe("Organization Settings Page", () => {
 
   test("loads without 500 error for invalid org", async ({ page }) => {
     await page.goto(`/organizations/${fakeOrgId}/settings`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-organization-settings.png",

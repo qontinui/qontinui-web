@@ -13,7 +13,7 @@ import { test, expect } from "../fixtures";
 test.describe("AI Tasks - List Page", () => {
   test("should load AI tasks list page without errors", async ({ page }) => {
     await page.goto("/ai-tasks");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/ai-tasks-list.png",
@@ -26,7 +26,7 @@ test.describe("AI Tasks - List Page", () => {
 
   test("should display AI Tasks heading", async ({ page }) => {
     await page.goto("/ai-tasks");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     // The page uses RequireProject, so may show project selection prompt.
@@ -44,7 +44,7 @@ test.describe("AI Tasks - List Page", () => {
 
   test("should have status filter dropdown", async ({ page }) => {
     await page.goto("/ai-tasks");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     // When AI Tasks page is visible, it should have a status filter
@@ -65,7 +65,7 @@ test.describe("AI Tasks - List Page", () => {
     page,
   }) => {
     await page.goto("/ai-tasks");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     const hasTaskHistory =
@@ -91,7 +91,7 @@ test.describe("AI Tasks - List Page", () => {
 
   test("should have pagination controls when tasks exist", async ({ page }) => {
     await page.goto("/ai-tasks");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // If there are tasks, pagination controls should be available
@@ -111,7 +111,7 @@ test.describe("AI Tasks - List Page", () => {
 
   test("should have refresh button", async ({ page }) => {
     await page.goto("/ai-tasks");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     const hasAITasksHeading = (await page.locator("text=AI Tasks").count()) > 0;
@@ -127,7 +127,7 @@ test.describe("AI Tasks - List Page", () => {
 test.describe("AI Tasks - Detail Page", () => {
   test("should handle non-existent task ID gracefully", async ({ page }) => {
     await page.goto("/ai-tasks/non-existent-task-id-12345");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     await page.screenshot({
@@ -160,7 +160,7 @@ test.describe("AI Tasks - Detail Page", () => {
 
   test("should display AI Task Details heading", async ({ page }) => {
     await page.goto("/ai-tasks/non-existent-task-id");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     // Should show AI Task Details heading or require project
@@ -176,7 +176,7 @@ test.describe("AI Tasks - Detail Page", () => {
     page,
   }) => {
     await page.goto("/ai-tasks/non-existent-task-id");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // If a task is loaded (even with an error), the tab structure should exist

@@ -19,7 +19,7 @@ import { test, expect } from "@playwright/test";
 test.describe("Runner Overview (/docs/runner)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/docs/runner");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -32,7 +32,7 @@ test.describe("Runner Overview (/docs/runner)", () => {
 
   test("displays main heading and description", async ({ page }) => {
     await page.goto("/docs/runner");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
       name: /qontinui runner/i,
@@ -48,7 +48,7 @@ test.describe("Runner Overview (/docs/runner)", () => {
 
   test("shows key capabilities", async ({ page }) => {
     await page.goto("/docs/runner");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByText("Actual mouse clicks and keyboard input")
@@ -64,7 +64,7 @@ test.describe("Runner Overview (/docs/runner)", () => {
 
   test("shows system requirements for all platforms", async ({ page }) => {
     await page.goto("/docs/runner");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /system requirements/i })
@@ -83,7 +83,7 @@ test.describe("Runner Overview (/docs/runner)", () => {
 
   test("shows documentation section links to sub-pages", async ({ page }) => {
     await page.goto("/docs/runner");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /documentation sections/i })
@@ -106,7 +106,7 @@ test.describe("Runner Overview (/docs/runner)", () => {
 
   test("shows Key Features section", async ({ page }) => {
     await page.goto("/docs/runner");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /key features/i })
@@ -119,7 +119,7 @@ test.describe("Runner Overview (/docs/runner)", () => {
 
   test("has download CTA", async ({ page }) => {
     await page.goto("/docs/runner");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("link", { name: /download runner/i })
@@ -130,7 +130,7 @@ test.describe("Runner Overview (/docs/runner)", () => {
 test.describe("Runner Installation (/docs/runner/installation)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/docs/runner/installation");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -143,7 +143,7 @@ test.describe("Runner Installation (/docs/runner/installation)", () => {
 
   test("displays page title", async ({ page }) => {
     await page.goto("/docs/runner/installation");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
       name: /runner installation guide/i,
@@ -153,7 +153,7 @@ test.describe("Runner Installation (/docs/runner/installation)", () => {
 
   test("shows Windows installation section", async ({ page }) => {
     await page.goto("/docs/runner/installation");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /windows installation/i })
@@ -165,7 +165,7 @@ test.describe("Runner Installation (/docs/runner/installation)", () => {
 
   test("shows macOS installation section", async ({ page }) => {
     await page.goto("/docs/runner/installation");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /macos installation/i })
@@ -178,7 +178,7 @@ test.describe("Runner Installation (/docs/runner/installation)", () => {
 
   test("shows Linux installation section", async ({ page }) => {
     await page.goto("/docs/runner/installation");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /linux installation/i })
@@ -190,7 +190,7 @@ test.describe("Runner Installation (/docs/runner/installation)", () => {
 
   test("shows checksum verification section", async ({ page }) => {
     await page.goto("/docs/runner/installation");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /verifying your download/i })
@@ -203,7 +203,7 @@ test.describe("Runner Installation (/docs/runner/installation)", () => {
 
   test("shows troubleshooting section", async ({ page }) => {
     await page.goto("/docs/runner/installation");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /troubleshooting/i })
@@ -216,7 +216,7 @@ test.describe("Runner Installation (/docs/runner/installation)", () => {
 test.describe("Runner Execution (/docs/runner/execution)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/docs/runner/execution");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -229,7 +229,7 @@ test.describe("Runner Execution (/docs/runner/execution)", () => {
 
   test("displays page title", async ({ page }) => {
     await page.goto("/docs/runner/execution");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
       name: /running automations/i,
@@ -239,7 +239,7 @@ test.describe("Runner Execution (/docs/runner/execution)", () => {
 
   test("shows 3 execution modes", async ({ page }) => {
     await page.goto("/docs/runner/execution");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /execution modes/i })
@@ -252,7 +252,7 @@ test.describe("Runner Execution (/docs/runner/execution)", () => {
 
   test("shows configurable execution settings", async ({ page }) => {
     await page.goto("/docs/runner/execution");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /execution settings/i })
@@ -266,7 +266,7 @@ test.describe("Runner Execution (/docs/runner/execution)", () => {
 
   test("shows prerequisites section", async ({ page }) => {
     await page.goto("/docs/runner/execution");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /before you begin/i })
@@ -279,7 +279,7 @@ test.describe("Runner Execution (/docs/runner/execution)", () => {
 
   test("shows monitoring section", async ({ page }) => {
     await page.goto("/docs/runner/execution");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /monitoring execution/i })
@@ -294,7 +294,7 @@ test.describe("Runner Execution (/docs/runner/execution)", () => {
 
   test("shows best practices", async ({ page }) => {
     await page.goto("/docs/runner/execution");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /best practices/i })
@@ -309,7 +309,7 @@ test.describe("Runner Execution (/docs/runner/execution)", () => {
 test.describe("Runner Monitoring (/docs/runner/monitoring)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/docs/runner/monitoring");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -322,7 +322,7 @@ test.describe("Runner Monitoring (/docs/runner/monitoring)", () => {
 
   test("displays page title", async ({ page }) => {
     await page.goto("/docs/runner/monitoring");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
       name: /monitoring/i,
@@ -332,7 +332,7 @@ test.describe("Runner Monitoring (/docs/runner/monitoring)", () => {
 
   test("shows log file structure documentation", async ({ page }) => {
     await page.goto("/docs/runner/monitoring");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /log file locations/i })
@@ -345,7 +345,7 @@ test.describe("Runner Monitoring (/docs/runner/monitoring)", () => {
 
   test("shows log levels documentation", async ({ page }) => {
     await page.goto("/docs/runner/monitoring");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /log levels/i })
@@ -359,7 +359,7 @@ test.describe("Runner Monitoring (/docs/runner/monitoring)", () => {
 
   test("shows real-time monitoring section", async ({ page }) => {
     await page.goto("/docs/runner/monitoring");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /real-time monitoring/i })
@@ -372,7 +372,7 @@ test.describe("Runner Monitoring (/docs/runner/monitoring)", () => {
 
   test("shows health monitoring section", async ({ page }) => {
     await page.goto("/docs/runner/monitoring");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /health monitoring/i })
@@ -385,7 +385,7 @@ test.describe("Runner Monitoring (/docs/runner/monitoring)", () => {
 
   test("shows debugging tips", async ({ page }) => {
     await page.goto("/docs/runner/monitoring");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /debugging tips/i })
@@ -400,7 +400,7 @@ test.describe("Runner Monitoring (/docs/runner/monitoring)", () => {
 test.describe("Runner Multi-Monitor (/docs/runner/multi-monitor)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/docs/runner/multi-monitor");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -413,7 +413,7 @@ test.describe("Runner Multi-Monitor (/docs/runner/multi-monitor)", () => {
 
   test("displays page title", async ({ page }) => {
     await page.goto("/docs/runner/multi-monitor");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
       name: /multi-monitor support/i,
@@ -423,7 +423,7 @@ test.describe("Runner Multi-Monitor (/docs/runner/multi-monitor)", () => {
 
   test("shows virtual desktop coordinate system docs", async ({ page }) => {
     await page.goto("/docs/runner/multi-monitor");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByText("Virtual Desktop Coordinate System")
@@ -436,7 +436,7 @@ test.describe("Runner Multi-Monitor (/docs/runner/multi-monitor)", () => {
 
   test("shows monitor detection documentation", async ({ page }) => {
     await page.goto("/docs/runner/multi-monitor");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Monitor Detection")).toBeVisible({
       timeout: 10000,
@@ -448,7 +448,7 @@ test.describe("Runner Multi-Monitor (/docs/runner/multi-monitor)", () => {
 
   test("shows monitor selection methods", async ({ page }) => {
     await page.goto("/docs/runner/multi-monitor");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /selecting monitors/i })
@@ -461,7 +461,7 @@ test.describe("Runner Multi-Monitor (/docs/runner/multi-monitor)", () => {
 
   test("shows bounding region capture concept", async ({ page }) => {
     await page.goto("/docs/runner/multi-monitor");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Bounding Region Capture")).toBeVisible({
       timeout: 10000,
@@ -470,7 +470,7 @@ test.describe("Runner Multi-Monitor (/docs/runner/multi-monitor)", () => {
 
   test("shows common use cases", async ({ page }) => {
     await page.goto("/docs/runner/multi-monitor");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /common use cases/i })
@@ -484,7 +484,7 @@ test.describe("Runner Multi-Monitor (/docs/runner/multi-monitor)", () => {
 test.describe("Runner Troubleshooting (/docs/runner/troubleshooting)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/docs/runner/troubleshooting");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -497,7 +497,7 @@ test.describe("Runner Troubleshooting (/docs/runner/troubleshooting)", () => {
 
   test("displays page title", async ({ page }) => {
     await page.goto("/docs/runner/troubleshooting");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
       name: /troubleshooting/i,
@@ -507,7 +507,7 @@ test.describe("Runner Troubleshooting (/docs/runner/troubleshooting)", () => {
 
   test("shows 4 issue categories", async ({ page }) => {
     await page.goto("/docs/runner/troubleshooting");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Installation Issues
     await expect(
@@ -532,7 +532,7 @@ test.describe("Runner Troubleshooting (/docs/runner/troubleshooting)", () => {
 
   test("shows quick diagnostics section", async ({ page }) => {
     await page.goto("/docs/runner/troubleshooting");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /quick diagnostics/i })
@@ -546,7 +546,7 @@ test.describe("Runner Troubleshooting (/docs/runner/troubleshooting)", () => {
 
   test("shows error codes reference", async ({ page }) => {
     await page.goto("/docs/runner/troubleshooting");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /error codes reference/i })
@@ -561,7 +561,7 @@ test.describe("Runner Troubleshooting (/docs/runner/troubleshooting)", () => {
 
   test("shows installation issues with error codes", async ({ page }) => {
     await page.goto("/docs/runner/troubleshooting");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("INSTALL_001")).toBeVisible({ timeout: 10000 });
     await expect(page.getByText("INSTALL_002")).toBeVisible();
@@ -570,7 +570,7 @@ test.describe("Runner Troubleshooting (/docs/runner/troubleshooting)", () => {
 
   test("shows platform-specific issues", async ({ page }) => {
     await page.goto("/docs/runner/troubleshooting");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /platform-specific issues/i })
@@ -579,7 +579,7 @@ test.describe("Runner Troubleshooting (/docs/runner/troubleshooting)", () => {
 
   test("shows advanced debugging section", async ({ page }) => {
     await page.goto("/docs/runner/troubleshooting");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /advanced debugging/i })
@@ -594,7 +594,7 @@ test.describe("Runner Troubleshooting (/docs/runner/troubleshooting)", () => {
 test.describe("Runner AI Integration (/docs/runner/ai-integration)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/docs/runner/ai-integration");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -607,7 +607,7 @@ test.describe("Runner AI Integration (/docs/runner/ai-integration)", () => {
 
   test("displays page title", async ({ page }) => {
     await page.goto("/docs/runner/ai-integration");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
       name: /ai integration/i,
@@ -617,7 +617,7 @@ test.describe("Runner AI Integration (/docs/runner/ai-integration)", () => {
 
   test("shows MCP integration documentation", async ({ page }) => {
     await page.goto("/docs/runner/ai-integration");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /mcp server integration/i })
@@ -630,7 +630,7 @@ test.describe("Runner AI Integration (/docs/runner/ai-integration)", () => {
 
   test("shows structured description format", async ({ page }) => {
     await page.goto("/docs/runner/ai-integration");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /description format/i })
@@ -646,7 +646,7 @@ test.describe("Runner AI Integration (/docs/runner/ai-integration)", () => {
 
   test("shows why workflow descriptions matter", async ({ page }) => {
     await page.goto("/docs/runner/ai-integration");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", {
@@ -657,7 +657,7 @@ test.describe("Runner AI Integration (/docs/runner/ai-integration)", () => {
 
   test("shows workflow examples", async ({ page }) => {
     await page.goto("/docs/runner/ai-integration");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByRole("heading", { name: /examples/i })).toBeVisible({
       timeout: 10000,
@@ -676,7 +676,7 @@ test.describe("Runner AI Integration (/docs/runner/ai-integration)", () => {
 
   test("shows best practices with Do and Don't", async ({ page }) => {
     await page.goto("/docs/runner/ai-integration");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /best practices/i })
@@ -694,7 +694,7 @@ test.describe("Runner AI Integration (/docs/runner/ai-integration)", () => {
 test.describe("Runner Workflow Descriptions (/docs/runner/workflow-descriptions)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/docs/runner/workflow-descriptions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -707,7 +707,7 @@ test.describe("Runner Workflow Descriptions (/docs/runner/workflow-descriptions)
 
   test("displays page title", async ({ page }) => {
     await page.goto("/docs/runner/workflow-descriptions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
       name: /writing workflow descriptions/i,
@@ -717,7 +717,7 @@ test.describe("Runner Workflow Descriptions (/docs/runner/workflow-descriptions)
 
   test("shows writing tips section", async ({ page }) => {
     await page.goto("/docs/runner/workflow-descriptions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Start with the Action")).toBeVisible({
       timeout: 10000,
@@ -729,7 +729,7 @@ test.describe("Runner Workflow Descriptions (/docs/runner/workflow-descriptions)
 
   test("shows JSON format example", async ({ page }) => {
     await page.goto("/docs/runner/workflow-descriptions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /json format example/i })
@@ -743,7 +743,7 @@ test.describe("Runner Workflow Descriptions (/docs/runner/workflow-descriptions)
 
   test("shows workflow categories table", async ({ page }) => {
     await page.goto("/docs/runner/workflow-descriptions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /workflow categories/i })
@@ -759,7 +759,7 @@ test.describe("Runner Workflow Descriptions (/docs/runner/workflow-descriptions)
 
   test("shows structured description format", async ({ page }) => {
     await page.goto("/docs/runner/workflow-descriptions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", {
@@ -773,7 +773,7 @@ test.describe("Runner Workflow Descriptions (/docs/runner/workflow-descriptions)
 
   test("shows best practices with Do and Don't", async ({ page }) => {
     await page.goto("/docs/runner/workflow-descriptions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /best practices/i })
@@ -788,7 +788,7 @@ test.describe("Runner Workflow Descriptions (/docs/runner/workflow-descriptions)
 
   test("shows multi-workflow sequences section", async ({ page }) => {
     await page.goto("/docs/runner/workflow-descriptions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", {

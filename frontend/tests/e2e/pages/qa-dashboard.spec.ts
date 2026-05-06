@@ -15,7 +15,7 @@ import { test, expect } from "../fixtures";
 test.describe("QA Dashboard - Main Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
     await page.goto("/qa-dashboard");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-qa-dashboard.png",
@@ -31,7 +31,7 @@ test.describe("QA Dashboard - Main Page", () => {
 
   test("should display 4-view selector buttons", async ({ page }) => {
     await page.goto("/qa-dashboard");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The view selector has 4 buttons: Test Runs, Live Execution, Coverage Trends, Reliability
     const viewSelector = page.locator(
@@ -55,7 +55,7 @@ test.describe("QA Dashboard - Main Page", () => {
 
   test("should have navigation links to sub-pages", async ({ page }) => {
     await page.goto("/qa-dashboard");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // All Runs button
     const allRunsBtn = page.locator(
@@ -72,7 +72,7 @@ test.describe("QA Dashboard - Main Page", () => {
 
   test("should display welcome section text", async ({ page }) => {
     await page.goto("/qa-dashboard");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Test Results Overview").first()).toBeVisible();
     await expect(
@@ -84,7 +84,7 @@ test.describe("QA Dashboard - Main Page", () => {
     page,
   }) => {
     await page.goto("/qa-dashboard");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Click Live Execution tab
     await page.locator('[data-testid="qa-dashboard-live-tab"]').click();
@@ -109,7 +109,7 @@ test.describe("QA Dashboard - Main Page", () => {
 test.describe("QA Dashboard - Runs Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
     await page.goto("/qa-dashboard/runs");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-qa-dashboard-runs.png",
@@ -124,7 +124,7 @@ test.describe("QA Dashboard - Runs Page", () => {
 
   test("should display back button to QA dashboard", async ({ page }) => {
     await page.goto("/qa-dashboard/runs");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const backBtn = page.locator('[data-testid="qa-runs-page-back-btn"]');
     await expect(backBtn).toBeVisible();
@@ -132,7 +132,7 @@ test.describe("QA Dashboard - Runs Page", () => {
 
   test("should display description text", async ({ page }) => {
     await page.goto("/qa-dashboard/runs");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByText("View all historical test runs").first()
@@ -143,7 +143,7 @@ test.describe("QA Dashboard - Runs Page", () => {
 test.describe("QA Dashboard - Run Detail Page", () => {
   test("should show error state for non-existent run ID", async ({ page }) => {
     await page.goto("/qa-dashboard/runs/non-existent-id-12345");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-qa-dashboard-run-detail-missing.png",
@@ -159,7 +159,7 @@ test.describe("QA Dashboard - Run Detail Page", () => {
 
   test("should display heading and back button", async ({ page }) => {
     await page.goto("/qa-dashboard/runs/non-existent-id-12345");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.locator("h1")).toContainText("Test Run Details");
 
@@ -171,7 +171,7 @@ test.describe("QA Dashboard - Run Detail Page", () => {
 test.describe("QA Dashboard - Coverage Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
     await page.goto("/qa-dashboard/coverage");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-qa-dashboard-coverage.png",
@@ -186,7 +186,7 @@ test.describe("QA Dashboard - Coverage Page", () => {
 
   test("should display coverage stat cards", async ({ page }) => {
     await page.goto("/qa-dashboard/coverage");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Three stat cards: Overall Coverage, Passing Tests, Failing Tests
     await expect(page.getByText("Overall Coverage").first()).toBeVisible();
@@ -198,7 +198,7 @@ test.describe("QA Dashboard - Coverage Page", () => {
     page,
   }) => {
     await page.goto("/qa-dashboard/coverage");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Without a project param, it shows "No Project Selected"
     await expect(page.getByText("No Project Selected").first()).toBeVisible();
@@ -206,7 +206,7 @@ test.describe("QA Dashboard - Coverage Page", () => {
 
   test("should have navigation buttons to sub-pages", async ({ page }) => {
     await page.goto("/qa-dashboard/coverage");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Test Runs and Deficiencies buttons in header
     await expect(
@@ -221,7 +221,7 @@ test.describe("QA Dashboard - Coverage Page", () => {
 test.describe("QA Dashboard - Deficiencies Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
     await page.goto("/qa-dashboard/deficiencies");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-qa-dashboard-deficiencies.png",
@@ -236,7 +236,7 @@ test.describe("QA Dashboard - Deficiencies Page", () => {
 
   test("should display deficiency list section", async ({ page }) => {
     await page.goto("/qa-dashboard/deficiencies");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Verify sub-heading and description
     await expect(
@@ -251,7 +251,7 @@ test.describe("QA Dashboard - Deficiencies Page", () => {
 
   test("should display back button", async ({ page }) => {
     await page.goto("/qa-dashboard/deficiencies");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const backBtn = page.locator(
       '[data-testid="qa-deficiencies-page-back-btn"]'
@@ -263,7 +263,7 @@ test.describe("QA Dashboard - Deficiencies Page", () => {
 test.describe("QA Dashboard - Compare Page", () => {
   test("should load without errors", async ({ page }) => {
     await page.goto("/qa-dashboard/compare");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-qa-dashboard-compare.png",
@@ -278,7 +278,7 @@ test.describe("QA Dashboard - Compare Page", () => {
     page,
   }) => {
     await page.goto("/qa-dashboard/compare");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Without project_id, it shows a message asking to select a project
     await expect(page.getByText("No project specified").first()).toBeVisible();
@@ -291,7 +291,7 @@ test.describe("QA Dashboard - Compare Page", () => {
     await page.goto(
       "/qa-dashboard/compare?project_id=test-project-id-placeholder"
     );
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // With project_id, should show the comparison page heading
     await expect(

@@ -21,7 +21,7 @@ async function selectProjectIfAvailable(
   page: import("@playwright/test").Page
 ): Promise<boolean> {
   await page.goto("/dashboard");
-  await page.waitForLoadState("networkidle");
+  await page.waitForLoadState("domcontentloaded");
   await page.waitForTimeout(2000);
 
   const projectSwitcher = page.locator('[aria-label="Select project"]');
@@ -51,7 +51,7 @@ test.describe("Automation Builder - Data Pages", () => {
   test.describe("Contexts Page (/automation-builder/contexts)", () => {
     test("loads without 500 error", async ({ page }) => {
       await page.goto("/automation-builder/contexts");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
       await page.screenshot({
         path: "test-results/automation-builder-contexts.png",
@@ -66,7 +66,7 @@ test.describe("Automation Builder - Data Pages", () => {
       page,
     }) => {
       await page.goto("/automation-builder/contexts");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
       await page.screenshot({
         path: "test-results/automation-builder-contexts-no-project.png",
@@ -100,7 +100,7 @@ test.describe("Automation Builder - Data Pages", () => {
       const hasProject = await selectProjectIfAvailable(page);
 
       await page.goto("/automation-builder/contexts");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       await page.screenshot({
@@ -143,7 +143,7 @@ test.describe("Automation Builder - Data Pages", () => {
   test.describe("Variables Page (/automation-builder/variables)", () => {
     test("loads without 500 error", async ({ page }) => {
       await page.goto("/automation-builder/variables");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
       await page.screenshot({
         path: "test-results/automation-builder-variables.png",
@@ -160,7 +160,7 @@ test.describe("Automation Builder - Data Pages", () => {
       const hasProject = await selectProjectIfAvailable(page);
 
       await page.goto("/automation-builder/variables");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       await page.screenshot({
@@ -201,7 +201,7 @@ test.describe("Automation Builder - Data Pages", () => {
       const hasProject = await selectProjectIfAvailable(page);
 
       await page.goto("/automation-builder/variables");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       await page.screenshot({
@@ -230,7 +230,7 @@ test.describe("Automation Builder - Data Pages", () => {
       const hasProject = await selectProjectIfAvailable(page);
 
       await page.goto("/automation-builder/variables");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       await page.screenshot({
@@ -269,7 +269,7 @@ test.describe("Automation Builder - Data Pages", () => {
   test.describe("Dependencies Page (/automation-builder/dependencies)", () => {
     test("loads without 500 error", async ({ page }) => {
       await page.goto("/automation-builder/dependencies");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
       await page.screenshot({
         path: "test-results/automation-builder-dependencies.png",
@@ -284,7 +284,7 @@ test.describe("Automation Builder - Data Pages", () => {
       const hasProject = await selectProjectIfAvailable(page);
 
       await page.goto("/automation-builder/dependencies");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       await page.screenshot({
@@ -313,7 +313,7 @@ test.describe("Automation Builder - Data Pages", () => {
       const hasProject = await selectProjectIfAvailable(page);
 
       await page.goto("/automation-builder/dependencies");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(3000);
 
       await page.screenshot({
@@ -346,7 +346,7 @@ test.describe("Automation Builder - Data Pages", () => {
       const hasProject = await selectProjectIfAvailable(page);
 
       await page.goto("/automation-builder/dependencies");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(3000);
 
       await page.screenshot({
@@ -380,7 +380,7 @@ test.describe("Automation Builder - Data Pages", () => {
   test.describe("Documentation Page (/automation-builder/documentation)", () => {
     test("loads without 500 error", async ({ page }) => {
       await page.goto("/automation-builder/documentation");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
       await page.screenshot({
         path: "test-results/automation-builder-documentation.png",
@@ -395,7 +395,7 @@ test.describe("Automation Builder - Data Pages", () => {
       const hasProject = await selectProjectIfAvailable(page);
 
       await page.goto("/automation-builder/documentation");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       await page.screenshot({
@@ -428,7 +428,7 @@ test.describe("Automation Builder - Data Pages", () => {
       const hasProject = await selectProjectIfAvailable(page);
 
       await page.goto("/automation-builder/documentation");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(3000);
 
       await page.screenshot({
@@ -471,7 +471,7 @@ test.describe("Automation Builder - Data Pages", () => {
       const hasProject = await selectProjectIfAvailable(page);
 
       await page.goto("/automation-builder/documentation");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(3000);
 
       await page.screenshot({
@@ -516,7 +516,7 @@ test.describe("Automation Builder - Data Pages", () => {
       const hasProject = await selectProjectIfAvailable(page);
 
       await page.goto("/automation-builder/documentation");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       await page.screenshot({

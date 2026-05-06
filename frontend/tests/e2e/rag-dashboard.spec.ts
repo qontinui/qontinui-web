@@ -8,7 +8,7 @@ test.describe("RAG Dashboard / Visual Index", () => {
   // Helper function to login via modal
   async function _loginUser(page: import("@playwright/test").Page) {
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Open login dialog - click the Sign In button in the header
     const headerSignInButton = page.getByRole("button", { name: /sign in/i });

@@ -13,7 +13,7 @@ import { test, expect } from "../fixtures";
 test.describe("Tools - Accessibility Explorer", () => {
   test("should load accessibility page without errors", async ({ page }) => {
     await page.goto("/tools/accessibility");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/tools-accessibility.png",
@@ -28,7 +28,7 @@ test.describe("Tools - Accessibility Explorer", () => {
     page,
   }) => {
     await page.goto("/tools/accessibility");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Verify heading
     const heading = page.locator("text=Accessibility Explorer");
@@ -37,7 +37,7 @@ test.describe("Tools - Accessibility Explorer", () => {
 
   test("should have URL input for inspection", async ({ page }) => {
     await page.goto("/tools/accessibility");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The page shows either the inspector interface (runner online) or
     // a runner offline state. Either is valid.
@@ -57,7 +57,7 @@ test.describe("Tools - Accessibility Explorer", () => {
 test.describe("Tools - Error Monitor", () => {
   test("should load error monitor page without errors", async ({ page }) => {
     await page.goto("/tools/error-monitor");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/tools-error-monitor.png",
@@ -70,7 +70,7 @@ test.describe("Tools - Error Monitor", () => {
 
   test("should display error monitor heading", async ({ page }) => {
     await page.goto("/tools/error-monitor");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.locator("text=Error Monitor");
     await expect(heading.first()).toBeVisible({ timeout: 15000 });
@@ -80,7 +80,7 @@ test.describe("Tools - Error Monitor", () => {
     page,
   }) => {
     await page.goto("/tools/error-monitor");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // When runner is online, the page shows severity filter buttons (All, Error, Warning, Info)
     // and log entries area. When offline, it shows a runner offline state.
@@ -106,7 +106,7 @@ test.describe("Tools - Error Monitor", () => {
     page,
   }) => {
     await page.goto("/tools/error-monitor");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // When runner is online, there should be 4 summary cards (Total, Errors, Warnings, Info)
     const hasTotalCard = (await page.locator("text=Total").count()) > 0;
@@ -124,7 +124,7 @@ test.describe("Tools - Error Monitor", () => {
 test.describe("Tools - Run Plan", () => {
   test("should load run plan page without errors", async ({ page }) => {
     await page.goto("/tools/run-plan");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/tools-run-plan.png",
@@ -137,7 +137,7 @@ test.describe("Tools - Run Plan", () => {
 
   test("should display run plan heading", async ({ page }) => {
     await page.goto("/tools/run-plan");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.locator("text=Run Plan");
     await expect(heading.first()).toBeVisible({ timeout: 15000 });
@@ -147,7 +147,7 @@ test.describe("Tools - Run Plan", () => {
     page,
   }) => {
     await page.goto("/tools/run-plan");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // When online: shows "Execution Plan" card, step list, and add step button
     // When offline: shows runner offline message
@@ -166,7 +166,7 @@ test.describe("Tools - Run Plan", () => {
 
   test("should have workflow selector or offline state", async ({ page }) => {
     await page.goto("/tools/run-plan");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // When online: shows "Add Workflow Step" section with a selector
     const hasAddWorkflowStep =
@@ -181,7 +181,7 @@ test.describe("Tools - Run Plan", () => {
 test.describe("Tools - UI Bridge Inspector", () => {
   test("should load UI bridge page without errors", async ({ page }) => {
     await page.goto("/tools/ui-bridge");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/tools-ui-bridge.png",
@@ -194,7 +194,7 @@ test.describe("Tools - UI Bridge Inspector", () => {
 
   test("should display UI Bridge Inspector heading", async ({ page }) => {
     await page.goto("/tools/ui-bridge");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.locator("text=UI Bridge Inspector");
     await expect(heading.first()).toBeVisible({ timeout: 15000 });
@@ -202,7 +202,7 @@ test.describe("Tools - UI Bridge Inspector", () => {
 
   test("should have dual-mode tabs or offline state", async ({ page }) => {
     await page.goto("/tools/ui-bridge");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // When online: shows "Control Mode (Runner UI)" and "External Mode (Browser)" tabs
     const hasControlTab =
@@ -219,7 +219,7 @@ test.describe("Tools - UI Bridge Inspector", () => {
     page,
   }) => {
     await page.goto("/tools/ui-bridge");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // When online: shows a "Discover Elements" or "Fetch Elements" button
     const hasDiscoverButton =
@@ -234,7 +234,7 @@ test.describe("Tools - UI Bridge Inspector", () => {
 
   test("should show Element Details panel when online", async ({ page }) => {
     await page.goto("/tools/ui-bridge");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The Element Details panel text appears when elements are discovered,
     // or a prompt to click on an element. Either way, check for the UI.

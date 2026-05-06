@@ -20,7 +20,7 @@ async function selectProjectIfAvailable(
   page: import("@playwright/test").Page
 ): Promise<boolean> {
   await page.goto("/dashboard");
-  await page.waitForLoadState("networkidle");
+  await page.waitForLoadState("domcontentloaded");
   await page.waitForTimeout(2000);
 
   const projectSwitcher = page.locator('[aria-label="Select project"]');
@@ -50,7 +50,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
   test.describe("Analytics Page (/automation-builder/analytics)", () => {
     test("loads without 500 error", async ({ page }) => {
       await page.goto("/automation-builder/analytics");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
       await page.screenshot({
         path: "test-results/automation-builder-analytics.png",
@@ -65,7 +65,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
       const hasProject = await selectProjectIfAvailable(page);
 
       await page.goto("/automation-builder/analytics");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       await page.screenshot({
@@ -95,7 +95,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
       const hasProject = await selectProjectIfAvailable(page);
 
       await page.goto("/automation-builder/analytics");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(3000);
 
       await page.screenshot({
@@ -134,7 +134,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
       const hasProject = await selectProjectIfAvailable(page);
 
       await page.goto("/automation-builder/analytics");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       await page.screenshot({
@@ -172,7 +172,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
       const hasProject = await selectProjectIfAvailable(page);
 
       await page.goto("/automation-builder/analytics");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(3000);
 
       await page.screenshot({
@@ -208,7 +208,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
       const hasProject = await selectProjectIfAvailable(page);
 
       await page.goto("/automation-builder/analytics");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       if (hasProject) {
@@ -254,7 +254,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
       const hasProject = await selectProjectIfAvailable(page);
 
       await page.goto("/automation-builder/analytics");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       if (hasProject) {
@@ -292,7 +292,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
       const hasProject = await selectProjectIfAvailable(page);
 
       await page.goto("/automation-builder/analytics");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       if (hasProject) {
@@ -333,7 +333,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
       const hasProject = await selectProjectIfAvailable(page);
 
       await page.goto("/automation-builder/analytics");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       await page.screenshot({
@@ -374,7 +374,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
   test.describe("Annotations Page (/automation-builder/annotations)", () => {
     test("loads without 500 error", async ({ page }) => {
       await page.goto("/automation-builder/annotations");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
       await page.screenshot({
         path: "test-results/automation-builder-annotations.png",
@@ -389,7 +389,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
       page,
     }) => {
       await page.goto("/automation-builder/annotations");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(3000);
 
       await page.screenshot({
@@ -417,7 +417,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
       const hasProject = await selectProjectIfAvailable(page);
 
       await page.goto("/automation-builder/annotations");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(3000);
 
       await page.screenshot({
@@ -456,7 +456,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
   test.describe("Screenshots Page (/automation-builder/screenshots)", () => {
     test("loads without 500 error", async ({ page }) => {
       await page.goto("/automation-builder/screenshots");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
       await page.screenshot({
         path: "test-results/automation-builder-screenshots.png",
@@ -471,7 +471,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
       page,
     }) => {
       await page.goto("/automation-builder/screenshots");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
       await page.screenshot({
         path: "test-results/automation-builder-screenshots-no-project.png",
@@ -488,7 +488,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
       const hasProject = await selectProjectIfAvailable(page);
 
       await page.goto("/automation-builder/screenshots");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(3000);
 
       await page.screenshot({
@@ -532,7 +532,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
       const hasProject = await selectProjectIfAvailable(page);
 
       await page.goto("/automation-builder/screenshots");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(3000);
 
       await page.screenshot({

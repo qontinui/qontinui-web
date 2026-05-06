@@ -21,7 +21,7 @@ test.describe("Integration Testing - Complete Workflow", () => {
     await page.goto("/integration-testing");
 
     // Wait for page to load
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
   });
 
   test("should display integration testing page with all sections", async ({
@@ -431,7 +431,7 @@ test.describe("Integration Testing - Complete Workflow", () => {
 test.describe("Integration Testing - Manual Selection Mode", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/integration-testing");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
   });
 
   test("should switch to manual selection mode", async ({ page }) => {
@@ -479,7 +479,7 @@ test.describe("Integration Testing - Manual Selection Mode", () => {
 test.describe("Integration Testing - Error States", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/integration-testing");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
   });
 
   test("should handle execution failure gracefully", async ({ page }) => {
@@ -583,7 +583,7 @@ test.describe("Integration Testing - Error States", () => {
 test.describe("Integration Testing - Visualization", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/integration-testing");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Setup mock execution with visualization data
     await page.route("**/api/integration-testing/execute", async (route) => {

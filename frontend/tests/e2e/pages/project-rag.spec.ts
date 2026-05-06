@@ -16,7 +16,7 @@ const TEST_PROJECT_ID = "test-project-placeholder-id";
 test.describe("Project RAG Dashboard", () => {
   test("should load without errors and display heading", async ({ page }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/rag`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-project-rag.png",
@@ -31,7 +31,7 @@ test.describe("Project RAG Dashboard", () => {
 
   test("should display Dashboard back button", async ({ page }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/rag`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("button", { name: /Dashboard/i }).first()
@@ -42,7 +42,7 @@ test.describe("Project RAG Dashboard", () => {
     page,
   }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/rag`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("tab", { name: /Indexed Elements/i })
@@ -57,7 +57,7 @@ test.describe("Project RAG Dashboard", () => {
 
   test("should display Indexed Elements tab by default", async ({ page }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/rag`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The Indexed Elements tab should be active by default
     const elementsTab = page.getByRole("tab", { name: /Indexed Elements/i });
@@ -66,7 +66,7 @@ test.describe("Project RAG Dashboard", () => {
 
   test("should switch to Processing History tab", async ({ page }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/rag`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Click Processing History tab
     await page.getByRole("tab", { name: /Processing History/i }).click();
@@ -84,7 +84,7 @@ test.describe("Project RAG Dashboard", () => {
 
   test("should switch to Semantic Search tab", async ({ page }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/rag`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Click Semantic Search tab
     await page.getByRole("tab", { name: /Semantic Search/i }).click();
@@ -120,7 +120,7 @@ test.describe("Project RAG Dashboard", () => {
     );
 
     await page.goto(`/projects/${TEST_PROJECT_ID}/rag`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-project-rag-with-stats.png",

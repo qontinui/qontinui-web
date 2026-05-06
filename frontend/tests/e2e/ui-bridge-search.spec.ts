@@ -28,7 +28,7 @@ test.describe("UI Bridge Element Search", () => {
     await page.goto("/automation-builder/extraction");
 
     // Wait for page to load
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Check if we're redirected to login
     const url = page.url();
@@ -100,7 +100,7 @@ test.describe("UI Bridge Element Search", () => {
     // to verify text matching works correctly
 
     await page.goto("/automation-builder/extraction");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Skip if not authenticated
     if (page.url().includes("/login")) {
@@ -140,7 +140,7 @@ test.describe("UI Bridge Element Search", () => {
 
   test("button can be found using multiple strategies", async ({ page }) => {
     await page.goto("/automation-builder/extraction");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     if (page.url().includes("/login")) {
       test.skip(true, "Requires authentication - skipping");

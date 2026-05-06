@@ -14,7 +14,7 @@ import { test, expect } from "../fixtures";
 test.describe("Build - Discover", () => {
   test("should load discover page without errors", async ({ page }) => {
     await page.goto("/build/discover");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/build-discover.png",
@@ -29,7 +29,7 @@ test.describe("Build - Discover", () => {
     page,
   }) => {
     await page.goto("/build/discover");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasHeading =
       (await page.locator("text=AI Spec Discovery").count()) > 0;
@@ -41,7 +41,7 @@ test.describe("Build - Discover", () => {
 
   test("should show AI-Powered badge or offline state", async ({ page }) => {
     await page.goto("/build/discover");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasAIPoweredBadge =
       (await page.locator("text=AI-Powered").count()) > 0;
@@ -55,7 +55,7 @@ test.describe("Build - Discover", () => {
     page,
   }) => {
     await page.goto("/build/discover");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The page has a "Target URL" input field with placeholder "https://example.com"
     const hasUrlInput =
@@ -73,7 +73,7 @@ test.describe("Build - Discover", () => {
     page,
   }) => {
     await page.goto("/build/discover");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The page has a "Description" input field for describing what to automate
     const hasDescriptionInput =
@@ -94,7 +94,7 @@ test.describe("Build - Discover", () => {
 
   test("should show Discover button or offline state", async ({ page }) => {
     await page.goto("/build/discover");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasDiscoverButton =
       (await page.locator('button:has-text("Discover")').count()) > 0;
@@ -108,7 +108,7 @@ test.describe("Build - Discover", () => {
     page,
   }) => {
     await page.goto("/build/discover");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The initial state shows a hint section with:
     // - "AI-Powered Automation Discovery" heading
@@ -137,7 +137,7 @@ test.describe("Build - Discover", () => {
     page,
   }) => {
     await page.goto("/build/discover");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasCardHeading =
       (await page.locator("text=Discover Automation Specs").count()) > 0;
@@ -151,7 +151,7 @@ test.describe("Build - Discover", () => {
     page,
   }) => {
     await page.goto("/build/discover");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The header shows a runner connection indicator:
     // "Runner Connected" (green), "Connecting..." (yellow), or "Runner Offline" (red)
@@ -171,7 +171,7 @@ test.describe("Build - Discover", () => {
 
   test("should gracefully handle runner offline state", async ({ page }) => {
     await page.goto("/build/discover");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // When runner is offline, the page shows RunnerOfflineState
     // with "Runner Not Connected" and "Start the Qontinui Runner" message

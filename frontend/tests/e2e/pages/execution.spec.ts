@@ -16,7 +16,7 @@ test.describe("Execute - /execute", () => {
     page,
   }) => {
     await page.goto("/execute");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-execute.png",
@@ -34,7 +34,7 @@ test.describe("Execute - /execute", () => {
 
   test("should display workflow list with search input", async ({ page }) => {
     await page.goto("/execute");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Check for search input in the workflow selection card
@@ -53,7 +53,7 @@ test.describe("Execute - /execute", () => {
 
   test("should display executor status indicator", async ({ page }) => {
     await page.goto("/execute");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // If runner is connected, either "Runner Connected" badge or "Executor Status" should show
@@ -74,7 +74,7 @@ test.describe("Execute - /execute", () => {
     page,
   }) => {
     await page.goto("/execute");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Check for "Select Workflow" card heading
@@ -112,7 +112,7 @@ test.describe("Execution History - /execution-history", () => {
     page,
   }) => {
     await page.goto("/execution-history");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-execution-history.png",
@@ -130,7 +130,7 @@ test.describe("Execution History - /execution-history", () => {
 
   test("should display tree event visualization area", async ({ page }) => {
     await page.goto("/execution-history");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // The page should show "Execution Tree Events" info card or the tree view
@@ -147,7 +147,7 @@ test.describe("Execution History - /execution-history", () => {
 
   test("should display workflow and run selectors", async ({ page }) => {
     await page.goto("/execution-history");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Check for "Workflow" and "Execution Run" selector labels
@@ -167,7 +167,7 @@ test.describe("Workflow Visualization - /workflow-viz", () => {
     page,
   }) => {
     await page.goto("/workflow-viz");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-workflow-viz.png",
@@ -185,7 +185,7 @@ test.describe("Workflow Visualization - /workflow-viz", () => {
 
   test("should display dual-panel design or empty state", async ({ page }) => {
     await page.goto("/workflow-viz");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Check for workflow structure panel and active states canvas, or empty state
@@ -208,7 +208,7 @@ test.describe("Workflow Visualization - /workflow-viz", () => {
     page,
   }) => {
     await page.goto("/workflow-viz");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Playback controls include Play/Pause, Step Forward, Step Back, Reset buttons
@@ -242,7 +242,7 @@ test.describe("Workflow Visualization - /workflow-viz", () => {
     page,
   }) => {
     await page.goto("/workflow-viz");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // The mode selector shows "Playback" or "Live" label, and canvas mode "Perception"/"Config"
@@ -278,7 +278,7 @@ test.describe("Monitor - /monitor", () => {
     page,
   }) => {
     await page.goto("/monitor");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-monitor.png",
@@ -298,7 +298,7 @@ test.describe("Monitor - /monitor", () => {
     page,
   }) => {
     await page.goto("/monitor");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Verify both tabs are visible
@@ -313,7 +313,7 @@ test.describe("Monitor - /monitor", () => {
 
   test("should display navigation to dashboard", async ({ page }) => {
     await page.goto("/monitor");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Verify Dashboard navigation button exists
@@ -325,7 +325,7 @@ test.describe("Monitor - /monitor", () => {
     page,
   }) => {
     await page.goto("/monitor");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Click on Session History tab
@@ -356,7 +356,7 @@ test.describe("Discoveries - /discoveries", () => {
     page,
   }) => {
     await page.goto("/discoveries");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-discoveries.png",
@@ -376,7 +376,7 @@ test.describe("Discoveries - /discoveries", () => {
     page,
   }) => {
     await page.goto("/discoveries");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Verify all three tabs are present
@@ -393,7 +393,7 @@ test.describe("Discoveries - /discoveries", () => {
     page,
   }) => {
     await page.goto("/discoveries");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Verify the "Review Discoveries" section heading
@@ -411,7 +411,7 @@ test.describe("Discoveries - /discoveries", () => {
     page,
   }) => {
     await page.goto("/discoveries");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Pending tab should be active by default, showing "Pending Discoveries" heading
@@ -425,7 +425,7 @@ test.describe("Discoveries - /discoveries", () => {
     page,
   }) => {
     await page.goto("/discoveries");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Click on Accepted tab
@@ -459,7 +459,7 @@ test.describe("Discoveries - /discoveries", () => {
 
   test("should display project filter dropdown", async ({ page }) => {
     await page.goto("/discoveries");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Check for project filter section

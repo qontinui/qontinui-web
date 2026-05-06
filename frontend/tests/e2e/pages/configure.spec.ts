@@ -12,7 +12,7 @@ import { test, expect } from "../fixtures";
 test.describe("Configure - Finding Rules", () => {
   test("should load finding rules page without errors", async ({ page }) => {
     await page.goto("/configure/finding-rules");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/configure-finding-rules.png",
@@ -25,7 +25,7 @@ test.describe("Configure - Finding Rules", () => {
 
   test("should display Finding Rules heading", async ({ page }) => {
     await page.goto("/configure/finding-rules");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.locator("text=Finding Rules");
     await expect(heading.first()).toBeVisible({ timeout: 15000 });
@@ -33,7 +33,7 @@ test.describe("Configure - Finding Rules", () => {
 
   test("should have Add Rule button or offline state", async ({ page }) => {
     await page.goto("/configure/finding-rules");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasAddButton =
       (await page.locator('button:has-text("Add Rule")').count()) > 0;
@@ -47,7 +47,7 @@ test.describe("Configure - Finding Rules", () => {
     page,
   }) => {
     await page.goto("/configure/finding-rules");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     // When runner is online, shows "Configured Rules" section with rules
@@ -70,7 +70,7 @@ test.describe("Configure - Finding Rules", () => {
     page,
   }) => {
     await page.goto("/configure/finding-rules");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     // If rules exist, they should show severity badges (CRITICAL, HIGH, MEDIUM, LOW)
@@ -88,7 +88,7 @@ test.describe("Configure - Finding Rules", () => {
 
   test("should show create form when Add Rule is clicked", async ({ page }) => {
     await page.goto("/configure/finding-rules");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     const addButton = page.locator('button:has-text("Add Rule")');
@@ -128,7 +128,7 @@ test.describe("Configure - Finding Rules", () => {
 test.describe("Configure - Hooks", () => {
   test("should load hooks page without errors", async ({ page }) => {
     await page.goto("/configure/hooks");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/configure-hooks.png",
@@ -141,7 +141,7 @@ test.describe("Configure - Hooks", () => {
 
   test("should display Hooks heading", async ({ page }) => {
     await page.goto("/configure/hooks");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.locator("h1:has-text('Hooks')");
     await expect(heading.first()).toBeVisible({ timeout: 15000 });
@@ -149,7 +149,7 @@ test.describe("Configure - Hooks", () => {
 
   test("should have Add Hook button or offline state", async ({ page }) => {
     await page.goto("/configure/hooks");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasAddButton =
       (await page.locator('button:has-text("Add Hook")').count()) > 0;
@@ -163,7 +163,7 @@ test.describe("Configure - Hooks", () => {
     page,
   }) => {
     await page.goto("/configure/hooks");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     const hasConfiguredHooks =
@@ -182,7 +182,7 @@ test.describe("Configure - Hooks", () => {
 
   test("should show action type information cards", async ({ page }) => {
     await page.goto("/configure/hooks");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     // When online, there should be info cards for Webhook, Script, Notification
@@ -200,7 +200,7 @@ test.describe("Configure - Hooks", () => {
 
   test("should show create form when Add Hook is clicked", async ({ page }) => {
     await page.goto("/configure/hooks");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     const addButton = page.locator('button:has-text("Add Hook")');
@@ -236,7 +236,7 @@ test.describe("Configure - Hooks", () => {
 test.describe("Configure - Log Sources", () => {
   test("should load log sources page without errors", async ({ page }) => {
     await page.goto("/configure/log-sources");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/configure-log-sources.png",
@@ -249,7 +249,7 @@ test.describe("Configure - Log Sources", () => {
 
   test("should display Log Sources heading", async ({ page }) => {
     await page.goto("/configure/log-sources");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.locator("text=Log Sources");
     await expect(heading.first()).toBeVisible({ timeout: 15000 });
@@ -259,7 +259,7 @@ test.describe("Configure - Log Sources", () => {
     page,
   }) => {
     await page.goto("/configure/log-sources");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasAddButton =
       (await page.locator('button:has-text("Add Log Source")').count()) > 0;
@@ -273,7 +273,7 @@ test.describe("Configure - Log Sources", () => {
     page,
   }) => {
     await page.goto("/configure/log-sources");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     const hasConfiguredSources =
@@ -294,7 +294,7 @@ test.describe("Configure - Log Sources", () => {
     page,
   }) => {
     await page.goto("/configure/log-sources");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     // If sources exist, they should show Active/Disabled badges
@@ -311,7 +311,7 @@ test.describe("Configure - Log Sources", () => {
     page,
   }) => {
     await page.goto("/configure/log-sources");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     const addButton = page.locator('button:has-text("Add Log Source")');
@@ -344,7 +344,7 @@ test.describe("Configure - Log Sources", () => {
 
   test("should show file path input in create form", async ({ page }) => {
     await page.goto("/configure/log-sources");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     const addButton = page.locator('button:has-text("Add Log Source")');

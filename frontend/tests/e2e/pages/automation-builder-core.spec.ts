@@ -24,7 +24,7 @@ test.describe("Automation Builder - Core Pages", () => {
   test.describe("Main Page (/automation-builder)", () => {
     test("loads without 500 error", async ({ page }) => {
       await page.goto("/automation-builder");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
       await page.screenshot({
         path: "test-results/automation-builder-main.png",
@@ -39,7 +39,7 @@ test.describe("Automation Builder - Core Pages", () => {
       page,
     }) => {
       await page.goto("/automation-builder");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
       await page.screenshot({
         path: "test-results/automation-builder-main-no-project.png",
@@ -57,7 +57,7 @@ test.describe("Automation Builder - Core Pages", () => {
     }) => {
       // Navigate to dashboard first to select a project
       await page.goto("/dashboard");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       // Try to select a project via the project switcher
@@ -79,7 +79,7 @@ test.describe("Automation Builder - Core Pages", () => {
 
       // Navigate to automation builder
       await page.goto("/automation-builder");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       await page.screenshot({
@@ -99,7 +99,7 @@ test.describe("Automation Builder - Core Pages", () => {
   test.describe("Overview Page (/automation-builder/overview)", () => {
     test("loads without 500 error", async ({ page }) => {
       await page.goto("/automation-builder/overview");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
       await page.screenshot({
         path: "test-results/automation-builder-overview.png",
@@ -115,7 +115,7 @@ test.describe("Automation Builder - Core Pages", () => {
     }) => {
       // Select a project first
       await page.goto("/dashboard");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       const projectSwitcher = page.locator('[aria-label="Select project"]');
@@ -133,7 +133,7 @@ test.describe("Automation Builder - Core Pages", () => {
       }
 
       await page.goto("/automation-builder/overview");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       await page.screenshot({
@@ -159,7 +159,7 @@ test.describe("Automation Builder - Core Pages", () => {
       page,
     }) => {
       await page.goto("/dashboard");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       const projectSwitcher = page.locator('[aria-label="Select project"]');
@@ -177,7 +177,7 @@ test.describe("Automation Builder - Core Pages", () => {
       }
 
       await page.goto("/automation-builder/overview");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(3000);
 
       await page.screenshot({
@@ -218,7 +218,7 @@ test.describe("Automation Builder - Core Pages", () => {
 
     test("displays quick navigation links", async ({ page }) => {
       await page.goto("/dashboard");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       const projectSwitcher = page.locator('[aria-label="Select project"]');
@@ -236,7 +236,7 @@ test.describe("Automation Builder - Core Pages", () => {
       }
 
       await page.goto("/automation-builder/overview");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(3000);
 
       // Verify quick navigation buttons
@@ -276,7 +276,7 @@ test.describe("Automation Builder - Core Pages", () => {
   test.describe("Images Page (/automation-builder/images)", () => {
     test("loads without 500 error", async ({ page }) => {
       await page.goto("/automation-builder/images");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
       await page.screenshot({
         path: "test-results/automation-builder-images.png",
@@ -291,7 +291,7 @@ test.describe("Automation Builder - Core Pages", () => {
       page,
     }) => {
       await page.goto("/dashboard");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       const projectSwitcher = page.locator('[aria-label="Select project"]');
@@ -309,7 +309,7 @@ test.describe("Automation Builder - Core Pages", () => {
       }
 
       await page.goto("/automation-builder/images");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       await page.screenshot({
@@ -355,7 +355,7 @@ test.describe("Automation Builder - Core Pages", () => {
   test.describe("States Page (/automation-builder/states)", () => {
     test("loads without 500 error", async ({ page }) => {
       await page.goto("/automation-builder/states");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
       await page.screenshot({
         path: "test-results/automation-builder-states.png",
@@ -370,7 +370,7 @@ test.describe("Automation Builder - Core Pages", () => {
       page,
     }) => {
       await page.goto("/dashboard");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       const projectSwitcher = page.locator('[aria-label="Select project"]');
@@ -388,7 +388,7 @@ test.describe("Automation Builder - Core Pages", () => {
       }
 
       await page.goto("/automation-builder/states");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(3000);
 
       await page.screenshot({
@@ -419,7 +419,7 @@ test.describe("Automation Builder - Core Pages", () => {
       page,
     }) => {
       await page.goto("/dashboard");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       const projectSwitcher = page.locator('[aria-label="Select project"]');
@@ -437,7 +437,7 @@ test.describe("Automation Builder - Core Pages", () => {
       }
 
       await page.goto("/automation-builder/states");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(3000);
 
       await page.screenshot({
@@ -459,7 +459,7 @@ test.describe("Automation Builder - Core Pages", () => {
 
     test("can switch between tabs", async ({ page }) => {
       await page.goto("/dashboard");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       const projectSwitcher = page.locator('[aria-label="Select project"]');
@@ -477,7 +477,7 @@ test.describe("Automation Builder - Core Pages", () => {
       }
 
       await page.goto("/automation-builder/states");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(3000);
 
       const stateViewTab = page.getByRole("tab", { name: /State View/i });
@@ -525,7 +525,7 @@ test.describe("Automation Builder - Core Pages", () => {
   test.describe("Settings Page (/automation-builder/settings)", () => {
     test("loads without 500 error", async ({ page }) => {
       await page.goto("/automation-builder/settings");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
       await page.screenshot({
         path: "test-results/automation-builder-settings.png",
@@ -538,7 +538,7 @@ test.describe("Automation Builder - Core Pages", () => {
 
     test("displays Settings heading and tabs", async ({ page }) => {
       await page.goto("/dashboard");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       const projectSwitcher = page.locator('[aria-label="Select project"]');
@@ -556,7 +556,7 @@ test.describe("Automation Builder - Core Pages", () => {
       }
 
       await page.goto("/automation-builder/settings");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       await page.screenshot({
@@ -596,7 +596,7 @@ test.describe("Automation Builder - Core Pages", () => {
 
     test("General tab shows auto-save toggle", async ({ page }) => {
       await page.goto("/dashboard");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       const projectSwitcher = page.locator('[aria-label="Select project"]');
@@ -614,7 +614,7 @@ test.describe("Automation Builder - Core Pages", () => {
       }
 
       await page.goto("/automation-builder/settings");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       await page.screenshot({
@@ -644,7 +644,7 @@ test.describe("Automation Builder - Core Pages", () => {
 
     test("can switch between settings tabs", async ({ page }) => {
       await page.goto("/dashboard");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       const projectSwitcher = page.locator('[aria-label="Select project"]');
@@ -662,7 +662,7 @@ test.describe("Automation Builder - Core Pages", () => {
       }
 
       await page.goto("/automation-builder/settings");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
       const editorTab = page.getByRole("tab", { name: /Editor/i });

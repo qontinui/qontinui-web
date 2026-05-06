@@ -14,7 +14,7 @@ import { test, expect } from "@playwright/test";
 test.describe("Homepage (/)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -27,7 +27,7 @@ test.describe("Homepage (/)", () => {
 
   test("displays Qontinui branding", async ({ page }) => {
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The header contains "ontinui" text next to the logo
     const pageContent = await page.content();
@@ -40,7 +40,7 @@ test.describe("Homepage (/)", () => {
 
   test("shows Sign In button when not authenticated", async ({ page }) => {
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Clear any auth state
     await page.evaluate(() => {
@@ -48,7 +48,7 @@ test.describe("Homepage (/)", () => {
       sessionStorage.clear();
     });
     await page.reload();
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const signInButton = page.getByRole("button", { name: /sign in/i });
     await expect(signInButton).toBeVisible({ timeout: 10000 });
@@ -56,7 +56,7 @@ test.describe("Homepage (/)", () => {
 
   test("shows feature cards in key features section", async ({ page }) => {
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Verify key feature cards are present
     await expect(page.getByText("Orchestrated Workflows")).toBeVisible({
@@ -70,7 +70,7 @@ test.describe("Homepage (/)", () => {
 
   test("has download button in hero section", async ({ page }) => {
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The hero section has a Download button
     const downloadButton = page
@@ -81,7 +81,7 @@ test.describe("Homepage (/)", () => {
 
   test("has View on GitHub link", async ({ page }) => {
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const githubButton = page.getByRole("button", { name: /github/i }).first();
     await expect(githubButton).toBeVisible({ timeout: 10000 });
@@ -89,7 +89,7 @@ test.describe("Homepage (/)", () => {
 
   test("shows How It Works section", async ({ page }) => {
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("How It Works")).toBeVisible({
       timeout: 10000,
@@ -105,7 +105,7 @@ test.describe("Homepage (/)", () => {
 test.describe("Runner Page (/runner)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/runner");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -118,7 +118,7 @@ test.describe("Runner Page (/runner)", () => {
 
   test("displays hero section with title", async ({ page }) => {
     await page.goto("/runner");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", { name: /qontinui runner/i });
     await expect(heading).toBeVisible({ timeout: 10000 });
@@ -129,7 +129,7 @@ test.describe("Runner Page (/runner)", () => {
 
   test("shows feature cards", async ({ page }) => {
     await page.goto("/runner");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Feature section heading
     await expect(
@@ -147,7 +147,7 @@ test.describe("Runner Page (/runner)", () => {
 
   test("has Download Now CTA linking to download page", async ({ page }) => {
     await page.goto("/runner");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const downloadLink = page.getByRole("link", { name: /download now/i });
     await expect(downloadLink).toBeVisible({ timeout: 10000 });
@@ -156,7 +156,7 @@ test.describe("Runner Page (/runner)", () => {
 
   test("has Documentation link", async ({ page }) => {
     await page.goto("/runner");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const docsLink = page.getByRole("link", { name: /documentation/i }).first();
     await expect(docsLink).toBeVisible({ timeout: 10000 });
@@ -165,7 +165,7 @@ test.describe("Runner Page (/runner)", () => {
 
   test("shows How it works section with steps", async ({ page }) => {
     await page.goto("/runner");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /how it works/i })
@@ -180,7 +180,7 @@ test.describe("Runner Page (/runner)", () => {
 
   test("shows Security & Code Signing section", async ({ page }) => {
     await page.goto("/runner");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Security & Code Signing")).toBeVisible({
       timeout: 10000,
@@ -191,7 +191,7 @@ test.describe("Runner Page (/runner)", () => {
 
   test("has bottom CTA section", async ({ page }) => {
     await page.goto("/runner");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Ready to get started?")).toBeVisible({
       timeout: 10000,
@@ -207,7 +207,7 @@ test.describe("Runner Page (/runner)", () => {
 test.describe("Runner Download Page (/runner/download)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/runner/download");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -220,7 +220,7 @@ test.describe("Runner Download Page (/runner/download)", () => {
 
   test("displays page title", async ({ page }) => {
     await page.goto("/runner/download");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
       name: /download qontinui runner/i,
@@ -230,7 +230,7 @@ test.describe("Runner Download Page (/runner/download)", () => {
 
   test("shows latest version info", async ({ page }) => {
     await page.goto("/runner/download");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Version badge should be present
     await expect(page.getByText(/latest version/i)).toBeVisible({
@@ -241,7 +241,7 @@ test.describe("Runner Download Page (/runner/download)", () => {
 
   test("detects platform and shows platform callout", async ({ page }) => {
     await page.goto("/runner/download");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Since tests run in a browser, platform detection should work
     // The "Detected Platform" callout should appear
@@ -251,7 +251,7 @@ test.describe("Runner Download Page (/runner/download)", () => {
 
   test("shows Windows download section", async ({ page }) => {
     await page.goto("/runner/download");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Windows section should be present
     await expect(page.getByText("Windows")).toBeVisible({ timeout: 10000 });
@@ -263,7 +263,7 @@ test.describe("Runner Download Page (/runner/download)", () => {
 
   test("shows macOS and Linux coming soon sections", async ({ page }) => {
     await page.goto("/runner/download");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // macOS and Linux sections should show "Coming Soon"
     const comingSoonBadges = page.getByText("Coming Soon");
@@ -272,7 +272,7 @@ test.describe("Runner Download Page (/runner/download)", () => {
 
   test("shows System Requirements section", async ({ page }) => {
     await page.goto("/runner/download");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /system requirements/i })
@@ -286,7 +286,7 @@ test.describe("Runner Download Page (/runner/download)", () => {
 
   test("shows Installation Instructions section", async ({ page }) => {
     await page.goto("/runner/download");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /installation instructions/i })
@@ -295,7 +295,7 @@ test.describe("Runner Download Page (/runner/download)", () => {
 
   test("has GitHub Releases link", async ({ page }) => {
     await page.goto("/runner/download");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /github releases/i })
@@ -307,7 +307,7 @@ test.describe("Runner Download Page (/runner/download)", () => {
 
   test("has Need Help section with links", async ({ page }) => {
     await page.goto("/runner/download");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByRole("heading", { name: /need help/i })).toBeVisible(
       { timeout: 10000 }

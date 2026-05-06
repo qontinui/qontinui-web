@@ -32,7 +32,7 @@ async function performManualLogin(page: Page): Promise<void> {
   // Check if already on a page, if not navigate to homepage
   if (page.url() === "about:blank") {
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
   }
 
   // Check if already logged in
@@ -84,7 +84,7 @@ export const test = base.extend<IntegrationTestFixtures>({
   authenticatedPage: async ({ page }, use) => {
     // Navigate to homepage
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Check if we're already authenticated (storageState loaded)
     const userEmailVisible = await page
@@ -137,7 +137,7 @@ export async function loginUser(page: Page): Promise<void> {
   // Check if already at a real page
   if (page.url() === "about:blank") {
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
   }
 
   // Check if already authenticated (storageState)

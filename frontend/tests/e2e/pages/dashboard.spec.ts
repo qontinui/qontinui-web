@@ -10,7 +10,7 @@ import { test, expect } from "../fixtures";
 test.describe("Dashboard Page", () => {
   test("loads without errors and shows greeting", async ({ page }) => {
     await page.goto("/dashboard");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-dashboard.png",
@@ -30,7 +30,7 @@ test.describe("Dashboard Page", () => {
 
   test("shows runner status area", async ({ page }) => {
     await page.goto("/dashboard");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Runner connection card should be visible with "Desktop Runner" text
     await expect(page.getByText("Desktop Runner")).toBeVisible({
@@ -44,7 +44,7 @@ test.describe("Dashboard Page", () => {
 
   test("shows quick action buttons", async ({ page }) => {
     await page.goto("/dashboard");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Wait for Quick Actions section to load
     await expect(page.getByText("Quick Actions")).toBeVisible({
@@ -59,7 +59,7 @@ test.describe("Dashboard Page", () => {
 
   test("shows active runs and recent runs sections", async ({ page }) => {
     await page.goto("/dashboard");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Active Runs card should be visible
     await expect(page.getByText("Active Runs").first()).toBeVisible({
@@ -76,7 +76,7 @@ test.describe("Dashboard Page", () => {
 test.describe("Project Dashboard Page", () => {
   test("loads without errors and shows heading", async ({ page }) => {
     await page.goto("/project-dashboard");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-project-dashboard.png",
@@ -95,7 +95,7 @@ test.describe("Project Dashboard Page", () => {
 
   test("shows metric cards and resource overview tabs", async ({ page }) => {
     await page.goto("/project-dashboard");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Verify metric cards are visible (Total Workflows, Total States, etc.)
     await expect(page.getByText("Total Workflows")).toBeVisible({
@@ -113,7 +113,7 @@ test.describe("Project Dashboard Page", () => {
 
   test("shows project health score section", async ({ page }) => {
     await page.goto("/project-dashboard");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Project Health Score card should be visible
     await expect(page.getByText("Project Health Score").first()).toBeVisible({
@@ -129,7 +129,7 @@ test.describe("Project Dashboard Page", () => {
 test.describe("Analytics Page", () => {
   test("loads without errors and shows heading", async ({ page }) => {
     await page.goto("/analytics");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-analytics.png",
@@ -148,7 +148,7 @@ test.describe("Analytics Page", () => {
 
   test("shows metric cards area", async ({ page }) => {
     await page.goto("/analytics");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Wait for loading to finish
     await page.waitForTimeout(3000);
@@ -164,7 +164,7 @@ test.describe("Analytics Page", () => {
 
   test("has back to dashboard button", async ({ page }) => {
     await page.goto("/analytics");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Back to Dashboard button should be visible
     await expect(page.getByText("Back to Dashboard").first()).toBeVisible({

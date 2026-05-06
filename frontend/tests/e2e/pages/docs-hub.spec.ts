@@ -13,7 +13,7 @@ import { test, expect } from "@playwright/test";
 test.describe("Docs Hub (/docs)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/docs");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -26,7 +26,7 @@ test.describe("Docs Hub (/docs)", () => {
 
   test("displays main heading and description", async ({ page }) => {
     await page.goto("/docs");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
       name: /qontinui documentation/i,
@@ -42,7 +42,7 @@ test.describe("Docs Hub (/docs)", () => {
 
   test("shows 4 documentation categories", async ({ page }) => {
     await page.goto("/docs");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Verify each documentation category section
     await expect(page.getByText("Qontinui Web")).toBeVisible({
@@ -55,7 +55,7 @@ test.describe("Docs Hub (/docs)", () => {
 
   test("shows category descriptions", async ({ page }) => {
     await page.goto("/docs");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByText(
@@ -80,7 +80,7 @@ test.describe("Docs Hub (/docs)", () => {
 
   test("has navigation links within each category", async ({ page }) => {
     await page.goto("/docs");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Qontinui Web links
     await expect(
@@ -113,7 +113,7 @@ test.describe("Docs Hub (/docs)", () => {
     page,
   }) => {
     await page.goto("/docs");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("New to Qontinui?")).toBeVisible({
       timeout: 10000,
@@ -131,7 +131,7 @@ test.describe("Docs Hub (/docs)", () => {
 
   test("shows Documentation Sections heading", async ({ page }) => {
     await page.goto("/docs");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /documentation sections/i })
@@ -140,7 +140,7 @@ test.describe("Docs Hub (/docs)", () => {
 
   test("shows Additional Resources section", async ({ page }) => {
     await page.goto("/docs");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /additional resources/i })
@@ -155,7 +155,7 @@ test.describe("Docs Hub (/docs)", () => {
 test.describe("Getting Started (/docs/getting-started)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/docs/getting-started");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -168,7 +168,7 @@ test.describe("Getting Started (/docs/getting-started)", () => {
 
   test("displays main heading and subtitle", async ({ page }) => {
     await page.goto("/docs/getting-started");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", { name: /getting started/i });
     await expect(heading).toBeVisible({ timeout: 10000 });
@@ -182,7 +182,7 @@ test.describe("Getting Started (/docs/getting-started)", () => {
 
   test("has back to documentation link", async ({ page }) => {
     await page.goto("/docs/getting-started");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const backLink = page.getByRole("link", {
       name: /back to documentation/i,
@@ -193,7 +193,7 @@ test.describe("Getting Started (/docs/getting-started)", () => {
 
   test("shows What You'll Learn section", async ({ page }) => {
     await page.goto("/docs/getting-started");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByText("How to build automation workflows in Qontinui Web")
@@ -208,7 +208,7 @@ test.describe("Getting Started (/docs/getting-started)", () => {
 
   test("shows 3-step workflow: Build, Test, Run", async ({ page }) => {
     await page.goto("/docs/getting-started");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Step 1: Build
     await expect(
@@ -230,7 +230,7 @@ test.describe("Getting Started (/docs/getting-started)", () => {
 
   test("Step 1 has sub-sections for building automation", async ({ page }) => {
     await page.goto("/docs/getting-started");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Create a Free Account")).toBeVisible({
       timeout: 10000,
@@ -242,7 +242,7 @@ test.describe("Getting Started (/docs/getting-started)", () => {
 
   test("Step 2 has mock testing explanation", async ({ page }) => {
     await page.goto("/docs/getting-started");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Why Mock Testing?")).toBeVisible({
       timeout: 10000,
@@ -253,7 +253,7 @@ test.describe("Getting Started (/docs/getting-started)", () => {
     page,
   }) => {
     await page.goto("/docs/getting-started");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Download Qontinui Runner")).toBeVisible({
       timeout: 10000,
@@ -264,7 +264,7 @@ test.describe("Getting Started (/docs/getting-started)", () => {
 
   test("shows Next Steps section with cards", async ({ page }) => {
     await page.goto("/docs/getting-started");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /next steps/i })
@@ -278,7 +278,7 @@ test.describe("Getting Started (/docs/getting-started)", () => {
 
   test("has Learn More links to detailed documentation", async ({ page }) => {
     await page.goto("/docs/getting-started");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Links within the step cards
     await expect(

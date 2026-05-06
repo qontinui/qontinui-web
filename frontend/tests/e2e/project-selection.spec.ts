@@ -21,7 +21,7 @@ test.describe("Project Selection Persistence", () => {
   }) => {
     // Navigate to dashboard
     await page.goto("/dashboard");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Wait for projects to load in the sidebar
     await page.waitForTimeout(2000);
@@ -67,7 +67,7 @@ test.describe("Project Selection Persistence", () => {
         const workflowsLink = page.getByRole("button", { name: /workflows/i });
         if (await workflowsLink.isVisible()) {
           await workflowsLink.click();
-          await page.waitForLoadState("networkidle");
+          await page.waitForLoadState("domcontentloaded");
           await page.waitForTimeout(2000);
 
           // Take screenshot - should NOT show "No projects yet"
@@ -104,7 +104,7 @@ test.describe("Project Selection Persistence", () => {
   test("project selection persists after page refresh", async ({ page }) => {
     // Navigate to dashboard
     await page.goto("/dashboard");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Wait for page to be ready
     await page.waitForTimeout(2000);
@@ -126,7 +126,7 @@ test.describe("Project Selection Persistence", () => {
 
         // Refresh the page
         await page.reload();
-        await page.waitForLoadState("networkidle");
+        await page.waitForLoadState("domcontentloaded");
         await page.waitForTimeout(2000);
 
         // Take screenshot after refresh
@@ -162,7 +162,7 @@ test.describe("Project Selection Persistence", () => {
   }) => {
     // Navigate to dashboard
     await page.goto("/dashboard");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     // Select a project
@@ -185,7 +185,7 @@ test.describe("Project Selection Persistence", () => {
         // Navigate to a page that uses RequireProject
         // Based on the codebase, workflows page uses RequireProject
         await page.goto("/workflows");
-        await page.waitForLoadState("networkidle");
+        await page.waitForLoadState("domcontentloaded");
         await page.waitForTimeout(2000);
 
         await page.screenshot({

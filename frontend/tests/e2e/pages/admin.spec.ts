@@ -15,7 +15,7 @@ import { test, expect } from "../fixtures";
 test.describe("Admin Dashboard", () => {
   test("should load admin page without errors", async ({ page }) => {
     await page.goto("/admin");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/admin-dashboard.png",
@@ -30,7 +30,7 @@ test.describe("Admin Dashboard", () => {
     page,
   }) => {
     await page.goto("/admin");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     // Admin page requires superuser access. Either we see the dashboard
@@ -48,7 +48,7 @@ test.describe("Admin Dashboard", () => {
 
   test("should have 8-tab interface for superusers", async ({ page }) => {
     await page.goto("/admin");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     // If we have admin access, verify the 8 tabs are present
@@ -102,7 +102,7 @@ test.describe("Admin Dashboard", () => {
     page,
   }) => {
     await page.goto("/admin");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     const hasAdminHeading =
@@ -126,7 +126,7 @@ test.describe("Admin Dashboard", () => {
 test.describe("Admin - Architecture", () => {
   test("should load architecture page without errors", async ({ page }) => {
     await page.goto("/admin/architecture");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/admin-architecture.png",
@@ -141,7 +141,7 @@ test.describe("Admin - Architecture", () => {
     page,
   }) => {
     await page.goto("/admin/architecture");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     const hasArchitectureHeading =
@@ -154,7 +154,7 @@ test.describe("Admin - Architecture", () => {
 
   test("should have navigation back to admin", async ({ page }) => {
     await page.goto("/admin/architecture");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     const hasArchitectureHeading =
@@ -171,7 +171,7 @@ test.describe("Admin - Architecture", () => {
 test.describe("Admin - Datasets", () => {
   test("should load datasets page without errors", async ({ page }) => {
     await page.goto("/admin/datasets");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/admin-datasets.png",
@@ -184,7 +184,7 @@ test.describe("Admin - Datasets", () => {
 
   test("should display datasets heading or access denied", async ({ page }) => {
     await page.goto("/admin/datasets");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     const hasDatasetsHeading =
@@ -201,7 +201,7 @@ test.describe("Admin - Datasets", () => {
 
   test("should have import button for admin users", async ({ page }) => {
     await page.goto("/admin/datasets");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     const hasDatasetsHeading =
@@ -222,7 +222,7 @@ test.describe("Admin - Datasets", () => {
     page,
   }) => {
     await page.goto("/admin/datasets");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     const hasDatasetsHeading =
@@ -247,7 +247,7 @@ test.describe("Admin - Datasets", () => {
 test.describe("Admin - Dataset Detail (non-existent)", () => {
   test("should handle non-existent dataset ID gracefully", async ({ page }) => {
     await page.goto("/admin/datasets/non-existent-id-12345");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     await page.screenshot({
@@ -276,7 +276,7 @@ test.describe("Admin - Dataset Detail (non-existent)", () => {
 test.describe("Admin - Mobile", () => {
   test("should load mobile admin page without errors", async ({ page }) => {
     await page.goto("/admin/mobile");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/admin-mobile.png",
@@ -289,7 +289,7 @@ test.describe("Admin - Mobile", () => {
 
   test("should display mobile admin heading or redirect", async ({ page }) => {
     await page.goto("/admin/mobile");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     const hasMobileHeading =
@@ -302,7 +302,7 @@ test.describe("Admin - Mobile", () => {
 
   test("should display health status or activity section", async ({ page }) => {
     await page.goto("/admin/mobile");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     const hasMobileHeading =
@@ -325,7 +325,7 @@ test.describe("Admin - Mobile", () => {
 test.describe("Admin - Region Analysis", () => {
   test("should load region analysis page without errors", async ({ page }) => {
     await page.goto("/admin/region-analysis");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/admin-region-analysis.png",
@@ -340,7 +340,7 @@ test.describe("Admin - Region Analysis", () => {
     page,
   }) => {
     await page.goto("/admin/region-analysis");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     const hasRegionHeading =
@@ -355,7 +355,7 @@ test.describe("Admin - Region Analysis", () => {
     page,
   }) => {
     await page.goto("/admin/region-analysis");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     const hasRegionHeading =

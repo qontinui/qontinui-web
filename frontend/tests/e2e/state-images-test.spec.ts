@@ -26,7 +26,7 @@ test.describe("StateImage Display Test", () => {
 
     // Navigate to states page
     await page.goto(`/automation-builder/states?project=${PROJECT_ID}`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(5000);
 
     // Take screenshot

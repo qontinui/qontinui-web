@@ -14,7 +14,7 @@ import { test, expect } from "@playwright/test";
 test.describe("Forgot Password Page (/forgot-password)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/forgot-password");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -27,7 +27,7 @@ test.describe("Forgot Password Page (/forgot-password)", () => {
 
   test("displays heading and description", async ({ page }) => {
     await page.goto("/forgot-password");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", { name: /forgot password/i });
     await expect(heading).toBeVisible({ timeout: 10000 });
@@ -37,7 +37,7 @@ test.describe("Forgot Password Page (/forgot-password)", () => {
 
   test("shows email input field", async ({ page }) => {
     await page.goto("/forgot-password");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const emailLabel = page.getByText("Email", { exact: true });
     await expect(emailLabel).toBeVisible({ timeout: 10000 });
@@ -49,7 +49,7 @@ test.describe("Forgot Password Page (/forgot-password)", () => {
 
   test("shows submit button", async ({ page }) => {
     await page.goto("/forgot-password");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const submitButton = page.getByRole("button", {
       name: /send reset email/i,
@@ -60,7 +60,7 @@ test.describe("Forgot Password Page (/forgot-password)", () => {
 
   test("shows Back to Login link", async ({ page }) => {
     await page.goto("/forgot-password");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const backButton = page.getByRole("button", { name: /back to login/i });
     await expect(backButton).toBeVisible({ timeout: 10000 });
@@ -70,7 +70,7 @@ test.describe("Forgot Password Page (/forgot-password)", () => {
     page,
   }) => {
     await page.goto("/forgot-password");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const emailInput = page.getByLabel(/email/i);
     await expect(emailInput).toBeVisible({ timeout: 10000 });
@@ -90,7 +90,7 @@ test.describe("Forgot Password Page (/forgot-password)", () => {
 
   test("email field has required attribute", async ({ page }) => {
     await page.goto("/forgot-password");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const emailInput = page.getByLabel(/email/i);
     await expect(emailInput).toBeVisible({ timeout: 10000 });
@@ -105,7 +105,7 @@ test.describe("Reset Password Page (/reset-password)", () => {
     page,
   }) => {
     await page.goto("/reset-password");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Without a token, the page should redirect to /forgot-password
     // or show an error/toast and navigate away
@@ -129,7 +129,7 @@ test.describe("Reset Password Page (/reset-password)", () => {
 
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/reset-password");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -138,7 +138,7 @@ test.describe("Reset Password Page (/reset-password)", () => {
   test("shows password form when token is provided", async ({ page }) => {
     // Navigate with a dummy token to see the form
     await page.goto("/reset-password?token=test-token-12345");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The form should be visible when a token is present
     const heading = page.getByRole("heading", {
@@ -174,7 +174,7 @@ test.describe("Reset Password Page (/reset-password)", () => {
 test.describe("Verify Email Page (/verify-email)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/verify-email");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -187,7 +187,7 @@ test.describe("Verify Email Page (/verify-email)", () => {
 
   test("shows error state when no token is provided", async ({ page }) => {
     await page.goto("/verify-email");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Without a token, the page should show an error state
     // The component sets status to "error" with message about invalid verification link
@@ -213,7 +213,7 @@ test.describe("Verify Email Page (/verify-email)", () => {
     page,
   }) => {
     await page.goto("/verify-email");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     // In error state, there should be action buttons
@@ -233,7 +233,7 @@ test.describe("Verify Email Page (/verify-email)", () => {
 
   test("shows Back to Home link", async ({ page }) => {
     await page.goto("/verify-email");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     const backToHome = page.getByRole("link", { name: /back to home/i });

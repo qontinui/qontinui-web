@@ -18,7 +18,7 @@ const TEST_PROJECT_ID = "test-project-placeholder-id";
 test.describe("Project Testing Dashboard", () => {
   test("should load without errors and display heading", async ({ page }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/testing`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-testing-project-dashboard.png",
@@ -33,7 +33,7 @@ test.describe("Project Testing Dashboard", () => {
 
   test("should display 4-view selector buttons", async ({ page }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/testing`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // View selector buttons: Test Runs, Live Execution, Coverage Trends, Reliability
     await expect(
@@ -52,7 +52,7 @@ test.describe("Project Testing Dashboard", () => {
 
   test("should have navigation links to sub-pages", async ({ page }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/testing`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Coverage button in header
     await expect(
@@ -72,7 +72,7 @@ test.describe("Project Testing Dashboard", () => {
 
   test("should display welcome section text", async ({ page }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/testing`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Test Results Overview").first()).toBeVisible();
   });
@@ -81,7 +81,7 @@ test.describe("Project Testing Dashboard", () => {
 test.describe("Project Testing - Coverage Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/testing/coverage`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-testing-project-coverage.png",
@@ -96,7 +96,7 @@ test.describe("Project Testing - Coverage Page", () => {
 
   test("should display coverage stat cards", async ({ page }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/testing/coverage`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Three stat cards: Overall Coverage, Passing Tests, Failing Tests
     await expect(page.getByText("Overall Coverage").first()).toBeVisible();
@@ -106,7 +106,7 @@ test.describe("Project Testing - Coverage Page", () => {
 
   test("should display coverage analysis heading", async ({ page }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/testing/coverage`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: "Coverage Analysis" })
@@ -118,7 +118,7 @@ test.describe("Project Testing - Coverage Page", () => {
 
   test("should display navigation buttons", async ({ page }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/testing/coverage`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Test Runs and Deficiencies buttons in header
     await expect(
@@ -133,7 +133,7 @@ test.describe("Project Testing - Coverage Page", () => {
 test.describe("Project Testing - Deficiencies Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/testing/deficiencies`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-testing-project-deficiencies.png",
@@ -148,7 +148,7 @@ test.describe("Project Testing - Deficiencies Page", () => {
 
   test("should display deficiency tracking list", async ({ page }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/testing/deficiencies`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: "Deficiencies" })
@@ -162,7 +162,7 @@ test.describe("Project Testing - Deficiencies Page", () => {
 
   test("should display navigation buttons", async ({ page }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/testing/deficiencies`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Test Runs and Coverage buttons in header
     await expect(
@@ -177,7 +177,7 @@ test.describe("Project Testing - Deficiencies Page", () => {
 test.describe("Project Testing - Integration Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/testing/integration`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-testing-project-integration.png",
@@ -192,14 +192,14 @@ test.describe("Project Testing - Integration Page", () => {
 
   test("should display Mock Mode badge", async ({ page }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/testing/integration`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Mock Mode").first()).toBeVisible();
   });
 
   test("should display API health indicator", async ({ page }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/testing/integration`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // API health badge shows one of: "Checking API...", "API Connected", "API Offline"
     const healthBadge = page
@@ -210,7 +210,7 @@ test.describe("Project Testing - Integration Page", () => {
 
   test("should display integration test runs heading", async ({ page }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/testing/integration`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: "Integration Test Runs" })
@@ -219,14 +219,14 @@ test.describe("Project Testing - Integration Page", () => {
 
   test("should display Run Test button", async ({ page }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/testing/integration`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByRole("button", { name: /Run Test/i })).toBeVisible();
   });
 
   test("should show empty state or run list", async ({ page }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/testing/integration`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Either shows run list or empty state with "No Integration Tests Yet"
     const emptyState = page.getByText("No Integration Tests Yet");
@@ -245,7 +245,7 @@ test.describe("Project Testing - Integration Page", () => {
 test.describe("Project Testing - Live Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/testing/live`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-testing-project-live.png",
@@ -262,7 +262,7 @@ test.describe("Project Testing - Live Page", () => {
     page,
   }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/testing/live`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Tabs: Live Execution and Test History
     await expect(
@@ -275,7 +275,7 @@ test.describe("Project Testing - Live Page", () => {
 
   test("should show no-active-test message on Live tab", async ({ page }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/testing/live`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // When no test run is selected, shows "No Active Test" message
     await expect(page.getByText("No Active Test").first()).toBeVisible();
@@ -288,7 +288,7 @@ test.describe("Project Testing - Live Page", () => {
     page,
   }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/testing/live`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Click Test History tab
     await page.getByRole("tab", { name: /Test History/i }).click();
@@ -306,7 +306,7 @@ test.describe("Project Testing - Run Detail Page", () => {
     await page.goto(
       `/projects/${TEST_PROJECT_ID}/testing/runs/non-existent-run-id`
     );
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-testing-project-run-detail-missing.png",
@@ -321,7 +321,7 @@ test.describe("Project Testing - Run Detail Page", () => {
     await page.goto(
       `/projects/${TEST_PROJECT_ID}/testing/runs/non-existent-run-id`
     );
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.locator("h1")).toContainText("Test Run Details");
   });
@@ -330,7 +330,7 @@ test.describe("Project Testing - Run Detail Page", () => {
     await page.goto(
       `/projects/${TEST_PROJECT_ID}/testing/runs/non-existent-run-id`
     );
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // When run is not found, it shows "Test run not found"
     await expect(page.getByText("Test run not found").first()).toBeVisible({

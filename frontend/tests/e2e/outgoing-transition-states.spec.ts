@@ -27,7 +27,7 @@ test.describe("Outgoing Transition States Dropdown", () => {
   }) => {
     // Navigate to dashboard first
     await page.goto("/dashboard");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     // Select a project with states
@@ -72,7 +72,7 @@ test.describe("Outgoing Transition States Dropdown", () => {
     // Navigate directly to the states page with project ID
     // This simulates navigating directly to the page (the bug scenario)
     await page.goto(`/automation-builder/states?project=${projectId}`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Take screenshot
@@ -149,7 +149,7 @@ test.describe("Outgoing Transition States Dropdown", () => {
 
     // Navigate to dashboard to get project ID
     await page.goto("/dashboard");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     // Select a project
@@ -191,7 +191,7 @@ test.describe("Outgoing Transition States Dropdown", () => {
     // Navigate directly to states page - this is the key scenario
     // When localStorage is clear but URL has project ID, it should still load data
     await page.goto(`/automation-builder/states?project=${projectId}`);
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(5000); // Give time for backend fetch
 
     // Take screenshot

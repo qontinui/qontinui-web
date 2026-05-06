@@ -10,7 +10,7 @@ import { test, expect } from "../fixtures";
 test.describe("Issues Page", () => {
   test("should load issues page without errors", async ({ page }) => {
     await page.goto("/issues");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/issues.png",
@@ -23,7 +23,7 @@ test.describe("Issues Page", () => {
 
   test("should display Detected Issues heading", async ({ page }) => {
     await page.goto("/issues");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     const hasHeading = (await page.locator("text=Detected Issues").count()) > 0;
@@ -33,7 +33,7 @@ test.describe("Issues Page", () => {
 
   test("should display stats cards", async ({ page }) => {
     await page.goto("/issues");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Stats cards: Total Issues, Unresolved, Critical, Resolved Today
@@ -52,7 +52,7 @@ test.describe("Issues Page", () => {
 
   test("should have severity filter dropdown", async ({ page }) => {
     await page.goto("/issues");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     // Should have severity filter with options: All Severity, Critical, High, Medium, Low
@@ -64,7 +64,7 @@ test.describe("Issues Page", () => {
 
   test("should have status filter dropdown", async ({ page }) => {
     await page.goto("/issues");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     // Should have status filter with options: All Status, Detected, In Progress, Resolved, Skipped
@@ -75,7 +75,7 @@ test.describe("Issues Page", () => {
 
   test("should have Filters label", async ({ page }) => {
     await page.goto("/issues");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     const hasFiltersLabel = (await page.locator("text=Filters:").count()) > 0;
@@ -85,7 +85,7 @@ test.describe("Issues Page", () => {
 
   test("should display issue list or empty state", async ({ page }) => {
     await page.goto("/issues");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     await page.screenshot({
@@ -106,7 +106,7 @@ test.describe("Issues Page", () => {
 
   test("should have refresh button", async ({ page }) => {
     await page.goto("/issues");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     const hasRefreshButton =
@@ -117,7 +117,7 @@ test.describe("Issues Page", () => {
 
   test("should have project filter dropdown", async ({ page }) => {
     await page.goto("/issues");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
     // Should have project filter with "All Projects" option
@@ -129,7 +129,7 @@ test.describe("Issues Page", () => {
 
   test("should show issue count when issues exist", async ({ page }) => {
     await page.goto("/issues");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // If issues exist, there should be a "Showing X of Y issues" text

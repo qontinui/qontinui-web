@@ -10,7 +10,7 @@ import { test, expect } from "../fixtures";
 test.describe("Marketplace Page", () => {
   test("loads without errors and shows heading", async ({ page }) => {
     await page.goto("/marketplace");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-marketplace.png",
@@ -29,7 +29,7 @@ test.describe("Marketplace Page", () => {
 
   test("shows package tabs (All, Popular, Installed)", async ({ page }) => {
     await page.goto("/marketplace");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Verify the three tabs are present
     await expect(page.getByText("All Packages").first()).toBeVisible({
@@ -41,7 +41,7 @@ test.describe("Marketplace Page", () => {
 
   test("shows Publish Package button", async ({ page }) => {
     await page.goto("/marketplace");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Publish Package button should be visible
     await expect(page.getByText("Publish Package").first()).toBeVisible({
@@ -51,7 +51,7 @@ test.describe("Marketplace Page", () => {
 
   test("shows package cards or empty state", async ({ page }) => {
     await page.goto("/marketplace");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Wait for packages to load
     await page.waitForTimeout(3000);
@@ -83,7 +83,7 @@ test.describe("Marketplace Page", () => {
 
   test("can switch between tabs", async ({ page }) => {
     await page.goto("/marketplace");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Wait for initial load
     await page.waitForTimeout(2000);
@@ -115,7 +115,7 @@ test.describe("Marketplace Page", () => {
 test.describe("Package Detail Page", () => {
   test("shows error state for invalid slug", async ({ page }) => {
     await page.goto("/marketplace/non-existent-package-slug-12345");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-marketplace-invalid-slug.png",
@@ -156,7 +156,7 @@ test.describe("Package Detail Page", () => {
 test.describe("Publish Package Page", () => {
   test("loads without errors and shows heading", async ({ page }) => {
     await page.goto("/marketplace/publish");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/pages-marketplace-publish.png",
@@ -175,7 +175,7 @@ test.describe("Publish Package Page", () => {
 
   test("shows multi-tab form structure", async ({ page }) => {
     await page.goto("/marketplace/publish");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Verify the four form tabs are present
     await expect(page.getByText("Package Details").first()).toBeVisible({
@@ -188,7 +188,7 @@ test.describe("Publish Package Page", () => {
 
   test("shows package details form on default tab", async ({ page }) => {
     await page.goto("/marketplace/publish");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Verify basic form fields are visible on the Details tab
     await expect(page.getByText("Basic Information")).toBeVisible({
@@ -209,7 +209,7 @@ test.describe("Publish Package Page", () => {
     page,
   }) => {
     await page.goto("/marketplace/publish");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Security Scan section
     await expect(page.getByText("Security Scan").first()).toBeVisible({
@@ -229,7 +229,7 @@ test.describe("Publish Package Page", () => {
 
   test("has back to marketplace link", async ({ page }) => {
     await page.goto("/marketplace/publish");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Back to Marketplace")).toBeVisible({
       timeout: 15000,
@@ -238,7 +238,7 @@ test.describe("Publish Package Page", () => {
 
   test("can navigate between form tabs", async ({ page }) => {
     await page.goto("/marketplace/publish");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Click Code tab
     await page.getByText("Code").first().click();

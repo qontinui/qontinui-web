@@ -16,7 +16,7 @@ import { test, expect } from "../fixtures";
 test.describe("Build - Workflows", () => {
   test("should load workflows page without errors", async ({ page }) => {
     await page.goto("/build/workflows");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/build-workflows.png",
@@ -31,7 +31,7 @@ test.describe("Build - Workflows", () => {
     page,
   }) => {
     await page.goto("/build/workflows");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasHeading =
       (await page.locator("text=Unified Workflow Builder").count()) > 0;
@@ -45,7 +45,7 @@ test.describe("Build - Workflows", () => {
     page,
   }) => {
     await page.goto("/build/workflows");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasNewButton =
       (await page.locator('button:has-text("New Workflow")').count()) > 0;
@@ -62,7 +62,7 @@ test.describe("Build - Workflows", () => {
     page,
   }) => {
     await page.goto("/build/workflows");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // When runner is online and workflows exist, selecting one shows phase sections:
     // Setup Steps, Agentic Steps, Verification Steps, Completion Steps
@@ -90,7 +90,7 @@ test.describe("Build - Workflows", () => {
 
   test("should gracefully handle runner offline state", async ({ page }) => {
     await page.goto("/build/workflows");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasContent =
       (await page.locator("text=Unified Workflow Builder").count()) > 0;
@@ -104,7 +104,7 @@ test.describe("Build - Workflows", () => {
 test.describe("Build - Flow Designer", () => {
   test("should load flow designer page without errors", async ({ page }) => {
     await page.goto("/build/flow-designer");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/build-flow-designer.png",
@@ -119,7 +119,7 @@ test.describe("Build - Flow Designer", () => {
     page,
   }) => {
     await page.goto("/build/flow-designer");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasHeading = (await page.locator("text=Flow Designer").count()) > 0;
     const hasOfflineState =
@@ -132,7 +132,7 @@ test.describe("Build - Flow Designer", () => {
     page,
   }) => {
     await page.goto("/build/flow-designer");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // When online: shows a workflow selector sidebar and a flow canvas area
     // The canvas shows "Select a Workflow to Design its Flow" when none is selected
@@ -156,7 +156,7 @@ test.describe("Build - Flow Designer", () => {
     page,
   }) => {
     await page.goto("/build/flow-designer");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasSearchInput =
       (await page.locator('input[placeholder="Search workflows..."]').count()) >
@@ -169,7 +169,7 @@ test.describe("Build - Flow Designer", () => {
 
   test("should gracefully handle runner offline state", async ({ page }) => {
     await page.goto("/build/flow-designer");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasContent = (await page.locator("text=Flow Designer").count()) > 0;
     const hasOfflineState =
@@ -182,7 +182,7 @@ test.describe("Build - Flow Designer", () => {
 test.describe("Build - Queue", () => {
   test("should load queue page without errors", async ({ page }) => {
     await page.goto("/build/queue");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/build-queue.png",
@@ -197,7 +197,7 @@ test.describe("Build - Queue", () => {
     page,
   }) => {
     await page.goto("/build/queue");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasHeading = (await page.locator("text=Workflow Queue").count()) > 0;
     const hasOfflineState =
@@ -208,7 +208,7 @@ test.describe("Build - Queue", () => {
 
   test("should show add to queue button or offline state", async ({ page }) => {
     await page.goto("/build/queue");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasAddButton =
       (await page.locator('button:has-text("Add to Queue")').count()) > 0;
@@ -222,7 +222,7 @@ test.describe("Build - Queue", () => {
     page,
   }) => {
     await page.goto("/build/queue");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // When online: shows queue items with status badges, or "Queue is Empty"
     // Status badges include: Running, Completed, Failed, Pending, Paused
@@ -242,7 +242,7 @@ test.describe("Build - Queue", () => {
 
   test("should have search input or offline state", async ({ page }) => {
     await page.goto("/build/queue");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasSearchInput =
       (await page.locator('input[placeholder="Search queue..."]').count()) > 0;
@@ -254,7 +254,7 @@ test.describe("Build - Queue", () => {
 
   test("should gracefully handle runner offline state", async ({ page }) => {
     await page.goto("/build/queue");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasContent = (await page.locator("text=Workflow Queue").count()) > 0;
     const hasOfflineState =
@@ -267,7 +267,7 @@ test.describe("Build - Queue", () => {
 test.describe("Build - Tests", () => {
   test("should load tests page without errors", async ({ page }) => {
     await page.goto("/build/tests");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/build-tests.png",
@@ -282,7 +282,7 @@ test.describe("Build - Tests", () => {
     page,
   }) => {
     await page.goto("/build/tests");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasHeading =
       (await page.locator("text=Playwright Tests").count()) > 0;
@@ -296,7 +296,7 @@ test.describe("Build - Tests", () => {
     page,
   }) => {
     await page.goto("/build/tests");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasSearchInput =
       (await page.locator('input[placeholder="Search tests..."]').count()) > 0;
@@ -312,7 +312,7 @@ test.describe("Build - Tests", () => {
     page,
   }) => {
     await page.goto("/build/tests");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasTestCount = (await page.locator("text=/\\d+ tests?/").count()) > 0;
     const hasEmptyState =
@@ -325,7 +325,7 @@ test.describe("Build - Tests", () => {
 
   test("should gracefully handle runner offline state", async ({ page }) => {
     await page.goto("/build/tests");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasContent =
       (await page.locator("text=Playwright Tests").count()) > 0;
@@ -339,7 +339,7 @@ test.describe("Build - Tests", () => {
 test.describe("Build - State Machine", () => {
   test("should load state machine page without errors", async ({ page }) => {
     await page.goto("/build/state-machine");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
       path: "test-results/build-state-machine.png",
@@ -354,7 +354,7 @@ test.describe("Build - State Machine", () => {
     page,
   }) => {
     await page.goto("/build/state-machine");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasHeading =
       (await page.locator("text=State Machine Builder").count()) > 0;
@@ -368,7 +368,7 @@ test.describe("Build - State Machine", () => {
     page,
   }) => {
     await page.goto("/build/state-machine");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The state machine editor has three mode tabs: Discover, Edit, View
     const hasDiscoverTab =
@@ -387,7 +387,7 @@ test.describe("Build - State Machine", () => {
 
   test("should show undo/redo controls or offline state", async ({ page }) => {
     await page.goto("/build/state-machine");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Undo/Redo buttons are visible in the header toolbar with tooltips
     // The tooltip content shows "Undo (Ctrl+Z)" and "Redo (Ctrl+Y)"
@@ -414,7 +414,7 @@ test.describe("Build - State Machine", () => {
     page,
   }) => {
     await page.goto("/build/state-machine");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // The footer status bar shows "States: N" and "Transitions: N"
     const hasStatesCount = (await page.locator("text=States:").count()) > 0;
@@ -430,7 +430,7 @@ test.describe("Build - State Machine", () => {
 
   test("should gracefully handle runner offline state", async ({ page }) => {
     await page.goto("/build/state-machine");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const hasContent =
       (await page.locator("text=State Machine Builder").count()) > 0;

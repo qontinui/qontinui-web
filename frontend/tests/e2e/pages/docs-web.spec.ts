@@ -18,7 +18,7 @@ import { test, expect } from "@playwright/test";
 test.describe("Web Overview (/docs/web)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/docs/web");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -31,7 +31,7 @@ test.describe("Web Overview (/docs/web)", () => {
 
   test("displays page title and description", async ({ page }) => {
     await page.goto("/docs/web");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", { name: /qontinui web/i });
     await expect(heading).toBeVisible({ timeout: 10000 });
@@ -47,7 +47,7 @@ test.describe("Web Overview (/docs/web)", () => {
     page,
   }) => {
     await page.goto("/docs/web");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /what is qontinui web/i })
@@ -79,7 +79,7 @@ test.describe("Web Overview (/docs/web)", () => {
 
   test("shows 6-step typical workflow", async ({ page }) => {
     await page.goto("/docs/web");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /typical workflow/i })
@@ -95,7 +95,7 @@ test.describe("Web Overview (/docs/web)", () => {
 
   test("shows documentation section links", async ({ page }) => {
     await page.goto("/docs/web");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /documentation sections/i })
@@ -118,7 +118,7 @@ test.describe("Web Overview (/docs/web)", () => {
 
   test("shows key concepts section", async ({ page }) => {
     await page.goto("/docs/web");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /key concepts/i })
@@ -131,7 +131,7 @@ test.describe("Web Overview (/docs/web)", () => {
 
   test("shows advanced features", async ({ page }) => {
     await page.goto("/docs/web");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /advanced features/i })
@@ -147,7 +147,7 @@ test.describe("Web Overview (/docs/web)", () => {
 test.describe("Web Actions (/docs/web/actions)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/docs/web/actions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -160,7 +160,7 @@ test.describe("Web Actions (/docs/web/actions)", () => {
 
   test("displays page title", async ({ page }) => {
     await page.goto("/docs/web/actions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", { name: /action types/i });
     await expect(heading).toBeVisible({ timeout: 10000 });
@@ -168,7 +168,7 @@ test.describe("Web Actions (/docs/web/actions)", () => {
 
   test("shows 7 action categories", async ({ page }) => {
     await page.goto("/docs/web/actions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // All 7 categories as h2 headings
     await expect(
@@ -196,7 +196,7 @@ test.describe("Web Actions (/docs/web/actions)", () => {
 
   test("shows Find actions: Find, Vanish, RAG Find", async ({ page }) => {
     await page.goto("/docs/web/actions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("FIND")).toBeVisible({ timeout: 10000 });
     await expect(page.getByText("VANISH")).toBeVisible();
@@ -207,7 +207,7 @@ test.describe("Web Actions (/docs/web/actions)", () => {
     page,
   }) => {
     await page.goto("/docs/web/actions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("CLICK")).toBeVisible({ timeout: 10000 });
     await expect(page.getByText("MOUSE_MOVE")).toBeVisible();
@@ -217,7 +217,7 @@ test.describe("Web Actions (/docs/web/actions)", () => {
 
   test("shows Keyboard actions: Type, Key Press, Hotkey", async ({ page }) => {
     await page.goto("/docs/web/actions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("TYPE")).toBeVisible({ timeout: 10000 });
     await expect(page.getByText("KEY_PRESS")).toBeVisible();
@@ -228,7 +228,7 @@ test.describe("Web Actions (/docs/web/actions)", () => {
     page,
   }) => {
     await page.goto("/docs/web/actions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("IF")).toBeVisible({ timeout: 10000 });
     await expect(page.getByText("LOOP")).toBeVisible();
@@ -240,7 +240,7 @@ test.describe("Web Actions (/docs/web/actions)", () => {
     page,
   }) => {
     await page.goto("/docs/web/actions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("SET_VARIABLE")).toBeVisible({
       timeout: 10000,
@@ -253,7 +253,7 @@ test.describe("Web Actions (/docs/web/actions)", () => {
 
   test("shows Code/AI actions: Code Block, AI Prompt", async ({ page }) => {
     await page.goto("/docs/web/actions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("CODE_BLOCK")).toBeVisible({
       timeout: 10000,
@@ -264,7 +264,7 @@ test.describe("Web Actions (/docs/web/actions)", () => {
 
   test("shows key concept about action categories", async ({ page }) => {
     await page.goto("/docs/web/actions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Key Concept: Action Categories")).toBeVisible({
       timeout: 10000,
@@ -277,7 +277,7 @@ test.describe("Web Actions (/docs/web/actions)", () => {
 test.describe("Web AI Actions (/docs/web/ai-actions)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/docs/web/ai-actions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -290,7 +290,7 @@ test.describe("Web AI Actions (/docs/web/ai-actions)", () => {
 
   test("displays page title", async ({ page }) => {
     await page.goto("/docs/web/ai-actions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", { name: /ai actions/i });
     await expect(heading).toBeVisible({ timeout: 10000 });
@@ -298,7 +298,7 @@ test.describe("Web AI Actions (/docs/web/ai-actions)", () => {
 
   test("shows AI_PROMPT action documentation", async ({ page }) => {
     await page.goto("/docs/web/ai-actions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /ai prompt action/i })
@@ -309,7 +309,7 @@ test.describe("Web AI Actions (/docs/web/ai-actions)", () => {
 
   test("shows configuration options", async ({ page }) => {
     await page.goto("/docs/web/ai-actions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Configuration options for AI_PROMPT
     await expect(page.getByText("prompt")).toBeVisible({ timeout: 10000 });
@@ -320,7 +320,7 @@ test.describe("Web AI Actions (/docs/web/ai-actions)", () => {
 
   test("shows when to use AI actions", async ({ page }) => {
     await page.goto("/docs/web/ai-actions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("When to Use AI Actions")).toBeVisible({
       timeout: 10000,
@@ -338,7 +338,7 @@ test.describe("Web AI Actions (/docs/web/ai-actions)", () => {
 test.describe("Web Image Recognition (/docs/web/image-recognition)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/docs/web/image-recognition");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -351,7 +351,7 @@ test.describe("Web Image Recognition (/docs/web/image-recognition)", () => {
 
   test("displays page title", async ({ page }) => {
     await page.goto("/docs/web/image-recognition");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
       name: /image recognition/i,
@@ -361,7 +361,7 @@ test.describe("Web Image Recognition (/docs/web/image-recognition)", () => {
 
   test("shows template matching explanation", async ({ page }) => {
     await page.goto("/docs/web/image-recognition");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", {
@@ -377,7 +377,7 @@ test.describe("Web Image Recognition (/docs/web/image-recognition)", () => {
 
   test("shows why visual recognition section", async ({ page }) => {
     await page.goto("/docs/web/image-recognition");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Why Visual Recognition?")).toBeVisible({
       timeout: 10000,
@@ -390,7 +390,7 @@ test.describe("Web Image Recognition (/docs/web/image-recognition)", () => {
 
   test("shows the template matching process steps", async ({ page }) => {
     await page.goto("/docs/web/image-recognition");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("The Template Matching Process")).toBeVisible({
       timeout: 10000,
@@ -403,7 +403,7 @@ test.describe("Web Image Recognition (/docs/web/image-recognition)", () => {
 test.describe("Web Keyboard Shortcuts (/docs/web/keyboard-shortcuts)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/docs/web/keyboard-shortcuts");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -416,7 +416,7 @@ test.describe("Web Keyboard Shortcuts (/docs/web/keyboard-shortcuts)", () => {
 
   test("displays page title", async ({ page }) => {
     await page.goto("/docs/web/keyboard-shortcuts");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
       name: /keyboard shortcuts/i,
@@ -426,7 +426,7 @@ test.describe("Web Keyboard Shortcuts (/docs/web/keyboard-shortcuts)", () => {
 
   test("shows shortcut reference sections", async ({ page }) => {
     await page.goto("/docs/web/keyboard-shortcuts");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /state machine editor/i })
@@ -435,7 +435,7 @@ test.describe("Web Keyboard Shortcuts (/docs/web/keyboard-shortcuts)", () => {
 
   test("shows StateImage movement methods", async ({ page }) => {
     await page.goto("/docs/web/keyboard-shortcuts");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("StateImage Operations")).toBeVisible({
       timeout: 10000,
@@ -449,7 +449,7 @@ test.describe("Web Keyboard Shortcuts (/docs/web/keyboard-shortcuts)", () => {
 
   test("shows modifier keys reference", async ({ page }) => {
     await page.goto("/docs/web/keyboard-shortcuts");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /modifier keys reference/i })
@@ -461,7 +461,7 @@ test.describe("Web Keyboard Shortcuts (/docs/web/keyboard-shortcuts)", () => {
 
   test("shows canvas navigation shortcuts", async ({ page }) => {
     await page.goto("/docs/web/keyboard-shortcuts");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Canvas Navigation")).toBeVisible({
       timeout: 10000,
@@ -474,7 +474,7 @@ test.describe("Web Keyboard Shortcuts (/docs/web/keyboard-shortcuts)", () => {
 test.describe("Web States (/docs/web/states)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/docs/web/states");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -487,7 +487,7 @@ test.describe("Web States (/docs/web/states)", () => {
 
   test("displays page title", async ({ page }) => {
     await page.goto("/docs/web/states");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
       name: /working with states/i,
@@ -497,7 +497,7 @@ test.describe("Web States (/docs/web/states)", () => {
 
   test("shows state concept explanation", async ({ page }) => {
     await page.goto("/docs/web/states");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /what is a state/i })
@@ -510,7 +510,7 @@ test.describe("Web States (/docs/web/states)", () => {
 
   test("shows visual identification key concept", async ({ page }) => {
     await page.goto("/docs/web/states");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByText("Key Concept: Visual Identification")
@@ -519,7 +519,7 @@ test.describe("Web States (/docs/web/states)", () => {
 
   test("shows creating states steps", async ({ page }) => {
     await page.goto("/docs/web/states");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /creating a state/i })
@@ -533,7 +533,7 @@ test.describe("Web States (/docs/web/states)", () => {
 
   test("shows state properties: is_initial and is_final", async ({ page }) => {
     await page.goto("/docs/web/states");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /state properties/i })
@@ -553,7 +553,7 @@ test.describe("Web States (/docs/web/states)", () => {
 
   test("shows identifying images section", async ({ page }) => {
     await page.goto("/docs/web/states");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /identifying images/i })
@@ -566,7 +566,7 @@ test.describe("Web States (/docs/web/states)", () => {
 
   test("shows parallel states concept", async ({ page }) => {
     await page.goto("/docs/web/states");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Parallel States")).toBeVisible({
       timeout: 10000,
@@ -579,7 +579,7 @@ test.describe("Web States (/docs/web/states)", () => {
 
   test("shows state examples", async ({ page }) => {
     await page.goto("/docs/web/states");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Login Screen")).toBeVisible({
       timeout: 10000,
@@ -592,7 +592,7 @@ test.describe("Web States (/docs/web/states)", () => {
 test.describe("Web Transitions (/docs/web/transitions)", () => {
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/docs/web/transitions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -605,7 +605,7 @@ test.describe("Web Transitions (/docs/web/transitions)", () => {
 
   test("displays page title", async ({ page }) => {
     await page.goto("/docs/web/transitions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
       name: /state transitions/i,
@@ -615,7 +615,7 @@ test.describe("Web Transitions (/docs/web/transitions)", () => {
 
   test("shows transition concept explanation", async ({ page }) => {
     await page.goto("/docs/web/transitions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /what is a transition/i })
@@ -632,7 +632,7 @@ test.describe("Web Transitions (/docs/web/transitions)", () => {
     page,
   }) => {
     await page.goto("/docs/web/transitions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /types of transitions/i })
@@ -652,7 +652,7 @@ test.describe("Web Transitions (/docs/web/transitions)", () => {
 
   test("shows transition properties", async ({ page }) => {
     await page.goto("/docs/web/transitions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /transition properties/i })
@@ -667,7 +667,7 @@ test.describe("Web Transitions (/docs/web/transitions)", () => {
 
   test("shows parallel state management section", async ({ page }) => {
     await page.goto("/docs/web/transitions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", {
@@ -689,7 +689,7 @@ test.describe("Web Transitions (/docs/web/transitions)", () => {
 
   test("shows creating a transition steps", async ({ page }) => {
     await page.goto("/docs/web/transitions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /creating a transition/i })
@@ -705,7 +705,7 @@ test.describe("Web Transitions (/docs/web/transitions)", () => {
 
   test("shows best practices", async ({ page }) => {
     await page.goto("/docs/web/transitions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByRole("heading", { name: /best practices/i })
@@ -724,7 +724,7 @@ test.describe("Web Transitions (/docs/web/transitions)", () => {
 
   test("shows how transitions work steps", async ({ page }) => {
     await page.goto("/docs/web/transitions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("How Transitions Work")).toBeVisible({
       timeout: 10000,
@@ -742,7 +742,7 @@ test.describe("Web Transitions (/docs/web/transitions)", () => {
     page,
   }) => {
     await page.goto("/docs/web/transitions");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     await expect(
       page.getByText("Key Concept: Transitions = Navigation Logic")
