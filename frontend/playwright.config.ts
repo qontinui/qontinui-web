@@ -24,7 +24,12 @@ export default defineConfig({
   // Test execution settings
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  // No retries in CI. The suite is single-worker, so each retry adds another
+  // 60s timeout to the wall-clock budget for every flake; with ~300 failing
+  // tests that compounds to multi-hour runs (5h+ observed on the post-cascade
+  // unblock). Surface failures fast, fix them once, then add retries back if
+  // genuine flakes appear.
+  retries: 0,
   workers: process.env.CI ? 1 : undefined,
 
   // Reporter to use
