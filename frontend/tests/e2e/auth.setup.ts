@@ -16,9 +16,15 @@ import { test as setup, expect } from "@playwright/test";
 import { TEST_USER } from "./test-credentials";
 import { STORAGE_STATE_PATH } from "./auth.constants";
 
-// Get credentials from environment or use defaults
+// Get credentials from environment or use defaults.
+// The form field is labeled "username" but the backend's auth manager
+// (`backend/app/auth/config.py:266`) looks the user up via
+// `get_by_email(credentials.username)` — fastapi-users treats the
+// OAuth2 `username` field as an email. Send the email by default;
+// override via PLAYWRIGHT_TEST_USERNAME if a deployment supports
+// username-based lookup.
 const getCredentials = () => {
-  const username = process.env.PLAYWRIGHT_TEST_USERNAME || TEST_USER.username;
+  const username = process.env.PLAYWRIGHT_TEST_USERNAME || TEST_USER.email;
   const password = process.env.PLAYWRIGHT_TEST_PASSWORD || TEST_USER.password;
   return { username, password };
 };

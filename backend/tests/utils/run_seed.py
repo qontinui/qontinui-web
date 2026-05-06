@@ -18,14 +18,21 @@ except ImportError:
 from app.db.base_class import Base  # noqa
 from app.db.session import AsyncSessionLocal
 from tests.utils.seed_snapshot_data import create_test_snapshots
+from tests.utils.seed_test_user import create_test_user
 
 # Ensure we can import from the backend app
 # sys.path is already set by the calling script
 
 
 async def seed():
-    """Seed test snapshots in the database"""
+    """Seed the dev test user + test snapshots in the database."""
     async with AsyncSessionLocal() as db:
+        # User must exist before Playwright's auth.setup.ts logs in;
+        # otherwise the login 401s and the [setup] project fails on
+        # every retry, blocking all downstream specs.
+        user = await create_test_user(db)
+        print(f"Test user ready: {user.email}")
+
         run_ids = await create_test_snapshots(db)
         print(f"Created {len(run_ids)} test snapshots")
 
