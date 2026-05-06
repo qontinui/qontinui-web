@@ -7,6 +7,14 @@ on:
     branches: [main, develop]
   workflow_dispatch:
 
+# Cancel in-progress runs when a newer commit lands on the same ref. Without
+# this, every push or PR update spawns a fresh ~1h+ E2E run while the prior
+# one keeps grinding — six concurrent 5h runs were observed in flight at
+# once before this guard was added.
+concurrency:
+  group: e2e-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend-tests:
     name: Backend E2E Tests
@@ -98,7 +106,7 @@ jobs:
           retention-days: 30
 
   frontend-tests:
-    name: Frontend E2E Tests
+    name: Frontend E2E Tests (shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
 
     services:
@@ -117,7 +125,17 @@ jobs:
           - 5432:5432
 
     strategy:
+      # Don't cancel sibling shards if one fails — we want the full failure
+      # picture from every shard, not just the first one to die.
+      fail-fast: false
       matrix:
+        # Run the suite in 4 parallel shards. Each matrix entry gets its
+        # own runner with its own ephemeral postgres + backend + frontend,
+        # so there is no shared state between shards. Wall clock ≈
+        # max(shard times), not sum. With ~309 failing tests at 60s each
+        # under retries=0, single-shard wall clock was 5h+; 4-way sharding
+        # brings that to ~1h15m.
+        shard: [1, 2, 3, 4]
         node-version: [20]
 
     steps:
@@ -232,13 +250,16 @@ jobs:
           CI: true
           PLAYWRIGHT_BASE_URL: http://localhost:3001
         run: |
-          npx playwright test --project=chromium
+          npx playwright test --project=chromium --shard=${{ matrix.shard }}/4
 
+      # Artifact names must be unique across matrix entries (actions/upload-artifact@v4
+      # rejects collisions). Suffix with the shard index so each shard's
+      # output uploads cleanly and can be downloaded independently.
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-shard-${{ matrix.shard }}
           path: frontend/playwright-report/
           retention-days: 30
 
@@ -246,7 +267,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: frontend-test-results
+          name: frontend-test-results-shard-${{ matrix.shard }}
           path: frontend/test-results/
           retention-days: 30
 
@@ -254,7 +275,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-artifacts
+          name: playwright-artifacts-shard-${{ matrix.shard }}
           path: |
             frontend/test-results/
             frontend/playwright-report/
