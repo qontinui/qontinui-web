@@ -28,3 +28,13 @@ npm run test:watch # watch mode
 ```
 
 New test files must use `vi.*` from vitest (globals are enabled), **not** `jest.*`. There is no jest shim.
+
+## Playwright (e2e)
+
+### Do not use `waitForLoadState("networkidle")`
+
+`networkidle` waits for 500 ms of zero network activity, which never settles in this app: same-origin polling on `/api/ui-bridge/commands`, the runner-discovery hook, and React Query background refetches keep the network warm continuously. Every call burns its full 60 s timeout before throwing, which is why the post-cascade-fix nightly was 11 ✓ / 697 ✘ over 3 h before PR #66.
+
+Use `waitForLoadState("domcontentloaded")` instead, then assert on a specific selector with `await expect(locator).toBeVisible({ timeout: ... })`. The same approach has been documented in `tests/e2e/auth.setup.ts:39-41` since the auth fixture was first written.
+
+PR #66 (commit `288f02e8`) replaced 706 occurrences across 50 spec files. The post-merge sharded run (`25456443767`) immediately moved the suite from 11 ✓ / 697 ✘ over 3 h to 411 ✓ / 313 ✘ over ~30 min. New tests must follow the same pattern.
