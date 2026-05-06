@@ -21,13 +21,14 @@ import asyncio
 import json
 
 import structlog
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, status
 from redis import asyncio as aioredis
 from starlette.websockets import WebSocketState
 
 from app.api.deps import get_current_user_from_ws
 from app.api.v1.endpoints.runners import _runner_to_wire
 from app.config.redis_config import get_redis
+from app.core.config import settings
 from app.crud import runner_crud
 
 logger = structlog.get_logger(__name__)
@@ -41,6 +42,17 @@ async def websocket_runner_status(
     redis: aioredis.Redis = Depends(get_redis),
 ) -> None:
     """Stream runner status updates to one user."""
+    # Short-circuit when Redis is disabled (e.g. CI without a Redis service
+    # container). Without this guard the handler keeps trying to subscribe to
+    # a non-existent localhost:6379 and floods logs with ConnectionRefusedError.
+    # Mirrors the precedent in device_bridge_ws.py.
+    if not settings.REDIS_ENABLED:
+        await websocket.close(
+            code=status.WS_1008_POLICY_VIOLATION,
+            reason="Runner status stream requires Redis.",
+        )
+        return
+
     await websocket.accept()
 
     token = websocket.query_params.get("token")
