@@ -185,7 +185,7 @@ test.describe("Demo Detail Page (/demo/[id])", () => {
     });
   });
 
-  test("shows loading state initially for valid-looking ID", async ({
+  test("shows loading state initially for valid-looking ID @smoke", async ({
     page,
   }) => {
     // Navigate without waiting to catch loading state

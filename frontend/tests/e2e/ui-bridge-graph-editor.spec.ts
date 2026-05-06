@@ -44,7 +44,7 @@ async function hasTabsVisible(
 }
 
 test.describe("UI Bridge Graph Editor - Page Load", () => {
-  test("should load the state machine page without errors", async ({
+  test("should load the state machine page without errors @smoke", async ({
     page,
   }) => {
     await navigateToUIBridge(page);
@@ -58,7 +58,7 @@ test.describe("UI Bridge Graph Editor - Page Load", () => {
     expect(pageContent).not.toContain("Internal Server Error");
   });
 
-  test("should show page content appropriately", async ({ page }) => {
+  test("should show page content appropriately @smoke", async ({ page }) => {
     await navigateToUIBridge(page);
 
     // The page should show either:
@@ -325,7 +325,7 @@ test.describe("UI Bridge Graph Editor - Other Tabs", () => {
 });
 
 test.describe("UI Bridge Graph Editor - No Console Errors", () => {
-  test("should load and navigate without critical console errors", async ({
+  test("should load and navigate without critical console errors @smoke", async ({
     page,
   }) => {
     const errors: string[] = [];
