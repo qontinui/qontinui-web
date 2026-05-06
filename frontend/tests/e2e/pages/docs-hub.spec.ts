@@ -95,7 +95,7 @@ test.describe("Docs Hub (/docs)", () => {
 
     // Qontinui Runner links
     await expect(
-      page.getByRole("link", { name: "Installation" })
+      page.getByRole("link", { name: "Installation" }).first()
     ).toBeVisible();
     await expect(
       page.getByRole("link", { name: "Running Automations" })
@@ -255,7 +255,9 @@ test.describe("Getting Started (/docs/getting-started)", () => {
     await page.goto("/docs/getting-started");
     await page.waitForLoadState("domcontentloaded");
 
-    await expect(page.getByText("Download Qontinui Runner")).toBeVisible({
+    await expect(
+      page.getByRole("heading", { name: "Download Qontinui Runner" })
+    ).toBeVisible({
       timeout: 10000,
     });
     await expect(page.getByText("Export Your Configuration")).toBeVisible();

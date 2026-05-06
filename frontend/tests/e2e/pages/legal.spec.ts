@@ -101,7 +101,9 @@ test.describe("Extension Privacy Policy (/privacy-extension)", () => {
     await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Overview")).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText("Data Collection")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Data Collection" })
+    ).toBeVisible();
     await expect(page.getByText("Permissions Explained")).toBeVisible();
     await expect(page.getByText("User Control")).toBeVisible();
     await expect(page.getByText("Data Storage")).toBeVisible();
@@ -136,7 +138,7 @@ test.describe("Extension Privacy Policy (/privacy-extension)", () => {
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
-      page.getByRole("heading", { name: "Open Source" })
+      page.getByRole("heading", { name: "Open Source", exact: true })
     ).toBeVisible({ timeout: 10000 });
 
     const githubLink = page.getByRole("link", {

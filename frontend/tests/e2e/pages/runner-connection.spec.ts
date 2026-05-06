@@ -102,9 +102,11 @@ test.describe("Download Page", () => {
     await page.waitForLoadState("domcontentloaded");
 
     // Verify platform selector buttons are present
-    await expect(page.getByText("Windows")).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText("macOS")).toBeVisible();
-    await expect(page.getByText("Linux")).toBeVisible();
+    await expect(page.getByText("Windows").first()).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(page.getByText("macOS").first()).toBeVisible();
+    await expect(page.getByText("Linux").first()).toBeVisible();
   });
 
   test("detects current platform", async ({ page }) => {
