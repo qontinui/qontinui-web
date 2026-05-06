@@ -5,6 +5,11 @@ on:
     branches: [main, develop]
   push:
     branches: [main, develop]
+  # Run the full sharded E2E suite nightly. The on-PR smoke job is the
+  # gating signal for merging; this scheduled run catches regressions the
+  # smoke set doesn't cover, without ever blocking a PR.
+  schedule:
+    - cron: '0 4 * * *'
   workflow_dispatch:
 
 # Cancel in-progress runs when a newer commit lands on the same ref. Without
@@ -105,8 +110,151 @@ jobs:
           path: ./backend/test-results/
           retention-days: 30
 
+  # Smoke set runs on every PR. Gates merging. Single runner, no shard,
+  # ~10 min including setup. `--grep` selects tests tagged `@smoke` plus
+  # the auth.setup bootstrap (every authenticated test depends on its
+  # storage state). Push-to-main, schedule, and workflow_dispatch run
+  # the full sharded job below instead.
+  frontend-tests-smoke:
+    name: Frontend E2E Smoke Tests
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg15
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Clone sibling dependencies
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CC_TOKEN: ${{ secrets.web_ci_cloud_control_read }}
+        run: |
+          set -euo pipefail
+          for spec in \
+            "qontinui/qontinui-schemas" \
+            "qontinui/qontinui" \
+            "qontinui/ui-bridge" \
+            "qontinui/qontinui-workflow-ui" \
+            "qontinui/qontinui-workflow-utils" \
+            "qontinui/qontinui-navigation" \
+          ; do
+            repo_name="${spec#*/}"
+            git clone --depth 1 \
+              "https://x-access-token:${GH_TOKEN}@github.com/${spec}.git" \
+              "../${repo_name}"
+          done
+          git clone --depth 1 \
+            "https://x-access-token:${CC_TOKEN}@github.com/jspinak/qontinui-cloud-control.git" \
+            "../qontinui-cloud-control"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov pytest-asyncio
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f pyproject.toml ]; then pip install -e .; fi
+          pip install -e ../../qontinui-cloud-control
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: ./frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Create runner schema
+        env:
+          PGPASSWORD: test_password
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          psql -h localhost -U test_user -d test_db -c "CREATE SCHEMA IF NOT EXISTS runner;"
+
+      - name: Run database migrations
+        working-directory: ./backend
+        env:
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+          TESTING: '1'
+          ENVIRONMENT: development
+          SECRET_KEY: test-secret-key-for-testing-only-minimum-32-chars-required
+          STORAGE_BACKEND: local
+          REDIS_ENABLED: 'false'
+        run: |
+          alembic upgrade heads
+
+      - name: Create dev user for E2E auth setup
+        working-directory: ./backend
+        env:
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+          TESTING: '1'
+          ENVIRONMENT: development
+          SECRET_KEY: test-secret-key-for-testing-only-minimum-32-chars-required
+          STORAGE_BACKEND: local
+          REDIS_ENABLED: 'false'
+        run: |
+          python create_admin.py
+
+      # auth.setup runs unconditionally (it's a `dependencies: ["setup"]`
+      # of the chromium project — see frontend/playwright.config.ts), so
+      # the cascade infrastructure (login + storage state) is verified on
+      # every PR. `--grep "@smoke"` filters the chromium project itself
+      # to tests tagged `@smoke` in their title:
+      #   test('does X @smoke', async ({ page }) => { ... })
+      # `--pass-with-no-tests` tolerates the initial "no @smoke yet" state
+      # — Playwright would otherwise error on zero matches. Tag tests as
+      # they prove reliable; the smoke set grows organically.
+      - name: Run frontend E2E smoke tests
+        working-directory: ./frontend
+        env:
+          CI: true
+          PLAYWRIGHT_BASE_URL: http://localhost:3001
+        run: |
+          npx playwright test --project=chromium --grep "@smoke" --pass-with-no-tests
+
+      - name: Upload smoke test artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-smoke-artifacts
+          path: |
+            frontend/test-results/
+            frontend/playwright-report/
+          retention-days: 30
+
+  # Full 4-shard suite. Runs on direct push to main, on the nightly
+  # schedule, and on workflow_dispatch — never on PR. PR runs use the
+  # smoke job above.
   frontend-tests:
     name: Frontend E2E Tests (shard ${{ matrix.shard }}/4)
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
 
     services:
