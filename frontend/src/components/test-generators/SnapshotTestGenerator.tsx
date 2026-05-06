@@ -32,8 +32,8 @@ export function SnapshotTestGenerator({
       return {} as Record<string, SpecConfig>;
     }
     return {
-      "snapshot-test-generator": pageSpec.config as SpecConfig,
-      "snapshot-post-capture": postCaptureSpec.config as SpecConfig,
+      "snapshot-test-generator": pageSpec.config,
+      "snapshot-post-capture": postCaptureSpec.config,
     };
   }, [pageSpec, postCaptureSpec]);
   usePageSpecs(specsToLoad);

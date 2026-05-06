@@ -5,50 +5,15 @@
  * Used by AiGeneratePanel to create spec-driven workflow generation requests.
  */
 
-// =============================================================================
-// Types (mirrors the spec JSON structure)
-// =============================================================================
+import type {
+  SpecConfig,
+  SpecAssertion,
+  SpecGroup,
+  DiscoveredSpec,
+} from "@qontinui/ui-bridge/specs";
 
-export interface SpecAssertion {
-  id: string;
-  description: string;
-  category: string;
-  severity: "critical" | "warning" | "info";
-  enabled: boolean;
-  target?: Record<string, unknown>;
-  assertionType?: string;
-  expected?: unknown;
-  condition?: Record<string, unknown>;
-  precondition?: string;
-}
-
-export interface SpecGroup {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  assertions: SpecAssertion[];
-  source?: string;
-}
-
-export interface SpecConfig {
-  version: string;
-  description: string;
-  groups: SpecGroup[];
-  metadata?: {
-    component?: string;
-    pageUrl?: string;
-    tags?: string[];
-    [key: string]: unknown;
-  };
-}
-
-export interface DiscoveredSpec {
-  specId: string;
-  config: SpecConfig;
-  /** The application this spec belongs to (e.g. "Qontinui Web", "Qontinui Runner") */
-  appName?: string;
-}
+// Re-export the canonical types so existing absolute imports keep working.
+export type { SpecConfig, SpecAssertion, SpecGroup, DiscoveredSpec };
 
 // =============================================================================
 // Prompt builder
@@ -179,8 +144,12 @@ export function buildSpecPrompt({
           totalAssertions++;
           const severity = assertion.severity || "info";
           const type = assertion.assertionType || "exists";
-          const targetStr = formatTarget(assertion.target);
-          const condStr = formatCondition(assertion.condition);
+          const targetStr = formatTarget(
+            assertion.target as unknown as Record<string, unknown>,
+          );
+          const condStr = formatCondition(
+            assertion.condition as unknown as Record<string, unknown>,
+          );
           const expectedStr =
             assertion.expected !== undefined && assertion.expected !== null
               ? ` expected=${JSON.stringify(assertion.expected)}`
