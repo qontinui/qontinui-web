@@ -12,6 +12,11 @@
  */
 
 import { test, expect } from "../fixtures";
+import { requireRunner } from "../runner-detection";
+
+test.beforeAll(async () => {
+  await requireRunner();
+});
 
 test.describe("Build - Workflows", () => {
   test("should load workflows page without errors", async ({ page }) => {
