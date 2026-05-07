@@ -35,10 +35,16 @@ test.describe("Admin - Architecture", () => {
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
+    // The page renders <h1>Architecture</h1> (page.tsx:52); the older
+    // "Qontinui Architecture" string lived on the deleted /admin (root)
+    // landing.
     const hasArchitectureHeading =
-      (await page.locator("text=Qontinui Architecture").count()) > 0;
+      (await page
+        .getByRole("heading", { name: "Architecture", exact: true })
+        .count()) > 0;
     const wasRedirected =
-      page.url().includes("/dashboard") && !page.url().includes("/admin");
+      page.url().includes("/build/workflows") ||
+      (page.url().includes("/dashboard") && !page.url().includes("/admin"));
 
     expect(hasArchitectureHeading || wasRedirected).toBeTruthy();
   });
@@ -49,12 +55,17 @@ test.describe("Admin - Architecture", () => {
     await page.waitForTimeout(2000);
 
     const hasArchitectureHeading =
-      (await page.locator("text=Qontinui Architecture").count()) > 0;
+      (await page
+        .getByRole("heading", { name: "Architecture", exact: true })
+        .count()) > 0;
 
     if (hasArchitectureHeading) {
-      const hasBackToAdmin =
-        (await page.locator("text=Back to Admin").count()) > 0;
-      expect(hasBackToAdmin).toBeTruthy();
+      // Header is now a breadcrumb: <Button>Admin</Button> / <h1>Architecture</h1>
+      // (page.tsx:44-52). The "Back to Admin" copy is gone.
+      const hasAdminButton = await page
+        .getByRole("button", { name: "Admin", exact: true })
+        .isVisible();
+      expect(hasAdminButton).toBeTruthy();
     }
   });
 });
