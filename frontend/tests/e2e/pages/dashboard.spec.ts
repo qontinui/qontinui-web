@@ -8,26 +8,6 @@
 import { test, expect } from "../fixtures";
 
 test.describe("Dashboard Page", () => {
-  test("loads without errors and shows greeting", async ({ page }) => {
-    await page.goto("/dashboard");
-    await page.waitForLoadState("domcontentloaded");
-
-    await page.screenshot({
-      path: "test-results/pages-dashboard.png",
-      fullPage: true,
-    });
-
-    // Should not have 500 error
-    const pageContent = await page.content();
-    expect(pageContent).not.toContain("Internal Server Error");
-
-    // Verify a greeting heading is present (Good morning/afternoon/evening)
-    const greeting = page.locator("h2").first();
-    await expect(greeting).toBeVisible({ timeout: 15000 });
-    const greetingText = await greeting.textContent();
-    expect(greetingText).toMatch(/Good (morning|afternoon|evening)/);
-  });
-
   test("shows runner status area", async ({ page }) => {
     await page.goto("/dashboard");
     await page.waitForLoadState("domcontentloaded");

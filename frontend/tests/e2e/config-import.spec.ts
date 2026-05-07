@@ -24,7 +24,7 @@ test.describe("Config Import", () => {
   }) => {
     // Navigate to the state machine page with increased timeout
     await page.goto("/automation-builder/states", { timeout: 60000 });
-    await page.waitForLoadState("networkidle", { timeout: 30000 });
+    await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
     // Take initial screenshot
