@@ -10,6 +10,7 @@ import React, {
   type ReactNode,
 } from "react";
 import type { Runner } from "@qontinui/shared-types";
+import type { RunnerStatusEvent } from "@qontinui/shared-types/tauri-events";
 import { runnerService } from "@/services/service-factory";
 import { createLogger } from "@/lib/logger";
 
@@ -38,13 +39,33 @@ const RealtimeConnectionsContext = createContext<
 // ============================================================================
 // WebSocket message shapes
 // ============================================================================
-
-type WsMessage =
-  | { type: "initial_state"; runners: Runner[] }
-  | { type: "runner_connected"; runner: Runner }
-  | { type: "runner_disconnected"; runner_id: string }
-  | { type: "runner_updated"; runner: Runner }
-  | { type: "error"; error: string };
+//
+// Wire shapes are the canonical `RunnerStatusEvent` discriminated union from
+// `@qontinui/shared-types/tauri-events`. The Rust source of truth is
+// `qontinui-runner/src-tauri/src/relay_envelopes.rs::RunnerStatusEvent`,
+// mirrored by the Python emitter
+// `qontinui-web/backend/app/services/runner/event_publisher.py` (which
+// references the Rust type by name in its docstring as the wire contract).
+//
+// Reading notes:
+//
+// - `runner_connected.connection` is a PARTIAL Runner payload — `connection`
+//   contains only the connection-level fields (id, runner_name, ip_address,
+//   ws_connected, …). It's NOT a full `Runner` (derivedStatus, capabilities,
+//   createdAt etc. are missing). Treat the event as a refresh trigger and
+//   refetch the canonical Runner row from REST.
+//
+// - `runner_name_updated` / `runner_port_updated` carry just the changed
+//   field; refetch for the same reason.
+//
+// - `initial_state.runners[]` items are typed `unknown` in the schema (Rust
+//   carries them as `Value` to avoid a circular dep on the canonical Runner
+//   type). Cast to `Runner[]` below — the Python serializer uses the same
+//   `qontinui_schemas.runner.Runner` Pydantic model that backs the TS type.
+//
+// - `runner_updated` is NOT published by the backend — keeping it out of
+//   the union prevents the frontend from depending on a non-existent wire
+//   shape.
 
 // ============================================================================
 // Provider
@@ -209,32 +230,38 @@ export function RealtimeConnectionsProvider({
 
       ws.onmessage = (event) => {
         try {
-          const message = JSON.parse(event.data) as WsMessage;
+          const message = JSON.parse(event.data) as RunnerStatusEvent;
 
           if (message.type === "initial_state") {
-            setRunners(message.runners);
+            // `runners` is `unknown[]` on the wire (Rust carries them as
+            // `Value` to avoid the circular dep on the canonical Runner
+            // type). The Python emitter serializes via the matching
+            // `qontinui_schemas.runner.Runner` Pydantic model, so the
+            // cast is safe at runtime.
+            setRunners(message.runners as Runner[]);
             setIsLoading(false);
           } else if (message.type === "runner_connected") {
-            setRunners((prev) => {
-              const exists = prev.some((r) => r.id === message.runner.id);
-              if (exists) {
-                // Replace with the latest snapshot.
-                return prev.map((r) =>
-                  r.id === message.runner.id ? message.runner : r
-                );
-              }
-              return [...prev, message.runner];
-            });
+            // Wire payload is a partial `connection_data` shape (id +
+            // snake_case fields), not a full `Runner`. Refetch the
+            // canonical Runner row instead of trying to splice it in.
+            void fetchRunners();
           } else if (message.type === "runner_disconnected") {
             setRunners((prev) =>
               prev.filter((r) => r.id !== message.runner_id)
             );
-          } else if (message.type === "runner_updated") {
-            setRunners((prev) =>
-              prev.map((r) =>
-                r.id === message.runner.id ? { ...r, ...message.runner } : r
-              )
-            );
+          } else if (
+            message.type === "runner_name_updated" ||
+            message.type === "runner_port_updated"
+          ) {
+            // Single-field updates: refetch so the in-memory Runner row
+            // picks up the change without us having to merge snake_case
+            // wire fields into the camelCase Runner shape.
+            void fetchRunners();
+          } else if (message.type === "runner.woke") {
+            // Handled by WakeRunnerModal's own WS listener. The realtime
+            // context still refetches so the runners list reflects the
+            // newly-online runner without waiting for the next poll tick.
+            void fetchRunners();
           } else if (message.type === "error") {
             console.error("[RealtimeConnections] Server error:", message.error);
           }

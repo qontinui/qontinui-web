@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useRealtimeConnectionsContext } from "@/contexts/realtime-connections-context";
 import { createLogger } from "@/lib/logger";
+import type { RunnerStatusEvent } from "@qontinui/shared-types/tauri-events";
 
 const log = createLogger("WakeRunnerModal");
 
@@ -150,16 +151,15 @@ export function WakeRunnerModal({
         ws = new WebSocket(wsUrl);
         ws.onmessage = (ev) => {
           try {
-            const msg = JSON.parse(ev.data);
-            if (msg?.type === "runner.woke") {
+            const msg = JSON.parse(ev.data) as RunnerStatusEvent;
+            if (msg.type === "runner.woke") {
               if (dispatchedRef.current) return;
               dispatchedRef.current = true;
               if (timeoutRef.current) {
                 clearTimeout(timeoutRef.current);
                 timeoutRef.current = null;
               }
-              const rid =
-                typeof msg.runner_id === "string" ? msg.runner_id : null;
+              const rid = msg.runner_id;
               log.debug("runner.woke event received", { runner_id: rid });
               onDispatch(rid);
               onClose();
