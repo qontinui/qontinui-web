@@ -68,8 +68,7 @@ test.describe("RAG Dashboard / Visual Index", () => {
     await page.goto("/projects/" + projectId + "/rag", { timeout: 30000 });
 
     // Wait for page to load
-    console.log("Waiting for network idle...");
-    await page.waitForLoadState("networkidle", { timeout: 30000 });
+    await page.waitForLoadState("domcontentloaded");
 
     // Wait a bit more for React Query to make the API call
     await page.waitForTimeout(3000);
@@ -119,7 +118,7 @@ test.describe("RAG Dashboard / Visual Index", () => {
     await page.goto("/projects/" + projectId + "/rag", { timeout: 30000 });
 
     // Wait for page to load
-    await page.waitForLoadState("networkidle", { timeout: 30000 });
+    await page.waitForLoadState("domcontentloaded");
 
     // Wait for the "Indexed Elements" section to appear
     const indexedElementsTitle = page.locator("text=Indexed Elements").first();
