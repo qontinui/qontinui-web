@@ -27,11 +27,12 @@ except ImportError:
         raise
 
 from app.core.test_credentials import get_admin_credentials  # noqa: E402
-from app.db.session import SessionLocal  # noqa: E402
+
 # Bulk-imports every in-tree model so SQLAlchemy's class registry has them
 # all before `db.query(User)` triggers configure_mappers. Cloud-only models
 # come in via the cloud-control import above.
 from app.db.base_class import Base  # noqa: F401, E402
+from app.db.session import SessionLocal  # noqa: E402
 from app.models.user import User  # noqa: E402
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
