@@ -61,11 +61,11 @@ test.describe("Admin - Architecture", () => {
 
     if (hasArchitectureHeading) {
       // Header is now a breadcrumb: <Button>Admin</Button> / <h1>Architecture</h1>
-      // (page.tsx:44-52). The "Back to Admin" copy is gone.
-      const hasAdminButton = await page
-        .getByRole("button", { name: "Admin", exact: true })
-        .isVisible();
-      expect(hasAdminButton).toBeTruthy();
+      // (page.tsx:44-53). The button has a data-testid so we don't collide
+      // with the sidebar's "Admin" parent nav item (rendered for superusers
+      // via nav-items.ts:581).
+      const adminBreadcrumb = page.getByTestId("admin-architecture-back-btn");
+      await expect(adminBreadcrumb).toBeVisible();
     }
   });
 });

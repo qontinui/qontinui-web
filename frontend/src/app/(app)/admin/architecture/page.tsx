@@ -45,6 +45,7 @@ export default function ArchitecturePage() {
             variant="ghost"
             size="sm"
             onClick={() => router.push("/admin")}
+            data-testid="admin-architecture-back-btn"
           >
             Admin
           </Button>
