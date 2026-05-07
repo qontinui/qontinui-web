@@ -34,8 +34,13 @@ export interface MetricCardProps {
 }
 
 /**
- * Returns true if the icon prop is a React component reference (function/class)
- * rather than an already-rendered ReactNode.
+ * Returns true if the icon prop is a React component reference rather than an
+ * already-rendered ReactNode. Handles plain function components, class
+ * components, and `React.forwardRef`/`React.memo`-wrapped components (which
+ * are objects of shape `{ $$typeof, render }` / `{ $$typeof, type }`, not
+ * functions — so a naive `typeof === "function"` check misses them and
+ * triggers "Objects are not valid as a React child" when the object is
+ * passed straight to JSX).
  */
 function isComponentRef(
   icon: MetricCardProps["icon"]
@@ -43,7 +48,13 @@ function isComponentRef(
   className?: string;
   style?: React.CSSProperties;
 }> {
-  return typeof icon === "function";
+  if (icon == null) return false;
+  if (typeof icon === "function") return true;
+  // Already-rendered elements have $$typeof too, so exclude them explicitly.
+  if (React.isValidElement(icon)) return false;
+  // Anything else with a $$typeof tag is a component-like object
+  // (forwardRef, memo, lazy, etc.) — instantiate it as JSX.
+  return typeof icon === "object" && "$$typeof" in icon;
 }
 
 const variantStyles: Record<NonNullable<MetricCardProps["variant"]>, string> = {
