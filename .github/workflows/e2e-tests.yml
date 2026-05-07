@@ -429,6 +429,164 @@ jobs:
             frontend/playwright-report/
           retention-days: 30
 
+  # Phase 3 cross-browser baseline collection. Runs firefox + webkit +
+  # Mobile Chrome + Mobile Safari sequentially in one non-gating job to
+  # produce a fail inventory the way Phase 2 had for chromium. Once we
+  # know which browsers are tractable, individual ones can be promoted
+  # to a sharded gating matrix; until then the survey is informational
+  # only and `continue-on-error: true` keeps it out of the merge gate.
+  # Skipped on PRs (PR-time CI is the @smoke set on chromium); runs on
+  # push-to-main and the nightly schedule.
+  frontend-tests-cross-browser-survey:
+    name: Frontend E2E Tests — cross-browser survey (firefox + webkit + mobile)
+    if: github.event_name != 'pull_request'
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg15
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Clone sibling dependencies
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CC_TOKEN: ${{ secrets.web_ci_cloud_control_read }}
+        run: |
+          set -euo pipefail
+          for spec in \
+            "qontinui/qontinui-schemas" \
+            "qontinui/qontinui" \
+            "qontinui/ui-bridge" \
+            "qontinui/qontinui-workflow-ui" \
+            "qontinui/qontinui-workflow-utils" \
+            "qontinui/qontinui-navigation" \
+          ; do
+            repo_name="${spec#*/}"
+            target="../${repo_name}"
+            echo "::group::Cloning ${spec} → ${target}"
+            git clone --depth 1 \
+              "https://x-access-token:${GH_TOKEN}@github.com/${spec}.git" \
+              "${target}"
+            echo "::endgroup::"
+          done
+          echo "::group::Cloning jspinak/qontinui-cloud-control → ../qontinui-cloud-control"
+          git clone --depth 1 \
+            "https://x-access-token:${CC_TOKEN}@github.com/jspinak/qontinui-cloud-control.git" \
+            "../qontinui-cloud-control"
+          echo "::endgroup::"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov pytest-asyncio
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f pyproject.toml ]; then pip install -e .; fi
+          pip install -e ../../qontinui-cloud-control
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      # Mobile Chrome uses the chromium engine; Mobile Safari uses webkit.
+      # Installing chromium + firefox + webkit covers all four non-chromium
+      # desktop-or-mobile projects in playwright.config.ts.
+      - name: Install Playwright browsers (chromium + firefox + webkit)
+        working-directory: ./frontend
+        run: npx playwright install --with-deps chromium firefox webkit
+
+      - name: Create runner schema
+        env:
+          PGPASSWORD: test_password
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          psql -h localhost -U test_user -d test_db -c "CREATE SCHEMA IF NOT EXISTS runner;"
+
+      - name: Run database migrations
+        working-directory: ./backend
+        env:
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+          TESTING: '1'
+          ENVIRONMENT: development
+          SECRET_KEY: test-secret-key-for-testing-only-minimum-32-chars-required
+          STORAGE_BACKEND: local
+          REDIS_ENABLED: 'false'
+        run: |
+          alembic upgrade heads
+
+      - name: Create dev user for E2E auth setup
+        working-directory: ./backend
+        env:
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+          TESTING: '1'
+          ENVIRONMENT: development
+          SECRET_KEY: test-secret-key-for-testing-only-minimum-32-chars-required
+          STORAGE_BACKEND: local
+          REDIS_ENABLED: 'false'
+        run: |
+          python create_admin.py
+
+      # Run all four non-chromium projects sequentially in one job. workers=1
+      # is inherited from playwright.config.ts's CI block; each project's
+      # tests finish before the next starts. Slow (expect 60-90min) but the
+      # goal is a fail inventory, not speed — we'll shard once we know which
+      # browsers are tractable.
+      - name: Run cross-browser survey
+        working-directory: ./frontend
+        env:
+          CI: true
+          PLAYWRIGHT_BASE_URL: http://localhost:3001
+        run: |
+          npx playwright test \
+            --project=firefox \
+            --project=webkit \
+            --project="Mobile Chrome" \
+            --project="Mobile Safari"
+
+      - name: Upload survey Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-cross-browser-survey
+          path: frontend/playwright-report/
+          retention-days: 30
+
+      - name: Upload survey test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cross-browser-survey-test-results
+          path: frontend/test-results/
+          retention-days: 30
+
   integration-tests:
     name: Full Stack Integration Tests
     runs-on: ubuntu-latest
