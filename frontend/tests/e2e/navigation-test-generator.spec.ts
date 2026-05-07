@@ -27,7 +27,7 @@ test.describe("Navigation Test Generator", () => {
     });
   });
 
-  test("should display page with all sections", async ({ page }) => {
+  test("should display page with all sections @smoke", async ({ page }) => {
     // Verify page title
     await expect(page.locator("h2")).toContainText("Navigation Test Generator");
 
@@ -42,7 +42,7 @@ test.describe("Navigation Test Generator", () => {
     await expect(page.getByRole("button", { name: /Output/i })).toBeVisible();
   });
 
-  test("should show exploration configuration", async ({ page }) => {
+  test("should show exploration configuration @smoke", async ({ page }) => {
     // Verify exploration config section
     await expect(page.getByText("Exploration Configuration")).toBeVisible();
 
@@ -52,7 +52,7 @@ test.describe("Navigation Test Generator", () => {
     await expect(page.locator('label:has-text("Max Elements")')).toBeVisible();
   });
 
-  test("should have Start Exploration button disabled without URL", async ({
+  test("should have Start Exploration button disabled without URL @smoke", async ({
     page,
   }) => {
     const startButton = page.getByRole("button", {
