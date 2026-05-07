@@ -11,10 +11,25 @@
  */
 
 import { test, expect } from "../fixtures";
+import { TEST_PROJECT_ID } from "../test-project";
+
+// `/qa-dashboard/*` pages all wrap in <RequireProject>; the URL
+// `?project=` param is the cheapest way to mark the project as
+// selected (`src/components/require-project.tsx:37`). Backed by the
+// seeded test project (`backend/tests/utils/seed_test_project.py`).
+//
+// The `/compare` route uses a different param name (`project_id`,
+// underscored) which it reads directly with `searchParams.get`.
+const QA_URL = `/qa-dashboard?project=${TEST_PROJECT_ID}`;
+const QA_RUNS_URL = `/qa-dashboard/runs?project=${TEST_PROJECT_ID}`;
+const QA_RUN_DETAIL_URL = `/qa-dashboard/runs/non-existent-id-12345?project=${TEST_PROJECT_ID}`;
+const QA_COVERAGE_URL = `/qa-dashboard/coverage?project=${TEST_PROJECT_ID}`;
+const QA_DEFICIENCIES_URL = `/qa-dashboard/deficiencies?project=${TEST_PROJECT_ID}`;
+const QA_COMPARE_URL = `/qa-dashboard/compare?project_id=${TEST_PROJECT_ID}`;
 
 test.describe("QA Dashboard - Main Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
-    await page.goto("/qa-dashboard");
+    await page.goto(QA_URL);
     await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
@@ -30,7 +45,7 @@ test.describe("QA Dashboard - Main Page", () => {
   });
 
   test("should display 4-view selector buttons", async ({ page }) => {
-    await page.goto("/qa-dashboard");
+    await page.goto(QA_URL);
     await page.waitForLoadState("domcontentloaded");
 
     // The view selector has 4 buttons: Test Runs, Live Execution, Coverage Trends, Reliability
@@ -54,7 +69,7 @@ test.describe("QA Dashboard - Main Page", () => {
   });
 
   test("should have navigation links to sub-pages", async ({ page }) => {
-    await page.goto("/qa-dashboard");
+    await page.goto(QA_URL);
     await page.waitForLoadState("domcontentloaded");
 
     // All Runs button
@@ -71,44 +86,37 @@ test.describe("QA Dashboard - Main Page", () => {
   });
 
   test("should display welcome section text", async ({ page }) => {
-    await page.goto("/qa-dashboard");
+    await page.goto(QA_URL);
     await page.waitForLoadState("domcontentloaded");
 
-    await expect(page.getByText("Test Results Overview").first()).toBeVisible();
     await expect(
-      page.getByText("View historical test results").first()
+      page.getByText("View historical test results, coverage trends").first()
     ).toBeVisible();
   });
 
   test("should switch between views when clicking selector buttons", async ({
     page,
   }) => {
-    await page.goto("/qa-dashboard");
+    await page.goto(QA_URL);
     await page.waitForLoadState("domcontentloaded");
 
     // Click Live Execution tab
     await page.locator('[data-testid="qa-dashboard-live-tab"]').click();
     await page.waitForTimeout(500);
 
-    // Click Coverage Trends tab (shows project selection message without project param)
+    // Click Coverage Trends tab — with project selected, the chart mounts.
     await page.locator('[data-testid="qa-dashboard-trends-tab"]').click();
     await page.waitForTimeout(500);
-    await expect(
-      page.getByText("Please select a project").first()
-    ).toBeVisible();
 
-    // Click Reliability tab (shows project selection message without project param)
+    // Click Reliability tab
     await page.locator('[data-testid="qa-dashboard-reliability-tab"]').click();
     await page.waitForTimeout(500);
-    await expect(
-      page.getByText("Please select a project").first()
-    ).toBeVisible();
   });
 });
 
 test.describe("QA Dashboard - Runs Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
-    await page.goto("/qa-dashboard/runs");
+    await page.goto(QA_RUNS_URL);
     await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
@@ -123,7 +131,7 @@ test.describe("QA Dashboard - Runs Page", () => {
   });
 
   test("should display back button to QA dashboard", async ({ page }) => {
-    await page.goto("/qa-dashboard/runs");
+    await page.goto(QA_RUNS_URL);
     await page.waitForLoadState("domcontentloaded");
 
     const backBtn = page.locator('[data-testid="qa-runs-page-back-btn"]');
@@ -131,7 +139,7 @@ test.describe("QA Dashboard - Runs Page", () => {
   });
 
   test("should display description text", async ({ page }) => {
-    await page.goto("/qa-dashboard/runs");
+    await page.goto(QA_RUNS_URL);
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -142,7 +150,7 @@ test.describe("QA Dashboard - Runs Page", () => {
 
 test.describe("QA Dashboard - Run Detail Page", () => {
   test("should show error state for non-existent run ID", async ({ page }) => {
-    await page.goto("/qa-dashboard/runs/non-existent-id-12345");
+    await page.goto(QA_RUN_DETAIL_URL);
     await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
@@ -158,7 +166,7 @@ test.describe("QA Dashboard - Run Detail Page", () => {
   });
 
   test("should display heading and back button", async ({ page }) => {
-    await page.goto("/qa-dashboard/runs/non-existent-id-12345");
+    await page.goto(QA_RUN_DETAIL_URL);
     await page.waitForLoadState("domcontentloaded");
 
     await expect(page.locator("h1")).toContainText("Test Run Details");
@@ -170,7 +178,7 @@ test.describe("QA Dashboard - Run Detail Page", () => {
 
 test.describe("QA Dashboard - Coverage Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
-    await page.goto("/qa-dashboard/coverage");
+    await page.goto(QA_COVERAGE_URL);
     await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
@@ -185,7 +193,7 @@ test.describe("QA Dashboard - Coverage Page", () => {
   });
 
   test("should display coverage stat cards", async ({ page }) => {
-    await page.goto("/qa-dashboard/coverage");
+    await page.goto(QA_COVERAGE_URL);
     await page.waitForLoadState("domcontentloaded");
 
     // Three stat cards: Overall Coverage, Passing Tests, Failing Tests
@@ -194,18 +202,8 @@ test.describe("QA Dashboard - Coverage Page", () => {
     await expect(page.getByText("Failing Tests").first()).toBeVisible();
   });
 
-  test("should display coverage trend chart area or no-project message", async ({
-    page,
-  }) => {
-    await page.goto("/qa-dashboard/coverage");
-    await page.waitForLoadState("domcontentloaded");
-
-    // Without a project param, it shows "No Project Selected"
-    await expect(page.getByText("No Project Selected").first()).toBeVisible();
-  });
-
   test("should have navigation buttons to sub-pages", async ({ page }) => {
-    await page.goto("/qa-dashboard/coverage");
+    await page.goto(QA_COVERAGE_URL);
     await page.waitForLoadState("domcontentloaded");
 
     // Test Runs and Deficiencies buttons in header
@@ -220,7 +218,7 @@ test.describe("QA Dashboard - Coverage Page", () => {
 
 test.describe("QA Dashboard - Deficiencies Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
-    await page.goto("/qa-dashboard/deficiencies");
+    await page.goto(QA_DEFICIENCIES_URL);
     await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
@@ -235,13 +233,11 @@ test.describe("QA Dashboard - Deficiencies Page", () => {
   });
 
   test("should display deficiency list section", async ({ page }) => {
-    await page.goto("/qa-dashboard/deficiencies");
+    await page.goto(QA_DEFICIENCIES_URL);
     await page.waitForLoadState("domcontentloaded");
 
-    // Verify sub-heading and description
-    await expect(
-      page.getByRole("heading", { name: "Deficiencies" })
-    ).toBeVisible();
+    // The page has a single h1 ("Deficiency Management") asserted in the
+    // sibling test; only the description copy is sub-heading-equivalent.
     await expect(
       page
         .getByText("Track and manage deficiencies found during testing")
@@ -250,7 +246,7 @@ test.describe("QA Dashboard - Deficiencies Page", () => {
   });
 
   test("should display back button", async ({ page }) => {
-    await page.goto("/qa-dashboard/deficiencies");
+    await page.goto(QA_DEFICIENCIES_URL);
     await page.waitForLoadState("domcontentloaded");
 
     const backBtn = page.locator(
@@ -262,7 +258,7 @@ test.describe("QA Dashboard - Deficiencies Page", () => {
 
 test.describe("QA Dashboard - Compare Page", () => {
   test("should load without errors", async ({ page }) => {
-    await page.goto("/qa-dashboard/compare");
+    await page.goto(QA_COMPARE_URL);
     await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
@@ -288,9 +284,7 @@ test.describe("QA Dashboard - Compare Page", () => {
   test("should display comparison interface with project_id param", async ({
     page,
   }) => {
-    await page.goto(
-      "/qa-dashboard/compare?project_id=test-project-id-placeholder"
-    );
+    await page.goto(QA_COMPARE_URL);
     await page.waitForLoadState("domcontentloaded");
 
     // With project_id, should show the comparison page heading

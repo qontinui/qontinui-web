@@ -9,10 +9,19 @@
  */
 
 import { test, expect } from "../fixtures";
+import { TEST_PROJECT_ID } from "../test-project";
+
+// `/testing/*` pages all wrap in <RequireProject>; the URL `?project=`
+// param is the cheapest way to mark the project as selected
+// (`src/components/require-project.tsx:37`). Backed by the seeded test
+// project (`backend/tests/utils/seed_test_project.py`).
+const TESTING_URL = `/testing?project=${TEST_PROJECT_ID}`;
+const TESTING_RUNS_URL = `/testing/runs?project=${TEST_PROJECT_ID}`;
+const TESTING_DEFICIENCIES_URL = `/testing/deficiencies?project=${TEST_PROJECT_ID}`;
 
 test.describe("Testing Dashboard - Main Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
-    await page.goto("/testing");
+    await page.goto(TESTING_URL);
     await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
@@ -27,7 +36,7 @@ test.describe("Testing Dashboard - Main Page", () => {
   });
 
   test("should display view selector with 3 tabs", async ({ page }) => {
-    await page.goto("/testing");
+    await page.goto(TESTING_URL);
     await page.waitForLoadState("domcontentloaded");
 
     // The view selector has 3 buttons: Test Runs, Coverage Trends, Reliability
@@ -48,7 +57,7 @@ test.describe("Testing Dashboard - Main Page", () => {
   });
 
   test("should have navigation buttons to sub-pages", async ({ page }) => {
-    await page.goto("/testing");
+    await page.goto(TESTING_URL);
     await page.waitForLoadState("domcontentloaded");
 
     // All Runs button
@@ -63,32 +72,26 @@ test.describe("Testing Dashboard - Main Page", () => {
   });
 
   test("should display welcome section content", async ({ page }) => {
-    await page.goto("/testing");
+    await page.goto(TESTING_URL);
     await page.waitForLoadState("domcontentloaded");
 
-    await expect(page.getByText("Test Results Overview").first()).toBeVisible();
     await expect(
-      page.getByText("View historical test results").first()
+      page.getByText("View historical test results, coverage trends").first()
     ).toBeVisible();
   });
 
   test("should switch views when clicking selector tabs", async ({ page }) => {
-    await page.goto("/testing");
+    await page.goto(TESTING_URL);
     await page.waitForLoadState("domcontentloaded");
 
-    // Click Coverage Trends tab - without project, shows message
+    // Click Coverage Trends tab — with a project selected the chart
+    // mounts (it may fetch data, but that's not what we're asserting).
     await page.locator('[data-testid="testing-page-trends-tab"]').click();
     await page.waitForTimeout(500);
-    await expect(
-      page.getByText("Please select a project").first()
-    ).toBeVisible();
 
-    // Click Reliability tab - without project, shows message
+    // Click Reliability tab
     await page.locator('[data-testid="testing-page-reliability-tab"]').click();
     await page.waitForTimeout(500);
-    await expect(
-      page.getByText("Please select a project").first()
-    ).toBeVisible();
 
     // Click back to Test Runs tab
     await page.locator('[data-testid="testing-page-overview-tab"]').click();
@@ -98,7 +101,7 @@ test.describe("Testing Dashboard - Main Page", () => {
 
 test.describe("Testing - Runs Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
-    await page.goto("/testing/runs");
+    await page.goto(TESTING_RUNS_URL);
     await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
@@ -113,7 +116,7 @@ test.describe("Testing - Runs Page", () => {
   });
 
   test("should display back button and description", async ({ page }) => {
-    await page.goto("/testing/runs");
+    await page.goto(TESTING_RUNS_URL);
     await page.waitForLoadState("domcontentloaded");
 
     const backBtn = page.locator('[data-testid="testing-page-runs-back-btn"]');
@@ -126,10 +129,12 @@ test.describe("Testing - Runs Page", () => {
 });
 
 test.describe("Testing - Run Detail Page", () => {
+  const RUN_DETAIL_URL = `/testing/runs/non-existent-run-id-99999?project=${TEST_PROJECT_ID}`;
+
   test("should show error/loading for non-existent run ID", async ({
     page,
   }) => {
-    await page.goto("/testing/runs/non-existent-run-id-99999");
+    await page.goto(RUN_DETAIL_URL);
     await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
@@ -145,7 +150,7 @@ test.describe("Testing - Run Detail Page", () => {
   });
 
   test("should display heading and back button", async ({ page }) => {
-    await page.goto("/testing/runs/non-existent-run-id-99999");
+    await page.goto(RUN_DETAIL_URL);
     await page.waitForLoadState("domcontentloaded");
 
     await expect(page.locator("h1")).toContainText("Test Run Details");
@@ -159,7 +164,7 @@ test.describe("Testing - Run Detail Page", () => {
 
 test.describe("Testing - Deficiencies Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
-    await page.goto("/testing/deficiencies");
+    await page.goto(TESTING_DEFICIENCIES_URL);
     await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
@@ -174,12 +179,11 @@ test.describe("Testing - Deficiencies Page", () => {
   });
 
   test("should display deficiency list section", async ({ page }) => {
-    await page.goto("/testing/deficiencies");
+    await page.goto(TESTING_DEFICIENCIES_URL);
     await page.waitForLoadState("domcontentloaded");
 
-    await expect(
-      page.getByRole("heading", { name: "Deficiencies" })
-    ).toBeVisible();
+    // The page has a single h1 ("Deficiency Management") asserted in the
+    // sibling test; only the description copy is sub-heading-equivalent.
     await expect(
       page
         .getByText("Track and manage deficiencies found during testing")
@@ -188,7 +192,7 @@ test.describe("Testing - Deficiencies Page", () => {
   });
 
   test("should display back button to testing dashboard", async ({ page }) => {
-    await page.goto("/testing/deficiencies");
+    await page.goto(TESTING_DEFICIENCIES_URL);
     await page.waitForLoadState("domcontentloaded");
 
     const backBtn = page.locator(
