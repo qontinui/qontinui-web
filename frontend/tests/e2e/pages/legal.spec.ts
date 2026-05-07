@@ -82,8 +82,12 @@ test.describe("Extension Privacy Policy (/privacy-extension)", () => {
       page.getByRole("heading", { name: "Open Source", exact: true })
     ).toBeVisible({ timeout: 10000 });
 
+    // The page has two github.com/qontinui/qontinui-runner links — the
+    // Open Source section's source-tree link (page.tsx:213) and the
+    // Contact section's issues link (page.tsx:230). Anchor on the
+    // /extension suffix so we hit only the Open Source one.
     const githubLink = page.getByRole("link", {
-      name: /github\.com\/qontinui\/qontinui-runner/i,
+      name: /github\.com\/qontinui\/qontinui-runner\/tree\/main\/extension/i,
     });
     await expect(githubLink).toBeVisible();
   });
