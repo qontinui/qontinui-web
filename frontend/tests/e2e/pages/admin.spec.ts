@@ -2,126 +2,17 @@
  * End-to-end tests for Admin pages
  *
  * Pages tested:
- * - /admin - Admin Dashboard with 8-tab interface (superuser-only)
  * - /admin/architecture - System architecture diagram display
  * - /admin/datasets - Dataset grid with statistics cards
  * - /admin/datasets/[id] - Dataset detail (test with non-existent ID)
- * - /admin/mobile - Responsive admin dashboard with health alerts
  * - /admin/region-analysis - Three-tab interface (Run, Results, History)
+ *
+ * The /admin (root) and /admin/mobile routes were removed; the dashboard
+ * landing was folded into the sub-pages and there is no mobile-specific
+ * variant anymore.
  */
 
 import { test, expect } from "../fixtures";
-
-test.describe("Admin Dashboard", () => {
-  test("should load admin page without errors", async ({ page }) => {
-    await page.goto("/admin");
-    await page.waitForLoadState("domcontentloaded");
-
-    await page.screenshot({
-      path: "test-results/admin-dashboard.png",
-      fullPage: true,
-    });
-
-    const pageContent = await page.content();
-    expect(pageContent).not.toContain("Internal Server Error");
-  });
-
-  test("should display Admin Dashboard heading for superusers", async ({
-    page,
-  }) => {
-    await page.goto("/admin");
-    await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
-
-    // Admin page requires superuser access. Either we see the dashboard
-    // or we get redirected to /dashboard due to access denied.
-    const hasAdminHeading =
-      (await page.locator("text=Admin Dashboard").count()) > 0;
-    const wasRedirected =
-      page.url().includes("/dashboard") && !page.url().includes("/admin");
-    const hasAccessDenied =
-      (await page.locator("text=Access denied").count()) > 0;
-
-    // One of these should be true
-    expect(hasAdminHeading || wasRedirected || hasAccessDenied).toBeTruthy();
-  });
-
-  test("should have 8-tab interface for superusers", async ({ page }) => {
-    await page.goto("/admin");
-    await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
-
-    // If we have admin access, verify the 8 tabs are present
-    const hasAdminHeading =
-      (await page.locator("text=Admin Dashboard").count()) > 0;
-
-    if (hasAdminHeading) {
-      // Check for all 8 tab triggers
-      const hasOverviewTab =
-        (await page
-          .locator('[data-testid="admin-page-overview-tab"]')
-          .count()) > 0;
-      const hasUsersTab =
-        (await page.locator('[data-testid="admin-page-users-tab"]').count()) >
-        0;
-      const hasProjectsTab =
-        (await page
-          .locator('[data-testid="admin-page-projects-tab"]')
-          .count()) > 0;
-      const hasAnalyticsTab =
-        (await page
-          .locator('[data-testid="admin-page-analytics-tab"]')
-          .count()) > 0;
-      const hasHealthTab =
-        (await page.locator('[data-testid="admin-page-health-tab"]').count()) >
-        0;
-      const hasSystemTab =
-        (await page.locator('[data-testid="admin-page-system-tab"]').count()) >
-        0;
-      const hasNotificationsTab =
-        (await page
-          .locator('[data-testid="admin-page-notifications-tab"]')
-          .count()) > 0;
-      const hasDownloadsTab =
-        (await page
-          .locator('[data-testid="admin-page-downloads-tab"]')
-          .count()) > 0;
-
-      expect(hasOverviewTab).toBeTruthy();
-      expect(hasUsersTab).toBeTruthy();
-      expect(hasProjectsTab).toBeTruthy();
-      expect(hasAnalyticsTab).toBeTruthy();
-      expect(hasHealthTab).toBeTruthy();
-      expect(hasSystemTab).toBeTruthy();
-      expect(hasNotificationsTab).toBeTruthy();
-      expect(hasDownloadsTab).toBeTruthy();
-    }
-  });
-
-  test("should have navigation buttons to Architecture and Mobile", async ({
-    page,
-  }) => {
-    await page.goto("/admin");
-    await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
-
-    const hasAdminHeading =
-      (await page.locator("text=Admin Dashboard").count()) > 0;
-
-    if (hasAdminHeading) {
-      const hasArchitectureBtn =
-        (await page
-          .locator('[data-testid="admin-page-architecture-btn"]')
-          .count()) > 0;
-      const hasMobileBtn =
-        (await page.locator('[data-testid="admin-page-mobile-btn"]').count()) >
-        0;
-
-      expect(hasArchitectureBtn).toBeTruthy();
-      expect(hasMobileBtn).toBeTruthy();
-    }
-  });
-});
 
 test.describe("Admin - Architecture", () => {
   test("should load architecture page without errors", async ({ page }) => {
@@ -270,55 +161,6 @@ test.describe("Admin - Dataset Detail (non-existent)", () => {
     expect(
       hasNotFound || hasBackButton || wasRedirected || hasLoading
     ).toBeTruthy();
-  });
-});
-
-test.describe("Admin - Mobile", () => {
-  test("should load mobile admin page without errors", async ({ page }) => {
-    await page.goto("/admin/mobile");
-    await page.waitForLoadState("domcontentloaded");
-
-    await page.screenshot({
-      path: "test-results/admin-mobile.png",
-      fullPage: true,
-    });
-
-    const pageContent = await page.content();
-    expect(pageContent).not.toContain("Internal Server Error");
-  });
-
-  test("should display mobile admin heading or redirect", async ({ page }) => {
-    await page.goto("/admin/mobile");
-    await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
-
-    const hasMobileHeading =
-      (await page.locator("text=Admin Mobile").count()) > 0;
-    const wasRedirected =
-      page.url().includes("/dashboard") && !page.url().includes("/admin");
-
-    expect(hasMobileHeading || wasRedirected).toBeTruthy();
-  });
-
-  test("should display health status or activity section", async ({ page }) => {
-    await page.goto("/admin/mobile");
-    await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
-
-    const hasMobileHeading =
-      (await page.locator("text=Admin Mobile").count()) > 0;
-
-    if (hasMobileHeading) {
-      // Should show either "Health Alerts" (problems) or "All Systems Healthy" (no problems)
-      // and an "Activity" section
-      const hasHealthAlerts =
-        (await page.locator("text=Health Alerts").count()) > 0;
-      const hasAllHealthy =
-        (await page.locator("text=All Systems Healthy").count()) > 0;
-      const hasActivity = (await page.locator("text=Activity").count()) > 0;
-
-      expect(hasHealthAlerts || hasAllHealthy || hasActivity).toBeTruthy();
-    }
   });
 });
 
