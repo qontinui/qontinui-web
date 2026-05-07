@@ -1,57 +1,13 @@
 /**
  * E2E tests for Dashboard pages
  *
- * Tests the main dashboard, project dashboard, and analytics pages.
- * Verifies page load, key elements, and basic interactions.
+ * Tests the project dashboard and analytics pages. The /dashboard
+ * route itself is a redirect-only stub (to /build/workflows or
+ * /tools/visual-automation depending on product mode), so it has no
+ * tests of its own.
  */
 
 import { test, expect } from "../fixtures";
-
-test.describe("Dashboard Page", () => {
-  test("shows runner status area", async ({ page }) => {
-    await page.goto("/dashboard");
-    await page.waitForLoadState("domcontentloaded");
-
-    // Runner connection card should be visible with "Desktop Runner" text
-    await expect(page.getByText("Desktop Runner")).toBeVisible({
-      timeout: 15000,
-    });
-
-    // Status should show either Connected, Checking, or Offline
-    const statusText = page.getByText(/(Connected|Checking|Offline)/);
-    await expect(statusText.first()).toBeVisible({ timeout: 10000 });
-  });
-
-  test("shows quick action buttons", async ({ page }) => {
-    await page.goto("/dashboard");
-    await page.waitForLoadState("domcontentloaded");
-
-    // Wait for Quick Actions section to load
-    await expect(page.getByText("Quick Actions")).toBeVisible({
-      timeout: 15000,
-    });
-
-    // Verify the four quick action buttons are present
-    await expect(page.getByText("Execute Workflow")).toBeVisible();
-    await expect(page.getByText("Build Workflow")).toBeVisible();
-    await expect(page.getByText("View Runs")).toBeVisible();
-  });
-
-  test("shows active runs and recent runs sections", async ({ page }) => {
-    await page.goto("/dashboard");
-    await page.waitForLoadState("domcontentloaded");
-
-    // Active Runs card should be visible
-    await expect(page.getByText("Active Runs").first()).toBeVisible({
-      timeout: 15000,
-    });
-
-    // Recent Runs card should be visible
-    await expect(page.getByText("Recent Runs").first()).toBeVisible({
-      timeout: 15000,
-    });
-  });
-});
 
 test.describe("Project Dashboard Page", () => {
   test("loads without errors and shows heading", async ({ page }) => {
