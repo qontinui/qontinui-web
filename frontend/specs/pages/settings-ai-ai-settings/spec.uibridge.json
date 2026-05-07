@@ -1,0 +1,331 @@
+{
+  "description": "AI Settings page — configure AI provider selection, credentials, and model settings",
+  "groups": [
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Page Structure",
+          "enabled": true,
+          "id": "aisettings-page-structure-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "heading",
+              "textContent": "AI Providers"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Page Structure",
+          "enabled": true,
+          "id": "aisettings-page-structure-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Claude CLI"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Page Structure",
+          "enabled": true,
+          "id": "aisettings-page-structure-elem-2",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Claude API"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state Page Structure",
+          "enabled": true,
+          "id": "aisettings-page-structure-elem-3",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Save Settings"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 4 for state Page Structure",
+          "enabled": true,
+          "id": "aisettings-page-structure-elem-4",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Test Connection"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Core structural elements of the AI Settings page including heading, provider option cards, and action buttons.",
+      "id": "aisettings-page-structure",
+      "name": "Page Structure",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Form State",
+          "enabled": true,
+          "id": "aisettings-form-state-elem-0",
+          "precondition": "Page has fully loaded with provider options rendered",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Save Settings"
+            },
+            "label": "Required element for Form State",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Form State",
+          "enabled": true,
+          "id": "aisettings-form-state-elem-1",
+          "precondition": "Page has fully loaded with provider options rendered",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Test Connection"
+            },
+            "label": "Required element for Form State",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Form State",
+          "enabled": true,
+          "id": "aisettings-form-state-elem-2",
+          "precondition": "Page has fully loaded with provider options rendered",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Claude CLI"
+            },
+            "label": "Required element for Form State",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Interactive state of the AI Settings form controls including buttons and provider selection.",
+      "id": "aisettings-form-state",
+      "name": "Form State",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Page Purpose",
+          "enabled": true,
+          "id": "aisettings-page-purpose-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Claude CLI"
+            },
+            "label": "Required element for Page Purpose",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Page Purpose",
+          "enabled": true,
+          "id": "aisettings-page-purpose-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "AI Providers"
+            },
+            "label": "Required element for Page Purpose",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Page Purpose",
+          "enabled": true,
+          "id": "aisettings-page-purpose-elem-2",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Test Connection"
+            },
+            "label": "Required element for Page Purpose",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state Page Purpose",
+          "enabled": true,
+          "id": "aisettings-page-purpose-elem-3",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Save Settings"
+            },
+            "label": "Required element for Page Purpose",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "The AI Settings page lets users configure which AI provider powers workflow execution. Users choose between Claude CLI, Claude API, Gemini CLI, or Gemini API, then configure provider-specific settings including API keys, model selection, execution modes, and timeouts. A test connection feature validates the configuration.",
+      "id": "aisettings-page-purpose",
+      "name": "Page Purpose",
+      "source": "migrated"
+    }
+  ],
+  "metadata": {
+    "component": "settings-ai-ai-settings",
+    "tags": [
+      "settings",
+      "ai-providers",
+      "configuration",
+      "credentials",
+      "tier-1"
+    ]
+  },
+  "stateMachine": {
+    "states": [
+      {
+        "description": "Core structural elements of the AI Settings page including heading, provider option cards, and action buttons.",
+        "elements": [
+          {
+            "role": "heading",
+            "textContent": "AI Providers"
+          },
+          {
+            "textContent": "Claude CLI"
+          },
+          {
+            "textContent": "Claude API"
+          },
+          {
+            "role": "button",
+            "textContent": "Save Settings"
+          },
+          {
+            "role": "button",
+            "textContent": "Test Connection"
+          }
+        ],
+        "id": "aisettings-page-structure",
+        "isInitial": false,
+        "name": "Page Structure",
+        "transitions": []
+      },
+      {
+        "description": "Interactive state of the AI Settings form controls including buttons and provider selection.",
+        "elements": [
+          {
+            "role": "button",
+            "textContent": "Save Settings"
+          },
+          {
+            "role": "button",
+            "textContent": "Test Connection"
+          },
+          {
+            "textContent": "Claude CLI"
+          }
+        ],
+        "id": "aisettings-form-state",
+        "isInitial": false,
+        "name": "Form State",
+        "transitions": []
+      },
+      {
+        "description": "The AI Settings page lets users configure which AI provider powers workflow execution. Users choose between Claude CLI, Claude API, Gemini CLI, or Gemini API, then configure provider-specific settings including API keys, model selection, execution modes, and timeouts. A test connection feature validates the configuration.",
+        "elements": [
+          {
+            "textContent": "Claude CLI"
+          },
+          {
+            "textContent": "AI Providers"
+          },
+          {
+            "role": "button",
+            "textContent": "Test Connection"
+          },
+          {
+            "role": "button",
+            "textContent": "Save Settings"
+          }
+        ],
+        "id": "aisettings-page-purpose",
+        "isInitial": false,
+        "name": "Page Purpose",
+        "transitions": []
+      }
+    ]
+  },
+  "version": "1.0.0"
+}

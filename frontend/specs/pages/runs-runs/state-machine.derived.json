@@ -1,0 +1,74 @@
+{
+  "version": "1.0",
+  "id": "runs-runs",
+  "name": "RunHistory",
+  "states": [
+    {
+      "id": "runs-page-structure",
+      "name": "Page Structure",
+      "requiredElements": [
+        {
+          "role": "heading",
+          "text": "Run History"
+        },
+        {},
+        {
+          "role": "button",
+          "text": "All"
+        }
+      ],
+      "description": "Core structural elements required for the Run History page: heading, search input, and status filter controls.",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "runs-table-state",
+      "name": "Table State",
+      "requiredElements": [
+        {},
+        {
+          "text": "Status"
+        }
+      ],
+      "description": "The runs table and its controls should be in a consistent default state when the page first loads.",
+      "precondition": "Page has just loaded with no query parameters",
+      "provenance": {
+        "source": "migrated"
+      }
+    },
+    {
+      "id": "runs-page-purpose",
+      "name": "Page Purpose",
+      "requiredElements": [
+        {
+          "text": "Run History"
+        },
+        {},
+        {
+          "text": "Total"
+        },
+        {
+          "text": "Status"
+        }
+      ],
+      "description": "The Run History page provides a comprehensive view of all task run executions. Users can search runs by name, filter by status (running, completed, failed, stopped) and type (GUI, AI), view summary statistics, and click into any run for full details. It supports bulk selection and deletion of runs.",
+      "provenance": {
+        "source": "migrated"
+      }
+    }
+  ],
+  "transitions": [],
+  "provenance": {
+    "source": "migrated"
+  },
+  "description": "Run History page — browse, search, and filter all task run executions",
+  "metadata": {
+    "tags": [
+      "run-history",
+      "task-runs",
+      "filtering",
+      "tier-1"
+    ]
+  }
+}

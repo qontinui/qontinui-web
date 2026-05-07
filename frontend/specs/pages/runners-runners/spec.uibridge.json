@@ -1,0 +1,225 @@
+{
+  "description": "Runners page — desktop runner connection management and monitoring",
+  "groups": [
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Page Structure",
+          "enabled": true,
+          "id": "runners-page-structure-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "heading",
+              "textContent": "Runners"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Page Structure",
+          "enabled": true,
+          "id": "runners-page-structure-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "tab",
+              "textContent": "Active Connections"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Page Structure",
+          "enabled": true,
+          "id": "runners-page-structure-elem-2",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "tab",
+              "textContent": "Connection History"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Core structural elements required for the Runners page: heading and tab navigation for Active Connections and Connection History.",
+      "id": "runners-page-structure",
+      "name": "Page Structure",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Tab State",
+          "enabled": true,
+          "id": "runners-tab-state-elem-0",
+          "precondition": "Page has just loaded with no tab query parameter",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "tab",
+              "textContent": "Active Connections"
+            },
+            "label": "Required element for Tab State",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Tab State",
+          "enabled": true,
+          "id": "runners-tab-state-elem-1",
+          "precondition": "Page has just loaded with no tab query parameter",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "tab",
+              "textContent": "Connection History"
+            },
+            "label": "Required element for Tab State",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "The tab navigation should default to showing Active Connections as the primary view on page load.",
+      "id": "runners-tab-state",
+      "name": "Tab State",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Page Purpose",
+          "enabled": true,
+          "id": "runners-page-purpose-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Active Connections"
+            },
+            "label": "Required element for Page Purpose",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Page Purpose",
+          "enabled": true,
+          "id": "runners-page-purpose-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Connection History"
+            },
+            "label": "Required element for Page Purpose",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "The Runners page lets users monitor desktop runner connections and view connection history. It shows which runners are currently active with real-time status indicators, and provides a searchable history of all past connections.",
+      "id": "runners-page-purpose",
+      "name": "Page Purpose",
+      "source": "migrated"
+    }
+  ],
+  "metadata": {
+    "component": "runners-runners",
+    "tags": [
+      "runners",
+      "connection-management",
+      "monitoring",
+      "tier-2"
+    ]
+  },
+  "stateMachine": {
+    "states": [
+      {
+        "description": "Core structural elements required for the Runners page: heading and tab navigation for Active Connections and Connection History.",
+        "elements": [
+          {
+            "role": "heading",
+            "textContent": "Runners"
+          },
+          {
+            "role": "tab",
+            "textContent": "Active Connections"
+          },
+          {
+            "role": "tab",
+            "textContent": "Connection History"
+          }
+        ],
+        "id": "runners-page-structure",
+        "isInitial": false,
+        "name": "Page Structure",
+        "transitions": []
+      },
+      {
+        "description": "The tab navigation should default to showing Active Connections as the primary view on page load.",
+        "elements": [
+          {
+            "role": "tab",
+            "textContent": "Active Connections"
+          },
+          {
+            "role": "tab",
+            "textContent": "Connection History"
+          }
+        ],
+        "id": "runners-tab-state",
+        "isInitial": false,
+        "name": "Tab State",
+        "transitions": []
+      },
+      {
+        "description": "The Runners page lets users monitor desktop runner connections and view connection history. It shows which runners are currently active with real-time status indicators, and provides a searchable history of all past connections.",
+        "elements": [
+          {
+            "textContent": "Active Connections"
+          },
+          {
+            "textContent": "Connection History"
+          }
+        ],
+        "id": "runners-page-purpose",
+        "isInitial": false,
+        "name": "Page Purpose",
+        "transitions": []
+      }
+    ]
+  },
+  "version": "1.0.0"
+}

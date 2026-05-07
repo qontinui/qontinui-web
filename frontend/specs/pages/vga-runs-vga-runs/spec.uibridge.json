@@ -1,0 +1,1312 @@
+{
+  "description": "Paginated index of VGA (Visual GUI Automation) runs. Shows one row per row of runner.vga_runs joined to runner.vga_state_machines on state_machine_id. Columns: truncated run id linking to /vga/runs/[runId], state machine name, target process, status badge, started-at timestamp, duration. Supports filtering by status, target_process (exact match), and started_at date range (since/until). Filter state is mirrored into the URL query string so a reload or shared link restores the view. Pagination: 50 rows/page; total row count is computed server-side via COUNT(*) OVER() in the same query as the page slice. This page is the user's window into the Python VGA worker's execution history — the canonical place to see which runs succeeded, failed, drifted, or are still running for a given app.",
+  "groups": [
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Page Structure & Layout",
+          "enabled": true,
+          "id": "page-structure-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "heading",
+              "textContent": "VGA runs"
+            },
+            "label": "Required element for Page Structure & Layout",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Page Structure & Layout",
+          "enabled": true,
+          "id": "page-structure-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "accessibleName": "Back to VGA landing"
+            },
+            "label": "Required element for Page Structure & Layout",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Page Structure & Layout",
+          "enabled": true,
+          "id": "page-structure-elem-2",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "accessibleName": "Back to VGA landing"
+            },
+            "label": "Required element for Page Structure & Layout",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state Page Structure & Layout",
+          "enabled": true,
+          "id": "page-structure-elem-3",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "total"
+            },
+            "label": "Required element for Page Structure & Layout",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 4 for state Page Structure & Layout",
+          "enabled": true,
+          "id": "page-structure-elem-4",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "main"
+            },
+            "label": "Required element for Page Structure & Layout",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Top-level layout: a sticky header with back-to-/vga link, heading, and total badge; a scrollable main area with a filters card followed by the runs table card. The viewport height is clamped to `calc(100vh-44px)` so the inner main section scrolls independently of the app shell.",
+      "id": "page-structure",
+      "name": "Page Structure & Layout",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Filters Card",
+          "enabled": true,
+          "id": "filters-card-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "id": "filter-status"
+            },
+            "label": "Required element for Filters Card",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Filters Card",
+          "enabled": true,
+          "id": "filters-card-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "id": "filter-status"
+            },
+            "label": "Required element for Filters Card",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Filters Card",
+          "enabled": true,
+          "id": "filters-card-elem-2",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "id": "filter-target"
+            },
+            "label": "Required element for Filters Card",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state Filters Card",
+          "enabled": true,
+          "id": "filters-card-elem-3",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "id": "filter-target"
+            },
+            "label": "Required element for Filters Card",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 4 for state Filters Card",
+          "enabled": true,
+          "id": "filters-card-elem-4",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "id": "filter-since"
+            },
+            "label": "Required element for Filters Card",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 5 for state Filters Card",
+          "enabled": true,
+          "id": "filters-card-elem-5",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "id": "filter-until"
+            },
+            "label": "Required element for Filters Card",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 6 for state Filters Card",
+          "enabled": true,
+          "id": "filters-card-elem-6",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Reset"
+            },
+            "label": "Required element for Filters Card",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 7 for state Filters Card",
+          "enabled": true,
+          "id": "filters-card-elem-7",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Reset"
+            },
+            "label": "Required element for Filters Card",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "The filters card exposes four filters: status (Select), target_process (free-text Input with exact-match semantics), since (date Input), until (date Input), plus a Reset button. Changing any filter resets page to 1 and triggers a fresh /api/vga/runs query.",
+      "id": "filters-card",
+      "name": "Filters Card",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Runs Table",
+          "enabled": true,
+          "id": "runs-table-elem-0",
+          "precondition": "At least one run row is rendered (data.runs.length > 0)",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "columnheader",
+              "textContent": "Run"
+            },
+            "label": "Required element for Runs Table",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Runs Table",
+          "enabled": true,
+          "id": "runs-table-elem-1",
+          "precondition": "At least one run row is rendered (data.runs.length > 0)",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "table"
+            },
+            "label": "Required element for Runs Table",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Runs Table",
+          "enabled": true,
+          "id": "runs-table-elem-2",
+          "precondition": "At least one run row is rendered (data.runs.length > 0)",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "row"
+            },
+            "label": "Required element for Runs Table",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state Runs Table",
+          "enabled": true,
+          "id": "runs-table-elem-3",
+          "precondition": "At least one run row is rendered (data.runs.length > 0)",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "row"
+            },
+            "label": "Required element for Runs Table",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 4 for state Runs Table",
+          "enabled": true,
+          "id": "runs-table-elem-4",
+          "precondition": "At least one run row is rendered (data.runs.length > 0)",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "row"
+            },
+            "label": "Required element for Runs Table",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 5 for state Runs Table",
+          "enabled": true,
+          "id": "runs-table-elem-5",
+          "precondition": "At least one run row is rendered (data.runs.length > 0)",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "row"
+            },
+            "label": "Required element for Runs Table",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 6 for state Runs Table",
+          "enabled": true,
+          "id": "runs-table-elem-6",
+          "precondition": "At least one run row is rendered (data.runs.length > 0)",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "row"
+            },
+            "label": "Required element for Runs Table",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "When runs exist, a 6-column table renders the current page of results: Run id (truncated to first 8 chars, linked to /vga/runs/[runId]), State machine name, Target process, Status badge, Started-at (locale datetime), Duration. Rows are ordered by started_at DESC.",
+      "id": "runs-table",
+      "name": "Runs Table",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Run Status Badges",
+          "enabled": true,
+          "id": "status-badges-elem-0",
+          "precondition": "At least one run with status in {succeeded, success} is visible on the current page",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Succeeded"
+            },
+            "label": "Required element for Run Status Badges",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Run Status Badges",
+          "enabled": true,
+          "id": "status-badges-elem-1",
+          "precondition": "At least one run with status in {succeeded, success} is visible on the current page",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Failed"
+            },
+            "label": "Required element for Run Status Badges",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Run Status Badges",
+          "enabled": true,
+          "id": "status-badges-elem-2",
+          "precondition": "At least one run with status in {succeeded, success} is visible on the current page",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Drifted"
+            },
+            "label": "Required element for Run Status Badges",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state Run Status Badges",
+          "enabled": true,
+          "id": "status-badges-elem-3",
+          "precondition": "At least one run with status in {succeeded, success} is visible on the current page",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Running"
+            },
+            "label": "Required element for Run Status Badges",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 4 for state Run Status Badges",
+          "enabled": true,
+          "id": "status-badges-elem-4",
+          "precondition": "At least one run with status in {succeeded, success} is visible on the current page",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Succeeded"
+            },
+            "label": "Required element for Run Status Badges",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Each row's Status cell renders a Badge whose variant encodes status. The statusTone helper maps: succeeded|success→secondary, failed→destructive, drifted→outline, running→default, any other→outline. The label shown capitalizes the first letter except for unknown statuses which pass through raw.",
+      "id": "status-badges",
+      "name": "Run Status Badges",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Loading / Empty / Error Lifecycle",
+          "enabled": true,
+          "id": "lifecycle-states-elem-0",
+          "precondition": "The page has just mounted and no data has arrived yet",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "tagName": "svg"
+            },
+            "label": "Required element for Loading / Empty / Error Lifecycle",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Loading / Empty / Error Lifecycle",
+          "enabled": true,
+          "id": "lifecycle-states-elem-1",
+          "precondition": "The page has just mounted and no data has arrived yet",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "No runs match these filters."
+            },
+            "label": "Required element for Loading / Empty / Error Lifecycle",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Loading / Empty / Error Lifecycle",
+          "enabled": true,
+          "id": "lifecycle-states-elem-2",
+          "precondition": "The page has just mounted and no data has arrived yet",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "Failed to load runs"
+            },
+            "label": "Required element for Loading / Empty / Error Lifecycle",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state Loading / Empty / Error Lifecycle",
+          "enabled": true,
+          "id": "lifecycle-states-elem-3",
+          "precondition": "The page has just mounted and no data has arrived yet",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "tagName": "main"
+            },
+            "label": "Required element for Loading / Empty / Error Lifecycle",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "The runs card renders one of four mutually exclusive sub-states based on the React Query status: isLoading → spinner, error → red error line, empty → muted 'No runs match these filters.', populated → table + pagination.",
+      "id": "lifecycle-states",
+      "name": "Loading / Empty / Error Lifecycle",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Pagination Controls",
+          "enabled": true,
+          "id": "pagination-elem-0",
+          "precondition": "At least one run row is rendered (populated state)",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": " of "
+            },
+            "label": "Required element for Pagination Controls",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Pagination Controls",
+          "enabled": true,
+          "id": "pagination-elem-1",
+          "precondition": "At least one run row is rendered (populated state)",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "accessibleName": "Previous page"
+            },
+            "label": "Required element for Pagination Controls",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Pagination Controls",
+          "enabled": true,
+          "id": "pagination-elem-2",
+          "precondition": "At least one run row is rendered (populated state)",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "accessibleName": "Next page"
+            },
+            "label": "Required element for Pagination Controls",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state Pagination Controls",
+          "enabled": true,
+          "id": "pagination-elem-3",
+          "precondition": "At least one run row is rendered (populated state)",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "accessibleName": "Next page"
+            },
+            "label": "Required element for Pagination Controls",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 4 for state Pagination Controls",
+          "enabled": true,
+          "id": "pagination-elem-4",
+          "precondition": "At least one run row is rendered (populated state)",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "accessibleName": "Previous page"
+            },
+            "label": "Required element for Pagination Controls",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "When the table is populated, a footer row shows the current window and Prev/Next controls. The controls are disabled at the ends of the range. PAGE_SIZE is 50.",
+      "id": "pagination",
+      "name": "Pagination Controls",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state URL ↔ Filter State Sync",
+          "enabled": true,
+          "id": "url-state-sync-elem-0",
+          "precondition": "The page is loaded with no query string",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "id": "filter-status"
+            },
+            "label": "Required element for URL ↔ Filter State Sync",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state URL ↔ Filter State Sync",
+          "enabled": true,
+          "id": "url-state-sync-elem-1",
+          "precondition": "The page is loaded with no query string",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "id": "filter-target"
+            },
+            "label": "Required element for URL ↔ Filter State Sync",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state URL ↔ Filter State Sync",
+          "enabled": true,
+          "id": "url-state-sync-elem-2",
+          "precondition": "The page is loaded with no query string",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "id": "filter-target"
+            },
+            "label": "Required element for URL ↔ Filter State Sync",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state URL ↔ Filter State Sync",
+          "enabled": true,
+          "id": "url-state-sync-elem-3",
+          "precondition": "The page is loaded with no query string",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "id": "filter-target"
+            },
+            "label": "Required element for URL ↔ Filter State Sync",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "The four filters plus the page index are mirrored into the URL query string. A shared link or bookmark must reproduce the exact filtered view. Sync is bidirectional via a single `lastSyncedRef` to prevent the state→URL effect from stomping params the user navigated in with.",
+      "id": "url-state-sync",
+      "name": "URL ↔ Filter State Sync",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state GET /api/vga/runs contract",
+          "enabled": true,
+          "id": "api-contract-elem-0",
+          "precondition": "At least one run row is rendered",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "table"
+            },
+            "label": "Required element for GET /api/vga/runs contract",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state GET /api/vga/runs contract",
+          "enabled": true,
+          "id": "api-contract-elem-1",
+          "precondition": "At least one run row is rendered",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "table"
+            },
+            "label": "Required element for GET /api/vga/runs contract",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state GET /api/vga/runs contract",
+          "enabled": true,
+          "id": "api-contract-elem-2",
+          "precondition": "At least one run row is rendered",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": " total"
+            },
+            "label": "Required element for GET /api/vga/runs contract",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state GET /api/vga/runs contract",
+          "enabled": true,
+          "id": "api-contract-elem-3",
+          "precondition": "At least one run row is rendered",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "table"
+            },
+            "label": "Required element for GET /api/vga/runs contract",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 4 for state GET /api/vga/runs contract",
+          "enabled": true,
+          "id": "api-contract-elem-4",
+          "precondition": "At least one run row is rendered",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "table"
+            },
+            "label": "Required element for GET /api/vga/runs contract",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 5 for state GET /api/vga/runs contract",
+          "enabled": true,
+          "id": "api-contract-elem-5",
+          "precondition": "At least one run row is rendered",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "main"
+            },
+            "label": "Required element for GET /api/vga/runs contract",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "The page is backed by the Next.js route handler at /api/vga/runs which executes a single SELECT over runner.vga_runs LEFT JOIN runner.vga_state_machines. The contract is observable from the page: the table's column values come directly from the row shape, totals come from COUNT(*) OVER(), filter params shape the WHERE clause.",
+      "id": "api-contract",
+      "name": "GET /api/vga/runs contract",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Visual Design & Typography",
+          "enabled": true,
+          "id": "visual-design-elem-0",
+          "precondition": "At least one run row is rendered",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "heading",
+              "textContent": "VGA runs"
+            },
+            "label": "Required element for Visual Design & Typography",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Visual Design & Typography",
+          "enabled": true,
+          "id": "visual-design-elem-1",
+          "precondition": "At least one run row is rendered",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "heading",
+              "textContent": "VGA runs"
+            },
+            "label": "Required element for Visual Design & Typography",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Visual Design & Typography",
+          "enabled": true,
+          "id": "visual-design-elem-2",
+          "precondition": "At least one run row is rendered",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "row"
+            },
+            "label": "Required element for Visual Design & Typography",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state Visual Design & Typography",
+          "enabled": true,
+          "id": "visual-design-elem-3",
+          "precondition": "At least one run row is rendered",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "cell"
+            },
+            "label": "Required element for Visual Design & Typography",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 4 for state Visual Design & Typography",
+          "enabled": true,
+          "id": "visual-design-elem-4",
+          "precondition": "At least one run row is rendered",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "No runs match these filters."
+            },
+            "label": "Required element for Visual Design & Typography",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Typography and color follow the theme tokens (bg-background, border-border, text-foreground, text-muted-foreground). The page header uses the same layout pattern as /vga to keep the two pages visually coherent.",
+      "id": "visual-design",
+      "name": "Visual Design & Typography",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Accessibility",
+          "enabled": true,
+          "id": "accessibility-elem-0",
+          "precondition": "At least one run row is rendered (populated state)",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "id": "filter-target"
+            },
+            "label": "Required element for Accessibility",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Accessibility",
+          "enabled": true,
+          "id": "accessibility-elem-1",
+          "precondition": "At least one run row is rendered (populated state)",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "accessibleName": "Next page"
+            },
+            "label": "Required element for Accessibility",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Accessibility",
+          "enabled": true,
+          "id": "accessibility-elem-2",
+          "precondition": "At least one run row is rendered (populated state)",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "accessibleName": "Back to VGA landing"
+            },
+            "label": "Required element for Accessibility",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state Accessibility",
+          "enabled": true,
+          "id": "accessibility-elem-3",
+          "precondition": "At least one run row is rendered (populated state)",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "row"
+            },
+            "label": "Required element for Accessibility",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Semantic HTML (h1, table with th scope, labeled form controls), aria-labels on icon-only buttons, keyboard-focus affordances.",
+      "id": "accessibility",
+      "name": "Accessibility",
+      "source": "migrated"
+    }
+  ],
+  "metadata": {
+    "component": "vga-runs-vga-runs",
+    "tags": [
+      "vga",
+      "runs-index",
+      "paginated-table",
+      "filterable",
+      "url-backed-state"
+    ]
+  },
+  "stateMachine": {
+    "states": [
+      {
+        "description": "Top-level layout: a sticky header with back-to-/vga link, heading, and total badge; a scrollable main area with a filters card followed by the runs table card. The viewport height is clamped to `calc(100vh-44px)` so the inner main section scrolls independently of the app shell.",
+        "elements": [
+          {
+            "role": "heading",
+            "textContent": "VGA runs"
+          },
+          {
+            "accessibleName": "Back to VGA landing"
+          },
+          {
+            "accessibleName": "Back to VGA landing"
+          },
+          {
+            "textContains": "total"
+          },
+          {
+            "role": "main"
+          }
+        ],
+        "id": "page-structure",
+        "isInitial": false,
+        "name": "Page Structure & Layout",
+        "transitions": []
+      },
+      {
+        "description": "The filters card exposes four filters: status (Select), target_process (free-text Input with exact-match semantics), since (date Input), until (date Input), plus a Reset button. Changing any filter resets page to 1 and triggers a fresh /api/vga/runs query.",
+        "elements": [
+          {
+            "id": "filter-status"
+          },
+          {
+            "id": "filter-status"
+          },
+          {
+            "id": "filter-target"
+          },
+          {
+            "id": "filter-target"
+          },
+          {
+            "id": "filter-since"
+          },
+          {
+            "id": "filter-until"
+          },
+          {
+            "role": "button",
+            "textContent": "Reset"
+          },
+          {
+            "role": "button",
+            "textContent": "Reset"
+          }
+        ],
+        "id": "filters-card",
+        "isInitial": false,
+        "name": "Filters Card",
+        "transitions": []
+      },
+      {
+        "description": "When runs exist, a 6-column table renders the current page of results: Run id (truncated to first 8 chars, linked to /vga/runs/[runId]), State machine name, Target process, Status badge, Started-at (locale datetime), Duration. Rows are ordered by started_at DESC.",
+        "elements": [
+          {
+            "role": "columnheader",
+            "textContent": "Run"
+          },
+          {
+            "role": "table"
+          },
+          {
+            "role": "row"
+          },
+          {
+            "role": "row"
+          },
+          {
+            "role": "row"
+          },
+          {
+            "role": "row"
+          },
+          {
+            "role": "row"
+          }
+        ],
+        "id": "runs-table",
+        "isInitial": false,
+        "name": "Runs Table",
+        "transitions": []
+      },
+      {
+        "description": "Each row's Status cell renders a Badge whose variant encodes status. The statusTone helper maps: succeeded|success→secondary, failed→destructive, drifted→outline, running→default, any other→outline. The label shown capitalizes the first letter except for unknown statuses which pass through raw.",
+        "elements": [
+          {
+            "textContent": "Succeeded"
+          },
+          {
+            "textContent": "Failed"
+          },
+          {
+            "textContent": "Drifted"
+          },
+          {
+            "textContent": "Running"
+          },
+          {
+            "textContent": "Succeeded"
+          }
+        ],
+        "id": "status-badges",
+        "isInitial": false,
+        "name": "Run Status Badges",
+        "transitions": []
+      },
+      {
+        "description": "The runs card renders one of four mutually exclusive sub-states based on the React Query status: isLoading → spinner, error → red error line, empty → muted 'No runs match these filters.', populated → table + pagination.",
+        "elements": [
+          {
+            "tagName": "svg"
+          },
+          {
+            "textContent": "No runs match these filters."
+          },
+          {
+            "textContains": "Failed to load runs"
+          },
+          {
+            "tagName": "main"
+          }
+        ],
+        "id": "lifecycle-states",
+        "isInitial": false,
+        "name": "Loading / Empty / Error Lifecycle",
+        "transitions": []
+      },
+      {
+        "description": "When the table is populated, a footer row shows the current window and Prev/Next controls. The controls are disabled at the ends of the range. PAGE_SIZE is 50.",
+        "elements": [
+          {
+            "textContains": " of "
+          },
+          {
+            "accessibleName": "Previous page"
+          },
+          {
+            "accessibleName": "Next page"
+          },
+          {
+            "accessibleName": "Next page"
+          },
+          {
+            "accessibleName": "Previous page"
+          }
+        ],
+        "id": "pagination",
+        "isInitial": false,
+        "name": "Pagination Controls",
+        "transitions": []
+      },
+      {
+        "description": "The four filters plus the page index are mirrored into the URL query string. A shared link or bookmark must reproduce the exact filtered view. Sync is bidirectional via a single `lastSyncedRef` to prevent the state→URL effect from stomping params the user navigated in with.",
+        "elements": [
+          {
+            "id": "filter-status"
+          },
+          {
+            "id": "filter-target"
+          },
+          {
+            "id": "filter-target"
+          },
+          {
+            "id": "filter-target"
+          }
+        ],
+        "id": "url-state-sync",
+        "isInitial": false,
+        "name": "URL ↔ Filter State Sync",
+        "transitions": []
+      },
+      {
+        "description": "The page is backed by the Next.js route handler at /api/vga/runs which executes a single SELECT over runner.vga_runs LEFT JOIN runner.vga_state_machines. The contract is observable from the page: the table's column values come directly from the row shape, totals come from COUNT(*) OVER(), filter params shape the WHERE clause.",
+        "elements": [
+          {
+            "role": "table"
+          },
+          {
+            "role": "table"
+          },
+          {
+            "textContains": " total"
+          },
+          {
+            "role": "table"
+          },
+          {
+            "role": "table"
+          },
+          {
+            "role": "main"
+          }
+        ],
+        "id": "api-contract",
+        "isInitial": false,
+        "name": "GET /api/vga/runs contract",
+        "transitions": []
+      },
+      {
+        "description": "Typography and color follow the theme tokens (bg-background, border-border, text-foreground, text-muted-foreground). The page header uses the same layout pattern as /vga to keep the two pages visually coherent.",
+        "elements": [
+          {
+            "role": "heading",
+            "textContent": "VGA runs"
+          },
+          {
+            "role": "heading",
+            "textContent": "VGA runs"
+          },
+          {
+            "role": "row"
+          },
+          {
+            "role": "cell"
+          },
+          {
+            "textContent": "No runs match these filters."
+          }
+        ],
+        "id": "visual-design",
+        "isInitial": false,
+        "name": "Visual Design & Typography",
+        "transitions": []
+      },
+      {
+        "description": "Semantic HTML (h1, table with th scope, labeled form controls), aria-labels on icon-only buttons, keyboard-focus affordances.",
+        "elements": [
+          {
+            "id": "filter-target"
+          },
+          {
+            "accessibleName": "Next page"
+          },
+          {
+            "accessibleName": "Back to VGA landing"
+          },
+          {
+            "role": "row"
+          }
+        ],
+        "id": "accessibility",
+        "isInitial": false,
+        "name": "Accessibility",
+        "transitions": []
+      }
+    ]
+  },
+  "version": "1.0.0"
+}

@@ -1,0 +1,299 @@
+{
+  "description": "Statistics page — execution performance analytics and metrics dashboard",
+  "groups": [
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Page Structure",
+          "enabled": true,
+          "id": "stats-page-structure-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "heading",
+              "textContent": "Statistics"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Page Structure",
+          "enabled": true,
+          "id": "stats-page-structure-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Total Runs"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Page Structure",
+          "enabled": true,
+          "id": "stats-page-structure-elem-2",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Avg Duration"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state Page Structure",
+          "enabled": true,
+          "id": "stats-page-structure-elem-3",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Success Rate"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 4 for state Page Structure",
+          "enabled": true,
+          "id": "stats-page-structure-elem-4",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Status Breakdown"
+            },
+            "label": "Required element for Page Structure",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Core structural elements of the Statistics page including heading, summary metric cards, and status breakdown section.",
+      "id": "stats-page-structure",
+      "name": "Page Structure",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Metrics State",
+          "enabled": true,
+          "id": "stats-metrics-state-elem-0",
+          "precondition": "Page has loaded with statistics data available",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Total Runs"
+            },
+            "label": "Required element for Metrics State",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Metrics State",
+          "enabled": true,
+          "id": "stats-metrics-state-elem-1",
+          "precondition": "Page has loaded with statistics data available",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Success Rate"
+            },
+            "label": "Required element for Metrics State",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Metrics State",
+          "enabled": true,
+          "id": "stats-metrics-state-elem-2",
+          "precondition": "Page has loaded with statistics data available",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Recent Runs"
+            },
+            "label": "Required element for Metrics State",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "State consistency of metric values and table structure on the statistics dashboard.",
+      "id": "stats-metrics-state",
+      "name": "Metrics State",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Page Purpose",
+          "enabled": true,
+          "id": "stats-page-purpose-elem-0",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Statistics"
+            },
+            "label": "Required element for Page Purpose",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Page Purpose",
+          "enabled": true,
+          "id": "stats-page-purpose-elem-1",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Status Breakdown"
+            },
+            "label": "Required element for Page Purpose",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Page Purpose",
+          "enabled": true,
+          "id": "stats-page-purpose-elem-2",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContent": "Recent Runs"
+            },
+            "label": "Required element for Page Purpose",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "The Statistics page provides performance analytics for workflow executions. It displays summary metrics (total runs, average duration, success rate, total time), a status breakdown with visual distribution bars, and a recent runs table comparing each run's duration against the average. A performance view adds time-range filtering and detailed metric cards.",
+      "id": "stats-page-purpose",
+      "name": "Page Purpose",
+      "source": "migrated"
+    }
+  ],
+  "metadata": {
+    "component": "runs-statistics-statistics",
+    "tags": [
+      "statistics",
+      "analytics",
+      "performance",
+      "metrics",
+      "tier-2"
+    ]
+  },
+  "stateMachine": {
+    "states": [
+      {
+        "description": "Core structural elements of the Statistics page including heading, summary metric cards, and status breakdown section.",
+        "elements": [
+          {
+            "role": "heading",
+            "textContent": "Statistics"
+          },
+          {
+            "textContent": "Total Runs"
+          },
+          {
+            "textContent": "Avg Duration"
+          },
+          {
+            "textContent": "Success Rate"
+          },
+          {
+            "textContent": "Status Breakdown"
+          }
+        ],
+        "id": "stats-page-structure",
+        "isInitial": false,
+        "name": "Page Structure",
+        "transitions": []
+      },
+      {
+        "description": "State consistency of metric values and table structure on the statistics dashboard.",
+        "elements": [
+          {
+            "textContent": "Total Runs"
+          },
+          {
+            "textContent": "Success Rate"
+          },
+          {
+            "textContent": "Recent Runs"
+          }
+        ],
+        "id": "stats-metrics-state",
+        "isInitial": false,
+        "name": "Metrics State",
+        "transitions": []
+      },
+      {
+        "description": "The Statistics page provides performance analytics for workflow executions. It displays summary metrics (total runs, average duration, success rate, total time), a status breakdown with visual distribution bars, and a recent runs table comparing each run's duration against the average. A performance view adds time-range filtering and detailed metric cards.",
+        "elements": [
+          {
+            "textContent": "Statistics"
+          },
+          {
+            "textContent": "Status Breakdown"
+          },
+          {
+            "textContent": "Recent Runs"
+          }
+        ],
+        "id": "stats-page-purpose",
+        "isInitial": false,
+        "name": "Page Purpose",
+        "transitions": []
+      }
+    ]
+  },
+  "version": "1.0.0"
+}

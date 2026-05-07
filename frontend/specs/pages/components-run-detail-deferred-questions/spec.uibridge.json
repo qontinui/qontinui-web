@@ -1,0 +1,1160 @@
+{
+  "description": "Deferred Questions (Decisions tab) — displays non-blocking human-in-the-loop questions that were deferred during autonomous workflow execution. Users can review the AI's auto-decisions, approve them, or reject them (triggering targeted rework). Also covers the floating panel on the Active Dashboard and the badge counter on active run cards.",
+  "groups": [
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Tab Registration & Navigation",
+          "enabled": true,
+          "id": "decisions-tab-registration-elem-0",
+          "precondition": "Decisions tab is selected and component is still loading",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "tab",
+              "textContains": "Decisions"
+            },
+            "label": "Required element for Tab Registration & Navigation",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Tab Registration & Navigation",
+          "enabled": true,
+          "id": "decisions-tab-registration-elem-1",
+          "precondition": "Decisions tab is selected and component is still loading",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "tab",
+              "textContains": "Decisions"
+            },
+            "label": "Required element for Tab Registration & Navigation",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Tab Registration & Navigation",
+          "enabled": true,
+          "id": "decisions-tab-registration-elem-2",
+          "precondition": "Decisions tab is selected and component is still loading",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "Loading..."
+            },
+            "label": "Required element for Tab Registration & Navigation",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "The Decisions tab appears in the RunDetailContent tab bar and is accessible via the ?tab=decisions URL parameter.",
+      "id": "decisions-tab-registration",
+      "name": "Tab Registration & Navigation",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Empty State — No Deferred Questions",
+          "enabled": true,
+          "id": "decisions-empty-state-elem-0",
+          "precondition": "No deferred questions exist for this run",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "tagName": "svg"
+            },
+            "label": "Required element for Empty State — No Deferred Questions",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Empty State — No Deferred Questions",
+          "enabled": true,
+          "id": "decisions-empty-state-elem-1",
+          "precondition": "No deferred questions exist for this run",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "No deferred questions for this run"
+            },
+            "label": "Required element for Empty State — No Deferred Questions",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Empty State — No Deferred Questions",
+          "enabled": true,
+          "id": "decisions-empty-state-elem-2",
+          "precondition": "No deferred questions exist for this run",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "autonomous decisions with low confidence"
+            },
+            "label": "Required element for Empty State — No Deferred Questions",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "When a workflow run has no deferred questions (either because blocking_approval was true, or confidence was always high enough to auto-approve silently), an empty state is displayed.",
+      "id": "decisions-empty-state",
+      "name": "Empty State — No Deferred Questions",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Header — Stats Badges & Bulk Actions",
+          "enabled": true,
+          "id": "decisions-header-stats-elem-0",
+          "precondition": "At least one deferred question exists",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "Deferred Questions"
+            },
+            "label": "Required element for Header — Stats Badges & Bulk Actions",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Header — Stats Badges & Bulk Actions",
+          "enabled": true,
+          "id": "decisions-header-stats-elem-1",
+          "precondition": "At least one deferred question exists",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "pending"
+            },
+            "label": "Required element for Header — Stats Badges & Bulk Actions",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Header — Stats Badges & Bulk Actions",
+          "enabled": true,
+          "id": "decisions-header-stats-elem-2",
+          "precondition": "At least one deferred question exists",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "approved"
+            },
+            "label": "Required element for Header — Stats Badges & Bulk Actions",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state Header — Stats Badges & Bulk Actions",
+          "enabled": true,
+          "id": "decisions-header-stats-elem-3",
+          "precondition": "At least one deferred question exists",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "rejected"
+            },
+            "label": "Required element for Header — Stats Badges & Bulk Actions",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 4 for state Header — Stats Badges & Bulk Actions",
+          "enabled": true,
+          "id": "decisions-header-stats-elem-4",
+          "precondition": "At least one deferred question exists",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContains": "Approve all"
+            },
+            "label": "Required element for Header — Stats Badges & Bulk Actions",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "When questions exist, a header shows the title, status count badges, and a bulk approve button.",
+      "id": "decisions-header-stats",
+      "name": "Header — Stats Badges & Bulk Actions",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Question Card — Data Display",
+          "enabled": true,
+          "id": "decisions-question-card-display-elem-0",
+          "precondition": "At least one deferred question exists",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "Iteration"
+            },
+            "label": "Required element for Question Card — Data Display",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Question Card — Data Display",
+          "enabled": true,
+          "id": "decisions-question-card-display-elem-1",
+          "precondition": "At least one deferred question exists",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "risk"
+            },
+            "label": "Required element for Question Card — Data Display",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Question Card — Data Display",
+          "enabled": true,
+          "id": "decisions-question-card-display-elem-2",
+          "precondition": "At least one deferred question exists",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "% confidence"
+            },
+            "label": "Required element for Question Card — Data Display",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state Question Card — Data Display",
+          "enabled": true,
+          "id": "decisions-question-card-display-elem-3",
+          "precondition": "At least one deferred question exists",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "completed iteration"
+            },
+            "label": "Required element for Question Card — Data Display",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Each deferred question is rendered as a bordered card showing iteration number, risk level badge, confidence percentage, and the question text.",
+      "id": "decisions-question-card-display",
+      "name": "Question Card — Data Display",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Question Card — Approve & Reject Actions",
+          "enabled": true,
+          "id": "decisions-question-actions-elem-0",
+          "precondition": "A pending deferred question exists",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Approve"
+            },
+            "label": "Required element for Question Card — Approve & Reject Actions",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Question Card — Approve & Reject Actions",
+          "enabled": true,
+          "id": "decisions-question-actions-elem-1",
+          "precondition": "A pending deferred question exists",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Reject"
+            },
+            "label": "Required element for Question Card — Approve & Reject Actions",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Question Card — Approve & Reject Actions",
+          "enabled": true,
+          "id": "decisions-question-actions-elem-2",
+          "precondition": "A pending deferred question exists",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "approved"
+            },
+            "label": "Required element for Question Card — Approve & Reject Actions",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Pending questions show Approve and Reject buttons. Approved/rejected questions show a status badge instead.",
+      "id": "decisions-question-actions",
+      "name": "Question Card — Approve & Reject Actions",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Question Card — Expanded Details",
+          "enabled": true,
+          "id": "decisions-expanded-details-elem-0",
+          "precondition": "At least one deferred question exists",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "tagName": "button"
+            },
+            "label": "Required element for Question Card — Expanded Details",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Question Card — Expanded Details",
+          "enabled": true,
+          "id": "decisions-expanded-details-elem-1",
+          "precondition": "At least one deferred question exists",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "Auto-decision:"
+            },
+            "label": "Required element for Question Card — Expanded Details",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Question Card — Expanded Details",
+          "enabled": true,
+          "id": "decisions-expanded-details-elem-2",
+          "precondition": "At least one deferred question exists",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "Files modified:"
+            },
+            "label": "Required element for Question Card — Expanded Details",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state Question Card — Expanded Details",
+          "enabled": true,
+          "id": "decisions-expanded-details-elem-3",
+          "precondition": "At least one deferred question exists",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "Git checkpoint:"
+            },
+            "label": "Required element for Question Card — Expanded Details",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 4 for state Question Card — Expanded Details",
+          "enabled": true,
+          "id": "decisions-expanded-details-elem-4",
+          "precondition": "At least one deferred question exists",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "Created:"
+            },
+            "label": "Required element for Question Card — Expanded Details",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Clicking the chevron expands a question card to show auto-decision details, summary, files modified, review comment, git checkpoint, and timestamps.",
+      "id": "decisions-expanded-details",
+      "name": "Question Card — Expanded Details",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Question Grouping — Status Sections",
+          "enabled": true,
+          "id": "decisions-question-grouping-elem-0",
+          "precondition": "At least one pending question exists",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "Pending Review"
+            },
+            "label": "Required element for Question Grouping — Status Sections",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Question Grouping — Status Sections",
+          "enabled": true,
+          "id": "decisions-question-grouping-elem-1",
+          "precondition": "At least one pending question exists",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "Rejected"
+            },
+            "label": "Required element for Question Grouping — Status Sections",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Question Grouping — Status Sections",
+          "enabled": true,
+          "id": "decisions-question-grouping-elem-2",
+          "precondition": "At least one pending question exists",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "Approved"
+            },
+            "label": "Required element for Question Grouping — Status Sections",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state Question Grouping — Status Sections",
+          "enabled": true,
+          "id": "decisions-question-grouping-elem-3",
+          "precondition": "At least one pending question exists",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "tagName": "div"
+            },
+            "label": "Required element for Question Grouping — Status Sections",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Questions are displayed in three sections: Pending Review (with MessageSquareWarning icon), Rejected (with XCircle icon), and Approved (with CheckCircle2 icon). Each section only renders when it has questions.",
+      "id": "decisions-question-grouping",
+      "name": "Question Grouping — Status Sections",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Visual Design & Styling",
+          "enabled": true,
+          "id": "decisions-design-elem-0",
+          "precondition": "At least one deferred question exists",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "Iteration"
+            },
+            "label": "Required element for Visual Design & Styling",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Visual Design & Styling",
+          "enabled": true,
+          "id": "decisions-design-elem-1",
+          "precondition": "At least one deferred question exists",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "Pending Review"
+            },
+            "label": "Required element for Visual Design & Styling",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Visual Design & Styling",
+          "enabled": true,
+          "id": "decisions-design-elem-2",
+          "precondition": "At least one deferred question exists",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "tagName": "span"
+            },
+            "label": "Required element for Visual Design & Styling",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "Design tokens, colors, and typography for the deferred questions UI.",
+      "id": "decisions-design",
+      "name": "Visual Design & Styling",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Floating Panel — Active Dashboard",
+          "enabled": true,
+          "id": "floating-panel-visibility-elem-0",
+          "precondition": "Active dashboard is showing a running workflow with pending deferred questions",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "pending decision"
+            },
+            "label": "Required element for Floating Panel — Active Dashboard",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Floating Panel — Active Dashboard",
+          "enabled": true,
+          "id": "floating-panel-visibility-elem-1",
+          "precondition": "Active dashboard is showing a running workflow with pending deferred questions",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "pending decision"
+            },
+            "label": "Required element for Floating Panel — Active Dashboard",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Floating Panel — Active Dashboard",
+          "enabled": true,
+          "id": "floating-panel-visibility-elem-2",
+          "precondition": "Active dashboard is showing a running workflow with pending deferred questions",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "tagName": "button"
+            },
+            "label": "Required element for Floating Panel — Active Dashboard",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 3 for state Floating Panel — Active Dashboard",
+          "enabled": true,
+          "id": "floating-panel-visibility-elem-3",
+          "precondition": "Active dashboard is showing a running workflow with pending deferred questions",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "pending decision"
+            },
+            "label": "Required element for Floating Panel — Active Dashboard",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 4 for state Floating Panel — Active Dashboard",
+          "enabled": true,
+          "id": "floating-panel-visibility-elem-4",
+          "precondition": "Active dashboard is showing a running workflow with pending deferred questions",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "role": "button",
+              "textContent": "Approve"
+            },
+            "label": "Required element for Floating Panel — Active Dashboard",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "During active workflow execution, a floating panel appears in the bottom-right corner showing pending deferred questions. Only visible when pending questions exist and not dismissed.",
+      "id": "floating-panel-visibility",
+      "name": "Floating Panel — Active Dashboard",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Floating Panel — Real-Time Events & Toasts",
+          "enabled": true,
+          "id": "floating-panel-realtime-elem-0",
+          "precondition": "Active dashboard is showing a running workflow",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "Decision needed"
+            },
+            "label": "Required element for Floating Panel — Real-Time Events & Toasts",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Floating Panel — Real-Time Events & Toasts",
+          "enabled": true,
+          "id": "floating-panel-realtime-elem-1",
+          "precondition": "Active dashboard is showing a running workflow",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "pending decision"
+            },
+            "label": "Required element for Floating Panel — Real-Time Events & Toasts",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Floating Panel — Real-Time Events & Toasts",
+          "enabled": true,
+          "id": "floating-panel-realtime-elem-2",
+          "precondition": "Active dashboard is showing a running workflow",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "pending decision"
+            },
+            "label": "Required element for Floating Panel — Real-Time Events & Toasts",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "The floating panel subscribes to WebSocket events for live updates and shows toast notifications when new questions arrive.",
+      "id": "floating-panel-realtime",
+      "name": "Floating Panel — Real-Time Events & Toasts",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Active Runs Bar — Pending Decisions Badge",
+          "enabled": true,
+          "id": "active-runs-badge-elem-0",
+          "precondition": "Multiple active runs exist, at least one has pending deferred questions",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "dataAttributes": {
+                "content-label": "active-run-name"
+              }
+            },
+            "label": "Required element for Active Runs Bar — Pending Decisions Badge",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Active Runs Bar — Pending Decisions Badge",
+          "enabled": true,
+          "id": "active-runs-badge-elem-1",
+          "precondition": "Multiple active runs exist, at least one has pending deferred questions",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "pending decision"
+            },
+            "label": "Required element for Active Runs Bar — Pending Decisions Badge",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 2 for state Active Runs Bar — Pending Decisions Badge",
+          "enabled": true,
+          "id": "active-runs-badge-elem-2",
+          "precondition": "Multiple active runs exist, at least one has pending deferred questions",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "dataAttributes": {
+                "content-label": "active-run-name"
+              }
+            },
+            "label": "Required element for Active Runs Bar — Pending Decisions Badge",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "The CompactRunCard in the ActiveRunsBar shows an amber badge with the count of pending deferred questions, fetched via useEventTriggeredFetch.",
+      "id": "active-runs-badge",
+      "name": "Active Runs Bar — Pending Decisions Badge",
+      "source": "migrated"
+    },
+    {
+      "assertions": [
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 0 for state Data Flow — Dual Source & Sync",
+          "enabled": true,
+          "id": "decisions-data-flow-elem-0",
+          "precondition": "Runner is connected and tab is active",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "Deferred Questions"
+            },
+            "label": "Required element for Data Flow — Dual Source & Sync",
+            "type": "search"
+          }
+        },
+        {
+          "assertionType": "exists",
+          "category": "element-presence",
+          "description": "Required element 1 for state Data Flow — Dual Source & Sync",
+          "enabled": true,
+          "id": "decisions-data-flow-elem-1",
+          "precondition": "Runner is connected and tab is active",
+          "reviewed": false,
+          "severity": "critical",
+          "source": "ai-generated",
+          "target": {
+            "criteria": {
+              "textContains": "Deferred Questions"
+            },
+            "label": "Required element for Data Flow — Dual Source & Sync",
+            "type": "search"
+          }
+        }
+      ],
+      "category": "element-presence",
+      "description": "The Decisions tab fetches data from the runner (live) with fallback to the backend (synced). This ensures deferred questions are viewable even when the runner is offline.",
+      "id": "decisions-data-flow",
+      "name": "Data Flow — Dual Source & Sync",
+      "source": "migrated"
+    }
+  ],
+  "metadata": {
+    "component": "components-run-detail-deferred-questions",
+    "tags": [
+      "deferred-feedback",
+      "human-in-the-loop",
+      "approval",
+      "review-queue",
+      "autonomous-execution",
+      "active-dashboard"
+    ]
+  },
+  "stateMachine": {
+    "states": [
+      {
+        "description": "The Decisions tab appears in the RunDetailContent tab bar and is accessible via the ?tab=decisions URL parameter.",
+        "elements": [
+          {
+            "role": "tab",
+            "textContains": "Decisions"
+          },
+          {
+            "role": "tab",
+            "textContains": "Decisions"
+          },
+          {
+            "textContains": "Loading..."
+          }
+        ],
+        "id": "decisions-tab-registration",
+        "isInitial": false,
+        "name": "Tab Registration & Navigation",
+        "transitions": []
+      },
+      {
+        "description": "When a workflow run has no deferred questions (either because blocking_approval was true, or confidence was always high enough to auto-approve silently), an empty state is displayed.",
+        "elements": [
+          {
+            "tagName": "svg"
+          },
+          {
+            "textContains": "No deferred questions for this run"
+          },
+          {
+            "textContains": "autonomous decisions with low confidence"
+          }
+        ],
+        "id": "decisions-empty-state",
+        "isInitial": false,
+        "name": "Empty State — No Deferred Questions",
+        "transitions": []
+      },
+      {
+        "description": "When questions exist, a header shows the title, status count badges, and a bulk approve button.",
+        "elements": [
+          {
+            "textContains": "Deferred Questions"
+          },
+          {
+            "textContains": "pending"
+          },
+          {
+            "textContains": "approved"
+          },
+          {
+            "textContains": "rejected"
+          },
+          {
+            "role": "button",
+            "textContains": "Approve all"
+          }
+        ],
+        "id": "decisions-header-stats",
+        "isInitial": false,
+        "name": "Header — Stats Badges & Bulk Actions",
+        "transitions": []
+      },
+      {
+        "description": "Each deferred question is rendered as a bordered card showing iteration number, risk level badge, confidence percentage, and the question text.",
+        "elements": [
+          {
+            "textContains": "Iteration"
+          },
+          {
+            "textContains": "risk"
+          },
+          {
+            "textContains": "% confidence"
+          },
+          {
+            "textContains": "completed iteration"
+          }
+        ],
+        "id": "decisions-question-card-display",
+        "isInitial": false,
+        "name": "Question Card — Data Display",
+        "transitions": []
+      },
+      {
+        "description": "Pending questions show Approve and Reject buttons. Approved/rejected questions show a status badge instead.",
+        "elements": [
+          {
+            "role": "button",
+            "textContent": "Approve"
+          },
+          {
+            "role": "button",
+            "textContent": "Reject"
+          },
+          {
+            "textContains": "approved"
+          }
+        ],
+        "id": "decisions-question-actions",
+        "isInitial": false,
+        "name": "Question Card — Approve & Reject Actions",
+        "transitions": []
+      },
+      {
+        "description": "Clicking the chevron expands a question card to show auto-decision details, summary, files modified, review comment, git checkpoint, and timestamps.",
+        "elements": [
+          {
+            "tagName": "button"
+          },
+          {
+            "textContains": "Auto-decision:"
+          },
+          {
+            "textContains": "Files modified:"
+          },
+          {
+            "textContains": "Git checkpoint:"
+          },
+          {
+            "textContains": "Created:"
+          }
+        ],
+        "id": "decisions-expanded-details",
+        "isInitial": false,
+        "name": "Question Card — Expanded Details",
+        "transitions": []
+      },
+      {
+        "description": "Questions are displayed in three sections: Pending Review (with MessageSquareWarning icon), Rejected (with XCircle icon), and Approved (with CheckCircle2 icon). Each section only renders when it has questions.",
+        "elements": [
+          {
+            "textContains": "Pending Review"
+          },
+          {
+            "textContains": "Rejected"
+          },
+          {
+            "textContains": "Approved"
+          },
+          {
+            "tagName": "div"
+          }
+        ],
+        "id": "decisions-question-grouping",
+        "isInitial": false,
+        "name": "Question Grouping — Status Sections",
+        "transitions": []
+      },
+      {
+        "description": "Design tokens, colors, and typography for the deferred questions UI.",
+        "elements": [
+          {
+            "textContains": "Iteration"
+          },
+          {
+            "textContains": "Pending Review"
+          },
+          {
+            "tagName": "span"
+          }
+        ],
+        "id": "decisions-design",
+        "isInitial": false,
+        "name": "Visual Design & Styling",
+        "transitions": []
+      },
+      {
+        "description": "During active workflow execution, a floating panel appears in the bottom-right corner showing pending deferred questions. Only visible when pending questions exist and not dismissed.",
+        "elements": [
+          {
+            "textContains": "pending decision"
+          },
+          {
+            "textContains": "pending decision"
+          },
+          {
+            "tagName": "button"
+          },
+          {
+            "textContains": "pending decision"
+          },
+          {
+            "role": "button",
+            "textContent": "Approve"
+          }
+        ],
+        "id": "floating-panel-visibility",
+        "isInitial": false,
+        "name": "Floating Panel — Active Dashboard",
+        "transitions": []
+      },
+      {
+        "description": "The floating panel subscribes to WebSocket events for live updates and shows toast notifications when new questions arrive.",
+        "elements": [
+          {
+            "textContains": "Decision needed"
+          },
+          {
+            "textContains": "pending decision"
+          },
+          {
+            "textContains": "pending decision"
+          }
+        ],
+        "id": "floating-panel-realtime",
+        "isInitial": false,
+        "name": "Floating Panel — Real-Time Events & Toasts",
+        "transitions": []
+      },
+      {
+        "description": "The CompactRunCard in the ActiveRunsBar shows an amber badge with the count of pending deferred questions, fetched via useEventTriggeredFetch.",
+        "elements": [
+          {
+            "dataAttributes": {
+              "content-label": "active-run-name"
+            }
+          },
+          {
+            "textContains": "pending decision"
+          },
+          {
+            "dataAttributes": {
+              "content-label": "active-run-name"
+            }
+          }
+        ],
+        "id": "active-runs-badge",
+        "isInitial": false,
+        "name": "Active Runs Bar — Pending Decisions Badge",
+        "transitions": []
+      },
+      {
+        "description": "The Decisions tab fetches data from the runner (live) with fallback to the backend (synced). This ensures deferred questions are viewable even when the runner is offline.",
+        "elements": [
+          {
+            "textContains": "Deferred Questions"
+          },
+          {
+            "textContains": "Deferred Questions"
+          }
+        ],
+        "id": "decisions-data-flow",
+        "isInitial": false,
+        "name": "Data Flow — Dual Source & Sync",
+        "transitions": []
+      }
+    ]
+  },
+  "version": "1.0.0"
+}
