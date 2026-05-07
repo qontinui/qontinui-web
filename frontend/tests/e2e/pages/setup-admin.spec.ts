@@ -25,10 +25,9 @@ test.describe("Setup Admin Page (/setup-admin)", () => {
     await page.goto("/setup-admin");
     await page.waitForLoadState("domcontentloaded");
 
-    const heading = page.getByRole("heading", {
-      name: /claim admin access/i,
-    });
-    await expect(heading).toBeVisible({ timeout: 10000 });
+    // CardTitle renders as <div>, not a heading element, so match by text.
+    const title = page.getByText(/claim admin access/i);
+    await expect(title).toBeVisible({ timeout: 10000 });
   });
 
   test("shows description text", async ({ page }) => {
@@ -59,12 +58,9 @@ test.describe("Setup Admin Page (/setup-admin)", () => {
     await page.goto("/setup-admin");
     await page.waitForLoadState("domcontentloaded");
 
-    // The page uses a Card component with specific structure
-    // The heading should be inside a card
-    const heading = page.getByRole("heading", {
-      name: /claim admin access/i,
-    });
-    await expect(heading).toBeVisible({ timeout: 10000 });
+    // CardTitle renders as <div>, not a heading element, so match by text.
+    const title = page.getByText(/claim admin access/i);
+    await expect(title).toBeVisible({ timeout: 10000 });
 
     // The description should also be visible
     const description = page.getByText(/only works if no admin exists yet/i);

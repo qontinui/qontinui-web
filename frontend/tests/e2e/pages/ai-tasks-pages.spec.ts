@@ -10,9 +10,12 @@
 
 import { test, expect } from "../fixtures";
 
+// Seeded project UUID — required because /ai-tasks wraps in <RequireProject>.
+const PROJECT_ID = "fb93478d-98bd-4e40-99f4-0f2c08c1fd5a";
+
 test.describe("AI Tasks - List Page", () => {
   test("should load AI tasks list page without errors", async ({ page }) => {
-    await page.goto("/ai-tasks");
+    await page.goto(`/ai-tasks?project=${PROJECT_ID}`);
     await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
@@ -25,7 +28,7 @@ test.describe("AI Tasks - List Page", () => {
   });
 
   test("should display AI Tasks heading", async ({ page }) => {
-    await page.goto("/ai-tasks");
+    await page.goto(`/ai-tasks?project=${PROJECT_ID}`);
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
@@ -43,7 +46,7 @@ test.describe("AI Tasks - List Page", () => {
   });
 
   test("should have status filter dropdown", async ({ page }) => {
-    await page.goto("/ai-tasks");
+    await page.goto(`/ai-tasks?project=${PROJECT_ID}`);
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
@@ -64,7 +67,7 @@ test.describe("AI Tasks - List Page", () => {
   test("should display table with task columns or empty state", async ({
     page,
   }) => {
-    await page.goto("/ai-tasks");
+    await page.goto(`/ai-tasks?project=${PROJECT_ID}`);
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
@@ -90,7 +93,7 @@ test.describe("AI Tasks - List Page", () => {
   });
 
   test("should have pagination controls when tasks exist", async ({ page }) => {
-    await page.goto("/ai-tasks");
+    await page.goto(`/ai-tasks?project=${PROJECT_ID}`);
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
@@ -110,7 +113,7 @@ test.describe("AI Tasks - List Page", () => {
   });
 
   test("should have refresh button", async ({ page }) => {
-    await page.goto("/ai-tasks");
+    await page.goto(`/ai-tasks?project=${PROJECT_ID}`);
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
@@ -126,7 +129,9 @@ test.describe("AI Tasks - List Page", () => {
 
 test.describe("AI Tasks - Detail Page", () => {
   test("should handle non-existent task ID gracefully", async ({ page }) => {
-    await page.goto("/ai-tasks/non-existent-task-id-12345");
+    await page.goto(
+      `/ai-tasks/non-existent-task-id-12345?project=${PROJECT_ID}`
+    );
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
@@ -159,7 +164,7 @@ test.describe("AI Tasks - Detail Page", () => {
   });
 
   test("should display AI Task Details heading", async ({ page }) => {
-    await page.goto("/ai-tasks/non-existent-task-id");
+    await page.goto(`/ai-tasks/non-existent-task-id?project=${PROJECT_ID}`);
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
@@ -175,7 +180,7 @@ test.describe("AI Tasks - Detail Page", () => {
   test("should have three tabs (Sessions, Findings, Output) when task loads", async ({
     page,
   }) => {
-    await page.goto("/ai-tasks/non-existent-task-id");
+    await page.goto(`/ai-tasks/non-existent-task-id?project=${PROJECT_ID}`);
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 

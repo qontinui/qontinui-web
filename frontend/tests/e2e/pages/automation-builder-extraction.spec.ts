@@ -13,6 +13,9 @@
 
 import { test, expect } from "../fixtures";
 
+// Seeded project UUID — extraction pages wrap in <RequireProject>.
+const PROJECT_ID = "fb93478d-98bd-4e40-99f4-0f2c08c1fd5a";
+
 // Run tests serially to avoid parallel timeout issues
 test.describe.configure({ mode: "serial" });
 
@@ -33,13 +36,13 @@ test.describe("Extraction (Unified)", () => {
   });
 
   test("should display the method selector", async ({ page }) => {
-    await page.goto("/automation-builder/extraction");
+    await page.goto(`/automation-builder/extraction?project=${PROJECT_ID}`);
     await page.waitForLoadState("domcontentloaded");
 
     // The ExtractionMethodSelector renders card-based options for methods
     // Verify at least some of the method labels are visible
     await expect(
-      page.getByText("Web Extraction", { exact: false })
+      page.getByText("Web Extraction", { exact: false }).first()
     ).toBeVisible({ timeout: 15000 });
   });
 

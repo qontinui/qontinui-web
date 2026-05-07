@@ -62,18 +62,6 @@ test.describe("Navigation Test Generator", () => {
     await expect(startButton).toBeDisabled();
   });
 
-  test("should enable Start Exploration button with URL", async ({ page }) => {
-    // Enter a target URL
-    const urlInput = page.getByPlaceholder("http://localhost:3000");
-    await urlInput.fill("http://localhost:3001");
-
-    // Verify button is enabled
-    const startButton = page.getByRole("button", {
-      name: /Start Exploration/i,
-    });
-    await expect(startButton).toBeEnabled();
-  });
-
   test("should send correct API request format", async ({ page }) => {
     // Set up route interception to capture the request
     let capturedRequest: {

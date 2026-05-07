@@ -42,7 +42,7 @@ test.describe("Runner Overview (/docs/runner)", () => {
 
     await expect(
       page.getByText(
-        "Desktop application for executing real GUI automation workflows"
+        "Desktop application for orchestrating AI coding sessions with automated feedback loops"
       )
     ).toBeVisible();
   });
@@ -264,9 +264,15 @@ test.describe("Runner Execution (/docs/runner/execution)", () => {
     await expect(
       page.getByRole("heading", { name: "default_timeout" })
     ).toBeVisible();
-    await expect(page.getByText("default_retry_count")).toBeVisible();
-    await expect(page.getByText("action_delay")).toBeVisible();
-    await expect(page.getByText("failure_strategy")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "default_retry_count" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "action_delay" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "failure_strategy" })
+    ).toBeVisible();
   });
 
   test("shows prerequisites section", async ({ page }) => {
@@ -349,8 +355,12 @@ test.describe("Runner Monitoring (/docs/runner/monitoring)", () => {
     await expect(
       page.getByRole("heading", { name: "runner-frontend.log" })
     ).toBeVisible();
-    await expect(page.getByText("runner-backend.log")).toBeVisible();
-    await expect(page.getByText("ai-output.jsonl")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "runner-backend.log" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "ai-output.jsonl" })
+    ).toBeVisible();
   });
 
   test("shows log levels documentation", async ({ page }) => {
@@ -361,10 +371,10 @@ test.describe("Runner Monitoring (/docs/runner/monitoring)", () => {
       page.getByRole("heading", { name: "Log Levels", exact: true })
     ).toBeVisible({ timeout: 10000 });
 
-    await expect(page.getByText("DEBUG")).toBeVisible();
-    await expect(page.getByText("INFO")).toBeVisible();
-    await expect(page.getByText("WARN")).toBeVisible();
-    await expect(page.getByText("ERROR")).toBeVisible();
+    await expect(page.getByText("DEBUG", { exact: true })).toBeVisible();
+    await expect(page.getByText("INFO", { exact: true })).toBeVisible();
+    await expect(page.getByText("WARN", { exact: true })).toBeVisible();
+    await expect(page.getByText("ERROR", { exact: true })).toBeVisible();
   });
 
   test("shows real-time monitoring section", async ({ page }) => {
@@ -652,10 +662,16 @@ test.describe("Runner AI Integration (/docs/runner/ai-integration)", () => {
 
     // Format fields
     await expect(page.getByRole("cell", { name: "Use when" })).toBeVisible();
-    await expect(page.getByText("Verifies")).toBeVisible();
-    await expect(page.getByText("Prerequisites")).toBeVisible();
-    await expect(page.getByText("Success indicators")).toBeVisible();
-    await expect(page.getByText("Failure indicators")).toBeVisible();
+    await expect(page.getByRole("cell", { name: "Verifies" })).toBeVisible();
+    await expect(
+      page.getByRole("cell", { name: "Prerequisites" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("cell", { name: "Success indicators" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("cell", { name: "Failure indicators" })
+    ).toBeVisible();
   });
 
   test("shows why workflow descriptions matter", async ({ page }) => {
@@ -765,10 +781,14 @@ test.describe("Runner Workflow Descriptions (/docs/runner/workflow-descriptions)
 
     // Category names in the table
     await expect(page.getByRole("cell", { name: "Main" })).toBeVisible();
-    await expect(page.getByText("Testing")).toBeVisible();
-    await expect(page.getByText("UI Automation")).toBeVisible();
-    await expect(page.getByText("Utilities")).toBeVisible();
-    await expect(page.getByText("Transitions")).toBeVisible();
+    await expect(page.getByRole("cell", { name: "Testing" })).toBeVisible();
+    await expect(
+      page.getByRole("cell", { name: "UI Automation" })
+    ).toBeVisible();
+    await expect(page.getByRole("cell", { name: "Utilities" })).toBeVisible();
+    await expect(
+      page.getByRole("cell", { name: "Transitions" })
+    ).toBeVisible();
   });
 
   test("shows structured description format", async ({ page }) => {

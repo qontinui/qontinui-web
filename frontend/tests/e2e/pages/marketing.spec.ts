@@ -38,36 +38,53 @@ test.describe("Homepage (/)", () => {
     await expect(logo).toBeVisible({ timeout: 10000 });
   });
 
-  test("shows Sign In button when not authenticated", async ({ page }) => {
-    await page.goto("/");
-    await page.waitForLoadState("domcontentloaded");
+  test.describe("when unauthenticated", () => {
+    // Override the saved auth state so the header shows the Sign In button.
+    // Without this, the chromium project loads with `.auth/user.json` and
+    // renders Dashboard + email instead of Sign In.
+    test.use({ storageState: { cookies: [], origins: [] } });
 
-    // Clear any auth state
-    await page.evaluate(() => {
-      localStorage.clear();
-      sessionStorage.clear();
+    test("shows Sign In button when not authenticated", async ({ page }) => {
+      await page.goto("/");
+      await page.waitForLoadState("domcontentloaded");
+
+      // Belt-and-braces: also clear any per-origin storage that survived.
+      await page.evaluate(() => {
+        localStorage.clear();
+        sessionStorage.clear();
+      });
+      await page.reload();
+      await page.waitForLoadState("domcontentloaded");
+
+      const signInButton = page.getByRole("button", { name: /sign in/i });
+      await expect(signInButton).toBeVisible({ timeout: 10000 });
     });
-    await page.reload();
-    await page.waitForLoadState("domcontentloaded");
-
-    const signInButton = page.getByRole("button", { name: /sign in/i });
-    await expect(signInButton).toBeVisible({ timeout: 10000 });
   });
 
   test("shows feature cards in key features section", async ({ page }) => {
     await page.goto("/");
     await page.waitForLoadState("domcontentloaded");
 
-    // Verify key feature cards are present
+    // Verify key feature cards are present. Use heading roles to avoid
+    // matching ambient prose ("error monitoring", "running application", etc.)
+    // in adjacent sections — `getByText` runs in strict mode.
     await expect(
       page.getByRole("heading", { name: "Orchestrated Workflows" })
     ).toBeVisible({
       timeout: 10000,
     });
-    await expect(page.getByText("Self-Correcting AI")).toBeVisible();
-    await expect(page.getByText("Error Monitoring")).toBeVisible();
-    await expect(page.getByText("UI Bridge Feedback")).toBeVisible();
-    await expect(page.getByText("Persistent Knowledge")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Self-Correcting AI" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Error Monitoring" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "UI Bridge Feedback" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Persistent Knowledge" })
+    ).toBeVisible();
   });
 
   test("has download button in hero section", async ({ page }) => {
@@ -93,14 +110,22 @@ test.describe("Homepage (/)", () => {
     await page.goto("/");
     await page.waitForLoadState("domcontentloaded");
 
-    await expect(page.getByText("How It Works")).toBeVisible({
-      timeout: 10000,
-    });
+    await expect(
+      page.getByRole("heading", { name: "How It Works" })
+    ).toBeVisible({ timeout: 10000 });
 
-    // Verify the three steps
-    await expect(page.getByText("Configure")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Build" })).toBeVisible();
-    await expect(page.getByText("Run")).toBeVisible();
+    // Verify the three step headings. Use heading role + exact match because
+    // "Run" alone matches "Qontinui Runner", "running application", etc.,
+    // and Playwright's getByText is strict-mode by default.
+    await expect(
+      page.getByRole("heading", { name: "Configure", exact: true })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Build", exact: true })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Run", exact: true })
+    ).toBeVisible();
   });
 });
 
@@ -137,18 +162,29 @@ test.describe("Runner Page (/runner)", () => {
 
     // Feature section heading
     await expect(
-      page.getByText("Built for AI-Assisted Development")
+      page.getByRole("heading", { name: "Built for AI-Assisted Development" })
     ).toBeVisible({ timeout: 10000 });
 
-    // Individual feature cards
+    // Individual feature cards — match by heading role so descriptions in
+    // adjacent sections ("Watch real-time progress…") don't break strict mode.
     await expect(
       page.getByRole("heading", { name: "Orchestrated Workflows" })
     ).toBeVisible();
-    await expect(page.getByText("Self-Correcting AI")).toBeVisible();
-    await expect(page.getByText("Error Monitoring")).toBeVisible();
-    await expect(page.getByText("UI Bridge Feedback")).toBeVisible();
-    await expect(page.getByText("Multi-Provider")).toBeVisible();
-    await expect(page.getByText("Persistent Knowledge")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Self-Correcting AI" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Error Monitoring" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "UI Bridge Feedback" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Multi-Provider" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Persistent Knowledge" })
+    ).toBeVisible();
   });
 
   test("has Download Now CTA linking to download page", async ({ page }) => {

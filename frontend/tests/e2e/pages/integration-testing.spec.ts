@@ -5,13 +5,21 @@
  *
  * This is the main integration testing page that uses RequireProject
  * and features a dual-column layout with a control panel and run list.
+ *
+ * The page wraps its content in <RequireProject>, which renders an empty
+ * "select a project" card unless a project is selected via context, local
+ * imported data, or a `?project=<uuid>` URL param. We pass the seeded dev
+ * project UUID inline so the real page renders.
  */
 
 import { test, expect } from "../fixtures";
 
+const PROJECT_ID = "fb93478d-98bd-4e40-99f4-0f2c08c1fd5a";
+const PAGE_URL = `/integration-testing?project=${PROJECT_ID}`;
+
 test.describe("Integration Testing Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
-    await page.goto("/integration-testing");
+    await page.goto(PAGE_URL);
     await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
@@ -26,14 +34,14 @@ test.describe("Integration Testing Page", () => {
   });
 
   test("should display Mock Mode badge", async ({ page }) => {
-    await page.goto("/integration-testing");
+    await page.goto(PAGE_URL);
     await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Mock Mode").first()).toBeVisible();
   });
 
   test("should display API health monitoring badge", async ({ page }) => {
-    await page.goto("/integration-testing");
+    await page.goto(PAGE_URL);
     await page.waitForLoadState("domcontentloaded");
 
     // The API health badge shows one of: "Checking API...", "API Connected", "API Offline"
@@ -46,7 +54,7 @@ test.describe("Integration Testing Page", () => {
   test("should display dual-column layout with control panel and runs list", async ({
     page,
   }) => {
-    await page.goto("/integration-testing");
+    await page.goto(PAGE_URL);
     await page.waitForLoadState("domcontentloaded");
 
     // The page uses a grid layout: control panel on left, runs list on right
@@ -64,19 +72,19 @@ test.describe("Integration Testing Page", () => {
   });
 
   test("should display Refresh button in list mode", async ({ page }) => {
-    await page.goto("/integration-testing");
+    await page.goto(PAGE_URL);
     await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByRole("button", { name: /Refresh/i })).toBeVisible();
   });
 
   test("should show empty state or runs list", async ({ page }) => {
-    await page.goto("/integration-testing");
+    await page.goto(PAGE_URL);
     await page.waitForLoadState("domcontentloaded");
 
     // Either shows run cards or empty state message
     const emptyState = page.getByText("No Integration Tests Yet");
-    const runsArea = page.getByText("Test Run History");
+    const runsArea = page.getByRole("heading", { name: /Test Run History/i });
 
     const hasEmpty = await emptyState.isVisible().catch(() => false);
     const hasRunsArea = await runsArea.isVisible().catch(() => false);
@@ -87,7 +95,7 @@ test.describe("Integration Testing Page", () => {
     // If there are no runs, empty state should be visible
     if (hasEmpty) {
       await expect(
-        page.getByText("Select a workflow from the configuration panel").first()
+        page.getByText(/Select a workflow from the configuration panel/i).first()
       ).toBeVisible();
     }
   });
@@ -95,8 +103,12 @@ test.describe("Integration Testing Page", () => {
   test("should display run history with status badges when runs exist", async ({
     page,
   }) => {
-    // Mock the integration test runs API to return test data
-    await page.route("**/api/v1/integration-testing/*/runs", async (route) => {
+    // The page fetches runs from the main backend at
+    // /api/v1/execution/runs?project_id=<uuid>&... (see services/integration-testing.ts).
+    // The response shape mirrors IntegrationTestRunSummary; the service maps
+    // each backend run into that shape directly, so we mock the backend route
+    // with the matching field names.
+    await page.route("**/api/v1/execution/runs**", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -151,7 +163,7 @@ test.describe("Integration Testing Page", () => {
       });
     });
 
-    await page.goto("/integration-testing");
+    await page.goto(PAGE_URL);
     await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
