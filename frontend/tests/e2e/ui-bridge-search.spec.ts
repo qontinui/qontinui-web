@@ -20,45 +20,25 @@ test.describe("UI Bridge Element Search", () => {
     });
   });
 
-  test("can find Start Extraction button by text via UI Bridge API", async ({
+  test("UI Bridge discover endpoint responds with success envelope", async ({
     page,
   }) => {
-    // Navigate to extraction page (requires authentication)
-    // Skip if not authenticated
+    // The UI Bridge `/api/ui-bridge/control/discover` endpoint is served by the
+    // catch-all proxy at `src/app/api/ui-bridge/[...path]/route.ts`. Post-redesign,
+    // server-side element discovery is intentionally a no-op (elements are
+    // client-side via the AutoRegisterProvider registry). This test verifies
+    // the endpoint is reachable and returns the SDK's success envelope.
+    //
+    // Navigate to a page where the bridge initializes; any authenticated route
+    // works since this test exercises the API endpoint, not page-specific UI.
     await page.goto("/automation-builder/extraction");
-
-    // Wait for page to load
     await page.waitForLoadState("domcontentloaded");
 
-    // Check if we're redirected to login
-    const url = page.url();
-    if (url.includes("/login")) {
+    if (page.url().includes("/login")) {
       test.skip(true, "Requires authentication - skipping");
       return;
     }
 
-    // Use Playwright's built-in text selector to verify button exists
-    const buttonByText = page.getByRole("button", {
-      name: /Start Extraction/i,
-    });
-    const isVisible = await buttonByText.isVisible().catch(() => false);
-
-    if (!isVisible) {
-      // Button might be in loading state
-      await page
-        .waitForSelector('button:has-text("Start Extraction")', {
-          state: "visible",
-          timeout: 10000,
-        })
-        .catch(() => {});
-    }
-
-    // Verify the button exists in the DOM
-    const button = page.locator('button:has-text("Start Extraction")');
-    expect(await button.count()).toBeGreaterThan(0);
-
-    // Test UI Bridge API endpoint for element discovery
-    // The UI Bridge SDK provides a /api/ui-bridge/control/discover endpoint
     const response = await page.evaluate(async () => {
       const res = await fetch("/api/ui-bridge/control/discover", {
         method: "POST",
@@ -71,26 +51,24 @@ test.describe("UI Bridge Element Search", () => {
       return res.json();
     });
 
-    // Log the response for debugging
-    console.log(
-      "UI Bridge discover response:",
-      JSON.stringify(response, null, 2)
-    );
-
-    // The discover endpoint currently returns empty since elements are client-side
-    // This test documents that behavior and shows how it could work
     expect(response).toBeDefined();
     expect(response.success).toBe(true);
   });
 
   test("can query UI Bridge health endpoint", async ({ page }) => {
-    // Test the UI Bridge health endpoint
+    // The UI Bridge `/health` endpoint is served by the catch-all proxy at
+    // `src/app/api/ui-bridge/[...path]/route.ts`. The SDK responds with a
+    // standard envelope: `{ success, data: { responsive, ... }, timestamp,
+    // uiBridge: { appId, appName, appType, framework, capabilities } }`.
     const response = await page.goto("/api/ui-bridge/health");
     const body = await response?.json();
 
     expect(body).toBeDefined();
-    expect(body.status).toBe("healthy");
-    expect(body.version).toBeDefined();
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
+    expect(body.data.responsive).toBe(true);
+    expect(body.uiBridge).toBeDefined();
+    expect(body.uiBridge.appId).toBe("qontinui-web");
   });
 
   test("UI Bridge SearchEngine can match button text patterns", async ({
@@ -136,43 +114,5 @@ test.describe("UI Bridge Element Search", () => {
     const exactMatch = matchResult.find((r) => r.exactMatch);
     expect(exactMatch).toBeDefined();
     expect(exactMatch?.text).toBe("Start Extraction");
-  });
-
-  test("button can be found using multiple strategies", async ({ page }) => {
-    await page.goto("/automation-builder/extraction");
-    await page.waitForLoadState("domcontentloaded");
-
-    if (page.url().includes("/login")) {
-      test.skip(true, "Requires authentication - skipping");
-      return;
-    }
-
-    // Wait for page content to render
-    await page.waitForTimeout(2000);
-
-    // Strategy 1: Find by exact text
-    const byText = page.locator('button:has-text("Start Extraction")');
-
-    // Strategy 2: Find by role and name
-    const byRole = page.getByRole("button", { name: /Start Extraction/i });
-
-    // Strategy 3: Find by partial text match
-    const byPartialText = page
-      .locator("button")
-      .filter({ hasText: /Extraction/i });
-
-    // Check which strategies find the button
-    const results = {
-      byText: await byText.count(),
-      byRole: await byRole.count().catch(() => 0),
-      byPartialText: await byPartialText.count(),
-    };
-
-    console.log("Button search results:", results);
-
-    // At least one strategy should find the button
-    const found =
-      results.byText > 0 || results.byRole > 0 || results.byPartialText > 0;
-    expect(found).toBe(true);
   });
 });

@@ -2,12 +2,25 @@
  * End-to-end tests for Runs pages
  *
  * Pages tested:
- * - /runs (Run History)
- * - /runs/active (Active Runs)
- * - /runs/findings (Findings)
- * - /runs/learning (Learning Insights)
- * - /runs/statistics (Statistics)
- * - /runs/checkpoints (Checkpoints)
+ * - /runs - Run History. Heading "Run History". No <RequireProject> wrap.
+ *   The legacy "Task Runs" heading is gone — when runs exist they render
+ *   directly into a table; when empty an "Empty State" panel shows
+ *   "No runs found"; when offline `RunnerPartialState` shows "Runner offline".
+ * - /runs/active - Active Runs. Heading "Active Dashboard" (renamed from
+ *   "Active Runs" — the URL slug stayed). Does NOT use `RunnerPartialState`;
+ *   instead `IdleState` shows "No Active Runs" + "Runner not connected" when
+ *   offline. There is no "Executor Status" widget on this page anymore.
+ * - /runs/findings - Findings. Heading "Findings". `RunnerPartialState` on
+ *   offline.
+ * - /runs/learning - Learning Insights. Heading "Learning Insights".
+ *   `RunnerPartialState` on offline.
+ * - /runs/statistics - Statistics. Heading "Statistics". `RunnerPartialState`
+ *   on offline.
+ * - /runs/checkpoints - Checkpoints. Heading "Checkpoints". `RunnerPartialState`
+ *   on offline.
+ *
+ * None of these routes wrap in <RequireProject>, so no `?project=` query
+ * param is needed for navigation.
  */
 
 import { test, expect } from "../fixtures";
@@ -62,18 +75,24 @@ test.describe("Run History - /runs", () => {
     // Wait for loading to finish
     await page.waitForTimeout(3000);
 
-    // Either runs table with "Task Runs" heading is shown, or empty state, or runner offline
-    const hasTaskRunsCard = (await page.locator("text=Task Runs").count()) > 0;
+    // Source of truth: page.tsx renders one of:
+    //  - a <table> with the runs (when data present)
+    //  - "No runs found" empty state (when query returns [])
+    //  - "Loading runs..." (initial fetch)
+    //  - <RunnerPartialState> banner ("Runner offline ...") when isRunnerOffline
+    // The legacy "Task Runs" heading was removed when the page was simplified
+    // to a single table view — the table has no card title now.
+    const hasRunsTable = (await page.locator("table").count()) > 0;
     const hasEmptyState =
       (await page.locator("text=No runs found").count()) > 0;
     const hasLoadingRuns =
       (await page.locator("text=Loading runs").count()) > 0;
+    // `text=` is case-insensitive, so this matches "Runner offline" too.
     const hasRunnerOffline =
-      (await page.locator("text=Runner Offline").count()) > 0 ||
-      (await page.locator("text=Runner is offline").count()) > 0;
+      (await page.locator("text=Runner offline").count()) > 0;
 
     expect(
-      hasTaskRunsCard || hasEmptyState || hasLoadingRuns || hasRunnerOffline
+      hasRunsTable || hasEmptyState || hasLoadingRuns || hasRunnerOffline
     ).toBeTruthy();
   });
 });
@@ -93,9 +112,10 @@ test.describe("Active Runs - /runs/active", () => {
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
 
-    // Verify heading
+    // Heading is "Active Dashboard" (the page was renamed; URL slug stayed
+    // /runs/active). See ActiveRunsContent.tsx line ~157.
     await expect(
-      page.locator("h1").filter({ hasText: "Active Runs" })
+      page.locator("h1").filter({ hasText: "Active Dashboard" })
     ).toBeVisible({ timeout: 15000 });
   });
 
@@ -106,39 +126,39 @@ test.describe("Active Runs - /runs/active", () => {
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
-    // Either active run cards, empty state "No Active Runs", loading, or runner offline
-    const hasActiveRuns = (await page.locator("text=active").count()) > 0;
+    // The page renders one of:
+    //  - the dashboard layout for the selected run (when runs exist)
+    //  - <IdleState>: "No Active Runs" + (offline) "Runner not connected"
+    //  - <CompletedState>: "Run Completed"
+    //  - the loading spinner
+    // The "Active Dashboard" h1 itself contains the substring "active",
+    // so we use a more specific check for the empty/offline branches.
     const hasNoActiveRuns =
       (await page.locator("text=No Active Runs").count()) > 0;
-    const hasLoading =
-      (await page.locator("text=Loading active runs").count()) > 0;
-    const hasRunnerOffline =
-      (await page.locator("text=Runner Offline").count()) > 0 ||
-      (await page.locator("text=Runner is offline").count()) > 0;
+    const hasRunCompleted =
+      (await page.locator("text=Run Completed").count()) > 0;
+    const hasRunnerNotConnected =
+      (await page.locator("text=Runner not connected").count()) > 0;
+    // When runs are active, the TabBar renders a "dashboard" tab.
+    const hasDashboardTab =
+      (await page.getByRole("tab", { name: /dashboard/i }).count()) > 0;
 
     expect(
-      hasActiveRuns || hasNoActiveRuns || hasLoading || hasRunnerOffline
+      hasNoActiveRuns ||
+        hasRunCompleted ||
+        hasRunnerNotConnected ||
+        hasDashboardTab
     ).toBeTruthy();
   });
-
-  test("should display executor health metrics when runner is connected", async ({
-    page,
-  }) => {
-    await page.goto("/runs/active");
-    await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
-
-    // Executor Status card should be visible if runner is connected
-    const hasExecutorStatus =
-      (await page.locator("text=Executor Status").count()) > 0;
-    const hasRunnerOffline =
-      (await page.locator("text=Runner Offline").count()) > 0 ||
-      (await page.locator("text=Runner is offline").count()) > 0;
-
-    // Either executor status is shown (runner online) or runner offline state
-    expect(hasExecutorStatus || hasRunnerOffline).toBeTruthy();
-  });
 });
+
+// Removed: "should display executor health metrics when runner is connected".
+// The page no longer has an "Executor Status" widget — the active-runs
+// dashboard surfaces health via per-widget panels (timeline, AI conversation,
+// findings, verification, command, ui-bridge), none of which use that label.
+// When offline the page shows <IdleState> with "Runner not connected" rather
+// than the "Runner offline" copy used by other pages, so the original
+// fallback assertion couldn't match either branch.
 
 test.describe("Findings - /runs/findings", () => {
   test("should load without errors and display page structure", async ({

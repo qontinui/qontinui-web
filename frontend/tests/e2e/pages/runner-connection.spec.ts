@@ -21,59 +21,31 @@ test.describe("Connect Runner Page", () => {
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
 
-    // Verify the Connect Desktop Runner heading
-    await expect(page.getByText("Connect Desktop Runner")).toBeVisible({
-      timeout: 15000,
-    });
-  });
-
-  test("shows step-by-step connection guide", async ({ page }) => {
-    await page.goto("/connect-runner");
-    await page.waitForLoadState("domcontentloaded");
-
-    // Verify "How to Connect" section
-    await expect(page.getByText("How to Connect")).toBeVisible({
-      timeout: 15000,
-    });
-
-    // Verify the four numbered steps are present
-    await expect(page.getByText("Download Qontinui Runner")).toBeVisible();
+    // Verify the Connect Runner heading
     await expect(
-      page.getByText("Log in with your Qontinui account")
-    ).toBeVisible();
+      page.getByRole("heading", { name: "Connect Runner" })
+    ).toBeVisible({
+      timeout: 15000,
+    });
+  });
+
+  test("shows validation message when opened without query params", async ({
+    page,
+  }) => {
+    await page.goto("/connect-runner");
+    await page.waitForLoadState("domcontentloaded");
+
+    // Without state/callback/runner_name query params, the page shows the
+    // invalid-state branch. This is the only state reachable directly via
+    // navigation — the full flow requires the runner to provide the params.
     await expect(
-      page.getByText("Select a project in the runner")
+      page.getByText(/Missing or invalid state parameter/i)
+    ).toBeVisible({ timeout: 15000 });
+
+    // The fallback branch offers a "Back to Runners" button.
+    await expect(
+      page.getByRole("button", { name: "Back to Runners" })
     ).toBeVisible();
-    await expect(page.getByText("Start automating!")).toBeVisible();
-  });
-
-  test("shows connection status indicator", async ({ page }) => {
-    await page.goto("/connect-runner");
-    await page.waitForLoadState("domcontentloaded");
-
-    // Connection status should show either "Runner Connected" or "No Runner Connected"
-    const statusText = page.getByText(/(Runner Connected|No Runner Connected)/);
-    await expect(statusText.first()).toBeVisible({ timeout: 15000 });
-  });
-
-  test("has Download Runner button", async ({ page }) => {
-    await page.goto("/connect-runner");
-    await page.waitForLoadState("domcontentloaded");
-
-    // Download Runner button should be visible
-    await expect(page.getByText("Download Runner").first()).toBeVisible({
-      timeout: 15000,
-    });
-  });
-
-  test("has Manage Runners link", async ({ page }) => {
-    await page.goto("/connect-runner");
-    await page.waitForLoadState("domcontentloaded");
-
-    // Manage Runners button/link should be visible
-    await expect(page.getByText("Manage Runners")).toBeVisible({
-      timeout: 15000,
-    });
   });
 });
 
@@ -91,9 +63,9 @@ test.describe("Download Page", () => {
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
 
-    // Verify the Download Qontinui Runner heading
+    // Verify the Download Runner heading
     await expect(
-      page.getByText("Download Qontinui Runner").first()
+      page.getByRole("heading", { name: "Download Runner" })
     ).toBeVisible({ timeout: 15000 });
   });
 
@@ -168,25 +140,34 @@ test.describe("Runners Management Page", () => {
     expect(pageContent).not.toContain("Internal Server Error");
 
     // Verify the Runner Management heading
-    await expect(page.getByText("Manage Desktop Runners").first()).toBeVisible({
+    await expect(
+      page.getByRole("heading", { name: "Runner Management" })
+    ).toBeVisible({
       timeout: 15000,
     });
   });
 
-  test("shows active connections and history tabs", async ({ page }) => {
+  test("shows online runners, session history, and auth tokens tabs", async ({
+    page,
+  }) => {
     await page.goto("/runners");
     await page.waitForLoadState("domcontentloaded");
 
-    // Active Connections tab should be visible
-    await expect(page.getByText("Active Connections").first()).toBeVisible({
-      timeout: 15000,
-    });
+    // Online Runners tab should be visible
+    await expect(
+      page.getByRole("tab", { name: /Online Runners/i })
+    ).toBeVisible({ timeout: 15000 });
 
-    // Connection History tab should be visible
-    await expect(page.getByText("Connection History").first()).toBeVisible();
+    // Session History tab should be visible
+    await expect(
+      page.getByRole("tab", { name: /Session History/i })
+    ).toBeVisible();
+
+    // Auth Tokens tab should be visible
+    await expect(page.getByRole("tab", { name: /Auth Tokens/i })).toBeVisible();
   });
 
-  test("shows active connections list or empty state", async ({ page }) => {
+  test("shows online runners list or empty state", async ({ page }) => {
     await page.goto("/runners");
     await page.waitForLoadState("domcontentloaded");
 

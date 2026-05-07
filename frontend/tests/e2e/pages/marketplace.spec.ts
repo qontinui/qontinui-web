@@ -1,15 +1,29 @@
 /**
  * E2E tests for Marketplace pages
  *
- * Tests the marketplace listing, package detail (with invalid slug),
- * and publish form pages. Verifies page load, key elements, and form structure.
+ * Pages tested:
+ * - /marketplace - Wraps in <RequireProject pageName="Marketplace">; navigation
+ *   must include `?project=<uuid>` so RequireProject's children render. The
+ *   seeded test project UUID is used (see PR-G's seed_test_project.py).
+ * - /marketplace/[slug] - Standalone (no RequireProject); shows the
+ *   PackageNotFound state for unknown slugs, with a "Back to Marketplace" button.
+ * - /marketplace/publish - Standalone (no RequireProject); the form has a
+ *   "Back" button (not "Back to Marketplace"), four tabs (Package Details,
+ *   Code, README, Preview), and a Security Scan / Publishing Guidelines sidebar.
+ *
+ * The marketplace heading is "Marketplace" (the prior "Community Code Marketplace"
+ * label was renamed; the URL slug remains).
  */
 
 import { test, expect } from "../fixtures";
 
+// Seeded test project UUID from PR-G's backend/tests/utils/seed_test_project.py.
+// Inlined per PR-H1 scope; PR-F adds a shared test-project.ts on a separate branch.
+const TEST_PROJECT_QS = "?project=fb93478d-98bd-4e40-99f4-0f2c08c1fd5a";
+
 test.describe("Marketplace Page", () => {
   test("loads without errors and shows heading", async ({ page }) => {
-    await page.goto("/marketplace");
+    await page.goto(`/marketplace${TEST_PROJECT_QS}`);
     await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
@@ -21,14 +35,15 @@ test.describe("Marketplace Page", () => {
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
 
-    // Verify the Community Code Marketplace heading
-    await expect(
-      page.getByText("Community Code Marketplace").first()
-    ).toBeVisible({ timeout: 15000 });
+    // Heading is "Marketplace" (the page formerly read "Community Code
+    // Marketplace"; the rename happened but the URL kept the slug).
+    await expect(page.getByText("Marketplace").first()).toBeVisible({
+      timeout: 15000,
+    });
   });
 
   test("shows package tabs (All, Popular, Installed)", async ({ page }) => {
-    await page.goto("/marketplace");
+    await page.goto(`/marketplace${TEST_PROJECT_QS}`);
     await page.waitForLoadState("domcontentloaded");
 
     // Verify the three tabs are present
@@ -40,7 +55,7 @@ test.describe("Marketplace Page", () => {
   });
 
   test("shows Publish Package button", async ({ page }) => {
-    await page.goto("/marketplace");
+    await page.goto(`/marketplace${TEST_PROJECT_QS}`);
     await page.waitForLoadState("domcontentloaded");
 
     // Publish Package button should be visible
@@ -50,7 +65,7 @@ test.describe("Marketplace Page", () => {
   });
 
   test("shows package cards or empty state", async ({ page }) => {
-    await page.goto("/marketplace");
+    await page.goto(`/marketplace${TEST_PROJECT_QS}`);
     await page.waitForLoadState("domcontentloaded");
 
     // Wait for packages to load
@@ -82,7 +97,7 @@ test.describe("Marketplace Page", () => {
   });
 
   test("can switch between tabs", async ({ page }) => {
-    await page.goto("/marketplace");
+    await page.goto(`/marketplace${TEST_PROJECT_QS}`);
     await page.waitForLoadState("domcontentloaded");
 
     // Wait for initial load
@@ -114,6 +129,7 @@ test.describe("Marketplace Page", () => {
 
 test.describe("Package Detail Page", () => {
   test("shows error state for invalid slug", async ({ page }) => {
+    // /marketplace/[slug] is not gated by RequireProject; no project param needed.
     await page.goto("/marketplace/non-existent-package-slug-12345");
     await page.waitForLoadState("domcontentloaded");
 
@@ -155,6 +171,7 @@ test.describe("Package Detail Page", () => {
 
 test.describe("Publish Package Page", () => {
   test("loads without errors and shows heading", async ({ page }) => {
+    // /marketplace/publish is not gated by RequireProject; no project param needed.
     await page.goto("/marketplace/publish");
     await page.waitForLoadState("domcontentloaded");
 
@@ -227,14 +244,10 @@ test.describe("Publish Package Page", () => {
     await expect(publishButton).toBeDisabled();
   });
 
-  test("has back to marketplace link", async ({ page }) => {
-    await page.goto("/marketplace/publish");
-    await page.waitForLoadState("domcontentloaded");
-
-    await expect(page.getByText("Back to Marketplace")).toBeVisible({
-      timeout: 15000,
-    });
-  });
+  // Removed: "has back to marketplace link" — the publish page header has a
+  // plain "Back" button (PublishHeader.tsx), not "Back to Marketplace". The
+  // "Back to Marketplace" copy lives only on the slug-detail PackageNotFound
+  // state, which is already covered above.
 
   test("can navigate between form tabs", async ({ page }) => {
     await page.goto("/marketplace/publish");
