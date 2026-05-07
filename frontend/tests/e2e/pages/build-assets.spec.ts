@@ -13,6 +13,11 @@
  */
 
 import { test, expect } from "../fixtures";
+import { requireRunner } from "../runner-detection";
+
+test.beforeAll(async () => {
+  await requireRunner();
+});
 
 test.describe("Build - API Requests", () => {
   test("should load API requests page without errors", async ({ page }) => {

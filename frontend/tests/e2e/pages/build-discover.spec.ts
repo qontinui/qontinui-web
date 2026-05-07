@@ -10,6 +10,11 @@
  */
 
 import { test, expect } from "../fixtures";
+import { requireRunner } from "../runner-detection";
+
+test.beforeAll(async () => {
+  await requireRunner();
+});
 
 test.describe("Build - Discover", () => {
   test("should load discover page without errors", async ({ page }) => {

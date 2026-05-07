@@ -10,6 +10,11 @@
  */
 
 import { test, expect } from "../fixtures";
+import { requireRunner } from "../runner-detection";
+
+test.beforeAll(async () => {
+  await requireRunner();
+});
 
 test.describe("Execute - /execute", () => {
   test("should load without errors and display page structure", async ({
