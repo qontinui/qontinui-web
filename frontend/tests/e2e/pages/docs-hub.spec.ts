@@ -35,7 +35,7 @@ test.describe("Docs Hub (/docs)", () => {
 
     await expect(
       page.getByText(
-        "Everything you need to build intelligent GUI automation workflows"
+        "Everything you need to orchestrate AI development with feedback loops"
       )
     ).toBeVisible();
   });
@@ -59,13 +59,13 @@ test.describe("Docs Hub (/docs)", () => {
 
     await expect(
       page.getByText(
-        "Visual configuration builder for creating automation workflows in your browser"
+        "Configuration builder for creating automation workflows in your browser"
       )
     ).toBeVisible({ timeout: 10000 });
 
     await expect(
       page.getByText(
-        "Desktop application for executing automation workflows on your system"
+        "Desktop application for orchestrating AI coding sessions with feedback loops"
       )
     ).toBeVisible();
 
@@ -74,7 +74,7 @@ test.describe("Docs Hub (/docs)", () => {
     ).toBeVisible();
 
     await expect(
-      page.getByText("Understand the model-based architecture behind Qontinui")
+      page.getByText("Understand the architecture behind Qontinui")
     ).toBeVisible();
   });
 
@@ -175,7 +175,7 @@ test.describe("Getting Started (/docs/getting-started)", () => {
 
     await expect(
       page.getByText(
-        "Create your first GUI automation workflow in 3 simple steps"
+        "Get up and running with AI development feedback loops in 3 simple steps"
       )
     ).toBeVisible();
   });

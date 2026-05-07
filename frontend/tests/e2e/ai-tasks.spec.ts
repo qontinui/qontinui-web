@@ -5,57 +5,10 @@
 import { test, expect } from "./fixtures";
 
 test.describe("AI Tasks Page", () => {
-  // Helper to get a project ID from the dashboard
-  async function getProjectId(
-    page: import("@playwright/test").Page
-  ): Promise<string | null> {
-    // Navigate to dashboard first
-    await page.goto("/dashboard");
-    await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
-
-    // Find and click the project switcher in the sidebar
-    const projectSwitcher = page.locator('[aria-label="Select project"]');
-    if (await projectSwitcher.isVisible()) {
-      await projectSwitcher.click();
-      await page.waitForTimeout(500);
-
-      // Get the first project menu item
-      const projectItems = page.locator('[role="menuitem"]');
-      const projectCount = await projectItems.count();
-
-      if (projectCount > 0) {
-        // Click to select and get the URL with project param
-        await projectItems.first().click();
-        await page.waitForTimeout(1000);
-
-        // Navigate to any page to get the project from URL or from a project card
-        // Check URL for project param
-        const url = page.url();
-        const match = url.match(/[?&]project=([^&]+)/);
-        if (match) {
-          return match[1];
-        }
-
-        // Try getting project from dashboard card click
-        const projectCard = page.locator("[data-project-id]").first();
-        if ((await projectCard.count()) > 0) {
-          const projectId = await projectCard.getAttribute("data-project-id");
-          return projectId;
-        }
-      }
-    }
-    return null;
-  }
-
   test("should load AI tasks page without errors", async ({ page }) => {
-    // First get a project ID
-    const projectId = await getProjectId(page);
-    console.log("Project ID:", projectId);
-
-    // Navigate to AI Tasks page with project in URL (if we have one)
-    const url = projectId ? `/ai-tasks?project=${projectId}` : "/ai-tasks";
-    await page.goto(url);
+    // Use seeded project UUID — /ai-tasks wraps in <RequireProject>.
+    const projectId = "fb93478d-98bd-4e40-99f4-0f2c08c1fd5a";
+    await page.goto(`/ai-tasks?project=${projectId}`);
 
     // Wait for page to load
     await page.waitForLoadState("domcontentloaded");

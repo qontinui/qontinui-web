@@ -60,7 +60,7 @@ test.describe("Web Overview (/docs/web)", () => {
 
     // 4 core concepts: States, Actions, Transitions, Images
     const statesItem = page.locator("li", {
-      hasText: /States.*different screens or conditions/,
+      hasText: /States.*different screens or conditions/i,
     });
     await expect(statesItem).toBeVisible();
 
@@ -590,9 +590,13 @@ test.describe("Web States (/docs/web/states)", () => {
       page.getByRole("heading", { name: "Identifying Images", exact: true })
     ).toBeVisible({ timeout: 10000 });
 
-    await expect(page.getByText("Similarity Threshold")).toBeVisible();
-    await expect(page.getByText("Required")).toBeVisible();
-    await expect(page.getByText("Shared")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Similarity Threshold" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Required" })
+    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Shared" })).toBeVisible();
   });
 
   test("shows parallel states concept", async ({ page }) => {
@@ -672,7 +676,9 @@ test.describe("Web Transitions (/docs/web/transitions)", () => {
     await expect(
       page.getByRole("heading", { name: "Outgoing Transition" })
     ).toBeVisible();
-    await expect(page.getByText("Incoming Transition")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Incoming Transition" })
+    ).toBeVisible();
 
     // Details of each type
     await expect(
@@ -694,10 +700,18 @@ test.describe("Web Transitions (/docs/web/transitions)", () => {
     await expect(
       page.getByRole("heading", { name: "from_state" })
     ).toBeVisible();
-    await expect(page.getByText("to_state")).toBeVisible();
-    await expect(page.getByText("stays_visible")).toBeVisible();
-    await expect(page.getByText("activate_states")).toBeVisible();
-    await expect(page.getByText("deactivate_states")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "to_state" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "stays_visible" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "activate_states" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "deactivate_states" })
+    ).toBeVisible();
   });
 
   test("shows parallel state management section", async ({ page }) => {
