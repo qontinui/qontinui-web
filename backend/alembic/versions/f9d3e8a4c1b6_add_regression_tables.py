@@ -47,18 +47,18 @@ def upgrade() -> None:
     """
     op.execute(
         """
-        CREATE TABLE IF NOT EXISTS regression_suites (
+        CREATE TABLE IF NOT EXISTS project.regression_suites (
             id          UUID PRIMARY KEY,
             ir_doc_id   TEXT NOT NULL,
             suite_json  JSONB NOT NULL,
             created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
         CREATE INDEX IF NOT EXISTS regression_suites_ir_doc_id_idx
-            ON regression_suites(ir_doc_id);
+            ON project.regression_suites(ir_doc_id);
 
-        CREATE TABLE IF NOT EXISTS regression_runs (
+        CREATE TABLE IF NOT EXISTS project.regression_runs (
             id                UUID PRIMARY KEY,
-            suite_id          UUID NOT NULL REFERENCES regression_suites(id) ON DELETE CASCADE,
+            suite_id          UUID NOT NULL REFERENCES project.regression_suites(id) ON DELETE CASCADE,
             run_id            TEXT NOT NULL,
             passed            INT NOT NULL,
             failed            INT NOT NULL,
@@ -68,22 +68,22 @@ def upgrade() -> None:
             drift_report_json JSONB
         );
         CREATE INDEX IF NOT EXISTS regression_runs_suite_id_idx
-            ON regression_runs(suite_id);
+            ON project.regression_runs(suite_id);
         CREATE INDEX IF NOT EXISTS regression_runs_run_id_idx
-            ON regression_runs(run_id);
+            ON project.regression_runs(run_id);
 
-        CREATE TABLE IF NOT EXISTS regression_diagnoses (
+        CREATE TABLE IF NOT EXISTS project.regression_diagnoses (
             id              UUID PRIMARY KEY,
-            run_id          UUID NOT NULL REFERENCES regression_runs(id) ON DELETE CASCADE,
+            run_id          UUID NOT NULL REFERENCES project.regression_runs(id) ON DELETE CASCADE,
             diagnosis_json  JSONB NOT NULL,
             created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
         CREATE INDEX IF NOT EXISTS regression_diagnoses_run_id_idx
-            ON regression_diagnoses(run_id);
+            ON project.regression_diagnoses(run_id);
 
-        CREATE TABLE IF NOT EXISTS regression_assertion_executions (
+        CREATE TABLE IF NOT EXISTS project.regression_assertion_executions (
             id                    UUID PRIMARY KEY,
-            run_id                UUID NOT NULL REFERENCES regression_runs(id) ON DELETE CASCADE,
+            run_id                UUID NOT NULL REFERENCES project.regression_runs(id) ON DELETE CASCADE,
             case_id               TEXT NOT NULL,
             assertion_id          TEXT NOT NULL,
             assertion_kind        TEXT NOT NULL,
@@ -95,13 +95,13 @@ def upgrade() -> None:
             error_message         TEXT
         );
         CREATE INDEX IF NOT EXISTS regression_assertion_executions_run_id_idx
-            ON regression_assertion_executions(run_id);
+            ON project.regression_assertion_executions(run_id);
         CREATE INDEX IF NOT EXISTS regression_assertion_executions_case_assertion_idx
-            ON regression_assertion_executions(case_id, assertion_id, started_at DESC);
+            ON project.regression_assertion_executions(case_id, assertion_id, started_at DESC);
         CREATE INDEX IF NOT EXISTS regression_assertion_executions_kind_status_idx
-            ON regression_assertion_executions(assertion_kind, status);
+            ON project.regression_assertion_executions(assertion_kind, status);
         CREATE INDEX IF NOT EXISTS regression_assertion_executions_failures_idx
-            ON regression_assertion_executions(case_id, assertion_id) WHERE status = 'fail';
+            ON project.regression_assertion_executions(case_id, assertion_id) WHERE status = 'fail';
         """
     )
 
@@ -110,10 +110,10 @@ def downgrade() -> None:
     """Drop the four regression tables (CASCADE drops dependent indexes/FKs)."""
     op.execute(
         """
-        DROP TABLE IF EXISTS regression_assertion_executions CASCADE;
-        DROP TABLE IF EXISTS regression_diagnoses CASCADE;
-        DROP TABLE IF EXISTS regression_runs CASCADE;
-        DROP TABLE IF EXISTS regression_suites CASCADE;
+        DROP TABLE IF EXISTS project.regression_assertion_executions CASCADE;
+        DROP TABLE IF EXISTS project.regression_diagnoses CASCADE;
+        DROP TABLE IF EXISTS project.regression_runs CASCADE;
+        DROP TABLE IF EXISTS project.regression_suites CASCADE;
         """
     )
 

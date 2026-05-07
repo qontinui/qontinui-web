@@ -37,15 +37,21 @@ def upgrade() -> None:
     op.add_column(
         "training_jobs",
         sa.Column("arq_job_id", sa.String(length=255), nullable=True),
+        schema="project",
     )
     op.create_index(
         op.f("ix_training_jobs_arq_job_id"),
         "training_jobs",
         ["arq_job_id"],
         unique=False,
+        schema="project",
     )
 
 
 def downgrade() -> None:
-    op.drop_index(op.f("ix_training_jobs_arq_job_id"), table_name="training_jobs")
-    op.drop_column("training_jobs", "arq_job_id")
+    op.drop_index(
+        op.f("ix_training_jobs_arq_job_id"),
+        table_name="training_jobs",
+        schema="project",
+    )
+    op.drop_column("training_jobs", "arq_job_id", schema="project")
