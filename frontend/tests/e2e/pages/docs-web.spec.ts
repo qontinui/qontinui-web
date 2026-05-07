@@ -33,7 +33,10 @@ test.describe("Web Overview (/docs/web)", () => {
     await page.goto("/docs/web");
     await page.waitForLoadState("domcontentloaded");
 
-    const heading = page.getByRole("heading", { name: /qontinui web/i });
+    const heading = page.getByRole("heading", {
+      name: /qontinui web/i,
+      level: 1,
+    });
     await expect(heading).toBeVisible({ timeout: 10000 });
 
     await expect(
@@ -125,7 +128,9 @@ test.describe("Web Overview (/docs/web)", () => {
     ).toBeVisible({ timeout: 10000 });
 
     await expect(page.getByText("Model-Based Automation")).toBeVisible();
-    await expect(page.getByText("State Identification")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "State Identification" })
+    ).toBeVisible();
     await expect(page.getByText("Visual Action Targeting")).toBeVisible();
   });
 
@@ -139,7 +144,9 @@ test.describe("Web Overview (/docs/web)", () => {
 
     await expect(page.getByText("Parallel States")).toBeVisible();
     await expect(page.getByText("Conditional Actions")).toBeVisible();
-    await expect(page.getByText("Image Library")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Image Library" })
+    ).toBeVisible();
     await expect(page.getByText("Export/Import")).toBeVisible();
   });
 });
@@ -198,9 +205,11 @@ test.describe("Web Actions (/docs/web/actions)", () => {
     await page.goto("/docs/web/actions");
     await page.waitForLoadState("domcontentloaded");
 
-    await expect(page.getByText("FIND")).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText("VANISH")).toBeVisible();
-    await expect(page.getByText("RAG_FIND")).toBeVisible();
+    await expect(page.getByText("FIND", { exact: true })).toBeVisible({
+      timeout: 10000,
+    });
+    await expect(page.getByText("VANISH", { exact: true })).toBeVisible();
+    await expect(page.getByText("RAG_FIND", { exact: true })).toBeVisible();
   });
 
   test("shows Mouse actions: Click, Mouse Move, Drag, Scroll", async ({
@@ -209,19 +218,23 @@ test.describe("Web Actions (/docs/web/actions)", () => {
     await page.goto("/docs/web/actions");
     await page.waitForLoadState("domcontentloaded");
 
-    await expect(page.getByText("CLICK")).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText("MOUSE_MOVE")).toBeVisible();
-    await expect(page.getByText("DRAG")).toBeVisible();
-    await expect(page.getByText("SCROLL")).toBeVisible();
+    await expect(page.getByText("CLICK", { exact: true })).toBeVisible({
+      timeout: 10000,
+    });
+    await expect(page.getByText("MOUSE_MOVE", { exact: true })).toBeVisible();
+    await expect(page.getByText("DRAG", { exact: true })).toBeVisible();
+    await expect(page.getByText("SCROLL", { exact: true })).toBeVisible();
   });
 
   test("shows Keyboard actions: Type, Key Press, Hotkey", async ({ page }) => {
     await page.goto("/docs/web/actions");
     await page.waitForLoadState("domcontentloaded");
 
-    await expect(page.getByText("TYPE")).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText("KEY_PRESS")).toBeVisible();
-    await expect(page.getByText("HOTKEY")).toBeVisible();
+    await expect(page.getByText("TYPE", { exact: true })).toBeVisible({
+      timeout: 10000,
+    });
+    await expect(page.getByText("KEY_PRESS", { exact: true })).toBeVisible();
+    await expect(page.getByText("HOTKEY", { exact: true })).toBeVisible();
   });
 
   test("shows Control Flow actions: If, Loop, Switch, Try/Catch", async ({
@@ -230,10 +243,12 @@ test.describe("Web Actions (/docs/web/actions)", () => {
     await page.goto("/docs/web/actions");
     await page.waitForLoadState("domcontentloaded");
 
-    await expect(page.getByText("IF")).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText("LOOP")).toBeVisible();
-    await expect(page.getByText("SWITCH")).toBeVisible();
-    await expect(page.getByText("TRY_CATCH")).toBeVisible();
+    await expect(page.getByText("IF", { exact: true })).toBeVisible({
+      timeout: 10000,
+    });
+    await expect(page.getByText("LOOP", { exact: true })).toBeVisible();
+    await expect(page.getByText("SWITCH", { exact: true })).toBeVisible();
+    await expect(page.getByText("TRY_CATCH", { exact: true })).toBeVisible();
   });
 
   test("shows Data actions: Set Variable, Sort, Filter, Map, Reduce", async ({
@@ -242,24 +257,24 @@ test.describe("Web Actions (/docs/web/actions)", () => {
     await page.goto("/docs/web/actions");
     await page.waitForLoadState("domcontentloaded");
 
-    await expect(page.getByText("SET_VARIABLE")).toBeVisible({
+    await expect(page.getByText("SET_VARIABLE", { exact: true })).toBeVisible({
       timeout: 10000,
     });
-    await expect(page.getByText("SORT")).toBeVisible();
-    await expect(page.getByText("FILTER")).toBeVisible();
-    await expect(page.getByText("MAP")).toBeVisible();
-    await expect(page.getByText("REDUCE")).toBeVisible();
+    await expect(page.getByText("SORT", { exact: true })).toBeVisible();
+    await expect(page.getByText("FILTER", { exact: true })).toBeVisible();
+    await expect(page.getByText("MAP", { exact: true })).toBeVisible();
+    await expect(page.getByText("REDUCE", { exact: true })).toBeVisible();
   });
 
   test("shows Code/AI actions: Code Block, AI Prompt", async ({ page }) => {
     await page.goto("/docs/web/actions");
     await page.waitForLoadState("domcontentloaded");
 
-    await expect(page.getByText("CODE_BLOCK")).toBeVisible({
+    await expect(page.getByText("CODE_BLOCK", { exact: true })).toBeVisible({
       timeout: 10000,
     });
-    await expect(page.getByText("AI_PROMPT")).toBeVisible();
-    await expect(page.getByText("SHELL")).toBeVisible();
+    await expect(page.getByText("AI_PROMPT", { exact: true })).toBeVisible();
+    await expect(page.getByText("SHELL", { exact: true })).toBeVisible();
   });
 
   test("shows key concept about action categories", async ({ page }) => {
@@ -292,7 +307,10 @@ test.describe("Web AI Actions (/docs/web/ai-actions)", () => {
     await page.goto("/docs/web/ai-actions");
     await page.waitForLoadState("domcontentloaded");
 
-    const heading = page.getByRole("heading", { name: /ai actions/i });
+    const heading = page.getByRole("heading", {
+      name: /ai actions/i,
+      level: 1,
+    });
     await expect(heading).toBeVisible({ timeout: 10000 });
   });
 
@@ -304,7 +322,9 @@ test.describe("Web AI Actions (/docs/web/ai-actions)", () => {
       page.getByRole("heading", { name: /ai prompt action/i })
     ).toBeVisible({ timeout: 10000 });
 
-    await expect(page.getByText("AI_PROMPT")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "AI_PROMPT" })
+    ).toBeVisible();
   });
 
   test("shows configuration options", async ({ page }) => {
@@ -312,7 +332,9 @@ test.describe("Web AI Actions (/docs/web/ai-actions)", () => {
     await page.waitForLoadState("domcontentloaded");
 
     // Configuration options for AI_PROMPT
-    await expect(page.getByText("prompt")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText("prompt", { exact: true })).toBeVisible({
+      timeout: 10000,
+    });
     await expect(page.getByText("templateId")).toBeVisible();
     await expect(page.getByText("maxSessions")).toBeVisible();
     await expect(page.getByText("outputVariable")).toBeVisible();
@@ -327,7 +349,9 @@ test.describe("Web AI Actions (/docs/web/ai-actions)", () => {
     });
 
     await expect(
-      page.getByText("Autonomous code analysis, fixes, and improvements")
+      page.getByText("Autonomous code analysis, fixes, and improvements", {
+        exact: true,
+      })
     ).toBeVisible();
     await expect(
       page.getByText("Test generation and documentation")
@@ -355,6 +379,7 @@ test.describe("Web Image Recognition (/docs/web/image-recognition)", () => {
 
     const heading = page.getByRole("heading", {
       name: /image recognition/i,
+      level: 1,
     });
     await expect(heading).toBeVisible({ timeout: 10000 });
   });
@@ -369,7 +394,9 @@ test.describe("Web Image Recognition (/docs/web/image-recognition)", () => {
       })
     ).toBeVisible({ timeout: 10000 });
 
-    await expect(page.getByText("template matching")).toBeVisible();
+    await expect(
+      page.getByText("template matching", { exact: true })
+    ).toBeVisible();
     await expect(
       page.getByText(/compared pixel-by-pixel using OpenCV/i)
     ).toBeVisible();
@@ -456,7 +483,9 @@ test.describe("Web Keyboard Shortcuts (/docs/web/keyboard-shortcuts)", () => {
     ).toBeVisible({ timeout: 10000 });
 
     // Platform-specific modifier keys
-    await expect(page.getByText("Windows")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Windows" })
+    ).toBeVisible();
   });
 
   test("shows canvas navigation shortcuts", async ({ page }) => {
@@ -539,7 +568,9 @@ test.describe("Web States (/docs/web/states)", () => {
       page.getByRole("heading", { name: /state properties/i })
     ).toBeVisible({ timeout: 10000 });
 
-    await expect(page.getByText("Initial State")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Initial State" })
+    ).toBeVisible();
     await expect(page.getByText("Final State")).toBeVisible();
 
     // Descriptions mention is_initial and is_final behaviors
@@ -556,7 +587,7 @@ test.describe("Web States (/docs/web/states)", () => {
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
-      page.getByRole("heading", { name: /identifying images/i })
+      page.getByRole("heading", { name: "Identifying Images", exact: true })
     ).toBeVisible({ timeout: 10000 });
 
     await expect(page.getByText("Similarity Threshold")).toBeVisible();
@@ -581,7 +612,7 @@ test.describe("Web States (/docs/web/states)", () => {
     await page.goto("/docs/web/states");
     await page.waitForLoadState("domcontentloaded");
 
-    await expect(page.getByText("Login Screen")).toBeVisible({
+    await expect(page.getByText("Login Screen", { exact: true })).toBeVisible({
       timeout: 10000,
     });
     await expect(page.getByText("Dashboard")).toBeVisible();
@@ -638,7 +669,9 @@ test.describe("Web Transitions (/docs/web/transitions)", () => {
       page.getByRole("heading", { name: /types of transitions/i })
     ).toBeVisible({ timeout: 10000 });
 
-    await expect(page.getByText("Outgoing Transition")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Outgoing Transition" })
+    ).toBeVisible();
     await expect(page.getByText("Incoming Transition")).toBeVisible();
 
     // Details of each type
@@ -658,7 +691,9 @@ test.describe("Web Transitions (/docs/web/transitions)", () => {
       page.getByRole("heading", { name: /transition properties/i })
     ).toBeVisible({ timeout: 10000 });
 
-    await expect(page.getByText("from_state")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "from_state" })
+    ).toBeVisible();
     await expect(page.getByText("to_state")).toBeVisible();
     await expect(page.getByText("stays_visible")).toBeVisible();
     await expect(page.getByText("activate_states")).toBeVisible();

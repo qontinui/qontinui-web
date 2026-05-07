@@ -59,7 +59,9 @@ test.describe("Homepage (/)", () => {
     await page.waitForLoadState("domcontentloaded");
 
     // Verify key feature cards are present
-    await expect(page.getByText("Orchestrated Workflows")).toBeVisible({
+    await expect(
+      page.getByRole("heading", { name: "Orchestrated Workflows" })
+    ).toBeVisible({
       timeout: 10000,
     });
     await expect(page.getByText("Self-Correcting AI")).toBeVisible();
@@ -97,7 +99,7 @@ test.describe("Homepage (/)", () => {
 
     // Verify the three steps
     await expect(page.getByText("Configure")).toBeVisible();
-    await expect(page.getByText("Build")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Build" })).toBeVisible();
     await expect(page.getByText("Run")).toBeVisible();
   });
 });
@@ -124,7 +126,9 @@ test.describe("Runner Page (/runner)", () => {
     await expect(heading).toBeVisible({ timeout: 10000 });
 
     // Verify subtitle/description
-    await expect(page.getByText(/AI development desktop app/i)).toBeVisible();
+    await expect(
+      page.getByText(/AI development desktop app/i).first()
+    ).toBeVisible();
   });
 
   test("shows feature cards", async ({ page }) => {
@@ -137,7 +141,9 @@ test.describe("Runner Page (/runner)", () => {
     ).toBeVisible({ timeout: 10000 });
 
     // Individual feature cards
-    await expect(page.getByText("Orchestrated Workflows")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Orchestrated Workflows" })
+    ).toBeVisible();
     await expect(page.getByText("Self-Correcting AI")).toBeVisible();
     await expect(page.getByText("Error Monitoring")).toBeVisible();
     await expect(page.getByText("UI Bridge Feedback")).toBeVisible();
@@ -186,7 +192,9 @@ test.describe("Runner Page (/runner)", () => {
       timeout: 10000,
     });
 
-    await expect(page.getByText(/SignPath Foundation/i)).toBeVisible();
+    await expect(
+      page.getByText(/SignPath Foundation/i).first()
+    ).toBeVisible();
   });
 
   test("has bottom CTA section", async ({ page }) => {
@@ -254,7 +262,9 @@ test.describe("Runner Download Page (/runner/download)", () => {
     await page.waitForLoadState("domcontentloaded");
 
     // Windows section should be present
-    await expect(page.getByText("Windows")).toBeVisible({ timeout: 10000 });
+    await expect(
+      page.getByRole("heading", { name: /windows/i }).first()
+    ).toBeVisible({ timeout: 10000 });
 
     // Download buttons for Windows
     await expect(page.getByText(/Windows Installer \(MSI\)/i)).toBeVisible();
@@ -279,7 +289,9 @@ test.describe("Runner Download Page (/runner/download)", () => {
     ).toBeVisible({ timeout: 10000 });
 
     // Platform-specific requirements
-    await expect(page.getByText("Windows 10 or later")).toBeVisible();
+    await expect(
+      page.getByText("Windows 10 or later", { exact: true })
+    ).toBeVisible();
     await expect(page.getByText(/64-bit processor/i).first()).toBeVisible();
     await expect(page.getByText(/4 GB RAM/i).first()).toBeVisible();
   });

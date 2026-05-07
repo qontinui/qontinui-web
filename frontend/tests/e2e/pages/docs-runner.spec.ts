@@ -36,6 +36,7 @@ test.describe("Runner Overview (/docs/runner)", () => {
 
     const heading = page.getByRole("heading", {
       name: /qontinui runner/i,
+      level: 1,
     });
     await expect(heading).toBeVisible({ timeout: 10000 });
 
@@ -56,7 +57,9 @@ test.describe("Runner Overview (/docs/runner)", () => {
     await expect(
       page.getByText("Real image recognition using OpenCV")
     ).toBeVisible();
-    await expect(page.getByText("Multi-monitor support")).toBeVisible();
+    await expect(
+      page.getByText("Multi-monitor support", { exact: true })
+    ).toBeVisible();
     await expect(
       page.getByText("Live execution monitoring and logs")
     ).toBeVisible();
@@ -90,7 +93,7 @@ test.describe("Runner Overview (/docs/runner)", () => {
     ).toBeVisible({ timeout: 10000 });
 
     await expect(
-      page.getByRole("link", { name: /installation/i })
+      page.getByRole("link", { name: /installation/i }).first()
     ).toBeVisible();
     await expect(
       page.getByRole("link", { name: /running automations/i })
@@ -122,7 +125,7 @@ test.describe("Runner Overview (/docs/runner)", () => {
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
-      page.getByRole("link", { name: /download runner/i })
+      page.getByRole("link", { name: /download runner/i }).first()
     ).toBeVisible({ timeout: 10000 });
   });
 });
@@ -258,7 +261,9 @@ test.describe("Runner Execution (/docs/runner/execution)", () => {
       page.getByRole("heading", { name: /execution settings/i })
     ).toBeVisible({ timeout: 10000 });
 
-    await expect(page.getByText("default_timeout")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "default_timeout" })
+    ).toBeVisible();
     await expect(page.getByText("default_retry_count")).toBeVisible();
     await expect(page.getByText("action_delay")).toBeVisible();
     await expect(page.getByText("failure_strategy")).toBeVisible();
@@ -289,7 +294,9 @@ test.describe("Runner Execution (/docs/runner/execution)", () => {
     await expect(
       page.getByText("State Transition Visualization")
     ).toBeVisible();
-    await expect(page.getByText("Screenshot Capture")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Screenshot Capture" })
+    ).toBeVisible();
   });
 
   test("shows best practices", async ({ page }) => {
@@ -326,6 +333,7 @@ test.describe("Runner Monitoring (/docs/runner/monitoring)", () => {
 
     const heading = page.getByRole("heading", {
       name: /monitoring/i,
+      level: 1,
     });
     await expect(heading).toBeVisible({ timeout: 10000 });
   });
@@ -338,7 +346,9 @@ test.describe("Runner Monitoring (/docs/runner/monitoring)", () => {
       page.getByRole("heading", { name: /log file locations/i })
     ).toBeVisible({ timeout: 10000 });
 
-    await expect(page.getByText("runner-frontend.log")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "runner-frontend.log" })
+    ).toBeVisible();
     await expect(page.getByText("runner-backend.log")).toBeVisible();
     await expect(page.getByText("ai-output.jsonl")).toBeVisible();
   });
@@ -348,7 +358,7 @@ test.describe("Runner Monitoring (/docs/runner/monitoring)", () => {
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
-      page.getByRole("heading", { name: /log levels/i })
+      page.getByRole("heading", { name: "Log Levels", exact: true })
     ).toBeVisible({ timeout: 10000 });
 
     await expect(page.getByText("DEBUG")).toBeVisible();
@@ -366,7 +376,9 @@ test.describe("Runner Monitoring (/docs/runner/monitoring)", () => {
     ).toBeVisible({ timeout: 10000 });
 
     await expect(page.getByText("General Logs")).toBeVisible();
-    await expect(page.getByText("Image Recognition Logs")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Image Recognition Logs" })
+    ).toBeVisible();
     await expect(page.getByText("Action Logs")).toBeVisible();
   });
 
@@ -538,7 +550,9 @@ test.describe("Runner Troubleshooting (/docs/runner/troubleshooting)", () => {
       page.getByRole("heading", { name: /quick diagnostics/i })
     ).toBeVisible({ timeout: 10000 });
 
-    await expect(page.getByText("Check Logs")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Check Logs" })
+    ).toBeVisible();
     await expect(page.getByText("Verify Display")).toBeVisible();
     await expect(page.getByText("Check Permissions")).toBeVisible();
     await expect(page.getByText("Validate Config")).toBeVisible();
@@ -554,7 +568,7 @@ test.describe("Runner Troubleshooting (/docs/runner/troubleshooting)", () => {
 
     // Some error codes
     await expect(page.getByText("CONFIG_001")).toBeVisible();
-    await expect(page.getByText("EXEC_001")).toBeVisible();
+    await expect(page.getByText("EXEC_001").first()).toBeVisible();
     await expect(page.getByText("COMM_001")).toBeVisible();
     await expect(page.getByText("HEALTH_001")).toBeVisible();
   });
@@ -637,7 +651,7 @@ test.describe("Runner AI Integration (/docs/runner/ai-integration)", () => {
     ).toBeVisible({ timeout: 10000 });
 
     // Format fields
-    await expect(page.getByText("Use when")).toBeVisible();
+    await expect(page.getByRole("cell", { name: "Use when" })).toBeVisible();
     await expect(page.getByText("Verifies")).toBeVisible();
     await expect(page.getByText("Prerequisites")).toBeVisible();
     await expect(page.getByText("Success indicators")).toBeVisible();
@@ -750,7 +764,7 @@ test.describe("Runner Workflow Descriptions (/docs/runner/workflow-descriptions)
     ).toBeVisible({ timeout: 10000 });
 
     // Category names in the table
-    await expect(page.getByText("Main")).toBeVisible();
+    await expect(page.getByRole("cell", { name: "Main" })).toBeVisible();
     await expect(page.getByText("Testing")).toBeVisible();
     await expect(page.getByText("UI Automation")).toBeVisible();
     await expect(page.getByText("Utilities")).toBeVisible();

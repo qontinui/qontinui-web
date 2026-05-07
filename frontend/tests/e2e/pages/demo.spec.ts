@@ -155,9 +155,9 @@ test.describe("Demo Detail Page (/demo/[id])", () => {
     await page.waitForTimeout(3000);
 
     // Should show an error message explaining the project doesn't exist or isn't public
-    const errorText = page.getByText(
-      /does not exist|not public|not found|failed/i
-    );
+    const errorText = page
+      .getByText(/does not exist|not public|not found|failed/i)
+      .first();
     await expect(errorText).toBeVisible({ timeout: 10000 });
   });
 
