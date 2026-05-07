@@ -82,15 +82,15 @@ test.describe("Integration Testing Page", () => {
     await page.goto(PAGE_URL);
     await page.waitForLoadState("domcontentloaded");
 
+    // The runs area heading is always rendered after RequireProject hydrates;
+    // wait for it explicitly so the immediate isVisible() snapshot below
+    // doesn't race the initial render.
+    const runsArea = page.getByRole("heading", { name: /Test Run History/i });
+    await expect(runsArea).toBeVisible({ timeout: 15000 });
+
     // Either shows run cards or empty state message
     const emptyState = page.getByText("No Integration Tests Yet");
-    const runsArea = page.getByRole("heading", { name: /Test Run History/i });
-
     const hasEmpty = await emptyState.isVisible().catch(() => false);
-    const hasRunsArea = await runsArea.isVisible().catch(() => false);
-
-    // The runs area heading should always be visible
-    expect(hasRunsArea).toBeTruthy();
 
     // If there are no runs, empty state should be visible
     if (hasEmpty) {

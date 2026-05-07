@@ -12,6 +12,13 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("Homepage (/)", () => {
+  // The homepage's AuthProvider auto-redirects authenticated users away from
+  // `/` (superusers go to `/admin`, normal users to `/build/workflows`). The
+  // chromium storageState carries an admin session, so the marketing page is
+  // never rendered without clearing auth. Override storageState for the whole
+  // describe block so all tests see the marketing landing.
+  test.use({ storageState: { cookies: [], origins: [] } });
+
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/");
     await page.waitForLoadState("domcontentloaded");

@@ -385,11 +385,15 @@ test.describe("Runner Monitoring (/docs/runner/monitoring)", () => {
       page.getByRole("heading", { name: /real-time monitoring/i })
     ).toBeVisible({ timeout: 10000 });
 
-    await expect(page.getByText("General Logs")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "General Logs" })
+    ).toBeVisible();
     await expect(
       page.getByRole("heading", { name: "Image Recognition Logs" })
     ).toBeVisible();
-    await expect(page.getByText("Action Logs")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Action Logs" })
+    ).toBeVisible();
   });
 
   test("shows health monitoring section", async ({ page }) => {
@@ -779,15 +783,23 @@ test.describe("Runner Workflow Descriptions (/docs/runner/workflow-descriptions)
       page.getByRole("heading", { name: /workflow categories/i })
     ).toBeVisible({ timeout: 10000 });
 
-    // Category names in the table
-    await expect(page.getByRole("cell", { name: "Main" })).toBeVisible();
-    await expect(page.getByRole("cell", { name: "Testing" })).toBeVisible();
+    // Category names in the table — use exact match because some descriptions
+    // (e.g., "State machine transitions") would otherwise match by substring
+    // and trigger strict-mode violations.
     await expect(
-      page.getByRole("cell", { name: "UI Automation" })
+      page.getByRole("cell", { name: "Main", exact: true })
     ).toBeVisible();
-    await expect(page.getByRole("cell", { name: "Utilities" })).toBeVisible();
     await expect(
-      page.getByRole("cell", { name: "Transitions" })
+      page.getByRole("cell", { name: "Testing", exact: true })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("cell", { name: "UI Automation", exact: true })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("cell", { name: "Utilities", exact: true })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("cell", { name: "Transitions", exact: true })
     ).toBeVisible();
   });
 

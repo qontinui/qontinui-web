@@ -103,8 +103,11 @@ test.describe("Marketplace Page", () => {
     // Wait for initial load
     await page.waitForTimeout(2000);
 
-    // Click on Popular tab
-    await page.getByText("Popular").first().click();
+    // Click on Popular tab — scope to the tablist so we don't pick up the
+    // "Most Popular" select option in the search bar (and so the click is
+    // routed to the Radix tab trigger directly, avoiding the html-pointer
+    // intercept seen with getByText().first()).
+    await page.getByRole("tab", { name: /Popular/i }).click();
     await page.waitForTimeout(1000);
 
     await page.screenshot({
@@ -113,7 +116,7 @@ test.describe("Marketplace Page", () => {
     });
 
     // Click on Installed tab
-    await page.getByText("Installed").first().click();
+    await page.getByRole("tab", { name: /Installed/i }).click();
     await page.waitForTimeout(1000);
 
     await page.screenshot({
@@ -253,8 +256,9 @@ test.describe("Publish Package Page", () => {
     await page.goto("/marketplace/publish");
     await page.waitForLoadState("domcontentloaded");
 
-    // Click Code tab
-    await page.getByText("Code").first().click();
+    // Click Code tab — use the tab role so we don't match incidental "Code"
+    // text and so the Radix trigger receives the click directly.
+    await page.getByRole("tab", { name: "Code", exact: true }).click();
     await page.waitForTimeout(1000);
 
     // Should show Package Code section
@@ -268,10 +272,7 @@ test.describe("Publish Package Page", () => {
     });
 
     // Click README tab
-    const readmeTab = page
-      .locator('[role="tab"]')
-      .filter({ hasText: "README" });
-    await readmeTab.click();
+    await page.getByRole("tab", { name: "README", exact: true }).click();
     await page.waitForTimeout(1000);
 
     // Should show README section with markdown support
@@ -280,7 +281,7 @@ test.describe("Publish Package Page", () => {
     });
 
     // Click Preview tab
-    await page.getByText("Preview").first().click();
+    await page.getByRole("tab", { name: /Preview/i }).click();
     await page.waitForTimeout(1000);
 
     // Should show Package Preview section

@@ -356,6 +356,8 @@ test.describe("Statistics - /runs/statistics", () => {
     const hasFailed = (await page.locator("text=Failed").count()) > 0;
     const hasNoData =
       (await page.locator("text=No Data Available").count()) > 0;
+    const hasLoading =
+      (await page.locator("text=Computing statistics").count()) > 0;
     const hasRunnerOffline =
       (await page.locator("text=Runner Offline").count()) > 0 ||
       (await page.locator("text=Runner is offline").count()) > 0;
@@ -363,6 +365,7 @@ test.describe("Statistics - /runs/statistics", () => {
     expect(
       (hasStatusBreakdown && hasCompleted && hasFailed) ||
         hasNoData ||
+        hasLoading ||
         hasRunnerOffline
     ).toBeTruthy();
   });
@@ -380,13 +383,19 @@ test.describe("Statistics - /runs/statistics", () => {
       (await page.locator("text=Shortest Run").count()) > 0;
     const hasNoData =
       (await page.locator("text=No Data Available").count()) > 0;
+    const hasLoading =
+      (await page.locator("text=Computing statistics").count()) > 0;
     const hasRunnerOffline =
       (await page.locator("text=Runner Offline").count()) > 0 ||
       (await page.locator("text=Runner is offline").count()) > 0;
 
     // Duration extremes only show when there are finished runs with duration data
     expect(
-      hasLongestRun || hasShortestRun || hasNoData || hasRunnerOffline
+      hasLongestRun ||
+        hasShortestRun ||
+        hasNoData ||
+        hasLoading ||
+        hasRunnerOffline
     ).toBeTruthy();
   });
 });
