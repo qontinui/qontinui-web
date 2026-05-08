@@ -125,10 +125,13 @@ test.describe("Navigation Test Generator", () => {
     const urlInput = page.getByPlaceholder("http://localhost:3000");
     await urlInput.fill("http://localhost:3001");
 
-    // Click start exploration
+    // The Start Exploration button is disabled while `targetUrl` is empty.
+    // Wait for the value to flush through React state so the button enables
+    // before we attempt to click.
     const startButton = page.getByRole("button", {
       name: /Start Exploration/i,
     });
+    await expect(startButton).toBeEnabled({ timeout: 10000 });
     await startButton.click();
 
     // Wait for the request to be made

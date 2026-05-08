@@ -55,16 +55,21 @@ test.describe("Extraction (Unified)", () => {
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
 
-    // The page wraps in RequireProject with pageName="Discover"
-    // When a project is selected, method options should be visible
+    // The page wraps in RequireProject with pageName="Discover".
+    // Without a project query param, the RequireProject fallback renders the
+    // "No project selected" card with a "Go to Dashboard" link. With one,
+    // the method selector renders. Wait for either branch to settle before
+    // asserting so we don't race the initial render.
     const hasMethodOptions = await page
       .getByText("Web Extraction")
-      .isVisible()
+      .first()
+      .isVisible({ timeout: 10000 })
       .catch(() => false);
 
     const hasProjectRequirement = await page
-      .getByText(/select.*project/i)
-      .isVisible()
+      .getByText(/no project selected|select.*project/i)
+      .first()
+      .isVisible({ timeout: 10000 })
       .catch(() => false);
 
     // Either method options are shown (project selected) or project selection is required

@@ -93,8 +93,11 @@ test.describe("Download Page", () => {
     await page.goto("/download");
     await page.waitForLoadState("domcontentloaded");
 
-    // Should show at least one Download button for files
+    // Wait for the download buttons to render before counting — the page
+    // initially shows a platform selector skeleton, then hydrates with the
+    // file list. Asserting visibility before count() avoids the 0-count race.
     const downloadButtons = page.getByRole("button", { name: /Download/i });
+    await expect(downloadButtons.first()).toBeVisible({ timeout: 15000 });
     const count = await downloadButtons.count();
     expect(count).toBeGreaterThan(0);
 

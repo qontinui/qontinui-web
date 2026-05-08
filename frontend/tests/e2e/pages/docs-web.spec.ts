@@ -335,9 +335,11 @@ test.describe("Web AI Actions (/docs/web/ai-actions)", () => {
     await expect(page.getByText("prompt", { exact: true })).toBeVisible({
       timeout: 10000,
     });
-    await expect(page.getByText("templateId")).toBeVisible();
-    await expect(page.getByText("maxSessions")).toBeVisible();
-    await expect(page.getByText("outputVariable")).toBeVisible();
+    await expect(page.getByText("templateId", { exact: true })).toBeVisible();
+    await expect(page.getByText("maxSessions", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("outputVariable", { exact: true })
+    ).toBeVisible();
   });
 
   test("shows when to use AI actions", async ({ page }) => {
@@ -571,7 +573,9 @@ test.describe("Web States (/docs/web/states)", () => {
     await expect(
       page.getByRole("heading", { name: "Initial State" })
     ).toBeVisible();
-    await expect(page.getByText("Final State")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Final State" })
+    ).toBeVisible();
 
     // Descriptions mention is_initial and is_final behaviors
     await expect(
@@ -616,11 +620,18 @@ test.describe("Web States (/docs/web/states)", () => {
     await page.goto("/docs/web/states");
     await page.waitForLoadState("domcontentloaded");
 
-    await expect(page.getByText("Login Screen", { exact: true })).toBeVisible({
+    // Anchor on the "Examples of States:" list to scope the matches — the
+    // page also has "Dashboard" in nav (header) and "Final State"/"Dashboard"
+    // mentions elsewhere; the example list contains the <strong> labels.
+    const examplesList = page
+      .getByRole("heading", { name: "Examples of States:" })
+      .locator("..")
+      .getByRole("list");
+    await expect(examplesList.getByText("Login Screen")).toBeVisible({
       timeout: 10000,
     });
-    await expect(page.getByText("Dashboard")).toBeVisible();
-    await expect(page.getByText("Error Dialog")).toBeVisible();
+    await expect(examplesList.getByText("Dashboard")).toBeVisible();
+    await expect(examplesList.getByText("Error Dialog")).toBeVisible();
   });
 });
 
@@ -674,10 +685,10 @@ test.describe("Web Transitions (/docs/web/transitions)", () => {
     ).toBeVisible({ timeout: 10000 });
 
     await expect(
-      page.getByRole("heading", { name: "Outgoing Transition" })
+      page.getByRole("heading", { name: "Outgoing Transition", exact: true })
     ).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Incoming Transition" })
+      page.getByRole("heading", { name: "Incoming Transition", exact: true })
     ).toBeVisible();
 
     // Details of each type
@@ -704,13 +715,13 @@ test.describe("Web Transitions (/docs/web/transitions)", () => {
       page.getByRole("heading", { name: "to_state" })
     ).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "stays_visible" })
+      page.getByRole("heading", { name: "stays_visible", exact: true })
     ).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "activate_states" })
+      page.getByRole("heading", { name: "activate_states", exact: true })
     ).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "deactivate_states" })
+      page.getByRole("heading", { name: "deactivate_states", exact: true })
     ).toBeVisible();
   });
 
