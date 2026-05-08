@@ -1,12 +1,19 @@
 /**
  * Debug test for Web Extraction WebSocket issue
  * Captures console logs to diagnose 1005 disconnect
+ *
+ * Same gating as web-extraction.spec.ts — the page's h1 only
+ * renders past the runner-spec-API check, so this debug spec
+ * auto-skips when no runner is reachable on :9876.
  */
 
 import { test } from "./fixtures";
+import { requireRunner } from "./runner-detection";
+import { TEST_PROJECT_ID as PROJECT_ID } from "./test-project";
 
-// Valid project ID from the bug report URL
-const PROJECT_ID = "fb93478d-98bd-4e40-99f4-0f2c08c1fd5a";
+test.beforeAll(async () => {
+  await requireRunner();
+});
 
 test.describe("Web Extraction Debug", () => {
   test.beforeEach(async ({ page }) => {
