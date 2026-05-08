@@ -38,7 +38,20 @@ test.describe("Project Dashboard Page", () => {
   });
 
   test("shows metric cards and resource overview tabs", async ({ page }) => {
-    await page.goto("/project-dashboard");
+    // firefox occasionally hits ERR_CONNECTION_REFUSED on the first
+    // goto of this test under CI load even though the dev server is
+    // up (other tests in this file succeed). One retry papers over
+    // the browser-init timing window.
+    try {
+      await page.goto("/project-dashboard");
+    } catch (e) {
+      if (e instanceof Error && /CONNECTION_REFUSED/i.test(e.message)) {
+        await page.waitForTimeout(1000);
+        await page.goto("/project-dashboard");
+      } else {
+        throw e;
+      }
+    }
     await page.waitForLoadState("domcontentloaded");
 
     // Verify metric cards are visible (rendered by MetricsOverview).
