@@ -1,12 +1,23 @@
 /**
  * E2E test for Web Extraction page
- * Tests that the Connect Runner link is displayed when no runner is connected
+ *
+ * The /automation-builder/web-extraction page renders an h1 "Web
+ * Extraction" only after the page reaches the runner's spec API.
+ * Without a runner the surface is gated upstream of the heading,
+ * so the spec auto-skips when no runner is reachable on :9876.
+ * Locally with a runner up, the tests exercise the
+ * "no runners connected" fallback (Connect Runner link / project
+ * parameter preservation) — those branches still need the page to
+ * render past the gate.
  */
 
 import { test, expect } from "./fixtures";
+import { requireRunner } from "./runner-detection";
+import { TEST_PROJECT_ID as PROJECT_ID } from "./test-project";
 
-// Valid project ID from the bug report URL
-const PROJECT_ID = "fb93478d-98bd-4e40-99f4-0f2c08c1fd5a";
+test.beforeAll(async () => {
+  await requireRunner();
+});
 
 test.describe("Web Extraction Page", () => {
   test("displays Connect Runner link when no runner is connected", async ({

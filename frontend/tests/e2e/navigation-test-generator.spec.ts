@@ -8,10 +8,10 @@
  */
 
 import { test, expect } from "./fixtures";
+import { requireRunner } from "./runner-detection";
+import { TEST_PROJECT_ID } from "./test-project";
 
-// Use a known project ID for testing
-const PROJECT_ID = "f0816920-92ed-4d18-b6d2-9f6d02b42a38";
-const PAGE_URL = `/automation-builder/navigation-tests?project=${PROJECT_ID}`;
+const PAGE_URL = `/automation-builder/navigation-tests?project=${TEST_PROJECT_ID}`;
 
 // Run tests serially to avoid parallel timeout issues
 test.describe.configure({ mode: "serial" });
@@ -63,6 +63,14 @@ test.describe("Navigation Test Generator", () => {
   });
 
   test("should send correct API request format", async ({ page }) => {
+    // The Start Exploration button only enables when both a target URL is
+    // entered AND a runner is reachable for the explore route to bind to.
+    // Without a runner, the button stays disabled even after fillUrl, so
+    // this specific test can't proceed. The other tests in this describe
+    // (the @smoke ones) check structure-only and still work without a
+    // runner — that's why this skip is per-test, not file-level.
+    await requireRunner();
+
     // Set up route interception to capture the request
     let capturedRequest: {
       connection_url?: string;
